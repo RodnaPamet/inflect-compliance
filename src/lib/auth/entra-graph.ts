@@ -31,6 +31,21 @@ interface GraphMemberOfPage {
     '@odata.nextLink'?: string;
 }
 
+/** A group read, and whether it is the WHOLE membership. */
+export interface GraphGroupsResult {
+    /**
+     * Always EMPTY when `complete` is false — #5593's defensive emptying is
+     * kept deliberately, so a caller that ignores the flag still cannot
+     * resolve a role from a prefix. The flag is what lets a caller tell "no
+     * groups" from "no groups yet"; the emptying is what makes forgetting to
+     * ask harmless.
+     */
+    groups: GraphGroupRef[];
+    /** False when pagination stopped early: a transport error, a non-OK
+     *  response, or the page bound. */
+    complete: boolean;
+}
+
 /**
  * Fetch the signed-in user's full group membership via Graph.
  * Follows `@odata.nextLink` cursor pagination and de-duplicates ids. The
@@ -40,12 +55,30 @@ interface GraphMemberOfPage {
  *
  * Returns `[]` on any non-OK response or transport error — a Graph outage must
  * never block sign-in; the caller treats an empty list as "no groups resolved".
+ * That holds on EVERY page, not only the first: a failure on page 2 returns
+ * `[]`, never the groups read before it, and so does running out of pages with
+ * a `nextLink` still to follow. A partial list resolves a role from the groups
+ * that happened to arrive, so the sync could rewrite an ADMIN membership to
+ * EDITOR on it, or pass the group gate on it (#5306); "no groups resolved"
+ * changes no role.
+ *
+ * ═══ WHAT THE FLAG ADDS TO THAT (#5600) ═══
+ *
+ * Emptying the list stops the demotion, and leaves one thing unanswered: with
+ * `enforceGroupGate` on, a caller that sees no groups sees NO MATCHED GROUP,
+ * and the gate denies the workspace for the session. So a transient 429 turned
+ * a silent demotion into a lockout — better, and still not right, because
+ * "we could not read your groups" is not "you are in none of them".
+ *
+ * `complete: false` is what lets the sync tell those apart and decline to
+ * decide at all: no role write, no gate verdict (owner decision, 2026-11-14).
+ * The emptying stays as the belt to that brace.
  */
 export async function fetchUserGroupsFromGraph(
     accessToken: string,
     fetchImpl: FetchImpl = fetch,
     maxPages = 20,
-): Promise<GraphGroupRef[]> {
+): Promise<GraphGroupsResult> {
     const seen = new Set<string>();
     const out: GraphGroupRef[] = [];
     let url: string | undefined = GRAPH_MEMBER_OF;
@@ -59,9 +92,9 @@ export async function fetchUserGroupsFromGraph(
                 headers: graphHeaders(accessToken, { Accept: 'application/json' }),
             });
         } catch {
-            return out;
+            return { groups: [], complete: false };
         }
-        if (!res.ok) return out;
+        if (!res.ok) return { groups: [], complete: false };
         const page = (await res.json()) as GraphMemberOfPage;
         for (const item of page.value ?? []) {
             if (item.id && !seen.has(item.id)) {
@@ -71,7 +104,9 @@ export async function fetchUserGroupsFromGraph(
         }
         url = page['@odata.nextLink'];
     }
-    return out;
+    // Stopped at `maxPages` with more to read: the list is incomplete.
+    if (url) return { groups: [], complete: false };
+    return { groups: out, complete: true };
 }
 
 export interface GraphGroupLookup {

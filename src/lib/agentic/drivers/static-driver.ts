@@ -630,11 +630,12 @@ async function haltRun(
     err: ContextIntegrityError,
 ): Promise<string> {
     const message = describeContextHalt(err);
-    await updateRun(ctx, runId, {
+    // An operator aborted the run first: their stop stands (#5366).
+    if (!(await updateRun(ctx, runId, {
         status: 'FAILED',
         completedAt: new Date(),
         errorMessage: message,
-    });
+    }))) return 'ABORTED';
     recordWorkflowContextIntegrityHalt({ code: err.code });
     await appendAuditEntry({
         tenantId: ctx.tenantId,

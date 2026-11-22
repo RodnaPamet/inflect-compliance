@@ -60,6 +60,12 @@ export interface RunRow {
      * nothing at all.
      */
     pendingProposals: number;
+    /**
+     * The proposal a run parked on a deferred call waits on (Step 2f), or null.
+     * Such a run is continued by the decision on it, never by Resume, which the
+     * server refuses: the row offers "Open proposal" in its place.
+     */
+    waitingOnProposalId?: string | null;
 }
 
 interface WorkflowOption {
@@ -451,7 +457,16 @@ export function AgentRunsClient({
                                         A PAUSED run was stopped by a shutdown
                                         mid-run, and nothing else resumes it
                                         (#4472). */}
-                                    {RESUMABLE.has(r.status) && (
+                                    {r.waitingOnProposalId && (
+                                        <a
+                                            className="text-sm font-medium text-content-info hover:underline"
+                                            data-testid={`agent-run-open-proposal-${r.id}`}
+                                            href={`${tenantHref('/agents/proposals')}#proposal-${r.waitingOnProposalId}`}
+                                        >
+                                            {t('runs.openProposal')}
+                                        </a>
+                                    )}
+                                    {RESUMABLE.has(r.status) && !r.waitingOnProposalId && (
                                         <PermissionGated allowed={canOperate} reason={t('runs.needsWrite')}>
                                             <Button
                                                 variant="secondary"

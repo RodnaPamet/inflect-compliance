@@ -37,10 +37,38 @@
 import { z } from 'zod';
 
 import { badRequest } from '@/lib/errors/types';
+import { logger } from '@/lib/observability/logger';
 import { pinFromCard } from '@/lib/agentic/policy-card-pin';
+import { proposalKindNoun } from '@/lib/agentic/proposal-labels';
+
+/**
+ * EVERY FIELD a propose result carries, and nothing else (#5548).
+ *
+ * The engines' guarded call does not run the injection scan on a propose
+ * result, because this text is built entirely here — counts, proposal ids, the
+ * proposal kind and a fixed sentence — and holds no tenant- or model-authored
+ * text to steer the model with. That exemption is only safe while it stays
+ * true, so the result is built from this list and a test pins it: a field
+ * added here is a field somebody must show is ours before the scan's absence
+ * covers it. Never put item content, a rationale or a refusal reason in it.
+ */
+export const PROPOSE_RESULT_FIELDS = [
+    'proposed',
+    'quarantined',
+    'kind',
+    'proposalIds',
+    'quarantinedProposalIds',
+    'message',
+] as const;
+
+type ProposeResultBody = { [K in (typeof PROPOSE_RESULT_FIELDS)[number]]: number | string | string[] };
+import { PROCESS_MAP_PROPOSALS_IMPLEMENTED } from '@/lib/agentic/proposal-kind-rollout';
 import {
     createAgentProposal,
+    parseProposalPayload,
+    prepareAgentProposal,
     type AgentProposalKind,
+    type PreparedAgentProposal,
 } from '@/app-layer/usecases/agent-proposals';
 
 import {
@@ -167,24 +195,72 @@ export const PROPOSE_TOOLS: McpProposeTool[] = [
         description:
             'Propose one or more candidate FINDINGS for human approval (NOT ' +
             'created). Each item uses the finding create shape (severity, type, ' +
-            'title required; description, rootCause, …). Returns pending proposal ids.',
+            'title required; type is NONCONFORMITY, OBSERVATION or OPPORTUNITY; ' +
+            'description, rootCause, …). Returns pending proposal ids.',
         inputSchema: proposeInputSchema('finding'),
         kind: 'FINDING',
-        resourceScope: { resource: 'audits', action: 'read' },
-        // `POST /api/t/:slug/findings` carries no permission key —
-        // `PermissionSet` has no `findings` domain — so its real gate is
-        // `assertCanWrite` inside `createFinding`. Naming `audits.manage`
-        // instead would be stricter but WRONG: an EDITOR holds
-        // `audits.manage: false` and can create a finding through the human
-        // API, so the tool would refuse a proposal its principal could commit.
+        // The findings domain's READ scope, like every propose tool's: a
+        // propose key must never carry `findings:write`, which would let it
+        // create findings over REST. It was `audits:read` until #5409; the
+        // keys minted for this tool with `audits:read` were given
+        // `findings:read` by data migration before and with the move.
+        resourceScope: { resource: 'findings', action: 'read' },
+        // The key the human route takes and `createFinding` floors on (#4574,
+        // #5369), so the tool never queues a proposal its principal could not
+        // approve. It named `audits.view` + write while findings had no keys
+        // of their own (#5393).
         authorize: {
-            keys: ['audits.view'],
-            policy: 'write',
+            keys: ['findings.create'],
             basis: 'principal',
-            mirrors: 'POST /api/t/:slug/findings (getTenantCtx + assertCanWrite)',
+            mirrors: 'POST /api/t/:slug/findings',
+        },
+    },
+    {
+        // #5053. Each item is ONE WHOLE MAP; `createAgentProposal` validates it
+        // against `ProposedProcessMapSchema` and stores it canonical. The item
+        // schema stays free-form (`{ type: 'object' }`): an item schema that
+        // declares `properties` is dropped from Flue and the in-app assistant
+        // by the valibot conversion. The description is therefore the model's
+        // only source for the shape. `processes:read` is the domain scope (a
+        // propose key must never carry `processes:write`, which could PUT maps
+        // over REST); the principal needs `processes.edit`, the key both human
+        // map routes take.
+        name: 'propose_process_map',
+        description:
+            'Propose one or more PROCESS MAPS for human approval (NOT created). ' +
+            'Each item is one whole map: name (required, max 200 characters), ' +
+            'description (optional, max 2000), nodes: [{ nodeKey, nodeType ' +
+            "'processStep' or 'decision', label (max 200), subtitle (optional, " +
+            'max 200) }] (1 to 40 steps; each nodeKey unique, letters, digits, ' +
+            "'-' or '_' only, at most 40 characters, e.g. 'review' or 's1', never " +
+            "'Step 1' or '1.1'), edges: [{ sourceKey, targetKey, labelOverride " +
+            '(optional, max 200) }] naming nodeKeys (at most 80 arrows; label the branches ' +
+            "of a decision, e.g. 'Approved'). Do not send positions, controls or " +
+            'automation: a map is laid out automatically and created as a draft ' +
+            'only after a human approves it. You cannot see existing process maps, ' +
+            'so a proposal may duplicate one. Returns the pending proposal ids.',
+        inputSchema: proposeInputSchema('process map'),
+        kind: 'PROCESS_MAP',
+        resourceScope: { resource: 'processes', action: 'read' },
+        authorize: {
+            keys: ['processes.edit'],
+            basis: 'principal',
+            mirrors: 'POST /api/t/:slug/processes + PUT /api/t/:slug/processes/:id (processes.edit)',
         },
     },
 ];
+
+/**
+ * Is this propose tool switched on in this release? The PROCESS_MAP brake
+ * (`PROCESS_MAP_PROPOSALS_IMPLEMENTED`) withdraws `propose_process_map` from
+ * every catalogue as well as refusing the kind, so setting it back to false
+ * stops an agent being offered a tool whose every call would be refused.
+ * Exported so the suites that walk every propose tool follow the brake rather
+ * than pin it, and setting it back stays a one-line diff.
+ */
+export function proposeToolReleased(tool: Pick<McpProposeTool, 'kind'>): boolean {
+    return tool.kind !== 'PROCESS_MAP' || PROCESS_MAP_PROPOSALS_IMPLEMENTED;
+}
 
 /**
  * The propose tools this invocation could actually LOAD: the tools offered at
@@ -214,7 +290,7 @@ export function loadableProposeTools(inv: McpInvocation): readonly McpProposeToo
         scopes.includes('mcp:*') ||
         scopes.includes('mcp:propose');
     if (!mayPropose) return [];
-    return PROPOSE_TOOLS.filter((t) => isToolLoadable(inv, t.name));
+    return PROPOSE_TOOLS.filter((t) => proposeToolReleased(t) && isToolLoadable(inv, t.name));
 }
 
 /** `tools/list` descriptors for the loadable propose surface. */
@@ -271,10 +347,15 @@ export async function runProposeTool(
     // 1. The one gate: exposure → the `mcp:propose` capability → the domain
     //    scope → the PRINCIPAL's create permission (the same `assertPermission`
     //    the human create route runs). Exactly one audit row on refusal.
-    await authorizeToolCall(
+    //
+    //    The policy card's budgets are NOT spent here (#5304): `charge` spends
+    //    them once every item has passed its schema and the content guards, so
+    //    a batch refused by its own content is not charged an action.
+    const charge = await authorizeToolCall(
         inv,
         { ...tool, capability: 'propose', capabilityClass: 'propose' },
         rawArgs,
+        { deferCharge: true },
     );
 
     // 2. Validate the envelope.
@@ -287,25 +368,74 @@ export async function runProposeTool(
     //    against the create-schema + sanitises + GUARDS + audits). Malformed →
     //    throws. An item the agentic output guard quarantines is written as a
     //    terminal QUARANTINED row and never enters the review queue.
+    //
+    //    ALL OR NOTHING (#5304). The loop used to write as it went, so a third
+    //    item that failed its schema or a content guard failed the call after
+    //    the first two were already PENDING; the agent saw a failure with no
+    //    ids and resent all three, and reviewers got the first two twice. So
+    //    every item is checked against its schema, then PREPARED (sanitised and
+    //    guarded, once each, with the guards' own audit rows), before any is
+    //    written, and a batch with an item refused at either step queues
+    //    nothing and is not charged.
+    const items = parsed.data.items;
+    items.forEach((item, index) => {
+        try {
+            parseProposalPayload(tool.kind, 'CREATE', item);
+        } catch (err) {
+            const reason = err instanceof Error ? err.message : String(err);
+            throw badRequest(
+                `Item ${index + 1} of ${items.length} for "${name}" is invalid, so none of the ${items.length} was proposed: ${reason}`,
+            );
+        }
+    });
+    const prepared: PreparedAgentProposal[] = [];
+    try {
+        for (const item of items) {
+            prepared.push(
+                await prepareAgentProposal(ctx, {
+                    kind: tool.kind,
+                    payload: item,
+                    rationale: parsed.data.rationale ?? null,
+                    // The version that ALLOWED this call, taken from the invocation the
+                    // gate above authorized — not re-read from the card here. A re-read
+                    // would answer "what is in force now", which is a different claim
+                    // and is not what this proposal executed under; between the gate and
+                    // this line an operator can have edited the card.
+                    policyCardVersion: pinFromCard(inv.policyCard?.inForce ?? null),
+                    // The step that produced it, when a step did. Every item in this
+                    // loop shares one origin — they came from one `buildItems` on one
+                    // step — so a run's step can legitimately own several proposals,
+                    // which is precisely why `stepSeq` carries no unique constraint.
+                    origin,
+                }),
+            );
+        }
+    } catch (err) {
+        // The refusal stands, and nothing joins the review queue. An earlier
+        // item the output guard QUARANTINED is still written, as it was before
+        // the batch became all-or-nothing: that row, its audit entry, the bell
+        // and the breaker count are the evidence of an injection attempt, and
+        // they never reach a reviewer, so they cannot be reviewed twice.
+        for (const evidence of prepared.filter((p) => p.quarantined)) {
+            await createAgentProposal(ctx, evidence).catch((writeErr: unknown) => {
+                logger.warn('a quarantined proposal from a refused batch was not recorded', {
+                    component: 'mcp-propose',
+                    tool: tool.name,
+                    error: writeErr instanceof Error ? writeErr.message : 'non-Error thrown',
+                });
+            });
+        }
+        throw err;
+    }
+
+    // Every item passed: spend the policy card's budgets now. This can still
+    // refuse (the daily budget), so it runs before anything is written.
+    await charge();
+
     const queued: string[] = [];
     const quarantined: string[] = [];
-    for (const item of parsed.data.items) {
-        const proposal = await createAgentProposal(ctx, {
-            kind: tool.kind,
-            payload: item,
-            rationale: parsed.data.rationale ?? null,
-            // The version that ALLOWED this call, taken from the invocation the
-            // gate above authorized — not re-read from the card here. A re-read
-            // would answer "what is in force now", which is a different claim
-            // and is not what this proposal executed under; between the gate and
-            // this line an operator can have edited the card.
-            policyCardVersion: pinFromCard(inv.policyCard?.inForce ?? null),
-            // The step that produced it, when a step did. Every item in this
-            // loop shares one origin — they came from one `buildItems` on one
-            // step — so a run's step can legitimately own several proposals,
-            // which is precisely why `stepSeq` carries no unique constraint.
-            origin,
-        });
+    for (const item of prepared) {
+        const proposal = await createAgentProposal(ctx, item);
         (proposal.status === 'QUARANTINED' ? quarantined : queued).push(proposal.id);
     }
 
@@ -320,8 +450,8 @@ export async function runProposeTool(
     // and they are already in the audit trail where a responder can read them.
     const message =
         quarantined.length === 0
-            ? `Proposed ${queued.length} ${tool.kind.toLowerCase()}(s), pending human approval in the tenant's agent-proposals review queue. Nothing was created.`
-            : `Proposed ${queued.length} ${tool.kind.toLowerCase()}(s) for human approval; ${quarantined.length} were QUARANTINED by the content guard and did NOT enter the review queue. Nothing was created.`;
+            ? `Proposed ${queued.length} ${proposalKindNoun(tool.kind)}(s), pending human approval in the tenant's agent-proposals review queue. Nothing was created.`
+            : `Proposed ${queued.length} ${proposalKindNoun(tool.kind)}(s) for human approval; ${quarantined.length} were QUARANTINED by the content guard and did NOT enter the review queue. Nothing was created.`;
 
     return {
         content: [
@@ -329,6 +459,8 @@ export async function runProposeTool(
                 type: 'text',
                 text: JSON.stringify(
                     {
+                        // Typed by PROPOSE_RESULT_FIELDS: a key outside it is a
+                        // compile error (#5548).
                         proposed: queued.length,
                         quarantined: quarantined.length,
                         kind: tool.kind,
@@ -354,7 +486,7 @@ export async function runProposeTool(
                         // instead of a confident wrong value, which is the
                         // trade the metric reporters make for the same reason.
                         message,
-                    },
+                    } satisfies ProposeResultBody,
                     null,
                     2,
                 ),

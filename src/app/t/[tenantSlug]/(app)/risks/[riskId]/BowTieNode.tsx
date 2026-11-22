@@ -5,10 +5,11 @@
    barrier / consequence. */
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { memo } from 'react';
-import { ShieldCheck } from '@inflect/ui/components/ui/icons/nucleo/shield-check';
-import { Bolt } from '@inflect/ui/components/ui/icons/nucleo/bolt';
-import { TriangleWarning } from '@inflect/ui/components/ui/icons/nucleo/triangle-warning';
-import { CurrencyDollar } from '@inflect/ui/components/ui/icons/nucleo/currency-dollar';
+import { useTranslations } from 'next-intl';
+import { ShieldCheck } from '@inflect/ui/components/ui/icons/glyphs/shield-check';
+import { Bolt } from '@inflect/ui/components/ui/icons/glyphs/bolt';
+import { TriangleWarning } from '@inflect/ui/components/ui/icons/glyphs/triangle-warning';
+import { CurrencyDollar } from '@inflect/ui/components/ui/icons/glyphs/currency-dollar';
 import { cn } from '@inflect/ui/lib/cn';
 import { useMoneyFormatter } from '@/lib/tenant-context-provider';
 
@@ -28,6 +29,7 @@ const effTone = (e: number | null | undefined) =>
 
 function BowTieNodeImpl({ type, data }: NodeProps) {
     const money = useMoneyFormatter();
+    const t = useTranslations('risks');
     const d = data as Record<string, unknown>;
     const label = String(d.title ?? d.label ?? '');
 
@@ -38,7 +40,8 @@ function BowTieNodeImpl({ type, data }: NodeProps) {
                 <TriangleWarning className="mx-auto size-6 text-content-muted" />
                 <div className="truncate font-medium text-content-emphasis">{label}</div>
                 <div className="mt-tight text-xs tabular-nums text-content-muted">
-                    Score {String(d.score ?? '—')}{d.ale != null ? ` · ${money(d.ale as number)}/yr` : ''}
+                    {t('bowtie.nodeScore', { score: String(d.score ?? '—') })}
+                    {d.ale != null ? ` · ${t('bowtie.nodeAlePerYear', { amount: money(d.ale as number) })}` : ''}
                 </div>
                 <Handle type="source" position={Position.Right} className="!bg-content-muted" />
             </div>

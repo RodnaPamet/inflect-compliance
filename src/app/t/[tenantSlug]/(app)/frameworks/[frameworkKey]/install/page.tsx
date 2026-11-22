@@ -7,6 +7,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { frameworkInstallRefusal } from '@/lib/framework-install-refusals';
+import { planLimitRefusalOf } from '@/lib/billing/plan-limit-message';
+import { apiErrorMessage } from '@/lib/api-error';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -53,6 +55,8 @@ interface InstallPreview {
     existingControls: number;
     /** Requirement mappings missing from controls that already exist (#4731). */
     missingMappings?: number;
+    /** Chosen packs not yet in this workspace's scope (#5277); multi-pack preview only. */
+    packsToAdd?: string[];
     templates: InstallPreviewTemplate[];
 }
 interface InstallResult {
@@ -116,16 +120,22 @@ export default function InstallWizardPage() {
 
     /**
      * What a refused preview or install tells the person: the named refusal
-     * in their language, the role note for a 403, else the fallback. The
-     * server's English sentence and the browser's "Failed to fetch" are not
-     * shown (#4731).
+     * in their language (#4731); the plan limit, which is a 403 too and so is
+     * asked before the role note, which an Owner would otherwise be shown
+     * (#5764); the role note for any other 403; else the server's own reason.
+     * A 5xx, or a refusal with no reason, gets the fallback. The browser's
+     * "Failed to fetch" is never shown.
      */
     const refusalText = useCallback(
         (status: number, body: unknown, fallback: string) => {
             const code = frameworkInstallRefusal(body);
             if (code) return tx(`install.refused.${code}`);
+            const planLimit = planLimitRefusalOf(body);
+            if (planLimit) {
+                return tx('install.planLimitReached', { limit: planLimit.limit, current: planLimit.current });
+            }
             if (status === 403) return tx('install.restricted');
-            return fallback;
+            return status >= 500 ? fallback : apiErrorMessage(body, fallback);
         },
         [tx],
     );
@@ -446,8 +456,10 @@ export default function InstallWizardPage() {
                             onClick={handleInstall}
                             // #4731 — a re-install also restores the mappings an
                             // existing control lost, so it is offered while any is
-                            // missing, not only for new controls.
-                            disabled={installing || (preview.newControls === 0 && (preview.missingMappings ?? 0) === 0)}
+                            // missing, not only for new controls. #5277 — and while
+                            // a chosen pack is not yet in scope: the install is the
+                            // only writer of that choice.
+                            disabled={installing || (preview.newControls === 0 && (preview.missingMappings ?? 0) === 0 && (preview.packsToAdd?.length ?? 0) === 0)}
                             id="confirm-install-btn"
                         >
                             {installing ? (
@@ -458,6 +470,8 @@ export default function InstallWizardPage() {
                                 tx('install.installN', { count: preview.newControls })
                             ) : (preview.missingMappings ?? 0) > 0 ? (
                                 tx('install.restoreN', { count: preview.missingMappings ?? 0 })
+                            ) : (preview.packsToAdd?.length ?? 0) > 0 ? (
+                                tx('install.addToScopeN', { count: preview.packsToAdd?.length ?? 0 })
                             ) : (
                                 tx('install.allInstalled')
                             )}

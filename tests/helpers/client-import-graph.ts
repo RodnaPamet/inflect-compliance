@@ -20,6 +20,14 @@
  * `@/` and `@inflect/ui/` resolve to source; any other bare specifier is a
  * package and is not walked (its own built-ins are its bundler configuration's
  * business, not this repo's source).
+ *
+ * ONE PACKAGE IS WALKED: `@rodnapamet/scanent-contract`. The harness contract,
+ * the ladder and the findings planner moved there from `src/lib` (scanent
+ * #26), and client components still reach them through the `@/` re-exports.
+ * Its modules are compiled CommonJS, some of which require Node's `crypto`, so
+ * a client reaching the wrong one is exactly the defect these guards exist
+ * for. A subpath resolves to the package's compiled `dist/<module>.js`, and
+ * the walk follows its relative `require()`s like any other edge.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -31,10 +39,27 @@ import { codeOf } from './source-blocks';
 
 export const EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
 
+/** The package whose compiled modules the walk follows (see the header). */
+export const WALKED_PACKAGE = '@rodnapamet/scanent-contract';
+
+/**
+ * The compiled file a subpath of the walked package names, as Node resolves it
+ * (through the package's `exports` map, walking up from here), or null when it
+ * names nothing.
+ */
+export function resolveWalkedPackageModule(spec: string): string | null {
+    try {
+        return require.resolve(spec);
+    } catch {
+        return null;
+    }
+}
+
 /** The source file a specifier names, or null for a package (not walked). */
 export function resolveSpecifier(spec: string, fromFile: string): string | null {
     let base: string;
     if (spec.startsWith('@/')) base = path.join(REPO_ROOT, 'src', spec.slice(2));
+    else if (spec.startsWith(`${WALKED_PACKAGE}/`)) return resolveWalkedPackageModule(spec);
     else if (spec.startsWith('@inflect/ui/')) base = path.join(REPO_ROOT, 'packages/ui/src', spec.slice('@inflect/ui/'.length));
     else if (spec.startsWith('./') || spec.startsWith('../')) base = path.resolve(path.dirname(fromFile), spec);
     else return null;

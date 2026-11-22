@@ -169,7 +169,7 @@ d('the on-prem observation survives the DB seam', () => {
         const { linkId, employeeId } = await seed(observedAt);
         const ctx = makeRequestContext('OWNER', { tenantId: T });
 
-        const candidates = await findLeaverCandidates(ctx, 'entra-id', [employeeId], FRESH_SINCE);
+        const { candidates } = await findLeaverCandidates(ctx, 'entra-id', [employeeId], FRESH_SINCE);
         const candidate = candidates.find((c) => c.linkId === linkId);
 
         // The seam itself: a timestamp in Postgres has to arrive on the
@@ -206,7 +206,7 @@ d('the on-prem observation survives the DB seam', () => {
         const { linkId, employeeId } = await seed(null);
         const ctx = makeRequestContext('OWNER', { tenantId: T });
 
-        const candidates = await findLeaverCandidates(ctx, 'entra-id', [employeeId], FRESH_SINCE);
+        const { candidates } = await findLeaverCandidates(ctx, 'entra-id', [employeeId], FRESH_SINCE);
         const candidate = candidates.find((c) => c.linkId === linkId);
 
         expect(candidate).toBeDefined();

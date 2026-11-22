@@ -186,7 +186,21 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
         }
     };
 
+    // Removed at once, committed when the undo window closes (Epic 67). The
+    // row leaves the list on click; Undo puts it back, and a refused DELETE
+    // puts it back AND says why (#5313) — it used to stay silent after the
+    // "removed" toast, so a refusal read as a removal.
+    const [removedDepIds, setRemovedDepIds] = useState<ReadonlySet<string>>(() => new Set());
+    const restoreDependency = (id: string) =>
+        setRemovedDepIds((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+        });
+    const dependencies = bia.dependencies.filter((d) => !removedDepIds.has(d.id));
+
     const removeDependency = (dep: ResolvedDependency) => {
+        setRemovedDepIds((prev) => new Set(prev).add(dep.id));
         triggerUndoToast({
             message: tx('biaDetail.dependencyRemoved'),
             undoMessage: tx('biaDetail.undo'),
@@ -195,10 +209,15 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
                     `/api/t/${tenantSlug}/business-continuity/${bia.id}/dependencies/${dep.id}`,
                     { method: 'DELETE' },
                 );
-                if (!res.ok) throw new Error('remove');
+                if (!res.ok) throw new Error(await refusalMessage(res, tx('biaDetail.removeDependencyFailed')));
                 router.refresh();
             },
-            onError: () => router.refresh(),
+            undoAction: () => restoreDependency(dep.id),
+            onError: (err) => {
+                restoreDependency(dep.id);
+                toast.error(err instanceof Error && err.message ? err.message : tx('biaDetail.removeDependencyFailed'));
+                router.refresh();
+            },
         });
     };
 
@@ -296,11 +315,11 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
                 </Section>
 
                 <Section title={tx('biaDetail.secDependencies')}>
-                    {bia.dependencies.length === 0 ? (
+                    {dependencies.length === 0 ? (
                         <p className="text-sm text-content-subtle">{tx('biaDetail.dependenciesEmpty')}</p>
                     ) : (
                         <ul className="space-y-tight">
-                            {bia.dependencies.map((d) => (
+                            {dependencies.map((d) => (
                                 <li
                                     key={d.id}
                                     className="flex items-center justify-between rounded-lg border border-border-subtle px-3 py-1.5 text-sm"
@@ -575,7 +594,18 @@ function BiaEditModal({
     const [notes, setNotes] = useState(bia.notes ?? '');
     const critLabels = buildBiaCriticalityLabels((k, v) => tx(k as Parameters<typeof tx>[0], v as Parameters<typeof tx>[1]));
     const critOptions = CRITICALITY_VALUES.map((v) => ({ value: v, label: critLabels[v] ?? v }));
-    const num = (s: string) => (s.trim() === '' ? null : Number(s));
+    // Blank clears the objective; anything else must be whole hours, zero or
+    // more. `Number('24h')` is NaN, which JSON sends as null, so a typo used
+    // to wipe the stored objective behind a success toast (#5162).
+    const hours = (s: string): number | null | undefined => {
+        if (s.trim() === '') return null;
+        const n = Number(s);
+        return Number.isInteger(n) && n >= 0 ? n : undefined;
+    };
+    const rtoValue = hours(rto);
+    const rpoValue = hours(rpo);
+    const mtpdValue = hours(mtpd);
+    const hoursInvalid = rtoValue === undefined || rpoValue === undefined || mtpdValue === undefined;
 
     return (
         <Modal showModal setShowModal={(v) => { if (!v) onClose(); }} size="lg" title={tx('biaDetail.editTitle')}>
@@ -589,9 +619,9 @@ function BiaEditModal({
                         <Combobox id="bia-edit-criticality" hideSearch options={critOptions} selected={critOptions.find((o) => o.value === criticality) ?? null} setSelected={(o) => { if (o) setCriticality(o.value); }} matchTriggerWidth buttonProps={{ className: 'w-full' }} />
                     </FormField>
                     <div className="grid grid-cols-1 gap-default sm:grid-cols-3">
-                        <FormField label={tx('bia.fieldRto')}><Input id="bia-edit-rto" type="text" inputMode="numeric" value={rto} onChange={(e) => setRto(e.target.value)} /></FormField>
-                        <FormField label={tx('bia.fieldRpo')}><Input id="bia-edit-rpo" type="text" inputMode="numeric" value={rpo} onChange={(e) => setRpo(e.target.value)} /></FormField>
-                        <FormField label={tx('bia.fieldMtpd')}><Input id="bia-edit-mtpd" type="text" inputMode="numeric" value={mtpd} onChange={(e) => setMtpd(e.target.value)} /></FormField>
+                        <FormField label={tx('bia.fieldRto')} error={rtoValue === undefined ? tx('biaDetail.hoursInvalid') : undefined}><Input id="bia-edit-rto" type="text" inputMode="numeric" value={rto} invalid={rtoValue === undefined} onChange={(e) => setRto(e.target.value)} /></FormField>
+                        <FormField label={tx('bia.fieldRpo')} error={rpoValue === undefined ? tx('biaDetail.hoursInvalid') : undefined}><Input id="bia-edit-rpo" type="text" inputMode="numeric" value={rpo} invalid={rpoValue === undefined} onChange={(e) => setRpo(e.target.value)} /></FormField>
+                        <FormField label={tx('bia.fieldMtpd')} error={mtpdValue === undefined ? tx('biaDetail.hoursInvalid') : undefined}><Input id="bia-edit-mtpd" type="text" inputMode="numeric" value={mtpd} invalid={mtpdValue === undefined} onChange={(e) => setMtpd(e.target.value)} /></FormField>
                     </div>
                     <FormField label={tx('bia.fieldOwner')}>
                         <UserCombobox id="bia-edit-owner" tenantSlug={tenantSlug} selectedId={ownerUserId} onChange={(uid) => setOwnerUserId(uid)} placeholder={tx('bia.phOwner')} forceDropdown matchTriggerWidth />
@@ -603,7 +633,7 @@ function BiaEditModal({
             </Modal.Body>
             <Modal.Actions>
                 <Button variant="secondary" size="sm" onClick={onClose}>{tx('bia.cancel')}</Button>
-                <Button variant="primary" size="sm" disabled={saving || !name.trim()} id="bia-edit-save" onClick={() => onSave({ name: name.trim(), criticality, rtoHours: num(rto), rpoHours: num(rpo), mtpdHours: num(mtpd), ownerUserId, notes: notes.trim() || null })}>
+                <Button variant="primary" size="sm" disabled={saving || !name.trim() || hoursInvalid} id="bia-edit-save" onClick={() => { if (hoursInvalid) return; void onSave({ name: name.trim(), criticality, rtoHours: rtoValue, rpoHours: rpoValue, mtpdHours: mtpdValue, ownerUserId, notes: notes.trim() || null }); }}>
                     {saving ? tx('biaDetail.saving') : tx('biaDetail.save')}
                 </Button>
             </Modal.Actions>

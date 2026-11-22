@@ -27,8 +27,8 @@
  *     own its xyflow state without prop-drilling.
  */
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import dynamic from "next/dynamic";
 import { cn } from "@inflect/ui/lib/cn";
@@ -90,6 +90,12 @@ interface ProcessesClientProps {
     canDeleteMaps?: boolean;
     /** May the viewer create, change, toggle or archive automation rules? */
     canManageRules?: boolean;
+    /**
+     * May the viewer open an agent on the agent view (`mayReadAgentInventory`,
+     * which that page asks first)? Without it an Agent step drills nowhere and
+     * links nowhere (Phase 2.3 of `docs/ai-architecture/langflow.md`).
+     */
+    canOpenAgentCanvas?: boolean;
 }
 
 export function ProcessesClient({
@@ -100,7 +106,10 @@ export function ProcessesClient({
     canEditMaps = false,
     canDeleteMaps = false,
     canManageRules = false,
+    canOpenAgentCanvas = false,
 }: ProcessesClientProps) {
+    const router = useRouter();
+    const openAgentCanvas = useCallback((href: string) => router.push(href), [router]);
     // The full list is owned here so a save can refresh the
     // selected map's metadata (version, updatedAt) without a full
     // page reload. Selection itself drives the canvas's load
@@ -211,7 +220,9 @@ export function ProcessesClient({
                         canOperateCheckpoints={canOperateCheckpoints}
                         canEdit={canEditMaps}
                         canDelete={canDeleteMaps}
+                        canManageRules={canManageRules}
                         focusStepKey={requestedStep}
+                        onOpenAgentCanvas={canOpenAgentCanvas ? openAgentCanvas : undefined}
                     />
                 )}
             </div>
@@ -229,7 +240,9 @@ function CanvasWorkspace({
     canOperateCheckpoints,
     canEdit,
     canDelete,
+    canManageRules,
     focusStepKey,
+    onOpenAgentCanvas,
 }: {
     tenantSlug: string;
     processes: ProcessMapSummary[];
@@ -241,8 +254,11 @@ function CanvasWorkspace({
     canOperateCheckpoints: boolean;
     canEdit: boolean;
     canDelete: boolean;
+    canManageRules: boolean;
     /** The step to select once the map loads (`?step=`). */
     focusStepKey: string | null;
+    /** Where an Agent step takes the viewer; absent without the register read. */
+    onOpenAgentCanvas?: (href: string) => void;
 }) {
     // Mobile PR-5 — the xyflow canvas (pan/zoom/drag of a node graph) is
     // unusable on a phone. Below `md` we render a read-only LIST of the
@@ -290,7 +306,9 @@ function CanvasWorkspace({
                         canOperateCheckpoints={canOperateCheckpoints}
                         canEdit={canEdit}
                         canDelete={canDelete}
+                        canManageRules={canManageRules}
                         focusStepKey={focusStepKey}
+                        onOpenAgentCanvas={onOpenAgentCanvas}
                     />
                 </CanvasModeProvider>
             </WorkspaceShell.Body>

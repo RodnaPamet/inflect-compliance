@@ -16,8 +16,10 @@
  *   4. refuses a replay (`scan.id` is unique per tenant);
  *   5. plans what the report means (`lib/agentic/harness-findings.ts`, pure):
  *      every level derived by the ladder, every register link checked against
- *      the register rather than taken from the report, and an agent the report
- *      links to nothing linked by the registration intake's own record (#3712);
+ *      the register rather than taken from the report, an agent the report
+ *      links to nothing linked by the registration intake's own record (#3712),
+ *      and an unlinked principal showing no sign of a model classed as an
+ *      unregistered automated identity rather than a shadow agent;
  *   6. writes the scan, the discovered agents and the items, and reconciles the
  *      harness findings, in one transaction.
  *
@@ -31,7 +33,7 @@
  * `tests/guards/agent-harness-single-write-seam.test.ts` refuses a write to the
  * three tables from any other file.
  */
-import { Prisma } from '@prisma/client';
+import { AgentSpendingRail, Prisma } from '@prisma/client';
 import type { PrismaTx } from '@/lib/db-context';
 
 import type { RequestContext } from '../types';
@@ -55,8 +57,13 @@ import {
     firstSecretShapedMember,
     HARNESS_FINDING_SOURCE_KIND,
     intakeClaimsByDiscoveredId,
+    onRecordAsAgentOf,
     orphanCredentialRefPrefix,
     planHarnessScan,
+    shadowRefOf,
+    shortfallRefOf,
+    spendingAuthorityStandingOf,
+    type SpendingAuthorityStanding,
     type PlannedFinding,
 } from '@/lib/agentic/harness-findings';
 import type { HarnessLevel } from '@/lib/agentic/harness-ladder';
@@ -71,6 +78,9 @@ const MAX_SCANNER_KEYS = 200;
  * nobody read.
  */
 const MAX_OPEN_ORPHANS_READ = 2 * MAX_UNBOUND_CREDENTIALS;
+
+/** One spending-authority row per agent per rail (Agent Pay Phase 1), so at most this many per agent. */
+const SPENDING_RAILS_PER_AGENT = Object.keys(AgentSpendingRail).length;
 
 export interface HarnessIngestResult {
     scanId: string;
@@ -224,7 +234,44 @@ async function record(
         orderBy: { createdAt: 'asc' },
         take: MAX_OPEN_ORPHANS_READ,
     });
+    // Which known principals are ON RECORD AS AGENTS: an open SHADOW_AGENT or
+    // HARNESS_SHORTFALL finding names them (owner decisions, 2026-11-13). The
+    // planner reads it for one case only — a principal this scan reports with
+    // no sign of a model, on a scan that did not read everything — and then
+    // leaves the record as it is. The OPEN FINDING is the record, not the
+    // stored scan rows: those are overwritten below by every scan, incomplete
+    // ones included, so they cannot say what a principal was last shown to be.
+    const agentFindings = known.length === 0
+        ? []
+        : await db.finding.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                sourceKind: HARNESS_FINDING_SOURCE_KIND,
+                sourceRef: { in: known.flatMap((k) => [shadowRefOf(k.discoveredId), shortfallRefOf(k.discoveredId)]) },
+                status: { not: 'CLOSED' },
+                deletedAt: null,
+            },
+            select: { sourceRef: true, status: true },
+            take: known.length * 4,
+        });
     const knownById = new Map(known.map((k) => [k.id, k]));
+    // The spending authority each register row this scan can link holds
+    // (Agent Pay Phase 2.3). Read, never written: the spending-authority
+    // usecase is that table's only writer. A row with several rails has one
+    // envelope per rail, so the read is bounded by rows × rails.
+    const linkable = [...new Set([...registered.map((r) => r.id), ...intake.map((r) => r.id)])];
+    const envelopes = linkable.length === 0
+        ? []
+        : await db.agentSpendingAuthority.findMany({
+            where: { tenantId: ctx.tenantId, agentId: { in: linkable } },
+            select: { agentId: true, status: true, reviewedAt: true },
+            take: linkable.length * SPENDING_RAILS_PER_AGENT,
+        });
+    const spendingAuthority = new Map<string, SpendingAuthorityStanding>();
+    for (const agentId of linkable) {
+        const standing = spendingAuthorityStandingOf(envelopes.filter((e) => e.agentId === agentId));
+        if (standing !== null) spendingAuthority.set(agentId, standing);
+    }
 
     const plan = planHarnessScan(body, {
         previousLevels: new Map(known.map((k) => [k.discoveredId, k.lastLevel as HarnessLevel])),
@@ -234,6 +281,8 @@ async function record(
         ),
         intakeClaims: intakeClaimsByDiscoveredId(known, intake),
         openOrphanCredentials: new Set(openOrphans.map((f) => f.sourceRef).filter((r): r is string => r !== null)),
+        spendingAuthority,
+        onRecordAsAgent: onRecordAsAgentOf(agentFindings),
     });
 
     // The signed body, without its signature, is what the signature covers.
@@ -383,6 +432,9 @@ async function record(
                 scannerAgentId: body.scan.scanner.agentId,
                 complete: scan.complete,
                 agentCount: scan.agentCount,
+                // Principals this scan classed as unregistered automated
+                // identities rather than agents: a count, never their ids.
+                unregisteredIdentityCount: plan.agents.filter((a) => a.unregisteredIdentity).length,
                 reportDigest: scan.reportDigest,
                 findingsOpened: counts.findingsOpened,
                 findingsReopened: counts.findingsReopened,

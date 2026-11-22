@@ -80,11 +80,13 @@ export function rankRuleSuggestions(posture: SuggestionPosture): RuleSuggestion[
             confidenceScore: 0.55 + riskWeight,
         },
         {
-            id: 'issue-created-task',
-            title: 'Turn new issues into tracked tasks',
+            // Was 'issue-created-task' on ISSUE_CREATED, which nothing emits
+            // (#5122): a rule made from it could never fire.
+            id: 'test-failed-task',
+            title: 'Open a remediation task when a control test fails',
             rationale:
-                'Create a task for each issue so remediation is tracked to closure rather than living in a comment thread.',
-            triggerEvent: 'ISSUE_CREATED',
+                'Create a task for each failed control test so remediation is tracked to closure rather than noticed once and forgotten.',
+            triggerEvent: 'TEST_RUN_FAILED',
             actionType: 'CREATE_TASK',
             confidenceScore: 0.5,
         },

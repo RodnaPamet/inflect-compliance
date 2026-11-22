@@ -1,0 +1,29 @@
+#
+# The capacity recorder's pass (capacity budget step C1b). Started every 10
+# minutes by inflect-capacity-record.timer; installed, with the script it runs,
+# by deploy/apply.sh's host config set. Read back by the `VM capacity`
+# workflow's `history` mode.
+#
+# The script is installed 0644 and run through bash, so no executable is placed
+# on the host. It reads cgroup files and asks docker for names and start times;
+# its only write is under the state directory systemd creates for it.
+#
+[Unit]
+Description=Record per-container memory and CPU for the capacity budget (C1b)
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /usr/local/lib/inflect-capacity/inflect-capacity-record.sh
+StateDirectory=inflect-capacity
+StateDirectoryMode=0700
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+CPUQuota=20%
+MemoryMax=64M
+TimeoutStartSec=60
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full

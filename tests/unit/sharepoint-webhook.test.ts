@@ -71,4 +71,27 @@ describe('SharePoint webhook', () => {
         expect(mockFindFirst).not.toHaveBeenCalled();
         expect(mockEnqueue).not.toHaveBeenCalled();
     });
+
+    it('refuses a notification with no subscriptionId, before any lookup', async () => {
+        // An undefined Prisma filter is dropped, so the lookup would match on
+        // the clientState alone.
+        mockFindFirst.mockResolvedValue({ id: 'p1', tenantId: 't1' });
+        const req = new NextRequest(ROUTE, {
+            method: 'POST',
+            body: JSON.stringify({ value: [{ clientState: 't1:p1' }] }),
+        });
+        const res = await POST(req);
+        expect(res.status).toBe(200);
+        expect(mockFindFirst).not.toHaveBeenCalled();
+        expect(mockEnqueue).not.toHaveBeenCalled();
+    });
+
+    it('looks the policy up by the exact subscriptionId', async () => {
+        mockFindFirst.mockResolvedValue({ id: 'p1', tenantId: 't1' });
+        await POST(new NextRequest(ROUTE, {
+            method: 'POST',
+            body: JSON.stringify({ value: [{ subscriptionId: 'sub-1', clientState: 't1:p1' }] }),
+        }));
+        expect(mockFindFirst.mock.calls[0][0].where).toEqual({ id: 'p1', tenantId: 't1', spSubscriptionId: 'sub-1' });
+    });
 });

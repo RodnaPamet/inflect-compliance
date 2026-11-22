@@ -59,7 +59,7 @@ Click **{{ui:audits.bia.addBia}}**. The **{{ui:audits.bia.createTitle}}** form a
 - **{{ui:audits.bia.fieldProcess}}**, required.
 - **{{ui:audits.bia.fieldCriticality}}**, required.
 - **{{ui:audits.bia.fieldRto}}**, **{{ui:audits.bia.fieldRpo}}** and **{{ui:audits.bia.fieldMtpd}}**, each in hours.
-- **{{ui:audits.bia.fieldOwner}}**.
+- **{{ui:audits.bia.fieldOwner}}**, who must be an active member of the workspace.
 - **{{ui:audits.bia.fieldDependencies}}**: {{ui:audits.bia.hintDependencies}} Choose a type, {{ui:audits.bia.depTypeProcess}}, {{ui:audits.bia.depTypeAsset}}, {{ui:audits.bia.depTypeVendor}} or {{ui:audits.bia.depTypeRisk}}, then the record, and click **{{ui:audits.bia.depAdd}}**.
 - **{{ui:audits.bia.fieldNotes}}**, for single points of failure and recovery gaps.
 

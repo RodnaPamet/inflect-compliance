@@ -23,6 +23,12 @@
 # host service rather than to the compose project:
 #
 #   deploy/ops-agent-config.yaml    → /etc/google-cloud-ops-agent/config.yaml
+#   deploy/capacity/recorder/inflect-capacity-record.sh
+#                                   → /usr/local/lib/inflect-capacity/inflect-capacity-record.sh
+#   deploy/capacity/recorder/inflect-capacity-record.service
+#                                   → /etc/systemd/system/inflect-capacity-record.service
+#   deploy/capacity/recorder/inflect-capacity-record.timer
+#                                   → /etc/systemd/system/inflect-capacity-record.timer
 #
 # WHY THAT IS A SECOND SET AND NOT A FOURTH ROW OF THE FIRST. Four properties
 # differ, and each one would be wrong if the two were merged:
@@ -44,9 +50,15 @@
 # can afford to run is the mechanism that goes unused, and an unused apply
 # path is how #2849's 148-line divergence happened in the first place.
 #
-# This set has exactly one member today, so the agent-specific validate and
-# reload steps are named inline rather than carried as fields in the array.
-# A second member is the moment to generalise them, not before.
+# The set has TWO OWNERS since 2026-11-13: the ops agent (one file) and the
+# capacity recorder (a script, a service and a timer — capacity budget C1b).
+# Each file's owner is decided by its remote path (`host_config_owner`), and
+# each owner brings its own validation and activation: the ops agent is
+# validated by its engine, restarted and checked in its compiled config; the
+# recorder is checked with `bash -n` and `systemd-analyze verify`, trial-run
+# against this host's real cgroups into a throwaway directory, then enabled,
+# run once and checked for a row. A file whose path names no owner is refused
+# in preflight, so a third owner is a decision rather than a silent copy.
 #
 # WHAT IT DELIBERATELY DOES NOT PUSH:
 #
@@ -76,6 +88,11 @@
 #   thing that was not true, and it outlived the state it described — which is
 #   the whole failure mode #3589 is about.
 #
+#   That measurement is of 2026-10-15. Since 2026-11-12 the repo copy no
+#   longer serves `hrm-mcp.…sslip.io` or `orangehrm-lab.…sslip.io`: the
+#   OrangeHRM lab was retired (capacity budget C1), so the next
+#   CADDY_ONLY push deliberately removes those two hostnames and no other.
+#
 # WHAT IT NEVER TOUCHES: /opt/inflect/.env and /opt/inflect/.env.prod. Those
 # are host-owned secret files. This script reads their KEY NAMES in preflight
 # and never their values, and never echoes either.
@@ -99,6 +116,38 @@
 #                                # the file back and reloads again if any
 #                                # hostname stops answering.
 #
+#   CADDY_RETIRE_HOSTS="a.example b.example" CADDY_ONLY=1 CONFIRM=1 deploy/apply.sh
+#                                # the same, when the repo copy deliberately
+#                                # stops serving hostnames the live copy serves.
+#                                # Without it such a push is refused; a lost
+#                                # hostname the list does not name is still
+#                                # refused with it.
+#
+#   ROLLBACK=1 deploy/apply.sh   # name the newest compose backup this script
+#   ROLLBACK=1 CONFIRM=1 deploy/apply.sh
+#                                # kept that differs from the live file, and
+#                                # validate it; with CONFIRM=1 put it
+#                                # back, `up -d` and health-verify. The compose
+#                                # file only: the other canonical files, the
+#                                # host config and the Caddyfile keep their own
+#                                # backups and are not restored by this.
+#
+#   APPLY_PUBLIC_LOG=1 …         # any of the above, for a run whose output is a
+#                                # PUBLIC log (the `VM apply` workflow: its logs
+#                                # are public because the repository is). What
+#                                # a tool on the VM prints is reduced to SHAPE
+#                                # before it reaches this process's output — see
+#                                # `show` below — and gcloud runs with --quiet,
+#                                # because a runner cannot answer a prompt.
+#
+#   IAP_ATTEMPTS=3 IAP_BACKOFF_SECONDS=5 …
+#                                # every call to the VM is attempted up to
+#                                # IAP_ATTEMPTS times when its IAP connection
+#                                # drops (ssh exit 255; scp any failure), with a
+#                                # linear backoff, and the run STOPS when it stays
+#                                # dropped — never reading the silence as an
+#                                # answer. See deploy/lib/iap.sh.
+#
 # Applying recreates containers. Expect a short 502 window on `app` and a
 # Redis restart (AOF-persisted, so queued BullMQ jobs survive). Run it in a
 # service window. HOST_CONFIG_ONLY=1 is the exception: it recreates nothing.
@@ -120,6 +169,27 @@ HEALTH_ORIGINS="${HEALTH_ORIGINS:-https://app.inflect.bg https://inflect.34-140-
 # compose-level DATA_ENCRYPTION_KEY agree with the container's by
 # construction — see the header of the compose file.
 ENV_FILES=(".env" ".env.prod")
+ENV_ARGS=""
+for f in "${ENV_FILES[@]}"; do ENV_ARGS="${ENV_ARGS} --env-file '${f}'"; done
+
+# The pipelock overlay's own environment file (#5308, owner decision
+# 2026-11-14). The overlay loads `.env.pipelock` through `env_file:` and never
+# `.env.prod`, so the master encryption key cannot reach that third-party
+# container. It is NOT an interpolation file, so it is not in ENV_FILES: the
+# overlay interpolates nothing, and putting it there would add its key to every
+# other service's interpolation scope for no reason.
+#
+# WHEN THE OVERLAY IS IN PLAY. Only when this script is pointed at the overlay
+# itself — COMPOSE_BASENAME=docker-compose.pipelock.yml, behind the escape hatch
+# below. The canonical set never includes it, and no other mode reads it. Then
+# the file must exist on the VM before anything is staged, validated or started
+# (pipelock_env_preflight): compose answers a missing `env_file:` with an error
+# about a path, and the quickest way to make that error go away is to point the
+# overlay back at `.env.prod`, which is the decision undone.
+PIPELOCK_OVERLAY="docker-compose.pipelock.yml"
+PIPELOCK_ENV_FILE=".env.pipelock"
+PIPELOCK_IN_SET=0
+if [ "$COMPOSE_BASENAME" = "$PIPELOCK_OVERLAY" ]; then PIPELOCK_IN_SET=1; fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -130,6 +200,112 @@ TS="$(date +%Y%m%d-%H%M%S)"
 log()  { printf '\033[36m[apply]\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m[apply] WARN:\033[0m %s\n' "$*" >&2; }
 err()  { printf '\033[31m[apply] ERROR:\033[0m %s\n' "$*" >&2; }
+
+# ── A public log gets shape, never content ───────────────────────────────
+#
+# Run from the `VM apply` workflow, this script's stdout and stderr are a
+# GitHub Actions log anybody can read. Most of what it prints is built here —
+# names, hashes, hostnames, counts — and is safe either way. What is not is
+# output it RELAYS from a tool on the VM, and one of those tools reads the
+# secrets: `docker compose` interpolates .env and .env.prod, and its errors and
+# warnings quote what it read. So under APPLY_PUBLIC_LOG=1 every relayed stream
+# goes through `show`, which keeps only lines of a known shape:
+#
+#   compose      the resource lines compose prints (`Container <name> <state>`,
+#                and Network, Volume, Image), each token checked against a
+#                narrow character set, and the NAME of a variable a ':?' guard
+#                found missing. An error line is reduced to a fixed CLASS from
+#                `error_class` (`dependency failed to start`, `no such image`,
+#                `manifest unknown`, `pull access denied`, …, else
+#                `unclassified`) and the container, service or image name it
+#                is about, from the positions `error_subject` knows — never
+#                the line's text. Everything else is counted and withheld.
+#   diagnostics  error-shaped lines from caddy and the ops agent's engine, whose
+#                only input is a file from this repository.
+#   none         the count alone.
+#
+# The filter runs HERE, on the stream before it is printed, so a line it does
+# not recognise never reaches stdout or stderr — nothing is left to masking.
+# Interactively `show` is `cat`: an operator at a terminal reads everything.
+PUBLIC_LOG="${APPLY_PUBLIC_LOG:-0}"
+QUIET_FLAG=""
+if [ "$PUBLIC_LOG" = "1" ]; then QUIET_FLAG="--quiet"; fi
+
+shape_compose() {
+    awk '
+        function error_class(l) {
+            if (l ~ /dependency failed to start|dependency [A-Za-z0-9._-]+ failed to start/) return "dependency failed to start"
+            if (l ~ /is unhealthy/) return "container is unhealthy"
+            if (l ~ /didn.t complete successfully/) return "one-shot service failed"
+            if (l ~ /[Nn]o such image/) return "no such image"
+            if (l ~ /manifest unknown|manifest for [^ ]+ not found/) return "manifest unknown"
+            if (l ~ /pull access denied|unauthorized|: denied$|: denied[: ]/) return "pull access denied"
+            if (l ~ /port is already allocated|address already in use/) return "port is already allocated"
+            if (l ~ /no such service/) return "no such service"
+            if (l ~ /failed to read [^ ]*\.env|\.env[^ ]*: line [0-9]+/) return "invalid env file"
+            if (l ~ /validating [^ ]+: |yaml: |[Aa]dditional propert|is not allowed/) return "invalid config"
+            if (l ~ /[Ee]rror|[Ff]ailed|denied|[Ii]nvalid|[Cc]annot|[Uu]nable/) return "unclassified"
+            return ""
+        }
+        function error_subject(l,   i, w) {
+            for (i = 1; i + 1 <= NF; i++)
+                if ($i ~ /^(Container|Network|Volume|Image)$/ && $(i + 1) ~ /^[A-Za-z0-9._\/:@-]+$/) return $i " " $(i + 1)
+            if (match(l, /dependency failed to start: container [A-Za-z0-9._-]+/)) { split(substr(l, RSTART, RLENGTH), w, " "); return "container " w[6] }
+            if (match(l, /container [A-Za-z0-9._-]+ is unhealthy/)) { split(substr(l, RSTART, RLENGTH), w, " "); return "container " w[2] }
+            if (match(l, /dependency [A-Za-z0-9._-]+ failed to start/)) { split(substr(l, RSTART, RLENGTH), w, " "); return "service " w[2] }
+            if (match(l, /service "[A-Za-z0-9._-]+"/)) { split(substr(l, RSTART, RLENGTH), w, "\""); return "service " w[2] }
+            if (match(l, /no such service: [A-Za-z0-9._-]+/)) { split(substr(l, RSTART, RLENGTH), w, " "); return "service " w[4] }
+            return ""
+        }
+        { n++ }
+        match($0, /required variable [A-Za-z_][A-Za-z0-9_]*/) {
+            print "    " substr($0, RSTART, RLENGTH); kept++; next
+        }
+        match($0, /^ERROR: \(gcloud\.[a-z.-]+\)/) {
+            print "    " substr($0, RSTART, RLENGTH) " (its message withheld)"; kept++; next
+        }
+        {
+            c = error_class($0)
+            if (c != "") {
+                s = error_subject($0)
+                print "    " (s != "" ? s "  " : "") "error class: " c; kept++; next
+            }
+        }
+        {
+            for (i = 1; i + 1 <= NF; i++) {
+                if ($i !~ /^(Container|Network|Volume|Image)$/) continue
+                state = (i + 2 <= NF) ? $(i + 2) : ""
+                if ($(i + 1) ~ /^[A-Za-z0-9._\/:@-]+$/ && state ~ /^[A-Za-z]*$/) {
+                    print "    " $i " " $(i + 1) " " state; kept++; next
+                }
+            }
+        }
+        END { if (n > kept) printf "    [%d line(s) withheld: this log is public]\n", n - kept }'
+}
+
+shape_diagnostics() {
+    awk '
+        { n++ }
+        /[Ee]rror|[Ii]nvalid|[Uu]nsupported|[Uu]nknown|[Uu]nrecognized|line [0-9]+|column [0-9]+|Valid configuration/ {
+            line = $0
+            gsub(/[^A-Za-z0-9 ._:\/,()#@=+-]/, "", line)
+            print "      " substr(line, 1, 240); kept++; next
+        }
+        END { if (n > kept) printf "      [%d line(s) withheld: this log is public]\n", n - kept }'
+}
+
+shape_none() {
+    awk '{ n++ } END { if (n > 0) printf "    [%d line(s) withheld: this log is public]\n", n }'
+}
+
+show() {
+    if [ "$PUBLIC_LOG" != "1" ]; then cat; return; fi
+    case "$1" in
+        compose)     shape_compose ;;
+        diagnostics) shape_diagnostics ;;
+        *)           shape_none ;;
+    esac
+}
 
 # ── COMPOSE_BASENAME is an allowlist, not a free variable ────────────────
 #
@@ -168,7 +344,19 @@ CANONICAL_SET=(
 # asserts the agreement in both directions.
 HOST_CONFIG_SET=(
     "${SCRIPT_DIR}/ops-agent-config.yaml:/etc/google-cloud-ops-agent/config.yaml"
+    "${SCRIPT_DIR}/capacity/recorder/inflect-capacity-record.sh:/usr/local/lib/inflect-capacity/inflect-capacity-record.sh"
+    "${SCRIPT_DIR}/capacity/recorder/inflect-capacity-record.service:/etc/systemd/system/inflect-capacity-record.service"
+    "${SCRIPT_DIR}/capacity/recorder/inflect-capacity-record.timer:/etc/systemd/system/inflect-capacity-record.timer"
 )
+
+# The capacity recorder (capacity budget C1b, deploy/capacity/recorder/): a
+# oneshot service its timer starts every 10 minutes, writing names and numbers
+# to day files under RECORDER_DATA_DIR, which `VM capacity`'s history mode
+# reads. Its three files above are pushed 0644 like every host config file:
+# the unit runs the script through /bin/bash, so nothing executable is placed.
+RECORDER_UNIT="inflect-capacity-record"
+RECORDER_SCRIPT="/usr/local/lib/inflect-capacity/inflect-capacity-record.sh"
+RECORDER_DATA_DIR="/var/lib/inflect-capacity"
 
 # ── The Caddyfile ──────────────────────────────────────────────────────────
 #
@@ -212,7 +400,127 @@ OPS_AGENT_COMPILED="/run/google-cloud-ops-agent-opentelemetry-collector/otel.yam
 # silently did nothing.
 OPS_AGENT_COMPILED_NEEDLE="/var/lib/docker/containers"
 
-ssh_vm() { gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap --command "$1"; }
+# Both retry a dropped IAP connection and stop the run when it stays dropped
+# (deploy/lib/iap.sh), so an unanswered call is never read as an answer. That
+# makes every ssh_vm below a call that may run TWICE, and each is written to be
+# safe to repeat: reads, validations that leave their staged input in place
+# until a separate cleanup, `cp -a` backups taken before the file they copy is
+# replaced, `install`, `place_staged` (a move that is a no-op the second time),
+# `systemctl restart`, `caddy reload` and `docker compose up -d`.
+# shellcheck source=deploy/lib/iap.sh
+. "${SCRIPT_DIR}/lib/iap.sh"
+ssh_vm() { iap_retry ssh 255 - gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap ${QUIET_FLAG:+"$QUIET_FLAG"} --command "$1"; }
+# scp_vm <local file> <remote path>
+scp_vm() { iap_retry scp any - gcloud compute scp "$1" "${VM_NAME}:$2" --zone "$VM_ZONE" --tunnel-through-iap ${QUIET_FLAG:+"$QUIET_FLAG"}; }
+
+# place_staged <staged path> <target path> <expected sha256> [chmod mode]
+#
+# Move a staged file into place, so that running it twice is the same as once.
+# A bare `mv` is not: when the connection drops AFTER the move, the retry finds
+# no staged file and fails. So the move happens only while the staged file
+# exists, and success is decided by the hash the target then holds, which is
+# the property that matters either way. A `mv` (not a copy) because it replaces
+# the inode, as these pushes always have.
+place_staged() {
+    local got
+    got="$(ssh_vm "if sudo test -e '$1'; then sudo mv '$1' '$2'; fi
+        sudo chown root:root '$2'${4:+ && sudo chmod $4 '$2'}
+        sudo sha256sum '$2' 2>/dev/null" | first_sha)" || got=""
+    [ -n "$got" ] && [ "$got" = "$3" ] && return 0
+    err "$2 did not land on the VM: it should hash ${3:0:12}, and it hashes ${got:-(unreadable)}."
+    return 1
+}
+
+# The last `<marker> <number>` line of a remote validation's output, or empty.
+# A validation that prints its marker AFTER the validator ran is how "it
+# rejected the file" is told apart from "it never ran": only the first is a
+# verdict about the file.
+verdict_of() { awk -v m="$1" '$1 == m && NF == 2 && $2 ~ /^[0-9]+$/ { v = $2 } END { print v }'; }
+without_marker() { awk -v m="$1" '$1 != m'; }
+
+# The first `gcloud compute ssh` on a machine with no key GENERATES one, and
+# ssh-keygen writes its banner, the key paths, the fingerprint and the randomart
+# to STDOUT, which is whatever `$(ssh_vm …)` is capturing at that moment: the
+# rollback's backup path, a file's hash. Every run on a GitHub runner is such a
+# first run. So the key is made, when absent, by one throwaway ssh whose stdout
+# is discarded, before any call whose output is read (called once, below, by
+# every mode that reaches the VM).
+ssh_key_ready() {
+    [ -f "${HOME}/.ssh/google_compute_engine" ] && return 0
+    log "no gcloud ssh key on this machine: making one with a throwaway ssh"
+    ssh_vm true >/dev/null
+}
+
+# The hash a `sha256sum` printed, and nothing else the remote side said: the
+# first word of the first line that is exactly 64 hex digits. Empty when there
+# is none. It reads to the end rather than `exit` early, so the writer never
+# meets a closed pipe, which `pipefail` would turn into a failed assignment.
+first_sha() { awk '!found && length($1) == 64 && $1 ~ /^[0-9a-f]+$/ { print $1; found = 1 }'; }
+
+# ── Health-verify ────────────────────────────────────────────────────────
+#
+# BOTH public origins, because Caddy serves two vhosts and a Caddyfile or
+# cert problem can take one down while the other answers — checking only the
+# sslip.io host would have reported a dead app.inflect.bg as a clean deploy.
+# /api/readyz (not /api/livez): livez is dependency-free and stays green
+# through a Redis or DB outage, which is exactly the failure a deploy causes.
+# A function because both the apply and the rollback end with it. Sets
+# HEALTH_FAILED.
+health_verify() {
+    local origin code
+    log "health-verifying: ${HEALTH_ORIGINS}"
+    HEALTH_FAILED=0
+    for origin in $HEALTH_ORIGINS; do
+        code=""
+        for _ in 1 2 3 4 5 6 7 8; do
+            # 000 is a sentinel OUTSIDE the healthy range; the comparison below
+            # fails closed on it, unlike `|| echo 0`.
+            code="$(curl -fsS -o /dev/null -w '%{http_code}' "${origin}/api/readyz" 2>/dev/null || echo 000)"
+            [ "$code" = "200" ] && break
+            sleep 5
+        done
+        if [ "$code" = "200" ]; then
+            log "  OK   ${origin}/api/readyz → 200"
+        else
+            err "  FAIL ${origin}/api/readyz → ${code}"
+            HEALTH_FAILED=1
+        fi
+    done
+}
+
+# ── The pipelock overlay's env file: present, or refuse ──────────────────
+#
+# A no-op unless the overlay is in play (PIPELOCK_IN_SET, set above). Reads
+# PRESENCE only — `test -f` as root — and never the file, so nothing of it can
+# reach a public log. Returns 2 (refused) when the file is absent and 1 when the
+# answer could not be read, which is UNKNOWN, never "present".
+pipelock_env_preflight() {
+    [ "$PIPELOCK_IN_SET" = "1" ] || return 0
+    log "the pipelock overlay is in the applied set: checking ${REMOTE_DIR}/${PIPELOCK_ENV_FILE} exists (presence only)"
+    local answer
+    answer="$(ssh_vm "if sudo test -f '${REMOTE_DIR}/${PIPELOCK_ENV_FILE}'; then echo 'PIPELOCK_ENV PRESENT'; else echo 'PIPELOCK_ENV ABSENT'; fi" \
+        | tr -d '\r' | awk '$1 == "PIPELOCK_ENV" && ($2 == "PRESENT" || $2 == "ABSENT") { v = $2 } END { print v }')" || answer=""
+    case "$answer" in
+        PRESENT)
+            log "  OK   ${PIPELOCK_ENV_FILE} is present"
+            return 0
+            ;;
+        ABSENT)
+            err "refusing: ${REMOTE_DIR}/${PIPELOCK_ENV_FILE} does not exist on ${VM_NAME}."
+            err "  The pipelock overlay reads its environment from that file and from no other."
+            err "  Create it root-owned, mode 0600, from deploy/.env.pipelock.example (read its"
+            err "  notes first: some variable names there must be confirmed against the pinned"
+            err "  release). Never point the overlay back at .env.prod to get past this: that"
+            err "  hands the master encryption key to a third-party container (#5308)."
+            return 2
+            ;;
+        *)
+            err "could not tell whether ${REMOTE_DIR}/${PIPELOCK_ENV_FILE} exists on ${VM_NAME}."
+            err "  Treat that as UNKNOWN, not present. Check gcloud auth / VM state."
+            return 1
+            ;;
+    esac
+}
 
 # ── Host config set: preflight and apply ─────────────────────────────────
 #
@@ -220,15 +528,31 @@ ssh_vm() { gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap 
 # need them, and because a preflight that cannot be run without applying is
 # not a preflight.
 
+# Which host service a host config file belongs to, by its remote path. The
+# owner decides how the file is validated and how it is activated; a path with
+# no owner is refused in preflight.
+host_config_owner() {
+    case "$1" in
+        /etc/google-cloud-ops-agent/*) echo ops-agent ;;
+        "${RECORDER_SCRIPT}" | "/etc/systemd/system/${RECORDER_UNIT}".service | "/etc/systemd/system/${RECORDER_UNIT}".timer) echo capacity-recorder ;;
+        *) echo none ;;
+    esac
+}
+
 host_config_preflight() {
-    local entry local_path remote_path base lsha rsha staged rc
+    local entry local_path remote_path base lsha rsha staged rc out verdict recorder=0
     log "host config set (pushed outside ${REMOTE_DIR}, reloads a host service):"
     for entry in "${HOST_CONFIG_SET[@]}"; do
         local_path="${entry%%:*}"; remote_path="${entry#*:}"; base="$(basename "$remote_path")"
         [ -f "$local_path" ] || { err "host config missing from the repo: $local_path"; return 1; }
+        case "$(host_config_owner "$remote_path")" in
+            ops-agent) ;;
+            capacity-recorder) recorder=1 ;;
+            *) err "no host service owns ${remote_path}: name its owner in host_config_owner"; return 1 ;;
+        esac
 
-        lsha="$(sha256sum "$local_path" | awk '{print $1}')"
-        rsha="$(ssh_vm "sudo sha256sum '${remote_path}' 2>/dev/null || true" | awk '{print $1}')"
+        lsha="$(sha256sum "$local_path" | first_sha)"
+        rsha="$(ssh_vm "sudo sha256sum '${remote_path}' 2>/dev/null || true" | first_sha)"
         if [ -z "$rsha" ]; then
             log "    WOULD CREATE ${remote_path} (absent on the VM)"
         elif [ "$lsha" = "$rsha" ]; then
@@ -236,6 +560,8 @@ host_config_preflight() {
         else
             log "    WOULD CHANGE ${remote_path}: repo ${lsha:0:12} → VM ${rsha:0:12}"
         fi
+        # The recorder's files are validated together, after this loop.
+        [ "$(host_config_owner "$remote_path")" = ops-agent ] || continue
 
         # Validate with the agent's OWN engine, against TEMP output dirs.
         #
@@ -248,8 +574,7 @@ host_config_preflight() {
         # on malformed YAML (reporting line:column), so it can express failure.
         staged="/tmp/${base}.validate.${TS}"
         log "    validating ${base} with ${OPS_AGENT_UNIT}'s own engine"
-        gcloud compute scp "$local_path" "${VM_NAME}:${staged}" \
-            --zone "$VM_ZONE" --tunnel-through-iap >/dev/null
+        scp_vm "$local_path" "${staged}" >/dev/null
         rc=0
         # The engine's output is captured to a file and printed AFTER, rather
         # than piped through `sed` for indentation, because the exit code is the
@@ -260,16 +585,30 @@ host_config_preflight() {
         # counterpart of the compose `up --dry-run` below: it shows what the
         # agent would actually run, including that the built-in pipelines
         # survive the merge.
-        ssh_vm "set -e
+        #
+        # The engine's exit comes back as an `engine-exit <n>` line printed
+        # after it ran, so "the engine rejected it" is said only when the engine
+        # ran. The staged file is removed by a separate call afterwards, not by
+        # this one's trap: a retry of this call must find its input still there.
+        out="$(ssh_vm "set -e
+            sudo test -x '${OPS_AGENT_ENGINE}'
             T=\$(mktemp -d)
-            trap 'sudo rm -rf \"\$T\" \"${staged}\"' EXIT
+            trap 'sudo rm -rf \"\$T\"' EXIT
             sudo mkdir -p \"\$T/logs\" \"\$T/state\"
             rc=0
             sudo ${OPS_AGENT_ENGINE} -service=otel -in '${staged}' \\
                 -logs \"\$T/logs\" -state \"\$T/state\" >\"\$T/out\" 2>&1 || rc=\$?
             sed 's/^/      /' \"\$T/out\"
-            exit \$rc" || rc=$?
-        if [ "$rc" -ne 0 ]; then
+            echo \"engine-exit \$rc\"" 2>&1)" || rc=$?
+        verdict="$(printf '%s\n' "$out" | verdict_of engine-exit)"
+        [ -z "$out" ] || printf '%s\n' "$out" | without_marker engine-exit | show diagnostics
+        ssh_vm "sudo rm -f '${staged}'" >/dev/null
+        if [ -z "$verdict" ]; then
+            err "${OPS_AGENT_UNIT}'s engine did not run on the VM (exit ${rc}). This is NOT a"
+            err "  verdict on ${base}: nothing was validated, and nothing was changed."
+            return 1
+        fi
+        if [ "$verdict" -ne 0 ]; then
             err "${base} is NOT a valid ${OPS_AGENT_UNIT} config — the engine rejected it."
             err "  Its own message is printed above and names either the unsupported field"
             err "  or the line:column of the YAML error. Nothing was changed."
@@ -277,6 +616,65 @@ host_config_preflight() {
         fi
         log "      config OK"
     done
+    if [ "$recorder" = 1 ]; then
+        recorder_preflight || return 1
+    fi
+}
+
+# The capacity recorder's three files, validated as they will run.
+#
+# Staged together in a throwaway directory under their real names, then:
+# `bash -n` parses the script; `systemd-analyze verify` loads both units (it
+# exits non-zero on an unknown section, a bad calendar spec or a missing
+# ExecStart binary); and the STAGED script runs one real pass against this
+# host's cgroups and docker, writing into that directory instead of
+# ${RECORDER_DATA_DIR}. That last step is the gate that matters: the cgroup
+# layout and docker's name format are facts about this host, and a recorder
+# that reads neither would write nothing, every ten minutes, and report
+# nothing wrong. It must write at least one well-formed row. What is printed
+# is counts; the rows themselves are removed with the directory.
+recorder_preflight() {
+    local entry local_path remote_path staged rc counts rows containers peaks
+    staged="/tmp/inflect-capacity-record.validate.${TS}"
+    log "    validating the capacity recorder (bash -n, systemd-analyze verify, one trial pass)"
+    ssh_vm "rm -rf '${staged}' && mkdir -m 700 '${staged}'" >/dev/null
+    for entry in "${HOST_CONFIG_SET[@]}"; do
+        local_path="${entry%%:*}"; remote_path="${entry#*:}"
+        [ "$(host_config_owner "$remote_path")" = capacity-recorder ] || continue
+        scp_vm "$local_path" "${staged}/$(basename "$remote_path")" >/dev/null
+    done
+    rc=0
+    # No trap removing ${staged} here: a retry of this call must find the
+    # staged files still in place. They are removed by the calls below.
+    ssh_vm "set -e
+        bash -n '${staged}/$(basename "$RECORDER_SCRIPT")'
+        rc=0
+        systemd-analyze verify '${staged}/${RECORDER_UNIT}.service' '${staged}/${RECORDER_UNIT}.timer' >'${staged}/verify.out' 2>&1 || rc=\$?
+        sed 's/^/      /' '${staged}/verify.out'
+        exit \$rc" 2>&1 | show diagnostics || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        ssh_vm "sudo rm -rf '${staged}'" >/dev/null
+        err "the capacity recorder's script or units did NOT validate. The message is above."
+        err "  Nothing was changed."
+        return 1
+    fi
+    # The trial pass. Only three numbers come back: rows written, containers
+    # named, and rows carrying a memory.peak. It clears its own output first,
+    # so a retry counts one pass rather than two.
+    ssh_vm "sudo rm -rf '${staged}' && mkdir -m 700 '${staged}'" >/dev/null
+    scp_vm "${SCRIPT_DIR}/capacity/recorder/$(basename "$RECORDER_SCRIPT")" "${staged}/trial.sh" >/dev/null
+    counts="$(ssh_vm "sudo rm -rf '${staged}/data'
+        sudo env DATA_DIR='${staged}/data' bash '${staged}/trial.sh' >/dev/null 2>&1
+        sudo sh -c \"cat '${staged}'/data/capacity-*.tsv 2>/dev/null\" | awk -F'\t' '!/^#/ && NF == 9 { r++; n[\$3] = 1; if (\$6 ~ /^[0-9]+\$/) p++ } END { c = 0; for (k in n) c++; print \"counts\", r + 0, c, p + 0 }'" 2>/dev/null | awk '$1 == "counts" && NF == 4 { print $2, $3, $4 }')" || counts=""
+    ssh_vm "sudo rm -rf '${staged}'" >/dev/null
+    read -r rows containers peaks <<<"${counts:-0 0 0}"
+    if [ "${rows:-0}" -lt 1 ]; then
+        err "the capacity recorder's trial pass wrote NO row on this host. Either docker did"
+        err "  not answer or no container's cgroup was found where the script looks"
+        err "  (system.slice/docker-<id>.scope or docker/<id>). Nothing was changed."
+        return 1
+    fi
+    log "      trial pass OK: ${rows} row(s) for ${containers} container(s), memory.peak on ${peaks}"
 }
 
 # Report what a Caddyfile push would change, and refuse a config Caddy rejects.
@@ -287,12 +685,12 @@ host_config_preflight() {
 # serving something. A validate alone would happily accept a file that drops a
 # production vhost.
 caddy_preflight() {
-    local lsha rsha staged rc repo_hosts live_hosts gone
+    local lsha rsha staged rc out verdict repo_hosts live_hosts gone
     [ -f "$CADDY_LOCAL" ] || { err "Caddyfile missing from the repo: $CADDY_LOCAL"; return 1; }
 
     log "Caddyfile (pushed to ${CADDY_REMOTE}, activated by reload — no container is recreated):"
-    lsha="$(sha256sum "$CADDY_LOCAL" | awk '{print $1}')"
-    rsha="$(ssh_vm "sudo sha256sum '${CADDY_REMOTE}' 2>/dev/null || true" | awk '{print $1}')"
+    lsha="$(sha256sum "$CADDY_LOCAL" | first_sha)"
+    rsha="$(ssh_vm "sudo sha256sum '${CADDY_REMOTE}' 2>/dev/null || true" | first_sha)"
     if [ -z "$rsha" ]; then
         log "    WOULD CREATE ${CADDY_REMOTE} (absent on the VM)"
     elif [ "$lsha" = "$rsha" ]; then
@@ -302,8 +700,7 @@ caddy_preflight() {
     fi
 
     staged="/tmp/Caddyfile.validate.${TS}"
-    gcloud compute scp "$CADDY_LOCAL" "${VM_NAME}:${staged}" \
-        --zone "$VM_ZONE" --tunnel-through-iap >/dev/null
+    scp_vm "$CADDY_LOCAL" "${staged}" >/dev/null
 
     log "    validating with ${CADDY_CONTAINER}'s own caddy binary"
     rc=0
@@ -311,15 +708,28 @@ caddy_preflight() {
     # because the staged file is not mounted anywhere — and `caddy validate`
     # resolves `import` relative to the config, so it has to sit where the real
     # one does for a multi-file config to behave the same way.
-    ssh_vm "set -e
+    #
+    # "caddy rejected it" must mean caddy RAN and rejected it (VM apply run
+    # 43604116595 refused an unchanged, already-validated file because this
+    # call's ssh had dropped). So caddy's own exit is printed as a
+    # `caddy-validate-exit <n>` line by a shell INSIDE the container, after
+    # caddy returned: a failed ssh, docker cp or docker exec prints no such line
+    # and is reported as not having run. The staged file is removed by a
+    # separate call, so a retry of this one still finds it.
+    out="$(ssh_vm "set -e
         sudo docker cp '${staged}' '${CADDY_CONTAINER}:/tmp/Caddyfile.candidate'
-        rc=0
-        sudo docker exec '${CADDY_CONTAINER}' caddy validate \
-            --config /tmp/Caddyfile.candidate --adapter caddyfile >/tmp/caddyval.${TS} 2>&1 || rc=\$?
-        sed 's/^/      /' /tmp/caddyval.${TS}
-        sudo rm -f /tmp/caddyval.${TS} '${staged}'
-        exit \$rc" || rc=$?
-    if [ "$rc" -ne 0 ]; then
+        sudo docker exec '${CADDY_CONTAINER}' sh -c 'caddy validate --config /tmp/Caddyfile.candidate --adapter caddyfile 2>&1; echo \"caddy-validate-exit \$?\"' \
+            | sed 's/^/      /; s/^      caddy-validate-exit /caddy-validate-exit /'" 2>&1)" || rc=$?
+    verdict="$(printf '%s\n' "$out" | verdict_of caddy-validate-exit)"
+    [ -z "$out" ] || printf '%s\n' "$out" | without_marker caddy-validate-exit | show diagnostics
+    ssh_vm "sudo rm -f '${staged}'" >/dev/null
+    if [ -z "$verdict" ]; then
+        err "caddy validate did not run in ${CADDY_CONTAINER} (exit ${rc}). This is NOT a"
+        err "  verdict on the Caddyfile: nothing was validated, and nothing was changed."
+        ssh_vm "sudo docker exec '${CADDY_CONTAINER}' rm -f /tmp/Caddyfile.candidate" >/dev/null 2>&1 || true
+        return 1
+    fi
+    if [ "$verdict" -ne 0 ]; then
         err "the repo Caddyfile is NOT valid — caddy rejected it. Its message is above."
         err "  Nothing was changed."
         ssh_vm "sudo docker exec '${CADDY_CONTAINER}' rm -f /tmp/Caddyfile.candidate" >/dev/null 2>&1 || true
@@ -343,14 +753,27 @@ caddy_preflight() {
     fi
     log "    hostnames served now : $(echo "$live_hosts" | tr '\n' ' ')"
     log "    hostnames after push : $(echo "$repo_hosts" | tr '\n' ' ')"
-    gone="$(comm -23 <(echo "$live_hosts") <(echo "$repo_hosts") || true)"
-    if [ -n "$gone" ]; then
-        err "pushing would STOP SERVING: $(echo "$gone" | tr '\n' ' ')"
+    gone="$(comm -23 <(echo "$live_hosts") <(echo "$repo_hosts") | sed '/^$/d' || true)"
+    # A hostname is retired on purpose only by NAMING it. CADDY_RETIRE_HOSTS is
+    # a space-separated list of the exact names the operator means to stop
+    # serving (first used 2026-11-12, retiring the OrangeHRM lab's two vhosts).
+    # Anything lost that it does not name is still refused, so the escape hatch
+    # cannot hide a hostname nobody meant to drop.
+    # shellcheck disable=SC2086  # word-splitting the list is the point
+    retire="$(printf '%s\n' ${CADDY_RETIRE_HOSTS:-} | sed '/^$/d' | sort -u)"
+    unexpected="$(comm -23 <(echo "$gone") <(echo "$retire") | sed '/^$/d' || true)"
+    if [ -n "$unexpected" ]; then
+        err "pushing would STOP SERVING: $(echo "$unexpected" | tr '\n' ' ')"
         err "  That is the thing #3589's exclusion reason existed to prevent, and it is"
-        err "  checked rather than assumed. Reconcile the repo copy first."
+        err "  checked rather than assumed. Reconcile the repo copy first — or, if"
+        err "  retiring a hostname is the point, name it in CADDY_RETIRE_HOSTS."
         return 1
     fi
-    log "    no hostname is lost"
+    if [ -n "$gone" ]; then
+        log "    retiring, as CADDY_RETIRE_HOSTS names: $(echo "$gone" | tr '\n' ' ')"
+    else
+        log "    no hostname is lost"
+    fi
 }
 
 # Push the Caddyfile and RELOAD, then prove every hostname still answers.
@@ -371,17 +794,21 @@ caddy_apply() {
     # Flattened staging name. `/tmp/${remote_base}.new` would be
     # `/tmp/caddy/Caddyfile.new` for this nested path, and /tmp/caddy does not
     # exist — the mechanical blocker the UNRECONCILED entry named.
-    gcloud compute scp "$CADDY_LOCAL" "${VM_NAME}:${staged}" \
-        --zone "$VM_ZONE" --tunnel-through-iap
-    ssh_vm "sudo mv '${staged}' '${CADDY_REMOTE}' && sudo chown root:root '${CADDY_REMOTE}'"
+    scp_vm "$CADDY_LOCAL" "${staged}"
+    place_staged "${staged}" "${CADDY_REMOTE}" "$(sha256sum "$CADDY_LOCAL" | first_sha)" || return 1
 
     log "reloading caddy (keeps listeners and issued certificates)"
     rc=0
+    # No `| sed` on the VM: a pipeline's status is its LAST command's and the
+    # remote shell sets no pipefail, so `caddy reload | sed` reported sed's
+    # success for a rejected reload. The restores below relay nothing but a
+    # count, because the backup they reload is the previous LIVE file, which
+    # this repository has never seen.
     ssh_vm "sudo docker exec '${CADDY_CONTAINER}' caddy reload \
-        --config '${CADDY_CONFIG_IN_CONTAINER}' --adapter caddyfile 2>&1 | sed 's/^/      /'" || rc=$?
+        --config '${CADDY_CONFIG_IN_CONTAINER}' --adapter caddyfile 2>&1" 2>&1 | show diagnostics || rc=$?
     if [ "$rc" -ne 0 ]; then
         err "caddy reload FAILED — restoring ${backup} and reloading again."
-        ssh_vm "sudo cp -a '${backup}' '${CADDY_REMOTE}' && sudo docker exec '${CADDY_CONTAINER}' caddy reload --config '${CADDY_CONFIG_IN_CONTAINER}' --adapter caddyfile" || true
+        ssh_vm "sudo cp -a '${backup}' '${CADDY_REMOTE}' && sudo docker exec '${CADDY_CONTAINER}' caddy reload --config '${CADDY_CONFIG_IN_CONTAINER}' --adapter caddyfile 2>&1" 2>&1 | show none || true
         return 1
     fi
 
@@ -406,16 +833,17 @@ caddy_apply() {
     if [ -n "$bad" ]; then
         err "these hostnames stopped answering after the reload:${bad}"
         err "  restoring ${backup} and reloading again."
-        ssh_vm "sudo cp -a '${backup}' '${CADDY_REMOTE}' && sudo docker exec '${CADDY_CONTAINER}' caddy reload --config '${CADDY_CONFIG_IN_CONTAINER}' --adapter caddyfile" || true
+        ssh_vm "sudo cp -a '${backup}' '${CADDY_REMOTE}' && sudo docker exec '${CADDY_CONTAINER}' caddy reload --config '${CADDY_CONFIG_IN_CONTAINER}' --adapter caddyfile 2>&1" 2>&1 | show none || true
         return 1
     fi
     log "Caddyfile applied and every hostname answers."
 }
 
 host_config_apply() {
-    local entry local_path remote_path base compiled
+    local entry local_path remote_path base owner owners=""
     for entry in "${HOST_CONFIG_SET[@]}"; do
         local_path="${entry%%:*}"; remote_path="${entry#*:}"; base="$(basename "$remote_path")"
+        case " $owners " in *" $(host_config_owner "$remote_path") "*) ;; *) owners="$owners $(host_config_owner "$remote_path")" ;; esac
 
         # Back up into ${REMOTE_DIR}, not beside the live file.
         #
@@ -432,44 +860,91 @@ host_config_apply() {
         ssh_vm "sudo sh -c \"cp -a '${remote_path}' '${REMOTE_DIR}/${base}.bak.${TS}' && chmod 600 '${REMOTE_DIR}/${base}.bak.${TS}'\" 2>/dev/null || true"
 
         log "pushing ${remote_path}"
-        gcloud compute scp "$local_path" "${VM_NAME}:/tmp/${base}.new.${TS}" \
-            --zone "$VM_ZONE" --tunnel-through-iap
-        # 644, matching the live mode: this file carries no credential, and the
-        # agent reads it as root anyway. The backup above is 600 regardless,
-        # because a dead copy has no reader to accommodate.
-        ssh_vm "sudo mv '/tmp/${base}.new.${TS}' '${remote_path}' \
-            && sudo chown root:root '${remote_path}' && sudo chmod 644 '${remote_path}'"
+        scp_vm "$local_path" "/tmp/${base}.new.${TS}"
+        # 644, matching the live mode: no file in this set carries a
+        # credential, and each is read by root. The backup above is 600
+        # regardless, because a dead copy has no reader to accommodate. The
+        # parent is made first: the recorder's script directory does not exist
+        # until its first push.
+        ssh_vm "sudo install -d -m 755 -o root -g root '$(dirname "$remote_path")'"
+        place_staged "/tmp/${base}.new.${TS}" "${remote_path}" "$(sha256sum "$local_path" | first_sha)" 644 || return 1
+    done
 
-        log "restarting ${OPS_AGENT_UNIT} (no container is touched)"
-        if ! ssh_vm "sudo systemctl restart '${OPS_AGENT_UNIT}'"; then
-            err "${OPS_AGENT_UNIT} failed to restart after the push. Roll back with:"
-            err "  sudo cp -a '${REMOTE_DIR}/${base}.bak.${TS}' '${remote_path}' && sudo systemctl restart ${OPS_AGENT_UNIT}"
-            return 1
-        fi
-
-        # WIRED IS NOT DELIVERED. `systemctl is-active` goes green for an agent
-        # that restarted while keeping its previous pipeline, so assert on the
-        # COMPILED collector config instead: the needle comes from the receiver
-        # in the file just pushed, so this fails if the push did not take.
-        log "verifying the push reached the collector (${OPS_AGENT_COMPILED})"
-        # `|| compiled=""` because `set -o pipefail` is on: a transient ssh
-        # failure here would otherwise abort the script through the command
-        # substitution, AFTER the compose stack has already been applied —
-        # killing the run at the one point where its output is what an operator
-        # needs. An empty read is UNKNOWN and falls into the failure branch
-        # below, which is the safe direction.
-        compiled="$(ssh_vm "sudo grep -c -F '${OPS_AGENT_COMPILED_NEEDLE}' '${OPS_AGENT_COMPILED}' 2>/dev/null || echo 0" | tr -d '[:space:]')" \
-            || compiled=""
-        if [ -z "$compiled" ] || [ "$compiled" = "0" ]; then
-            err "${OPS_AGENT_UNIT} restarted but the compiled collector config does not"
-            err "  mention '${OPS_AGENT_COMPILED_NEEDLE}'. The push did not take effect."
-            err "  Roll back with:"
-            err "  sudo cp -a '${REMOTE_DIR}/${base}.bak.${TS}' '${remote_path}' && sudo systemctl restart ${OPS_AGENT_UNIT}"
-            return 1
-        fi
-        log "  OK   the receiver from ${base} is present in the compiled config (${compiled} ref(s))"
+    # Each owner is activated once, after all its files are in place.
+    for owner in $owners; do
+        case "$owner" in
+            ops-agent) ops_agent_activate || return 1 ;;
+            capacity-recorder) recorder_activate || return 1 ;;
+        esac
     done
 }
+
+ops_agent_activate() {
+    local entry remote_path="" base compiled
+    for entry in "${HOST_CONFIG_SET[@]}"; do
+        if [ "$(host_config_owner "${entry#*:}")" = ops-agent ]; then remote_path="${entry#*:}"; break; fi
+    done
+    [ -n "$remote_path" ] || return 0
+    base="$(basename "$remote_path")"
+    log "restarting ${OPS_AGENT_UNIT} (no container is touched)"
+    if ! ssh_vm "sudo systemctl restart '${OPS_AGENT_UNIT}'"; then
+        err "${OPS_AGENT_UNIT} failed to restart after the push. Roll back with:"
+        err "  sudo cp -a '${REMOTE_DIR}/${base}.bak.${TS}' '${remote_path}' && sudo systemctl restart ${OPS_AGENT_UNIT}"
+        return 1
+    fi
+
+    # WIRED IS NOT DELIVERED. `systemctl is-active` goes green for an agent
+    # that restarted while keeping its previous pipeline, so assert on the
+    # COMPILED collector config instead: the needle comes from the receiver
+    # in the file just pushed, so this fails if the push did not take.
+    log "verifying the push reached the collector (${OPS_AGENT_COMPILED})"
+    # `|| compiled=""` because `set -o pipefail` is on: a transient ssh
+    # failure here would otherwise abort the script through the command
+    # substitution, AFTER the compose stack has already been applied —
+    # killing the run at the one point where its output is what an operator
+    # needs. An empty read is UNKNOWN and falls into the failure branch
+    # below, which is the safe direction.
+    compiled="$(ssh_vm "sudo grep -c -F '${OPS_AGENT_COMPILED_NEEDLE}' '${OPS_AGENT_COMPILED}' 2>/dev/null || echo 0" | tr -d '[:space:]')" \
+        || compiled=""
+    if [ -z "$compiled" ] || [ "$compiled" = "0" ]; then
+        err "${OPS_AGENT_UNIT} restarted but the compiled collector config does not"
+        err "  mention '${OPS_AGENT_COMPILED_NEEDLE}'. The push did not take effect."
+        err "  Roll back with:"
+        err "  sudo cp -a '${REMOTE_DIR}/${base}.bak.${TS}' '${remote_path}' && sudo systemctl restart ${OPS_AGENT_UNIT}"
+        return 1
+    fi
+    log "  OK   the receiver from ${base} is present in the compiled config (${compiled} ref(s))"
+}
+
+# Load the recorder's units, enable and start its timer, run one pass now, and
+# prove it: the timer enabled and active, that pass's result `success`, and at
+# least one row in today's file. A pushed unit nobody reloads is the
+# host-config version of an inert deploy.
+recorder_activate() {
+    local state enabled active result rows
+    log "loading ${RECORDER_UNIT}.service and .timer, enabling the timer, running one pass (no container is touched)"
+    if ! ssh_vm "sudo systemctl daemon-reload && sudo systemctl enable --now '${RECORDER_UNIT}.timer' \
+            && sudo systemctl start '${RECORDER_UNIT}.service'" 2>&1 | show diagnostics; then
+        err "${RECORDER_UNIT} did not start after the push. Stop and remove it with the"
+        err "  VM apply action retire-capacity-recorder; nothing else depends on it."
+        return 1
+    fi
+    state="$(ssh_vm "systemctl is-enabled '${RECORDER_UNIT}.timer' 2>/dev/null; systemctl is-active '${RECORDER_UNIT}.timer' 2>/dev/null; systemctl show -p Result --value '${RECORDER_UNIT}.service' 2>/dev/null; sudo sh -c \"grep -vc '^#' '${RECORDER_DATA_DIR}'/capacity-\$(date -u +%F).tsv 2>/dev/null || echo 0\"" | tr -d '\r' | tr '\n' ' ')" || state=""
+    read -r enabled active result rows <<<"${state:-unknown unknown unknown 0}"
+    log "    timer ${enabled:-unknown}/${active:-unknown}, last pass ${result:-unknown}, rows today ${rows:-0}"
+    case "${rows:-0}" in '' | *[!0-9]*) rows=0 ;; esac
+    if [ "$enabled" != enabled ] || [ "$active" != active ] || [ "$result" != success ] || [ "$rows" -lt 1 ]; then
+        err "${RECORDER_UNIT} is installed but not recording. Stop and remove it with the"
+        err "  VM apply action retire-capacity-recorder; nothing else depends on it."
+        return 1
+    fi
+    log "  OK   the capacity recorder is enabled and recording"
+}
+
+# Every mode below but DRY_RUN reaches the VM, and DRY_RUN never does.
+if [ "${DRY_RUN:-0}" != "1" ]; then
+    ssh_key_ready
+fi
 
 # ── CADDY_ONLY: the other no-service-window path (#3589) ─────────────────
 #
@@ -524,6 +999,91 @@ if [ "${HOST_CONFIG_ONLY:-0}" = "1" ]; then
     exit 0
 fi
 
+# ── ROLLBACK: the newest DIFFERENT compose backup, back into service ─────
+#
+# Every apply keeps `${REMOTE_COMPOSE}.bak.<timestamp>` and prints a one-line
+# rollback naming THIS run's timestamp. That line needs a person with a shell on
+# the VM; this mode is the same restore for a caller without one (the `VM apply`
+# workflow's `rollback`).
+#
+# It picks the newest backup whose content DIFFERS from the live file, newest by
+# the timestamp in its name, which sorts as time. Not simply the newest: every
+# CONFIRM apply backs the compose file up, also when it does not change it, so a
+# retried apply, or one that pushed only another file, leaves a newest backup
+# identical to the live file in front of the one worth restoring. Those are
+# skipped and counted. When EVERY backup equals the live file it refuses:
+# restoring one would recreate nothing and report a rollback that did not
+# happen.
+#
+# Without CONFIRM=1 it names the backup and validates it with `docker compose
+# config` in place (so relative paths resolve as they will). It restores the
+# compose file only, as the printed rollback does; the other canonical files,
+# the host config and the Caddyfile keep their own backups. The VM then drifts
+# from the repo until a revert merges, which check-drift.sh reports.
+if [ "${ROLLBACK:-0}" = "1" ]; then
+    if [ "${DRY_RUN:-0}" = "1" ] || [ "${CADDY_ONLY:-0}" = "1" ] || [ "${HOST_CONFIG_ONLY:-0}" = "1" ]; then
+        err "ROLLBACK=1 restores the compose file and takes no other mode."
+        exit 2
+    fi
+    log "ROLLBACK — the newest backup of ${REMOTE_COMPOSE} that differs from it"
+    LSHA="$(ssh_vm "sudo sha256sum '${REMOTE_COMPOSE}' 2>/dev/null || true" | first_sha)"
+    # Every backup with its hash, in one call. Only lines of exactly the shape
+    # `<64 hex>  <REMOTE_COMPOSE>.bak.<YYYYmmdd-HHMMSS>` are read, so nothing
+    # else the remote side prints can become a path; newest first. The awk
+    # reads sha256sum's lines, never a backup's content.
+    BAK_PREFIX="${REMOTE_COMPOSE}.bak."
+    BACKUPS="$(ssh_vm "sudo sh -c 'sha256sum ${BAK_PREFIX}* 2>/dev/null' || true" | tr -d '\r' \
+        | awk -v prefix="$BAK_PREFIX" '
+            NF == 2 && length($1) == 64 && $1 ~ /^[0-9a-f]+$/ && index($2, prefix) == 1 \
+                && substr($2, length(prefix) + 1) ~ /^[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]$/ { print }' \
+        | sort -r -k2,2)" || BACKUPS=""
+    if [ -z "$BACKUPS" ]; then
+        err "no ${COMPOSE_BASENAME}.bak.<timestamp> on the VM — nothing to roll back to."
+        exit 1
+    fi
+    BACKUP=""; BSHA=""; SAME=0
+    while read -r sha path; do
+        if [ "$sha" = "$LSHA" ]; then SAME=$((SAME + 1)); continue; fi
+        BACKUP="$path"; BSHA="$sha"
+        break
+    done <<<"$BACKUPS"
+    log "    live    ${COMPOSE_BASENAME} (${LSHA:0:12})"
+    if [ -z "$BACKUP" ]; then
+        err "every backup (${SAME}) IS the live file — restoring one would change nothing."
+        exit 2
+    fi
+    log "    backup  $(basename "$BACKUP") (${BSHA:0:12})"
+    if [ "$SAME" -gt 0 ]; then
+        log "    skipped ${SAME} newer backup(s) identical to the live file (an apply that"
+        log "    did not change the compose file still backs it up)"
+    fi
+    pipelock_env_preflight || exit $?
+    log "validating the backup on the VM: docker compose config"
+    if ! ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '$(basename "$BACKUP")' config -q 2>&1" 2>&1 | show compose; then
+        err "the backup does not validate against today's env files. Nothing was changed."
+        exit 1
+    fi
+    log "  config OK"
+    if [ "${CONFIRM:-0}" != "1" ]; then
+        log ""
+        log "PREFLIGHT ONLY — nothing has been restored. Re-run with CONFIRM=1, in a"
+        log "service window: restoring recreates the containers whose definition changes."
+        exit 0
+    fi
+    log "restoring $(basename "$BACKUP") → ${COMPOSE_BASENAME}"
+    ssh_vm "sudo cp -a '${BACKUP}' '${REMOTE_COMPOSE}' && sudo chown root:root '${REMOTE_COMPOSE}'"
+    log "docker compose up -d"
+    ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '${COMPOSE_BASENAME}' up -d 2>&1" 2>&1 | show compose
+    health_verify
+    if [ "$HEALTH_FAILED" = "1" ]; then
+        err "restored, but health checks FAILED. The backup is still on the VM."
+        exit 1
+    fi
+    log "rolled back to $(basename "$BACKUP"). The VM now drifts from the repo until a"
+    log "revert merges; deploy/check-drift.sh reports it."
+    exit 0
+fi
+
 # ── DRY_RUN: local only, never reaches the VM ────────────────────────────
 #
 # WHAT IT PROVES: the compose file is valid YAML and every ${VAR} in it
@@ -552,6 +1112,8 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
     cp "$LOCAL_COMPOSE" "${TMP_PROJECT}/${COMPOSE_BASENAME}"
     # Placeholder for the `env_file:` directive only. Never read for values.
     : > "${TMP_PROJECT}/.env.prod"
+    # The same for the pipelock overlay, whose `env_file:` is its own file.
+    if [ "$PIPELOCK_IN_SET" = "1" ]; then : > "${TMP_PROJECT}/${PIPELOCK_ENV_FILE}"; fi
 
     if [ -n "${DRY_RUN_ENV_FILE:-}" ]; then
         if [ ! -f "$DRY_RUN_ENV_FILE" ]; then
@@ -595,6 +1157,11 @@ for entry in "${CANONICAL_SET[@]}"; do
     [ -f "$local_path" ] || { err "canonical file missing from the repo: $local_path"; exit 1; }
 done
 
+# 0. The pipelock overlay's own env file, when the overlay is what is applied.
+#    Before anything else reads the VM's env files, so its refusal is the one
+#    the operator sees.
+pipelock_env_preflight || exit $?
+
 # 1. The host env files must exist, and must CARRY the three interpolation
 #    variables. We check for the KEY, never the value, and print neither.
 ENV_CHECK_CMD="set -e; cd '${REMOTE_DIR}'"
@@ -603,13 +1170,25 @@ for f in "${ENV_FILES[@]}"; do
 done
 ENV_CHECK_CMD="${ENV_CHECK_CMD}; for k in POSTGRES_PASSWORD REDIS_PASSWORD DATA_ENCRYPTION_KEY; do"
 ENV_CHECK_CMD="${ENV_CHECK_CMD} if sudo grep -qE \"^\${k}=.\" ${ENV_FILES[*]}; then echo \"PRESENT \${k}\"; else echo \"ABSENT \${k}\"; fi; done"
+# NODE_OPTIONS, counted (capacity budget C1). The canonical file states it in
+# `environment:` for app and worker, which overrides `env_file:`, so a line in
+# .env.prod stops reaching them. A count, never the line.
+ENV_CHECK_CMD="${ENV_CHECK_CMD}; echo \"COUNT NODE_OPTIONS \$(sudo grep -c '^NODE_OPTIONS=' .env.prod || true)\""
 
 log "checking the host env files carry the three interpolation variables (key names only)"
 ENV_REPORT="$(ssh_vm "$ENV_CHECK_CMD")" || {
     err "could not read the env files on ${VM_NAME}. Check gcloud auth / VM state."
     exit 1
 }
-printf '%s\n' "$ENV_REPORT" | sed 's/^/    /'
+# Only the lines the command above writes, so nothing else the remote shell
+# says can ride along into a public log.
+printf '%s\n' "$ENV_REPORT" | grep -E '^((PRESENT|ABSENT|MISSING_ENV_FILE) [A-Za-z0-9_.]+|COUNT [A-Z_]+ [0-9]+)$' | sed 's/^/    /' || true
+NODE_OPTIONS_LINES="$(printf '%s\n' "$ENV_REPORT" | awk '$1 == "COUNT" && $2 == "NODE_OPTIONS" { print $3 }')"
+if [ -n "$NODE_OPTIONS_LINES" ] && [ "$NODE_OPTIONS_LINES" != "0" ]; then
+    warn ".env.prod sets NODE_OPTIONS (${NODE_OPTIONS_LINES} line(s)). The canonical file's"
+    warn "  environment: for app and worker overrides it, so it no longer reaches them."
+    warn "  Fold any flag it carried into deploy/docker-compose.prod.yml in a PR first."
+fi
 
 if printf '%s' "$ENV_REPORT" | grep -q '^ABSENT '; then
     err "an interpolation variable is absent from ${REMOTE_DIR}/{${ENV_FILES[0]},${ENV_FILES[1]}}."
@@ -631,17 +1210,14 @@ fi
 #    `up` time. Nothing live is touched: the live file still has its name.
 STAGED="${REMOTE_COMPOSE}.new.${TS}"
 log "staging ${LOCAL_COMPOSE} → ${VM_NAME}:${STAGED}"
-gcloud compute scp "$LOCAL_COMPOSE" "${VM_NAME}:/tmp/${COMPOSE_BASENAME}.new.${TS}" \
-    --zone "$VM_ZONE" --tunnel-through-iap
-ssh_vm "sudo mv '/tmp/${COMPOSE_BASENAME}.new.${TS}' '${STAGED}'"
-
-ENV_ARGS=""
-for f in "${ENV_FILES[@]}"; do ENV_ARGS="${ENV_ARGS} --env-file '${f}'"; done
+LOCAL_COMPOSE_SHA="$(sha256sum "$LOCAL_COMPOSE" | first_sha)"
+scp_vm "$LOCAL_COMPOSE" "/tmp/${COMPOSE_BASENAME}.new.${TS}"
+place_staged "/tmp/${COMPOSE_BASENAME}.new.${TS}" "${STAGED}" "$LOCAL_COMPOSE_SHA" || exit 1
 
 cleanup_staged() { ssh_vm "sudo rm -f '${STAGED}'" >/dev/null 2>&1 || true; }
 
 log "validating on the VM: docker compose config (this is where a ':?' guard fires)"
-if ! ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '$(basename "$STAGED")' config -q"; then
+if ! ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '$(basename "$STAGED")' config -q 2>&1" 2>&1 | show compose; then
     err "docker compose config FAILED on the VM. Nothing was changed — the live file"
     err "  still has its own name and every container is untouched."
     cleanup_staged
@@ -653,8 +1229,26 @@ log "  config OK — every \${VAR} resolved"
 #    the API calls, so this names the containers that would be recreated
 #    without creating any. Advisory: an older compose without --dry-run just
 #    warns rather than blocking the apply.
+#
+#    One error here is the simulation's, not the apply's. The dry run resolves
+#    each image at its registry (`Image <ref> Pulled` means the registry
+#    answered for that tag) but downloads nothing, and the simulated container
+#    create then inspects the image LOCALLY. So a service whose image is new to
+#    the VM reads `Container <name> Error` with the class `no such image`
+#    (reproduced with compose v5.6.1, and the shape `VM apply` run 43761627105
+#    printed for postgres on 2026-11-15). A real `up -d` pulls first. An image
+#    the registry does not have fails at its `Image` line instead, as
+#    `manifest unknown` or `pull access denied`, and no note is printed for it.
 log "simulating the apply (docker compose up -d --dry-run)"
-if ! ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '$(basename "$STAGED")' up -d --dry-run 2>&1 | sed 's/^/    /'"; then
+if dry_run_out="$(ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '$(basename "$STAGED")' up -d --dry-run 2>&1 | sed 's/^/    /'" 2>&1 | show compose)"; then
+    printf '%s\n' "$dry_run_out"
+    if printf '%s\n' "$dry_run_out" | grep -qi 'no such image'; then
+        log "  note: 'no such image' under --dry-run is the simulation's: it resolves an image at"
+        log "  its registry but downloads nothing, so an image new to this VM is not there to"
+        log "  inspect. The real apply pulls it first. Check its Image line above reads Pulled."
+    fi
+else
+    printf '%s\n' "$dry_run_out"
     warn "up --dry-run was not usable on this host — continuing without the simulation."
 fi
 
@@ -662,8 +1256,8 @@ fi
 log "other canonical files (pushed alongside the compose file):"
 for entry in "${CANONICAL_SET[@]:1}"; do
     local_path="${entry%%:*}"; remote_base="${entry##*:}"
-    lsha="$(sha256sum "$local_path" | awk '{print $1}')"
-    rsha="$(ssh_vm "sudo sha256sum '${REMOTE_DIR}/${remote_base}' 2>/dev/null || true" | awk '{print $1}')"
+    lsha="$(sha256sum "$local_path" | first_sha)"
+    rsha="$(ssh_vm "sudo sha256sum '${REMOTE_DIR}/${remote_base}' 2>/dev/null || true" | first_sha)"
     if [ "$lsha" = "$rsha" ]; then
         log "    unchanged  ${remote_base} (${lsha:0:12})"
     else
@@ -708,15 +1302,14 @@ log "backing up ${REMOTE_COMPOSE} → ${REMOTE_COMPOSE}.bak.${TS}"
 ssh_vm "sudo cp -a '${REMOTE_COMPOSE}' '${REMOTE_COMPOSE}.bak.${TS}' && sudo chmod 600 '${REMOTE_COMPOSE}.bak.${TS}'"
 
 log "installing the validated file"
-ssh_vm "sudo mv '${STAGED}' '${REMOTE_COMPOSE}' && sudo chown root:root '${REMOTE_COMPOSE}'"
+place_staged "${STAGED}" "${REMOTE_COMPOSE}" "$LOCAL_COMPOSE_SHA" || exit 1
 
 for entry in "${CANONICAL_SET[@]:1}"; do
     local_path="${entry%%:*}"; remote_base="${entry##*:}"
     log "pushing ${remote_base}"
     ssh_vm "sudo sh -c \"cp -a '${REMOTE_DIR}/${remote_base}' '${REMOTE_DIR}/${remote_base}.bak.${TS}' && chmod 600 '${REMOTE_DIR}/${remote_base}.bak.${TS}'\" 2>/dev/null || true"
-    gcloud compute scp "$local_path" "${VM_NAME}:/tmp/${remote_base}.new.${TS}" \
-        --zone "$VM_ZONE" --tunnel-through-iap
-    ssh_vm "sudo mv '/tmp/${remote_base}.new.${TS}' '${REMOTE_DIR}/${remote_base}' && sudo chown root:root '${REMOTE_DIR}/${remote_base}'"
+    scp_vm "$local_path" "/tmp/${remote_base}.new.${TS}"
+    place_staged "/tmp/${remote_base}.new.${TS}" "${REMOTE_DIR}/${remote_base}" "$(sha256sum "$local_path" | first_sha)" || exit 1
 done
 
 # The host config set, before the prune below so the backup it writes is
@@ -751,11 +1344,17 @@ caddy_apply || CADDY_FAILED=1
 # `shred` rather than `rm`: these are credential files on a VM whose disk is a
 # GCE persistent disk, and the cost of overwriting a handful of small files is
 # nothing next to leaving them recoverable.
+#
+# Candidates are listed with `find`, not `ls *.bak.*`: a shell glob does not
+# match a leading dot, so `.env.prod.bak.*` — the files named above as the
+# reason for pruning at all — were never pruned (#5308). The per-base `ls`
+# below is safe, because its pattern starts with the base's own leading dot.
+# tests/unit/deploy-apply-backup-prune.test.ts runs this block.
 KEEP_BACKUPS="${KEEP_BACKUPS:-5}"
 log "pruning backups, keeping the newest ${KEEP_BACKUPS} per file"
 ssh_vm "sudo sh -c '
   cd \"${REMOTE_DIR}\" 2>/dev/null || exit 0
-  for base in \$(ls -1 *.bak.* 2>/dev/null | sed \"s/\\.bak\\..*//\" | sort -u); do
+  for base in \$(find . -maxdepth 1 -type f -name \"*.bak.*\" 2>/dev/null | sed -e \"s|^\\./||\" -e \"s/\\.bak\\..*//\" | sort -u); do
     ls -1t \"\$base\".bak.* 2>/dev/null | tail -n +\$((${KEEP_BACKUPS} + 1)) | while read -r old; do
       shred -u \"\$old\" 2>/dev/null || rm -f \"\$old\"
     done
@@ -763,39 +1362,18 @@ ssh_vm "sudo sh -c '
 '"
 
 log "docker compose up -d"
-ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '${COMPOSE_BASENAME}' up -d"
+ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '${COMPOSE_BASENAME}' up -d 2>&1" 2>&1 | show compose
 
-# ── Health-verify ────────────────────────────────────────────────────────
-#
-# BOTH public origins, because Caddy serves two vhosts and a Caddyfile or
-# cert problem can take one down while the other answers — checking only the
-# sslip.io host would have reported a dead app.inflect.bg as a clean deploy.
-# /api/readyz (not /api/livez): livez is dependency-free and stays green
-# through a Redis or DB outage, which is exactly the failure a deploy causes.
-log "health-verifying: ${HEALTH_ORIGINS}"
-HEALTH_FAILED=0
-for origin in $HEALTH_ORIGINS; do
-    code=""
-    for _ in 1 2 3 4 5 6 7 8; do
-        # 000 is a sentinel OUTSIDE the healthy range; the comparison below
-        # fails closed on it, unlike `|| echo 0`.
-        code="$(curl -fsS -o /dev/null -w '%{http_code}' "${origin}/api/readyz" 2>/dev/null || echo 000)"
-        [ "$code" = "200" ] && break
-        sleep 5
-    done
-    if [ "$code" = "200" ]; then
-        log "  OK   ${origin}/api/readyz → 200"
-    else
-        err "  FAIL ${origin}/api/readyz → ${code}"
-        HEALTH_FAILED=1
-    fi
-done
+health_verify
 
 ROLLBACK="gcloud compute ssh ${VM_NAME} --zone ${VM_ZONE} --tunnel-through-iap --command \"sudo cp -a '${REMOTE_COMPOSE}.bak.${TS}' '${REMOTE_COMPOSE}' && cd '${REMOTE_DIR}' && sudo docker compose${ENV_ARGS} -f '${COMPOSE_BASENAME}' up -d\""
 
 if [ "$HEALTH_FAILED" = "1" ]; then
     err "applied, but health checks FAILED. Roll back with:"
     printf '  %s\n' "$ROLLBACK" >&2
+    err "  or ROLLBACK=1 CONFIRM=1 deploy/apply.sh (the VM apply workflow's 'rollback'),"
+    err "  which restores the newest backup that differs from the live file: this"
+    err "  run's, when this run changed the compose file."
     exit 1
 fi
 

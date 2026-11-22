@@ -380,3 +380,21 @@ describe('the delivery ledger has one writer', () => {
         expect(offenders).toEqual([]);
     });
 });
+
+describe('replies past the first page are still claimed (#5317)', () => {
+    it('the 21st reply is delivered by the next claim, not stranded behind 20 decided ones', async () => {
+        const r = await run(T1, 'RUNNING');
+        for (let i = 0; i < 21; i += 1) {
+            await message(T1, { direction: 'OUTBOUND', peerId: 'peer-a', runId: r.id, wireId: `ours-p${i}` });
+            await message(T1, {
+                direction: 'INBOUND', peerId: 'peer-a', runId: r.id, wireId: `theirs-p${i}`, relatesTo: `ours-p${i}`,
+            });
+        }
+
+        const first = await claimPeerRepliesForRun(ctxFor(T1), r.id);
+        expect(first.deliver).toHaveLength(20);
+        const second = await claimPeerRepliesForRun(ctxFor(T1), r.id);
+        expect(second.deliver).toHaveLength(1);
+        expect(second.deliver[0].relatesToMessageId).toBe('ours-p20');
+    });
+});

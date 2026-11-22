@@ -40,6 +40,7 @@
  */
 import type { PrismaClient } from '@prisma/client';
 import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
+import { insertedNotificationIds } from './inserted-ids';
 
 /** ms in a UTC day. */
 export const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -198,22 +199,20 @@ export async function createTaskDueNotification(
     // 2026-05-27 (PR-C) — on a fresh insert, push the event to
     // every live SSE subscriber for this (tenant, user). The row
     // we wrote is a value-equal copy of the inputs we're holding
-    // here — no re-read needed for the bell-bound payload shape.
-    // `id` would normally come from Prisma's return, but
-    // `createMany` doesn't return ids; we omit it from the event
-    // and the client treats `id`-less events as "prepend then
-    // refetch on next open" — graceful fallback.
+    // here, except its id: `createMany` returns none, and the event
+    // used to carry the dedupe key in its place, so the bell's
+    // mark-read PATCH named no notification (#5305). The id is read
+    // back by the (unique) dedupe key.
     if (result.count > 0) {
-        publishNotificationEvent(task.tenantId, task.assigneeUserId, {
-            // No id — see comment above. The client uses createdAt
-            // as the dedupe seed for prepend.
-            id: row.dedupeKey,
+        const written = (await insertedNotificationIds(db, task.tenantId, [row.dedupeKey])).get(row.dedupeKey);
+        if (written) publishNotificationEvent(task.tenantId, task.assigneeUserId, {
+            id: written.id,
             type: row.type,
             title: row.title,
             message: row.message,
             read: false,
             linkUrl: row.linkUrl,
-            createdAt: now.toISOString(),
+            createdAt: written.createdAt.toISOString(),
         });
     }
 

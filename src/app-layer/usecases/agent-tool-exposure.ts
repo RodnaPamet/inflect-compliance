@@ -482,8 +482,11 @@ export async function grantAgentTool(ctx: RequestContext, agentId: string, input
         // and so the register never shows a fresh assessment beside a tool it
         // never saw.
         //
+        // It fires on grant TIME — any grant newer than the scoring (#5304) —
+        // so a swap that leaves the count unchanged is caught as well.
+        //
         // It WARNS; it does not block, and here the warning is the whole of the
-        // remedy available: the tool count is not a scorer input, so unlike an
+        // remedy available: the tools are not a scorer input, so unlike an
         // axis widening there is no tier to recompute (the reconcile below will
         // find the axes unchanged and re-score nothing). The rung check above is
         // what bounds the grant; this records that the ANSWERS — "is every tool

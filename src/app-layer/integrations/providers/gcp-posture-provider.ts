@@ -23,7 +23,9 @@ import type {
 } from '../types';
 import { runPowerpipeBenchmark, type RunBenchmarkInput } from '../cloud-posture/powerpipe-core';
 import { collectorExecForDeploy } from '../cloud-posture/sandboxed-collector-exec';
+import { postureProviderNameFor } from '../cloud-posture/provider-name';
 import { sandboxDecisionRecorderForScan } from '../openshell-audit-bridge';
+import { baseCollectorEnv } from '../collector-child-env';
 
 export interface GcpPostureConfig {
     benchmark?: string;
@@ -147,13 +149,28 @@ export class GcpPostureProvider implements ScheduledCheckProvider {
      */
     private execForScan(input: CheckInput, benchmarkId: string): RunBenchmarkInput['exec'] {
         if (!this.execFromDeploy) return this.exec;
+        // #5476: the gateway provider holding THIS connection's credential.
+        // `undefined` when the check carries no connection id, which makes
+        // `collectorExecForDeploy` refuse rather than attach a shared
+        // credential — see `postureProviderNameFor`. Never defaulted.
+        const providerName = postureProviderNameFor({
+            tenantId: input.tenantId,
+            connectionId: input.connectionId,
+        });
         return (
             collectorExecForDeploy({
                 benchmarkId,
+                providerName,
                 onDecision: sandboxDecisionRecorderForScan({
                     tenantId: input.tenantId,
                     job: 'gcp-posture-collect',
                     discriminator: input.jobRunId,
+                    // The lease row names the provider ACTUALLY attached. Left
+                    // to default it would record `inflect-collector` — the
+                    // shared one #5251 refused — while the sandbox held this
+                    // connection's own, making an operational table disagree
+                    // with the gateway.
+                    providerName,
                 }),
             }) ?? undefined
         );
@@ -192,7 +209,12 @@ export class GcpPostureProvider implements ScheduledCheckProvider {
         // Write the SA key to a restricted temp file for the GCP plugin.
         let credPath: string | null = null;
         let dir: string | null = null;
-        const env: NodeJS.ProcessEnv = { ...process.env };
+        // An ALLOWLIST, not `process.env` (#5253) — see collector-child-env.ts.
+        // An inherited ambient GOOGLE_APPLICATION_CREDENTIALS or CLOUDSDK_* would
+        // let a benchmark run as the platform and be stored as this tenant's
+        // evidence, and the worker's own secrets have no business reaching the
+        // CLI. TMPDIR is allowlisted because the key file below lives under it.
+        const env: NodeJS.ProcessEnv = baseCollectorEnv();
         if (cfg.projectId) env.CLOUDSDK_CORE_PROJECT = cfg.projectId;
         try {
             // `!exec` means "the on-host execFile path", which is the

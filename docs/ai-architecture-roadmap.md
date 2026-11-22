@@ -1,4 +1,4 @@
-inflect · ai architecture · master roadmap v2 · 2026-10-31
+inflect · ai architecture · master roadmap v2 · 2026-11-12
 
 # The AI architecture roadmap: the v6 target, mapped onto the codebase
 
@@ -11,7 +11,10 @@ inflect · ai architecture · master roadmap v2 · 2026-10-31
 > optional work taken up after that, or never (owner, 2026-10-31).
 > The **Current state** section is true today (verified at main 3.338.0,
 > `a1c2f05c`; re-checked where it changed at 3.347.0, `e0e682e03`, on
-> 2026-10-31) and names what each layer already has. The
+> 2026-10-31, and again on 2026-11-12 against the integration of the
+> 2026-11-11 wave, twenty-two work items on top of main 3.368.1, and on
+> 2026-11-13 against #5361, the 2026-11-12 batch) and names
+> what each layer already has. The
 > **Roadmap** section is the plan: what complete means, a status board, the
 > sequencing, the evals per layer, and the decisions the owner must take. Every framework the target
 > names and the codebase lacks has its own child roadmap under
@@ -29,7 +32,7 @@ Three documents own three different things, and none repeats another:
 | --- | --- |
 | The target as received | [`ai-architecture/blueprint-v6.md`](./ai-architecture/blueprint-v6.md) (historical: a record of the input) |
 | What exists, the global rules, Layer 5's optionality, what complete means, the capacity budget, sequencing, the status board, the decisions | **this file** |
-| Phases, sub-phases, prompts and hardening for one framework | `ai-architecture/<framework>.md` — one per missing framework (twenty roadmaps, listed in the status board, beside the blueprint record): eighteen from the blueprint, and two additions the owner made on 2026-10-30, [`web-bot-auth.md`](./ai-architecture/web-bot-auth.md) and [`mastercard-agent-pay.md`](./ai-architecture/mastercard-agent-pay.md) |
+| Phases, sub-phases, prompts and hardening for one framework | `ai-architecture/<framework>.md` — one per missing framework (twenty roadmaps, listed in the status board, beside the blueprint record): eighteen from the blueprint, and two additions the owner made on 2026-10-30, [`web-bot-auth.md`](./ai-architecture/web-bot-auth.md) and [`mastercard-agent-pay.md`](./ai-architecture/mastercard-agent-pay.md). Two keep the filename of the framework the blueprint named after a decision replaced it, so links stay stable: `weaviate.md` plans the vector store (pgvector first, D-L4-1) and `ragflow.md` the document parser (Docling-class, D-L4-4) |
 
 Two owner decisions of 2026-10-31 (D-L5-1) bind the whole plan:
 
@@ -49,7 +52,8 @@ Layer 5 plan under its old filename so links stay stable.
 
 ## The target, with status
 
-Green is on `main`, amber partly present, blue missing and part of
+Green is in production use on `main`, amber partly present (some of it runs,
+or a seam is built and nothing runs through it yet), blue missing and part of
 completeness (each has a child roadmap), slate dashed optional Layer 5 work
 that starts only after every other roadmap is complete, grey dashed declined.
 Requests enter at Layer 1 and descend; the evaluation row measures every
@@ -60,10 +64,10 @@ production use, together with its status-board row.
 flowchart LR
   subgraph EV["EVALUATION AND VALIDATION · measures every layer"]
     direction TB
-    GA["Garak<br/>LLM red-teaming"]:::todo
-    RA["Ragas<br/>RAG metrics"]:::todo
+    GA["Garak<br/>nightly built, off by default;<br/>first run dispatched 2026-11-13"]:::partial
+    RA["Ragas<br/>harness, answers and nightly built;<br/>no record: no keyed night yet"]:::partial
     AR["ARES<br/>calibrated judges"]:::todo
-    IS["Inspect<br/>governed-run tasks"]:::todo
+    IS["Inspect<br/>harness and nightly built;<br/>seed in review"]:::partial
     SB["SWE-bench<br/>no capability to measure"]:::declined
     HR["House eval records (ours)<br/>skills, identity-match"]:::done
   end
@@ -77,30 +81,30 @@ flowchart LR
     MO5["Modal<br/>not adopted 2026-10-31"]:::declined
     OS["OpenShell gateway<br/>collectors sandboxed"]:::done
     GW["TS API gateway (ours)<br/>Next.js routes + Compose"]:::done
-    CAP["Capacity budget<br/>limits on every container"]:::todo
+    CAP["Capacity budget<br/>every container measured and limited;<br/>resize with the first crossing"]:::partial
   end
 
   subgraph L4["LAYER 4 · Knowledge and deep RAG"]
     direction TB
-    RF["RAGFlow<br/>parsing service only"]:::todo
-    RT["Nemotron Retriever<br/>embed + rerank on CPU TEI"]:::todo
-    WV["Weaviate<br/>vectors only, per-tenant"]:::todo
-    LU["Langfuse<br/>traces, datasets, scores"]:::todo
+    RF["Document parsing<br/>Docling-class seam built;<br/>RAGFlow measured only"]:::partial
+    RT["Retriever<br/>embed + rerank seam built;<br/>D-L4-3 decided: multilingual-e5-small<br/>+ bge-reranker-base on CPU"]:::partial
+    WV["Vector store<br/>tables, index job, search_knowledge;<br/>off, gate closed; Weaviate conditional"]:::partial
+    LU["Langfuse<br/>not adopted, OTel-only, D-L4-5"]:::declined
     TR["Tool-shaped retrieval (ours)<br/>MCP read tools"]:::done
   end
 
   subgraph L3["LAYER 3 · Cognition and reasoning"]
     direction TB
-    NR["Role axis<br/>worker model by API key"]:::todo
+    NR["Role axis<br/>built; no worker model set,<br/>worker runs the supervisor's"]:::partial
     NW["Nemotron as the worker<br/>if Layer 5 is taken up"]:::optional
     SW["Subagents, fan-out<br/>supervisor/worker shape"]:::partial
     CL["Claude engines<br/>Tool Runner on; Agent SDK designed"]:::partial
-    CO["NVIDIA cuOpt<br/>CPU seam first, if any"]:::todo
+    CO["NVIDIA cuOpt<br/>declined, D-L3-3"]:::declined
   end
 
   subgraph L2["LAYER 2 · Orchestration and workflow"]
     direction TB
-    LF["Agent-flow canvas on tldraw<br/>view every agent, draw flows;<br/>Langflow not adopted"]:::todo
+    LF["Agent-flow canvas on tldraw<br/>draw, save as draft, preview built;<br/>runs on no engine; Langflow not adopted"]:::partial
     FL["Flue<br/>phases 1-3 shipped"]:::done
     CV["Canvas, rule builder,<br/>agent profiles (ours)"]:::done
   end
@@ -108,12 +112,12 @@ flowchart LR
   subgraph L1["LAYER 1 · Security, guards and alignment"]
     direction TB
     AG["AI Guard (ours)<br/>injection + egress"]:::done
-    MO["NVIDIA Morpheus<br/>behaviour anomaly, CPU detector"]:::todo
-    NG["NeMo Guardrails<br/>second guard slice"]:::todo
-    NC["NemoClaw<br/>substrate only"]:::partial
-    PR["Microsoft Presidio<br/>PII redaction, EN + BG"]:::todo
-    WB["Web Bot Auth (added)<br/>signed crawler, verified agents"]:::todo
-    MA["Mastercard Agent Pay (added)<br/>spending authority governed"]:::todo
+    MO["NVIDIA Morpheus<br/>CPU detector built, off by default"]:::partial
+    NG["NeMo Guardrails<br/>provider seam built; no server"]:::partial
+    NC["NemoClaw<br/>reference only; runtime declined"]:::partial
+    PR["Microsoft Presidio<br/>EN + BG record; PiiDetector seam"]:::partial
+    WB["Web Bot Auth (added)<br/>vendor monitor signs, honours robots.txt;<br/>no inbound verifier"]:::partial
+    MA["Mastercard Agent Pay (added)<br/>spending authority on the register;<br/>paying agents discovered"]:::partial
   end
 
   classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
@@ -125,10 +129,15 @@ flowchart LR
 
 ## Current state (true today)
 
-Verified by direct inspection of `main` at 3.338.0 on 2026-10-29. Where this
-section cites a finding from the 2026-10-09 audit of Flue Phase 1 (made
-against 3.164.1), it says so; those were not re-verified and the first pull
-request touching Flue re-checks them.
+Verified by direct inspection of `main` at 3.338.0 on 2026-10-29, and
+rewritten where the 2026-11-11 wave changed it (re-read against the code of
+its integration, 2026-11-12). Most of that wave is **seams**: a module, its
+tests and its operator variables, off by default, with nothing deployed behind
+it and nothing in the product calling it yet. Each bullet below says which.
+Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
+3.164.1), F5 and F12 were re-verified and closed on 2026-11-11 against
+3.364.1; F3 is unchanged, and is now recorded as a decision
+([note](./implementation-notes/2026-11-15-flue-f3-telemetry-stays-hand-rolled.md)).
 
 ### Layer 1 — Security, guards & alignment
 
@@ -138,6 +147,24 @@ request touching Flue re-checks them.
   `assertNoReviewRequired`; `allow / flag / block` pinned by
   `flue-guard-outcome-has-arms`; `flag` latches review, `block` aborts,
   repeated blocks latch `AgentCircuitBreaker`.
+- **The guard composes providers, worst-of** (NeMo Phase 1, 2026-11-11):
+  `src/app-layer/ai/guard/providers/` holds a `GuardProvider` seam, the
+  deterministic patterns as the first provider, and a NeMo Guardrails client
+  read from `AI_GUARD_NEMO_BASE_URL` (operator config, never tenant-writable),
+  composed worst-of behind the unchanged `GuardOutcome` (G4). An unreachable
+  provider scans `suspicious` (`guard.provider_unavailable.<id>`), which is
+  `flag` in both directions under `strict` and `balanced`, never `allow` and
+  never `block` (G9): the call latches review rather than aborting, egress
+  included. A tenant in `audit` mode records it and allows, as it does every
+  verdict.
+  With the URL unset the guard is byte-identical to before. No NeMo server is
+  deployed (Phase 1.3, held by the capacity rule until C1), and three callers
+  that scan inside a tenant transaction (A2A reply delivery, questionnaire
+  autofill, risk suggestions) consult the patterns provider only, recording
+  `notConsulted: ['nemo']`. The client dials the server through the
+  in-deployment rule (`src/lib/ai/in-deployment-service.ts`, G6 as amended on
+  2026-11-12), not `safeFetch`, so a NeMo container on the Compose network is
+  reachable and an address outside the deployment is refused.
 - **Applied three ways at the tool boundary** (`flue/tools-adapter.ts`):
   egress on args before the funnel; injection on results before context;
   egress on result text before a third-party provider. The engine-neutral
@@ -151,32 +178,93 @@ request touching Flue re-checks them.
   in a sandbox is **refused by import** (`flue/refused-capabilities.ts`, 23
   exports). Four OpenShell operator skills are vendored and reviewed.
 - **PII is protected by encryption at rest and by field selection** (several
-  sub-processor rows promise "no PII by construction"); nothing detects PII
-  in a payload. Secrets egress is scanned; persons are not.
-- **Known residual (2026-10-09, unverified since):** run *input* reached
-  prompt assembly unscanned — `guardUntrustedInput` lived only in the tools
-  adapter (F5). Closed by [`nemo-guardrails.md`](./ai-architecture/nemo-guardrails.md)
-  Phase 0 with the existing scanner, before NeMo.
-- **Nothing signs or verifies an automated HTTP request** (verified
-  2026-10-30, main 3.340.0). The product's only unattended crawler of
-  third-party websites, the vendor monitor's TLS grade, identifies itself by
-  a User-Agent string alone. It fetches the tenant-entered domain only
-  through `safeFetch`, following redirects one re-checked hop at a time
-  (since 2026-10-31; it used `fetchWithRetry` until then, an SSRF sink). A
-  site that refuses it (403, or a challenge) still leaves the vendor's old
-  grade in place with no event. The public trust center knows automated visitors only by IP.
-  [`web-bot-auth.md`](./ai-architecture/web-bot-auth.md) plans both
+  sub-processor rows promise "no PII by construction"); nothing in the product
+  detects PII in a payload. Secrets egress is scanned; persons are not.
+  Presidio's Phase 0 is done (2026-11-11): D-L1-1's scope (external routes
+  only; PERSON, EMAIL, PHONE, IBAN, ЕГН; LOCATION and ORG out of scope; EN +
+  BG; `LOCAL_ONLY` not redacted), a seeded 85-case EN + BG fixture corpus
+  (`tests/fixtures/pii/`), Bulgarian recognisers in the detector image's
+  sources (`guards/presidio/`, which no CI job builds yet), and the first
+  precision/recall record (`evals/pii/records/`), a development-set figure that
+  is not yet a mount condition. The `PiiDetector` seam (Phase 1.2–1.4,
+  `src/lib/ai/pii/`) is built: a stub default, a Presidio client on the
+  in-deployment dial, an egress use that fails closed when the detector is
+  unavailable, and a mount gate that registers the provider only with a passing
+  record. No detector is deployed (Phase 1.1, held by C1), and no record can
+  mount until a held-out corpus carries at least `PII_MIN_SUPPORT` cases per
+  type and locale (D-L1-11).
+- **Run input is scanned before any engine sees it** (F5, closed 2026-11-11,
+  re-verified against 3.364.1). The admission scan in `startWorkflowRun`
+  (#3468) runs before engine selection, and
+  `tests/integration/run-input-scan-precedes-every-engine.test.ts` pins it for
+  Flue and the Tool Runner. A `flag` verdict on run input refuses the run at
+  admission; it does not park it for review (owner, 2026-11-12, D-L1-16).
+- **The behaviour circuit breaker is hourly, and a daily fingerprint is built
+  beside it** (Morpheus Phase 1, partly). The breaker already watches an
+  agent's hourly window (`AgentBehaviourWindow`: `PROPOSAL_RATE`, `TOOL_MIX`,
+  `REJECTION_RATE`, `GUARD_BLOCK`); the gap was daily signals (read volume,
+  tokens, runs, active hours). The `agent-fingerprint` job (01:53 UTC, in the
+  existing worker, no container) baselines each agent over 14 to 28 days in
+  `AgentBehaviourBaseline` and records `AgentBehaviourAnomaly` rows under RLS:
+  z ≥ 4 raises a finding and z ≥ 8 latches the existing breaker with
+  `BEHAVIOUR_ANOMALY`. It is off by default under `AGENT_BEHAVIOUR_DETECTOR` +
+  `AGENT_BEHAVIOUR_DETECTOR_TENANTS`, with `AGENT_BEHAVIOUR_DETECTOR_LATCH` as a
+  third key for the latch, and its thresholds are written down with reasons
+  but not measured (Morpheus Phase 0.2's seeded check is open). Its surface
+  (Phase 1.3, 2026-11-12) shows the fingerprint on the agent page and in
+  reports, and a person can accept a new baseline as normal, also for an agent
+  with no breaker row.
+- **Automated HTTP: the vendor monitor signs its requests, honours
+  robots.txt, and a refusal is visible.** The product's only unattended crawler
+  of third-party websites, the vendor monitor's TLS grade, goes through one bot
+  seam (Web Bot Auth Phase 2, 2026-11-12): `botFetch` is `safeFetch`, following
+  redirects one re-checked hop at a time, plus an honest User-Agent and an
+  RFC 9421 signature whenever the deployment key is set. robots.txt is read per
+  RFC 9309 and judged on every hop, same-origin redirects included: a disallow
+  is `REFUSED` with reason `ROBOTS` and nothing on that path is requested, and a
+  robots.txt that fails or answers 5xx counts as a complete disallow. A public
+  page, `/bots/vendor-monitor`, says who the bot is. The seam is held by an
+  ESLint single-seam rule and the SSRF guard's `BOT_SEAM_CALLERS`. Since 2026-11-11 it records why a fetch did not grade —
+  `GRADED`, `REFUSED`, `UNREACHABLE` or `BLOCKED`, with the time, on
+  `VendorMonitor` — counts it on `vendor_monitor.tls_fetch{provider,outcome}`,
+  and the vendor page marks a stale grade stale. A DNS failure is
+  `UNREACHABLE` and every 4xx is `REFUSED` (owner, 2026-11-12, D-L1-15).
+  Web Bot Auth Phase 1 is partly built: an optional deployment-wide Ed25519
+  key (`WEB_BOT_AUTH_SIGNING_KEY`, with `WEB_BOT_AUTH_PREVIOUS_SIGNING_KEY`;
+  absent means a 404 and nothing built) and a signed key directory at
+  `/.well-known/http-message-signatures-directory`, its `keyid` the RFC 7638
+  thumbprint, signed in-house on `node:crypto`. The wire format follows
+  `draft-ietf-webbotauth-httpsig-protocol-01` (2026-10-29). The production key
+  was set on 2026-11-13 and the directory is served. The request half of the
+  conformance record is recomputed in CI against `web-bot-auth@0.2.0`. The
+  directory is registered nowhere (Phase 2.4 waits on the signature covering
+  `content-digest` and on D-L1-13's crawl-delay), and the public trust center
+  knows automated visitors only by IP. [`web-bot-auth.md`](./ai-architecture/web-bot-auth.md) plans both
   directions; it is an addition to the blueprint (owner, 2026-10-30).
-- **Nothing records that an agent can spend money** (verified 2026-10-30).
-  The agentic IAM subsystem governs grants, autonomy, ownership and kills,
-  but no field, finding or evidence kind describes payment authority, and
-  the harness cannot see payment code. No card data exists anywhere in the
-  product. [`mastercard-agent-pay.md`](./ai-architecture/mastercard-agent-pay.md)
-  makes spending authority a governed privilege without Inflect ever
-  holding a payment credential; it is the second addition to the blueprint
-  (owner, 2026-10-30).
-- Missing: Morpheus, NeMo Guardrails, Presidio, Web Bot Auth, Agent Pay
-  governance; NemoClaw as a stack.
+- **The register records an agent's spending authority** (Agent Pay Phase 1,
+  partly). `AgentSpendingAuthority` holds a declared envelope reviewed by a
+  second person; activation refuses `SPENDING_AUTHORITY_UNREVIEWED`, and a
+  trigger on `RegisteredAgent` backs it; the kill switch and the owner-orphan
+  kill request a spending suspension and open an `AGENT_SPENDING_SUSPENSION`
+  task; widening an envelope raises a `SPENDING_AUTHORITY_WIDENED` finding.
+  The harness contract refuses a card number as a secret (Phase 0,
+  `harness-contract-rules.ts`). No card data exists anywhere in the product,
+  and Inflect never holds a payment credential (D-L1-8). Discovery is built
+  (Phase 2, 2026-11-12): the scanner's `code` source finds agents whose code
+  can pay, reported under contract `inflect-agent-harness/4` (the DPIA's `/4`
+  amendment is signed), and the ingest raises `SPENDING_AGENT_UNDECLARED` for a
+  registered paying agent with no reviewed envelope. Only a reviewed envelope,
+  or a person, closes it; a clean code read never does. Since 2026-11-20
+  (#5333) the envelope has its routes, its card on the agent's page, a
+  governance-pack row and a section in an AGENT campaign's reviewer pack, and a
+  pack may propose withdrawing it, which a person accepts or rejects.
+  [`mastercard-agent-pay.md`](./ai-architecture/mastercard-agent-pay.md) is the
+  second addition to the blueprint (owner, 2026-10-30).
+- Missing: a deployed second guard slice (NeMo server), a PII detector, the
+  inbound Web Bot Auth verifier and the directory's registration, Agent Pay's
+  evidence (Phase 3) and its scan-to-signature link (Phase 2.4, which waits on
+  the verifier). NemoClaw is reference-only by decision (D-L1-4); its Phase 1 is
+  two collector-policy tightenings.
 
 ### Layer 2 — Orchestration & workflow
 
@@ -193,23 +281,47 @@ request touching Flue re-checks them.
   (ESM, `--experimental-vm-modules`) is a coverage contributor; the gate
   merges **nine** artifacts (the trailing argument to
   `check-merged-coverage.ts` in `ci.yml` is the authority).
-- **Residuals from the 2026-10-09 audit, unverified since:** F3 — the
-  one-member `PERMITTED_FLUE_PACKAGES` allowlist (exact set equality against
-  `package.json`) blocks `@flue/opentelemetry`, so telemetry stays hand-rolled
-  (`flue/telemetry.ts`, content-free by guard) — a decision to record, not a
-  gap; F12 — a stale comment in `usecases/workflow-runs.ts` claiming no
-  definition sets `driver`.
+- **Residuals from the 2026-10-09 audit, re-verified 2026-11-11 against
+  3.364.1, and again 2026-11-15 against 3.387.2:** F3 is unchanged and is now
+  RECORDED ([note](./implementation-notes/2026-11-15-flue-f3-telemetry-stays-hand-rolled.md)). The one-member
+  `PERMITTED_FLUE_PACKAGES` allowlist (`['@flue/runtime']`, exact set equality
+  against `package.json`) refuses `@flue/opentelemetry`, so Flue spans go
+  through the tracer every usecase already writes to rather than a second
+  exporter with its own sampling, retention and credentials. It is NOT what
+  keeps content off those spans: subpaths of a permitted package are permitted
+  by decision, `@flue/runtime/telemetry` among them, and that subpath ships the
+  helpers that would put prompts, answers and tool arguments on spans —
+  `tests/guards/flue-telemetry-carries-no-content.test.ts` is what refuses
+  them, structurally, because a version that forwarded content would pass every
+  functional test. A decision, not a gap. F12, the stale comment in `usecases/workflow-runs.ts` claiming no
+  definition sets `driver`, is fixed. F5 is closed (Layer 1).
 - **The canvas, the rule builder and agent profiles are the authoring
   surfaces.** Profiles (Claude engines Step 1a): approved by a second person,
   frozen by trigger, tools only narrow. Only the Tool Runner runs one (Step
   2c, #4512); Flue does not, by owner decision of 2026-10-26. The surface is
   behind `AGENT_PROFILES` + `AGENT_PROFILES_TENANTS`, or, with the variable
   unset, the workspace organization's own switch (#4557).
-- Missing: a canvas on which to draw what an agent does. The process canvas
-  can invoke an agent (an `agent` node owns an `INVOKE_AGENT` rule), and agents
-  are created through two forms (registration, and the Behaviour tab's profile),
-  but no agent can be seen on a canvas and nothing composes an agent's flow
-  visually. [`langflow.md`](./ai-architecture/langflow.md) plans it in the
+- **A drawn flow exists as data, and an agent can be viewed on the canvas,
+  read-only** (agent-flow canvas Phases 1 and 2, 2026-11-11).
+  `AgentProfileVersion.flowJson` is encrypted, frozen by trigger and covered by
+  the version hash (still the `instructionsHash` column, unchanged for a
+  version without a flow); with a flow, the version's tool list is derived
+  from it, and the approver sees the flow as text, diffed against the version
+  in force. A flow version runs on **no engine** until Phase 5: admission
+  refuses it with `PROFILE_FLOW_NOT_RUNNABLE` (`runsFlows`, false for every
+  engine), and so does the worker's pinned path. There is no checkpoint node
+  kind (D-L2-2). The read-only agent view lives at
+  `/t/:slug/processes/agents/:agentId`, inside the process-canvas module, with
+  its own node taxonomy (`AGENT_VIEW_NODE_TAXONOMY`); ESLint refuses
+  `@xyflow/*` across the agent-flow paths.
+- **A flow is drawn on the canvas and previewed** (agent-flow canvas Phases 3
+  and 4, 2026-11-12). The editor saves a drawn flow as a new DRAFT profile
+  version through the profile usecase and its permission, shows the engine's
+  own run message beside it, and puts the approver's diff in the editor. The
+  panel says a flow version runs on no engine (`PROFILE_FLOW_NOT_RUNNABLE`).
+- Missing: the Behaviour tab's "Open on canvas" link and the approver's diff
+  for form-edited versions (Phase 2.3, 2.4), the stored layout record (3.2),
+  and running a flow with checkpoint enforcement (Phase 5). [`langflow.md`](./ai-architecture/langflow.md) plans it in the
   product as a second editor for the agent profile (D-L2-1, decided
   2026-10-29); Langflow itself is not adopted.
 - The process canvas is switching drawing engines tenant by tenant, from
@@ -235,8 +347,15 @@ request touching Flue re-checks them.
   the Laya estate was retired on 2026-10-14, so model usage in production is
   the API keys on the external route.
 - **Supervisor/worker exists as subagents** (fan-out capped, tokens charged
-  to the parent); there is no *role* in model selection — a subagent uses its
-  parent's model.
+  to the parent), and **model selection has a role** (D-L3-1, built
+  2026-11-11). The supervisor uses `AGENT_FLUE_MODEL`; the worker (Flue
+  subagents) uses the optional `AGENT_FLUE_WORKER_MODEL` on the same external
+  provider and key, or the supervisor's model when it is unset
+  (`worker_fallback`). No worker model is configured by default, so **the
+  worker runs on the supervisor's model today**. `LOCAL_ONLY` uses the local
+  route for both roles or refuses both. Both roles' models are recorded in
+  `WORKFLOW_RUN_STARTED`. No sub-processor changed: the variable is noted on
+  the existing Anthropic row.
 - **Claude.** `@anthropic-ai/sdk 1.3.0` powers the **Tool Runner** engine
   (`src/lib/agentic/tool-runner/`), built in Step 2b and turned on in Step 2c
   (#4512): `DRIVER_IMPLEMENTED['tool-runner']` is true and `TOOL_RUNNER` is a
@@ -247,9 +366,11 @@ request touching Flue re-checks them.
   are designed (living docs, #4135), not built. The harness scanner
   recognises customers' Agent SDK agents (Step 3b, #4476). Every model call is
   preceded by the kill switch and the caps (#4196) and writes an Art 12 row.
-- Missing: the role axis, with the worker role served by a model through API
-  keys; cuOpt's seam, if a feature wants one. Nemotron as the worker is
-  optional Layer 5 work (D-L3-2, deferred 2026-10-31).
+- Missing: a worker model chosen by records (nemotron-reasoning Phase 3,
+  after Inspect's comparison records). cuOpt is declined (D-L3-3, 2026-11-11:
+  no optimisation problem in the product, none at GPU scale; a CPU seam only if
+  a feature wants one). Nemotron as the worker is optional Layer 5 work
+  (D-L3-2, deferred 2026-10-31).
 
 ### Layer 4 — Knowledge & deep RAG
 
@@ -258,14 +379,92 @@ request touching Flue re-checks them.
   audited MCP read tools (`src/lib/mcp/tools/`), questionnaire grounding
   (titles only), vendor-doc and risk-assessment AI features — each a
   provider behind `AI_*_PROVIDER` defaulting to `stub`.
-- **No vector store, no embedding, no parser, no RAG eval.** The 18
-  `embedding` hits are prompt/UI wording; `weaviate`, `pgvector`, `ragflow`,
-  `langfuse` return nothing. Business content is encrypted by the manifest;
+- **Three knowledge seams exist, off by default** (2026-11-11); the vector
+  store's own index job and query path now call the first two (2026-11-16). Business content is encrypted by the manifest;
   tenant isolation is RLS + repository filters — both in Postgres.
-- **Observability is OTel + Sentry + the decision log**; Flue telemetry is
-  content-free by guard; prompts are code and profiles are frozen rows.
-- Missing: RAGFlow, Nemotron Retriever, Weaviate, Langfuse. LlamaIndex is
-  not planned (see [`langfuse.md`](./ai-architecture/langfuse.md) § Fit).
+  - *Embedding and rerank* (`src/lib/ai/embeddings/`, Retriever Phase 1.1–1.5
+    and 2.1): residency-routed providers, a stub default, a TEI client, a
+    `RerankProvider` with fallback, a revision key carrying the rerank model,
+    and a served-model check that compares the container's `model_id`
+    exactly. Operator variables `AI_EMBED_LOCAL_*` and `AI_RERANK_LOCAL_*`.
+    It dials an in-deployment address through the shared in-deployment rule
+    (`src/lib/ai/in-deployment-service.ts`), not through `safeFetch`, as G6
+    as amended requires. There is no external embedding route, so no sub-processor changed.
+    Phase 1.1 is in two steps (D-L4-11, owner, 2026-11-15): the patched TEI
+    image `tei-embed` runs is built, gated and published from
+    `deploy/tei-embed/` (since 2026-11-15), and the service is in the
+    repo-canonical Compose file, at 2,560 MiB and 1.0 CPU, pinned to the
+    digest that workflow published (1.1b, `ghcr.io/rodnapamet/tei-embed@sha256:90f7be79…3b55`).
+    The owner's `VM apply` put it on the VM on 2026-11-15 (1.1c; healthy in
+    `VM check` `containers`), and the app calls it only once the operator sets
+    `AI_EMBED_LOCAL_*`. Timed there the same day (retriever 0.5a): about 0.7 s
+    per 512-token passage whatever the batch size, so the indexing pipeline
+    embeds 8 passages per call under the seam's 15 s deadline (owner,
+    2026-11-15; `weaviate.md` Phase 2). No `tei-rerank` exists (Phase 2).
+  - *Vector store* (`src/app-layer/repositories/VectorRepository.ts`, the only
+    entry, held by ESLint `local/vector-store-single-seam`): pgvector first
+    (D-L4-1), on only when `VECTOR_STORE_BACKEND` is exactly `pgvector`.
+    Every Postgres the repository runs is the self-built
+    `ghcr.io/rodnapamet/postgres-pgvector:16-alpine` (Phase 1.1–1.2, D-L4-8),
+    and migration `20261115190000_knowledge_vector_store` creates the
+    extension, `KnowledgeChunk` (text in the encryption manifest) and
+    `KnowledgeChunkEmbedding` (vectors only, D-L4-2) under RLS, with one partial
+    HNSW index for `multilingual-e5-small` at 384 dimensions (Phase 1). The
+    `knowledge-index` job chunks and embeds approved policy versions, the
+    purges follow the source, and `scripts/knowledge-reindex.ts` rebuilds a
+    tenant's vectors from the stored text (Phase 2; 2.5's later sources wait
+    on the parser). The query path is built (Phase 3.1–3.5, 2026-11-16): a
+    filtered search that keeps a small tenant's recall (exact below 2,000
+    vectors, `relaxed_order` iterative scans above), the read usecase
+    `searchKnowledge`, the MCP read tool `search_knowledge` that every engine
+    and the assistant reach through the funnel and the guards, and its mount
+    gate, which offers the tool only with a passing RAG evaluation record for
+    the deployment's retriever revision, held to D-L4-9's floors (decided
+    2026-11-16 to gate the tool too). The Ragas nightly keys its output by
+    that same revision and reads its figures against the same floors, so a
+    record it writes is the one the gate looks for, and its answer stage asks
+    the assistant in process with the tool mounted by the evaluation's own
+    scoped decision, which no deployed app can open. No record exists — no
+    keyed night has run — and the tool is in no catalogue. See
+    [`weaviate.md`](./ai-architecture/weaviate.md) § Current state.
+  - *Document parsing* (`src/lib/ai/parsing/`, parser Phase 1.1, 1.2, 1.4,
+    1.7): a `DocumentParser` seam with a paragraph stub as the default and a
+    docling-serve client (D-L4-4), read from `DOC_PARSER_BASE_URL` /
+    `DOC_PARSER_API_KEY`. The client dials through the in-deployment rule
+    (`src/lib/ai/in-deployment-service.ts`, G6 as amended), so a Docling
+    container on the Compose network is reachable and an outside address is
+    refused. No parsing service is deployed (Phase 1.3, held by C1).
+- **The RAG and retriever evaluation sets exist; the retriever benchmark has
+  run; the RAG harness is built and no RAG record exists** (Ragas Phase 1,
+  2026-11-16: the nightly measures D-L4-9's retrieval figures, keyed by the
+  revision the `search_knowledge` gate compares, asks the product its
+  questions in process through `search_knowledge`, and judges the answers;
+  no keyed night has run). Ragas Phase 0 put a 52-case set at
+  `evals/rag/sets/seed-policies.json` and a record schema
+  (`src/lib/ai/evals/rag-record.ts`), grounded on the three seeded policies
+  (the seed has no questionnaire answer-library rows). The D-L4-3 benchmark
+  (`.github/workflows/retriever-benchmark.yml`, dispatch-only;
+  `scripts/retriever-benchmark/`) ran on 2026-11-13 (run 43413063708, `main`
+  `32d3038`) over the synthetic seed set
+  `tests/fixtures/rag/retriever-seed-set.json` (`sha256:297f425a…3e92f`): 250
+  cases, 200 English and a 50-case Bulgarian slice that translates 50 of them
+  over the same English corpus (BG → EN). It compared small open models only,
+  English-only and multilingual, as D-L4-3's amendment of 2026-11-13 asks, with
+  the margin applied on the Bulgarian slice as well as overall. **D-L4-3 is
+  decided (owner, 2026-11-13): `intfloat/multilingual-e5-small` embeds and
+  `BAAI/bge-reranker-base` reranks** (recall@10 0.946 overall, 0.840 on the
+  Bulgarian slice; the figures are in the decision log). The 50 Bulgarian
+  translations are accepted unreviewed (owner, 2026-11-13). No Nemotron model
+  was a candidate: none runs on TEI's CPU backend (it refuses Llama- and
+  Mistral-family models), and Nemotron is optional Layer 5 work only.
+- **Observability is OTel + Sentry + the decision log**, and that is the
+  decided end state for traces: OTel-only, no Langfuse service and no
+  sub-processor (D-L4-5, 2026-11-11), with trace content capture off by default
+  for any sink (D-L4-6). Flue telemetry is content-free by guard; prompts are
+  code and profiles are frozen rows.
+- Missing: a deployed rerank or parsing service; a RAG harness and record (so
+  `search_knowledge`, built, is offered nowhere). LlamaIndex is not
+  planned (see [`langfuse.md`](./ai-architecture/langfuse.md) § Fit).
 
 ### Layer 5 — Runtime & infrastructure
 
@@ -273,20 +472,34 @@ request touching Flue re-checks them.
   `clamav`, `app`, `worker`, `watchtower`, `caddy`), repo-canonical
   (`deploy/docker-compose.prod.yml`, `apply.sh`, `check-drift.sh`, #2849);
   plus the OpenShell gateway VM. Images pinned by digest (dependency
-  governance, fifth pillar). CI builds `app`, the worker/scheduler bundle and
-  a `scanner-image`.
-- **The TypeScript API gateway is the Next.js route tree** (582 routes under
-  two authorization layers), and the "microservices" are the Compose services.
+  governance, fifth pillar). CI builds `app` and the worker/scheduler bundle;
+  the harness scanner's image is scanent's (`ghcr.io/rodnapamet/scanent`), and
+  the `scanner-image` job that built Inflect's in-repo copy was removed with it
+  (scanent #26).
+- **The TypeScript API gateway is the Next.js route tree** (every
+  `src/app/api/**/route.ts`, under two authorization layers), and the "microservices" are the Compose services.
 - **No GPU, no vLLM, no Triton, no NIM, no Modal.** `vLLM` appears in comments
   naming what `AI_LOCAL_BASE_URL` may point at.
-- **No container has a memory or CPU limit** (`deploy/docker-compose.prod.yml`,
-  2026-10-31); Redis caps its own data at 256 MB. § Capacity budget plans the
-  limits and the room the completeness services need.
+- **Every container has a memory limit and a CPU cap** (C1, applied
+  2026-11-12, #5324), set from the peaks C0 measured the same day, and `app`,
+  `worker` and the harness scanner re-sized by C1b from 24 hours of measured
+  peaks, the nightly jobs included (2026-11-14): 9,216 MiB of limits across
+  the stack and its overlays, against a 14.5 GB line (§ Capacity budget). The
+  embedding, rerank, parsing, NeMo and PII services the 2026-11-11 wave
+  prepared are each held by the capacity rule, and pgvector adds no container
+  (it is absorbed into `postgres`'s existing 2,048 MiB limit, owner,
+  2026-11-13). `tei-embed` was measured on 2026-11-15 at 2,560 MiB of limit,
+  from CI runners; it is in the canonical file, pinned to its image's digest
+  (1.1b), so the stack and its overlays are limited to 11,776 MiB in all. That measurement was
+  2.5 times its 1 GB estimate, and with it the planned standing additions no
+  longer fit: about 205 MiB over the 14.5 GB line, with the reranker still at
+  an estimate the same ratio says is low. The first addition that would take
+  the canonical file over the line carries C2 (D-CAP-1).
 - **Model usage is LLM API keys.** `inflect-external` is registered from
   `ANTHROPIC_API_KEY` or the OpenRouter key, and `docs/sub-processors.md`
   bounds what each provider receives.
-- Missing for completeness: the capacity budget's measurements and limits
-  (§ Capacity budget). By the owner's decision of 2026-10-31, Layer 5's model
+- Missing for completeness: C2, the resize, only if an addition is measured
+  above its estimate and crosses the line (§ Capacity budget). By the owner's decision of 2026-10-31, Layer 5's model
   serving (a self-hosted model route, the GPU arms other roadmaps deferred,
   Triton, a NIM proof of concept) is optional and starts only after every
   other roadmap is complete. Modal is not adopted.
@@ -303,15 +516,47 @@ request touching Flue re-checks them.
   `*-NON-BLOCKING-UNTIL:` marker **parsed** by a guard).
 - **The product scores customers' agents on a six-level ladder**
   (`harness-ladder.ts`, H0–H5 with named criteria) and does not yet score its
-  own the same way.
-- Missing: Garak, Ragas, ARES, Inspect. SWE-bench measures a capability that
-  is absent and refused.
+  own the same way; D-EV-4 (2026-11-11) decided that it will, and Inspect's
+  Phase 0 defined the first ten governed-run tasks
+  ([`2026-11-11-inspect-first-tasks.md`](./implementation-notes/2026-11-11-inspect-first-tasks.md)).
+  The Inspect harness is built (Phase 1.1–1.5, 2026-11-12): a pinned
+  `inspect-ai` project under `evals/inspect/` that starts runs on Flue and the
+  Tool Runner as the seed agent's bound `iflk_` key, deterministic scorers, the
+  record module `src/lib/ai/evals/inspect-record.ts`, and the
+  `agent-evals.yml` nightly (02:20 UTC, USD 10, D-EV-6). The nightly is off
+  unless the repository variable `AGENT_EVALS_ENABLED` is `true`, and it fails
+  closed without its seed: `scripts/inspect-seed.ts` (1.6) is in review as
+  #5447. No Inspect record exists.
+- **Garak's nightly is built, off by default, and its first run was
+  dispatched on 2026-11-13** (garak Phases 0–1, partly):
+  `.github/workflows/garak.yml` (01:15 UTC and dispatch, never from a pull
+  request) runs a pinned garak in a `python:3.12-slim` image by digest against
+  the assistant's existing non-streaming route,
+  `POST /api/t/:slug/assistant/ask`, with a pinning guard and a parsed
+  `GARAK-NON-BLOCKING-UNTIL: 2027-02-28` marker. It spends at most its USD 2.50
+  share of the shared USD 6.50 nightly cap (D-EV-11 as amended 2026-11-17), metered by the shared cost
+  meter (`evals/cost-meter/`), at 40 requests per role. The schedule runs only
+  while the repository variable `GARAK_ENABLED` is `true`; a dispatch always
+  runs. Its key is `GARAK_CI_ANTHROPIC_KEY`, falling back to the existing
+  `ANTHROPIC_API_KEY` secret when that is unset. The baseline (0.4), the
+  agent-run adapter route (1.1b) and the re-enabled-probe proof (1.5) are
+  open.
+- **Ragas has its set and record format** (Phase 0, Layer 4 above), the
+  shared cost meter it splits the nightly cap through (0.6), and its harness
+  and `rag-eval.yml` nightly (Phase 1, off unless `RAG_EVAL_ENABLED` is
+  `true`), whose judge reaches the model only through the metering proxy. Its
+  key is `RAGAS_ANTHROPIC_API_KEY`, falling back to the existing
+  `ANTHROPIC_API_KEY` secret when that is unset (D-EV-2, amended 2026-11-16). Web Bot Auth's conformance vectors are at
+  `evals/web-bot-auth/vectors.json`; the PII record at `evals/pii/records/`.
+- Missing: an ARES labelled set, an Inspect record, a RAG record, a completed
+  keyed garak run. SWE-bench is declined (D-EV-5, 2026-11-11): there is no
+  capability to measure.
 
 ### Existing roadmaps this one indexes, not replaces
 
 | Roadmap | Tracks | Status |
 | --- | --- | --- |
-| Flue × Inflect integration plan (artifact, v4, 2026-10-09 audit) | Flue Phases 1–3 | shipped; residuals F3/F5/F12 carried here |
+| Flue × Inflect integration plan (artifact, v4, 2026-10-09 audit) | Flue Phases 1–3 | shipped; F5 closed and F12 fixed 2026-11-11; F3 recorded as a decision 2026-11-15 |
 | `docs/claude-agent-sdk-design.md`, `claude-tool-runner-design.md`, `claude-managed-agents-design.md` | Claude engines, #4135 | the Tool Runner built and on (Steps 2a–2d, the flag since 2c, #4512), the connect wizard and the scanner recogniser (3a, 3b) on `main`; the Agent SDK engine (Phase 4) and Managed Agents (Phases 5–6) designed |
 | `docs/agentic-iam-roadmap.md` | agentic IAM, #3654 | in progress |
 | `docs/sap-agent-integration-roadmap.md` | SAP routes, #3859 | Phase 0 re-scoped 2026-10-20 |
@@ -358,15 +603,35 @@ a new framework cannot miss one; G12 and G13 are the owner's decisions of
   line in § Capacity budget, in the same pull request. **Python lives in
   images and `deploy/`, never in the app** — every Python framework here
   (Presidio, NeMo, RAGFlow, Langflow, garak, Ragas, ARES, Inspect) is a
-  container or a deploy script.
-- **G6 — Egress is `safeFetch`, hosts are config.** Every new outbound host
-  joins `tests/guards/ssrf-egress-coverage.test.ts`'s population; base URLs are
+  container or a deploy script. Still true after the 2026-11-11 wave: the
+  Presidio recognisers live in the detector image's sources
+  (`guards/presidio/`), garak runs in a `python:3.12-slim` image pinned by
+  digest in CI, and the retriever benchmark drives TEI's container from
+  TypeScript; the app gained no Python.
+- **G6 — Egress is `safeFetch` outside the deployment, a perimeter dial inside
+  it; hosts are config.** Every new outbound host joins
+  `tests/guards/ssrf-egress-coverage.test.ts`'s population; base URLs are
   operator config or code constants, never tenant-writable; reads are
   byte-capped and deadline-bounded (the MCP client is the pattern).
-- **G7 — Tenant data gets RLS and a two-tenant behavioural test.** A store
-  outside Postgres (Weaviate) proves isolation with the same test shape at
-  every layer that touches it, and is **rebuildable from Postgres** so losing
-  it loses nothing (vectors-only rule).
+  `safeFetch` stays the rule for **every host outside the deployment**. An
+  **in-deployment service** (owner amendment, 2026-11-12) — a URL the operator
+  sets, read by exactly one module, never tenant-writable — must resolve to an
+  address **inside** the deployment (private, loopback or ULA, and every
+  address it resolves to), and is dialled with a deadline and a byte cap that
+  aborts the transfer rather than truncating it. The one dial is
+  `src/lib/ai/in-deployment-service.ts`, whose address test is the inverse of
+  `safeFetch`'s: `safeFetch` admits only public addresses, which for a service
+  that must stay inside the deployment is exactly the wrong set. Its
+  `IN_DEPLOYMENT_SERVICES` table names each service, its variable and its one
+  reader — the parser, NeMo, the embedder, the reranker and the PII detector —
+  and `tests/guards/ssrf-egress-coverage.test.ts` derives each variable's
+  readers from the tree and requires exactly one.
+- **G7 — Tenant data gets RLS and a two-tenant behavioural test.** Vectors
+  live in Postgres under RLS (pgvector, D-L4-1). A store outside Postgres —
+  Weaviate, only if the vector store's conditional Phase 4 is triggered —
+  proves isolation with the same test shape at every layer that touches it,
+  and is **rebuildable from Postgres** so losing it loses nothing
+  (vectors-only rule, D-L4-2).
 - **G8 — Long work runs in the worker.** BullMQ jobs under `runJob()`,
   resumable under the Epic E drain; never the web tier.
 - **G9 — Off by default, fail closed, two keys where a customer's data is the
@@ -455,10 +720,10 @@ flowchart LR
   | Layer 5 taken up (optional, after completion) | also `inflect-local`, registered from `AI_LOCAL_*` and served by an operator GPU VM | unchanged, unless an owner decision routes a role to the local model | the local route |
 
 - **The deferred GPU arms.** Each roadmap that planned a GPU arm states what it
-  completes without one: the retriever on CPU TEI, Morpheus as a CPU
-  detector, cuOpt as a CPU seam or a recorded decline, the worker role on an
+  completes without one: the retriever on CPU (the D-L4-3 winner), Morpheus as a CPU
+  detector, cuOpt by its recorded decline (D-L3-3), the worker role on an
   API-key model. The arms themselves (Nemotron as the worker, the retriever's
-  GPU phase, Morpheus's GPU scoring, cuOpt on a GPU, Triton) are
+  GPU phase, Morpheus's GPU scoring, Triton; cuOpt on a GPU went with D-L3-3) are
   [`modal-inference.md`](./ai-architecture/modal-inference.md) Phase 3.
 - **De-NIM, restated.** No NIM container in production. If Layer 5 is taken
   up, NIM may serve a proof of concept on a GPU VM under the NVIDIA Developer
@@ -476,18 +741,20 @@ below, outside the optional wave, shows a "Phase on `main`" at or past its
 the child wins if the two disagree. Five rules make the definition hold:
 
 - **No completeness phase needs Layer 5** (G12). Where a roadmap planned a GPU
-  arm, it is complete without it: the retriever on CPU TEI, Morpheus as a CPU
-  detector, cuOpt as a CPU seam or a recorded decline, the worker role on a
+  arm, it is complete without it: the retriever on CPU (the D-L4-3 winner), Morpheus as a CPU
+  detector, cuOpt by its recorded decline (D-L3-3), the worker role on a
   model reached through API keys.
 - **Layer 5, here, means its model serving.** The Layer 5 box also holds the
   VM everything else runs on, and that VM's capacity budget is part of
   completeness, because every container the other roadmaps add spends from
   it. Only the self-hosted model route, the GPU arms, Triton and the NIM proof
   of concept are optional.
-- **A recorded decision can be the completing phase.** SWE-bench, NemoClaw,
-  cuOpt and Langfuse may complete at Phase 0 by a recorded decline or
-  narrowing, and ARES at Phase 2 by a recorded failure to calibrate. A
-  decision is a result, not a gap.
+- **A recorded decision can be the completing phase.** SWE-bench (D-EV-5),
+  cuOpt (D-L3-3) and Langfuse (D-L4-5) completed at Phase 0 by recorded
+  decisions on 2026-11-11. NemoClaw's Phase 0 found two tightenings worth
+  taking, so it completes at Phase 1, not by its decision alone. ARES may
+  complete at Phase 2 by a recorded failure to calibrate. A decision is a
+  result, not a gap.
 - **Two rows are outside the definition.** The Claude engines are tracked by
   their own plan (#4135); this roadmap asks of them only an Inspect record for
   the Tool Runner ([`inspect.md`](./ai-architecture/inspect.md) Phase 2).
@@ -500,10 +767,11 @@ the child wins if the two disagree. Five rules make the definition hold:
 ### Capacity budget
 
 Every phase that adds a container to the production VM spends from one budget
-(G5). Until 2026-10-31 there was no budget, and there are no limits: no service
-in `deploy/docker-compose.prod.yml` sets a memory or CPU limit, and only Redis
-caps its own data, at 256 MB. So the kernel's out-of-memory killer is the
-only memory limit, and it picks which process to kill. The one precedent for a
+(G5). Until 2026-10-31 there was no budget, and until C1 (2026-11-12) there
+were no limits: no service in `deploy/docker-compose.prod.yml` set a memory or
+CPU limit, and only Redis capped its own data, at 256 MB, so the kernel's
+out-of-memory killer was the only memory limit and picked which process to
+kill. Since C1 every container has both. The one precedent for a
 limited model service is the retired Laya estate, which ran at 1 vCPU and
 4 GB.
 
@@ -525,47 +793,132 @@ or under the host's memory minus 1.5 GB for the OS, Docker and the page cache:
 always keeps a core. That is the Laya precedent. A pull request that would
 cross the memory line carries D-CAP-1's answer in the same pull request.
 
+**The window rule** (owner, 2026-11-13). A batch service that runs only inside
+a scheduled window, started by a host timer and stopped when its window ends,
+does not count against the standing line. During its window, the always-on
+services' measured peaks over that same window (C1b measures them across the
+nightly jobs) plus the batch service's own limit stay under the line, and two
+windows never overlap. The document parser is the first such service.
+
 **The lines.** The ceilings are planning estimates, labelled as such, until a
 phase measures its service. "Measured" replaces an estimate in the pull request
 that measures it.
 
 | Line | Containers | Added by | Memory ceiling | CPU cap | Basis |
 | --- | --- | --- | --- | --- | --- |
-| Today's stack | `postgres`, `pgbouncer`, `redis`, `clamav`, `app`, `worker`, `watchtower`, `caddy` | on `main` | **not measured** | none | C0 measures each peak |
-| Embeddings | `tei-embed` | Retriever 1 | 5 GB (estimate) | 1.0 | a 1B-parameter model (`llama-nemotron-embed-1b-v2`) is about 4 GB of weights at fp32, before runtime overhead |
-| Reranking | `tei-rerank` | Retriever 2 | 5 GB (estimate) | 1.0 | the same size class; Retriever 0.1 confirms it |
-| Vectors | `weaviate` | Weaviate 1 | 1.5 GB (estimate) | 0.5 | vectors held in memory; the embedding dimension (384 to 2048, configurable) moves it most |
-| Parsing | a parsing-only service (D-L4-4) | RAGFlow 1 | 3 GB (estimate) | 1.0 | RAGFlow's full reference stack (server, search engine, MySQL, MinIO, Redis) is a second product and is not budgeted here |
-| PII detection | `presidio` | Presidio 1 | 1.5 GB (estimate) | 1.0 | a large spaCy pipeline plus recognisers |
+| Today's stack | `postgres`, `pgbouncer`, `redis`, `clamav`, `app`, `worker`, `watchtower`, `caddy` | on `main` | **8,448 MiB of limits** (C1, applied 2026-11-12; `app` and `worker` re-sized by C1b, 2026-11-14): clamav 3,072, postgres 2,048, app 1,024, worker 1,024, redis 768, caddy 256, pgbouncer 128, watchtower 128. `app` and `worker` are **measured**: max `memory.peak` 593 and 385 MiB over 24 hours of recorder history, parser and nightly windows included, so 1.5 times is 890 and 578; the worker is held at 1,024 rather than 768 until the history holds a Sunday and a month start. clamav's peak is 2,099 MiB (its 3,072 covers a signature reload), postgres's 343 | app and postgres 1.5; clamav, worker, redis, caddy, pgbouncer 1.0 (clamav and worker at half CPU weight); watchtower 0.25 | C0 (`VM capacity` run 43209382354), C1 (#5324, re-measured in run 43253038007) and C1b (`VM capacity` history run 43566712099, 2026-11-14; `docs/implementation-notes/2026-11-14-capacity-c1b.md`) |
+| Overlays | `harness-scanner`, `harness-egress`, `legacy-mcp-proving` | on `main` | **768 MiB of limits** (C1; the scanner re-sized by C1b): 256, 256 and 256; peaks 134, 85 and 108 MiB | 1.0 (half weight), 0.5, 0.5 | the same runs. The scanner's 256 is owner-approved (2026-11-13): peaks 155 (C0) and 134, 1.5 times 233. The OrangeHRM lab left the VM on 2026-11-12 |
+| Embeddings | `tei-embed` | Retriever 1 (1.1: the patched image is built and published from `deploy/tei-embed/`, D-L4-11; 1.1b: the service is in the canonical file, pinned to the published digest; 1.1c: on the VM since 2026-11-15, by the owner's `VM apply`) | **2,560 MiB limit**, set from a measurement on a CI runner, not the VM: `memory.peak` 1,600–1,664 MiB over five runs with the service's exact flags at 1.0 CPU after 64 × 512-token batches (anonymous 1,120–1,180, page cache 465: the model file), 1.5 times 1,664 is 2,496, rounded up. The 1 GB estimate was wrong: under a 1g limit TEI was OOM-killed while loading. **On the VM** (2026-11-15, `VM check` `tei-embed-timing`, run 43757070861): `memory.current` 880 → 1,269 MiB under a serial load of up to 64 × 512-token passages, `memory.peak` 1,601 MiB, set before the load, no OOM kill. **The limit stays 2,560 MiB until a full day of the capacity recorder's figures is read on 2026-11-16 at 17:30 UTC**; 2,048 is the likely target (owner, 2026-11-15) | 1.0 (half weight) | `intfloat/multilingual-e5-small` (D-L4-3, decided 2026-11-13): 118M parameters, 470 MB of fp32 weights. TEI's CPU build serves through ONNX Runtime (`onnx/model.onnx`), which holds about 2.5 times the weights in anonymous memory. `docs/implementation-notes/2026-11-15-retriever-tei-embed.md` |
+| Reranking | `tei-rerank` | Retriever 2 | about 1.5 GB (estimate until measured; **likely low**: the embedder measured about 3.5 times its weights in `memory.peak`, and the same ratio on these 1.1 GB of weights is about 3.9 GB) | 1.0 | `BAAI/bge-reranker-base` (D-L4-3, decided 2026-11-13): 278M parameters, weights about 1.1 GB at fp32, plus the TEI engine |
+| Vectors | none: pgvector inside `postgres` (D-L4-1, 2026-11-11) | Vector store 1 | 0 added: absorbed into `postgres`'s existing 2,048 MiB limit (owner, 2026-11-13). Measured `postgres` peaks are 406 MiB (C0) and 332 MiB (2026-11-13); with about 0.5 GB of vectors that is about 918 MiB, and 1.5 times it (the reset rule) about 1,377 MiB, still under the limit. Re-checked once vectors are loaded | `postgres`'s own | a 1024-dimensional `float4` vector is 4 KiB, so 100k chunks are about 0.4 GB of heap plus an HNSW graph of similar order, served from shared buffers and the page cache; index builds take `maintenance_work_mem`, capped for the build. No container is added, so the "no new container until C1" rule is not crossed. **The image changes:** no Postgres image in the repository ships pgvector (every one is `postgres:16-alpine`); a repo-built image `FROM postgres:16-alpine` compiling pgvector (`deploy/postgres/Dockerfile`, built, smoke-tested and Trivy-gated in CI since 2026-11-15, published as a moving line tag rebuilt weekly and on every upstream digest move, D-L4-8) replaces all of them in the pull request after its first publish, a SIGNIFICANT change. Weaviate's 1.5 GB line returns only if the vector store's conditional Phase 4 is triggered |
+| Parsing | a Docling-class parsing-only service (D-L4-4, 2026-11-11), `docling-serve-cpu`, **nightly batch only** (00:15–01:45 UTC, the window rule, owner 2026-11-13) | Parser 1 | 0 standing; 3 GB inside its window (estimate, until the parser's Phase 0 measures it) | 1.0 | layout and table models on CPU; the image is about 4.4 GB on disk. RAGFlow's full reference stack (server, search engine, MySQL, MinIO, Redis) is a second product and is not budgeted here |
+| PII detection | `presidio` | Presidio 1 | 0.7 GB (estimate) | 1.0 | the small spaCy pipelines the Presidio roadmap plans (`en_core_web_sm`; `xx_ent_wiki_sm` for Bulgarian, which has no spaCy pipeline of its own) plus the recognisers; the earlier 1.5 GB assumed a large pipeline (corrected 2026-11-13). The PII record's floors (D-L1-11) decide whether the small pipelines are enough |
 | Guard rails | `nemo-guardrails` | NeMo 1 | 1 GB (estimate) | 0.5 | LLM-free rails; LLM-backed rails call the external API, not this VM |
-| Traces | Langfuse self-host | Langfuse 1 | **does not fit** | — | Langfuse's own guide sets 8 GiB for ClickHouse alone, plus web, worker, Postgres and blob storage. D-L4-5 picks Cloud EU or OTel-only, or a VM of its own |
-| In-app work | none (Morpheus CPU detector, cuOpt CPU seam, Web Bot Auth, Agent Pay, the agent-flow canvas) | various | inside `app` / `worker` | — | measured with today's stack |
+| Traces | none: OTel-only (D-L4-5, 2026-11-11) | — | 0 | — | traces stay on the existing OTel export: no Langfuse container, no sub-processor. Self-hosted Langfuse would not have fitted (its own guide sets 8 GiB for ClickHouse alone, plus web, worker, Postgres and blob storage) |
+| In-app work | none (Morpheus CPU detector, Web Bot Auth, Agent Pay, the agent-flow canvas, the seams' clients) | various | inside `app` / `worker` | — | measured with today's stack |
 | Evaluations | none on the VM | Garak, Ragas, ARES, Inspect | 0 | — | they run in CI images (G5, G11) |
 
-**What the arithmetic says.** The completeness additions alone come to about
-17 GB of estimated ceilings, above the 14.5 GB line before today's eight
-services are counted. Two embedding-class models at fp32 make up most of it.
-So the completeness target, as planned, does not fit this VM. Something has to
-give, and that is D-CAP-1:
+**What the arithmetic says.** As first planned, the completeness additions
+alone came to about 17 GB of estimated ceilings, above the 14.5 GB line before
+today's eight services were counted; two embedding-class models at fp32 made up
+most of it. The owner's decisions of 2026-11-11 (pgvector inside Postgres
+instead of a vector container, a small open retriever model unless recall says
+otherwise, a parsing-only service, traces OTel-only) brought the estimate to
+about 8.5 GB with the smallest open models, or up to about 12 GB with the
+largest small candidates. D-L4-3's amendment (2026-11-13) removed the Nemotron
+pair, which would have taken it to about 16 GB.
+C0 and C1 answered the fit on 2026-11-12: today's stack was limited to
+10,496 MiB, leaving about 4 GB of the 14.5 GB line unallocated, so even 8.5 GB
+did not fit beside it. C1b (2026-11-14) re-sized `app` and `worker` from 24
+hours of measured peaks, the parser and nightly windows included, and cut the
+harness scanner from 512 to 256 MiB (owner-approved): today's stack and its
+overlays are now limited to 9,216 MiB.
+
+Recomputed after C1b and the decisions of 2026-11-13 (the smaller pieces below,
+D-L4-3 decided on `multilingual-e5-small` + `bge-reranker-base`, pgvector
+absorbed into `postgres`'s existing limit, the parser in its nightly window):
+
+| | MiB |
+| --- | --- |
+| Today's limits (C1, re-sized by C1b) | 9,216 |
+| Embedding (the 2,560 MiB limit, from a CI-runner measurement, 2026-11-15) | 2,560 |
+| Reranking, about 1.5 GB (estimate) | 1,536 |
+| PII detection, 0.7 GB (estimate) | 717 |
+| Guard rails, 1 GB (estimate) | 1,024 |
+| Vectors (absorbed by `postgres`) and the parser (in its window) | 0 |
+| **Total** | **15,053** |
+
+The standing additions come to 5,837 MiB. **The embedder's measurement
+(2026-11-15) crossed the plan:** at 2,560 MiB against its 1,024 estimate, the
+planned total is about 205 MiB over the 14.5 GB line (14,848 MiB) and about
+586 MiB over the stricter reading, the measured host memory minus 1.5 GB
+(16,003 − 1,536 = 14,467 MiB,
+`docs/implementation-notes/2026-11-12-capacity-c1.md`), and the reranker's
+1,536 is likely low by the same ratio. What the canonical file holds is not
+over: today's limits plus `tei-embed`, pinned in the file since 1.1b, are
+11,776 MiB, which the guard holds.
+Under D-CAP-1 as decided (measure, take the smaller pieces the records allow,
+then resize), the first addition that would take the canonical file over the
+line carries C2 in its own pull request; the reranker (Phase 2) is the likely
+one. Until 2026-11-15 the recommendation was no resize, from the 13,517 MiB
+the estimates gave.
+
+**The window rule, checked.** The always-on containers' highest `memory.peak`
+over the 00:15–01:45 UTC parser window (C1b, 9 of 9 recorder passes) sum to
+3,881 MiB: app 593, worker 385, clamav 2,099, postgres 343, harness-scanner
+134, harness-egress 85, legacy-mcp-proving 108, caddy 51, redis 30, watchtower
+39, pgbouncer 14. With the future standing services at their limits (4,301)
+and the parser's 3,072 that is 11,254 MiB, about 3.2 GB under the stricter
+line. `app` and `worker` restarted inside the window (Watchtower), so their
+figures cover short lifetimes; the margin is wide enough that this changes
+nothing.
+
+D-CAP-1's options, as decided:
 
 - **Resize** to `e2-highmem-4` (4 vCPU, 32 GB). This doubles the machine, and
   its cost, and keeps one Compose file.
 - **A second CPU VM** for the model services (embedding, reranking, parsing,
   PII). The request path's VM stays as it is, at the price of a second
   repo-canonical deployment, an internal TLS hop and its own drift check.
-- **Smaller pieces.** Smaller open embedding and reranking models if
-  Retriever 0's recall holds (a change to D-L4-3), quantised weights, a
-  parsing-only service rather than RAGFlow, Langfuse OTel-only.
+- **Smaller pieces.** Smaller open embedding and reranking models while their
+  recall holds (this is D-L4-3 as decided, not a change to it), quantised
+  weights; the parsing-only service (D-L4-4) and traces OTel-only (D-L4-5) are
+  already taken.
 
-The default, until the owner decides, is in that order of preference: measure
+**D-CAP-1, decided 2026-11-12 (owner):** in that order of preference, measure
 first (C0 and Retriever 0), take the smaller pieces the records allow, and
-resize when the measured sum still crosses the line. Self-hosted Langfuse never
-goes on the production VM.
+resize to `e2-highmem-4` when the measured sum still crosses the line. A second
+VM only if memory alone cannot fit. Self-hosted Langfuse never goes on the
+production VM.
+
+**The smaller pieces, taken 2026-11-13 (owner):**
+
+- **The parser runs as a nightly batch.** A host timer starts it at 00:15 UTC
+  and stops it at 01:45, clear of the 01:53 and 02:00 jobs. The worker's
+  indexing job drains the day's queued documents inside the window. Outside it
+  a queued document waits: the parser's outage fallback (the paragraph stub) is
+  for a failure inside the window, never for "not the window", so a new upload
+  is searchable the next morning rather than indexed from poor text. Counted
+  under the window rule, not the standing line.
+- **The reranker is `bge-reranker-base`** (D-L4-3, decided 2026-11-13), the
+  smaller of the two candidates: about 1.1 GB of weights at fp32 against about
+  2.3 GB for `bge-reranker-v2-m3`, which ranks better (MRR@10 0.936 against
+  0.863 with the same embedder) and is the alternative if the VM is ever
+  resized for another reason. That is not a commitment.
+- **Presidio uses the small spaCy pipelines** its roadmap plans; its capacity
+  line is corrected from 1.5 to 0.7 GB. Its record's floors (D-L1-11) still
+  decide whether they are enough.
+- **Every container's limit is reset to 1.5 times its measured peak** after
+  C1b's re-measure across the nightly jobs, not only `app` and `worker`. Done
+  in C1b (2026-11-14) where a service's mechanics allow: `app`, `worker` and
+  the scanner moved; clamav (signature reload), postgres (pgvector, owner),
+  redis (AOF fork) and the services at their floors kept their limits, each
+  for the reason its row in the C1b note gives.
 
 **The budget's own phases** (a status-board row; complete at C1, and C2 if
 needed):
 
-- [ ] **C0 — measure.** On the VM: each container's peak memory and CPU over a
+- [x] **C0 — measure** (done 2026-11-12, `VM capacity` run 43209382354; the figures are in the table above). On the VM: each container's peak memory and CPU over a
       working day, including the nightly jobs (vendor monitor 02:00, identity
       chain 03:00–05:00), with free memory and disk. Record the figures in
       this table, replacing "not measured". The `VM capacity` workflow
@@ -575,13 +928,22 @@ needed):
       and page-cache memory, average CPU and OOM kills, and optional samples.
       A session cannot do it itself: this environment's proxy carries HTTPS
       only, so no SSH or IAP tunnel reaches the VM from a session.
-- [ ] **C1 — limit today's stack.** A memory limit and CPU cap on each of the
+- [x] **C1 — limit today's stack** (done 2026-11-12: #5324, applied the same day, every container limited; C1b re-measured `app` and `worker`, #5327). A memory limit and CPU cap on each of the
       eight services, at 1.5× its measured peak, in
       `deploy/docker-compose.prod.yml`, applied with `deploy/apply.sh`. A
       structural Compose change, so it carries a rollback plan: revert the
       file and apply.
-- [ ] **C2 — D-CAP-1's answer, before the first addition that crosses the
-      line.** The resize, the second VM or the smaller pieces, in the pull
+- [x] **C1b — re-size from measured nightly peaks** (done 2026-11-14,
+      #5327; `VM capacity` history run 43566712099, 24 hours, the parser and
+      nightly windows fully recorded). `app` 1,536 → 1,024 and `worker`
+      1,536 → 1,024 (V8 heap 768 each), `harness-scanner` 512 → 256
+      (owner-approved). Every other limit kept: clamav for its signature
+      reload (peak 2,099, about 1.46 times), postgres by the owner's pgvector
+      decision, redis for its AOF fork, the rest at their floors. 9,216 MiB in
+      all. Tightening the worker to 768 waits for recorder history that holds a
+      Sunday and a month start.
+- [ ] **C2 — D-CAP-1's answer (decided 2026-11-12: measure, smaller pieces,
+      then resize), applied by the first addition that crosses the line.** The resize, the second VM or the smaller pieces, in the pull
       request that would otherwise cross it.
 
 ### Status board
@@ -593,30 +955,30 @@ completion.
 
 | Framework | Layer | Child roadmap | Wave | Status | Phase on `main` | Complete at | Decisions open |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Presidio | 1 | [`presidio.md`](./ai-architecture/presidio.md) | 3 | missing | — | 3 | D-L1-1 |
-| NeMo Guardrails | 1 | [`nemo-guardrails.md`](./ai-architecture/nemo-guardrails.md) | 3 | missing (F5 residual closes in its Phase 0) | — | 3, LLM-backed rails by API key | D-L1-2 |
-| Morpheus | 1 | [`morpheus.md`](./ai-architecture/morpheus.md) | 3 / optional (GPU, Phase 2) | missing; CPU detector first | — | 1, the CPU detector | D-L1-3 |
-| NemoClaw | 1 | [`nemoclaw.md`](./ai-architecture/nemoclaw.md) | 3 | substrate present (OpenShell); stack to be declined | — | 1, or 0's recorded decision | D-L1-4 |
-| Web Bot Auth (added 2026-10-30, not in v6) | 1 | [`web-bot-auth.md`](./ai-architecture/web-bot-auth.md) | 1 (sign the crawler) / 3 (verify at the door) | missing; vendor monitor unsigned, its refusals invisible | — | 3 | D-L1-5, D-L1-6, D-L1-7 |
-| Mastercard Agent Pay (added 2026-10-30, not in v6) | 1 | [`mastercard-agent-pay.md`](./ai-architecture/mastercard-agent-pay.md) | 2 (register) / 3 (discover, evidence) / 4 (Mastercard API, if access) | missing; no agent's spending authority is recorded | — | 3 (4 waits on access) | D-L1-8, D-L1-9, D-L1-10 |
-| Agent-flow canvas (Langflow's box) | 2 | [`langflow.md`](./ai-architecture/langflow.md) | 2 (view, author, preview) / 3 (run) | missing; in-product canvas on tldraw decided, Langflow not adopted | 0 (decided) | 5 | D-L2-2 |
-| Flue | 2 | artifact v4 + residuals here | — | **shipped** (Phases 1–3) | 3 | 3 (met) | F3 decision to record |
-| Role axis; Nemotron as the worker | 3 | [`nemotron-reasoning.md`](./ai-architecture/nemotron-reasoning.md) | 1 (role axis) / 2 (models chosen by records) / optional (Nemotron, Phases 0 and 2) | missing | — | 1 and 3, worker by API key | D-L3-1 |
+| Presidio | 1 | [`presidio.md`](./ai-architecture/presidio.md) | 3 | Phase 0 done: D-L1-1's scope, an EN + BG fixture corpus, Bulgarian recognisers, the first precision/recall record ([note](./implementation-notes/2026-11-11-pii-redaction-decision.md)); Phase 1.2–1.4 built: the `PiiDetector` seam on the in-deployment dial, fail-closed egress use, record mount gate; 1.1 (the `presidio` container) open, held by C1; no detector deployed | 0 | 3 | — |
+| NeMo Guardrails | 1 | [`nemo-guardrails.md`](./ai-architecture/nemo-guardrails.md) | 3 | Phase 0's done-when met: F5 closed, D-L1-2 decided; 0.2 (the rail-by-rail list) and 0.3 (the garak baseline) open. Phase 1 seam built (1.1, 1.2, 1.4, 1.5: `GuardProvider`, worst-of, a fail-closed NeMo client); 1.3, the server and its rails, held by C1; nothing runs | 0 | 3, LLM-backed rails by API key | — |
+| Morpheus | 1 | [`morpheus.md`](./ai-architecture/morpheus.md) | 3 / optional (GPU, Phase 2) | Phase 0 — signal defined; seeded check (0.2) open. Phase 1's sub-phases built (1.1–1.4): the `agent-fingerprint` CPU detector, off by default under three keys, and its surface with a person's "accept as new normal" (1.3, 2026-11-12); the done-when waits on thresholds measured on the seed tenant | — | 1, the CPU detector | — |
+| NemoClaw | 1 | [`nemoclaw.md`](./ai-architecture/nemoclaw.md) | 3 | Phase 0 done; reference-only, runtime and router declined (D-L1-4, 2026-11-11, [note](./implementation-notes/2026-11-11-ai-roadmap-decision-completions.md)); Phase 1 — two collector-policy tightenings | 0 | 1 | — |
+| Web Bot Auth (added 2026-10-30, not in v6) | 1 | [`web-bot-auth.md`](./ai-architecture/web-bot-auth.md) | 1 (sign the crawler) / 3 (verify at the door) | Phase 0's sub-phases done; its done-when waits for the outcome metric to be observed in production. Phase 1 partly (1.1, 1.3, 1.5): the deployment Ed25519 key, set in production 2026-11-13, and the signed key directory; 1.2 and 1.4 open. Phase 2 partly (2.1–2.3, 2026-11-12): the vendor monitor signs through `botFetch`, honours robots.txt on every hop, and names itself on `/bots/vendor-monitor`; the conformance record's request half is recomputed in CI. 2.4 (registration, after `content-digest` and D-L1-13's crawl-delay) and 2.5 (the 14-day measurement) open | — | 3 | — |
+| Mastercard Agent Pay (added 2026-10-30, not in v6) | 1 | [`mastercard-agent-pay.md`](./ai-architecture/mastercard-agent-pay.md) | 2 (register) / 3 (discover, evidence) / 4 (Mastercard API, if access) | Phase 0 partly: the card-number refusal in code (0.4); 0.2, 0.3 and 0.5 done in substance, their boxes to be ticked in the child now that D-L1-8 to D-L1-10 are initialled here; 0.1 (primary sources, a conversation with Mastercard) open. Phase 1 done: spending authority on the register (1.1, 1.2, 1.3, 1.5, 1.6), four-eyes, refused at activation, suspended by a kill, with its routes, its card on the agent's page and its governance-pack inventory row (2026-11-20, #5333); 1.4 built (2026-11-20): the pack section (and with it 3.3) and the withdrawal on all four of the owner's grounds, the last confirmed by the reviewer rather than read from a scan. Phase 2 partly (2.1–2.3, 2.5, 2026-11-12): the scanner finds agents whose code can pay (contract `/4`, DPIA amendment signed) and `SPENDING_AGENT_UNDECLARED` is raised and closed only by a reviewed envelope or a person; 2.4 blocked on Web Bot Auth Phase 3 | — | 3 (4 waits on access) | — |
+| Agent-flow canvas (Langflow's box) | 2 | [`langflow.md`](./ai-architecture/langflow.md) | 2 (view, author, preview) / 3 (run) | Phase 1 done: a flow as data on the profile version, refused on every engine until Phase 5. Phase 2 partly: the read-only agent view; 2.3 (open on canvas, drill-down) and 2.4 (the diff for form-edited versions) open. Phase 3 (the editor, saving a DRAFT version; 3.2's stored layout record open) and Phase 4 (the engine's own run message beside the flow) built 2026-11-12. Langflow not adopted | 1 | 5 | — |
+| Flue | 2 | artifact v4 + residuals here | — | **shipped** (Phases 1–3); F5 closed and F12 fixed 2026-11-11 | 3 | 3 (met) | — |
+| Role axis; Nemotron as the worker | 3 | [`nemotron-reasoning.md`](./ai-architecture/nemotron-reasoning.md) | 1 (role axis) / 2 (models chosen by records) / optional (Nemotron, Phases 0 and 2) | Phase 1 done: the role axis, worker by API key (`AGENT_FLUE_WORKER_MODEL`, unset by default, so the worker runs the supervisor's model). Phase 3 and the optional Phases 0 and 2 unchanged | 1 | 1 and 3, worker by API key | — |
 | Claude engines | 3 | `docs/claude-*-design.md` (#4135) | — | Tool Runner on (Step 2c, #4512); Agent SDK and Managed Agents designed | 2d | its own plan | — (its own plan) |
-| cuOpt | 3 | [`cuopt.md`](./ai-architecture/cuopt.md) | 4 / optional (GPU, Phase 2) | missing; CPU seam first if any | — | 1, or 0's recorded decline | D-L3-3 |
-| Weaviate | 4 | [`weaviate.md`](./ai-architecture/weaviate.md) | 1 | missing | — | 3 | D-L4-1, D-L4-2 |
-| Nemotron Retriever | 4 | [`nemotron-retriever.md`](./ai-architecture/nemotron-retriever.md) | 1 (CPU) / optional (GPU, Phase 3) | missing | — | 2, CPU TEI | D-L4-3 |
-| RAGFlow | 4 | [`ragflow.md`](./ai-architecture/ragflow.md) | 1 | missing | — | 3 | D-L4-4 |
-| Langfuse | 4 | [`langfuse.md`](./ai-architecture/langfuse.md) | 2 | missing | — | 3, or 0's OTel-only decision | D-L4-5, D-L4-6 |
+| cuOpt | 3 | [`cuopt.md`](./ai-architecture/cuopt.md) | — | **declined** — no optimisation problem in the product, none at GPU scale (D-L3-3, 2026-11-11, [note](./implementation-notes/2026-11-11-ai-roadmap-decision-completions.md)) | 0 | 0's recorded decline (met) | — |
+| Vector store (pgvector; Weaviate conditional) | 4 | [`weaviate.md`](./ai-architecture/weaviate.md) | 1 | Phase 0 done (pgvector first, vectors-only). Phase 1 built: the self-built pgvector image on every Postgres, the extension, `KnowledgeChunk` + `KnowledgeChunkEmbedding` under RLS, the e5-small HNSW index, `VectorRepository` the single seam, the two-tenant test against the real tables. Phase 2 built for its first source (the `knowledge-index` job over approved policy versions, purges, `scripts/knowledge-reindex.ts`); 2.5's later sources wait on the parser. Phase 3.1–3.5 built (2026-11-16): the filtered search, `search_knowledge` through the funnel, and the mount gate, which stays closed until a RAG record passes D-L4-9's floors (the owner decided on 2026-11-16 that they gate the tool too). 3.6 partly: the nightly produces the two figures, keyed by the gate's own revision and read against the same floors, and the answers (Ragas 1.2, in process, no route or flag); no record exists until a keyed night runs and a reviewed pull request commits one. Off by default (`VECTOR_STORE_BACKEND`, `AI_EMBED_LOCAL_*`). Phase 4 (Weaviate) only on a missed floor | 2 | 3 | — |
+| Nemotron Retriever | 4 | [`nemotron-retriever.md`](./ai-architecture/nemotron-retriever.md) | 1 (CPU) / optional (GPU, Phase 3) | Phase 0 desk research done (0.1, 0.2); the seed set done (0.4: 200 English cases and a 50-case Bulgarian slice, 2026-11-13); the D-L4-3 benchmark run 2026-11-13 (0.3, run 43413063708) and D-L4-3 decided the same day: `multilingual-e5-small` + `bge-reranker-base`, the Bulgarian translations accepted unreviewed. Phase 1 seam built (1.2–1.5); 1.1 in two steps: the patched TEI image is built, Trivy-gated and published from `deploy/tei-embed/` (2026-11-15, D-L4-11: weekly and on each upstream release), and the `tei-embed` service (model at commit `614241f6`, 2,560 MiB measured on CI runners) is in the canonical Compose file pinned to the published digest (1.1b), and on the VM since 2026-11-15 (1.1c), timed there the same day (0.5a: query p95 37.5 ms, about 0.7 s per 512-token passage; the indexing pipeline embeds 8 per call, owner, 2026-11-15); 0.1b and 0.6 done; Phase 2.1 (`RerankProvider`) built. Nothing calls the seam | — | 2, `multilingual-e5-small` + `bge-reranker-base` on CPU | D-L4-10's latency budgets |
+| Document parsing (Docling-class; RAGFlow measured) | 4 | [`ragflow.md`](./ai-architecture/ragflow.md) | 1 | Phase 0 decided (D-L4-4), its fidelity set and measurements (0.1–0.5) open. Phase 1 seam built (1.1, 1.2, 1.4, 1.7: `DocumentParser`, a docling-serve client, a paragraph stub default); 1.3 (the Compose service, held by C1), 1.5 and 1.6 open | 0 | 3 | — |
+| Langfuse | 4 | [`langfuse.md`](./ai-architecture/langfuse.md) | — | **complete** — OTel-only (D-L4-5, 2026-11-11); content capture off by default (D-L4-6) ([note](./implementation-notes/2026-11-11-ai-roadmap-decision-completions.md)) | 0 | 0's OTel-only decision (met) | — |
 | Self-hosted model route (was "Modal") | 5 | [`modal-inference.md`](./ai-architecture/modal-inference.md) | optional | **optional, after completion**; Modal not adopted (D-L5-1) | — | not part of completeness | D-L5-2 (deferred) |
 | Triton | 5 | [`triton.md`](./ai-architecture/triton.md) | optional | optional, after completion | — | not part of completeness | D-L5-3 (deferred) |
 | NIM | 5 | [`modal-inference.md`](./ai-architecture/modal-inference.md) | optional (proof of concept) | **declined** in production (G13); a proof of concept only, if Layer 5 is taken up | — | not part of completeness | — |
-| Capacity budget (added 2026-10-31) | 5 | § Capacity budget, this file | 0 | no container has a limit; nothing measured | — | C1, and C2 before the first addition that crosses the line | D-CAP-1 |
-| Garak | evals | [`garak.md`](./ai-architecture/garak.md) | 3 (Phase 1 any time) | missing | — | 3 | D-EV-1 |
-| Ragas | evals | [`ragas.md`](./ai-architecture/ragas.md) | 1 | missing | — | 3 | D-EV-2 |
-| ARES | evals | [`ares.md`](./ai-architecture/ares.md) | 2 | missing | — | 3, or 2's recorded failure to calibrate | D-EV-3 |
-| Inspect | evals | [`inspect.md`](./ai-architecture/inspect.md) | 2 | missing | — | 3 | D-EV-4 |
-| SWE-bench | evals | [`swe-bench.md`](./ai-architecture/swe-bench.md) | — | no capability to measure | — | 0's recorded decision | D-EV-5 |
+| Capacity budget (added 2026-10-31) | 5 | § Capacity budget, this file | 0 | C0 and C1 done 2026-11-12: every container measured and limited; C1b done 2026-11-14: `app`, `worker` and the scanner re-sized from measured nightly peaks (9,216 MiB of the 14.5 GB line); `tei-embed` measured at 2.5 times its estimate on 2026-11-15 (2,560 MiB; 11,776 with it in the canonical file, pinned since 1.1b), which puts the planned standing additions about 205 MiB over the line; D-CAP-1 decided (measure, smaller pieces, then resize) and satisfied without a resize | C0, C1, C1b | C2, the resize, only if a phase measures an addition above its estimate and it crosses the line | — |
+| Garak | evals | [`garak.md`](./ai-architecture/garak.md) | 3 (Phase 1 any time) | Phase 0 partly (0.1–0.3, D-EV-1; 0.4 baseline open). Phase 1 partly: the nightly, the pinning guard and the budget built (USD 2.50 of the shared USD 6.50, D-EV-11 as amended 2026-11-17), non-blocking until 2027-02-28, off unless `GARAK_ENABLED` is `true`, keyed by the shared `ANTHROPIC_API_KEY` when its own key is unset; first run dispatched 2026-11-13. 1.1b (agent-run adapter) and 1.5 (a re-enabled probe shown) open | — | 3 | — |
+| Ragas | evals | [`ragas.md`](./ai-architecture/ragas.md) | 1 | Phase 0 done: a 52-case set over the seeded policies and the record format, D-EV-2 decided; 0.6 built (the shared cost meter, `evals/cost-meter/`, at D-EV-11's split: USD 2.50 each, amended 2026-11-17 to garak USD 2.50 and Ragas USD 4.00 of USD 6.50, a share listing the models it may spend on); 0.5 (one seed set with the retriever's) open. Phase 1 partly (2026-11-16): the harness, the metering proxy, the judge image and the `rag-eval.yml` nightly built (1.1-1.5), off unless `RAG_EVAL_ENABLED` is `true`; D-L4-9's retrieval figures measured nightly; the retrieval stage wired to the product's search (`strategy: 'index'`, `HNSW_SEARCH`, the gate's revision), the judge key dedicated (D-EV-2 amended 2026-11-16) and the judge image's Python locks pinned by hash; 1.2 built (2026-11-16): the answer stage asks the real assistant in process with `search_knowledge` mounted by a scoped decision no deployed app can open, its turns metered against the same share; since 2026-11-17 the answers are the assistant's own production model's (the record names it), the judge stays Haiku, and the injection cases are asked in a tenant of their own; no keyed night has run, so no record exists | 0 | 3 | — |
+| ARES | evals | [`ares.md`](./ai-architecture/ares.md) | 2 | Phase 0: D-EV-3 decided; labelling not yet done | — | 3, or 2's recorded failure to calibrate | — |
+| Inspect | evals | [`inspect.md`](./ai-architecture/inspect.md) | 2 | Phase 0 done: the ten governed-run tasks defined ([note](./implementation-notes/2026-11-11-inspect-first-tasks.md)), D-EV-4 decided. Phase 1 partly (1.1–1.5, 2026-11-12): the harness for Flue and the Tool Runner, the record module and the `agent-evals.yml` nightly (D-EV-6's USD 10), off unless `AGENT_EVALS_ENABLED` is `true`; 1.6, the seed script, in review (#5447); 1.7, the done-when, open | 0 | 3 | — |
+| SWE-bench | evals | [`swe-bench.md`](./ai-architecture/swe-bench.md) | — | **declined** — no capability to measure (D-EV-5, 2026-11-11, [note](./implementation-notes/2026-11-11-ai-roadmap-decision-completions.md)) | 0 | 0's recorded decision (met) | — |
 
 ### Sequencing
 
@@ -625,79 +987,83 @@ target, and none of them needs a GPU: each range ends at that roadmap's
 "Complete at" phase. The last section is optional Layer 5 work, which starts
 only after every wave before it has landed (G12). The timeline is ordering, not
 dates: a wave starts when the waves before it have landed what it depends on.
-"Weaviate 0-3" means that roadmap's Phases 0 to 3.
+"Vector store 0-3" means that roadmap's Phases 0 to 3. An event marked "done"
+landed in the 2026-11-11 wave; "built" means its seam or code is in place and
+the phase's done-when is not yet met. Three roadmaps moved into Wave 0 because
+a recorded decision completed them: Langfuse (OTel-only), cuOpt and SWE-bench
+(declined).
 
 ```mermaid
 timeline
   title Delivery waves (ordering, not dates)
   section Decide
-    Wave 0 : Owner initials the D-* table, D-L5-1 taken 2026-10-31
-           : Close F5, scan run input with the existing scanner
-           : Record F3 as a decision, fix F12
+    Wave 0 : Owner initials the D-* table, all initialled, done
+           : Close F5 and fix F12, done 2026-11-11
+           : Record F3 as a decision, done 2026-11-15
+           : Langfuse 0, OTel-only, done
+           : cuOpt 0 and SWE-bench 0, declined, done
            : Capacity C0-C1, measure the VM and limit every container
   section Knowledge
-    Wave 1 : Retriever 0-2, TEI on CPU
-           : Weaviate 0-3, then search_knowledge
-           : RAGFlow 0-3, parsing seam and fidelity eval
-           : Ragas 0-3, the record opens the gate
-           : Role axis, nemotron-reasoning 1, worker by API key
-           : Garak 0-1, nightly and non-blocking
-           : Web Bot Auth 0-2, sign the vendor monitor
+    Wave 1 : Retriever 0-2, models chosen (D-L4-3, 2026-11-13), seam built
+           : Vector store 0-3, pgvector, then search_knowledge, 0-1 done, 2 for policies, 3.1-3.5 built, gate closed
+           : Document parsing 0-3, Docling seam and fidelity eval, 0 decided, seam built
+           : Ragas 0-3, the record opens the gate, 0 done
+           : Role axis, nemotron-reasoning 1, worker by API key, done
+           : Garak 0-1, nightly and non-blocking, built, awaits its key
+           : Web Bot Auth 0-2, sign the vendor monitor, 0 and part of 1 built
   section Records and authoring
-    Wave 2 : Inspect 0-3, governed-run records and model comparison
+    Wave 2 : Inspect 0-3, governed-run records and model comparison, 0 done
            : Models chosen by records, nemotron-reasoning 3
-           : Langfuse 0-2 and ARES 0-3
-           : Agent-flow canvas 1-4, view every agent, author, preview
-           : Agent Pay 0-1, spending authority on the register
+           : ARES 0-3
+           : Agent-flow canvas 1-4, view every agent, author, preview, 1 done, 2 partly
+           : Agent Pay 0-1, spending authority on the register, 1 partly built
   section Guards
-    Wave 3 : Presidio 0-3, PII redaction
-           : NeMo Guardrails 0-3, LLM rails by API key
-           : Langfuse 3, capture-on and masked
+    Wave 3 : Presidio 0-3, PII redaction, 0 done, 1 seam built
+           : NeMo Guardrails 0-3, LLM rails by API key, 0 met, 1 seam built
            : Garak 2-3, blocking
-           : Morpheus 0-1, CPU detector
-           : NemoClaw 0-1, decision and tightenings
+           : Morpheus 0-1, CPU detector, 1 partly built
+           : NemoClaw 1, two policy tightenings, 0 done
            : Agent-flow canvas 5, run and replay
            : Web Bot Auth 3, verify at the trust center
            : Agent Pay 2-3, discover and evidence
   section Conditional
-    Wave 4 : cuOpt 0-1, CPU seam or a recorded decline
-           : SWE-bench 0, the recorded decision
-           : Agent Pay 4, only with Mastercard API access, not a completeness condition
+    Wave 4 : Agent Pay 4, only with Mastercard API access, not a completeness condition
   section Optional · after completion
     Layer 5 : Owner takes Layer 5 up, or not, D-L5-2
             : NIM proof of concept on a GCP GPU VM
             : Production local route, vLLM, open weights
-            : GPU arms, Nemotron worker, Retriever 3, Morpheus 2, cuOpt 2, Triton
+            : GPU arms, Nemotron worker, Retriever 3, Morpheus 2, Triton
 ```
 
 The hard dependencies between roadmaps, as a graph. A box may start only when
 everything pointing at it has landed; a roadmap's own earlier phases are
 implied and not drawn, except where another roadmap's box sits between them.
 The slate pair at the bottom is the optional tail: Layer 5 waits for every
-other box, which a single edge from "complete" stands for.
+other box, which a single edge from "complete" stands for. Green boxes have
+landed, amber ones are partly built (a phase or a seam in place, the range not
+finished), blue ones have not started.
 
 ```mermaid
 flowchart LR
-  F5["W0 · close F5<br/>input scan"]:::todo
-  RT1["W1 · Retriever 0-2<br/>TEI on CPU"]:::todo
-  WV2["W1 · Weaviate 0-2<br/>store + index"]:::todo
-  RF2["W1 · RAGFlow 0-3"]:::todo
-  RA2["W1 · Ragas 0-2"]:::todo
-  WV3["W1 · Weaviate 3<br/>search_knowledge"]:::todo
+  F5["W0 · close F5<br/>input scan, done"]:::done
+  RT1["W1 · Retriever 0-2<br/>multilingual-e5-small<br/>+ bge-reranker-base on CPU"]:::partial
+  WV2["W1 · Vector store 0-2<br/>pgvector + index"]:::partial
+  RF2["W1 · Document parsing 0-3<br/>Docling-class"]:::partial
+  RA2["W1 · Ragas 0-2"]:::partial
+  WV3["W1 · Vector store 3<br/>search_knowledge, gate closed"]:::partial
   AR2["W2 · ARES 0-3"]:::todo
-  GA1["W1 · Garak 0-1"]:::todo
-  RX1["W1 · role axis<br/>worker by API key"]:::todo
-  IS2["W2 · Inspect 0-3"]:::todo
+  GA1["W1 · Garak 0-1"]:::partial
+  RX1["W1 · role axis<br/>worker by API key, done"]:::done
+  IS2["W2 · Inspect 0-3"]:::partial
   NR3["W2 · models chosen<br/>by records"]:::todo
-  AF1["W2 · Agent-flow canvas 1-4<br/>view, author, preview"]:::todo
+  AF1["W2 · Agent-flow canvas 1-4<br/>view, author, preview"]:::partial
   AF4["W3 · Agent-flow canvas 5<br/>run and replay"]:::todo
-  PR2["W3 · Presidio 0-3"]:::todo
-  NG2["W3 · NeMo 0-3"]:::todo
-  LU3["W3 · Langfuse 3<br/>after its own 0-2 in W2"]:::todo
+  PR2["W3 · Presidio 0-3"]:::partial
+  NG2["W3 · NeMo 0-3"]:::partial
   GA2["W3 · Garak 2-3"]:::todo
-  WB2["W1 · Web Bot Auth 0-2<br/>sign the crawler"]:::todo
+  WB2["W1 · Web Bot Auth 0-2<br/>sign the crawler"]:::partial
   WB3["W3 · Web Bot Auth 3<br/>verify at the door"]:::todo
-  AP1["W2 · Agent Pay 0-1<br/>on the register"]:::todo
+  AP1["W2 · Agent Pay 0-1<br/>on the register"]:::partial
   AP3["W3 · Agent Pay 2-3<br/>discover, evidence"]:::todo
   AP4["W4 · Agent Pay 4<br/>if Mastercard API access<br/>not a completeness condition"]:::todo
   DONE(["Complete<br/>every roadmap at its Complete at"]):::gate
@@ -715,7 +1081,6 @@ flowchart LR
   F5 --> NG2
   GA1 --> NG2
   PR2 --> NG2
-  PR2 --> LU3
   GA1 --> GA2
   NG2 --> GA2
   WB2 --> WB3
@@ -723,16 +1088,21 @@ flowchart LR
   AP1 --> AP3
   DONE -.-> L5
 
+  classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
+  classDef partial fill:#fef3c7,stroke:#b45309,color:#78350f
   classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
   classDef gate fill:#ede9fe,stroke:#6d28d9,color:#3b0764
   classDef optional fill:#f1f5f9,stroke:#475569,color:#334155,stroke-dasharray:6 3
 ```
 
 The same dependencies as prose, for a reader without a Mermaid renderer:
-Weaviate Phase 2 needs an embedding provider; Ragas needs an index; the
+the vector store's Phase 2 needs an embedding provider and its Phase 1 a
+Postgres image carrying pgvector; Ragas needs an index; the
 `search_knowledge` tool needs a Ragas record; choosing the worker's model needs
-the role axis and Inspect's comparison records; Langfuse capture-on and NeMo
-PII rails need Presidio; Web Bot Auth's inbound verifier needs its own
+the role axis and Inspect's comparison records; NeMo's PII rails need
+Presidio; Inspect's Phase 1 needs the test-only route that starts and awaits
+an agent run, which is garak's sub-phase 1.1b (the assistant already has a
+non-streaming route, so garak's assistant probes need no such route); Web Bot Auth's inbound verifier needs its own
 outbound phases; NeMo's rails are measured by Garak Phase 1 before and after;
 Agent Pay's discovery reuses that verifier, and its Mastercard phase waits on
 API access Mastercard gates. Every phase that adds a container waits for the
@@ -776,10 +1146,10 @@ flowchart LR
 
 | Layer | What is evaluated | Framework | Record / gate |
 | --- | --- | --- | --- |
-| 1 | injection, jailbreak, leakage through the composed guard; PII precision/recall; rail precision; request-signature conformance and the verifier's negative cases | Garak; Presidio fixtures; NeMo rail sets; Web Bot Auth vectors and the directory validator | garak thresholds (blocking after Phase 2); `evals/pii/records/` as a mount condition; `evals/web-bot-auth/records/` gates signed crawling |
-| 2 | governed-run invariants (propose-not-commit, halt on flagged result, kill mid-run, caps) | Inspect (ten tasks) | `evals/inspect/records/`; every engine that is on needs a record (Flue and the Tool Runner get theirs in Inspect Phase 2) |
+| 1 | injection, jailbreak, leakage through the composed guard; PII precision/recall; rail precision; request-signature conformance and the verifier's negative cases | Garak; Presidio fixtures; NeMo rail sets; Web Bot Auth vectors and the directory validator | garak thresholds in `.github/workflows/garak.yml` (non-blocking until 2027-02-28, blocking after Phase 2); `evals/pii/records/` as a mount condition; `evals/web-bot-auth/records/` gates signed crawling |
+| 2 | governed-run invariants (propose-not-commit, halt on flagged result, kill mid-run, caps) | Inspect (ten tasks, defined in [`2026-11-11-inspect-first-tasks.md`](./implementation-notes/2026-11-11-inspect-first-tasks.md); the Tool Runner covers three case kinds until D-EV-7) | `evals/inspect/records/`; every engine that is on needs a record (Flue and the Tool Runner get theirs in Inspect Phase 2) |
 | 3 | worker/supervisor model quality among models reached through API keys; residency per role | skills evaluation sets per model revision; Inspect comparisons | skills records; comparison records decide defaults |
-| 4 | retrieval precision/recall, faithfulness; parse fidelity; isolation | Ragas → ARES; parse-eval; two-tenant tests | `evals/rag/records/` opens `search_knowledge`; floors ratchet |
+| 4 | retrieval precision/recall, faithfulness; parse fidelity; isolation; the D-L4-3 model choice | Ragas (set `evals/rag/sets/seed-policies.json`) → ARES; parse-eval; two-tenant tests; the retriever benchmark (`tests/fixtures/rag/retriever-seed-set.json`) | `evals/rag/records/` opens `search_knowledge`; floors ratchet |
 | 5 (optional) | optionality (nothing of Layer 5 without `AI_LOCAL_*`), residency at the socket; if taken up, serving smoke and cost | provider-set test; Inspect LOCAL_ONLY task; if taken up, the Layer 5 Phase 1 checklist | CI; if taken up, budget alerts on the GPU VM |
 | cross | the product's own agents on its own ladder (H3–H5); customers' payment-capable agents found in code | Inspect records cited on the agent's Coverage tab; synthetic repositories for the scanner | committed records are evidence; live runs are not; the scanner fixture record gates Agent Pay discovery |
 
@@ -790,42 +1160,61 @@ blocking — the DAST path, every time.
 ### Decisions for the owner
 
 Each child roadmap's Phase 0 ends with one or more of these. Initial here;
-the child records the reasoning.
+the child records the reasoning. As of 2026-11-12 every row is decided or deferred.
+The rows after D-L1-10, D-L4-6 and D-EV-5 were raised by the 2026-11-11 wave;
+the owner adopted each one's proposed default on 2026-11-12, and decided
+D-L1-15, D-L1-16, D-L4-7, D-EV-6 and D-EV-11 by name.
 
 | Id | Decision | Child | Default if undecided |
 | --- | --- | --- | --- |
-| D-L1-1 | PII redaction scope: paths, entity types, locales, LOCAL_ONLY handling | presidio | external routes only; PERSON/EMAIL/PHONE/IBAN/ЕГН; EN+BG; LOCAL_ONLY off |
-| D-L1-2 | NeMo rails: LLM-free first; LLM-backed only on the tenant's permitted route | nemo-guardrails | as stated |
-| D-L1-3 | Behaviour anomaly signal; CPU detector before Morpheus | morpheus | CPU first |
-| D-L1-4 | NemoClaw: reference-only; runtime and privacy router declined | nemoclaw | declined |
-| D-L1-5 | Web Bot Auth signing identity: one Ed25519 key per deployment, never per tenant, so no signature discloses which customer monitors a vendor | web-bot-auth | adopt |
-| D-L1-6 | Outbound conduct: a User-Agent naming the bot, a public bot page, robots.txt honoured, registration with Cloudflare Verified Bots by the operator | web-bot-auth | adopt; register after Phase 2 |
-| D-L1-7 | Inbound verification: a label on public surfaces, never authorization; open directory fetch under cache and caps, or an allowlist of operators | web-bot-auth | label only; open fetch, cached and capped |
-| D-L1-8 | Inflect never holds a payment credential (no PAN, token value or wallet key) and its own agents never pay; it stays outside PCI DSS cardholder-data scope | mastercard-agent-pay | adopt |
-| D-L1-9 | Spending authority is a declared envelope on the register, reviewed by a second person, required before activation, and reached by recertification and the kill switch | mastercard-agent-pay | adopt |
-| D-L1-10 | Reading and suspending at Mastercard only through a customer-owned connection on the external write ladder, once written API access and a sandbox exist | mastercard-agent-pay | wait for access; Phases 1–3 need none |
+| D-L1-1 | PII redaction scope: paths, entity types, locales, LOCAL_ONLY handling | presidio | **decided 2026-11-11** (owner): external routes only; PERSON/EMAIL/PHONE/IBAN/ЕГН; EN+BG; LOCAL_ONLY off |
+| D-L1-2 | NeMo rails: LLM-free first; LLM-backed only on the tenant's permitted route | nemo-guardrails | **decided 2026-11-11** (owner): LLM-free rails first |
+| D-L1-3 | Behaviour anomaly signal; CPU detector before Morpheus | morpheus | **decided 2026-11-11** (owner): CPU detector in the worker first |
+| D-L1-4 | NemoClaw: reference-only; runtime and privacy router declined | nemoclaw | **decided 2026-11-11** (owner): reference only; runtime and privacy router declined |
+| D-L1-5 | Web Bot Auth signing identity: one Ed25519 key per deployment, never per tenant, so no signature discloses which customer monitors a vendor | web-bot-auth | **decided 2026-11-11** (owner): adopt |
+| D-L1-6 | Outbound conduct: a User-Agent naming the bot, a public bot page, robots.txt honoured, registration with Cloudflare Verified Bots by the operator | web-bot-auth | **decided 2026-11-11** (owner): adopt, at the default only; what Cloudflare's policy adds is D-L1-13 |
+| D-L1-7 | Inbound verification: a label on public surfaces, never authorization; open directory fetch under cache and caps, or an allowlist of operators | web-bot-auth | **decided 2026-11-11** (owner): adopt, at the default (an open directory fetch, cached and capped); what the draft adds is D-L1-14 |
+| D-L1-8 | Inflect never holds a payment credential (no PAN, token value or wallet key) and its own agents never pay; it stays outside PCI DSS cardholder-data scope | mastercard-agent-pay | **decided 2026-11-11** (owner): adopt |
+| D-L1-9 | Spending authority is a declared envelope on the register, reviewed by a second person, required before activation, and reached by recertification and the kill switch | mastercard-agent-pay | **decided 2026-11-11** (owner): adopt |
+| D-L1-10 | Reading and suspending at Mastercard only through a customer-owned connection on the external write ladder, once written API access and a sandbox exist | mastercard-agent-pay | **decided 2026-11-11** (owner): adopt; Phases 1-3 need no access |
+| D-L1-11 | Presidio redaction action per type, and the record floors that mount the detector | presidio | **decided 2026-11-12** (owner: the proposed default, adopted). a numbered typed placeholder (`<PERSON_1>`) for all five types, recorded as a Phase 0 default and not part of D-L1-1; a type and locale counts towards the mount only with at least `PII_MIN_SUPPORT` = 20 cases, against floors of recall 0.95 and precision 0.80 |
+| D-L1-12 | NemoClaw Phase 1: take the two collector-policy tightenings Phase 0 found | nemoclaw | **decided 2026-11-12** (owner: the proposed default, adopted). take both, each from a real run's measurements — binaries named on every network rule, and an L7 rule on the Vertex AI residual that admits the measured configuration reads and refuses the inference verbs |
+| D-L1-13 | Additions under D-L1-6 from Cloudflare's Verified Bots policy: honour crawl directives (a crawl-delay as well as disallow), and a stated purpose on the bot page that matches what the monitor fetches | web-bot-auth | **decided 2026-11-12** (owner: the proposed default, adopted). Both are adopted by name. The monitor does not yet honour a crawl-delay, so that is now owed before Phase 2's registration |
+| D-L1-14 | Additions under D-L1-7 from the draft: the inbound label is keyed on the (URL, key) pair, never the key alone; only `verified` is labelled, `invalid` and `unverified` stay distinct; a failed directory fetch never evicts a cached directory | web-bot-auth | **decided 2026-11-12** (owner: the proposed default, adopted). Adopted by name, before Phase 3's verifier |
+| D-L1-15 | The vendor monitor's TLS-fetch outcome taxonomy | web-bot-auth | **decided 2026-11-12** (owner): a DNS failure is `UNREACHABLE`, not `BLOCKED`; every 4xx is `REFUSED`, not only 403, 429 and a challenge |
+| D-L1-16 | A `flag` verdict on run input at admission: refuse the run, or park it for review | nemo-guardrails | **decided 2026-11-12** (owner): keep refusing; no parked run |
 | D-L2-1 | Langflow's box: the visual canvas is the product's own, editing the agent profile; Langflow not adopted | langflow | **decided 2026-10-29** (owner) |
-| D-L2-2 | Reasoning engines enforce flow checkpoints, or the canvas offers no checkpoint node | langflow | build enforcement; no checkpoint node until it lands |
+| D-L2-2 | Reasoning engines enforce flow checkpoints, or the canvas offers no checkpoint node | langflow | **decided 2026-11-11** (owner): enforcement first; no checkpoint node until it lands |
 | D-L2-3 | The agent-flow canvas is drawn by tldraw (3.x, watermark kept), never xyflow, and lives inside the process-canvas module | langflow | **decided 2026-10-29** (owner) |
-| D-L3-1 | Supervisor/worker role axis in model selection | nemotron-reasoning | adopt |
+| D-L3-1 | Supervisor/worker role axis in model selection | nemotron-reasoning | **decided 2026-11-11** (owner): adopt; built 2026-11-11 (nemotron-reasoning Phase 1) |
 | D-L3-2 | Nemotron as the default worker | nemotron-reasoning | **deferred 2026-10-31** with Layer 5 (owner); the worker is a model reached through API keys |
-| D-L3-3 | An optimisation problem at GPU scale exists | cuopt | no; CPU seam if a feature wants it |
-| D-L4-1 | pgvector-first or Weaviate-first | weaviate | Weaviate (the target), with the note's trade-offs |
-| D-L4-2 | Vectors-only rule (no chunk text outside Postgres) | weaviate | adopt |
-| D-L4-3 | De-NIM retriever: open weights on CPU TEI in the deployment; the GPU arm is optional Layer 5 | nemotron-retriever | adopt |
-| D-L4-4 | Parser backend: RAGFlow slim or a parsing-only service | ragflow | measured in Phase 0 |
-| D-L4-5 | Langfuse hosting: self-host / Cloud EU / OTel-only | langfuse | self-host if the VM bears it |
-| D-L4-6 | Trace content capture off by default; three conditions to turn on | langfuse | adopt |
+| D-L3-3 | An optimisation problem at GPU scale exists | cuopt | **decided 2026-11-11** (owner): no; a CPU seam only if a feature wants one |
+| D-L4-1 | pgvector-first or Weaviate-first | weaviate | **decided 2026-11-11** (owner): **pgvector first**, in the existing Postgres under RLS; Weaviate only if a measured recall or latency floor is not met |
+| D-L4-2 | Vectors-only rule (no chunk text outside Postgres) | weaviate | **decided 2026-11-11** (owner): adopt |
+| D-L4-3 | Retriever models in the deployment; the GPU arm is optional Layer 5 | nemotron-retriever | **decided 2026-11-11, amended and decided 2026-11-13** (owner). **Decided 2026-11-13: embedder `intfloat/multilingual-e5-small`, reranker `BAAI/bge-reranker-base`.** Retriever benchmark run 43413063708 on `main` `32d3038`, seed set `sha256:297f425a247bb6f6800528187765f404fee8e9f879c41f2727897fe11573e92f` (250 cases, 50 Bulgarian, BG → EN), figures recomputed from each record's raw answers. Recall@10 overall / Bulgarian, MRR@10: `multilingual-e5-small` + `bge-reranker-v2-m3` 0.960 / 0.880, 0.936 (the best); + `bge-reranker-base` 0.946 / 0.840, 0.863 (0.014 and 0.040 behind, within the 0.05 margin, and smaller); alone 0.899 / 0.733, 0.774 (0.061 behind, outside it). Every English-only pipeline scored 0.080 or less on the Bulgarian slice. The owner accepts the lower first-place ranking as the price of not resizing; `bge-reranker-v2-m3` is the better-ranking alternative if the VM is ever resized for another reason, not a commitment. The 50 Bulgarian translations are accepted unreviewed. As decided: benchmark Nemotron 1B embed and rerank against a small open multilingual model on CPU (open weights on an open engine, never the NIM container); keep the smaller unless recall@10 drops by more than the agreed margin (D-L4-10); the GPU arm is optional Layer 5. **Amended:** Nemotron is not a Layer 4 candidate (no CPU engine the deployment has serves it, a 1B model costs about ten times a small one's memory, and small per-tenant corpora with a reranker rarely need it); it stays only in the retriever's optional Layer 5 Phase 3. Layer 4 compares small open models, English-only and multilingual, and keeps the smallest within the margin both overall and on the seed set's Bulgarian slice, because the product serves Bulgarian. The benchmark's small candidates had been English-only, against this decision's own "multilingual"; the amendment's pull request corrected them and added the Bulgarian slice |
+| D-L4-4 | Parser backend: RAGFlow slim or a parsing-only service | ragflow | **decided 2026-11-11** (owner): a Docling-class parsing-only service; RAGFlow measured, adopted only if Docling fails the fidelity eval |
+| D-L4-5 | Langfuse hosting: self-host / Cloud EU / OTel-only | langfuse | **decided 2026-11-11** (owner): **OTel-only for now**; no new service and no sub-processor |
+| D-L4-6 | Trace content capture off by default; three conditions to turn on | langfuse | **decided 2026-11-11** (owner): adopt |
+| D-L4-7 | The lexical search arm under vectors-only and field encryption: none, a keyed blind-token index, or a plaintext `tsvector` | weaviate | **decided 2026-11-12** (owner): a **keyed blind-token index** — an HMAC of each normalised token under a per-tenant key, matching exact terms without storing them; never a plaintext `tsvector`, and not none |
+| D-L4-8 | Patch cadence of the self-built pgvector Postgres image | weaviate | **decided 2026-11-12** (owner: the proposed default, adopted). keep the owner's 2026-10-10 tag rule, with the image rebuilt on a weekly schedule and whenever the upstream `16-alpine` digest changes, republishing a moving line tag plus an immutable per-build tag. The alternative, digest pins with a scheduled bump pull request, reverses the 2026-10-10 decision |
+| D-L4-9 | The floors that trigger Weaviate (the vector store's Phase 4) | weaviate | **decided 2026-11-12, amended and decided 2026-11-16** (owner). **Decided 2026-11-12** (the proposed default, adopted): recall@10 at least 0.95 of an exact scan of the same tenant, and p95 `search` latency at most 300 ms on the VM, at `k = 10`; a miss on two consecutive nightly records after tuning is the trigger, one miss is a tuning task. **Amended 2026-11-16** (owner): (a) the same two values also decide whether `search_knowledge` is offered — the mount gate (`src/app-layer/services/knowledge-search-mount.ts`) reads a record's figures through the one set of floors the Ragas nightly reads (`src/lib/ai/evals/rag-retrieval-floors.ts`); (b) the gate checks these retrieval floors only until Ragas Phase 2 defines answer-quality floors, which then join it; (c) the figures are measured on a probe tenant of 5,000 chunks in a shared index of 4 times that (`RAG_EVAL_PROBE_TENANT_CHUNKS`, `RAG_EVAL_SCALE_MULTIPLE` in `rag-eval.yml`), re-sized once production's largest tenant is indexed; (e) both figures are measured on the product's own call — the 20-deep, source-filtered store query `searchKnowledge` issues (`knowledgeVectorQuery`), pinned to the index path: recall@10 is recall over its first 10 returned against the exact top 10 of the same tenant under the same filter, and the latency is the p95 of that whole 20-deep call. The thresholds (0.95, 300 ms) are unchanged; (f) recall is tie-aware: an indexed result among the call's first 10 is a hit when its distance is at most the exact search's 10th-best distance for the same tenant and filter plus `RECALL_TIE_EPSILON` (1e-6 on cosine distance, for float noise), and recall = hits / min(10, exact result count). A question whose exact search returns nothing is left unscored, never counted as 1, and a run with no scored question has no recall figure, which never passes (`recallAgainstExact`, `src/lib/ai/evals/rag-record.ts`) |
+| D-L4-10 | D-L4-3's recall margin and the retriever latency budgets | nemotron-retriever | **decided 2026-11-12** (owner: the proposed default, adopted): 0.05 absolute recall@10, the value the benchmark carries (`D_L4_3_RECALL_MARGIN`, about two standard errors on its 200 cases); the child's Phase 0 text still proposes 0.03 overall and 0.05 on the Bulgarian slice and now follows 0.05. Still open, because no default was proposed: the latency budgets, and growing the Bulgarian slice to about 200 queries so its margin is closer to enforceable |
+| D-L4-11 | The tei-embed image's source and patch cadence | nemotron-retriever | **decided 2026-11-15, following the owner's decision of 2026-11-15** (option B on #5687: the production VM runs a patched copy of TEI, never the upstream image, because upstream `cpu-1.9.4` carries Debian packages with fixes available, 4 CRITICAL and 13 HIGH, which the repository's Trivy gate blocks on). The image is `deploy/tei-embed/Dockerfile`: the upstream CPU release by tag and digest plus `apt-get update && apt-get -y upgrade` and a cleaned apt cache, built, smoke-tested and Trivy-gated (CRITICAL,HIGH, fixed only) by ci.yml's `TEI image` on every change to that directory, and published to `ghcr.io/rodnapamet/tei-embed` by `.github/workflows/tei-embed-image.yml`, behind the same gate, from `main` only. **Cadence:** rebuilt and published **every Monday** (07:23 UTC), so Debian's fixes reach a published image within a week, and **on each upstream TEI release**: Dependabot proposes the `FROM` move every Monday, the weekly run also reports a newer upstream `cpu-x.y.z` tag, and the `FROM` move (with the benchmark's `TEI_CPU_IMAGE`) is a reviewed pull request followed by a dispatch. The canonical Compose file pins a published digest; **the pin moves by pull request**, as the scanner overlay's does (#5493), when a newer build clears a finding the pinned one has (the weekly run reports the pinned image under the same gate) and after each upstream release. As D-L4-8 does for pgvector, the image tracks its upstream line rather than freezing it; unlike pgvector there is no moving tag, because the VM runs it by digest |
 | D-L5-1 | Model usage through LLM API keys; no self-hosting now; Modal not adopted; Layer 5 optional, after every other roadmap is complete | modal-inference | **decided 2026-10-31** (owner) |
 | D-L5-2 | If Layer 5 is taken up: model, weights and licence, GPU class, zone and quota, cost | modal-inference | **deferred** until Layer 5 is taken up |
 | D-L5-3 | Triton consolidation trigger | triton | **deferred** with Layer 5 |
-| D-CAP-1 | Where the completeness services run once the measured sum crosses the line: resize the VM, a second CPU VM, or smaller pieces (smaller embedding models, a parsing-only service, Langfuse OTel-only) | § Capacity budget | measure first; smaller pieces the records allow; then resize to `e2-highmem-4`; never self-host Langfuse on the production VM |
-| D-EV-1 | Which model answers garak probes in CI, and the nightly budget | garak | external CI key, budgeted |
-| D-EV-2 | Ragas judge residency and cost | ragas | external CI key, budgeted |
-| D-EV-3 | Who labels ARES triples, from the seed corpus | ares | operator, seed only |
-| D-EV-4 | The product scores its own agents on its own ladder | inspect | adopt |
-| D-EV-5 | SWE-bench: declined or placeholder | swe-bench | declined |
-
+| D-CAP-1 | Where the completeness services run once the measured sum crosses the line: resize the VM, a second CPU VM, or smaller pieces (smaller embedding models, quantised weights; the parsing-only service and OTel-only traces are already decided) | § Capacity budget | **decided 2026-11-12** (owner: the default, adopted): measure first; take the smaller pieces the records allow; then resize the VM to `e2-highmem-4` (4 vCPU, 32 GB); a second VM only if memory alone cannot fit; never self-host Langfuse on the production VM. C1 (limits on every container) was applied the same day. **Smaller pieces taken 2026-11-13** (owner): the parser as a nightly batch under the new window rule, the reranker by the amended D-L4-3 rule (`bge-reranker-base`, decided 2026-11-13), Presidio on its small pipelines (0.7 GB), and every limit reset to 1.5 times its peak after C1b. **C1b done 2026-11-14** (`VM capacity` history run 43566712099): `app` and `worker` 1,536 → 1,024, the harness scanner 512 → 256, 9,216 MiB in all; with the standing additions the total is 13,517 MiB, about 950 MiB under the stricter line, so **no resize**: the smaller pieces plus C1b satisfy it, revisited when a phase measures a service above its estimate |
+| D-EV-1 | Which model answers garak probes in CI, and the nightly budget | garak | **decided 2026-11-11, amended 2026-11-17** (owner). **Decided 2026-11-11:** a Haiku-class model through a dedicated CI key, capped at USD 5 a night, seed data only. **Amended 2026-11-17** (owner): the shared nightly cap is **USD 6.50** (`evals/cost-meter/shares.json`, `DECIDED_NIGHTLY_CAP_USD` in `meter.mjs`); garak's model and its USD 2.50 share are unchanged (see D-EV-11) |
+| D-EV-2 | Ragas judge residency and cost | ragas | **decided 2026-11-11, amended 2026-11-16** (owner). **Decided 2026-11-11:** as D-EV-1, one shared cap. **Amended 2026-11-16** (owner): the judge prefers a dedicated key — `rag-eval.yml` reads the `RAGAS_ANTHROPIC_API_KEY` secret when it is set and the repository's `ANTHROPIC_API_KEY` (with its workspace header) otherwise, as garak's and Inspect's nightlies choose theirs, and logs which secret it used, never the value. Creating the secret, and the spend limit on its workspace, are owner actions. **Amended 2026-11-17** (owner): the judge stays Haiku 4.5 (`JUDGE_MODEL` in `evals/rag/inflect_rag/judge.py`); the product's answers it scores are written by the assistant's own production model (`AGENT_FLUE_MODEL`, default `claude-sonnet-5-5`, `src/lib/ai/model-defaults.ts`), resolved by the assistant itself and never named by the nightly, and every record states it (`answerRevision`). The cost meter therefore lets a share list the models it may spend on, each priced from the table (`claude-sonnet-5-5` added at USD 2 / USD 10 per million tokens, price table version 2026-11-17), and the proxy refuses any model the share does not list. The injection cases are asked in an injection tenant that holds the set's injected chunks and nothing else; every other case in the answer tenant, which holds none. The set and its hash are unchanged: a case's tenant follows from its `kind` |
+| D-EV-3 | Who labels ARES triples, from the seed corpus | ares | **decided 2026-11-11** (owner): operator, seed data only |
+| D-EV-4 | The product scores its own agents on its own ladder | inspect | **decided 2026-11-11** (owner): adopt |
+| D-EV-5 | SWE-bench: declined or placeholder | swe-bench | **decided 2026-11-11** (owner): declined |
+| D-EV-6 | The Inspect nightly budget and model | inspect | **decided 2026-11-12** (owner): **USD 10 a night**, covering both engines, each run on its own model (a record about another model evidences another system); non-blocking at first. Separate from D-EV-1's USD 5 |
+| D-EV-7 | A missing-input arm for the Tool Runner: profile runs take no caller input, so its record covers three case kinds, not four | inspect | **decided 2026-11-12** (owner: the proposed default, adopted). accept three kinds for the Tool Runner with the reason recorded; a declared input on profile runs is a product change in the Claude engines plan |
+| D-EV-8 | A JSON read of a run's decision rows (`AiDecisionLog`), which no REST route serves | inspect | **decided 2026-11-12** (owner: the proposed default, adopted). a read under the steps feed's gate (`admin.view` or `admin.agent_registry_view`). **Done 2026-11-15** (owner decision of that day): `GET /api/t/:slug/agent-runs/:id/decisions` takes that gate AND the decision log's own read rule (`mayReadOversightSurface`), and returns each row's id, input digest, agent, time and outcome code, no text. Task 8 scores the row count (a missing row fails only where the read succeeded; an unreadable read is NOT_EVIDENCED); task 4 checks a refused run wrote none; task 7's Flue boundary stays unscored, as the rows the harness reads carry no tokens |
+| D-EV-9 | Persisting a run's offered tool set, which is logged (`toolsOffered`, `toolsOmitted`) and not stored | inspect | **decided 2026-11-12** (owner: the proposed default, adopted). store the offered names on the run (a product change), so task 5 can prove a tool was never offered, not only never reached |
+| D-EV-10 | A guard verdict on the delegation step: the `task` step carries no `guardVerdict`, so a flagged answer that is not refused leaves no trace on it | inspect | **decided 2026-11-12** (owner: the proposed default, adopted). write the verdict onto the step (a product change in the Claude engines plan); task 6 then requires it and task 8 drops the `task` exclusion |
+| D-EV-11 | Whether D-EV-1's nightly cap (USD 5, then 6.50) is shared between garak and Ragas or is per job | garak, ragas | **decided 2026-11-12, amended 2026-11-17** (owner): **shared, USD 2.50 each.** `evals/cost-meter/shares.json` states the split and the shared meter enforces it; garak meters against its USD 2.50 share (40 requests per role, 80 a night at the planned USD 0.03 turn, USD 2.40), and Ragas takes its share when its harness lands. Garak's worst case is not reserved: its measured breaker checks the night's spend between roles, not within one, so one role can overrun its share (garak 1.4). The invoice-level stop is the spend limit on the dedicated key's workspace, an owner action. **Amended 2026-11-17** (owner): **garak USD 2.50, Ragas USD 4.00, of a USD 6.50 cap** (D-EV-1 as amended). The Ragas share now also pays for the product's answers on the assistant's production model: the planned Ragas night is USD 3.03 (`evals/rag/budget.json`: the judge USD 1.91, the answers USD 1.12), USD 3.19 if the assistant asks for 10 passages a search. garak's share is unchanged and stays on Haiku alone |
 ### How this document is updated
 
 - A phase lands → its child's "done when" is met → the **Status board** row's

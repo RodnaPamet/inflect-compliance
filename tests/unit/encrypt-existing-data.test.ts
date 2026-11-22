@@ -814,3 +814,126 @@ describe('parseArgs — PII flags', () => {
         ).toThrow(/Unknown model in --models filter/);
     });
 });
+
+/**
+ * The loops end, whatever happens to the rows they read (#5243).
+ *
+ * The fake behaves like the table: it applies the SELECT's own filter, its
+ * `id > $2` and its `LIMIT $1`, so a loop that re-reads the head of the table
+ * gets the same rows back. It throws after a bounded number of SELECTs rather
+ * than hanging the suite.
+ */
+describe('the backfill loops terminate (#5243)', () => {
+    function tableDeps(rows: Array<{ id: string; value: string }>, matches: (sql: string, v: string) => boolean) {
+        const queryCalls: unknown[][] = [];
+        const prisma = {
+            async $queryRawUnsafe<T>(sql: string, ...params: unknown[]): Promise<T> {
+                queryCalls.push(params);
+                if (queryCalls.length > 20) throw new Error('the loop never ended: it kept re-reading the table');
+                const [limit, after] = params as [number, string | undefined];
+                const page = rows
+                    .filter((r) => matches(sql, r.value) && (after === undefined || r.id > after))
+                    .sort((a, b) => (a.id < b.id ? -1 : 1))
+                    .slice(0, limit);
+                return page as unknown as T;
+            },
+            async $executeRawUnsafe(): Promise<number> {
+                return 1;
+            },
+        };
+        return { deps: { prisma, log: () => undefined } as Parameters<typeof encryptFieldForModel>[0], queryCalls };
+    }
+    const fieldFilter = (sql: string, v: string) =>
+        v !== '' && !v.startsWith('v1:') && !(sql.includes("NOT LIKE 'v2:%'") && v.startsWith('v2:'));
+
+    it('a dry run reads every plaintext row once and stops', async () => {
+        const rows = Array.from({ length: 25 }, (_, i) => ({ id: `r${String(i).padStart(3, '0')}`, value: `plain-${i}` }));
+        const { deps, queryCalls } = tableDeps(rows, fieldFilter);
+        const r = await encryptFieldForModel(deps, 'Risk', 'treatmentNotes', { ...DEFAULTS, execute: false, batchSize: 10 });
+        expect(r).toMatchObject({ scanned: 25, encrypted: 25, errors: 0 });
+        expect(queryCalls).toHaveLength(3); // 10 + 10 + a short page of 5 ends it
+    });
+
+    it('never selects a v2: ciphertext', async () => {
+        const rows = [
+            { id: 'a', value: encryptField('already') .replace(/^v1:/, 'v2:') },
+            { id: 'b', value: 'plain' },
+        ];
+        const { deps } = tableDeps(rows, fieldFilter);
+        const r = await encryptFieldForModel(deps, 'Risk', 'treatmentNotes', { ...DEFAULTS, execute: false });
+        expect(r).toMatchObject({ scanned: 1, encrypted: 1, skippedAlreadyEncrypted: 0 });
+    });
+
+    it('the parallel-column backfill stops on a dry run too', async () => {
+        const rows = Array.from({ length: 12 }, (_, i) => ({ id: `u${String(i).padStart(3, '0')}`, value: `p${i}@example.com` }));
+        const { deps } = tableDeps(rows, (_sql, v) => v !== '');
+        const r = await backfillParallelColumn(
+            deps,
+            { model: 'User', plaintextColumn: 'email', encryptedColumn: 'emailEncrypted', hashColumn: 'emailHash' },
+            { ...DEFAULTS, execute: false, batchSize: 5 },
+        );
+        expect(r).toMatchObject({ scanned: 12, backfilled: 12, errors: 0 });
+    });
+});
+
+// ─── #5647: the documented spelling must work, and a dropped flag must not
+// be silent ────────────────────────────────────────────────────────────
+//
+// The usage block documents `--models Risk,Finding` and the parser only read
+// `--models=…`, so the documented command dropped the filter. On this script a
+// dropped `--models` is not a usage error but a mass write: no filter means
+// every model in the manifest re-encrypted under the global key.
+describe('parseArgs — flag spelling and unknown arguments (#5647)', () => {
+    const argv = (...args: string[]) => ['node', 'script', ...args];
+
+    it('reads --models with a SPACE, as the usage block documents', () => {
+        expect(parseArgs(argv('--models', 'Risk,Finding')).modelsFilter)
+            .toEqual(['Risk', 'Finding']);
+    });
+
+    it('still reads --models with an = sign', () => {
+        // The form that always worked. Without this the fix could have moved
+        // the breakage rather than removed it.
+        expect(parseArgs(argv('--models=Risk,Finding')).modelsFilter)
+            .toEqual(['Risk', 'Finding']);
+    });
+
+    it('reads --batch-size in both spellings', () => {
+        expect(parseArgs(argv('--batch-size', '100')).batchSize).toBe(100);
+        expect(parseArgs(argv('--batch-size=100')).batchSize).toBe(100);
+    });
+
+    it('leaves the filter empty when --models is absent, as before', () => {
+        expect(parseArgs(argv('--execute')).modelsFilter).toEqual([]);
+    });
+
+    it('REFUSES an argument nobody claimed', () => {
+        // The half that surfaces the next one of these: a dropped flag was
+        // indistinguishable from an applied one.
+        expect(() => parseArgs(argv('--execute', '--modls', 'Risk')))
+            .toThrow(/Unrecognised argument/);
+    });
+
+    it('refuses a value flag given no value', () => {
+        expect(() => parseArgs(argv('--models'))).toThrow(/--models was given no value/);
+        // And one followed by another flag rather than a value — reading
+        // `--execute` as the model list would be worse than stopping.
+        expect(() => parseArgs(argv('--models', '--execute')))
+            .toThrow(/--models was given no value/);
+    });
+
+    it('does not mistake a value for an unknown argument', () => {
+        // The value-consuming half of the unknown-argument check: `Risk,Finding`
+        // is a value, not a stray token. A naive check would reject every
+        // space-form invocation it was added to allow.
+        expect(() => parseArgs(argv('--execute', '--models', 'Risk,Finding', '--verify')))
+            .not.toThrow();
+    });
+
+    it('still rejects an unknown MODEL name, in either spelling', () => {
+        // The validation that already existed, now reachable from the
+        // documented form too — it used to be bypassed entirely by it.
+        expect(() => parseArgs(argv('--models', 'NotAModel'))).toThrow(/Unknown model/);
+        expect(() => parseArgs(argv('--models=NotAModel'))).toThrow(/Unknown model/);
+    });
+});

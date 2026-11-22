@@ -80,15 +80,41 @@ curl -fsS https://app.example.com/api/t/<tenantSlug>/risks \
 In Swagger UI (dev/staging), click **Authorize → BearerAuth** and paste
 the key (no `Bearer ` prefix — Swagger adds it).
 
+A key reaches only the endpoints its scopes name. Each endpoint under
+`/api/t/{tenantSlug}/` belongs to one resource (`/risks/…` to `risks`,
+`/vendor-assessment-templates/…` to `vendors`, `/admin/…` to `admin`), and:
+
+- a `GET` needs a scope on that resource (`risks:read`, `risks:write`, `risks:*`, …);
+- any other method needs a scope on it other than `<resource>:read`;
+- an endpoint that belongs to no resource (the dashboard, search, the calendar,
+  onboarding, the assistant) is reachable only by a `*` key.
+
+A request outside the key's scopes is refused with a 403 and recorded in the
+audit log. The endpoint's own permission check still applies after this one.
+
 A key bound to a registered agent stops working while that agent is stopped.
 Every request with it is refused with a 403 while a kill switch covers the agent,
 or while the agent is anything but ACTIVE in the register (draft, suspended,
 retired). It works again once the kill is lifted or the agent is activated.
 
-### Session cookie — `next-auth.session-token` (browser / dev only)
+### The MCP endpoint — `/api/mcp`
+
+A key with `mcp:read` (and `mcp:propose`, for the propose-not-commit write
+tools) also reaches the Model Context Protocol endpoint at `/api/mcp`, which
+has its own rate limits (section 3). Each tool still needs the key's scope on
+its resource. A key can be traded at `POST /api/mcp/token` for a short-lived
+`ifxt_` token that names the tools it may call, and a key created with
+"requires token exchange" is refused at `/api/mcp` unless it presents such a
+token. The scope list and the exchange are described in
+[custom roles and API keys](./enterprise-identity-custom-roles-api-keys.md).
+
+### Session cookie — `__Secure-next-auth.session-token` (browser / dev only)
 
 When you're signed in to the app in a browser, requests carry a NextAuth
-JWT **cookie** automatically (same-origin). This is what powers
+JWT **cookie** automatically (same-origin). Its name is scheme-dependent:
+`__Secure-next-auth.session-token` over https — every hosted deployment — and
+`next-auth.session-token` over http, because next-auth v4 adds the `__Secure-`
+prefix when the deployment URL is https. This is what powers
 Swagger UI's "Try it out" on dev/staging after you sign in. It is **not**
 a partner integration mechanism — there's no supported way to extract
 and replay the cookie from outside the browser, and it's tied to the
@@ -112,14 +138,16 @@ the slug in the path selects it.
 
 ## 3. Rate limiting
 
-Three tiers, each scoped to a traffic class. All limits are per-minute,
-keyed per IP + identity (and per tenant for reads).
+Three tiers, each scoped to a traffic class, plus the MCP endpoint's own
+pair. All limits are per-minute, keyed per IP + identity (and per tenant
+for reads).
 
 | Tier | Applies to | Default limit |
 |---|---|---|
 | **Read** (`API_READ_LIMIT`) | Tenant-scoped `GET /api/t/<slug>/…` | 120 / min |
 | **Mutation** (`API_MUTATION_LIMIT`) | `POST` / `PUT` / `PATCH` / `DELETE` | 60 / min |
 | **Auth** | Sign-in / session / csrf endpoints | 10–60 / min (per endpoint) |
+| **MCP** (`MCP_PER_KEY_LIMIT`, `MCP_IP_CEILING_LIMIT`) | `/api/mcp`, in place of the mutation tier | 60 JSON-RPC messages / min per key; 600 requests / min per IP |
 
 Stricter presets apply to a few sensitive routes (login, API-key
 creation, email dispatch). The `x-rate-limit` extension on each

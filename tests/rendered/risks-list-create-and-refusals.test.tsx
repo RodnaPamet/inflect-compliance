@@ -150,7 +150,11 @@ function installFetch() {
 
 const translations = new Proxy({} as Props['translations'], { get: (_t, key) => String(key) });
 
-function mount({ canCreate = true, risks = [RISK] }: { canCreate?: boolean; risks?: RiskRow[] } = {}) {
+function mount({
+    canCreate = true,
+    canLinkControls = true,
+    risks = [RISK],
+}: { canCreate?: boolean; canLinkControls?: boolean; risks?: RiskRow[] } = {}) {
     rows = risks;
     return render(
         <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
@@ -162,6 +166,7 @@ function mount({ canCreate = true, risks = [RISK] }: { canCreate?: boolean; risk
                     permissions={{ canRead: true, canWrite: true, canAdmin: true, canAudit: false, canExport: true }}
                     bulkPermissions={{ canEdit: true, canDelete: true }}
                     canCreate={canCreate}
+                    canLinkControls={canLinkControls}
                     translations={translations}
                 />
             </TooltipProvider>
@@ -191,6 +196,29 @@ beforeEach(() => {
     window.localStorage.clear();
     window.history.replaceState({}, '', '/t/acme/risks');
     installFetch();
+});
+
+describe('Risks list — the create dialog offers control links only with controls.edit', () => {
+    async function openCreate() {
+        await screen.findByText(RISK.title);
+        await act(async () => {
+            fireEvent.click(document.getElementById('new-risk-btn')!);
+        });
+    }
+
+    it('a user who can edit controls is offered the control picker', async () => {
+        mount({ canLinkControls: true });
+        await openCreate();
+        expect(await screen.findByTestId('risk-controls-toggle')).toBeInTheDocument();
+    });
+
+    it('a user without controls.edit is not', async () => {
+        mount({ canLinkControls: false });
+        await openCreate();
+        // The dialog is open (its title field is there) but has no picker.
+        await waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull());
+        expect(screen.queryByTestId('risk-controls-toggle')).toBeNull();
+    });
 });
 
 describe('Risks list — Create follows riskCanCreate', () => {

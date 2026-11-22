@@ -210,6 +210,26 @@ describe('createBlockedAccount', () => {
         expect(r.kind).toBe('indeterminate');
     });
 
+    it('is INDETERMINATE, and sent ONCE, when the create gets no answer at all (#5097)', async () => {
+        // A deadline or a dropped socket: the account may exist. Refused would
+        // assert it does not, and a second send would come back "already
+        // exists" and be read as a refusal while the account stood there.
+        const { impl, calls } = stubFetch([TAP_ENABLED]);
+        const throwing = (async (url: string, init?: RequestInit) => {
+            if ((init?.method ?? 'GET') === 'POST') {
+                calls.push({ method: 'POST', url: String(url), body: undefined });
+                throw new Error('socket hang up');
+            }
+            return (impl as unknown as (u: string, i?: RequestInit) => Promise<Response>)(url, init);
+        }) as unknown as typeof fetch;
+        const p = createEntraIdProvisioner({ connection: OPTED_IN, doFetch: throwing });
+
+        const r = await p.createBlockedAccount({ identifier: 'a@corp.example', displayName: 'A', employeeId: 'e' });
+
+        expect(r.kind).toBe('indeterminate');
+        expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+    });
+
     it('is INDETERMINATE when Graph accepts but returns no id', async () => {
         // The account cannot be addressed for the three steps that follow.
         const { p } = build([[/^POST .*\/users$/, { status: 201, body: {} }]]);

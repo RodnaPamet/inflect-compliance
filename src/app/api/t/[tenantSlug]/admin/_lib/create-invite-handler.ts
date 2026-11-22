@@ -22,7 +22,7 @@ import type { RequestContext } from '@/app-layer/types';
 import { TENANT_INVITE_CREATE_LIMIT } from '@/lib/security/rate-limit';
 import { enforceRateLimit, getClientIp, isRateLimitBypassed } from '@/lib/security/rate-limit-middleware';
 import { jsonResponse } from '@/lib/api-response';
-import { resolvePublicOrigin } from '@/lib/http/request-origin';
+import { publicBaseUrl } from '@/lib/http/public-base-url';
 import { sendInviteEmail } from '@/lib/email/invite-email';
 
 type CreateInviteInput = Parameters<typeof createInviteToken>[1];
@@ -72,7 +72,11 @@ export async function createInvitePostHandler(
     // tells the admin whether it went out.
     const { sent } = await sendInviteEmail({
         to: result.invite.email,
-        acceptUrl: resolvePublicOrigin(req) + result.url,
+        // The link leaves this request in an email from our own sender,
+        // so its host is the configured one, never X-Forwarded-Host
+        // (#5316): a caller who reaches the app without the proxy
+        // controls that header.
+        acceptUrl: publicBaseUrl(req) + result.url,
         kind: 'workspace',
         spaceName: ctx.tenantSlug ?? 'your workspace',
         roleLabel: TENANT_ROLE_LABEL[input.role] ?? input.role,

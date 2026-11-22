@@ -73,11 +73,10 @@ export function Areas({
                 </mask>
 
                 {/* R18 visible-uplift — gloss def for the area
-                    fill. The TrendCard ×4 row on the executive
-                    dashboard is built on <Areas>; R18 polished
-                    LineChart + MiniAreaChart but missed THIS
-                    primitive entirely. `default` intensity — a
-                    full TrendCard tile, not a tiny sparkline. */}
+                    fill. Full-size trend tiles are built on <Areas>;
+                    R18 polished LineChart + MiniAreaChart but missed
+                    THIS primitive entirely. `default` intensity — a
+                    full trend tile, not a tiny sparkline. */}
                 <ChartGloss
                   id={chartGlossId(s.id)}
                   direction="vertical"

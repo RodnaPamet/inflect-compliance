@@ -65,6 +65,7 @@ import type { PermissionMode } from './assert-permission';
 export { assertPermission } from './assert-permission';
 export type { PermissionMode } from './assert-permission';
 import type { PermissionKey } from './permission-key';
+import { raiseApiKeyCoarseTier } from './api-key-coarse-raise';
 
 // ─── Handler signature plumbing ─────────────────────────────────────
 
@@ -138,8 +139,13 @@ function safePath(req: NextRequest): string {
  * straight to `withApiErrorHandling`.
  *
  * On denial:
- *   1. Records an AUTHZ_DENIED audit entry (best-effort).
- *   2. Throws `forbidden('Permission denied')` — surfaces as a 403
+ *   1. Records an AUTHZ_DENIED audit entry, FAIL-CLOSED (#2657): the entry
+ *      goes to the hash chain, or else to a durable `AuditOutbox` row drained
+ *      out-of-band; if both writes fail (the database is unreachable) the
+ *      write throws, and the caller gets a 500 rather than a 403 — a refusal
+ *      that cannot be recorded surfaces as an error, never as a gap in the
+ *      trail. See `auditPermissionDenied` in `assert-permission.ts`.
+ *   2. Otherwise throws `forbidden('Permission denied')` — surfaces as a 403
  *      with a generic message via `withApiErrorHandling`.
  *
  * @param required - One key, an array of keys, or `{ keys, mode }` for
@@ -192,7 +198,15 @@ export function requirePermission<
             path: safePath(req),
         });
 
-        return handler(req, { ...routeArgs, params: resolvedParams }, ctx) as Promise<TResponse>;
+        // An API key's coarse tier is derived from its scopes, so an `admin:*`
+        // key read EDITOR and was refused by the `assertCanAdmin` behind a
+        // route it had just passed by name. Having passed, the key gets the
+        // coarse tier of the lowest built-in role holding these keys, for THIS
+        // request only (#5306, owner decision 2026-11-14). A session context
+        // and an agent-bound key are returned unchanged; see the module.
+        const handlerCtx = raiseApiKeyCoarseTier(ctx, keys, mode);
+
+        return handler(req, { ...routeArgs, params: resolvedParams }, handlerCtx) as Promise<TResponse>;
     };
 }
 

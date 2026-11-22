@@ -412,7 +412,7 @@ export function mapRows(
             );
         }
         byKey.set(accountKey, {
-            ...existing,
+            ...fillAbsentScalars(existing, account),
             entitlements: [...new Set([...existing.entitlements, ...account.entitlements])],
         });
     }
@@ -444,6 +444,41 @@ export function mapRows(
         overshared: [...oversharedKeys].sort(),
         declaredDenied,
         unparsedDates,
+    };
+}
+
+/**
+ * A long layout's account, with every field the FIRST row left absent taken
+ * from a later row that has it (#5179).
+ *
+ * Keeping the first row's scalars as they were meant a sparse first row — the
+ * key and a role, nothing else — decided the account: its identity, status and
+ * last login were dropped even though the next row carried them, and the
+ * account then reached matching and review as an UNKNOWN with no name. This is
+ * safe only because `scalarDisagreements` runs first: two present values that
+ * differ are refused, so a later row can only FILL a gap, never overwrite.
+ * Absence is the same as there: null, and `UNKNOWN` for the two enums.
+ */
+function fillAbsentScalars(first: CanonicalAccount, later: CanonicalAccount): CanonicalAccount {
+    const pick = <T>(a: T, b: T): T => (a === null || a === undefined ? b : a);
+    const pickKnown = <T extends string>(a: T, b: T): T => (a === 'UNKNOWN' ? b : a);
+    return {
+        ...first,
+        username: pick(first.username, later.username),
+        displayName: pick(first.displayName, later.displayName),
+        givenName: pick(first.givenName, later.givenName),
+        familyName: pick(first.familyName, later.familyName),
+        email: pick(first.email, later.email),
+        employeeNumber: pick(first.employeeNumber, later.employeeNumber),
+        department: pick(first.department, later.department),
+        title: pick(first.title, later.title),
+        managerRef: pick(first.managerRef, later.managerRef),
+        status: pickKnown(first.status, later.status),
+        lastLoginAt: pick(first.lastLoginAt, later.lastLoginAt),
+        createdAt: pick(first.createdAt, later.createdAt),
+        expiresAt: pick(first.expiresAt, later.expiresAt),
+        isPrivileged: pick(first.isPrivileged, later.isPrivileged),
+        accountType: pickKnown(first.accountType, later.accountType),
     };
 }
 

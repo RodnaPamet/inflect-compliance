@@ -331,6 +331,29 @@ describeFn('audience-scoped tokens, the autonomy ceiling, and mid-run revocation
             expect(status).toBe(400);
         });
 
+        it('a token can be minted for a GRANTED external tool, and only a granted one (#5234)', async () => {
+            // An external tool is `mcp__<connectionId>__<tool>`, never in this
+            // build's catalogue. The exchange refused every such name as "not
+            // an MCP tool", so a key that must exchange could never call one.
+            const agent = await seedAgent(`ext-${randomUUID().slice(0, 6)}`, 2);
+            const granted = 'mcp__connExt5234__list_alerts';
+            await prisma.registeredAgentTool.create({
+                data: { tenantId: TENANT, agentId: agent, toolName: granted, grantedByUserId: ownerId },
+            });
+            const key = await mintKey(ownerId, WIDE_SCOPES, agent);
+
+            const ok = await exchange(key.plaintext, granted);
+            expect(ok.status).toBe(201);
+            expect(ok.json.audience).toEqual([granted]);
+
+            // Well-formed but not granted: a grant refusal, not "not a tool".
+            const refused = await exchange(key.plaintext, 'mcp__connExt5234__delete_alerts');
+            expect(refused.status).toBe(403);
+            expect((refused.json.error as { message?: string } | undefined)?.message).toMatch(
+                /not granted the "mcp__connExt5234__delete_alerts" tool/,
+            );
+        });
+
         it('an exchanged token cannot be exchanged AGAIN', async () => {
             const { json: minted } = await exchange(keyForExchange, 'list_risks');
             const again = await exchange(String(minted.access_token), 'list_controls');

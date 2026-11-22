@@ -147,7 +147,7 @@ GET + HEAD requests through `withApiErrorHandling`. Per-route exclusions identic
 
 - **Primary**: `api_request_duration` histogram, filtered by `http_method=~"GET|HEAD"`
 - **Dashboard**: `inflect-api-overview` ("Latency percentiles (p95 / p99 / mean)")
-- **Alert**: none in production. `ApiLatencySloBreach` in `infra/observability/prometheus/rules/alerting-rules.yml` fires when p95 over all requests is above 750ms for 15 minutes: looser than this SLO, and not split by method. The stack that would evaluate it is not recorded as running; see [`observability/03-prometheus-grafana.md`](observability/03-prometheus-grafana.md).
+- **Alert**: none in production. `ApiLatencySloBreach` in `infra/observability/grafana/provisioning/alerting/alert-rules.yml` fires when p95 over all requests is above 750ms for 15 minutes: looser than this SLO, and not split by method. The stack that would evaluate it is not recorded as running; see [`observability/03-prometheus-grafana.md`](observability/03-prometheus-grafana.md).
 
 ---
 
@@ -338,7 +338,7 @@ continuous transaction log shipping". There is no RDS. See
 
 | Layer | Mechanism | Recoverable to |
 |---|---|---|
-| Postgres (`postgres:16-alpine` container) | Crash-consistent daily disk snapshot only. `archive_mode=off`; `pg_stat_archiver.archived_count` is 0 for the container's lifetime. No WAL archive, no replica, no replication slot. | The 02:00 UTC snapshot moment, ≤ 24h old |
+| Postgres (`postgres-pgvector:16-alpine` container) | Crash-consistent daily disk snapshot only. `archive_mode=off`; `pg_stat_archiver.archived_count` is 0 for the container's lifetime. No WAL archive, no replica, no replication slot. | The 02:00 UTC snapshot moment, ≤ 24h old |
 | GCP persistent-disk snapshots | Policy `inflect-daily-snapshot`: daily 02:00 UTC, `maxRetentionDays: 14`, `storageLocations: [eu]` (multi-region, so a snapshot survives loss of `europe-west1-b`), `guestFlush: false`, `onSourceDiskDelete: KEEP_AUTO_SNAPSHOTS` | Same snapshot moment |
 | Encrypted column data | Same disk snapshot — the ciphertext is in the same volume | Same |
 | Evidence / uploaded files | Same disk snapshot. `STORAGE_PROVIDER=local`; the files live on a Docker volume on that one disk, not in object storage. | Same |

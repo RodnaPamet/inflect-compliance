@@ -86,7 +86,11 @@ describe('Vendor Management Integration', () => {
             const mod = require('../../src/app-layer/repositories/AssessmentRepository');
             expect(mod.QuestionnaireRepository).toBeDefined();
             expect(mod.VendorAssessmentRepository).toBeDefined();
-            expect(mod.VendorAnswerRepository).toBeDefined();
+            // VendorAnswerRepository was retired with the legacy questionnaire
+            // path (#5533): it had no src/ caller, and its `upsertMany` was the
+            // last writer that set a bare `questionId` with no
+            // `templateQuestionId` — the shape #5068 fixed.
+            expect(mod.VendorAnswerRepository).toBeUndefined();
         });
     });
 

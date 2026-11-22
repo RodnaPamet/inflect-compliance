@@ -1,0 +1,80 @@
+{
+  "schema": "inflect-web-bot-auth-vectors/1",
+  "about": "Conformance vectors for src/lib/web-bot-auth (docs/ai-architecture/web-bot-auth.md Phase 1). Every key here is PUBLISHED and therefore worthless as an identity: src/lib/web-bot-auth/seed.ts refuses each seed in production. Vectors marked origin=external reproduce a published value byte for byte; origin=regression pins this implementation's own output and is checked by an independent verifier in the test, never by the signer that produced it.",
+  "thumbprints": [
+    {
+      "origin": "external",
+      "source": "RFC 8037 Appendix A.3 (JWK thumbprint of the A.1 Ed25519 key)",
+      "jwk": { "kty": "OKP", "crv": "Ed25519", "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo" },
+      "thumbprint": "kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k"
+    }
+  ],
+  "keys": [
+    {
+      "origin": "external",
+      "source": "RFC 8032 section 7.1 TEST 1 = RFC 8037 Appendix A.1",
+      "seedHex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+      "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+      "keyid": "kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k"
+    },
+    {
+      "origin": "external",
+      "source": "RFC 9421 Appendix B.1.4 test-key-ed25519; the keyid is the one Cloudflare's web-bot-auth examples sign with",
+      "seedHex": "9f8362f87a484a954e6e740c5b4c0e84229139a20aa8ab56ff66586f6a7d29c5",
+      "x": "JrQLj5P_89iXES9-vFgrIy29clF9CC_oPPsw3c5D0bs",
+      "keyid": "poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U"
+    }
+  ],
+  "ed25519": [
+    {
+      "origin": "external",
+      "source": "RFC 8032 section 7.1 TEST 1",
+      "seedHex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+      "messageHex": "",
+      "signatureHex": "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+    }
+  ],
+  "messageSignatures": [
+    {
+      "origin": "external",
+      "source": "RFC 9421 Appendix B.2.6 (signing a request using ed25519)",
+      "seedHex": "9f8362f87a484a954e6e740c5b4c0e84229139a20aa8ab56ff66586f6a7d29c5",
+      "label": "sig-b26",
+      "components": [
+        { "name": "date", "value": "Tue, 20 Apr 2021 02:07:55 GMT" },
+        { "name": "@method", "value": "POST" },
+        { "name": "@path", "value": "/foo" },
+        { "name": "@authority", "value": "example.com" },
+        { "name": "content-type", "value": "application/json" },
+        { "name": "content-length", "value": "18" }
+      ],
+      "params": { "created": 1618884473, "keyid": "test-key-ed25519" },
+      "base": "\"date\": Tue, 20 Apr 2021 02:07:55 GMT\n\"@method\": POST\n\"@path\": /foo\n\"@authority\": example.com\n\"content-type\": application/json\n\"content-length\": 18\n\"@signature-params\": (\"date\" \"@method\" \"@path\" \"@authority\" \"content-type\" \"content-length\");created=1618884473;keyid=\"test-key-ed25519\"",
+      "signatureInput": "sig-b26=(\"date\" \"@method\" \"@path\" \"@authority\" \"content-type\" \"content-length\");created=1618884473;keyid=\"test-key-ed25519\"",
+      "signature": "sig-b26=:wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1u02Gb04v9EDgwUPiu4A0w6vuQv5lIp5WPpBKRCw==:"
+    }
+  ],
+  "directories": [
+    {
+      "origin": "regression",
+      "source": "this implementation, one key",
+      "currentSeedHex": "9f8362f87a484a954e6e740c5b4c0e84229139a20aa8ab56ff66586f6a7d29c5",
+      "authority": "crawler.example.com",
+      "now": 1767225600,
+      "body": "{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"JrQLj5P_89iXES9-vFgrIy29clF9CC_oPPsw3c5D0bs\"}]}",
+      "signatureInput": "binding0=(\"@authority\";req);created=1767225600;expires=1767229200;keyid=\"poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U\";alg=\"ed25519\";tag=\"http-message-signatures-directory\"",
+      "signature": "binding0=:KXhmvjV1ZG32FXMexaFQnEeqnZ6+/aWChtffonx3l1vNF8zctHZbkT0z+JmCfPtLJprVOsQZb8Yyc1Rg0eboBA==:"
+    },
+    {
+      "origin": "regression",
+      "source": "this implementation, current and previous key during a rotation's grace",
+      "currentSeedHex": "9f8362f87a484a954e6e740c5b4c0e84229139a20aa8ab56ff66586f6a7d29c5",
+      "previousSeedHex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+      "authority": "crawler.example.com",
+      "now": 1767225600,
+      "body": "{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"JrQLj5P_89iXES9-vFgrIy29clF9CC_oPPsw3c5D0bs\"},{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo\"}]}",
+      "signatureInput": "binding0=(\"@authority\";req);created=1767225600;expires=1767229200;keyid=\"poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U\";alg=\"ed25519\";tag=\"http-message-signatures-directory\", binding1=(\"@authority\";req);created=1767225600;expires=1767229200;keyid=\"kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k\";alg=\"ed25519\";tag=\"http-message-signatures-directory\"",
+      "signature": "binding0=:KXhmvjV1ZG32FXMexaFQnEeqnZ6+/aWChtffonx3l1vNF8zctHZbkT0z+JmCfPtLJprVOsQZb8Yyc1Rg0eboBA==:, binding1=:GmISdfAf1hYO5F5xhit7plHml4V3nNh0W1Ou8wxIYzL6+6Dff1RHPuN9YMcdlFM48MWnsZvqd10vhRAXkHaRAw==:"
+    }
+  ]
+}

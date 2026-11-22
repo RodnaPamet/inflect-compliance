@@ -47,11 +47,13 @@
  *     a CLOSED member campaign whose PDF failed at close, rebuilt from the
  *     stored decisions with the close's own builder (#4130).
  */
+import { latestSignInByUser } from '@/lib/security/session-tracker';
 import { RequestContext } from '../types';
 import { AccessReviewRepository } from '../repositories/AccessReviewRepository';
 import { assertCanAdmin, assertCanRead } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
+import { lockTenantOwners } from './tenant-owner-lock';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { AppError, badRequest, forbidden, notFound, ConflictError } from '@/lib/errors/types';
 import { ZodError } from 'zod';
@@ -159,25 +161,25 @@ export async function getAccessReview(ctx: RequestContext, id: string) {
 
 /**
  * Detail-with-activity — the review page wants the full decision
- * graph PLUS the per-subject "last activity" signal. Single round
- * trip from the route's perspective, two queries inside.
+ * graph PLUS each subject's latest sign-in (#5106). The review is read
+ * in the tenant's context; the sign-ins are read for exactly its
+ * subjects, across every session they have had.
  */
 export async function getAccessReviewWithActivity(
     ctx: RequestContext,
     id: string,
 ) {
     assertCanRead(ctx);
-    return runInTenantContext(ctx, async (db) => {
-        const review = await AccessReviewRepository.getById(db, ctx, id);
-        if (!review) throw notFound('Access review not found');
-        const userIds = review.decisions.map((d) => d.subjectUserId);
-        const lastActivityByUser = await AccessReviewRepository.getLastActivityByUser(
-            db,
-            ctx,
-            userIds,
-        );
-        return { ...narrowAgentSubjects(ctx, review), lastActivityByUser };
+    const review = await runInTenantContext(ctx, async (db) => {
+        const found = await AccessReviewRepository.getById(db, ctx, id);
+        if (!found) throw notFound('Access review not found');
+        return found;
     });
+    const narrowed = narrowAgentSubjects(ctx, review);
+    const lastSignInByUser = await latestSignInByUser(
+        narrowed.decisions.map((d) => d.subjectUserId),
+    );
+    return { ...narrowed, lastSignInByUser };
 }
 
 // ─── createAccessReview ───────────────────────────────────────────────
@@ -802,6 +804,11 @@ export async function closeAccessReview(
     // Phase 1 — execute decisions + flip status. All inside one
     // tenant context so RLS is in effect for every statement.
     const phase1 = await runInTenantContext(ctx, async (db) => {
+        // The tenant's owner lock, first (#5388): the live-OWNER count below
+        // must read the committed result of any concurrent owner change, and
+        // taking it before any row keeps the lock order the trigger and the
+        // member usecases use, so a close never deadlocks with them.
+        await lockTenantOwners(db, ctx.tenantId);
         const review = await db.accessReview.findFirst({
             where: { id: accessReviewId, tenantId: ctx.tenantId },
             include: {

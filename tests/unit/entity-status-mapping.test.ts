@@ -24,6 +24,7 @@ import {
     VENDOR_CRITICALITY_VARIANT,
     VENDOR_ASSESSMENT_VARIANT,
 } from '../../src/app-layer/domain/entity-status-mapping';
+import { PolicyStatus } from '@prisma/client';
 
 // ═════════════════════════════════════════════════════════════════════
 // 1. riskSeverityToBadgeVariant — config-tone → badge-variant bridge
@@ -137,8 +138,17 @@ describe('status-variant lookup tables', () => {
     test('policy status: PUBLISHED is success, ARCHIVED warns', () => {
         expect(POLICY_STATUS_VARIANT.DRAFT).toBe('neutral');
         expect(POLICY_STATUS_VARIANT.IN_REVIEW).toBe('info');
+        expect(POLICY_STATUS_VARIANT.APPROVED).toBe('success');
         expect(POLICY_STATUS_VARIANT.PUBLISHED).toBe('success');
         expect(POLICY_STATUS_VARIANT.ARCHIVED).toBe('warning');
+    });
+
+    test('policy status covers every PolicyStatus value (#5305)', () => {
+        // A status missing here falls to the detail page's neutral default and
+        // reads like a DRAFT, which is how APPROVED rendered.
+        for (const status of Object.values(PolicyStatus)) {
+            expect(POLICY_STATUS_VARIANT[status]).toBeDefined();
+        }
     });
 
     test('policy approval: REJECTED is error, APPROVED is success', () => {

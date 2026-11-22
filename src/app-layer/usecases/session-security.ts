@@ -30,6 +30,7 @@ import {
     OWNER_MANAGED_SESSION_REVOKE_REFUSAL,
     ownerManagedSessionRevokeMessage,
 } from '@/lib/roles';
+import { assertActingAsPerson } from '../policies/person-only.policies';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -236,6 +237,7 @@ export async function revokeOtherSessions(
     ctx: RequestContext,
     currentSessionId: string | null,
 ): Promise<OtherSessionsRevocationResult> {
+    assertActingAsPerson(ctx, 'Signing out your other sessions');
     const kept = await liveOwnSession(ctx.userId, currentSessionId);
     const now = new Date();
 

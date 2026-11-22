@@ -76,6 +76,23 @@ export interface RequestContext {
     agentId?: string;
 
     /**
+     * The `INVOKE_AGENT` recursion depth of the run this context belongs to
+     * (#5716), or absent for every context no automation rule invoked.
+     *
+     * `MAX_AGENT_INVOKE_DEPTH` is read off the job payload by
+     * `agent-invoke-dispatch`, and nothing wrote the number it reads: a run did
+     * not record its depth and the automation events its effects caused carried
+     * none, so every invoke arrived at depth 1 and `depth_exceeded` could not
+     * trip through a real cycle. This is the carrier — the bus stamps it onto
+     * every event emitted under this context, and `invokeAgent` enqueues one
+     * higher.
+     *
+     * ABSENT IS DEPTH ZERO, deliberately: an event no agent run caused is the
+     * common case and must keep behaving exactly as before.
+     */
+    agentInvokeDepth?: number;
+
+    /**
      * `TenantApiKey.maxAutonomyLevel` — the highest rung on the 0-6 agent
      * ladder this CREDENTIAL may drive its agent to.
      *
@@ -110,6 +127,21 @@ export interface RequestContext {
      * grants nothing; it only ever narrows.
      */
     a2aInbound?: A2aInboundOrigin;
+
+    /**
+     * Set on the context a READ-ONLY run's tools execute on (#5365): a run whose
+     * definition declares `readOnly` — a Test run of an agent profile, an Ask
+     * run, a Flue workflow with no PROPOSE step.
+     *
+     * Set by `offerToolSet` alone, on the invocation its `run` closures are
+     * bound to, because that is the one seam every engine's tool calls pass
+     * through and it already receives the definition's `readOnly`. The offer
+     * withholds every write-classified external tool and every A2A send from
+     * such a run; this is the BACKSTOP behind that: the external write
+     * dispatch and the A2A send refuse with nothing sent and no row written
+     * when it is set. It grants nothing; it only ever narrows.
+     */
+    readOnlyRun?: true;
 }
 
 /**

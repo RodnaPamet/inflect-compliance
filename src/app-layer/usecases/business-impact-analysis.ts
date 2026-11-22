@@ -26,6 +26,7 @@ import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { deriveRecoveryPriority, rankFor } from '../services/bia-recovery-priority';
 import { isBiaReviewOverdue } from '@/lib/bia/review-overdue';
+import { assertActiveTenantMember } from '@/app-layer/domain/tenant-member-reference';
 
 /**
  * Requirement codes whose control is a "continuity control" (case 4a).
@@ -327,12 +328,19 @@ async function assertDependencyTargets(
     }
 }
 
+/** A BIA's owner must be an active member of the tenant; see tenant-member-reference. */
+const BIA_OWNER_REFUSAL = {
+    code: 'INVALID_OWNER',
+    message: 'The BIA owner must be an active member of this tenant.',
+};
+
 export async function createBia(ctx: RequestContext, rawInput: CreateBiaInput) {
     assertCanWrite(ctx);
     const data = CreateBiaSchema.parse(rawInput);
     return runInTenantContext(ctx, async (db) => {
         // Validate every dependency target exists in this tenant (no dangling refs).
         await assertDependencyTargets(db, ctx, data.dependencies ?? []);
+        await assertActiveTenantMember(db, ctx.tenantId, data.ownerUserId, BIA_OWNER_REFUSAL);
         const bia = await db.businessImpactAnalysis.create({
             data: {
                 tenantId: ctx.tenantId,
@@ -635,6 +643,7 @@ export async function updateBia(ctx: RequestContext, id: string, rawInput: z.inp
     return runInTenantContext(ctx, async (db) => {
         const existing = await db.businessImpactAnalysis.findFirst({ where: { id, tenantId: ctx.tenantId }, select: { id: true } });
         if (!existing) throw notFound('BIA not found');
+        await assertActiveTenantMember(db, ctx.tenantId, data.ownerUserId, BIA_OWNER_REFUSAL);
         // Resolved once, then spread below — `undefined` means "not supplied"
         // and must leave the existing link alone, which is why this cannot be
         // folded into the spread unconditionally.
@@ -730,10 +739,31 @@ export async function linkBiaToControl(ctx: RequestContext, biaId: string, contr
         ]);
         if (!bia) throw notFound('BIA not found');
         if (!control) throw badRequest('INVALID_CONTROL', 'Control not found in this tenant');
+        const key = { controlId_kind_biaId: { controlId, kind: 'BIA' as const, biaId } };
+        // Re-linking is idempotent and writes no second audit row; a NEW
+        // link changes how the control reads for Art.21(2)(c) coverage, so
+        // it is audited (#5317).
+        const existing = await db.controlEvidenceLink.findUnique({ where: key });
+        if (existing) return existing;
         const link = await db.controlEvidenceLink.upsert({
-            where: { controlId_kind_biaId: { controlId, kind: 'BIA', biaId } },
+            where: key,
             create: { tenantId: ctx.tenantId, controlId, kind: 'BIA', biaId, note: `BIA: ${bia.name}`, createdByUserId: ctx.userId },
             update: {},
+        });
+        await logEvent(db, ctx, {
+            action: 'BIA_CONTROL_LINKED',
+            entityType: 'BusinessImpactAnalysis',
+            entityId: biaId,
+            details: `Linked BIA to control as continuity evidence: ${bia.name}`,
+            detailsJson: {
+                category: 'relationship',
+                operation: 'linked',
+                sourceEntity: 'BusinessImpactAnalysis',
+                sourceId: biaId,
+                targetEntity: 'Control',
+                targetId: controlId,
+                relation: 'BIA_EVIDENCE',
+            },
         });
         return link;
     });
@@ -790,11 +820,10 @@ export async function getControlBiaSurface(ctx: RequestContext, controlId: strin
             select: { processMapId: true, sourceKey: true, targetKey: true },
             take: 400,
         });
-        const nodeKeys = [...new Set(edges.flatMap((e) => [e.sourceKey, e.targetKey]))];
-        const mapIds = [...new Set(edges.map((e) => e.processMapId))];
-        if (nodeKeys.length === 0) return { kind: 'none' };
+        const endpoints = edgeEndpointPairs(edges);
+        if (endpoints.length === 0) return { kind: 'none' };
         const nodes = await db.processNode.findMany({
-            where: { tenantId: ctx.tenantId, processMapId: { in: mapIds }, nodeKey: { in: nodeKeys } },
+            where: { tenantId: ctx.tenantId, OR: endpoints },
             select: { processMapId: true, nodeKey: true, label: true },
             take: 400,
         });
@@ -896,6 +925,25 @@ export async function getBiasForProcessNodeKey(ctx: RequestContext, processMapId
 }
 
 /**
+ * The exact (map, node) pairs an edge set touches, deduplicated, as an OR of
+ * pairs (#5260). Never `mapId in [...] AND nodeKey in [...]`: map templates
+ * reuse node keys n1..n6, so that cross-product also matched node n5 of map A
+ * when only map B's n5 sat on a protected edge, and surfaced a BIA for a
+ * process the control does not protect.
+ */
+function edgeEndpointPairs(
+    edges: ReadonlyArray<{ processMapId: string; sourceKey: string; targetKey: string }>,
+): Array<{ processMapId: string; nodeKey: string }> {
+    const seen = new Map<string, { processMapId: string; nodeKey: string }>();
+    for (const e of edges) {
+        for (const nodeKey of [e.sourceKey, e.targetKey]) {
+            seen.set(`${e.processMapId}\u0000${nodeKey}`, { processMapId: e.processMapId, nodeKey });
+        }
+    }
+    return [...seen.values()];
+}
+
+/**
  * Recovery-deadline context for a live incident: the BIAs reachable from
  * the incident's linked controls (control → process → BIA). Derived — no
  * direct incident→process FK exists, so we resolve via the controls the
@@ -922,11 +970,10 @@ export async function getIncidentBiaContext(ctx: RequestContext, incidentId: str
             select: { processMapId: true, sourceKey: true, targetKey: true },
             take: 500,
         });
-        const nodeKeys = [...new Set(edges.flatMap((e) => [e.sourceKey, e.targetKey]))];
-        const mapIds = [...new Set(edges.map((e) => e.processMapId))];
-        if (nodeKeys.length === 0) return [];
+        const endpoints = edgeEndpointPairs(edges);
+        if (endpoints.length === 0) return [];
         const nodes = await db.processNode.findMany({
-            where: { tenantId: ctx.tenantId, processMapId: { in: mapIds }, nodeKey: { in: nodeKeys } },
+            where: { tenantId: ctx.tenantId, OR: endpoints },
             select: { processMapId: true, nodeKey: true },
             take: 500,
         });

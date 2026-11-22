@@ -25,6 +25,7 @@
 
 import type { PrismaClient } from '@prisma/client';
 import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
+import { insertedNotificationIds } from './inserted-ids';
 
 export interface AssignmentTarget {
     /** Tenant the entity belongs to. */
@@ -145,16 +146,18 @@ export async function createAssignmentNotification(
     // by PR-C #761) so subscribed bell clients see the assignment
     // alert the moment it lands, not on the next 60s poll. Skip
     // when result.count === 0 — that means the dedupeKey collapsed
-    // a duplicate, and we already pushed the original.
+    // a duplicate, and we already pushed the original. The event
+    // carries the ROW's id (#5305), which marking it read needs.
     if (result.count > 0) {
-        publishNotificationEvent(target.tenantId, target.assigneeUserId, {
-            id: row.dedupeKey,
+        const written = (await insertedNotificationIds(db, target.tenantId, [row.dedupeKey])).get(row.dedupeKey);
+        if (written) publishNotificationEvent(target.tenantId, target.assigneeUserId, {
+            id: written.id,
             type: row.type,
             title: row.title,
             message: row.message,
             read: false,
             linkUrl: row.linkUrl,
-            createdAt: now.toISOString(),
+            createdAt: written.createdAt.toISOString(),
         });
     }
 

@@ -348,6 +348,42 @@ interface JobOutcome {
     noRetry?: boolean;
 }
 
+/**
+ * The outcome of a fan-out sweep that isolates per-item failures (#5307).
+ *
+ * Isolation keeps one tenant's fault from stopping the others, but the run is
+ * still not a clean one: any isolated failure makes it an ERROR, the shape
+ * `snapshot` and `sla-monitor` already use (`success: errored === 0`).
+ * `noRetry`, because the sweep already ran every item once and a BullMQ retry
+ * would re-run the whole fan-out for the ones that succeeded; the next
+ * scheduled tick is the retry.
+ */
+export function fanOutOutcome(
+    jobName: string,
+    failures: number,
+    what: string,
+): JobOutcome | undefined {
+    if (failures === 0) return undefined;
+    return {
+        status: 'ERROR',
+        errorMessage: `${jobName}: ${failures} ${what}`,
+        noRetry: true,
+    };
+}
+
+/** The outcome of a master-KEK rotation sweep (#5299). */
+export function keyRotationOutcome(
+    totalErrors: number,
+    dekRewrapped: boolean,
+    dekRewrapError: string | undefined,
+): JobOutcome {
+    if (totalErrors === 0 && dekRewrapped) return { status: 'PASSED' };
+    const parts: string[] = [];
+    if (!dekRewrapped) parts.push(`DEK not re-wrapped${dekRewrapError ? ` (${dekRewrapError})` : ''}`);
+    if (totalErrors > 0) parts.push(`${totalErrors} error(s)`);
+    return { status: 'ERROR', errorMessage: `key-rotation: ${parts.join('; ')}` };
+}
+
 // ── health-check ─────────────────────────────────────────────────────
 
 executorRegistry.register('health-check', async (payload) => {
@@ -904,6 +940,12 @@ executorRegistry.register('key-rotation', async (payload) => {
             totalErrors: r.totalErrors,
             jobRunId: r.jobRunId,
         },
+        // A sweep with errors — a DEK that failed to re-wrap, a row that
+        // failed to re-encrypt — is a FAILED job, so BullMQ retries it and
+        // the job history stops reading green while the tenant still
+        // depends on the previous KEK (#5299). The sweep is idempotent, so
+        // a retry is safe.
+        keyRotationOutcome(r.totalErrors, r.dekRewrapped, r.dekRewrapError),
     );
 });
 
@@ -938,6 +980,14 @@ executorRegistry.register('tenant-dek-rotation', async (payload, ctx) => {
             totalErrors: r.totalErrors,
             jobRunId: r.jobRunId,
         },
+        // Errors leave previousEncryptedDek set, which blocks every later
+        // rotation; that is a failed job, retried, not a green one (#5299).
+        r.totalErrors > 0
+            ? {
+                  status: 'ERROR',
+                  errorMessage: `tenant-dek-rotation: ${r.totalErrors} row(s) not re-encrypted; previous DEK kept`,
+              }
+            : { status: 'PASSED' },
     );
 });
 
@@ -962,8 +1012,14 @@ executorRegistry.register('agent-run-execute', async (payload) => {
     // they are right to: a dispatch site that never mentions the tenant is
     // how a job comes to act across tenants without any single line looking
     // wrong.
-    const { tenantId, runId } = payload;
-    const r = await runAgentRunExecute({ tenantId, runId });
+    //
+    // `clockBase` is named for the same reason (#5534): a person's resume puts
+    // its clock base in the payload, and an executor that kept naming two
+    // fields would silently measure every resumed segment from the run's start.
+    // `NamesEveryField` makes leaving it out a compile error.
+    const { tenantId, runId, clockBase } = payload;
+    const forwarded: NamesEveryField<JobPayload<'agent-run-execute'>> = { tenantId, runId, clockBase };
+    const r = await runAgentRunExecute(forwarded);
     return makeResult(
         'agent-run-execute',
         startedAt,
@@ -1153,7 +1209,7 @@ executorRegistry.register('report-delivery', async (payload) => {
     const r = await runReportDelivery(payload);
     return makeResult('report-delivery', startedAt, startMs, r.due, r.generated, r.failed, {
         due: r.due, generated: r.generated, delivered: r.delivered, pushed: r.pushed, failed: r.failed,
-    });
+    }, fanOutOutcome('report-delivery', r.failed, 'scheduled report(s) failed to generate or deliver'));
 });
 
 // RQ-2 — daily cross-tenant risk-appetite breach monitor.
@@ -1164,7 +1220,11 @@ executorRegistry.register('risk-appetite-monitor', async (payload) => {
     const r = await runRiskAppetiteMonitor(payload);
     // A tenant this job could not act in used to be a hardcoded ZERO here, so a
     // workspace that had silently stopped being monitored scored as a clean run
-    // (#4388). It is a failure, and it is counted as one.
+    // (#4388). It is now COUNTED — as `itemsSkipped` and `details.unroutable` —
+    // but it does not fail the job (#5307 corrected this comment, which said
+    // it did): an unroutable tenant is a standing configuration state, reported
+    // with its count the way `sharepoint-delta-sync-dispatch` reports its
+    // unroutable connections, not a fault a retry or a red run would fix.
     return makeResult('risk-appetite-monitor', startedAt, startMs, r.scanned, r.newBreaches, r.unroutable, {
         tenants: r.tenants,
         scanned: r.scanned,
@@ -1388,6 +1448,34 @@ executorRegistry.register('legacy-reconcile', async (payload) => {
     });
 });
 
+// #5317 — prepare a large AGENT campaign's reviewer packs. ON-DEMAND only:
+// enqueued by `requestAgentReviewPacks` behind POST …/agent-packs, never
+// scheduled. It runs as the person who asked, re-read now; a refusal throws,
+// fails the job with its sentence (the page shows it) and is never retried.
+executorRegistry.register('agent-recert-packs-prepare', async (payload, ctx) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runAgentRecertPackPreparation } = await import('./agent-recert-pack-preparation');
+    const forwarded: NamesEveryField<JobPayload<'agent-recert-packs-prepare'>> = {
+        tenantId: payload.tenantId,
+        accessReviewId: payload.accessReviewId,
+        requestedByUserId: payload.requestedByUserId,
+        requestId: payload.requestId,
+    };
+    const r = await runAgentRecertPackPreparation(forwarded, async (progress) => {
+        // Forwarded to the BullMQ progress channel, which the packs route
+        // reads for the page's "preparing N of M".
+        if (ctx?.updateProgress) await ctx.updateProgress(progress);
+    });
+    return makeResult('agent-recert-packs-prepare', startedAt, startMs, r.packs, r.packs, 0, {
+        tenantId: payload.tenantId,
+        accessReviewId: r.accessReviewId,
+        packs: r.packs,
+        narrowings: r.narrowings,
+        runs: r.runIds.length,
+    });
+});
+
 // PR-2 — identity-sync: sync one Okta / Google Workspace connection.
 executorRegistry.register('identity-sync', async (payload) => {
     const startedAt = new Date().toISOString();
@@ -1541,6 +1629,62 @@ executorRegistry.register('agent-harness-estate-staleness', async (payload) => {
     return runHarnessEstateStalenessJob({ tenantId: payload.tenantId });
 });
 
+// audit-pack-snapshot-encryption (#5455): encrypts the audit-pack snapshots
+// written in plaintext before #5150, under each tenant's own DEK. Writes only
+// plaintext rows, each in a batch that holds the tenant row against a DEK
+// rotation. `tenantId` named, as above.
+executorRegistry.register('audit-pack-snapshot-encryption', async (payload) => {
+    const { runAuditPackSnapshotEncryptionJob } = await import('./audit-pack-snapshot-encryption');
+    return runAuditPackSnapshotEncryptionJob({ tenantId: payload.tenantId });
+});
+
+// agent-fingerprint (Morpheus roadmap Phase 1): the nightly behaviour
+// fingerprint. Off unless the operator's two keys admit the tenant; findings,
+// and at threshold B a latch of the EXISTING breaker only with the third key.
+executorRegistry.register('agent-fingerprint', async (payload) => {
+    const { runAgentFingerprintJob } = await import('./agent-fingerprint');
+    return runAgentFingerprintJob({ tenantId: payload.tenantId });
+});
+
+// knowledge-index (vector store Phase 2.1): one source row into the knowledge
+// store. On demand — enqueued after a source's write commits — and worker
+// only. Fields NAMED, for the reason `NamesEveryField` states. A run that could
+// not do its work is an ERROR naming its outcome; only a transient embedding
+// failure is left to BullMQ's retry, every other one is `noRetry` (a switch
+// that is off, an unknown model and an oversized source do not change in 30 s).
+executorRegistry.register('knowledge-index', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runKnowledgeIndexJob } = await import('./knowledge-index');
+    const { isKnowledgeIndexSuccess } = await import('@/lib/knowledge/index-outcome');
+    const forwarded: NamesEveryField<JobPayload<'knowledge-index'>> = {
+        tenantId: payload.tenantId,
+        sourceModel: payload.sourceModel,
+        sourceId: payload.sourceId,
+        requestId: payload.requestId,
+    };
+    const r = await runKnowledgeIndexJob(forwarded);
+    const ok = isKnowledgeIndexSuccess(r.outcome);
+    return makeResult(
+        'knowledge-index',
+        startedAt,
+        startMs,
+        r.chunks,
+        r.chunksWritten + r.chunksDeleted + r.embedded,
+        Math.max(0, r.chunks - r.embedded),
+        // `status` is the run's outcome, so the record carries the verdict the
+        // eighth argument reports (tests/guards/a-refusal-is-not-a-success.test.ts).
+        { ...r, status: r.outcome },
+        ok
+            ? undefined
+            : {
+                  status: 'ERROR',
+                  errorMessage: `knowledge-index: ${r.outcome}${r.embedFailure ? ` (${r.embedFailure})` : ''}${r.storeRefusal ? ` (${r.storeRefusal})` : ''}`,
+                  noRetry: !(r.outcome === 'EMBED_FAILED' && r.transient),
+              },
+    );
+});
+
 // agentic-evidence-emission: turn receipts + AI decision records into evidence
 // attached to the agentic controls they discharge. Payload passed THROUGH, both
 // fields NAMED: an absent tenantId is the scheduled sweep and an absent asOf is
@@ -1623,6 +1767,9 @@ executorRegistry.register('identity-joiner-pass', async (payload) => {
             refusal: r.refusal,
             detail: redactDirectoryIdentifiers(r.detail, null),
             decisions: r.decisions,
+            // What the pass CREATED, beside what it planned (#5317): at
+            // AUTOMATIC the two differ, and the job result named only the plan.
+            created: r.created,
         },
         {
             status: r.status,
@@ -1808,6 +1955,7 @@ executorRegistry.register('external-write-dispatch', async (payload) => {
     const { runExternalWriteDispatchJob } = await import('./external-write-dispatch');
     const r = await runExternalWriteDispatchJob({ tenantId: payload.tenantId });
     return makeResult('external-write-dispatch', startedAt, startMs, r.scanned, r.applied, r.refused, {
+        failedTenantPasses: r.failedTenantPasses,
         tenants: r.tenants,
         indeterminate: r.indeterminate,
         // `accepted` was missing here, which made the whole ACCEPTED population
@@ -1822,7 +1970,7 @@ executorRegistry.register('external-write-dispatch', async (payload) => {
         reconcileNotYet: r.reconcile.notYet,
         reconcileUnreadable: r.reconcile.unreadable,
         reconcileUnverifiable: r.reconcile.unverifiable,
-    });
+    }, fanOutOutcome('external-write-dispatch', r.failedTenantPasses, 'tenant pass(es) threw'));
 });
 
 // ── agent-proposal-expiry ───────────────────────────────────────────

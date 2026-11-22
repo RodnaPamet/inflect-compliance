@@ -51,6 +51,7 @@
 process.env.SKIP_ENV_VALIDATION = '1';
 
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import type { Prisma } from '@prisma/client';
 
 import { DEFAULT_ORG_DASHBOARD_PRESET } from '../src/app-layer/usecases/org-dashboard-presets';
@@ -240,7 +241,7 @@ async function main(): Promise<void> {
         console.log('  No writes performed. Rerun with --execute to persist.\n');
     }
 
-    const prisma = new PrismaClient();
+    const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }) });
     let orgsChanged = 0;
     let orgsClean = 0;
     let totalDeleted = 0;

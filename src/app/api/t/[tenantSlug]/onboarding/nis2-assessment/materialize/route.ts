@@ -1,7 +1,7 @@
-import { getTenantCtx } from '@/app-layer/context';
 import { materializeNis2Gaps } from '@/app-layer/usecases/nis2-readiness';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { withValidatedBody } from '@/lib/validation/route';
+import { parseJsonBody } from '@/lib/validation/route';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 import { z } from 'zod';
 
@@ -15,11 +15,13 @@ const MaterializeSchema = z
 
 // POST → explicitly convert serious gaps to Findings (+ Tasks).
 // Idempotent + reconciling. NEVER automatic. Mutation-tier rate-limited.
+// `findings.create` AND `findings.edit`: it creates findings, and reopens or
+// closes the ones it created before.
 export const POST = withApiErrorHandling(
-    withValidatedBody(
-        MaterializeSchema,
-        async (req, { params }: { params: Promise<{ tenantSlug: string }> }, body) => {
-            const ctx = await getTenantCtx(await params, req);
+    requirePermission<{ tenantSlug: string }>(
+        { keys: ['findings.create', 'findings.edit'], mode: 'all' },
+        async (req, _routeArgs, ctx) => {
+            const body = await parseJsonBody(req, MaterializeSchema);
             const result = await materializeNis2Gaps(ctx, body);
             return jsonResponse(result);
         },

@@ -17,9 +17,16 @@
 const db = {
     /** Each workspace's policy. */
     policies: {} as Record<string, string>,
-    /** Workspaces whose challenge was passed, and when. */
-    challengedAt: {} as Record<string, Date>,
+    /** Each session's row: which workspaces that session passed the challenge of. */
+    sessionPasses: {} as Record<string, string[]>,
+    /** The account's ACTIVE memberships, oldest first. */
+    memberships: [] as Array<{ tenantId: string; role: string; tenant: { id: string; slug: string } }>,
 };
+const BOTH_WORKSPACES = [
+    // `alpha` is older, so it is the primary workspace.
+    { tenantId: 't-alpha', role: 'EDITOR', tenant: { id: 't-alpha', slug: 'alpha' } },
+    { tenantId: 't-beta', role: 'EDITOR', tenant: { id: 't-beta', slug: 'beta' } },
+];
 
 jest.mock('@/lib/prisma', () => {
     const prisma: any = {
@@ -28,11 +35,7 @@ jest.mock('@/lib/prisma', () => {
                 id: 'user-1',
                 sessionVersion: 1,
                 passwordHash: 'hash',
-                tenantMemberships: [
-                    // `alpha` is older, so it is the primary workspace.
-                    { tenantId: 't-alpha', role: 'EDITOR', tenant: { id: 't-alpha', slug: 'alpha' } },
-                    { tenantId: 't-beta', role: 'EDITOR', tenant: { id: 't-beta', slug: 'beta' } },
-                ],
+                tenantMemberships: db.memberships,
                 orgMemberships: [],
             })),
         },
@@ -50,14 +53,13 @@ jest.mock('@/lib/prisma', () => {
         },
         userMfaEnrollment: {
             findUnique: jest.fn(async () => null),
-            findMany: jest.fn(async ({ where }: any) =>
-                (where.tenantId.in as string[])
-                    .filter((id) => {
-                        if (where.lastChallengeAt === undefined) return false;
-                        const at = db.challengedAt[id];
-                        return at !== undefined && at >= where.lastChallengeAt.gte;
-                    })
-                    .map((tenantId) => ({ tenantId, isVerified: true })),
+            findMany: jest.fn(async () => []),
+        },
+        userSession: {
+            findUnique: jest.fn(async ({ where }: any) =>
+                db.sessionPasses[where.sessionId]
+                    ? { userId: 'user-1', mfaPassedTenantIds: db.sessionPasses[where.sessionId] }
+                    : null,
             ),
         },
     };
@@ -102,7 +104,8 @@ const MEMBERSHIPS = [
 
 beforeEach(() => {
     db.policies = {};
-    db.challengedAt = {};
+    db.sessionPasses = { 'sess-this': [], 'sess-other': [] };
+    db.memberships = BOTH_WORKSPACES;
 });
 
 /** A password sign-in through the real `jwt` callback. */
@@ -129,6 +132,7 @@ async function cookieFor(claims: Record<string, unknown>): Promise<string> {
             sessionVersion: 1,
             sessionVersionCheckedAt: Math.floor(Date.now() / 1000),
             mfaPending: false,
+            userSessionId: 'sess-this',
             ...claims,
         } as any,
     });
@@ -199,15 +203,85 @@ describe("passing a workspace's challenge clears that workspace", () => {
         return (await decode({ token: set.split(';')[0].split('=').slice(1).join('='), secret: SECRET })) as any;
     }
 
-    it('a challenge passed after the token was issued clears the workspace', async () => {
+    it('a challenge this session passed clears the workspace', async () => {
         const cookie = await cookieFor({ mfaPendingTenantIds: ['t-beta'] });
-        db.challengedAt['t-beta'] = new Date(Date.now() + 1000);
+        db.sessionPasses['sess-this'].push('t-beta');
         expect((await refreshed(cookie)).mfaPendingTenantIds).toEqual([]);
     });
 
-    it('a challenge passed before the token was issued does not', async () => {
+    it('a challenge another session passed does not', async () => {
         const cookie = await cookieFor({ mfaPendingTenantIds: ['t-beta'] });
-        db.challengedAt['t-beta'] = new Date(Date.now() - 60 * 60_000);
+        db.sessionPasses['sess-other'].push('t-beta');
         expect((await refreshed(cookie)).mfaPendingTenantIds).toEqual(['t-beta']);
+    });
+
+    it('a session with no row clears nothing', async () => {
+        const cookie = await cookieFor({ mfaPendingTenantIds: ['t-beta'], userSessionId: 'sess-gone' });
+        db.sessionPasses['sess-this'].push('t-beta');
+        expect((await refreshed(cookie)).mfaPendingTenantIds).toEqual(['t-beta']);
+    });
+});
+
+describe('when the primary workspace changes during the session', () => {
+    /** A refresh of the claims through the real `jwt` callback. */
+    async function refresh(token: Record<string, unknown>) {
+        return jwtCallback({ token: token as any, trigger: 'update' } as any);
+    }
+
+    it("the new primary keeps the code it still wanted, and the edge holds the session at its challenge", async () => {
+        db.policies = { 't-beta': 'REQUIRED' };
+        const signedIn: any = await signIn();
+        expect(signedIn.tenantId).toBe('t-alpha');
+        expect(signedIn.mfaPending).toBe(false);
+        expect(signedIn.mfaPendingTenantIds).toEqual(['t-beta']);
+
+        // The member loses `alpha`; `beta` becomes the primary.
+        db.memberships = [BOTH_WORKSPACES[1]];
+        const after: any = await refresh({ ...signedIn, userSessionId: 'sess-this' });
+        expect(after.tenantId).toBe('t-beta');
+        expect(after.mfaPending).toBe(true);
+        expect(after.mfaPendingTenantIds).toEqual([]);
+
+        const cookie = await cookieFor({ ...after, memberships: [MEMBERSHIPS[1]] });
+        expect((await edge(cookie, '/t/beta/dashboard')).location).toMatch(/^\/t\/beta\/auth\/mfa/);
+    });
+
+    it('a new primary that asked for nothing, or whose code this session passed, is not held', async () => {
+        db.policies = { 't-beta': 'REQUIRED' };
+        const signedIn: any = await signIn();
+        // This session passed beta's challenge before alpha was lost.
+        db.sessionPasses['sess-this'] = ['t-beta'];
+        const passed: any = await jwtCallback({ token: { ...signedIn, userSessionId: 'sess-this' } as any } as any);
+        expect(passed.mfaPendingTenantIds).toEqual([]);
+
+        db.memberships = [BOTH_WORKSPACES[1]];
+        const after: any = await refresh(passed);
+        expect(after.tenantId).toBe('t-beta');
+        expect(after.mfaPending).toBe(false);
+    });
+
+    it("an unchanged primary keeps its own flag on a refresh", async () => {
+        db.policies = { 't-alpha': 'REQUIRED' };
+        const signedIn: any = await signIn();
+        expect(signedIn.mfaPending).toBe(true);
+        const after: any = await refresh({ ...signedIn, userSessionId: 'sess-this' });
+        expect(after.tenantId).toBe('t-alpha');
+        expect(after.mfaPending).toBe(true);
+    });
+});
+
+describe('a read failure while checking a KNOWN pending challenge (#5306)', () => {
+    it('leaves the primary pending on a fail-open workspace: a failed read is not a pass', async () => {
+        db.policies = { 't-alpha': 'REQUIRED' };
+        const signedIn: any = await signIn();
+        expect(signedIn.mfaPending).toBe(true);
+        expect(signedIn.mfaFailClosed).toBe(false);
+
+        const prisma = jest.requireMock('@/lib/prisma').default;
+        prisma.userSession.findUnique.mockRejectedValueOnce(new Error('pool exhausted'));
+        const after: any = await jwtCallback({ token: { ...signedIn, userSessionId: 'sess-this' } as any } as any);
+        expect(after.mfaPending).toBe(true);
+        // #5587 (on main): the error is set for every tenant, not only fail-closed ones.
+        expect(after.error).toBe('MfaDependencyFailure');
     });
 });

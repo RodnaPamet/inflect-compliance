@@ -78,6 +78,16 @@ export interface ExternalToolCatalogue {
     /** True when `advertised` exceeded the cap and `tools` is a prefix. */
     truncated: boolean;
     /**
+     * `MAX_EXTERNAL_TOOLS`, sent rather than re-declared in the client.
+     *
+     * The catalogue page has to name this number when it reports a truncated
+     * read, and the alternatives were both worse: importing it would pull this
+     * usecase's whole graph into the browser bundle, and a second copy in a
+     * client constants module is a number that goes stale silently the day
+     * this one moves.
+     */
+    cap: number;
+    /**
      * How many advertised tools were left out for an unusable name (#4238):
      * empty, not a string, or longer than `MCP_TOOL_NAME_MAX_LENGTH`. Counted
      * and never quoted, so an operator can see a tool is missing without
@@ -223,7 +233,7 @@ export async function listExternalMcpTools(
     // Measured 2026-09-26 against Microsoft's Entra MCP server: Test ok at
     // 11:51:25, this function 401 at 11:55:12, Test ok again at 11:59:46 —
     // same connection, same refresh token, the path as the only variable.
-    const { tools: advertised, refusedNames } = await readCatalogueOrExplain(async () => {
+    const { tools: advertised, refusedNames, truncated: catalogueTruncated } = await readCatalogueOrExplain(async () => {
         const authorization = await authorizationFor(
             connection.id,
             (connection.configJson ?? {}) as Record<string, unknown>,
@@ -287,7 +297,14 @@ export async function listExternalMcpTools(
         connectionId,
         tools,
         advertised: advertised.length,
-        truncated: advertised.length > considered.length,
+        // EITHER cause: our own cap cut the list, or the server kept offering
+        // pages past the client's bound and some of its tools were never read
+        // (#5311). Both mean the same thing to an operator — what you see is a
+        // prefix — and the one thing that must never happen is presenting a
+        // partial catalogue as complete, because a tool nobody can see cannot
+        // be granted.
+        truncated: advertised.length > considered.length || catalogueTruncated,
+        cap: MAX_EXTERNAL_TOOLS,
         refusedNames,
     };
 }
@@ -354,8 +371,15 @@ export async function approveExternalToolManifest(
         // "approve something that is gone" call for different actions.
         throw notFound(
             truncated
-                ? `"${toolName}" is not among the first ${MAX_EXTERNAL_TOOLS} tools this ` +
-                  'server advertises, so it cannot be reviewed or approved here.'
+                // Reworded for #5311: `truncated` now also means the server
+                // paginated past the client's page bound, so the tool may be
+                // within the first MAX_EXTERNAL_TOOLS and still unread. Naming
+                // the cap would have sent an operator looking for a limit that
+                // was not the one they hit. The distinction this message exists
+                // to draw — "cannot see" versus "gone" — is unchanged.
+                ? `"${toolName}" is not in the part of this server's catalogue we could read ` +
+                  `(at most ${MAX_EXTERNAL_TOOLS} tools, and only the pages the server returned ` +
+                  'within its cursor bound), so it cannot be reviewed or approved here.'
                 : `The server no longer advertises a tool named "${toolName}"`,
         );
     }
@@ -615,9 +639,23 @@ export async function resolveGrantedExternalTools(
         const url = typeof config.url === 'string' ? config.url.trim() : '';
         if (!url) continue;
 
-        const secrets = connection.secretEncrypted
-            ? (JSON.parse(decryptField(connection.secretEncrypted)) as Record<string, unknown>)
-            : {};
+        // A secret that will not decrypt (a key-rotation problem, a corrupted
+        // row) or parse costs THIS connection and nothing else (#5317) — the
+        // same isolation as an unusable credential or an unreachable server
+        // below. Thrown out of the loop, it failed every invocation whose
+        // grants named any external tool, internal-only work included.
+        let secrets: Record<string, unknown>;
+        try {
+            secrets = connection.secretEncrypted
+                ? (JSON.parse(decryptField(connection.secretEncrypted)) as Record<string, unknown>)
+                : {};
+        } catch (err) {
+            logger.warn('mcp.external_secret_unreadable', {
+                connectionId: connection.id,
+                error: err instanceof Error ? err.name : 'non-Error thrown',
+            });
+            continue;
+        }
 
         // Minted through the SHARED resolver, so the runtime and the "Test
         // connection" button agree about what a credential means. A connection

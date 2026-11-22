@@ -63,6 +63,17 @@ export const GET = withApiErrorHandling(
  * person's gate. The decision is `assertPermission`, the function
  * `requirePermission` delegates to, so a refused person leaves the same
  * `AUTHZ_DENIED` row the GET's wrapper writes.
+ *
+ * It starts NO agent profile (#5367). A profile version names the triggers
+ * that may start it — Ask, an automation rule, a Test run — and this route is
+ * none of them, so it names no trigger and `resolveRunDefinition` refuses a
+ * profile key `PROFILE_TRIGGER_REQUIRED`, for a person and a key alike.
+ *
+ * It starts NO ad-hoc question either (#5304, owner decision 2026-11-14): for
+ * the same reason, `resolveRunDefinition` refuses `ad-hoc-question`
+ * `AD_HOC_QUESTION_USE_QUESTIONS_ROUTE` (400), for a person and a key alike. The questions
+ * route sanitises the question and rate-limits the asker; this one does
+ * neither, so it is not a second door.
  */
 export const POST = withApiErrorHandling(async (
     req: NextRequest,

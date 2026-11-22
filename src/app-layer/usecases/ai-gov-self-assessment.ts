@@ -1,6 +1,12 @@
 /**
  * AI-governance self-assessment usecases — mirrors the NIS2 self-assessment.
  *
+ * Authorization mirrors NIS2 (owner decision, 2026-11-14, #5317): answering
+ * and completing the assessment are onboarding-admin acts
+ * (`assertCanManageOnboarding`), so an EDITOR cannot mark the tenant's
+ * AI-governance assessment COMPLETED; reading takes `canRead` and raising
+ * findings from the gaps takes `canWrite`, as NIS2's materialise does.
+ *
  * One 30-question assessment (global reference content) + a tenant-scoped run.
  * Answers project onto AISVS / ISO 42001 / EU AI Act via each question's
  * mappings (see ai-gov-coverage). Conditional questions (RAG / AGENTIC) auto-
@@ -10,9 +16,10 @@
  */
 import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext } from '@/lib/db-context';
-import { badRequest, notFound } from '@/lib/errors/types';
+import { badRequest, forbidden, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
+import { assertCanManageOnboarding } from '../policies/onboarding.policies';
 import { createFinding } from './finding';
 import {
     computeAiGovCoverage,
@@ -55,7 +62,7 @@ export async function getAiGovAssessmentState(
     ctx: RequestContext,
     opts: { architecture?: AiGovArchitecture } = {},
 ) {
-    if (!ctx.permissions.canRead) throw badRequest('Read access required.');
+    if (!ctx.permissions.canRead) throw forbidden('Read access required.');
     const arch = opts.architecture ?? 'NONE';
     const assessment = await activeAssessment(ctx);
 
@@ -100,6 +107,10 @@ export async function getAiGovAssessmentState(
                 mappings: q.mappingsJson,
                 applicable: conditionalApplies(q.conditional, arch),
                 answer: answerByQ.get(q.id)?.answer ?? null,
+                // The stored note, so the wizard can seed it (#5128). Without
+                // it the wizard held null and sent null on the next answer
+                // change, overwriting the note.
+                note: answerByQ.get(q.id)?.note ?? null,
             })),
             coverage: computeAiGovCoverage(scored),
         };
@@ -111,7 +122,7 @@ export async function saveAiGovAnswer(
     ctx: RequestContext,
     input: { questionId: string; answer: AiGovAnswerValue; note?: string | null },
 ) {
-    if (!ctx.permissions.canWrite) throw badRequest('Write access required.');
+    assertCanManageOnboarding(ctx);
     if (!ANSWER_VALUES.includes(input.answer)) {
         throw badRequest(`Invalid answer '${input.answer}'.`);
     }
@@ -121,10 +132,17 @@ export async function saveAiGovAnswer(
         const question = await db.aiGovQuestion.findUnique({ where: { id: input.questionId } });
         if (!question) throw notFound('Question not found');
 
+        // `note` absent leaves the stored note as it is; `null` clears it
+        // (#5128). An answer-only change must not erase a justification.
         const note = input.note != null ? sanitizePlainText(input.note) : null;
         const saved = await db.aiGovSelfAssessmentAnswer.upsert({
             where: { assessmentId_questionId: { assessmentId: assessment.id, questionId: input.questionId } },
-            update: { answer: input.answer, note, answeredById: ctx.userId, answeredAt: new Date() },
+            update: {
+                answer: input.answer,
+                ...(input.note === undefined ? {} : { note }),
+                answeredById: ctx.userId,
+                answeredAt: new Date(),
+            },
             create: {
                 tenantId: ctx.tenantId,
                 assessmentId: assessment.id,
@@ -150,7 +168,7 @@ export async function saveAiGovAnswer(
 
 /** Mark the active assessment COMPLETED + audit. */
 export async function completeAiGovAssessment(ctx: RequestContext) {
-    if (!ctx.permissions.canWrite) throw badRequest('Write access required.');
+    assertCanManageOnboarding(ctx);
     const assessment = await activeAssessment(ctx);
     return runInTenantContext(ctx, async (db) => {
         const done = await db.aiGovSelfAssessment.update({
@@ -179,7 +197,7 @@ export async function raiseFindingsFromAiGovGaps(
     ctx: RequestContext,
     opts: { architecture?: AiGovArchitecture } = {},
 ): Promise<{ created: string[] }> {
-    if (!ctx.permissions.canWrite) throw badRequest('Write access required.');
+    if (!ctx.permissions.canWrite) throw forbidden('Write access required.');
     const arch = opts.architecture ?? 'NONE';
     const assessment = await activeAssessment(ctx);
 
@@ -210,7 +228,10 @@ export async function raiseFindingsFromAiGovGaps(
     for (const g of gaps) {
         const finding = await createFinding(ctx, {
             severity: g.criticality === 'CRITICAL' ? 'HIGH' : 'MEDIUM',
-            type: 'AI governance',
+            // A FindingType (#5181): 'AI governance' is not one, and the
+            // enum column refused it, so raising these findings failed. A
+            // self-reported gap is an observation until someone audits it.
+            type: 'OBSERVATION',
             title: `AI-governance gap (${g.questionId}) [${FINDING_MARKER}:${g.questionId}]`,
             description: `Self-assessed gap: "${g.text}" — answered below YES. Source: unified AI-governance self-assessment (self-reported, not legal advice).`,
         });

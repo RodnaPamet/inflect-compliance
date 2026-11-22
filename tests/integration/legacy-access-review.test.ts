@@ -253,6 +253,35 @@ describe('a created campaign', () => {
         expect(s.findings).toContain('PRIVILEGED');
     });
 
+    it('measures a mover against THIS application’s last closed campaign, not another one’s (#5254)', async () => {
+        // A closed campaign of a different legacy application, where a login
+        // that happens to be `jsmith` sat in Sales.
+        const other = await prisma.integrationConnection.create({
+            data: { tenantId: T, provider: 'legacy-mcp', name: 'other legacy', configJson: {} },
+        });
+        const otherCampaign = await prisma.accessReview.create({
+            data: {
+                tenantId: T, name: 'other app', scope: 'LEGACY_APP', status: 'CLOSED',
+                reviewerUserId: reviewerId, createdByUserId: reviewerId,
+            },
+        });
+        await prisma.accessReviewConnectedDecision.create({
+            data: {
+                tenantId: T, accessReviewId: otherCampaign.id, subjectRef: `${other.id}:jsmith`,
+                snapshotJson: { accountKey: 'jsmith', department: 'Sales', managerRef: null },
+            },
+        });
+        await seedHappyPath();
+
+        const r = await create();
+
+        const d = await prisma.accessReviewConnectedDecision.findFirstOrThrow({
+            where: { tenantId: T, accessReviewId: r.accessReviewId },
+        });
+        // No prior campaign of THIS application: a first sighting, not a move.
+        expect((d.snapshotJson as Record<string, unknown>).findings).not.toContain('MOVER_SUSPECT');
+    });
+
     it('reports the finding counts to the creator', async () => {
         await seedHappyPath();
         const r = await create();

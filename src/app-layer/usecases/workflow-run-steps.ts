@@ -99,6 +99,7 @@ export async function getRunStepFeed(
                 id: true, seq: true, kind: true, status: true, toolCalled: true,
                 inputJson: true, outputJson: true, guardVerdict: true,
                 guardRuleIds: true, costTokens: true, at: true, actorUserId: true,
+                subagentName: true,
             },
         });
 

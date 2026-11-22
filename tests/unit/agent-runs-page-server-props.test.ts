@@ -19,9 +19,20 @@ const getServerSessionMock = jest.fn();
 jest.mock('next-auth', () => ({ getServerSession: (...a: unknown[]) => getServerSessionMock(...a) }));
 jest.mock('@/auth', () => ({ authOptions: {} }));
 
-jest.mock('next-intl/server', () => ({
-    getTranslations: async () => (key: string) => key,
-}));
+// Resolves `en.json` under the namespace, with `{param}` substitution, so a
+// name the page builds from a message is asserted as a person reads it.
+jest.mock('next-intl/server', () => {
+    const en = jest.requireActual('../../messages/en.json') as Record<string, unknown>;
+    return {
+        getTranslations: async (ns: string) => (key: string, params: Record<string, unknown> = {}) => {
+            const v = `${ns}.${key}`
+                .split('.')
+                .reduce<unknown>((o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined), en);
+            if (typeof v !== 'string') return key;
+            return Object.entries(params).reduce((text, [p, val]) => text.replace(`{${p}}`, String(val)), v);
+        },
+    };
+});
 jest.mock('@/app-layer/context', () => ({
     getTenantCtx: (...a: unknown[]) => getTenantCtxMock(...a),
 }));
@@ -90,6 +101,12 @@ describe('the run list', () => {
         listWorkflowRunsMock.mockResolvedValue([run(1, 'audit-prep'), run(2, 'profile:abc')]);
         const props = await render();
         expect(props.runs.map((r) => r.workflowName)).toEqual(['Audit prep', 'profile:abc']);
+    });
+
+    it('names an agent profile run by its version, never by its raw key (#5374)', async () => {
+        listWorkflowRunsMock.mockResolvedValue([run(1, 'agent-profile:prof1@v3:test-run'), run(2, 'agent-profile:prof1@v2')]);
+        const props = await render();
+        expect(props.runs.map((r) => r.workflowName)).toEqual(['Behaviour v3 — Test run', 'Behaviour v2']);
     });
 
     it('projects the pending-proposal count the paused-run hint reads', async () => {

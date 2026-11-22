@@ -7,8 +7,14 @@
   "inflect": {
     "baseUrl": "https://app.inflect.bg",
     "tenantSlug": "replace-with-the-tenant-slug",
-    "apiKeyEnv": "INFLECT_INGEST_KEY"
+    "apiKeyEnv": "INFLECT_INGEST_KEY",
+    "integrationsApiKeyEnv": "INFLECT_INTEGRATIONS_KEY"
   },
+  "outputs": [
+    {
+      "kind": "inflect"
+    }
+  ],
   "schedule": {
     "everyHours": 24
   },
@@ -43,6 +49,18 @@
         "hazel-design-419410"
       ],
       "keyEnv": "GCP_SCANNER_KEY"
+    },
+    {
+      "kind": "entra-integrations",
+      "directoryId": "00000000-0000-0000-0000-000000000000",
+      "clientId": "00000000-0000-0000-0000-000000000000",
+      "clientSecretEnv": "ENTRA_CLIENT_SECRET",
+      "readSignInActivity": false
+    },
+    {
+      "kind": "github-integrations",
+      "organization": "rodnapamet",
+      "tokenEnv": "GITHUB_INTEGRATIONS_TOKEN"
     }
   ]
 }

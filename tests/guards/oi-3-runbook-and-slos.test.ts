@@ -15,9 +15,9 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import * as yaml from 'js-yaml';
 
 import { headingLines, mdSection } from '../helpers/markdown-regions';
+import { readGrafanaAlertRules } from '../helpers/grafana-alert-rules';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
@@ -352,10 +352,7 @@ describe('OI-3 — final readiness check (alignment)', () => {
         // Prometheus stack reads, so the doc cannot name a rule that is gone.
         const reads = mdSection(read('docs/slos.md'), 'SLO 2: API Latency — Reads (P95)');
         expect(reads).toMatch(/ApiLatencySloBreach/);
-        const rules = yaml.load(read('infra/observability/prometheus/rules/alerting-rules.yml')) as {
-            groups: { rules: { alert?: string }[] }[];
-        };
-        const alerts = rules.groups.flatMap((g) => g.rules.map((r) => r.alert));
+        const alerts = readGrafanaAlertRules(ROOT).map((r) => r.alert);
         expect(alerts).toContain('ApiLatencySloBreach');
     });
 });

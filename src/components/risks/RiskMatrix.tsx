@@ -81,12 +81,14 @@ export const MOVEMENT_ARROW_TOOLTIP_MAX = 8;
 export function movementArrowTitle(
     titles: ReadonlyArray<string>,
     max: number = MOVEMENT_ARROW_TOOLTIP_MAX,
+    /** The overflow tail in the reader's language; English by default. */
+    moreLabel: (overflow: number) => string = (n) => `+${n} more`,
 ): string {
     if (titles.length === 0) return '';
     const shown = titles.slice(0, max);
     const overflow = titles.length - shown.length;
     const head = shown.join(', ');
-    return overflow > 0 ? `${head} +${overflow} more` : head;
+    return overflow > 0 ? `${head} ${moreLabel(overflow)}` : head;
 }
 
 // ─── Public types ───────────────────────────────────────────────────
@@ -133,6 +135,11 @@ export interface RiskMovement {
 export interface RiskMatrixProps {
     /** Effective config for this tenant. */
     config: RiskMatrixConfigShape;
+    /**
+     * Formats ALE amounts in the tenant's currency (#5281). Pass
+     * `useMoneyFormatter()`; the cells otherwise print the '€' default.
+     */
+    formatMoney?: (v: number) => string;
     /** Sparse list of cells with risks. Cells absent from the list render as empty (count=0). */
     cells: ReadonlyArray<RiskMatrixDataCell>;
     /**
@@ -188,6 +195,7 @@ export function RiskMatrix({
     showHeader = true,
     title: titleProp,
     onCellClick,
+    formatMoney,
     selectedKey = null,
     storageKey,
     className = '',
@@ -496,6 +504,7 @@ export function RiskMatrix({
                                                     : undefined
                                             }
                                             aleOverlay={aleOverlayActive}
+                                            formatMoney={formatMoney}
                                             totalAle={cell.totalAle}
                                             collisionRatio={cell.collisionRatio}
                                             aleShare={
@@ -558,7 +567,11 @@ export function RiskMatrix({
                                     // The overlay SVG is pointer-events-none (so it
                                     // never blocks cell clicks); this single arrow
                                     // group opts back IN so the native <title> fires.
-                                    const tooltip = movementArrowTitle(a.titles);
+                                    const tooltip = movementArrowTitle(
+                                        a.titles,
+                                        MOVEMENT_ARROW_TOOLTIP_MAX,
+                                        (n) => t('movementMore', { count: n }),
+                                    );
                                     return (
                                         <g
                                             key={key}

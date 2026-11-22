@@ -6,6 +6,7 @@ import { logger } from '@/lib/observability/logger';
 
 import { InflectAgent } from './agent';
 import { buildFlueProviders } from './providers';
+import { agentFlueModel } from './model-selection';
 import { planFlueStart } from './runtime-bootstrap';
 import { installFlueTelemetry } from './telemetry';
 
@@ -53,7 +54,11 @@ function deploymentProviders(): readonly Provider[] {
             // The agent runtime's own pin, not ANTHROPIC_MODEL: the posture
             // summary and the risk suggestions keep that one (owner decision,
             // 2026-10-18). Same key, different model.
-            externalModel: env.AGENT_FLUE_MODEL,
+            externalModel: agentFlueModel(),
+            // The WORKER role's pin (D-L3-1), registered beside it on the same
+            // provider. Unset, the worker runs on the supervisor's model and
+            // nothing extra is registered.
+            externalWorkerModel: env.AGENT_FLUE_WORKER_MODEL,
             // Deployment-wide only. A per-tenant `localModel` override is not
             // served — see `FlueProviderModels.localModels` for why, and for
             // the upgrade path.

@@ -34,6 +34,8 @@ let keyRisksB = '';
 let keyControlsOnly = ''; // tenant A: mcp:read + controls:read (NO risks:read)
 let keyFrameworksA = ''; // tenant A: mcp:read + frameworks:read
 let keyEveryDomainA = ''; // tenant A: mcp:read + every domain read scope
+let keyFindingsOnlyA = ''; // tenant A: mcp:read + findings:read (NO audits scope)
+let keyAuditsOnlyA = ''; // tenant A: mcp:read + audits:read (NO findings scope)
 
 async function mintKey(tenantId: string, userId: string, scopes: string[]): Promise<string> {
     const { plaintext, keyHash, keyPrefix } = generateApiKey();
@@ -129,8 +131,12 @@ describeFn('MCP read suite (real route, real key, real RLS)', () => {
         // AUTHZ_DENIED rows and buries the signal they exist for.
         keyEveryDomainA = await mintKey(TENANT_A, userA, [
             'mcp:read', 'risks:read', 'controls:read', 'frameworks:read',
-            'evidence:read', 'audits:read', 'tasks:read',
+            'evidence:read', 'findings:read', 'tasks:read',
         ]);
+        // #5409: `list_findings` is a findings-domain tool. These two keys are
+        // the pair that tells the findings scope from the audits scope.
+        keyFindingsOnlyA = await mintKey(TENANT_A, userA, ['mcp:read', 'findings:read']);
+        keyAuditsOnlyA = await mintKey(TENANT_A, userA, ['mcp:read', 'audits:read']);
 
         const fw = await prisma.framework.create({
             data: { key: FW_KEY, version: '1', name: 'MCP RS Test Framework', kind: 'NIST_FRAMEWORK', description: 'x' },
@@ -217,6 +223,41 @@ describeFn('MCP read suite (real route, real key, real RLS)', () => {
         expect(risks.length).toBe(1);
     });
 
+    /**
+     * #5304, owner decision 2026-11-14: the score filter reaches 100, the
+     * largest score a 10x10 matrix gives. It stopped at 25, so an agent on such
+     * a matrix asking for its critical risks (`scoreMin: 50`) got "Invalid
+     * arguments", and `scoreMax: 25` silently left out every risk above it.
+     */
+    it('list_risks filters to the top of a 10x10 matrix (score up to 100)', async () => {
+        const high = await prisma.risk.create({
+            data: {
+                tenantId: TENANT_A, title: `${TENANT_A}-risk-critical`, description: 'x', category: 'Cybersecurity',
+                impact: 10, likelihood: 9, score: 90, inherentScore: 90, status: 'OPEN',
+                createdByUserId: `u-${TENANT_A}`,
+            },
+        });
+        try {
+            const top = await rpc(keyRisksA, {
+                jsonrpc: '2.0', id: 51, method: 'tools/call',
+                params: { name: 'list_risks', arguments: { scoreMin: 50, scoreMax: 100 } },
+            });
+            const risks = toolResult(top.json) as Array<{ id: string }>;
+            expect(risks.map((r) => r.id)).toEqual([high.id]);
+
+            // The bound still binds, one past the largest possible score.
+            const over = await rpc(keyRisksA, {
+                jsonrpc: '2.0', id: 52, method: 'tools/call',
+                params: { name: 'list_risks', arguments: { scoreMin: 101 } },
+            });
+            const r = over.json as { error?: { message: string }; result?: unknown };
+            expect(r.result).toBeUndefined();
+            expect(r.error?.message).toMatch(/invalid arguments/i);
+        } finally {
+            await prisma.risk.delete({ where: { id: high.id } });
+        }
+    });
+
     it('resources/list exposes the framework catalogue + per-framework requirements', async () => {
         const { json } = await rpc(keyFrameworksA, { jsonrpc: '2.0', id: 6, method: 'resources/list' });
         const uris = (json as { result: { resources: Array<{ uri: string }> } }).result.resources.map((r) => r.uri);
@@ -249,6 +290,40 @@ describeFn('MCP read suite (real route, real key, real RLS)', () => {
             // funnel routed. What it contains is this tenant's business.
             expect(Array.isArray(toolResult(json))).toBe(true);
         }
+    });
+
+    /**
+     * `list_findings` checks the FINDINGS scope, not the audits one (#5409).
+     *
+     * The tool's resource scope and its `findings.view` key (evaluated against
+     * the KEY's own permissions, `basis: 'effective'`) both come from
+     * `findings:read`. A key holding only `audits:read` reaches audits and
+     * nothing in the findings register, so it is refused in-band and the tool
+     * is not advertised to it. Both directions, or a gate that admitted every
+     * key would pass.
+     */
+    it('list_findings answers a findings:read key and refuses an audits:read key', async () => {
+        const allowed = await rpc(keyFindingsOnlyA, {
+            jsonrpc: '2.0', id: 31, method: 'tools/call',
+            params: { name: 'list_findings', arguments: { limit: 1 } },
+        });
+        expect(Array.isArray(toolResult(allowed.json))).toBe(true);
+
+        const refused = await rpc(keyAuditsOnlyA, {
+            jsonrpc: '2.0', id: 32, method: 'tools/call',
+            params: { name: 'list_findings', arguments: { limit: 1 } },
+        });
+        expect(refused.status).toBe(200);
+        const r = refused.json as { error?: { message: string }; result?: unknown };
+        expect(r.result).toBeUndefined();
+        expect(r.error?.message).toMatch(/scope/i);
+
+        const listed = async (token: string) => {
+            const { json } = await rpc(token, { jsonrpc: '2.0', id: 33, method: 'tools/list' });
+            return (json as { result: { tools: Array<{ name: string }> } }).result.tools.map((t) => t.name);
+        };
+        expect(await listed(keyFindingsOnlyA)).toContain('list_findings');
+        expect(await listed(keyAuditsOnlyA)).not.toContain('list_findings');
     });
 
     /**

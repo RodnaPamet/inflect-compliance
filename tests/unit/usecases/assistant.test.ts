@@ -157,6 +157,13 @@ describe('with NO model configured, nothing proposes (#3882)', () => {
         expect(getDashboardData).toHaveBeenCalled();
     });
 
+    it('the fallback does not offer to queue actions it can never queue (#5317)', async () => {
+        const res = await askAssistant(ctx, { question: 'hello there' });
+        expect(res.kind).toBe('answer');
+        expect(res.message).toContain('read questions');
+        expect(res.message.toLowerCase()).not.toContain('queue');
+    });
+
     it('does the same for a risk phrasing — the pattern is gone, not narrowed', async () => {
         const res = await askAssistant(ctx, {
             question: 'create a risk for third-party data processing',
@@ -175,6 +182,43 @@ describe('askAssistant — guard enforcement', () => {
         expect(createAgentProposal).not.toHaveBeenCalled();
         expect(getDashboardData).not.toHaveBeenCalled();
         expect(recordGeneration).not.toHaveBeenCalled();
+    });
+});
+
+describe('askAssistant — earlier turns are guarded like the question (#5054)', () => {
+    const history = [{ question: 'how many controls?', answer: 'Forty.' }];
+
+    it('guards the history AFTER the question and BEFORE any answer', async () => {
+        await askAssistant(ctx, { question: 'and how many risks?', history });
+
+        const calls = (guardUntrustedInput as jest.Mock).mock.calls;
+        const sources = calls.map((c) => (c[2] as { source: string }).source);
+        expect(sources[0]).toBe('assistant');
+        expect(sources).toContain('assistant:history');
+        const order = (guardUntrustedInput as jest.Mock).mock.invocationCallOrder;
+        const historyAt = order[sources.indexOf('assistant:history')];
+        expect(order[0]).toBeLessThan(historyAt);
+        expect(historyAt).toBeLessThan((getDashboardData as jest.Mock).mock.invocationCallOrder[0]);
+        // The text scanned is the turns themselves, not a label for them.
+        expect(calls[sources.indexOf('assistant:history')][1]).toBe('how many controls?\n\nForty.');
+    });
+
+    it('a review-required history verdict refuses the whole request, before any answer', async () => {
+        (guardUntrustedInput as jest.Mock).mockImplementation(async (_c, _t, o: { source: string }) =>
+            o.source === 'assistant:history' ? { blocked: false, reviewRequired: true } : { blocked: false },
+        );
+        await expect(askAssistant(ctx, { question: 'and how many risks?', history })).rejects.toThrow(
+            'ai_guard_review_required',
+        );
+        expect(getDashboardData).not.toHaveBeenCalled();
+        expect(recordGeneration).not.toHaveBeenCalled();
+    });
+
+    it('does not run when there is no history', async () => {
+        await askAssistant(ctx, { question: 'how many risks?' });
+        await askAssistant(ctx, { question: 'how many risks?', history: [] });
+        const sources = (guardUntrustedInput as jest.Mock).mock.calls.map((c) => (c[2] as { source: string }).source);
+        expect(sources).not.toContain('assistant:history');
     });
 });
 

@@ -1,12 +1,16 @@
 # Onboarding a client estate to the harness scanner
 
-How a tenant puts one client estate under the reference harness scanner,
-`packages/agent-harness-scanner` (#3678; its LangSmith source is #3738): what to
+How a tenant puts one client estate under the harness scanner: what to
 register in Inflect, what to prepare in the estate, how to label the estate's
 principals so the scanner can attribute them, and how the estate's schedule
-health is judged. The report the
-scanner sends is specified in [`docs/agent-harness-contract.md`](agent-harness-contract.md);
-the scanner's own reference is `packages/agent-harness-scanner/README.md`.
+health is judged. The scanner is scanent, the standalone scanner product
+([RodnaPamet/scanent](https://github.com/RodnaPamet/scanent)), shipped as the
+image `ghcr.io/rodnapamet/scanent`. Since scanent #26 it replaces Inflect's
+in-repo copy, `packages/agent-harness-scanner` (#3678; its LangSmith source was
+#3738), which carried the same sources and rules and was then removed. Sections
+2 and 3 describe the scanner's sources and labels as that move left them;
+scanent's repository is the scanner's own reference. The report the scanner
+sends is specified in [`docs/agent-harness-contract.md`](agent-harness-contract.md).
 
 An **estate** is one client environment that one scanner deployment covers: a
 name, the registered scanner agent whose signed reports describe it, the
@@ -36,6 +40,16 @@ scanner signed it, so each estate has a scanner of its own.
    (1 to 720), and each source kind with its owner. Every owner must be an
    active member of the tenant (owner decision, 2026-10-19), and an estate
    declares at least one source.
+5. **For the third-party application report, issue a second key.** A scanner
+   that also reads which applications a directory has granted access to (Entra,
+   Okta, GitHub) signs a second report, `scanent-integrations/1`, with the SAME
+   signing key, and posts it to
+   `POST /api/t/{slug}/admin/agents/integration-scans`. That route takes
+   `admin.integrations_ingest`, which an API key gets from the
+   `admin:integrations_ingest` scope and from no other named scope: a key
+   minted with `admin:harness_ingest` alone cannot post it, and the other way
+   round (owner decision). Bind it to the scanner agent too. Its results are the
+   Integrations tab on `/agents/reports`.
 
 ## 2. In the estate
 
@@ -48,7 +62,7 @@ scanner signed it, so each estate has a scanner of its own.
 | `runtime` (LangSmith) | A LangSmith service key holding the workspace Viewer role | `api.smith.langchain.com` (US) or `eu.api.smith.langchain.com` (EU), or the estate's own self-hosted LangSmith |
 | `cicd` (GitHub Actions) | A fine-grained token limited to the listed repositories, holding the repository permissions Contents: read and Secrets: read | `api.github.com` |
 | `gcp-sa` (Google Cloud IAM) | The JSON key of a service account holding `roles/iam.serviceAccountViewer` on the listed projects | `iam.googleapis.com`, and the token from `oauth2.googleapis.com` |
-| `code` (LangChain, LangGraph and the Claude Agent SDK) | None: read access to the directories it is given, mounted into the scanner | None: it makes no request |
+| `code` (LangChain, LangGraph, the Claude Agent SDK, and agents built directly on the Anthropic, OpenAI, Gemini or Bedrock SDK) | None: read access to the directories it is given, mounted into the scanner | None: it makes no request |
 | `runtime` (OpenShell) | A renewable client credential scoped to **`sandbox:read`** — and, only if the estate opts in to reading providers, `provider:read` as well | The estate's own OpenShell gateway, the host it names in its configuration |
 
 `Key Vault Reader` reads metadata and cannot read a secret's contents. Every
@@ -103,13 +117,27 @@ keeps the read read-only.
   internal name such as `langsmith.corp.internal` is accepted.
 
 The `code` source reads the repositories that define the estate's LangChain,
-LangGraph and Claude Agent SDK agents. Mount each one read-only into the scanner's container and name
+LangGraph and Claude Agent SDK agents, and the agents the estate builds
+directly on a model provider's SDK: Anthropic, OpenAI or Azure OpenAI, Google
+Gemini, or AWS Bedrock. On a provider's SDK an agent is **a model call that is
+given tools**; a model call that is given none is a completion and is not
+reported. Mount each repository read-only into the scanner's container and name
 it as a root with a label: the label, never the path, is what reports and
 findings carry. The source reads `.py`, `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`,
-`.mts`, `.cts` and `.tsx` files that mention the framework; it does not enter
+`.mts`, `.cts` and `.tsx` files that mention a framework or a provider's SDK; it does not enter
 dependency or build directories (`node_modules`, virtual environments, `dist`,
 `build`), and it does not follow a symbolic link, which it reports as a location
 it could not read. It never imports or runs what it reads.
+
+An agent on a provider's SDK is named by the function its call is written in
+(`code:<label>/<path>#support_agent`). It reports its tools, the model it
+names, the endpoint and the key of the client when the file builds the client,
+and no ladder verdict. When the client is handed in from another file, the
+endpoint is the place of the call and no key is claimed.
+
+To turn this recognition off for an estate, set `"providerSdks": false` on
+the `code` source. The source then parses and reports what it did before it
+recognised a provider's SDK.
 
 Two consequences, both kept by the owner on 2026-10-19:
 
@@ -232,43 +260,63 @@ What the scanner deliberately does not take from these labels:
   and reported as nothing; which of a vault's secrets belong to agents is the
   estate's statement to make.
 - **An owner for a service account.** Google records none, so each is reported
-  unowned and raises `SHADOW_AGENT` until somebody registers it.
+  unowned and raises a finding until somebody registers it.
 - **An owner for a workflow.** GitHub records none, and the scanner does not read
-  CODEOWNERS, so each workflow is reported unowned and raises `SHADOW_AGENT`
-  until somebody registers it.
+  CODEOWNERS, so each workflow is reported unowned and raises a finding until
+  somebody registers it.
 - **An owner for a coded agent.** The `code` source reports each agent
   definition as `code:<label>/<path>#<name>`, where the name is the variable the
   definition is bound to, with no owner: code names no accountable person. It
   raises `SHADOW_AGENT` until somebody registers it.
 
 Every Okta API token is reported as a principal acting for the administrator who
-created it, and so raises `SHADOW_AGENT` until it is registered, except the token
+created it, and so raises a finding until it is registered, except the token
 the scanner reads with. The scanner identifies that one by its id, from
 `GET /api/v1/api-tokens/current`, never by its name.
 
+**Which finding an unregistered principal raises.** Inflect decides it from the
+report, and the scanner sends nothing extra. A principal with no row in the
+agent register raises `SHADOW_AGENT` (HIGH) when the report shows a sign that
+it runs a model: it was found in agent code, in a tracing system or on an MCP
+server, or it lists a tool or a model endpoint. A principal that shows none of
+those raises `UNREGISTERED_IDENTITY` (MEDIUM), and is not held to the harness
+bar. A service account, a workflow and an Okta API token usually show none, so
+they are reported as unregistered automated identities; a coded agent is found
+in code, so it is a shadow agent. The name of a credential is not a sign. A
+scan cannot show that an identity runs no model: if one of yours is an agent,
+register it from its finding and it is scored as one from the next scan; if it
+is not, give it an owner where you keep such identities, or retire it. The full
+rule, including what a scan that could not read every source may conclude, is
+in [the contract](agent-harness-contract.md#transport).
+
 ## 4. The scanner configuration and its schedule
 
-One JSON file per estate, strict and credential-free; the README has a complete
-example. Set `schedule.everyHours` to the cadence declared on the estate in
+One JSON file per estate, strict and credential-free; scanent's repository has
+the configuration's reference, and `deploy/harness-scanner/config.pilot.example.json`
+is the one Inflect's own estate fills in. Set `schedule.everyHours` to the cadence declared on the estate in
 Inflect. Check the report with `scan --dry-run` first, then run `schedule`,
 which scans at once and then every `everyHours`, anchored to each run's start,
 and carries on after a failed run.
 
-The scanner runs in the estate as a container that the estate builds from a
-checkout of this repository (`packages/agent-harness-scanner/Dockerfile`, owner
-decision 2026-10-19). Inflect's own estate is the exception. Its scanner runs on
-the production VM from a copy published by digest to the repository's private
-GHCR package (owner decision 2026-10-20; the README's Container section), as
-the opt-in Compose overlay `deploy/docker-compose.harness-scanner.yml`. The
-dispatch-only `Scanner VM` workflow configures, checks and starts it, from
-credentials kept as `production` environment secrets
-(`deploy/harness-scanner/README.md` has the one-time setup and the order of the
-actions). Its default command is `schedule`.
+The scanner runs in the estate as a container: scanent's public image
+(`ghcr.io/rodnapamet/scanent`), pinned by its multi-arch index digest and signed
+by scanent's release workflow; `deploy/harness-scanner/README.md` has the
+commands that verify a digest's signature and build attestation before it is
+pinned. Until scanent #26 an estate built the image from a checkout of this
+repository (`packages/agent-harness-scanner/Dockerfile`, owner decision
+2026-10-19); that package and its Dockerfile are gone. Inflect's own estate runs
+the same image on the production VM, as the opt-in Compose overlay
+`deploy/docker-compose.harness-scanner.yml`. The dispatch-only `Scanner VM`
+workflow configures, checks and starts it, from credentials kept as
+`production` environment secrets (`deploy/harness-scanner/README.md` has the
+one-time setup, the order of the actions and how the configuration and paths
+differ from the removed in-repo package's). Its default command is `schedule`.
 Run it read-only, with every capability dropped, as its own non-root user
 (uid 1000); mount the configuration and each `code` root read-only and readable
 by that user; and supply the environment variables the configuration names from
 the estate's secret store. The signing key is one of them, and the image holds
-none. The README's Container section has the commands.
+none. The overlay `deploy/docker-compose.harness-scanner.yml` is a worked
+example of the user, the read-only filesystem and the dropped capabilities.
 
 **Before the first estate scans a real LangSmith workspace** (owner decision,
 2026-10-19), run one `scan --dry-run` against it and read the `runtime` entry
@@ -282,8 +330,8 @@ the question:
   the assumption holds, and the estate may be scheduled.
 - **`INCOMPLETE` `PAGINATION_TORN`** while the API answered (no `AUTH_FAILED`,
   `UNREACHABLE` or `RATE_LIMITED`): the response did not read as assumed. Do not
-  schedule the estate. The shape is corrected in one place,
-  `packages/agent-harness-scanner/src/sources/langsmith.ts`.
+  schedule the estate. The shape is corrected in scanent's LangSmith source, in
+  [scanent's repository](https://github.com/RodnaPamet/scanent).
 
 ## 5. Schedule health
 
@@ -300,9 +348,24 @@ the source refused or that was not set, and `UNREACHABLE`, `RATE_LIMITED`,
 `UNPARSEABLE`: it read a file that does not parse, or an agent definition built
 from something it cannot resolve statically — a tool list returned by a
 function, a model passed in as a parameter, `**kwargs`. The agent is still
-reported with what did resolve, and the source line names the reason. The
-`cicd` source adds it for a workflow file that is not one YAML document with a
-`jobs` mapping, or that declares a `permissions:` value it does not know; the
+reported with what did resolve, and the source line names the reason. For a
+model call on a provider's SDK the rule is: tools the reader cannot follow
+make an agent with no tool listed, and the source is `UNPARSEABLE`; options
+the reader cannot see at all make an agent only for a tool loop
+(`toolRunner`, `tool_runner`, `runTools`), and for any other method the call
+is not reported as an agent, because most model calls are completions, and
+the source is `UNPARSEABLE` all the same. The report carries that status and
+its reason and nothing more. The scanner's own log names the places: after the
+`source incomplete` line for the `code` source it writes one `not read` line
+per file and line it did not read, as a `code://<root label>/<path>#L<line>`
+locator with the reason, for at most 25 places, and then the total when there
+are more. A path that has a secret's shape is written as a hash of itself. A
+source file over 1 MiB is not parsed: one that names no framework and no
+provider's SDK (a vendored or minified bundle) leaves the source complete, and
+one that names one is `BYTE_CAP` at that file, as is any file over 16 MiB. The
+`cicd` source adds `UNPARSEABLE` for a workflow file that is not one YAML
+document with a `jobs` mapping, or that declares a `permissions:` value it
+does not know; the
 repository's other workflows are still reported.
 
 A LangSmith source's rows are the deployments and projects it listed, so a

@@ -53,7 +53,7 @@ import {
     useMaybeEditor,
 } from 'tldraw';
 
-import { ChevronRight } from '@inflect/ui/components/ui/icons/nucleo/chevron-right';
+import { ChevronRight } from '@inflect/ui/components/ui/icons/glyphs/chevron-right';
 
 import { isCollapsedFromDataJson } from './drill-scope-host';
 import {
@@ -63,6 +63,14 @@ import {
     awaitsAHuman,
 } from '@/lib/processes/canvas-execution-overlay';
 import { useStepRuleStatus } from '@/lib/processes/canvas-rule-status';
+// A linked node's live card. Safe without a provider, so a node rendered bare
+// draws its label and nothing else.
+import {
+    useLinkedCard,
+    type CardTone,
+    type LinkedCard,
+} from '@/lib/processes/canvas-linked-facts';
+import { NODE_LINK_FIELD, linkFieldForNodeType, type LinkedNodeType } from '@/app-layer/schemas/process-map';
 // WHO HAS OPENED WHICH CHECKPOINT (#3472). Read unconditionally and safe
 // without a provider — `canReview` is false and `open` is a no-op — which is
 // the same design property the execution overlay states for itself and the
@@ -145,6 +153,9 @@ export class ProcessNodeShapeUtil extends ShapeUtil<ProcessNodeShape> {
             subtitle: null,
             parentNodeKey: null,
             dataJson: null,
+            controlId: null,
+            riskId: null,
+            assetId: null,
         };
     }
 
@@ -311,6 +322,66 @@ function GroupFoldToggle({ shape }: { shape: ProcessNodeShape }) {
     );
 }
 
+const CARD_TONE: Record<CardTone, string> = {
+    success: 'text-content-success',
+    warning: 'text-content-warning',
+    neutral: 'text-content-muted',
+};
+
+/**
+ * The linked record on a control, risk or asset node: `key · name`, then the
+ * kind's facts (a risk's band chip, score and status; a control's status and
+ * last test; an asset's type and criticality), then a risk's mitigation on this
+ * map. Plain text only. The link itself is changed in the inspector, never on
+ * the canvas: a gesture on a shape has no path to the governed write.
+ */
+function LinkedCardLines({ card, nodeKey }: { card: LinkedCard; nodeKey: string }) {
+    return (
+        <span
+            className="flex min-w-0 flex-col"
+            data-testid={`process-node-link-${nodeKey}`}
+            data-link-state={card.state}
+            data-link-status={card.status ?? undefined}
+        >
+            <span
+                className={`truncate text-xs font-medium ${
+                    card.state === 'linked' ? 'text-content-default' : CARD_TONE[card.tone]
+                }`}
+            >
+                {card.title}
+            </span>
+            {card.detail ? (
+                <span className={`flex min-w-0 items-center gap-tight text-xs ${CARD_TONE[card.tone]}`}>
+                    {card.chip ? (
+                        <span
+                            className="flex shrink-0 items-center gap-tight font-medium text-content-default"
+                            data-testid={`process-node-band-${nodeKey}`}
+                        >
+                            {/* The band's own colour, from the tenant's matrix: a
+                                swatch, so the name stays readable in both themes. */}
+                            <span
+                                aria-hidden="true"
+                                className="h-2 w-2 shrink-0 rounded-full"
+                                style={{ backgroundColor: card.chip.color }}
+                            />
+                            {card.chip.name}
+                        </span>
+                    ) : null}
+                    <span className="truncate">{card.detail}</span>
+                </span>
+            ) : null}
+            {card.note ? (
+                <span
+                    className={`truncate text-xs ${CARD_TONE[card.noteTone]}`}
+                    data-testid={`process-node-link-note-${nodeKey}`}
+                >
+                    {card.note}
+                </span>
+            ) : null}
+        </span>
+    );
+}
+
 /**
  * A process node's chassis and contents.
  *
@@ -393,6 +464,17 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
         the canvas, joined by the context above.
     */
     const checkpoint = useCheckpointReview();
+    // What the linked record currently says. The kind is null for a node that
+    // links to nothing, so the hook runs unconditionally and only a control,
+    // risk or asset node shows a card.
+    const linkKind =
+        linkFieldForNodeType(shape.props.nodeType) === null
+            ? null
+            : (shape.props.nodeType as LinkedNodeType);
+    const linkCard = useLinkedCard(
+        linkKind,
+        linkKind === null ? null : shape.props[NODE_LINK_FIELD[linkKind]],
+    );
     const canOpenCheckpoint = runAwaitsAHuman && checkpoint.canReview && agentRun !== undefined;
 
     return (
@@ -407,6 +489,9 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
                 // describes: flow nodes read as solid, context nodes as
                 // annotations ON the flow rather than part of it.
                 meta.category === 'flow' ? 'bg-bg-default' : 'bg-bg-subtle',
+                // An unlinked control node is a draft placeholder: dashed, so
+                // it reads as unfinished on the map without opening it.
+                linkCard?.state === 'unlinked' ? 'border-dashed' : '',
                 // Last, so the run-state ring wins over the accent border it
                 // overlaps. `''` when there is no overlay, which `join` renders
                 // as a harmless double space.
@@ -453,6 +538,7 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
                     {shape.props.subtitle}
                 </span>
             ) : null}
+            {linkCard ? <LinkedCardLines card={linkCard} nodeKey={shape.props.nodeKey || shape.id} /> : null}
             {ruleStatus ? (
                 <span
                     className={[

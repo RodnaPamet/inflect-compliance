@@ -16,6 +16,8 @@
  */
 import { useEffect, useState } from "react";
 
+import { unwrapCappedList, type CappedList } from "@/lib/list-backfill-cap";
+
 import {
     isSessionExpired,
     noteUnauthorized,
@@ -65,16 +67,10 @@ async function fetchTenantRisks(
         throw new Error(`Could not load risks (${res.status})`);
     }
     const body = (await res.json()) as unknown;
-    // Normalise both bare-array AND `{ risks: [...] }` / `{ data:
-    // [...] }` wrapper responses — the API shape varies between
-    // paginated + non-paginated.
-    const rows = Array.isArray(body)
-        ? (body as unknown[])
-        : Array.isArray((body as { risks?: unknown[] })?.risks)
-          ? (body as { risks: unknown[] }).risks
-          : Array.isArray((body as { data?: unknown[] })?.data)
-            ? (body as { data: unknown[] }).data
-            : [];
+    // GET /risks returns the capped `{ rows, truncated, kpiCounts }`
+    // envelope. No branch here read `rows`, so the canvas pickers were
+    // always empty (#5183).
+    const rows = unwrapCappedList(body as CappedList<unknown> | unknown[] | null);
     return rows
         .map((r) => {
             const row = r as {

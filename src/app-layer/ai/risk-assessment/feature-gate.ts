@@ -74,9 +74,32 @@ const REQUIRED_PLAN_LEVEL: number | null = AI_RISK_PLAN_REQUIRED
 
 // ─── Feature Gate ───
 
+/**
+ * The refusal codes the gate puts in `details.reason` (#5764), so a page can
+ * word the refusal in the reader's language. `reason` on the result stays the
+ * server's English sentence.
+ */
+export const AI_GATE_REFUSAL = {
+    /** The deployment's master switch or this feature's switch is off. */
+    DISABLED: 'AI_DISABLED',
+    /** The caller holds no write capability. */
+    ROLE_REQUIRED: 'AI_ROLE_REQUIRED',
+    /** The workspace turned AI, or this feature, off. */
+    TURNED_OFF_FOR_WORKSPACE: 'AI_TURNED_OFF_FOR_WORKSPACE',
+    /** The workspace's AI settings could not be read, so the gate refused. */
+    AVAILABILITY_UNCONFIRMED: 'AI_AVAILABILITY_UNCONFIRMED',
+    /** The workspace's plan is below the one AI requires. */
+    PLAN_REQUIRED: 'AI_PLAN_REQUIRED',
+    /** The plan gate could not be applied (misconfigured or unreadable). */
+    PLAN_UNVERIFIED: 'AI_PLAN_UNVERIFIED',
+} as const;
+export type AiGateRefusal = (typeof AI_GATE_REFUSAL)[keyof typeof AI_GATE_REFUSAL];
+
 export interface FeatureGateResult {
     allowed: boolean;
     reason?: string;
+    /** Set on every refusal: the code `enforceFeatureGate` sends as `details.reason`. */
+    code?: AiGateRefusal;
 }
 
 /**
@@ -98,17 +121,25 @@ const AI_ACCESS_ALLOWLIST: ReadonlyArray<(ctx: RequestContext, feature: AiFeatur
     () =>
         AI_RISK_ENABLED
             ? { allowed: true }
-            : { allowed: false, reason: 'AI features are currently disabled' },
+            : { allowed: false, reason: 'AI features are currently disabled', code: AI_GATE_REFUSAL.DISABLED },
     // 2. The specific feature's enable flag must be on (GAP-2).
     (_ctx, feature) =>
         FEATURE_ENABLED[feature]
             ? { allowed: true }
-            : { allowed: false, reason: `${FEATURE_LABEL[feature]} is currently disabled` },
+            : {
+                  allowed: false,
+                  reason: `${FEATURE_LABEL[feature]} is currently disabled`,
+                  code: AI_GATE_REFUSAL.DISABLED,
+              },
     // 3. Caller must hold the write capability (Editor / Admin / Owner).
     (ctx) =>
         ctx.permissions.canWrite
             ? { allowed: true }
-            : { allowed: false, reason: 'AI features require Editor or Admin role' },
+            : {
+                  allowed: false,
+                  reason: 'AI features require Editor or Admin role',
+                  code: AI_GATE_REFUSAL.ROLE_REQUIRED,
+              },
     // Gate 4 (plan entitlement) is NOT in this list: it needs an async
     // plan resolution. It runs in `checkFeatureGateWithPlan` /
     // `enforceFeatureGate`, AFTER every predicate here has passed.
@@ -200,12 +231,17 @@ async function checkTenantToggle(
 
         const settings = row as unknown as Record<string, boolean>;
         if (settings[AI_MASTER_COLUMN] === false) {
-            return { allowed: false, reason: 'AI features are turned off for this workspace' };
+            return {
+                allowed: false,
+                reason: 'AI features are turned off for this workspace',
+                code: AI_GATE_REFUSAL.TURNED_OFF_FOR_WORKSPACE,
+            };
         }
         if (settings[column] === false) {
             return {
                 allowed: false,
                 reason: `${FEATURE_LABEL[feature]} is turned off for this workspace`,
+                code: AI_GATE_REFUSAL.TURNED_OFF_FOR_WORKSPACE,
             };
         }
         return { allowed: true };
@@ -219,6 +255,7 @@ async function checkTenantToggle(
         return {
             allowed: false,
             reason: 'AI availability could not be confirmed for this workspace',
+            code: AI_GATE_REFUSAL.AVAILABILITY_UNCONFIRMED,
         };
     }
 }
@@ -235,6 +272,14 @@ export async function checkFeatureGateWithPlan(
     if (!tenant.allowed) return tenant;
     if (!AI_RISK_PLAN_REQUIRED) return { allowed: true };
     return checkPlanEntitlement(ctx);
+}
+
+/** The 403 for a refused gate, carrying its code as `details.reason` (#5764). */
+function gateRefusal(result: FeatureGateResult) {
+    return forbidden(
+        result.reason ?? 'This AI feature is not available',
+        result.code ? { reason: result.code } : undefined,
+    );
 }
 
 /**
@@ -268,19 +313,19 @@ export function enforceFeatureGate(ctx: RequestContext, feature: AiFeature = 'ri
     */
     const sync = checkFeatureGate(ctx, feature);
     if (!sync.allowed) {
-        throw forbidden(sync.reason ?? 'This AI feature is not available');
+        throw gateRefusal(sync);
     }
 
     return checkTenantToggle(ctx, feature).then((tenant) => {
         if (!tenant.allowed) {
-            throw forbidden(tenant.reason ?? 'This AI feature is not available');
+            throw gateRefusal(tenant);
         }
         // Opted out of plan gating (the default) — nothing further to do.
         if (!AI_RISK_PLAN_REQUIRED) return;
 
         return checkPlanEntitlement(ctx).then((plan) => {
             if (!plan.allowed) {
-                throw forbidden(plan.reason ?? 'This AI feature is not available');
+                throw gateRefusal(plan);
             }
         });
     });
@@ -317,6 +362,7 @@ async function checkPlanEntitlement(ctx: RequestContext): Promise<FeatureGateRes
         return {
             allowed: false,
             reason: 'AI features are gated by plan, but the required plan is misconfigured',
+            code: AI_GATE_REFUSAL.PLAN_UNVERIFIED,
         };
     }
 
@@ -329,6 +375,7 @@ async function checkPlanEntitlement(ctx: RequestContext): Promise<FeatureGateRes
         return {
             allowed: false,
             reason: 'AI features are unavailable while the plan could not be verified',
+            code: AI_GATE_REFUSAL.PLAN_UNVERIFIED,
         };
     }
 
@@ -337,6 +384,7 @@ async function checkPlanEntitlement(ctx: RequestContext): Promise<FeatureGateRes
         return {
             allowed: false,
             reason: `AI features require the ${AI_RISK_PLAN_REQUIRED.toUpperCase()} plan or higher (current plan: ${plan})`,
+            code: AI_GATE_REFUSAL.PLAN_REQUIRED,
         };
     }
     return { allowed: true };

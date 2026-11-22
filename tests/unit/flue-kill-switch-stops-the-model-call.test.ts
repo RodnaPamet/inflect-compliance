@@ -89,7 +89,8 @@ jest.mock('@/lib/agentic/drivers/run-store', () => ({
 }));
 jest.mock('@/lib/agentic/drivers/step-recorder', () => ({ recordStep: jest.fn(async () => undefined) }));
 jest.mock('@/lib/agentic/drivers/run-settlement', () => ({
-    updateRun: jest.fn(async () => undefined),
+    updateRun: jest.fn(async () => true),
+    isRunAborted: jest.fn(async () => false),
     failRun: jest.fn(async () => 'FAILED'),
     haltRunAtCap: jest.fn(async () => 'FAILED'),
     haltRunAtGuard: jest.fn(async () => 'ABORTED'),
@@ -117,7 +118,7 @@ jest.mock('@/lib/db/rls-middleware', () => ({
 
 import { executeFlueRun } from '@/lib/agentic/flue/execute';
 import { readRunBinding } from '@/lib/agentic/flue/run-binding';
-import { failRun, haltRunAtCap, haltRunAtKill } from '@/lib/agentic/drivers/run-settlement';
+import { failRun, haltRunAtCap, haltRunAtKill, isRunAborted, updateRun } from '@/lib/agentic/drivers/run-settlement';
 import { getRunRow } from '@/lib/agentic/drivers/run-store';
 import { killRefusalMessage, resolveKillState } from '@/lib/agentic/kill-switch';
 import { recordAgentKillRefusal } from '@/lib/observability/integration-metrics';
@@ -284,6 +285,34 @@ describe('a kill switch engaged mid-run stops the next model call', () => {
         expect(out.status).toBe('COMPLETED');
         expect(resolveKillState).toHaveBeenCalledTimes(1 + 3);
         expect(haltRunAtKill).not.toHaveBeenCalled();
+    });
+
+    it("halts before the second model call when an operator aborts the run, and settles nothing over it (#5366)", async () => {
+        // The run row is the switch: `abortWorkflowRun` wrote ABORTED after
+        // the first call. Before #5366 only the kill switch was read here, so
+        // the model was called again and the run settled COMPLETED over it.
+        let abortedByOperator = false;
+        (isRunAborted as jest.Mock).mockImplementation(async () => abortedByOperator);
+        scriptModelCalls(3, (i) => {
+            if (i === 1) abortedByOperator = true;
+        });
+
+        let out;
+        try {
+            out = await executeFlueRun(CTX, 'run-1', DEF, 0, Date.now(), 'anthropic/claude');
+        } finally {
+            (isRunAborted as jest.Mock).mockImplementation(async () => false);
+        }
+
+        expect(modelCalls).toBe(1);
+        expect(out.status).toBe('ABORTED');
+        // No settlement is attempted: the operator's ABORTED is the settlement.
+        for (const [, , data] of (updateRun as jest.Mock).mock.calls as Array<[unknown, unknown, Record<string, unknown>]>) {
+            expect(data).not.toHaveProperty('status');
+        }
+        expect(haltRunAtKill).not.toHaveBeenCalled();
+        expect(haltRunAtCap).not.toHaveBeenCalled();
+        expect(failRun).not.toHaveBeenCalled();
     });
 
     it('refuses the call when the kill read itself fails, rather than proceeding', async () => {

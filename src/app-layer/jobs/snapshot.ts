@@ -67,9 +67,12 @@ export async function runSnapshotJob(options?: {
         const snapshotDate = toSnapshotDate(options?.date);
 
         // Get target tenants
+        // Live tenants only (#5307): a removed (soft-deleted) workspace gets
+        // no further daily snapshot rows. An explicit `tenantId` is the
+        // caller's choice and is honoured as given.
         const tenants = options?.tenantId
             ? [{ id: options.tenantId }]
-            : await prisma.tenant.findMany({ select: { id: true } });
+            : await prisma.tenant.findMany({ where: { deletedAt: null }, select: { id: true } });
 
         let snapshotted = 0;
         let errored = 0;

@@ -46,10 +46,16 @@ const readBreakerLatch = jest.fn(async () => null as unknown);
 jest.mock('@/lib/agentic/kill-switch', () => ({ resolveKillState }));
 jest.mock('@/lib/agentic/circuit-breaker-store', () => ({ readBreakerLatch }));
 jest.mock('@/app-layer/usecases/workflow-runs', () => ({ startWorkflowRun }));
+// #5716. The depth counter is the only thing that can tell us whether 5 is the
+// right ceiling, and it is recorded BEFORE the cap check so a refusal is still
+// a sample. Mocked here to observe that ordering.
+const recordAgentInvokeDepth = jest.fn();
+jest.mock('@/lib/observability/metrics', () => ({ recordAgentInvokeDepth: (...a: unknown[]) => recordAgentInvokeDepth(...a) }));
 
 import { runAgentInvokeDispatch, MAX_AGENT_INVOKE_DEPTH } from '@/app-layer/jobs/agent-invoke-dispatch';
 import { prisma } from '@/lib/prisma';
 import { resolveTenantContext } from '@/lib/tenant-context';
+import { ForbiddenError } from '@/lib/errors/types';
 
 const mockPrisma = prisma as any;
 
@@ -161,12 +167,67 @@ describe('an automation rule invoking an agent', () => {
         expect(resolveTenantContext).not.toHaveBeenCalled();
     });
 
+    it('refuses — does not throw — when the rule owner is no longer an active member (#5307)', async () => {
+        // A deactivated or removed author is a rule that outlived its owner: a
+        // misconfiguration, which must not put the job into retry.
+        (resolveTenantContext as jest.Mock).mockRejectedValueOnce(
+            new ForbiddenError('Your account has been deactivated by a tenant administrator.'),
+        );
+        const { refusal, result } = await runAgentInvokeDispatch(payload() as never);
+        expect(refusal).toBe('rule_owner_not_member');
+        expect(startWorkflowRun).not.toHaveBeenCalled();
+        expect((result as unknown as { success: boolean }).success).toBe(true);
+        expect(summaryOf(result)).toContain('rule_owner_not_member');
+    });
+
+    it('still THROWS for a fault that is not a membership refusal', async () => {
+        // The retry exists for infrastructure faults; only the named
+        // misconfiguration is converted into a refusal.
+        (resolveTenantContext as jest.Mock).mockRejectedValueOnce(new Error('connection reset'));
+        await expect(runAgentInvokeDispatch(payload() as never)).rejects.toThrow('connection reset');
+        expect(startWorkflowRun).not.toHaveBeenCalled();
+    });
+
     it('caps recursion — an agent run that re-fires its own rule cannot loop', async () => {
         const { refusal } = await runAgentInvokeDispatch(
             payload({ depth: MAX_AGENT_INVOKE_DEPTH + 1 }) as never,
         );
         expect(refusal).toBe('depth_exceeded');
         expect(startWorkflowRun).not.toHaveBeenCalled();
+    });
+
+    // #5716. The counter is recorded at ARRIVAL, which is what makes the
+    // distribution usable. Counting after the refusal would censor it at the
+    // cap: the data could then only ever say nothing exceeded the ceiling,
+    // never that the ceiling is too low.
+    it('counts a REFUSED depth too, so the distribution is not censored at the cap', async () => {
+        const { refusal } = await runAgentInvokeDispatch(
+            payload({ depth: MAX_AGENT_INVOKE_DEPTH + 1 }) as never,
+        );
+        expect(refusal).toBe('depth_exceeded');
+        expect(recordAgentInvokeDepth).toHaveBeenCalledWith({ depth: MAX_AGENT_INVOKE_DEPTH + 1 });
+    });
+
+    it('counts an allowed depth at the value it arrived with', async () => {
+        mockPrisma.registeredAgent.findFirst.mockResolvedValue({
+            id: 'ag-1', status: 'ACTIVE', riskTier: 'LOW',
+        });
+        await runAgentInvokeDispatch(payload({ depth: 3 }) as never);
+        expect(recordAgentInvokeDepth).toHaveBeenCalledWith({ depth: 3 });
+    });
+
+    // #5716. THE HALF THAT WAS MISSING. The cases above drive the comparison
+    // with a hand-written `depth`, which proves the arithmetic and says nothing
+    // about whether the number is ever anything but 1 — a dead gate's shape.
+    // The depth now reaches the RUN, so the events the run's effects emit carry
+    // it and the next lap arrives one deeper.
+    it('puts the depth on the run context, so the events the run causes carry it', async () => {
+        mockPrisma.registeredAgent.findFirst.mockResolvedValue({
+            id: 'ag-1', status: 'ACTIVE', riskTier: 'LOW',
+        });
+        await runAgentInvokeDispatch(payload({ depth: 2 }) as never);
+        expect(startWorkflowRun).toHaveBeenCalled();
+        expect((startWorkflowRun.mock.calls[0][0] as { agentInvokeDepth?: number }).agentInvokeDepth).toBe(2);
     });
 
     it('allows the last permitted depth — the cap is off-by-one safe', async () => {

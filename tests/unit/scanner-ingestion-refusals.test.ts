@@ -159,6 +159,36 @@ describe('permission gates', () => {
         expect(mockRunInTenantContext).not.toHaveBeenCalled();
     });
 
+    // #5369 (owner decision 2026-11-12): an ingest that raises findings asks
+    // the finding keys BEFORE phase 1 commits the scan run, never after.
+    it.each(['create', 'edit'] as const)(
+        'refuses a write-capable caller without findings.%s before anything is written',
+        async (flag) => {
+            const editor = makeRequestContext('EDITOR');
+            const ctx = makeRequestContext('EDITOR', {
+                appPermissions: {
+                    ...editor.appPermissions!,
+                    findings: { ...editor.appPermissions!.findings, [flag]: false },
+                },
+            });
+            await expect(ingest({}, ctx)).rejects.toBeInstanceOf(ForbiddenError);
+            expect(mockParseSarif).not.toHaveBeenCalled();
+            expect(mockRunInTenantContext).not.toHaveBeenCalled();
+            expect(mockDb.scannerRun.create).not.toHaveBeenCalled();
+        },
+    );
+
+    it('admits the same caller when it asks for no findings (materializeFindings: false)', async () => {
+        const editor = makeRequestContext('EDITOR');
+        const ctx = makeRequestContext('EDITOR', {
+            appPermissions: { ...editor.appPermissions!, findings: { ...editor.appPermissions!.findings, create: false } },
+        });
+        mockParseSarif.mockReturnValue(parsed([finding('a', 'CRITICAL')]));
+        const out = await ingest({ materializeFindings: false }, ctx);
+        expect(out.scannerRunId).toBe('run-1');
+        expect(mockCreateFinding).not.toHaveBeenCalled();
+    });
+
     it('ingestScannerRun ADMITS an EDITOR (so the gate is canWrite, not canAdmin)', async () => {
         const out = await ingest({}, makeRequestContext('EDITOR'));
         expect(out.scannerRunId).toBe('run-1');
@@ -540,6 +570,18 @@ describe('control-evidence bridge link', () => {
 // ─────────────────────────────────────────────────────────────────────
 // Phase 2 — dedupe against existing Findings, and the stale reconcile.
 // ─────────────────────────────────────────────────────────────────────
+/**
+ * The reconcile closes only findings in THIS scan's scope (#5077): the ones
+ * whose last reporting run shares its source, scan type and target. The scope
+ * is read from `scannerFinding`; this answers that read with the given
+ * fingerprints.
+ */
+function scopeHolds(...fingerprints: string[]): void {
+    mockDb.scannerFinding.findMany.mockImplementation(async (args: { where?: { scannerRun?: unknown } }) =>
+        args?.where?.scannerRun ? fingerprints.map((fingerprint, i) => ({ id: `sf-${i}`, fingerprint })) : [],
+    );
+}
+
 describe('finding materialisation and reconcile', () => {
     it('skips phase 2 entirely when materializeFindings is false', async () => {
         mockParseSarif.mockReturnValue(parsed([finding('a', 'CRITICAL')]));
@@ -635,6 +677,7 @@ describe('finding materialisation and reconcile', () => {
         ]);
         mockDb.finding.updateMany.mockResolvedValue({ count: 7 });
         mockParseSarif.mockReturnValue(parsed([finding('a', 'CRITICAL')]));
+        scopeHolds('gone', 'a');
 
         const out = await ingest({ source: 'TRIVY' });
 
@@ -661,12 +704,51 @@ describe('finding materialisation and reconcile', () => {
     it('does not re-close an already-CLOSED finding that is absent from the scan', async () => {
         mockDb.finding.findMany.mockResolvedValue([{ id: 'f-done', sourceRef: 'gone', status: 'CLOSED' }]);
         mockParseSarif.mockReturnValue(parsed([finding('a', 'CRITICAL')]));
+        scopeHolds('gone');
 
         const out = await ingest();
 
         expect(mockDb.finding.updateMany).not.toHaveBeenCalled();
-        expect(mockDb.scannerFinding.updateMany).not.toHaveBeenCalled();
+        // The only scanner-row write is the re-report's reopen of 'a' (#5206).
+        const fixedWrites = mockDb.scannerFinding.updateMany.mock.calls.filter(
+            ([args]: [{ data: { status: string } }]) => args.data.status === 'FIXED',
+        );
+        expect(fixedWrites).toHaveLength(0);
         expect(out.findingsReconciledClosed).toBe(0);
+    });
+
+    it('closes nothing outside this scan\'s scope (#5077)', async () => {
+        mockDb.finding.findMany.mockResolvedValue([
+            { id: 'f-mine', sourceRef: 'mine', status: 'OPEN' },
+            { id: 'f-other-repo', sourceRef: 'theirs', status: 'OPEN' },
+        ]);
+        mockDb.finding.updateMany.mockResolvedValue({ count: 1 });
+        mockParseSarif.mockReturnValue(parsed([]));
+        scopeHolds('mine');
+
+        await ingest({ source: 'TRIVY', repoRef: 'org/a@abc123' });
+
+        expect(mockDb.finding.updateMany.mock.calls[0][0].where.sourceRef).toStrictEqual({ in: ['mine'] });
+        // The scope is this source, this scan type and this repository at any ref.
+        const scope = mockDb.scannerFinding.findMany.mock.calls.find(
+            ([args]: [{ where?: { scannerRun?: unknown } }]) => args?.where?.scannerRun,
+        )?.[0].where.scannerRun;
+        expect(scope).toMatchObject({
+            source: 'TRIVY',
+            // The stored repoRef is sanitised, so the scope is too (the mock prefixes SAN:).
+            OR: [{ repoRef: 'SAN:org/a' }, { repoRef: { startsWith: 'SAN:org/a@' } }],
+        });
+    });
+
+    it('reopens a FIXED scanner row the scan reports again, and only a FIXED one (#5206)', async () => {
+        mockParseSarif.mockReturnValue(parsed([finding('back', 'CRITICAL')]));
+
+        await ingest();
+
+        expect(mockDb.scannerFinding.updateMany).toHaveBeenCalledWith({
+            where: { tenantId: 'tenant-1', fingerprint: { in: ['back'] }, status: 'FIXED' },
+            data: { status: 'OPEN' },
+        });
     });
 
     it('reconciles against ABOVE-THRESHOLD findings only — a demoted-to-LOW issue is closed', async () => {
@@ -675,6 +757,7 @@ describe('finding materialisation and reconcile', () => {
         // 'lo' is still in the scan, but below the HIGH default, so it is not a
         // current ref and reconciles closed.
         mockParseSarif.mockReturnValue(parsed([finding('lo', 'LOW'), finding('a', 'CRITICAL')]));
+        scopeHolds('lo', 'a');
 
         const out = await ingest();
 

@@ -190,6 +190,7 @@ export async function findDueAutomationControls(
             automationKey: true,
             frequency: true,
             nextDueAt: true,
+            automationLastAttemptAt: true,
             name: true,
         },
         orderBy: { nextDueAt: 'asc' },
@@ -217,6 +218,46 @@ export async function findDueAutomationControls(
             },
             select: { id: true },
         });
+
+        // ── BACKOFF: WE TRIED THIS RECENTLY, WHATEVER CAME BACK (#5204) ──
+        //
+        // The dedupe above only sees PASSED/FAILED/RUNNING executions, and
+        // four of the runner's failure paths return before writing any
+        // execution row — so a control whose check can never run was never
+        // deduped, never advanced its `nextDueAt`, and therefore sorted FIRST
+        // for ever under `nextDueAt ASC`. At 500 of them the batch held
+        // nothing else.
+        //
+        // Measured against the control's OWN frequency window, the same one
+        // the dedupe uses, so this adds no new constant and no new cadence: a
+        // broken DAILY control is retried daily rather than every tick.
+        if (ctrl.automationLastAttemptAt && ctrl.automationLastAttemptAt >= windowStart) {
+            continue;
+        }
+
+        // ── BOOTSTRAP: A NULL nextDueAt GETS A DATE, NOT THIS TICK (#5204) ──
+        //
+        // The WHERE above admits `nextDueAt: null` with the comment "execute
+        // immediately", but `ASC` puts NULLs LAST in PostgreSQL, so those
+        // controls were the FIRST thing starved — the opposite of the comment.
+        //
+        // Rather than reorder them (which lets a fleet-wide burst of
+        // first-ever runs fill the batch ahead of genuinely due controls),
+        // this is the pattern `control-test-scheduler` already uses next door
+        // for a plan with a schedule and no `nextRunAt`: compute the first
+        // date, do NOT enqueue this tick. The control waits at most one tick
+        // longer than today and then competes on an equal footing, and the
+        // comment becomes true of the behaviour.
+        if (!ctrl.nextDueAt) {
+            const first = computeNextDueAt(ctrl.frequency, now);
+            if (first) {
+                await prisma.control.update({
+                    where: { id: ctrl.id },
+                    data: { nextDueAt: first },
+                });
+            }
+            continue;
+        }
 
         if (!recentExecution) {
             dueControls.push({
@@ -596,6 +637,35 @@ export async function runScheduledAutomations(
                 dryRun: true,
                 jobRunId,
             };
+        }
+
+        // ═══ STAMP THE WHOLE BATCH AS ATTEMPTED, BEFORE EXECUTING IT ═══
+        //
+        // One `updateMany` rather than a write per control: 500 rows is the
+        // ceiling, and the stamp is the same value for all of them.
+        //
+        // BEFORE the loop, on purpose. Stamping afterwards would leave the
+        // batch unstamped if the job died partway — and the controls it had
+        // not reached would be re-selected on the next tick in the same order,
+        // which is the starvation this exists to stop. Stamped up front, a job
+        // that dies has still consumed its attempt: the next tick moves on to
+        // controls it has not tried, and these come back one frequency window
+        // later.
+        //
+        // The cost is that a crash between the stamp and the execution defers
+        // those controls by one window instead of retrying them immediately.
+        // That is the right trade for a batch bounded at 500 with a 15-minute
+        // tick, and it is the only shape that cannot livelock.
+        //
+        // It covers every outcome, which is the point: the verdicts, the four
+        // ERROR paths that write no execution row, a provider that throws, and
+        // the `skipped` controls below whose provider is not registered at all.
+        // `dryRun` returns above, so a dry run stamps nothing.
+        if (dueControls.length > 0) {
+            await prisma.control.updateMany({
+                where: { id: { in: dueControls.map((c) => c.id) } },
+                data: { automationLastAttemptAt: now },
+            });
         }
 
         // 2. Execute each control

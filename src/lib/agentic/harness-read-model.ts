@@ -23,51 +23,32 @@
  *     userinfo replaced by `***` (`redactPointerCredentials`), so a pointer
  *     that embedded a password is neither linked nor printed nor copied.
  *
- * PURE: no clock, no I/O. The one import beside the ladder is a TYPE
- * (`OwnerSignalKind`), erased at build, so the tab's bundle gains nothing.
+ * THE ROWS ARE THE SHARED TABLE MODEL'S (owner decision, 2026-11-13). A
+ * matrix row carries `buildHarnessMatrix`'s row from the contract package —
+ * cells, judgement, level, bar, and the order `compareHarnessMatrixRows` puts
+ * them in — and Inflect's own columns beside it (`MatrixRow`).
+ *
+ * PURE: no clock, no I/O. Every import beside the ladder is a TYPE
+ * (`OwnerSignalKind`, the model's row, and the stored shapes the contract
+ * owns), erased at build, so the tab's bundle gains nothing.
  */
-import {
-    rungOf,
-    type CriterionVerdict,
-    type HarnessLevel,
-} from './harness-ladder';
+import type { HarnessMatrixRow } from '@rodnapamet/scanent-contract/harness-matrix-model';
+
+import { rungOf, type HarnessLevel } from './harness-ladder';
 import type { OwnerSignalKind } from './iam-skill-outputs';
 
 // ─── View types: JSON-safe (ISO strings, no Date) ───────────────────────────
 
 export type HarnessScanCompleteness = 'COMPLETE' | 'INCOMPLETE' | 'EMPTY';
 
-/** One stored source of a scan, as the contract re-validates it. */
-export interface StoredSource {
-    readonly kind: string;
-    readonly status: 'COMPLETE' | 'INCOMPLETE';
-    readonly rows: number;
-    readonly reason: string | null;
-}
+// `StoredSource`, `HarnessModelEndpointView` and `HarnessAgentModels` are the
+// shapes the contract's stored-value parsers return, so the contract owns them
+// and this module re-exports them: one definition, and the contract's import
+// closure stays free of this file. The re-export is a TYPE, erased at build.
+export type { HarnessAgentModels, HarnessModelEndpointView, StoredSource } from './harness-contract';
+import type { HarnessAgentModels, StoredSource } from './harness-contract';
 
 export type HarnessStoredReach = 'READ_ONLY' | 'WRITE_OR_EXTERNAL' | 'UNKNOWN';
-
-/** One model endpoint an agent calls, as `/2` reports it: a reference and a model id. */
-export interface HarnessModelEndpointView {
-    readonly endpoint: string;
-    readonly model: string | null;
-}
-
-/**
- * The model endpoints a scan item holds (#3759), in three states that never
- * collapse into one another:
- *
- *   • NOT_REPORTED — the scan said nothing: a `/1` report, or a `/2` agent
- *     without `models`. Not "calls no model";
- *   • REPORTED — what the scanner reported, possibly EMPTY, which is the
- *     scanner's claim that the agent calls none;
- *   • UNREADABLE — the stored value failed re-validation. Never shown as
- *     either of the other two.
- */
-export type HarnessAgentModels =
-    | { readonly state: 'NOT_REPORTED' }
-    | { readonly state: 'UNREADABLE' }
-    | { readonly state: 'REPORTED'; readonly endpoints: readonly HarnessModelEndpointView[] };
 
 export type AcceptAffordance = 'ACCEPT' | 'RENEW' | 'OWNER_ONLY' | 'REGISTER_FIRST' | 'NONE';
 
@@ -105,21 +86,40 @@ export interface HarnessDrift {
     readonly sourceDriftUnknown: boolean;
 }
 
+/**
+ * One agent of a scanner's latest scan, as the tab shows it: the SHARED TABLE
+ * MODEL's row (owner decision, 2026-11-13: "one shared table model"), joined by
+ * `discoveredId` to the columns that are Inflect's own.
+ *
+ * `matrix` is `buildHarnessMatrix`'s row from `@rodnapamet/scanent-contract`,
+ * the same one scanent's local results are built from, so the two surfaces
+ * cannot say different things about the same scan: the cells, whether the
+ * agent is judged, its level, its bar and where it stands against it, and the
+ * row order. The server builds it; no component re-derives any of it.
+ *
+ *   • A cell's state is `matrix.cells[i].state`. Inflect passes no readers and
+ *     no declarations, so only EVIDENCED, MET_UNEVIDENCED, NOT_MET and
+ *     UNANSWERED occur; the components are exhaustive over all seven anyway.
+ *   • `matrix.judgement` NOT_JUDGED states NO level (`level` is null, never
+ *     H0), with its reasons as codes. Stored verdicts that cannot be re-read
+ *     are the model's `VERDICTS_UNREADABLE`; stored sources that cannot be
+ *     re-read are its `SOURCES_UNREADABLE`.
+ *   • An UNREGISTERED AUTOMATED IDENTITY (`matrix.classification`) is held to
+ *     no bar: `heldToBar` and `countsAsShortfall` are false. The class is the
+ *     server's reading of the finding on record
+ *     (`unregisteredIdentitiesOnRecord`), handed to the model as its input,
+ *     never re-derived from the scan rows.
+ */
 export interface MatrixRow {
     readonly discoveredAgentId: string;
-    readonly discoveredId: string;
-    readonly discoveredVia: readonly string[];
-    /** `null` is SHADOW — including a register row deleted after the scan linked it. */
+    /** The shared model's row. Its `discoveredId` is the join key for every member below. */
+    readonly matrix: HarnessMatrixRow;
+    /**
+     * `null` is NOT REGISTERED — including a register row deleted after the
+     * scan linked it: a shadow agent, or, when the model's class says so, an
+     * unregistered automated identity.
+     */
     readonly registered: { readonly agentId: string; readonly name: string } | null;
-    readonly level: HarnessLevel;
-    readonly reach: HarnessStoredReach;
-    readonly belowBar: boolean;
-    readonly bar: HarnessLevel;
-    readonly blockingNextRung: readonly string[];
-    /** Collapsed: one verdict per answered criterion, at most one per criterion. The client maps cells with `criterionState`. */
-    readonly verdicts: readonly CriterionVerdict[];
-    /** The stored verdicts failed re-validation: every cell renders unanswered (fail closed). */
-    readonly verdictsUnreadable: boolean;
     /** The model endpoints this scan reported for the agent. Rendered as text, never as links. */
     readonly models: HarnessAgentModels;
     /**
@@ -156,7 +156,18 @@ export interface HarnessScannerSection {
     readonly rowsTruncated: boolean;
 }
 
+/**
+ * One principal with no live register row, on either of the tab's two lists:
+ * the shadow agents, or the unregistered automated identities. `kind` says
+ * which, and it is the server's reading of the finding on record.
+ */
 export interface ShadowRow {
+    /**
+     * `UNREGISTERED_IDENTITY` when that finding is the one open for the
+     * principal; `SHADOW_AGENT` otherwise — including when neither is, the
+     * more severe reading.
+     */
+    readonly kind: 'SHADOW_AGENT' | 'UNREGISTERED_IDENTITY';
     readonly discoveredAgentId: string;
     readonly discoveredId: string;
     readonly discoveredVia: readonly string[];
@@ -165,9 +176,10 @@ export interface ShadowRow {
     readonly lastLevel: HarnessLevel;
     readonly reason: 'UNREGISTERED' | 'REGISTER_ROW_DELETED';
     /**
-     * The agent's SHADOW_AGENT finding — what the registration intake registers
-     * from (#3712). `null` when none is on record, and then there is nothing to
-     * register from.
+     * The finding the registration intake registers from (#3712): an identity
+     * row's UNREGISTERED_IDENTITY finding, a shadow row's SHADOW_AGENT finding
+     * (or, when it never had one, the identity finding it had before). `null`
+     * when none is on record, and then there is nothing to register from.
      */
     readonly findingId: string | null;
     /**
@@ -251,6 +263,19 @@ export interface HarnessMatrixView {
          */
         readonly basis: 'EVIDENCED' | 'NOT_EVIDENCED';
         /** The OLDEST of those complete latest scans' `asOf`, when `basis` is EVIDENCED. */
+        readonly basisAsOf: string | null;
+    };
+    /**
+     * Unregistered automated identities (owner decisions, 2026-11-13): no live
+     * register row and no sign of a model, so not shadow agents and not on the
+     * list above. Read with the shadow list in ONE bounded read and split by
+     * the finding on record, so `truncated` and the basis are that list's: an
+     * empty list here is "none" under exactly the same evidence.
+     */
+    readonly unregisteredIdentities: {
+        readonly rows: readonly ShadowRow[];
+        readonly truncated: boolean;
+        readonly basis: 'EVIDENCED' | 'NOT_EVIDENCED';
         readonly basisAsOf: string | null;
     };
     readonly acceptances: { readonly rows: readonly AcceptanceRow[]; readonly truncated: boolean };
@@ -406,15 +431,4 @@ const POINTER_USERINFO = /\/\/[^/?#]*@/g;
 export function redactPointerCredentials(pointer: string): { readonly text: string; readonly redacted: boolean } {
     const text = pointer.replace(POINTER_USERINFO, '//***@');
     return { text, redacted: text !== pointer };
-}
-
-/** Matrix order: the worst rung first, then below its bar, then by discovered id. */
-export function compareMatrixRows(
-    a: { readonly level: HarnessLevel; readonly belowBar: boolean; readonly discoveredId: string },
-    b: { readonly level: HarnessLevel; readonly belowBar: boolean; readonly discoveredId: string },
-): number {
-    const rung = rungOf(a.level) - rungOf(b.level);
-    if (rung !== 0) return rung;
-    if (a.belowBar !== b.belowBar) return a.belowBar ? -1 : 1;
-    return byString(a.discoveredId, b.discoveredId);
 }

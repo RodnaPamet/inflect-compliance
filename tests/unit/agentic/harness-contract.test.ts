@@ -13,6 +13,7 @@ import {
     HARNESS_CONTRACT_V1,
     HARNESS_CONTRACT_V2,
     HARNESS_CONTRACT_V3,
+    HARNESS_CONTRACT_V4,
     INCOMPLETE_REASONS,
     INCOMPLETE_REASONS_V2,
     SOURCE_KINDS,
@@ -35,6 +36,8 @@ import {
     GCP_SA_ID,
     GCP_SA_KEY_REF,
     MALFORMATIONS,
+    PAYING_AGENT_ID,
+    PAYING_AGENT_PAYMENT_AT,
     UNBOUND_VAULT_REF,
     V2_MODEL_ENDPOINTS,
     createFakeScanner,
@@ -44,6 +47,7 @@ import {
     validReportBody,
     validV2ReportBody,
     validV3ReportBody,
+    validV4ReportBody,
     type Malformation,
 } from '../../helpers/agent-harness-fake-scanner';
 import { REPO_ROOT, repoFiles } from '../../helpers/repo-files';
@@ -172,6 +176,46 @@ describe('looksLikeSecret', () => {
     });
 });
 
+describe('inflect-agent-harness/4 (Agent Pay Phase 2.2)', () => {
+    const scanner4 = createFakeScanner();
+    const verify = (body: unknown) => verifyAndParseHarnessReport(scanner4.serialise(body), [scanner4.publicKeyHex]);
+
+    it('verifies a /4 report carrying a payment capability by protocol, library and locator', () => {
+        const result = verify(validV4ReportBody());
+        if (!result.ok) throw new Error(`${result.reason}: ${result.issues?.join('; ')}`);
+        expect(result.body.contract).toBe(HARNESS_CONTRACT_V4);
+        const paying = result.body.agents.find((a) => a.discoveredId === PAYING_AGENT_ID);
+        expect(paying).toMatchObject({ paymentCapabilities: [{ protocol: 'x402', library: 'x402-fetch', at: PAYING_AGENT_PAYMENT_AT }] });
+    });
+
+    it('keeps "read and saw none" apart from "not reported": [] survives verification, absence stays absent', () => {
+        const result = verify(validV4ReportBody());
+        if (!result.ok) throw new Error(result.reason);
+        const members = result.body.agents.map((a) => ('paymentCapabilities' in a ? a.paymentCapabilities : 'ABSENT'));
+        // The identity-provider agents carry no member; the SDK agent's code was read and calls no payment client.
+        expect(members.filter((m) => m === 'ABSENT').length).toBe(result.body.agents.length - 2);
+        expect(members).toContainEqual([]);
+    });
+
+    it('/2 and /3 reports still verify beside it, with the member they never had', () => {
+        expect(verify(validV2ReportBody())).toMatchObject({ ok: true });
+        expect(verify(validV3ReportBody())).toMatchObject({ ok: true });
+    });
+
+    it.each([
+        'v3-carries-payment-capabilities',
+        'v4-unknown-payment-library',
+        'v4-payment-not-located-in-code',
+        'v4-payment-on-agent-not-read-from-code',
+        'v4-payment-at-carries-a-card-number',
+        'v4-payment-reported-twice',
+    ] as const)('refuses %s at the schema', (kind) => {
+        const { raw, trusted, expected } = malformedReport(scanner4, kind);
+        expect(expected).toBe('SCHEMA');
+        expect(verifyAndParseHarnessReport(raw, trusted)).toMatchObject({ ok: false, reason: 'SCHEMA' });
+    });
+});
+
 describe('inflect-agent-harness/3 (#3785)', () => {
     const verify = (body: unknown) => verifyAndParseHarnessReport(scanner3.serialise(body), [scanner3.publicKeyHex]);
     const scanner3 = createFakeScanner();
@@ -241,13 +285,13 @@ describe('inflect-agent-harness/2 (#3754)', () => {
     it('a /1 report is refused since /1 was retired, and the refusal says so (#3686)', () => {
         // A report exactly as a /1 scanner sent it, signed by a trusted key.
         expect(issuesOf(retiredV1ReportBody())).toEqual([
-            `contract: ${HARNESS_CONTRACT_V1} is retired; the scanner must speak ${HARNESS_CONTRACT_V3}`,
+            `contract: ${HARNESS_CONTRACT_V1} is retired; the scanner must speak ${HARNESS_CONTRACT_V4}`,
         ]);
         // The retirement refuses the id, not the content: the same body under
         // /2, with /2's one required member, verifies.
         expect(verify({ ...retiredV1ReportBody(), contract: HARNESS_CONTRACT_V2, unboundCredentials: [] })).toMatchObject({ ok: true });
         // An id that never existed gets the plain refusal, naming nothing.
-        expect(issuesOf({ ...validReportBody(), contract: 'inflect-agent-harness/4' })).toEqual([
+        expect(issuesOf({ ...validReportBody(), contract: 'inflect-agent-harness/9' })).toEqual([
             'contract: not a contract id this verifier accepts',
         ]);
     });
@@ -429,8 +473,8 @@ describe('inflect-agent-harness/2 (#3754)', () => {
         });
     });
 
-    it('/2 and /3 are the accepted ids, and stored rows, a /1 scan\'s included, are read against /3\'s lists', () => {
-        expect(HARNESS_CONTRACT_IDS).toEqual([HARNESS_CONTRACT_V2, HARNESS_CONTRACT_V3]);
+    it('/2, /3 and /4 are the accepted ids, and stored rows, a /1 scan\'s included, are read against /3\'s lists', () => {
+        expect(HARNESS_CONTRACT_IDS).toEqual([HARNESS_CONTRACT_V2, HARNESS_CONTRACT_V3, HARNESS_CONTRACT_V4]);
         expect(SOURCE_KINDS).toEqual(SOURCE_KINDS_V3);
         expect(INCOMPLETE_REASONS).toEqual(INCOMPLETE_REASONS_V2);
         const v1Sources = JSON.parse(JSON.stringify(retiredV1ReportBody().population.sources)) as unknown;

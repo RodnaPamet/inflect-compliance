@@ -23,7 +23,9 @@ jest.mock('@/lib/tenant-context-provider', () => {
         tenantSlug: 'acme',
         tenantName: 'Acme',
         permissions,
-        appPermissions: { tasks: { create: true, edit: true } },
+        // Every vendor write asks `vendors.edit` (#5313); a real context
+        // always carries it.
+        appPermissions: { tasks: { create: true, edit: true }, vendors: { view: true, create: true, edit: true } },
     };
     const apiUrl = (p: string) => `/api/t/acme${p.startsWith('/') ? p : `/${p}`}`;
     const href = (p: string) => `/t/acme${p}`;
@@ -182,6 +184,20 @@ describe('vendor detail — a refused save says why and keeps the form (#4534)',
         await openEditAndSave();
         const alert = await screen.findByRole('alert');
         expect(alert).toHaveTextContent(/can't be made Active until an assessment has been sent/);
+        expect(document.getElementById('save-vendor-btn')).not.toBeNull();
+    });
+
+    it('an activation refused while a reassessment is in progress says so (#5318)', async () => {
+        patchAnswer = {
+            status: 400,
+            body: envelope('BAD_REQUEST', 'Cannot activate vendor while a reassessment is in progress.', {
+                reason: 'VENDOR_REASSESSMENT_IN_PROGRESS',
+            }),
+        };
+        await openEditAndSave();
+        const alert = await screen.findByRole('alert');
+        expect(alert).toHaveTextContent(/can't be made Active while a reassessment is in progress/);
+        expect(alert).not.toHaveTextContent(/until an assessment has been sent/);
         expect(document.getElementById('save-vendor-btn')).not.toBeNull();
     });
 

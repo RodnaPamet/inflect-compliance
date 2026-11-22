@@ -140,6 +140,7 @@ const PROPOSAL: ProposalRow = {
     windowClosed: false,
     approvalsRecorded: 0,
     signedByViewer: false,
+    viewerMayApprove: true,
     // Made outside a run — this suite is not about provenance.
     runId: null,
     stepSeq: null,

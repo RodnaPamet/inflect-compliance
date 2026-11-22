@@ -9,7 +9,7 @@
  *   • Snapshot role at campaign creation (frozen evidence)
  *   • Live role today (changes if anyone updated the membership
  *     after snapshot)
- *   • Last activity date (max UserSession.lastActiveAt for the user)
+ *   • Last sign-in (latest UserSession.createdAt across all of the user's sessions, #5106)
  *   • Decision dropdown — CONFIRM / REVOKE / MODIFY
  *   • Decision-aware modal for MODIFY's `modifiedToRole` + notes
  *
@@ -24,7 +24,7 @@
  *   - Anyone with read can browse + download the evidence PDF when
  *     the campaign is CLOSED, and read each decision's justification.
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
@@ -200,6 +200,45 @@ interface AgentNarrowingRow {
     executionResult: string | null;
 }
 
+/** Agent Pay 1.4 (#5333) — a proposed withdrawal of the agent's spending authority. */
+type SpendingWithdrawalGround =
+    | 'EXPIRED_BY_WINDOW_END'
+    | 'SUSPENDED_AFTER_KILL'
+    | 'NEVER_REVIEWED'
+    | 'EXPIRES_DURING_CAMPAIGN'
+    | 'NO_PAYMENT_ABILITY_CONFIRMED';
+type SpendingWithdrawalResult =
+    | 'ENVELOPE_WITHDRAWN'
+    | 'ENVELOPE_ALREADY_WITHDRAWN'
+    | 'ENVELOPE_REDECLARED'
+    | 'ENVELOPE_ABSENT';
+const SPENDING_WITHDRAWAL_GROUNDS: readonly SpendingWithdrawalGround[] = [
+    'EXPIRED_BY_WINDOW_END', 'SUSPENDED_AFTER_KILL', 'NEVER_REVIEWED',
+    'EXPIRES_DURING_CAMPAIGN', 'NO_PAYMENT_ABILITY_CONFIRMED',
+];
+const SPENDING_WITHDRAWAL_RESULTS: readonly SpendingWithdrawalResult[] = [
+    'ENVELOPE_WITHDRAWN', 'ENVELOPE_ALREADY_WITHDRAWN', 'ENVELOPE_REDECLARED', 'ENVELOPE_ABSENT',
+];
+type SpendingRail = 'AGENT_PAY_TOKEN' | 'AP4M' | 'OTHER';
+const SPENDING_RAILS: readonly SpendingRail[] = ['AGENT_PAY_TOKEN', 'AP4M', 'OTHER'];
+
+interface AgentSpendingWithdrawalRow {
+    id: string;
+    decisionId: string;
+    packId: string;
+    rail: string;
+    declaredAt: string;
+    statusAtPack: string;
+    expiresAt: string;
+    grounds: string[];
+    outcome: NarrowingOutcome;
+    decidedAt: string | null;
+    decidedByUserId: string | null;
+    executedAt: string | null;
+    executionResult: string | null;
+    ownerTaskId: string | null;
+}
+
 interface AgentSampleRow {
     id: string;
     decisionId: string;
@@ -211,10 +250,30 @@ interface AgentSampleRow {
     reviewedAt: string | null;
 }
 
+/**
+ * A background preparation of a large campaign's packs (#5317), as the packs
+ * route reads it off the queue; null when there is none to show.
+ */
+type AgentPackPreparation =
+    | { state: 'QUEUED' | 'RUNNING'; done: number; total: number | null }
+    | { state: 'FAILED'; reason: string | null }
+    | { state: 'UNKNOWN' };
+
+/** How often the page re-reads a preparation that is queued or running. */
+const PREPARATION_POLL_MS = 3000;
+
+function preparationIsLive(p: AgentPackPreparation | null | undefined): boolean {
+    return p?.state === 'QUEUED' || p?.state === 'RUNNING';
+}
+
 interface AgentPacksResponse {
     packs: AgentPackRow[];
     narrowings: AgentNarrowingRow[];
+    /** Agent Pay 1.4 — absent from a response that predates it, which reads as none. */
+    spendingWithdrawals?: AgentSpendingWithdrawalRow[];
     samples: AgentSampleRow[];
+    /** Absent from a response that predates it, which reads as none. */
+    preparation?: AgentPackPreparation | null;
     evidence: {
         fileRecordId: string;
         storedSha256: string | null;
@@ -240,6 +299,22 @@ interface PackSummary {
     guardFlags: number;
     breakerTripped: boolean;
     kills: number;
+    /**
+     * Spending envelopes the agent holds (not withdrawn) and how many of them
+     * nobody but the declarer has reviewed (Agent Pay Phase 1.4, #5333). Zero
+     * for a pack filed before the section, which could not tell.
+     */
+    spendingEnvelopes: number;
+    spendingUnreviewed: number;
+    /** The rails of those envelopes, in the pack's order. */
+    spendingRails: SpendingRail[];
+    /**
+     * The sections whose read hit its cap (#5317), in the order shown. A
+     * capped section is not every row, and the reviewer must not read it as
+     * if it were. A pack filed before a flag existed carries no key, which
+     * reads as not capped: that read could not tell.
+     */
+    truncated: Array<'grants' | 'timeBounded' | 'kills'>;
 }
 
 /**
@@ -254,6 +329,9 @@ function readPackSummary(value: unknown): PackSummary {
     const harness = v.harness && typeof v.harness === 'object' ? (v.harness as Record<string, unknown>) : {};
     const flags = v.guardFlags && typeof v.guardFlags === 'object' ? Object.values(v.guardFlags as Record<string, unknown>) : [];
     const breaker = v.breaker && typeof v.breaker === 'object' ? (v.breaker as Record<string, unknown>) : null;
+    const spending = Array.isArray(v.spendingAuthority)
+        ? (v.spendingAuthority as Array<Record<string, unknown>>).filter((e) => e && typeof e === 'object')
+        : [];
     return {
         grants: grants.length,
         unusedGrants: grants.filter((g) => g.lastCalledAt === null && g.heldForWholeWindow === true).length,
@@ -262,8 +340,26 @@ function readPackSummary(value: unknown): PackSummary {
         guardFlags: flags.reduce<number>((n, x) => n + (typeof x === 'number' ? x : 0), 0),
         breakerTripped: breaker?.trippedInWindow === true,
         kills: Array.isArray(v.killEngagements) ? v.killEngagements.length : 0,
+        spendingEnvelopes: spending.filter((e) => e.status !== 'WITHDRAWN').length,
+        spendingUnreviewed: spending.filter((e) => e.unreviewed === true).length,
+        spendingRails: spending
+            .filter((e) => e.status !== 'WITHDRAWN')
+            .map((e) => SPENDING_RAILS.find((r) => r === e.rail))
+            .filter((r): r is SpendingRail => r !== undefined),
+        truncated: [
+            ...(v.grantsTruncated === true ? (['grants'] as const) : []),
+            ...(v.timeBoundedTruncated === true ? (['timeBounded'] as const) : []),
+            ...(v.killsTruncated === true ? (['kills'] as const) : []),
+        ],
     };
 }
+
+/** The note for each capped section, by message key. */
+const TRUNCATED_SECTION_MESSAGE = {
+    grants: 'agentPackGrantsTruncated',
+    timeBounded: 'agentPackTimeBoundedTruncated',
+    kills: 'agentPackKillsTruncated',
+} as const;
 
 /**
  * A request the server refused, worded for the person (#4699): the named
@@ -327,7 +423,7 @@ interface ReviewDetail {
      * `admin.agent_registry`. Optional because only an AGENT campaign sets it.
      */
     subjectsRestricted?: boolean;
-    lastActivityByUser: Record<string, string | Date>;
+    lastSignInByUser: Record<string, string | Date>;
 }
 
 interface Props {
@@ -347,6 +443,23 @@ interface Props {
      * route's `access_reviews.close` AND `canAdmin`. Defaults to `isAdmin`.
      */
     canRegenerateEvidence?: boolean;
+    /**
+     * May close the campaign: the close route's `access_reviews.close` AND the
+     * usecase's `canAdmin`, computed on the server (#5313). Defaults to
+     * `isAdmin`, the same answer for every built-in role.
+     */
+    canCloseCampaign?: boolean;
+    /**
+     * Holds `access_reviews.decide`, the key every decision route takes
+     * (#5313). Every built-in role holds it; a custom role can drop it.
+     */
+    holdsDecide?: boolean;
+    /**
+     * Holds `admin.agent_registry`. A sampled agent decision is answered by
+     * the campaign's reviewer or a holder of that key, never by `canAdmin`
+     * (`recordAgentDecisionSampleOutcome`, #5274).
+     */
+    holdsAgentRegistry?: boolean;
 }
 
 const STATUS_VARIANT: Record<Status, 'warning' | 'info' | 'success'> = {
@@ -368,6 +481,9 @@ export function AccessReviewDetailClient({
     isAdmin,
     canManage = isAdmin,
     canRegenerateEvidence = isAdmin,
+    canCloseCampaign = isAdmin,
+    holdsDecide = true,
+    holdsAgentRegistry = false,
 }: Props) {
     const t = useTranslations('accessReviews');
     // Roles, statuses and verdicts render through their labels (#4130), never
@@ -378,6 +494,10 @@ export function AccessReviewDetailClient({
     const { mutate: swrMutate } = useSWRConfig();
     const router = useRouter();
     const apiBase = `/api/t/${tenantSlug}/access-reviews/${initialReview.id}`;
+    // The register reads its list through `useTenantSWR`, whose cache key is
+    // the RESOLVED URL. Revalidating the bare `CACHE_KEYS` path hit no entry,
+    // so the register kept its pre-change progress and reviewer (#5313).
+    const listCacheKey = `/api/t/${tenantSlug}${CACHE_KEYS.accessReviews.list()}`;
 
     const reviewQuery = useTenantSWR<ReviewDetail>(
         CACHE_KEYS.accessReviews.detail(initialReview.id),
@@ -394,8 +514,11 @@ export function AccessReviewDetailClient({
     // fails is worse than showing none.
     const isAgent = review.scope === 'AGENT';
     const agentActionsAvailable = !isAgent || AGENT_CAMPAIGNS_IMPLEMENTED;
-    const canDecide = (isReviewer || isAdmin) && review.status !== 'CLOSED' && agentActionsAvailable;
-    const canClose = isAdmin && review.status !== 'CLOSED' && agentActionsAvailable;
+    // #5313 — each follows the route's key as well as the usecase's tier: the
+    // decision routes take `access_reviews.decide`, the close route
+    // `access_reviews.close`.
+    const canDecide = holdsDecide && (isReviewer || isAdmin) && review.status !== 'CLOSED' && agentActionsAvailable;
+    const canClose = canCloseCampaign && review.status !== 'CLOSED' && agentActionsAvailable;
     // #4130 — the reviewer and the due date of an OPEN or IN_REVIEW campaign,
     // for every scope `campaignSettingsEditable` admits (not AGENT).
     const canEditSettings = canManage && review.status !== 'CLOSED' && campaignSettingsEditable(review.scope);
@@ -471,19 +594,43 @@ export function AccessReviewDetailClient({
     // Read only by somebody the server will answer: the packs are register
     // data, narrowed to the reviewer or a holder of `admin.agent_registry`,
     // and a withheld campaign (`subjectsRestricted`) would only fetch a 403.
+    // A preparation handed to the background job (#5317) is re-read until it
+    // ends; nothing else on the packs read changes without a press here. A
+    // NUMBER, set from the last read, rather than SWR's function form: SWR
+    // asks the function only when it arms the next tick, and with no data at
+    // mount it answers 0 and never arms one.
+    const [preparationPollMs, setPreparationPollMs] = useState(0);
     const packsQuery = useTenantSWR<AgentPacksResponse>(
         isAgent && !review.subjectsRestricted ? `/access-reviews/${review.id}/agent-packs` : null,
+        // `dedupingInterval` below the poll, or the default 5 s deduping
+        // swallows every tick (see MonitorTab).
+        {
+            refreshInterval: preparationPollMs,
+            dedupingInterval: PREPARATION_POLL_MS - 1000,
+            onSuccess: (data) => setPreparationPollMs(preparationIsLive(data?.preparation) ? PREPARATION_POLL_MS : 0),
+        },
     );
+    const preparation = packsQuery.data?.preparation ?? null;
+    const preparationLive = preparationIsLive(preparation);
     const packs = useMemo(() => packsQuery.data?.packs ?? [], [packsQuery.data]);
     const narrowings = useMemo(() => packsQuery.data?.narrowings ?? [], [packsQuery.data]);
     const samples = useMemo(() => packsQuery.data?.samples ?? [], [packsQuery.data]);
     const packByDecision = useMemo(() => new Map(packs.map((p) => [p.decisionId, p])), [packs]);
+    const spendingWithdrawals = useMemo(() => packsQuery.data?.spendingWithdrawals ?? [], [packsQuery.data]);
     const pendingByDecision = useMemo(() => {
         const m = new Map<string, number>();
         for (const n of narrowings) if (n.outcome === 'PENDING') m.set(n.decisionId, (m.get(n.decisionId) ?? 0) + 1);
         return m;
     }, [narrowings]);
+    // Agent Pay 1.4 — a subject waits for its spending withdrawals as for its
+    // narrowings: the server refuses its verdict while either is pending.
+    const pendingWithdrawalsByDecision = useMemo(() => {
+        const m = new Map<string, number>();
+        for (const w of spendingWithdrawals) if (w.outcome === 'PENDING') m.set(w.decisionId, (m.get(w.decisionId) ?? 0) + 1);
+        return m;
+    }, [spendingWithdrawals]);
     const pendingNarrowings = narrowings.filter((n) => n.outcome === 'PENDING').length;
+    const pendingWithdrawals = spendingWithdrawals.filter((w) => w.outcome === 'PENDING').length;
     const agentRowById = useMemo(() => new Map(connectedRows.map((r) => [r.id, r])), [connectedRows]);
     // Every preparing agent is ACTIVE, so it is a subject too: its name is in a snapshot.
     const agentNameByAgentId = useMemo(() => {
@@ -502,24 +649,37 @@ export function AccessReviewDetailClient({
     );
     // An AGENT campaign closes only with every pack prepared and every
     // narrowing decided as well — the server's rule, stated where it is pressed.
-    const agentCloseReady = !isAgent || (packs.length === subjectCount && pendingNarrowings === 0);
+    const agentCloseReady = !isAgent
+        || (packs.length === subjectCount && pendingNarrowings === 0 && pendingWithdrawals === 0);
     const [agentBusy, setAgentBusy] = useState(false);
 
     const mutateReview = reviewQuery.mutate;
     const mutatePacks = packsQuery.mutate;
+
+    // When a background preparation ends, the campaign it prepared is read
+    // again: its packs came with the packs read, and the subjects beside them
+    // are the review's.
+    const wasPreparing = useRef(false);
+    useEffect(() => {
+        if (wasPreparing.current && !preparationLive) {
+            void mutateReview();
+            void swrMutate(listCacheKey);
+        }
+        wasPreparing.current = preparationLive;
+    }, [preparationLive, mutateReview, swrMutate, listCacheKey]);
     const agentAct = useCallback(async (url: string, body?: unknown) => {
         setAgentBusy(true);
         setConnectedError(null);
         try {
             await postJson(url, (b) => refusalText(t, b, t('submitFailed')), body);
             await Promise.all([mutateReview(), mutatePacks()]);
-            void swrMutate(CACHE_KEYS.accessReviews.list());
+            void swrMutate(listCacheKey);
         } catch (err) {
             setConnectedError(caughtText(err, t('unknownError')));
         } finally {
             setAgentBusy(false);
         }
-    }, [mutateReview, mutatePacks, swrMutate, t]);
+    }, [mutateReview, mutatePacks, swrMutate, listCacheKey, t]);
 
     const decisionColumns = useMemo(
         () => createColumns<DecisionRow>([
@@ -555,14 +715,14 @@ export function AccessReviewDetailClient({
                     ),
             },
             {
-                id: 'lastActive',
-                header: t('colLastActive'),
+                id: 'lastSignIn',
+                header: t('colLastSignIn'),
                 cell: ({ row }) => {
-                    const lastActiveAt =
-                        review.lastActivityByUser[row.original.subjectUserId] ?? null;
+                    const lastSignInAt =
+                        review.lastSignInByUser[row.original.subjectUserId] ?? null;
                     return (
                         <span className="text-sm text-content-muted">
-                            {lastActiveAt ? formatDate(lastActiveAt) : t('never')}
+                            {lastSignInAt ? formatDate(lastSignInAt) : t('never')}
                         </span>
                     );
                 },
@@ -668,7 +828,7 @@ export function AccessReviewDetailClient({
                 ),
             },
         ]),
-        [canDecide, currentUserId, review.lastActivityByUser, t],
+        [canDecide, currentUserId, review.lastSignInByUser, t],
     );
 
 
@@ -923,6 +1083,28 @@ export function AccessReviewDetailClient({
                                 {sum.breakerTripped ? ` · ${t('agentPackBreakerTripped')}` : ''}
                                 {sum.kills > 0 ? ` · ${t('agentPackKills', { count: sum.kills })}` : ''}
                             </div>
+                            {/* Agent Pay 1.4 (#5333) — the agent can spend
+                                money; an unreviewed envelope is said loudly. */}
+                            {sum.spendingEnvelopes > 0 ? (
+                                <div
+                                    className={sum.spendingUnreviewed > 0 ? 'text-content-warning' : 'text-content-muted'}
+                                    data-testid={`agent-pack-spending-${row.original.id}`}
+                                >
+                                    {t('agentPackSpending', { count: sum.spendingEnvelopes })}
+                                    {sum.spendingUnreviewed > 0
+                                        ? ` · ${t('agentPackSpendingUnreviewed', { count: sum.spendingUnreviewed })}`
+                                        : ''}
+                                </div>
+                            ) : null}
+                            {/* #5317 — a capped section is not the whole
+                                list; say so beside the figures it bounds. */}
+                            {sum.truncated.length > 0 ? (
+                                <div className="text-content-warning" data-testid={`agent-pack-truncated-${row.original.id}`}>
+                                    {sum.truncated.map((section) => (
+                                        <div key={section}>{t(TRUNCATED_SECTION_MESSAGE[section])}</div>
+                                    ))}
+                                </div>
+                            ) : null}
                             <div className="text-content-muted" data-testid={`agent-pack-prepared-by-${row.original.id}`}>
                                 {pack.preparedByAgentId
                                     ? t('agentPackPreparedBy', { agent: agentNameByAgentId.get(pack.preparedByAgentId) ?? pack.preparedByAgentId })
@@ -970,7 +1152,24 @@ export function AccessReviewDetailClient({
                             </span>
                         );
                     }
+                    const pendingWithdrawalsHere = pendingWithdrawalsByDecision.get(d.id) ?? 0;
+                    if (pendingWithdrawalsHere > 0) {
+                        return (
+                            <span className="text-xs text-content-muted" data-testid={`agent-withdrawals-first-${d.id}`}>
+                                {t('agentWithdrawalsFirst', { count: pendingWithdrawalsHere })}
+                            </span>
+                        );
+                    }
+                    // Agent Pay 1.4, ground (d): a scan cannot show the agent
+                    // can no longer pay, so the reviewer says so — once per
+                    // envelope the pack describes and no withdrawal names yet.
+                    const proposedRails = new Set(
+                        spendingWithdrawals.filter((w) => w.decisionId === d.id).map((w) => w.rail),
+                    );
+                    const confirmable = readPackSummary(packByDecision.get(d.id)?.sectionsJson)
+                        .spendingRails.filter((r) => !proposedRails.has(r));
                     return (
+                        <div className="space-y-tight">
                         <select
                             className="input"
                             defaultValue=""
@@ -987,11 +1186,22 @@ export function AccessReviewDetailClient({
                             <option value="REVOKE">{t('agentRevoke')}</option>
                             <option value="MODIFY">{t('agentModify')}</option>
                         </select>
+                        {confirmable.map((rail) => (
+                            <Button
+                                key={rail}
+                                variant="secondary"
+                                size="sm"
+                                disabled={agentBusy}
+                                data-testid={`agent-no-payment-ability-${d.id}-${rail}`}
+                                onClick={() => void agentAct(`${apiBase}/agent-spending-withdrawals`, { decisionId: d.id, rail })}
+                            >{t('agentNoPaymentAbility', { rail: t(`withdrawalRail.${rail}`) })}</Button>
+                        ))}
+                        </div>
                     );
                 },
             },
         ]),
-        [t, packByDecision, pendingByDecision, canDecide, currentUserId, agentBusy, ownerOf, agentAct, apiBase, agentNameByAgentId],
+        [t, packByDecision, pendingByDecision, pendingWithdrawalsByDecision, spendingWithdrawals, canDecide, currentUserId, agentBusy, ownerOf, agentAct, apiBase, agentNameByAgentId],
     );
 
     const agentNameOf = useCallback((decisionId: string): string => {
@@ -1064,6 +1274,91 @@ export function AccessReviewDetailClient({
         [t, canDecide, currentUserId, agentBusy, agentNameOf, ownerOf, agentAct, apiBase],
     );
 
+    // Agent Pay 1.4 (#5333) — what each pack proposes to withdraw, and the
+    // person's answer. Offered where the server takes it: a reviewer or admin
+    // who does not own the agent, on an open campaign.
+    const withdrawalColumns = useMemo(
+        () => createColumns<AgentSpendingWithdrawalRow>([
+            {
+                id: 'agent',
+                header: t('colAgent'),
+                cell: ({ row }) => <span className="text-sm">{agentNameOf(row.original.decisionId)}</span>,
+            },
+            {
+                id: 'rail',
+                header: t('colWithdrawalRail'),
+                cell: ({ row }) => {
+                    const w = row.original;
+                    const rail = SPENDING_RAILS.find((r) => r === w.rail);
+                    return (
+                        <div data-testid={`agent-withdrawal-${w.id}`}>
+                            <div className="text-sm">{rail ? t(`withdrawalRail.${rail}`) : w.rail}</div>
+                            <div className="text-xs text-content-muted">
+                                {t('withdrawalDeclared', { date: formatDate(w.declaredAt) })}
+                            </div>
+                        </div>
+                    );
+                },
+            },
+            {
+                id: 'grounds',
+                header: t('colWithdrawalGrounds'),
+                cell: ({ row }) => (
+                    <ul className="text-xs text-content-muted" data-testid={`agent-withdrawal-grounds-${row.original.id}`}>
+                        {row.original.grounds.map((g) => {
+                            const known = SPENDING_WITHDRAWAL_GROUNDS.find((x) => x === g);
+                            return <li key={g}>{known ? t(`withdrawalGround.${known}`) : g}</li>;
+                        })}
+                    </ul>
+                ),
+            },
+            {
+                id: 'outcome',
+                header: t('colDecision'),
+                cell: ({ row }) => {
+                    const w = row.original;
+                    if (w.outcome !== 'PENDING') {
+                        const result = SPENDING_WITHDRAWAL_RESULTS.find((r) => r === w.executionResult);
+                        return (
+                            <div>
+                                <span className="text-sm font-medium">
+                                    {w.outcome === 'ACCEPTED' ? t('withdrawalAccepted') : t('withdrawalRejected')}
+                                </span>
+                                {result ? (
+                                    <div className="text-xs text-content-muted" data-testid={`agent-withdrawal-result-${w.id}`}>
+                                        {t(`withdrawalResult.${result}`)}
+                                    </div>
+                                ) : null}
+                            </div>
+                        );
+                    }
+                    if (!canDecide || ownerOf(w.decisionId) === currentUserId) {
+                        return <span className="text-xs text-content-muted">{t('pending')}</span>;
+                    }
+                    return (
+                        <div className="flex gap-tight">
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={agentBusy}
+                                data-testid={`agent-withdrawal-accept-${w.id}`}
+                                onClick={() => void agentAct(`${apiBase}/agent-spending-withdrawals/${w.id}`, { outcome: 'ACCEPT' })}
+                            >{t('withdrawalAccept')}</Button>
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={agentBusy}
+                                data-testid={`agent-withdrawal-reject-${w.id}`}
+                                onClick={() => void agentAct(`${apiBase}/agent-spending-withdrawals/${w.id}`, { outcome: 'REJECT' })}
+                            >{t('withdrawalReject')}</Button>
+                        </div>
+                    );
+                },
+            },
+        ]),
+        [t, canDecide, currentUserId, agentBusy, agentNameOf, ownerOf, agentAct, apiBase],
+    );
+
     const sampleColumns = useMemo(
         () => createColumns<AgentSampleRow>([
             {
@@ -1101,7 +1396,7 @@ export function AccessReviewDetailClient({
                     if (first === currentUserId || ownerOf(sample.decisionId) === currentUserId) {
                         return <span className="text-xs text-content-muted">{t('sampleNotYours')}</span>;
                     }
-                    if (!(isReviewer || isAdmin)) {
+                    if (!(isReviewer || holdsAgentRegistry)) {
                         return <span className="text-xs text-content-muted">{t('pending')}</span>;
                     }
                     const url = `${apiBase}/agent-samples/${sample.id}`;
@@ -1142,7 +1437,7 @@ export function AccessReviewDetailClient({
                 },
             },
         ]),
-        [t, currentUserId, isReviewer, isAdmin, agentBusy, agentRowById, agentNameOf, ownerOf, agentAct, apiBase],
+        [t, currentUserId, isReviewer, holdsAgentRegistry, agentBusy, agentRowById, agentNameOf, ownerOf, agentAct, apiBase],
     );
 
     return (
@@ -1376,8 +1671,10 @@ export function AccessReviewDetailClient({
                 </div>
             ) : null}
 
-            {isAgent && isAdmin && review.status === 'OPEN' && !review.subjectsRestricted
-                && packsQuery.data && packs.length === 0 ? (
+            {/* The prepare route takes `access_reviews.create` and the usecase
+                `canAdmin` — `canManage` is that pair (#5313). */}
+            {isAgent && canManage && review.status === 'OPEN' && !review.subjectsRestricted
+                && packsQuery.data && packs.length === 0 && !preparationLive ? (
                 <div
                     role="status"
                     data-testid="access-review-agent-packs-missing"
@@ -1390,6 +1687,51 @@ export function AccessReviewDetailClient({
                         onClick={() => void agentAct(`${apiBase}/agent-packs`)}
                         data-testid="access-review-agent-prepare-packs"
                     >{agentBusy ? t('agentPreparing') : t('agentPreparePacks')}</Button>
+                </div>
+            ) : null}
+
+            {isAgent && preparationLive && preparation && 'done' in preparation ? (
+                <div
+                    role="status"
+                    aria-live="polite"
+                    data-testid="access-review-agent-packs-preparing"
+                    data-state={preparation.state}
+                    className="flex flex-col gap-tight rounded-md border border-border-subtle bg-bg-muted p-3 text-sm"
+                >
+                    <span className="text-content-default">
+                        {preparation.total === null
+                            ? t('agentPacksQueued')
+                            : t('agentPacksPreparingProgress', { done: preparation.done, total: preparation.total })}
+                    </span>
+                    {preparation.total ? (
+                        <ProgressBar
+                            value={Math.round((preparation.done / preparation.total) * 100)}
+                            variant="info"
+                            aria-label={t('agentPacksPreparingProgress', { done: preparation.done, total: preparation.total })}
+                            className="w-full sm:w-48"
+                        />
+                    ) : null}
+                </div>
+            ) : null}
+
+            {isAgent && preparation?.state === 'FAILED' && packs.length === 0 ? (
+                <div
+                    role="alert"
+                    data-testid="access-review-agent-packs-preparation-failed"
+                    className="rounded-md border border-border-error bg-bg-error p-3 text-sm text-content-error"
+                >
+                    {t('agentPacksPreparationFailed')}
+                    {preparation.reason ? <> <span className="font-mono text-xs">{preparation.reason}</span></> : null}
+                </div>
+            ) : null}
+
+            {isAgent && preparation?.state === 'UNKNOWN' && packs.length === 0 ? (
+                <div
+                    role="status"
+                    data-testid="access-review-agent-packs-preparation-unknown"
+                    className="rounded-md border border-border-subtle bg-bg-muted p-3 text-sm text-content-muted"
+                >
+                    {t('agentPacksPreparationUnknown')}
                 </div>
             ) : null}
 
@@ -1455,6 +1797,26 @@ export function AccessReviewDetailClient({
                 </section>
             ) : null}
 
+            {/* Agent Pay 1.4 (#5333) — what each pack proposes to withdraw from
+                the agent's spending authority. Accepting withdraws it on the
+                register and opens a task for the owner; nothing here adds one. */}
+            {isAgent && spendingWithdrawals.length > 0 ? (
+                <section className="space-y-tight" aria-labelledby="access-review-agent-withdrawals-heading">
+                    <Heading level={3} id="access-review-agent-withdrawals-heading">
+                        {t('agentWithdrawalsTitle')}
+                    </Heading>
+                    <p className="text-xs text-content-muted max-w-prose">{t('agentWithdrawalsHint')}</p>
+                    <DataTable
+                        data={spendingWithdrawals}
+                        columns={withdrawalColumns}
+                        getRowId={(w) => w.id}
+                        emptyState={t('rosterEmpty')}
+                        resourceName={(p) => (p ? 'withdrawals' : 'withdrawal')}
+                        data-testid="access-review-agent-withdrawals-table"
+                    />
+                </section>
+            ) : null}
+
             {/* #3674 — the decisions drawn at close for a second human. */}
             {isAgent && samples.length > 0 ? (
                 <section className="space-y-tight" aria-labelledby="access-review-agent-sample-heading">
@@ -1481,7 +1843,7 @@ export function AccessReviewDetailClient({
                     onSuccess={() => {
                         setActiveDecision(null);
                         void reviewQuery.mutate();
-                        void swrMutate(CACHE_KEYS.accessReviews.list());
+                        void swrMutate(listCacheKey);
                     }}
                 />
             ) : null}
@@ -1496,7 +1858,7 @@ export function AccessReviewDetailClient({
                     onSuccess={() => {
                         setEditingSettings(false);
                         void reviewQuery.mutate();
-                        void swrMutate(CACHE_KEYS.accessReviews.list());
+                        void swrMutate(listCacheKey);
                     }}
                 />
             ) : null}
@@ -1521,9 +1883,7 @@ export function AccessReviewDetailClient({
                         setClosing(false);
                         void reviewQuery.mutate();
                         // List page sees the new CLOSED state too.
-                        void swrMutate(
-                            `/api/t/${tenantSlug}${CACHE_KEYS.accessReviews.list()}`,
-                        );
+                        void swrMutate(listCacheKey);
                         router.refresh();
                     }}
                 />

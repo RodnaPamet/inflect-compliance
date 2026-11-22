@@ -289,17 +289,25 @@ describe('the concurrency token', () => {
         expect(onSaved).toHaveBeenCalledWith(saved);
     });
 
-    it('is DROPPED on a conflict, so the next autosave cannot retry it', async () => {
-        render(
-            <TldrawProcessMap tenantSlug="acme" mapId="map-1" fetchImpl={okFetch(payload())} />,
-        );
+    it('a conflict\'s Reload re-reads the map and takes its version, rather than dropping the token (#5081)', async () => {
+        // Clearing the token reloaded nothing, and the next save went out with
+        // no concurrency token at all.
+        let version = 3;
+        const fetchImpl = jest.fn(async () => ({
+            ok: true,
+            status: 200,
+            json: async () => payload({ version }),
+        })) as unknown as typeof fetch;
+        render(<TldrawProcessMap tenantSlug="acme" mapId="map-1" fetchImpl={fetchImpl} />);
         await waitFor(() => expect(screen.getByTestId('canvas-stub')).toBeInTheDocument());
         expect(lastAutosave()).toMatchObject({ expectedVersion: 3 });
 
+        version = 9; // somebody else saved
         await act(async () => {
             (lastAutosave().onConflict as () => void)();
         });
-        expect(lastAutosave()).not.toHaveProperty('expectedVersion');
+        await waitFor(() => expect(lastAutosave()).toMatchObject({ expectedVersion: 9 }));
+        expect(fetchImpl).toHaveBeenCalledTimes(2);
     });
 });
 

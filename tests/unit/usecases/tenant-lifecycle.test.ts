@@ -300,10 +300,14 @@ describe('transferTenantOwnership — happy path', () => {
 
         const calls: { id: string; role: string }[] = [];
         const tx = {
+            $executeRawUnsafe: jest.fn().mockImplementation((_sql: string, key: string) => {
+                calls.push({ id: key, role: 'LOCK' });
+                return Promise.resolve(0);
+            }),
             tenantMembership: {
-                update: jest.fn().mockImplementation((args: any) => {
+                updateMany: jest.fn().mockImplementation((args: any) => {
                     calls.push({ id: args.where.id, role: args.data.role });
-                    return Promise.resolve({});
+                    return Promise.resolve({ count: 1 });
                 }),
             },
         };
@@ -316,9 +320,17 @@ describe('transferTenantOwnership — happy path', () => {
         });
 
         expect(calls).toEqual([
+            { id: 'tenant-owner:t1', role: 'LOCK' }, // the tenant's owner lock first (#5388)
             { id: 'm-new', role: 'OWNER' },  // promote first
             { id: 'm-old', role: 'ADMIN' },  // then demote
         ]);
+        // Both writes re-check their row under the lock.
+        expect(tx.tenantMembership.updateMany.mock.calls[0][0].where).toEqual({
+            id: 'm-new', tenantId: 't1', status: 'ACTIVE',
+        });
+        expect(tx.tenantMembership.updateMany.mock.calls[1][0].where).toEqual({
+            id: 'm-old', tenantId: 't1', role: 'OWNER', status: 'ACTIVE',
+        });
         // Regression: reversing the order would demote the old OWNER
         // first, leaving the tenant with zero ACTIVE OWNERs and tripping
         // the `tenant_membership_last_owner_guard` trigger — the whole
@@ -333,7 +345,8 @@ describe('transferTenantOwnership — happy path', () => {
 
         mockTransaction.mockImplementationOnce(async (fn: any) =>
             fn({
-                tenantMembership: { update: jest.fn().mockResolvedValue({}) },
+                $executeRawUnsafe: jest.fn().mockResolvedValue(0),
+                tenantMembership: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
             }),
         );
 
@@ -351,5 +364,38 @@ describe('transferTenantOwnership — happy path', () => {
         expect(audit.detailsJson.fromUserId).toBe('u-old');
         expect(audit.detailsJson.toUserId).toBe('u-new');
         expect(audit.detailsJson.previousOwnerNewRole).toBe('ADMIN');
+    });
+
+    it('refuses, and audits nothing, when the new owner stopped being ACTIVE before the lock', async () => {
+        mockUserFind.mockResolvedValueOnce({ id: 'u-new' } as never);
+        mockMembershipFind
+            .mockResolvedValueOnce({ id: 'm-new', role: 'EDITOR' } as never)
+            .mockResolvedValueOnce({ id: 'm-old' } as never);
+        const updateMany = jest.fn().mockResolvedValueOnce({ count: 0 });
+        mockTransaction.mockImplementationOnce(async (fn: any) =>
+            fn({ $executeRawUnsafe: jest.fn().mockResolvedValue(0), tenantMembership: { updateMany } }),
+        );
+
+        await expect(
+            transferTenantOwnership({ tenantId: 't1', currentOwnerUserId: 'u-old', newOwnerEmail: 'new@b.com' }),
+        ).rejects.toThrow(/active tenant member/);
+        expect(updateMany).toHaveBeenCalledTimes(1);
+        expect(mockAppendAudit).not.toHaveBeenCalled();
+    });
+
+    it('refuses, and audits nothing, when the current owner stopped being an ACTIVE OWNER before the lock', async () => {
+        mockUserFind.mockResolvedValueOnce({ id: 'u-new' } as never);
+        mockMembershipFind
+            .mockResolvedValueOnce({ id: 'm-new', role: 'EDITOR' } as never)
+            .mockResolvedValueOnce({ id: 'm-old' } as never);
+        const updateMany = jest.fn().mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+        mockTransaction.mockImplementationOnce(async (fn: any) =>
+            fn({ $executeRawUnsafe: jest.fn().mockResolvedValue(0), tenantMembership: { updateMany } }),
+        );
+
+        await expect(
+            transferTenantOwnership({ tenantId: 't1', currentOwnerUserId: 'u-old', newOwnerEmail: 'new@b.com' }),
+        ).rejects.toThrow(/no ACTIVE OWNER membership/);
+        expect(mockAppendAudit).not.toHaveBeenCalled();
     });
 });

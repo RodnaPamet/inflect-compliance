@@ -28,7 +28,7 @@
 services:
   # ── Postgres ──
   db:
-    image: postgres:16-alpine
+    image: ghcr.io/rodnapamet/postgres-pgvector:16-alpine
     container_name: inflect-prod-db
     restart: always
     environment:
@@ -37,6 +37,11 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-inflect_production}
     volumes:
       - prod-pgdata:/var/lib/postgresql/data
+      # Creates `app_user` and the placeholder `postgres` role the RLS-setup
+      # migration grants to (#5302). Without it a fresh volume has no
+      # `postgres` role, `prisma migrate deploy` fails and the app crash-loops.
+      # Runs only when the volume is initialised.
+      - ./prisma/init-roles.sh:/docker-entrypoint-initdb.d/01-init-roles.sh:ro
     tmpfs:
       - /tmp:size=256M        # Temp files never hit persistent disk
       - /run/postgresql:size=16M
@@ -155,7 +160,9 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       CLAMAV_HOST: clamav:3310
       AV_SCAN_MODE: strict
-      STORAGE_PROVIDER: s3
+      # STORAGE_PROVIDER is NOT set here: it comes from .env.production, so the
+      # env file can choose s3 (with S3_*) or local (the volume below).
+      # A value here would silently override the env file (#5308).
       FILE_STORAGE_ROOT: /data/uploads
       UPLOAD_DIR: /data/uploads
       # GAP-03 — fail-fast at `docker compose up` time if the master
@@ -228,7 +235,9 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       CLAMAV_HOST: clamav:3310
       AV_SCAN_MODE: strict
-      STORAGE_PROVIDER: s3
+      # STORAGE_PROVIDER is NOT set here: it comes from .env.production, so the
+      # env file can choose s3 (with S3_*) or local (the volume below).
+      # A value here would silently override the env file (#5308).
       FILE_STORAGE_ROOT: /data/uploads
       UPLOAD_DIR: /data/uploads
       DATA_ENCRYPTION_KEY: "${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY is required for production. Generate with: openssl rand -base64 48}"

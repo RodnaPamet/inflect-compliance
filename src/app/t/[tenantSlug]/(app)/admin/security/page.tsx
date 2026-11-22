@@ -12,6 +12,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { useTenantApiUrl, useTenantHref, useTenantContext, usePermissions } from '@/lib/tenant-context-provider';
 import { AgentEnforcementCard } from './AgentEnforcementCard';
 import { ApiKeyRotationCard } from './ApiKeyRotationCard';
+import { AgentTurnCapsCard } from './AgentTurnCapsCard';
 import { ShieldCheck, Save, AlertTriangle, LogOut, Users, UserX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { InfoTooltip } from '@/components/ui/tooltip';
@@ -391,6 +392,9 @@ export default function AdminSecurityPage() {
 
             {/* ──── API-key rotation age for credential hygiene (#3708) ──── */}
             <ApiKeyRotationCard />
+
+            {/* ──── Agent per-turn limits, under the organization's ceiling (#4594) ──── */}
+            <AgentTurnCapsCard />
 
             {/* ──── Session Management ──── */}
             <div className={cn(cardVariants(), 'space-y-default')}>

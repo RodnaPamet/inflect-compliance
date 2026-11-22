@@ -85,15 +85,21 @@ CLI. That is the gap this design closes.
 
 `src/lib/agentic/drivers/` is where an engine plugs in. A `RunDriver` is one
 function, `(ctx, runId, def, fromSeq, runStartMs) => Promise<RunDriverOutcome>`.
-`DRIVERS` maps `static` and `flue` to implementations.
+`DRIVERS` (`src/lib/agentic/drivers/index.ts`) maps `static`, `flue` and
+`tool-runner` to implementations.
 
 Which engine runs is the AND of four terms, each able only to narrow
-(`src/lib/agentic/agent-driver.ts`, `docs/implementation-notes/2026-09-20-agent-driver-seam.md`):
+(`resolveAgentDriver` in `src/lib/agentic/agent-driver.ts`, then
+`selectRunDriver`; `docs/implementation-notes/2026-09-20-agent-driver-seam.md`):
 
-1. the operator's process-wide switch (`AGENT_DRIVER_FLUE`, opt-in: only `1`
-   or `true` count);
+1. the operator's switch for the engine the tenant chose. Flue's is
+   `AGENT_DRIVER_FLUE` (opt-in: only `1` or `true` count). The Tool Runner's is
+   `AGENT_DRIVER_TOOL_RUNNER`, read as three states: `1`/`true` on everywhere,
+   any other set value off everywhere, and unset leaves it to the workspace's
+   organization (`toolRunnerDecisionFor` in
+   `src/lib/agentic/agent-switches-policy.ts`);
 2. the tenant's setting (`TenantSecuritySettings.agentDriver`, enum
-   `AgentDriverMode { STATIC FLUE }`);
+   `AgentDriverMode { STATIC FLUE TOOL_RUNNER }`);
 3. whether this build implements the engine (`DRIVER_IMPLEMENTED`);
 4. whether the workflow definition asks for it (`WorkflowDefinition.driver`).
 
@@ -191,7 +197,7 @@ adapter: it scripts the model's turns, starts a run and reads back what
 happened. The scenarios assert only on that observation, never on an internal
 call.
 
-- Ten run scenarios:
+- The run scenarios (`CONFORMANCE_SCENARIOS`, which is the authority):
   - a kill switch engaged between model calls;
   - each of the three caps;
   - the ledger accounting for every model call and tool call;
@@ -199,7 +205,8 @@ call.
   - a secret-shaped argument refused before the funnel;
   - a flagged result withheld from the model;
   - a `LOCAL_ONLY` tenant never sent to an external model;
-  - the tool surface bounded and every engine-supplied tool reported.
+  - the tool surface bounded and every engine-supplied tool reported;
+  - a skill the mount gate refuses never reaching the model.
 - One admission scenario, run against the database. An unvouched agent (no
   binding, not in the register, or suspended) is refused before the run row
   exists. A vouched agent is the positive control.
@@ -312,9 +319,12 @@ profile run key is refused at admission.
   - member labels in place of user ids;
   - `testRun`.
 
-- **`allowedTriggers` is checked where a trigger starts a run.** The Test run
-  checks `TEST_RUN` (Step 2c); the Ask page and automation check theirs when they
-  gain a start path in Phase 2.
+- **`allowedTriggers` is checked where a trigger starts a run.** Admission
+  (`resolveRunDefinition`) requires every profile start to name its trigger and
+  refuses one the version does not allow (#5367): the Test run names `TEST_RUN`
+  (Step 2c), the Ask path (`startInteractiveRun`) `ASK`, and an automation rule's
+  `INVOKE_AGENT` `AUTOMATION`. The generic `POST /agent-runs` is no trigger, so
+  it starts no profile (`PROFILE_TRIGGER_REQUIRED`).
 - **The worker and resume execute what admission pinned** (Step 2c). They
   rebuild a profile run's definition from the run's own `profileVersionId`,
   while its instructions hash to `profileInstructionsHash`, never by approval
@@ -322,9 +332,14 @@ profile run key is refused at admission.
 
 ### What the harness scanner recognises
 
-The reference scanner's `code` source
-(`packages/agent-harness-scanner/src/sources/code/recognize.ts`) reads static
-code for LangChain, LangGraph and Claude Agent SDK agents (Step 3b, #4156).
+The harness scanner's `code` source reads static code for LangChain, LangGraph
+and Claude Agent SDK agents (Step 3b, #4156). It was built in this repository
+(`packages/agent-harness-scanner/src/sources/code/recognize.ts`) and moved with
+the scanner to the standalone scanent product by scanent #26
+([RodnaPamet/scanent](https://github.com/RodnaPamet/scanent)); the in-repo
+package was removed. The option mapping below
+(`agentSdkOptionVerdicts`, `AGENT_SDK_OPTION_CRITERIA`) is the contract
+package's, re-exported by `src/lib/agentic/harness-findings.ts`.
 
 - **What counts as an SDK agent.** A call resolved through the file's imports:
   - `query` from `@anthropic-ai/claude-agent-sdk`;
@@ -660,6 +675,28 @@ the sub-processor change policy's 30-day notice, and for each tenant to opt in.
    driver stays the candidate second engine, adopted only if a profile needs
    something the Tool Runner engine cannot give it, such as hook-based deferral
    of a call to a human.
+
+   **Phase 4 trigger (owner, 2026-11-13).** The owner recorded that profiles
+   need three things the Tool Runner engine cannot give them today: (1)
+   deferring a tool call to a person mid-run through an SDK hook, (2) context
+   compaction for long runs, and (3) a file or code workspace. That starts Step
+   4a (#4159) and nothing past it: the decision above stands until the owner
+   has read the spike. Need (3) overlaps Managed Agents (Phases 5 and 6,
+   `docs/claude-managed-agents-design.md`, Step 5e), whose container is a
+   workspace by design, while this document's locked options refuse every
+   built-in file and shell tool. So the spike's recommendation names, for each
+   of the three needs, the engine that serves it: this one, an extension of the
+   Tool Runner, or Managed Agents. The spike and its recommendation are in
+   `docs/implementation-notes/2026-11-13-spike-4a-agent-sdk.md`.
+
+   **Decided (owner, 2026-11-13): follow the spike.** No need adopts this
+   engine. Deferral to a person (1) and compaction (2) extend the Tool Runner,
+   as steps 2f (#5530) and 2g (#5531); deferral cannot resume without a durable
+   transcript, which Inflect would own either way, and the Tool Runner already
+   has compaction, off by choice. The workspace (3) is Managed Agents' Step 5e.
+   Phase 4 stays parked once the owner's `--real` run confirms the faux-mode
+   figures, and the Agent SDK remains the candidate second engine should a
+   later need be one the other two cannot serve.
 2. **The four #3351 questions, for instructions instead of compose text.**
    **Decided (owner, 2026-10-25): all four answers below are accepted as
    written.** Step 1a builds to them. *Recorded where:* encrypted on `AgentProfileVersion`, its hash pinned on every
@@ -743,7 +780,7 @@ done and the evidence table below bind all three.
 | --- | --- | --- | --- | --- |
 | 0 | Foundations | 0a, 0b, 0c, 0d, 0H | this document | — |
 | 1 | Agent builder | 1a, 1b, 1H | this document | 0H |
-| 2 | Tool Runner engine | 2a, 2b, 2c, 2d, 2H (2x is independent; 2e follows 2H) | `docs/claude-tool-runner-design.md` | 1H |
+| 2 | Tool Runner engine | 2a, 2b, 2c, 2d, 2H (2x is independent; 2e, 2f and 2g follow 2H) | `docs/claude-tool-runner-design.md` | 1H |
 | 3 | Connect agents customers run | 3a, 3b, 3H | this document | 0H (3a also needs 0d) |
 | 4 | Agent SDK engine (conditional) | 4a, 4b, 4c, 4H | this document | 2H, and a profile that needs it |
 | 5 | Managed Agents in the customer's workspace | 5a, 5b, 5c, 5d, 5e, 5H | `docs/claude-managed-agents-design.md` | 2H, 3H |
@@ -878,8 +915,8 @@ Each phase's hardening step fills its row.
 | Phase | Has it run in production? | Evidence |
 | --- | --- | --- |
 | 0 — Foundations | yes, 2026-10-26 | Deployed at 19:04:37 UTC on 2026-10-25, when Watchtower rolled the `ced48e0` publish. Before that, every image publish after 04:28 had been cancelled by the next push (#4280). **`/api/mcp` limiting**, about 19:25 UTC: a probe of 610 unauthenticated requests drew 600 `401` and 10 `429`, and exactly 10 `rate-limit.blocked` lines, all `mcp-ip`, none `api-mutation`. **A Flue run:** the first start after the deploy answered 500, because the image did not carry the skill corpus (#4301, fixed by #4302). After the fix, `access-posture` run `cmvp38v9d000001o5526qt04h` completed on 2026-10-26: recorded `FLUE`, 1 `MODEL_CALL` and 2 `TOOL_CALL` steps, all `DONE`, in 16 s. The baseline, `cmujpuc84000001pgl3rdy9ud` (2026-09-27), had 1 `MODEL_CALL` and 5 `TOOL_CALL` steps. |
-| 1 — Agent builder | no | — |
-| 2 — Tool Runner engine | no | — |
+| 1 — Agent builder | yes, 2026-11-11 | In the proving tenant, agent "Proving Agent" (`cmwc7djln000o01o5l8c2ay4c`): profile `cmwc7sgtz002301o5nkwb5prt`, version 1, written by one member at 14:28 UTC and approved by a different member at 14:29 UTC; instructions hash `e4221e1c4669532b50cebf95754f553af154a6d00a79ae5eb86461d5911b0f97`. Read off the Behaviour tab's version history. The `AGENT_PROFILE_SUBMITTED` / `AGENT_PROFILE_APPROVED` audit rows were not read from the audit log: the evidence was gathered from a phone, and the page shows the two people and times those rows record. |
+| 2 — Tool Runner engine | yes, 2026-11-11 | Profile `cmwc7sgtz002301o5nkwb5prt` v1 by Test run, on the Tool Runner engine. **Completed**: run `cmwc8pgt2000301o5927h6ozw` (14:54 UTC), 3 `MODEL_CALL` and 2 `TOOL_CALL` steps (`list_risks`, `list_controls`, guard clean), 3 Art 12 decision rows, 25,119 tokens, last stop reason `end_turn`. **Kill switch**: run `cmwclvwva001301o5iycngfi0` (21:03 UTC), the same five steps, 49,465 tokens, settled Aborted with "The run was stopped because a kill switch was engaged for this agent". The stop was pressed during the last model call (44,107 tokens), which the engine does not interrupt; the check after it settled the run, and nothing was sent after it. **`LOCAL_ONLY`**: with the tenant's residency set to local only, a Test run failed at once with `tool_runner_local_only_unserved` and 0 steps. **No conversation stored at Anthropic**: every `MODEL_CALL` step of both runs records `wire` `POST /v1/messages` with body keys `fallbacks, max_tokens, messages, model, output_config, stream, system, thinking, tool_choice, tools` and `threadMember: absent`, read on the run page (the shape `messagesOnlyFor` logs for every attempt, retries included, #4537). |
 | 3 — Connect agents customers run | no | — |
 | 4 — Agent SDK engine | no | — |
 | 5 — Managed Agents, customer workspace | no | — |
@@ -1217,7 +1254,8 @@ to be deployed first. The first carries the per-tenant allowlist (decision 8),
 the adversarial read and its tests, the corpus and purge tests, and the
 invariants. The answers are in
 `docs/implementation-notes/2026-10-26-phase-1-hardening.md`. The second records
-the production profile in the evidence table.
+the production profile in the evidence table, from the proving tenant on
+2026-11-11 (`docs/implementation-notes/2026-11-12-agents-production-evidence.md`).
 
 **Goal.** Prove the builder holds its invariants across both steps, and record that
 a real tenant has authored and approved a profile.

@@ -126,6 +126,40 @@ export class AutomationExecutionRepository {
         });
     }
 
+    /**
+     * Settle an execution ONLY while it is still RUNNING; true when this call
+     * settled it (#5305).
+     *
+     * `recordCompletion` overwrites whatever status the row holds. The SLA
+     * sweep reads RUNNING rows and then settles them, so a dispatcher that
+     * committed SUCCEEDED in between had its success overwritten to FAILED,
+     * and the sweep then audited a breach and notified its recipients for an
+     * action that had succeeded. The status predicate is in the write, so the
+     * loser of that race changes nothing and is told so.
+     */
+    static async recordCompletionIfRunning(
+        db: PrismaTx,
+        ctx: RequestContext,
+        id: string,
+        input: RecordAutomationExecutionCompletionInput
+    ): Promise<boolean> {
+        const res = await db.automationExecution.updateMany({
+            where: { id, tenantId: ctx.tenantId, status: 'RUNNING' },
+            data: {
+                status: input.status,
+                outcomeJson:
+                    input.outcome === null || input.outcome === undefined
+                        ? Prisma.JsonNull
+                        : (input.outcome as Prisma.InputJsonValue),
+                errorMessage: input.errorMessage ?? null,
+                errorStack: input.errorStack ?? null,
+                durationMs: input.durationMs ?? null,
+                completedAt: new Date(),
+            },
+        });
+        return res.count === 1;
+    }
+
     /** Per-rule history feed (used by the rule detail page). */
     static async listForRule(
         db: PrismaTx,

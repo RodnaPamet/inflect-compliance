@@ -67,6 +67,8 @@ const NON_SCORER_EVIDENCE_FILES: ReadonlyArray<readonly [string, string]> = [
      'Deadline surface — uses the evidence-EXPIRY predicate (app-layer/domain/evidence-expiry), a different question.'],
     ['src/app-layer/repositories/DashboardRepository.ts',
      'Freshness/retention KPI buckets — overdue/dueSoon semantics, not coverage.'],
+    ['src/app-layer/usecases/control/health.ts',
+     "Freshness — the newest evidence ATTACHMENT date (#5266); its only APPROVED is the control EXCEPTION filter, not evidence."],
 ];
 
 /**

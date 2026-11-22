@@ -62,7 +62,13 @@ function fakeEditor(selected: unknown[] = [], records: unknown[] = [BINDING]) {
     return {
         editor: {
             getSelectedShapes: () => sel,
-            getCurrentPageShapes: () => [NODE_SHAPE, LINE_SHAPE],
+            // The selected node shapes first, so a test that selects a node of
+            // another kind is the one a page lookup by key finds.
+            getCurrentPageShapes: () => [
+                ...(selected as Array<{ type?: string }>).filter((x) => x.type === 'process-node'),
+                NODE_SHAPE,
+                LINE_SHAPE,
+            ],
             markHistoryStoppingPoint: () => marks.push(1),
             updateShape: (p: Record<string, unknown>) => shapeUpdates.push(p),
             updateBinding: (p: Record<string, unknown>) => bindingUpdates.push(p),
@@ -156,15 +162,26 @@ describe('the node write path', () => {
         });
     });
 
-    it('MERGES linkedEntityId into dataJson instead of replacing it', () => {
-        // `dataJson` is an opaque passthrough carrying whatever else the row
-        // holds. A whole-value write would silently drop every sibling key.
+    it.each([
+        ['control', 'controlId'],
+        ['risk', 'riskId'],
+        ['asset', 'assetId'],
+    ])("a %s node's picked link goes to its own %s prop, and dataJson is untouched", (nodeType, field) => {
+        // The link is its kind's prop, persisted to a table with a real foreign
+        // key. Writing it into the opaque `dataJson` would bring back the
+        // unvalidated JSON link this replaced.
+        const shape = { ...NODE_SHAPE, props: { ...NODE_SHAPE.props, nodeType } };
+        const f = fakeEditor([shape]);
+        const h = renderHook(() => useTldrawSelection(f.editor as never));
+        act(() => h.result.current.onUpdate('n1', { linkedEntityId: 'rec_1' }));
+        expect(f.shapeUpdates[0]!.props).toEqual({ [field]: 'rec_1' });
+    });
+
+    it('a picked link on a kind that links to nothing writes nothing', () => {
         const f = fakeEditor([NODE_SHAPE]);
         const h = renderHook(() => useTldrawSelection(f.editor as never));
         act(() => h.result.current.onUpdate('n1', { linkedEntityId: 'ctl_1' }));
-        expect(f.shapeUpdates[0]!.props).toEqual({
-            dataJson: { existing: 'keep-me', linkedEntityId: 'ctl_1' },
-        });
+        expect(f.shapeUpdates).toEqual([]);
     });
 
     it('DROPS size, and drops it visibly rather than writing a no-op', () => {

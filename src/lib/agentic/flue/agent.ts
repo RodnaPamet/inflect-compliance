@@ -1,7 +1,7 @@
 import { defineSkill, defineSubagent, useInitialData, useInstruction, useModel, useResponseFinish, useSkill, useSubagent, useTool } from '@flue/runtime';
 
 import { readRunBinding } from './run-binding';
-import { SPECIALISTS, narrowTools, narrowSkills } from './subagents';
+import { SPECIALISTS, narrowTools, narrowSkills, workerModelOverride } from './subagents';
 
 /**
  * THE ONE AGENT FUNCTION THIS PROCESS SERVES.
@@ -117,17 +117,21 @@ export function InflectAgent(): void {
     // at all. It is in every run's tool list already (#3569) and until now had
     // no valid `agent` value — so this is the line that turns delegation on,
     // and `delegation-gate.ts` is what bounds it.
+    // THE WORKER'S MODEL (D-L3-1), set on a delegate ONLY when it differs from
+    // the parent's. Equal or absent, the override is left out and the delegate
+    // inherits — the definition this loop built before the role axis existed.
+    const workerModel = workerModelOverride(binding);
     for (const spec of SPECIALISTS) {
         const tools = narrowTools(spec, binding.tools);
         const skills = narrowSkills(spec, binding.skills);
         useSubagent(defineSubagent({
             name: spec.name,
             description: spec.description,
-            // NO `model` AND NO `thinkingLevel` OVERRIDE. Both inherit the
-            // parent's turn when omitted, which is what we want: the model was
-            // resolved against the tenant's residency and its budget, and a
-            // delegate on a different model would spend a budget nobody
-            // resolved for it.
+            // THE WORKER ROLE'S MODEL, when one was resolved for this run
+            // (D-L3-1) — against the tenant's residency, by the driver, under
+            // the same terms as the parent's, and charged to the parent's
+            // budget. NO `thinkingLevel` override: it inherits.
+            ...(workerModel ? { model: workerModel } : {}),
             agent: () => {
                 for (const tool of tools) useTool(tool);
                 for (const skill of skills) {

@@ -19,9 +19,13 @@ jest.mock('@/env', () => ({ env: mockEnv }));
 import {
     sandboxedCollectorExec,
     collectorExecForDeploy,
+    COLLECTOR_PROVIDER_NAME,
+    PROVIDER_NOT_READY_REFUSAL,
+    SHARED_PROVIDER_REFUSAL,
 } from '@/app-layer/integrations/cloud-posture/sandboxed-collector-exec';
 import { runPowerpipeBenchmark } from '@/app-layer/integrations/cloud-posture/powerpipe-core';
 import {
+    ProviderNotReadyError,
     SandboxExecIncompleteError,
     SandboxUnreachableError,
     unconfiguredTransport,
@@ -35,6 +39,8 @@ const PROVIDER = 'inflect-collector';
 interface Recorded {
     created: number;
     attached: Array<{ sandboxId: string; providerName: string }>;
+    /** What the readiness wait was asked about — #5739. */
+    readied: Array<{ sandboxId: string; providerName: string; receiptId: string | null }>;
     execEnv: Array<NodeJS.ProcessEnv | undefined>;
     deleted: string[];
     order: string[];
@@ -46,10 +52,14 @@ interface FakeOpts {
     readonly execThrows?: Error;
     readonly attachThrows?: Error;
     readonly createThrows?: Error;
+    /** Make the attached provider never become ready — #5739. */
+    readonly readyThrows?: Error;
 }
 
 const fake = (opts: FakeOpts = {}): { transport: SandboxTransport; rec: Recorded } => {
-    const rec: Recorded = { created: 0, attached: [], execEnv: [], deleted: [], order: [] };
+    const rec: Recorded = {
+        created: 0, attached: [], readied: [], execEnv: [], deleted: [], order: [],
+    };
     const transport: SandboxTransport = {
         createSandbox: async () => {
             rec.order.push('create');
@@ -61,6 +71,14 @@ const fake = (opts: FakeOpts = {}): { transport: SandboxTransport; rec: Recorded
             rec.order.push('attach');
             if (opts.attachThrows) throw opts.attachThrows;
             rec.attached.push({ sandboxId, providerName });
+            // A PERSISTED INTENT with a receipt, which is what the real gateway
+            // returns. `void` here is what let the race exist (#5739).
+            return { attached: true, receiptId: 'rcpt-1' };
+        },
+        awaitProviderReady: async ({ sandboxId, providerName, receiptId }) => {
+            rec.order.push('ready');
+            if (opts.readyThrows) throw opts.readyThrows;
+            rec.readied.push({ sandboxId, providerName, receiptId });
         },
         execSandbox: async ({ env }) => {
             rec.order.push('exec');
@@ -91,6 +109,84 @@ const run = (transport: SandboxTransport) =>
         secretValues: ['super-secret-key-value'],
         exec: sandboxedCollectorExec({ transport, providerName: PROVIDER }),
     });
+
+describe('the attached credential is WAITED for before the tool runs (#5739)', () => {
+    beforeEach(() => {
+        for (const k of Object.keys(mockEnv)) delete mockEnv[k];
+    });
+
+    it('waits BETWEEN the attach and the exec, in that order', async () => {
+        const { transport, rec } = fake();
+        await run(transport);
+        // The position is the whole claim. Waiting after the exec would be
+        // decoration, and waiting before the attach would ask about nothing.
+        expect(rec.order).toEqual(['create', 'attach', 'ready', 'exec', 'delete']);
+    });
+
+    it('asks about the receipt the attach returned, not about nothing', async () => {
+        const { transport, rec } = fake();
+        await run(transport);
+        expect(rec.readied).toEqual([
+            { sandboxId: 'sbx-1', providerName: PROVIDER, receiptId: 'rcpt-1' },
+        ]);
+    });
+
+    it('NEVER RUNS THE TOOL when the provider does not become ready', async () => {
+        const { transport, rec } = fake({
+            readyThrows: new ProviderNotReadyError(
+                PROVIDER,
+                'state=PROVIDER_READINESS_STATE_WITHHELD credentialsInstalled=false',
+            ),
+        });
+        const result = await run(transport);
+        // THE load-bearing assertion. powerpipe reads its credential from the
+        // attachment and from nothing else, so a run without it produces output
+        // nobody can attribute to an account — and this collector's output is
+        // stored as the tenant's Evidence.
+        expect(rec.order).not.toContain('exec');
+        expect(rec.execEnv).toEqual([]);
+        expect(result.status).toBe('ERROR');
+    });
+
+    it('classifies it as its own refusal, not as an unreachable gateway', async () => {
+        const { transport } = fake({
+            readyThrows: new ProviderNotReadyError(PROVIDER, 'state=PROVIDER_READINESS_STATE_FAILED'),
+        });
+        // The CODE is on the collector's own result, which is where the ladder
+        // reads it — asserted the way the shared-provider refusal above is.
+        const exec = sandboxedCollectorExec({ transport, providerName: PROVIDER });
+        const r = await exec('powerpipe', [BENCHMARK], { NODE_ENV: 'test' }, [], []);
+        expect({ ok: r.ok, failure: r.failure }).toEqual({
+            ok: false,
+            failure: PROVIDER_NOT_READY_REFUSAL,
+        });
+    });
+
+    it('tells an operator to check the credential, not the gateway', async () => {
+        const { transport } = fake({
+            readyThrows: new ProviderNotReadyError(PROVIDER, 'state=PROVIDER_READINESS_STATE_FAILED'),
+        });
+        const result = await run(transport);
+        // `errorMessage` is persisted on IntegrationExecution and served to the
+        // browser, so the operator-visible half is its own assertion. The gateway
+        // ANSWERED here — it took the attachment and reported the credential is
+        // not installed — so reading as "unreachable" would send somebody to
+        // check the wrong thing entirely.
+        expect(result.status).toBe('ERROR');
+        expect(result.errorMessage ?? '').toContain('not ready on this sandbox');
+        expect(result.errorMessage ?? '').not.toContain('not reachable');
+    });
+
+    it('still deletes the sandbox it created', async () => {
+        const { transport, rec } = fake({
+            readyThrows: new ProviderNotReadyError(PROVIDER, 'state=PROVIDER_READINESS_STATE_REVOKED'),
+        });
+        await run(transport);
+        // A refusal that leaked a sandbox would turn a credential problem into a
+        // quota problem on every scheduled scan.
+        expect(rec.deleted).toEqual(['sbx-1']);
+    });
+});
 
 describe('a sandboxed collector failure is ERROR, never PASSED (#3961)', () => {
     beforeEach(() => {
@@ -226,7 +322,10 @@ describe('the deploy switch leaves an unconfigured deploy alone (#3961)', () => 
         // every collection ERROR. The deploy has declared a capability it cannot
         // provide, and that is the safe way to find out.
         mockEnv.SANDBOX_EXECUTION_ENABLED = '1';
-        const exec = collectorExecForDeploy();
+        // An explicit provider, so this test still exercises the GATEWAY path.
+        // Without one the refusal below (#5251) would short-circuit first and
+        // this case would pass for a reason its name does not describe.
+        const exec = collectorExecForDeploy({ providerName: 'tenant-a-aws' });
         expect(exec).not.toBeNull();
         const r = await runPowerpipeBenchmark({
             benchmarkId: BENCHMARK,
@@ -235,6 +334,67 @@ describe('the deploy switch leaves an unconfigured deploy alone (#3961)', () => 
             exec: exec!,
         });
         expect(r.status).toBe('ERROR');
+    });
+});
+
+describe('a collection that cannot name its tenant refuses (#5251)', () => {
+    beforeEach(() => {
+        for (const k of Object.keys(mockEnv)) delete mockEnv[k];
+    });
+
+    it('refuses by name rather than attaching the shared collector credential', async () => {
+        mockEnv.SANDBOX_EXECUTION_ENABLED = '1';
+        const exec = collectorExecForDeploy();
+        expect(exec).not.toBeNull();
+        const r = await exec!('powerpipe', [BENCHMARK], { NODE_ENV: 'test' }, [], []);
+        expect({ ok: r.ok, failure: r.failure }).toEqual({
+            ok: false,
+            failure: SHARED_PROVIDER_REFUSAL,
+        });
+    });
+
+    it('reaches ERROR with the REASON an operator reads off the execution', async () => {
+        // `errorMessage` is persisted on IntegrationExecution and served to the
+        // browser (powerpipe-core.ts), so asserting the reason survives to it is
+        // the operator-visible half of the owner's decision. Asserting only
+        // `status === 'ERROR'` would not discriminate: with no gateway the
+        // pre-fix shared-provider path also errors, so that assertion passed
+        // under the mutation and detected nothing.
+        mockEnv.SANDBOX_EXECUTION_ENABLED = '1';
+        const exec = collectorExecForDeploy();
+        const r = await runPowerpipeBenchmark({
+            benchmarkId: BENCHMARK,
+            env: { NODE_ENV: 'test' },
+            secretValues: [],
+            exec: exec!,
+        });
+        expect(r.status).toBe('ERROR');
+        expect(r.errorMessage ?? '').toContain('#5251');
+    });
+
+    it('names no credential, account or provider in what it reports', async () => {
+        // The refusal is read by an operator off an IntegrationExecution, so it
+        // must not carry the shared provider's name or anything account-shaped.
+        mockEnv.SANDBOX_EXECUTION_ENABLED = '1';
+        const exec = collectorExecForDeploy();
+        const r = await exec!('powerpipe', [BENCHMARK], { NODE_ENV: 'test' }, [], []);
+        // Both directions: the refusal IS named (so this is not vacuous under a
+        // mutation that restores the shared default) and the provider's name is
+        // NOT, because this string reaches the browser.
+        expect(r.stderr).toContain('#5251');
+        expect(r.stderr).not.toContain(COLLECTOR_PROVIDER_NAME);
+        expect(r.stdout).toBe('');
+    });
+
+    it('still runs when a per-tenant provider IS named', async () => {
+        // The positive control: the refusal must not be unconditional, or it
+        // would be indistinguishable from removing the feature.
+        mockEnv.SANDBOX_EXECUTION_ENABLED = '1';
+        const exec = collectorExecForDeploy({ providerName: 'tenant-a-aws' });
+        const r = await exec!('powerpipe', [BENCHMARK], { NODE_ENV: 'test' }, [], []);
+        // No gateway in this test, so it fails — but as UNREACHABLE, having got
+        // past the refusal, which is the distinction that matters.
+        expect(r.failure).not.toBe(SHARED_PROVIDER_REFUSAL);
     });
 });
 

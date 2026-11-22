@@ -20,15 +20,20 @@
  *   2. On EVERY subsequent request, the same callback calls
  *      `verifyAndTouchSession(sessionId)`. The helper:
  *        - returns `{ revoked: true }` if the row's `revokedAt` is
- *          set, prompting the JWT callback to return a `SessionRevoked`
- *          error;
+ *          set. The JWT callback then THROWS `SessionRevokedError`
+ *          (`src/lib/auth/session-revoked.ts`), so NextAuth treats the
+ *          session as invalid and every server gate refuses it. It
+ *          never returns the token with an error flag: that pattern
+ *          signed nobody out, because nothing read the flag;
  *        - otherwise touches `lastActiveAt`, throttled to once every 5
  *          minutes so we don't write on every middleware request.
  *
- *   3. Admin / self UI calls `revokeSessionById` to mark a row revoked.
- *      It also bumps `User.sessionVersion` as a defence-in-depth so a
- *      classic JWT-versioning check still invalidates the cookie even
- *      if the per-session lookup is somehow skipped.
+ *   3. Admin / self UI calls `revokeSessionById` to mark ONE row
+ *      revoked. It stamps only that row — it does NOT bump
+ *      `User.sessionVersion`. A caller that must sign out every session
+ *      of a user (Revoke All, per-user revocation) bumps the version
+ *      itself, as the coarse backstop for a token whose row was never
+ *      written.
  *
  * IP / UA capture is best-effort: NextAuth callbacks don't get the
  * request object directly, so we pull headers via `next/headers` and
@@ -326,6 +331,28 @@ export interface VerifyResult {
     revoked: boolean;
     /** Non-null when we actually found the row. */
     rowId: string | null;
+    /**
+     * True only when this call actually stamped `lastActiveAt`, i.e. at least
+     * `TOUCH_INTERVAL_MS` had elapsed since the last touch (#5246).
+     *
+     * It exists because it is the only 5-minute cadence on this path that
+     * SURVIVES a request. The jwt callback used to throttle its
+     * membership-claims re-read on `token.sessionVersionCheckedAt`, but in the
+     * App Router the re-signed cookie is never written back, so that timestamp
+     * persisted exactly once — at sign-in, where the cookie IS written. After
+     * five minutes every server request re-ran the full claims read: a joined
+     * user+memberships+orgs query plus a `tenantsEnforcingSso` query, on every
+     * page render, for the life of the session.
+     *
+     * `lastActiveAt` is already read here on every pass and written at most
+     * once per interval, so reporting whether that write happened hands the
+     * caller a persisted throttle for free — no new column, no extra query.
+     *
+     * False when there is no row, when the session is revoked or expired, and
+     * on any error: the caller must treat it as "no persisted signal" and fall
+     * back to its own timing rather than skipping the work for ever.
+     */
+    touched: boolean;
 }
 
 const TOUCH_INTERVAL_MS = 5 * 60 * 1000;
@@ -352,8 +379,8 @@ export async function verifyAndTouchSession(
                 expiresAt: true,
             },
         });
-        if (!row) return { revoked: false, rowId: null };
-        if (row.revokedAt) return { revoked: true, rowId: row.id };
+        if (!row) return { revoked: false, rowId: null, touched: false };
+        if (row.revokedAt) return { revoked: true, rowId: row.id, touched: false };
 
         const now = Date.now();
         // Treat expiry as implicit revocation. We also stamp `revokedAt`
@@ -373,23 +400,27 @@ export async function verifyAndTouchSession(
                 // If the bookkeeping write fails we still report
                 // revoked — the JWT callback should still force re-auth.
             }
-            return { revoked: true, rowId: row.id };
+            return { revoked: true, rowId: row.id, touched: false };
         }
 
         const lastTouchMs = row.lastActiveAt.getTime();
+        let touched = false;
         if (now - lastTouchMs >= TOUCH_INTERVAL_MS) {
             await prisma.userSession.update({
                 where: { id: row.id },
                 data: { lastActiveAt: new Date(now) },
             });
+            // Set only AFTER the write committed, so a failed update reports no
+            // signal rather than a cadence that did not actually persist.
+            touched = true;
         }
-        return { revoked: false, rowId: row.id };
+        return { revoked: false, rowId: row.id, touched };
     } catch (err) {
         logger.warn('session-tracker: verify/touch failed', {
             component: 'session-tracker',
             error: err instanceof Error ? err.message : String(err),
         });
-        return { revoked: false, rowId: null };
+        return { revoked: false, rowId: null, touched: false };
     }
 }
 
@@ -414,6 +445,28 @@ export async function currentSessionIdOf(req: NextRequest): Promise<string | nul
     try {
         const { getToken } = await import('next-auth/jwt');
         const token = await getToken({ req, secret: env.AUTH_SECRET });
+        const id = token?.userSessionId;
+        return typeof id === 'string' && id !== '' ? id : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * The same as `currentSessionIdOf`, for a server component that has no
+ * request object: the session JWT is read from the request's own cookies.
+ */
+export async function currentSessionIdFromCookies(): Promise<string | null> {
+    try {
+        const { cookies, headers } = await import('next/headers');
+        const { getToken } = await import('next-auth/jwt');
+        const jar = await cookies();
+        const hdrs = await headers();
+        const req = {
+            cookies: Object.fromEntries(jar.getAll().map((c) => [c.name, c.value])),
+            headers: Object.fromEntries(hdrs.entries()),
+        };
+        const token = await getToken({ req: req as unknown as NextRequest, secret: env.AUTH_SECRET });
         const id = token?.userSessionId;
         return typeof id === 'string' && id !== '' ? id : null;
     } catch {
@@ -447,14 +500,14 @@ export async function findOwnTenantSession(args: {
 /**
  * Mark a UserSession row revoked. Caller is responsible for the audit
  * log (the action context — admin vs self vs system — is theirs to
- * know). To prevent partial revocation, also bump `User.sessionVersion`
- * so the existing JWT-versioning check (in src/auth.ts) catches the
- * revoked token even if `verifyAndTouchSession` is somehow skipped.
+ * know).
  *
- * Per-session granularity comes from this function returning the
- * affected `userId`; the caller can choose whether to bump the global
- * sessionVersion (revokes ALL of the user's sessions) or rely solely
- * on the row-level `revokedAt` (revokes only this specific session).
+ * Stamps ONLY this row's `revokedAt`; it does not touch
+ * `User.sessionVersion`. The next JWT pass for that session reads the
+ * stamp through `verifyAndTouchSession` and throws `SessionRevokedError`.
+ * It returns the affected `userId` so a caller that means to sign out
+ * EVERY session of the user can bump `sessionVersion` itself — doing so
+ * here would turn a one-device revoke into a sign-out everywhere.
  */
 export async function revokeSessionById(input: {
     sessionId: string;
@@ -585,6 +638,39 @@ export async function countActiveSessionsForTenantUsers(
     const out: Record<string, number> = {};
     for (const r of rows) {
         out[r.userId] = r._count._all;
+    }
+    return out;
+}
+
+/**
+ * Each user's latest sign-in, across every session they have had (#5106).
+ *
+ * The access-review page shows it as "Last sign-in". It used to read
+ * `lastActiveAt` from this tenant's live sessions only, and a session is
+ * stamped with the person's PRIMARY workspace, so a member who works in this
+ * workspace but whose oldest membership is another one read "Never", and so
+ * did everybody after a Revoke All. Owner decision (2026-11-13): show the
+ * latest sign-in across all sessions, revoked ones included, with no
+ * per-workspace stamp. A session row is minted at sign-in, so its `createdAt`
+ * is the sign-in.
+ *
+ * The global client on purpose: `UserSession` RLS shows a tenant only its own
+ * rows. The result is one timestamp per user and nothing else, and the caller
+ * passes only people it is already entitled to see (the subjects of a review
+ * in its own tenant). An empty input reads nothing.
+ */
+export async function latestSignInByUser(
+    userIds: readonly string[],
+): Promise<Record<string, Date>> {
+    if (userIds.length === 0) return {};
+    const rows = await prisma.userSession.groupBy({
+        by: ['userId'],
+        where: { userId: { in: [...new Set(userIds)] } },
+        _max: { createdAt: true },
+    });
+    const out: Record<string, Date> = {};
+    for (const r of rows) {
+        if (r._max.createdAt) out[r.userId] = r._max.createdAt;
     }
     return out;
 }

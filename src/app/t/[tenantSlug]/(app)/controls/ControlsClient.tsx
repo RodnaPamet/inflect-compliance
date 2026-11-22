@@ -36,7 +36,7 @@ import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { AppIcon } from '@/components/icons/AppIcon';
-import { Plus, Trash } from '@inflect/ui/components/ui/icons/nucleo';
+import { Plus, Trash } from '@inflect/ui/components/ui/icons/glyphs';
 import { ViewsMenu } from '@/components/ui/views-menu';
 import { Paperclip, ChevronDown, ChevronLeft } from 'lucide-react';
 import {
@@ -77,7 +77,7 @@ import {
 } from '@/lib/controls/control-taxonomy';
 import { applicabilityState } from '@/lib/controls/control-applicability';
 import { AiAssistRail } from '@/components/ui/ai-assist-rail';
-import { Sparkle3 } from '@inflect/ui/components/ui/icons/nucleo/sparkle3';
+import { Sparkle3 } from '@inflect/ui/components/ui/icons/glyphs/sparkle3';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
 import { useKpiTrends, buildKpiSparklines, centeredSparklineDomain, assignSparklineVariants } from '@/lib/charts/kpi-trends';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
@@ -185,6 +185,26 @@ function bulkSkippedCount(outcome: unknown): number {
         if (!r || typeof r !== 'object' || (r as { status?: unknown }).status !== 'ok') skipped++;
     }
     return skipped;
+}
+
+/**
+ * What a bulk delete response says it left in place (#5763): `blocked` are
+ * controls the server refused because they still have test runs, test plans
+ * or exceptions; `skipped` are any other id it did not delete. A response
+ * without `results` (older server) reports nothing left.
+ */
+function bulkDeleteKept(outcome: unknown): { blocked: number; skipped: number } {
+    const kept = { blocked: 0, skipped: 0 };
+    if (!outcome || typeof outcome !== 'object') return kept;
+    const results = (outcome as { results?: unknown }).results;
+    if (!Array.isArray(results)) return kept;
+    for (const r of results) {
+        const status = r && typeof r === 'object' ? (r as { status?: unknown }).status : undefined;
+        if (status === 'ok') continue;
+        if (status === 'blocked') kept.blocked++;
+        else kept.skipped++;
+    }
+    return kept;
 }
 
 interface ControlsClientProps {
@@ -1049,7 +1069,22 @@ function ControlsPageInner({
                         body: JSON.stringify({ controlIds: ids }),
                     });
                     if (!res.ok) throw new Error('Bulk delete failed');
+                    const outcome: unknown = await res.json().catch(() => null);
                     await controlsQuery.mutate();
+                    return outcome;
+                },
+                // The toast above said every selected control was deleted.
+                // A control that still has test runs, test plans or
+                // exceptions is refused by the server and comes back with
+                // the re-fetch — so say so, rather than let it reappear.
+                onCommit: (outcome) => {
+                    const { blocked, skipped } = bulkDeleteKept(outcome);
+                    if (blocked > 0) {
+                        toast.warning(t('bulk.deleteBlocked', { blocked, total: ids.length }));
+                    }
+                    if (skipped > 0) {
+                        toast.warning(t('bulk.deleteSkipped', { skipped, total: ids.length }));
+                    }
                 },
                 undoAction: () => { void controlsQuery.mutate(); },
                 onError: () => {

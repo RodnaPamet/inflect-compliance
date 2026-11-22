@@ -33,7 +33,31 @@ import type {
 } from './types';
 import { graphHeaders } from '@/lib/http/graph-headers';
 
-const GRAPH = 'https://graph.microsoft.com/v1.0';
+const GRAPH_ORIGIN = 'https://graph.microsoft.com';
+const GRAPH = `${GRAPH_ORIGIN}/v1.0`;
+
+/**
+ * Resolve a Graph path or absolute URL to the URL the client will call, and
+ * refuse anything that is not on Microsoft Graph's v1.0 API.
+ *
+ * Every request carries the connection's bearer token, so the host it goes to
+ * is an authorization decision, not a formatting one. Absolute URLs reach this
+ * client from Graph's own paging links, which a caller can hand back as a
+ * cursor; a URL is followed only when it is https, on graph.microsoft.com, on
+ * the default port, carries no credentials and is under /v1.0/.
+ */
+export function graphUrl(urlOrPath: string): URL {
+    const url = urlOrPath.startsWith('/') ? new URL(`${GRAPH}${urlOrPath}`) : new URL(urlOrPath);
+    if (
+        url.origin !== GRAPH_ORIGIN ||
+        url.username !== '' ||
+        url.password !== '' ||
+        !url.pathname.startsWith('/v1.0/')
+    ) {
+        throw new Error('Refused a SharePoint request outside Microsoft Graph v1.0');
+    }
+    return url;
+}
 
 export interface SharePointConnectionConfig extends BaseConnectionConfig {
     /** AAD directory tenant ID (from the EI-1 Entra provider). */
@@ -72,7 +96,7 @@ export class SharePointClient extends BaseIntegrationClient<SharePointConnection
 
     /** GET a Graph URL (absolute or path under /v1.0) and parse JSON. */
     private async graphGet<T>(urlOrPath: string): Promise<T> {
-        const url = urlOrPath.startsWith('http') ? urlOrPath : `${GRAPH}${urlOrPath}`;
+        const url = graphUrl(urlOrPath).toString();
         const res = await this.request(url, { headers: this.headers });
         if (!res.ok) {
             throw new Error(`Graph GET ${url} → ${res.status}`);
@@ -184,8 +208,8 @@ export class SharePointClient extends BaseIntegrationClient<SharePointConnection
     async assertDriveAllowed(driveId: string): Promise<void> {
         if (this.config.allowedSiteIds.length === 0) {
             throw new Error(
-                'SharePoint connection has no approved sites, so no drive may be written to. ' +
-                    'Approve a site on the integration before pushing files.',
+                'SharePoint connection has no approved sites, so no drive may be read or written. ' +
+                    'Approve a site on the integration first.',
             );
         }
         const allowed = await this.allowedDriveIds();
@@ -198,10 +222,23 @@ export class SharePointClient extends BaseIntegrationClient<SharePointConnection
 
     // ── SharePoint-specific surface ──
 
-    /** List sites the connection can reach (admin site-selection). */
-    async listSites(): Promise<SpSite[]> {
-        const body = await this.graphGet<{ value?: SpSite[] }>('/sites?search=*');
-        return body.value ?? [];
+    /**
+     * List sites the connection can reach (admin site-selection).
+     *
+     * Follows `@odata.nextLink` (#5215): Graph pages the search, and reading
+     * the first page alone hid every site past it from the picker, so an
+     * allowed site there could not be seen or kept. Bounded by `maxPages` the
+     * way `getDelta` is, so a tenant with an enormous estate still answers.
+     */
+    async listSites(maxPages = 20): Promise<SpSite[]> {
+        const sites: SpSite[] = [];
+        let url = '/sites?search=*';
+        for (let pages = 0; url && pages < maxPages; pages++) {
+            const body = await this.graphGet<{ value?: SpSite[]; '@odata.nextLink'?: string }>(url);
+            for (const site of body.value ?? []) sites.push(site);
+            url = body['@odata.nextLink'] ?? '';
+        }
+        return sites;
     }
 
     async getSite(siteId: string): Promise<SpSite> {
@@ -225,10 +262,20 @@ export class SharePointClient extends BaseIntegrationClient<SharePointConnection
         itemId?: string,
         pageUrl?: string,
     ): Promise<SpChildrenPage> {
-        // A caller-supplied cursor must belong to THIS drive — never follow a
-        // nextLink pointing at another drive (defence against a crafted cursor).
-        if (pageUrl && !pageUrl.includes(`/drives/${encodeURIComponent(driveId)}`)) {
-            throw new Error('pageUrl does not belong to the requested drive');
+        await this.assertDriveAllowed(driveId);
+        // A caller-supplied cursor must be a Graph URL under THIS drive. A
+        // substring match is not enough: the cursor is a whole URL, and its
+        // host decides where the bearer token goes.
+        if (pageUrl) {
+            let cursor: URL;
+            try {
+                cursor = graphUrl(pageUrl);
+            } catch {
+                throw new Error('pageUrl does not belong to the requested drive');
+            }
+            if (!cursor.pathname.startsWith(`/v1.0/drives/${encodeURIComponent(driveId)}/`)) {
+                throw new Error('pageUrl does not belong to the requested drive');
+            }
         }
         const path = pageUrl
             ? pageUrl
@@ -240,6 +287,7 @@ export class SharePointClient extends BaseIntegrationClient<SharePointConnection
     }
 
     async getItem(driveId: string, itemId: string): Promise<SpDriveItem> {
+        await this.assertDriveAllowed(driveId);
         return this.graphGet<SpDriveItem>(
             `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}`,
         );
@@ -247,6 +295,7 @@ export class SharePointClient extends BaseIntegrationClient<SharePointConnection
 
     /** Download a file's bytes. (ArrayBuffer — SP-3 wraps it as a File.) */
     async downloadItemContent(driveId: string, itemId: string): Promise<ArrayBuffer> {
+        await this.assertDriveAllowed(driveId);
         const url = `${GRAPH}/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}/content`;
         const res = await this.request(url, { headers: this.headers });
         if (!res.ok) throw new Error(`Graph download ${itemId} → ${res.status}`);
@@ -258,13 +307,38 @@ export class SharePointClient extends BaseIntegrationClient<SharePointConnection
      * terminal `@odata.deltaLink`, accumulating changed items. Returns the new
      * delta token to persist for the next incremental sync.
      */
-    async getDelta(driveId: string, deltaToken?: string, maxPages = 50): Promise<SpDeltaPage> {
-        let url = deltaToken
-            ? `${GRAPH}/drives/${encodeURIComponent(driveId)}/root/delta?token=${encodeURIComponent(deltaToken)}`
-            : `${GRAPH}/drives/${encodeURIComponent(driveId)}/root/delta`;
+    async getDelta(driveId: string, cursor?: string, maxPages = 50): Promise<SpDeltaPage> {
+        let url = `${GRAPH}/drives/${encodeURIComponent(driveId)}/root/delta${deltaQuery(cursor)}`;
         const items: SpDriveItem[] = [];
         let newToken: string | undefined;
-        for (let pages = 0; url && pages < maxPages; pages++) {
+        let truncated = false;
+        for (let pages = 0; ; pages++) {
+            if (!url) break;
+            if (pages >= maxPages) {
+                // ═══ OUT OF PAGES, NOT OUT OF CHANGES (#5555) ═══
+                //
+                // This used to just fall out of the loop and return
+                // `deltaToken: undefined`, so the caller stored nothing —
+                // correctly, because an unfinished walk has no valid DELTA
+                // token. But the unconsumed `@odata.nextLink` was discarded
+                // too, leaving nothing to resume from. A library past about
+                // 10,000 items therefore re-walked from the beginning on every
+                // run, stopped at the same page, and never checked a single
+                // item beyond it for a change or a deletion — silently, for the
+                // life of the connection.
+                //
+                // So the pending link's cursor is returned instead, PREFIXED
+                // with the query parameter it belongs to, and `truncated` says
+                // the walk is incomplete so the caller does not report a clean
+                // sync. Only the opaque token is kept: a stored URL would be a
+                // request target read back from the database and fetched with a
+                // bearer token attached, which is the hazard `listChildren`
+                // already validates against ("its host decides where the bearer
+                // token goes").
+                truncated = true;
+                newToken = extractPageCursor(url);
+                break;
+            }
             const body = await this.graphGet<{
                 value?: SpDriveItem[];
                 '@odata.nextLink'?: string;
@@ -277,7 +351,7 @@ export class SharePointClient extends BaseIntegrationClient<SharePointConnection
             }
             url = body['@odata.nextLink'] ?? '';
         }
-        return { items, deltaToken: newToken };
+        return { items, deltaToken: newToken, truncated };
     }
 
     /**
@@ -369,4 +443,47 @@ export class SharePointClient extends BaseIntegrationClient<SharePointConnection
 export function extractDeltaToken(deltaLink: string): string | undefined {
     const m = deltaLink.match(/[?&]token=([^&]+)/);
     return m ? decodeURIComponent(m[1]) : undefined;
+}
+
+/**
+ * The cursor of a pending `@odata.nextLink`, PREFIXED with the query parameter
+ * it belongs to (#5555).
+ *
+ * Graph is not consistent about the name: a drive `delta` link carries `token`,
+ * while its paging links carry `$skiptoken` (see
+ * `tests/fixtures/sharepoint/children.json`). A bare token would therefore be
+ * ambiguous — resumed under the wrong parameter it is silently ignored and the
+ * walk restarts from the beginning, which is the bug this is fixing. So the
+ * name travels with the value and `deltaQuery` below puts it back.
+ *
+ * Only the token is kept, never the URL: a stored URL is a request target read
+ * back from the database and then fetched with a bearer token attached.
+ *
+ * Returns undefined when neither parameter is present — then there is no cursor
+ * to store, and the caller is no worse off than before.
+ */
+export function extractPageCursor(nextLink: string): string | undefined {
+    const skip = nextLink.match(/[?&]\$skiptoken=([^&]+)/);
+    if (skip) return `skiptoken:${decodeURIComponent(skip[1])}`;
+    const tok = nextLink.match(/[?&]token=([^&]+)/);
+    if (tok) return `token:${decodeURIComponent(tok[1])}`;
+    return undefined;
+}
+
+/**
+ * The query string for a stored cursor.
+ *
+ * A BARE value is a delta token, which is what every cursor stored before
+ * #5555 is — so existing connections keep working with no migration and no
+ * special case at the call site.
+ */
+export function deltaQuery(cursor?: string): string {
+    if (!cursor) return '';
+    if (cursor.startsWith('skiptoken:')) {
+        return `?$skiptoken=${encodeURIComponent(cursor.slice('skiptoken:'.length))}`;
+    }
+    if (cursor.startsWith('token:')) {
+        return `?token=${encodeURIComponent(cursor.slice('token:'.length))}`;
+    }
+    return `?token=${encodeURIComponent(cursor)}`;
 }

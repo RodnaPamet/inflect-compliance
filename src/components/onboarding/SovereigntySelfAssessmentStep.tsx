@@ -30,7 +30,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { KPIStat } from '@/components/ui/metric';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@inflect/ui/components/ui/icons/loading-spinner';
-import { DIGITAL_SOVEREIGNTY_ASSESSMENT } from '@/data/self-assessments/digital-sovereignty';
+import { DIGITAL_SOVEREIGNTY_ASSESSMENT, type SovereigntyBandKey } from '@/data/self-assessments/digital-sovereignty';
 import {
     scoreSelfAssessment,
     buildGapSuggestions,
@@ -50,6 +50,27 @@ function buildDimensionLabels(t: SovereigntyT): Record<string, string> {
         regulatoryAlignment: t('sovereignty.dimensions.regulatoryAlignment'),
         sovereignAi: t('sovereignty.dimensions.sovereignAi'),
     };
+}
+
+/** Maturity band labels, keyed by the scorer's band key
+ *  (`onboarding.sovereignty.bands.*`). */
+function buildBandLabels(t: SovereigntyT): Record<SovereigntyBandKey, string> {
+    return {
+        exposed: t('sovereignty.bands.exposed'),
+        emerging: t('sovereignty.bands.emerging'),
+        managed: t('sovereignty.bands.managed'),
+        sovereignReady: t('sovereignty.bands.sovereignReady'),
+    };
+}
+
+/** A question's text and option labels, read from the message catalogue
+ *  (`onboarding.sovereignty.questions.<questionId>.*`) — the bank carries ids
+ *  and scores only. */
+function questionText(t: SovereigntyT, questionId: string): string {
+    return t(`sovereignty.questions.${questionId}.text`);
+}
+function optionLabel(t: SovereigntyT, questionId: string, score: number): string {
+    return t(`sovereignty.questions.${questionId}.options.s${score}`);
 }
 
 type Approval = { createRisk: boolean; createControl: boolean };
@@ -138,7 +159,7 @@ export function SovereigntySelfAssessmentStep({
     };
 
     const overallLabel = score.overall100 == null ? '—' : `${score.overall100}`;
-    const bandLabel = score.band ?? '—';
+    const bandLabel = score.band == null ? '—' : buildBandLabels(t)[score.band];
 
     return (
         <div className="space-y-section" data-testid="sovereignty-self-assessment">
@@ -195,7 +216,7 @@ export function SovereigntySelfAssessmentStep({
                                             >
                                                 <div className="flex items-start gap-tight flex-wrap">
                                                     <span className="text-sm text-content-default flex-1 min-w-[12rem]">
-                                                        {q.text}
+                                                        {questionText(t, q.id)}
                                                     </span>
                                                     <InfoTooltip
                                                         content={t('sovereignty.references', { refs: dim.clauseRefs.join(', ') })}
@@ -210,7 +231,7 @@ export function SovereigntySelfAssessmentStep({
                                                     {q.options.map((opt) => (
                                                         <label key={opt.score} className="flex items-center gap-tight text-sm cursor-pointer">
                                                             <RadioGroupItem value={String(opt.score)} />
-                                                            {opt.label}
+                                                            {optionLabel(t, q.id, opt.score)}
                                                         </label>
                                                     ))}
                                                 </RadioGroup>

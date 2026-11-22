@@ -145,6 +145,13 @@ export interface RetirementCascadeEffects {
      * than one retirement withdraws; the next emitter tick withdraws the rest.
      */
     readonly evidenceArtefacts: RetirementEffectRows & { readonly deferredToSweep: boolean };
+    /**
+     * Runs of the agent that were PARKED on a deferred tool call (Step 2f,
+     * #5530), settled FAILED because the proposal each waited on expired with
+     * the rest; `ids` are run ids. Not in the summary: it is the consequence of
+     * `proposals`, not an authority of its own.
+     */
+    readonly parkedRuns: RetirementEffectRows;
 }
 
 /** The cascade as the response and the summary audit row report it. */

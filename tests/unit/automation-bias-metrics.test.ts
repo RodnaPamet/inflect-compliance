@@ -230,10 +230,13 @@ describe('the fixture report, against numbers computed by hand', () => {
                 sampleSize: 10,
             },
             {
+                // 12 pinned SECOND_APPROVER, 3 of them REJECTED (a rejection
+                // needs one person): 9 approvals, none with a second signer
+                // counted (#5232).
                 code: 'SECOND_APPROVER_UNRECORDED',
                 scope: 'AGENT',
                 subjectId: 'agent-alpha',
-                observed: 12,
+                observed: 9,
                 threshold: 0,
                 sampleSize: 16,
             },
@@ -519,5 +522,34 @@ describe('the signal identity is stable across input order', () => {
         expect(signalIdentity(computeReviewQuality(oneMore).signals)).toBe(
             signalIdentity(computeReviewQuality(FIXTURE).signals),
         );
+    });
+});
+
+describe('SECOND_APPROVER_UNRECORDED counts signers, not the rung (#5232)', () => {
+    const pinned = (proposalId: string, distinctApprovers: number, approved = true): ReviewObservation =>
+        obs({
+            proposalId,
+            reviewerUserId: 'u-final',
+            decidedAtMs: T0,
+            latencySeconds: 600,
+            approved,
+            approvalRung: 'SECOND_APPROVER',
+            distinctApprovers,
+        });
+    const signal = (observations: ReviewObservation[]) =>
+        computeReviewQuality(observations).signals.find((s) => s.code === 'SECOND_APPROVER_UNRECORDED');
+
+    it('does not fire for approvals that carry two distinct signers', () => {
+        // It fired for EVERY such proposal, though two signatures are enforced
+        // and recorded — naming a gap that no longer existed.
+        expect(signal([pinned('p1', 2), pinned('p2', 3)])).toBeUndefined();
+    });
+
+    it('fires for the approvals with fewer than two, counting only those', () => {
+        expect(signal([pinned('p1', 2), pinned('p2', 1), pinned('p3', 1)])?.observed).toBe(2);
+    });
+
+    it('does not count a rejection, which one person may make', () => {
+        expect(signal([pinned('p1', 1, false)])).toBeUndefined();
     });
 });

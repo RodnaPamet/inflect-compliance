@@ -55,6 +55,9 @@ jest.mock('next/navigation', () => ({
 }));
 
 const mockPermissions = { canWrite: true, canAdmin: true };
+// The granular keys; undefined means the built-in role's (ADMIN or EDITOR,
+// following `mockPermissions.canAdmin`).
+let mockAppPermissions: unknown;
 // Stable function identities: the page keys its fetch callback on `apiUrl`,
 // so a fresh function per render would refetch forever.
 const mockApiUrl = (path: string) => `/api/t/acme${path.startsWith('/') ? path : `/${path}`}`;
@@ -62,6 +65,9 @@ const mockHref = (path: string) => `/t/acme${path.startsWith('/') ? path : `/${p
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantContext: () => ({
         permissions: mockPermissions,
+        appPermissions:
+            mockAppPermissions ??
+            jest.requireActual('@/lib/permissions').getPermissionsForRole(mockPermissions.canAdmin ? 'ADMIN' : 'EDITOR'),
         role: mockPermissions.canAdmin ? 'ADMIN' : 'EDITOR',
         tenantSlug: 'acme',
         userId: 'u-viewer',
@@ -103,7 +109,7 @@ jest.mock('@/components/InheritedMappingsPanel', () => ({ InheritedMappingsPanel
 jest.mock('@/components/LinkedTasksPanel', () => ({ __esModule: true, default: () => null }));
 jest.mock('@/components/ui/VersionDiff', () => ({ VersionDiff: () => null }));
 jest.mock('@/app/t/[tenantSlug]/(app)/policies/[policyId]/PolicySharePointSection', () => ({
-    PolicySharePointSection: () => null,
+    PolicySharePointSection: () => <div data-testid="policy-sharepoint-section" />,
 }));
 
 import PolicyDetailPage from '@/app/t/[tenantSlug]/(app)/policies/[policyId]/page';
@@ -211,6 +217,7 @@ beforeEach(() => {
     global.fetch = fetchMock as unknown as typeof fetch;
     mockPermissions.canWrite = true;
     mockPermissions.canAdmin = true;
+    mockAppPermissions = undefined;
 });
 
 describe('an edited draft — the newest version is the one acted on', () => {
@@ -373,6 +380,21 @@ describe('status and errors', () => {
         expect(screen.queryByText('[object Object]')).not.toBeInTheDocument();
     });
 
+    // #5313 — the stepper shows 30 for a policy with no cadence, and Save
+    // used to send nothing for it; nor could a date be cleared.
+    it('the review-schedule save sends the cadence it shows, and a cleared date as null', async () => {
+        const patches: Array<Record<string, unknown>> = [];
+        serve(EDITED_DRAFT, (url, init) => {
+            if (url === '/api/t/acme/policies/p1' && init.method === 'PATCH') patches.push(JSON.parse(String(init.body)));
+            return json({});
+        });
+        await renderPage();
+        fireEvent.click(screen.getByText(EN.detail.editReviewSchedule));
+        fireEvent.click(screen.getByRole('button', { name: EN.detail.save }));
+        await waitFor(() => expect(patches).toHaveLength(1));
+        expect(patches[0]).toEqual({ reviewFrequencyDays: 30, nextReviewAt: null });
+    });
+
     it('a refused review-schedule save says why and keeps the form open', async () => {
         serve(EDITED_DRAFT, () => json({ error: { code: 'BAD_REQUEST', message: 'Next review must be in the future.' } }, 400));
         await renderPage();
@@ -437,3 +459,74 @@ describe('the activity tab reads in words (#4695)', () => {
     });
 });
 
+describe('policy actions follow the policy keys, not the tier alone (#5276)', () => {
+    const { getPermissionsForRole } = jest.requireActual('@/lib/permissions');
+    const v1 = version(1, 'LIVE TEXT', [approval('a1', 'v1', 'APPROVED', { createdAt: '2026-01-01T00:00:00.000Z' })]);
+
+    it('an EDITOR-based role without policies.edit is offered no version, editor or approval request', async () => {
+        mockPermissions.canAdmin = false;
+        const editor = getPermissionsForRole('EDITOR');
+        mockAppPermissions = { ...editor, policies: { ...editor.policies, edit: false } };
+        serve(EDITED_DRAFT);
+        await renderPage();
+        expect(document.getElementById('new-version-btn')).toBeNull();
+        expect(document.getElementById('header-request-approval')).toBeNull();
+        expect(screen.queryByRole('tab', { name: EN.detail.tabEditor })).toBeNull();
+    });
+
+    // #5313 — every SharePoint route on a policy takes policies.edit.
+    it('an EDITOR-based role without policies.edit is offered no SharePoint section', async () => {
+        mockPermissions.canAdmin = false;
+        const editor = getPermissionsForRole('EDITOR');
+        mockAppPermissions = { ...editor, policies: { ...editor.policies, edit: false } };
+        serve(EDITED_DRAFT);
+        await renderPage();
+        expect(screen.queryByTestId('policy-sharepoint-section')).toBeNull();
+    });
+
+    it('a role holding policies.edit is offered it', async () => {
+        mockPermissions.canAdmin = false;
+        mockAppPermissions = getPermissionsForRole('EDITOR');
+        serve(EDITED_DRAFT);
+        await renderPage();
+        expect(screen.getByTestId('policy-sharepoint-section')).toBeInTheDocument();
+    });
+
+    it('an ADMIN-based role without policies.approve is offered no decision on a pending request', async () => {
+        const admin = getPermissionsForRole('ADMIN');
+        mockAppPermissions = { ...admin, policies: { ...admin.policies, approve: false } };
+        const pending = approval('a2', 'v2', 'PENDING', { createdAt: '2026-02-01T00:00:00.000Z' });
+        const v2 = version(2, 'REVISED TEXT', [pending]);
+        serve(policyFixture({ status: 'PUBLISHED', currentVersion: v1, versions: [v2, v1], approvals: [pending, v1.approvals[0]] }));
+        await renderPage();
+        const banner = screen.getByTestId('approval-banner');
+        expect(within(banner).queryByTestId('approval-banner-reject')).toBeNull();
+    });
+
+    it('an ADMIN-based role without admin.manage is offered no Archive', async () => {
+        const admin = getPermissionsForRole('ADMIN');
+        mockAppPermissions = { ...admin, admin: { ...admin.admin, manage: false } };
+        serve(EDITED_DRAFT);
+        await renderPage();
+        expect(document.getElementById('archive-btn')).toBeNull();
+        // The policy key it holds still offers the version actions.
+        expect(document.getElementById('new-version-btn')).not.toBeNull();
+    });
+});
+
+describe('the evidence checklist (#5278)', () => {
+    it('a writer can add the first item to a policy that has none', async () => {
+        serve(EDITED_DRAFT);
+        await renderPage();
+        await waitFor(() => expect(document.getElementById('policy-evidence-add-btn')).not.toBeNull());
+    });
+
+    it('a reader sees no empty checklist', async () => {
+        mockPermissions.canWrite = false;
+        mockPermissions.canAdmin = false;
+        mockAppPermissions = jest.requireActual('@/lib/permissions').getPermissionsForRole('READER');
+        serve(EDITED_DRAFT);
+        await renderPage();
+        expect(document.getElementById('policy-evidence-add-btn')).toBeNull();
+    });
+});

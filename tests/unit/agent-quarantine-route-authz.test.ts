@@ -177,6 +177,23 @@ describe('the gate', () => {
         expect(listQuarantinedMock).toHaveBeenCalledTimes(1);
     });
 
+    // The usecase admits the register key on its own; the route used to ask
+    // for the view key alone and refused such a custom role (#5217).
+    it('admits a custom role holding the register key without the view key', async () => {
+        const ctx = ctxFor('EDITOR');
+        getTenantCtxMock.mockResolvedValueOnce({
+            ...ctx,
+            appPermissions: {
+                ...ctx.appPermissions,
+                admin: { ...ctx.appPermissions.admin, agent_registry: true, agent_registry_view: false },
+            },
+        });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const res = await GET(req(), routeArgs as any);
+        expect(res.status).toBe(200);
+        expect(listQuarantinedMock).toHaveBeenCalledTimes(1);
+    });
+
     for (const role of ['EDITOR', 'READER'] as const) {
         it(`refuses ${role} with 403 and never reaches the usecase`, async () => {
             getTenantCtxMock.mockResolvedValueOnce(ctxFor(role));
@@ -280,9 +297,10 @@ describe('the page it returns', () => {
 });
 
 describe('the declarative side of the same policy', () => {
-    it('ROUTE_PERMISSIONS resolves this path to the same key the handler names', () => {
+    it('ROUTE_PERMISSIONS resolves this path to the same keys the handler names', () => {
         const rule = resolveRoutePermission(PATH, 'GET');
-        expect(rule?.permission).toBe('admin.agent_registry_view');
+        expect(rule?.permission).toEqual(['admin.agent_registry_view', 'admin.agent_registry']);
+        expect(rule?.mode).toBe('any');
     });
 
     it('exactly one rule in the whole map matches this path', () => {
@@ -299,14 +317,16 @@ describe('the declarative side of the same policy', () => {
         const matching = ROUTE_PERMISSIONS.filter((r) => r.path.test(PATH));
         expect(matching).toHaveLength(1);
         expect(matching[0].note).toContain('QUARANTINE TRIAGE');
-        expect(matching[0].permission).toBe('admin.agent_registry_view');
+        expect(matching[0].permission).toEqual(['admin.agent_registry_view', 'admin.agent_registry']);
     });
 
-    it('the key it names is one an EDITOR and a READER do not hold', () => {
+    it('neither key it names is one an EDITOR or a READER holds', () => {
         expect(getPermissionsForRole('OWNER').admin.agent_registry_view).toBe(true);
         expect(getPermissionsForRole('ADMIN').admin.agent_registry_view).toBe(true);
         expect(getPermissionsForRole('AUDITOR').admin.agent_registry_view).toBe(true);
         expect(getPermissionsForRole('EDITOR').admin.agent_registry_view).toBe(false);
         expect(getPermissionsForRole('READER').admin.agent_registry_view).toBe(false);
+        expect(getPermissionsForRole('EDITOR').admin.agent_registry).toBe(false);
+        expect(getPermissionsForRole('READER').admin.agent_registry).toBe(false);
     });
 });

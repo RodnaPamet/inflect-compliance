@@ -9,6 +9,16 @@ import { EDGE_ADMIN_ROLES } from './edge-admin-roles';
 import { sanitizeRedirectPath } from './redirect-path';
 
 // ─── Public path allowlist ───
+//
+// The workspace picker (`/tenants`) is deliberately NOT here. It was, from
+// R-1, "so it is reachable before an active tenant is set", but no gate in
+// the middleware needs an active tenant for a path outside `/t/`, so the
+// carve-out only changed what an UNAUTHENTICATED request got: the page's own
+// `redirect('/login')`, which Next sends as a 307 carrying the whole root
+// layout (about 800 KB, every i18n message; DAST rule 10044, 2026-11-13).
+// Behind the gate it gets the edge's bodyless login redirect, and a session
+// still owing its second factor is sent to the challenge rather than shown
+// its workspaces.
 
 const PUBLIC_PATH_PREFIXES = [
     '/login',
@@ -16,7 +26,6 @@ const PUBLIC_PATH_PREFIXES = [
     '/forgot-password',  // Password-reset request page — unauthenticated users must reach it
     '/reset-password',   // Password-reset confirm page — reached from an emailed token link
     '/no-tenant',        // Landing page for uninvited users — must not gate-loop
-    '/tenants',          // R-1: tenant picker — must be reachable before active-tenant is set
     '/invite/',          // Invite preview page (tenant + org) — public so unauthenticated users can see invite details
     '/api/auth',         // Auth.js callbacks, session, csrf, providers
     '/api/invites/',     // Tenant invite redemption API (public) + start-signin cookie setter
@@ -41,6 +50,15 @@ const PUBLIC_PATH_EXACT = new Set([
     '/favicon.ico',
     '/robots.txt',
     '/sitemap.xml',
+    // Web Bot Auth key directory (docs/ai-architecture/web-bot-auth.md
+    // Phase 1). Public keys only, no tenant data, 404 when unconfigured; the
+    // per-IP read budget is charged in the handler. EXACT path: no other
+    // `/.well-known/` path is opened by this entry.
+    '/.well-known/http-message-signatures-directory',
+    // The vendor monitor's public bot page (Web Bot Auth Phase 2, D-L1-6):
+    // its User-Agent links here. Reads no database row and names no tenant.
+    // EXACT path: nothing else under `/bots/` is opened by this entry.
+    '/bots/vendor-monitor',
 ]);
 
 const STATIC_EXTENSIONS = /\.(ico|png|jpg|jpeg|gif|svg|webp|css|js|woff|woff2|ttf|eot|map|json)$/;
@@ -634,6 +652,7 @@ export const AGENT_ADMIN_API_STATIC_SEGMENTS: readonly string[] = [
     'harness-scanner-keys',
     'harness-scans',
     'intake',
+    'integration-scans',
     'kill-switch',
     'owner-orphan-pass',
     'parameter-sets',
@@ -658,6 +677,9 @@ export const AGENT_ADMIN_API_STATIC_SEGMENTS: readonly string[] = [
  *   - `/api/t/[slug]/admin/agents/harness-estates` the client estates and their
  *     schedule health, built from the scans (owner decision, 2026-10-19). The
  *     exact list template only: one estate's path is PATCH and DELETE
+ *   - `/api/t/[slug]/admin/agents/integration-scans` the third-party
+ *     application scan list, the harness list's twin; its POST is the
+ *     scanner's ingest key, which AUDITOR does not hold
  *   - `/api/t/[slug]/admin/agents/reports`        the governance pack
  *   - `/api/t/[slug]/admin/mcp/quarantine`        the quarantine triage read
  *     (#4898). Its route takes the view key and its usecase refuses an AUDITOR
@@ -674,6 +696,7 @@ export const AUDITOR_ADMIN_READ_PATHS: readonly string[] = [
     '/api/t/[slug]/admin/agents/[agentId]',
     '/api/t/[slug]/admin/agents/harness-scans',
     '/api/t/[slug]/admin/agents/harness-estates',
+    '/api/t/[slug]/admin/agents/integration-scans',
     '/api/t/[slug]/admin/agents/reports',
     // The quarantine triage read (#4898). Admitted at the edge so the usecase
     // can apply the Owner's switch: an AUDITOR reads it only while an owner has
@@ -706,6 +729,53 @@ export function isAuditorAdminReadPath(pathname: string, method: string | null |
 }
 
 /**
+ * The two admin API READS the edge admits an AUDITOR to (#5695, owner
+ * decisions 2026-11-15: `identity_reconciliation.view` opens the legacy-access
+ * reconciliation queue, and the built-in roles that hold it are OWNER, ADMIN
+ * and AUDITOR; decisions stay on their existing keys). Exact templates, GET or
+ * HEAD only:
+ *
+ *   - `/api/t/[slug]/admin/legacy-access/queue`             the queue rows
+ *   - `/api/t/[slug]/admin/legacy-access/queue/latest-run`  the connection's
+ *     name and its latest PASSED match run, which the queue needs first
+ *
+ * Nothing beneath them and no sibling: `queue/decide` and `queue/bulk-confirm`
+ * are `identity_reconciliation.confirm` and stay behind the admin roles here.
+ * Both routes' only verb is a GET whose literal `requirePermission` names the
+ * view key, and that handler stays the authority — it is what refuses a
+ * custom role that withholds the key, and what writes `AUTHZ_DENIED`. The edge
+ * reads the MEMBERSHIP role, as for every admin path, so a custom role that
+ * grants the key on a READER, EDITOR or AI_ADMIN membership is still refused
+ * here; it reaches the queue only on an ADMIN membership.
+ * `tests/unit/reconciliation-view-key-edge.test.ts` pins the list, the roles
+ * and the refusals with the real middleware.
+ */
+export const RECONCILIATION_VIEW_READ_PATHS: readonly string[] = [
+    '/api/t/[slug]/admin/legacy-access/queue',
+    '/api/t/[slug]/admin/legacy-access/queue/latest-run',
+];
+
+/**
+ * The built-in roles below `EDGE_ADMIN_ROLES` whose permission set holds
+ * `identity_reconciliation.view`: AUDITOR alone (owner decision 2026-11-15).
+ * Spelled out rather than computed, because this module runs at the edge and
+ * stays free of the permission tables; the test above holds it equal to
+ * `getPermissionsForRole`, so a role that gains or loses the key fails CI until
+ * this set follows. AUDITOR does not hold `confirm`.
+ */
+export const RECONCILIATION_VIEW_EDGE_ROLES: ReadonlySet<string> = new Set(['AUDITOR']);
+
+/** Whether this request is a GET/HEAD of one of `RECONCILIATION_VIEW_READ_PATHS`. */
+export function isReconciliationViewReadPath(pathname: string, method: string | null | undefined): boolean {
+    const verb = (method ?? '').toUpperCase();
+    if (verb !== 'GET' && verb !== 'HEAD') return false;
+    const raw = tenantPathTemplate(pathname);
+    if (raw === null) return false;
+    const template = raw.endsWith('/') ? raw.slice(0, -1) : raw;
+    return RECONCILIATION_VIEW_READ_PATHS.includes(template);
+}
+
+/**
  * Pure gate function: may this session reach an admin path, judged by the
  * role it holds IN THE TENANT THE PATH NAMES (#3701)?
  *
@@ -721,7 +791,8 @@ export function isAuditorAdminReadPath(pathname: string, method: string | null |
  *   'allow' — the role here is an admin role, or is AI_ADMIN and the path is
  *             one of the agent admin paths (`AI_ADMIN_ADMIN_PATH_PREFIXES`,
  *             #3699), or is AUDITOR and the request is a GET of the agent
- *             inventory (`AUDITOR_ADMIN_READ_PATHS`, #3710)
+ *             inventory (`AUDITOR_ADMIN_READ_PATHS`, #3710) or of the
+ *             reconciliation queue (`RECONCILIATION_VIEW_READ_PATHS`, #5695)
  *   'deny'  — the role here is not
  *   'defer' — the URL's tenant is not in the claim. This gate does not own
  *             that answer: the tenant-access gate does, and it refuses
@@ -758,6 +829,9 @@ export function checkAdminAccess(
     if (here.role === 'AI_ADMIN' && isAiAdminAdminPath(pathname)) return 'allow';
     // #3710 — AUDITOR in THIS tenant, reading the agent inventory only.
     if (here.role === 'AUDITOR' && isAuditorAdminReadPath(pathname, method)) return 'allow';
+    // #5695 — AUDITOR (the one view-key holder below the admin roles) in THIS
+    // tenant, reading the reconciliation queue only.
+    if (RECONCILIATION_VIEW_EDGE_ROLES.has(here.role) && isReconciliationViewReadPath(pathname, method)) return 'allow';
     return 'deny';
 }
 

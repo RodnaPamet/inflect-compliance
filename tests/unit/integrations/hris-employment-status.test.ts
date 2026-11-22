@@ -12,7 +12,7 @@
  *   • string-beats-future-date would disable someone still serving notice;
  *   • string-beats-past-date would leave a departed worker enabled forever.
  */
-import { deriveEmploymentStatus } from '@/app-layer/integrations/providers/hris/employment-status';
+import { deriveEmploymentStatus, leaverFrom } from '@/app-layer/integrations/providers/hris/employment-status';
 
 const NOW = new Date('2026-06-01T00:00:00Z');
 const FUTURE = '2026-07-01';
@@ -101,5 +101,33 @@ describe('deriveEmploymentStatus — no opinion', () => {
             expect(deriveEmploymentStatus({ statusText }, NOW)).toBe('ONBOARDING');
         }
         expect(deriveEmploymentStatus({ statusText: 'Pre-Hire', terminationDate: PAST }, NOW)).toBe('TERMINATED');
+    });
+});
+
+describe('a date-only termination date is the last working day (#5200)', () => {
+    // Last working day: Friday 2026-11-13.
+    const LAST_DAY = '2026-11-13';
+
+    it('is still OFFBOARDING throughout that day, at 04:00 UTC and at 23:59 UTC', () => {
+        // 04:00 UTC is the HRIS sync; it is 20:00 the evening BEFORE in California.
+        expect(deriveEmploymentStatus({ terminationDate: LAST_DAY }, new Date('2026-11-13T04:00:00Z'))).toBe('OFFBOARDING');
+        expect(deriveEmploymentStatus({ terminationDate: LAST_DAY }, new Date('2026-11-13T23:59:59Z'))).toBe('OFFBOARDING');
+    });
+
+    it('becomes TERMINATED at 00:00 UTC on the following day', () => {
+        expect(deriveEmploymentStatus({ terminationDate: LAST_DAY }, new Date('2026-11-14T00:00:00Z'))).toBe('TERMINATED');
+        expect(deriveEmploymentStatus({ terminationDate: LAST_DAY }, new Date('2026-11-14T04:00:00Z'))).toBe('TERMINATED');
+    });
+
+    it('takes a value with a time as the instant it names', () => {
+        const instant = '2026-11-13T12:00:00Z';
+        expect(deriveEmploymentStatus({ terminationDate: instant }, new Date('2026-11-13T11:59:59Z'))).toBe('OFFBOARDING');
+        expect(deriveEmploymentStatus({ terminationDate: instant }, new Date('2026-11-13T12:00:00Z'))).toBe('TERMINATED');
+        expect(leaverFrom(new Date(instant))?.toISOString()).toBe('2026-11-13T12:00:00.000Z');
+    });
+
+    it('answers nothing for an unparseable date', () => {
+        expect(leaverFrom('2026-13-45')).toBeNull();
+        expect(leaverFrom(null)).toBeNull();
     });
 });

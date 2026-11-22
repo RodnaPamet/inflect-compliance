@@ -22,7 +22,7 @@ const GRANTS = ['list_risks', 'propose_risks', 'list_controls', EXTERNAL];
 
 describe('the key carries exactly the scopes its grants need', () => {
     it('read grants: mcp:read and each tool\'s resource scope, and never mcp:propose', () => {
-        expect(connectKeyScopes(['list_risks', 'list_findings'])).toEqual(['audits:read', 'mcp:read', 'risks:read']);
+        expect(connectKeyScopes(['list_risks', 'list_findings'])).toEqual(['findings:read', 'mcp:read', 'risks:read']);
     });
 
     it('a propose grant adds mcp:propose; an external tool adds admin:external_tools', () => {

@@ -11,6 +11,9 @@ const verifyMfaChallenge = jest.fn(async (..._args: unknown[]) => ({ success: tr
 jest.mock('@/app-layer/usecases/mfa-challenge', () => ({
     verifyMfaChallenge: (...args: unknown[]) => verifyMfaChallenge(...args),
 }));
+jest.mock('@/lib/security/session-tracker', () => ({
+    currentSessionIdOf: jest.fn(async () => 'sess-1'),
+}));
 jest.mock('@/auth', () => ({
     auth: jest.fn(async () => ({ user: { id: 'user-1', tenantId: 't-alpha', role: 'EDITOR' } })),
 }));
@@ -56,12 +59,12 @@ describe("the MFA challenge verifies the URL's workspace", () => {
     it("checks a code at beta's challenge against beta, not the session's primary workspace", async () => {
         const res = await verifyAt('beta');
         expect(res.status).toBe(200);
-        expect(verifyMfaChallenge).toHaveBeenCalledWith('user-1', 't-beta', '123456', expect.any(Number));
+        expect(verifyMfaChallenge).toHaveBeenCalledWith('user-1', 't-beta', '123456', expect.any(Number), 'sess-1');
     });
 
     it("still checks the primary workspace's code at the primary's challenge", async () => {
         await verifyAt('alpha');
-        expect(verifyMfaChallenge).toHaveBeenCalledWith('user-1', 't-alpha', '123456', expect.any(Number));
+        expect(verifyMfaChallenge).toHaveBeenCalledWith('user-1', 't-alpha', '123456', expect.any(Number), 'sess-1');
     });
 
     it('refuses a workspace the person is not an active member of, and checks no code', async () => {

@@ -83,6 +83,39 @@ interface PiiFieldSpec {
     mapped: boolean;
 }
 
+/**
+ * The ENCRYPTED columns this middleware writes, per model — #5070.
+ *
+ * DERIVED from `PII_FIELD_MAP` below rather than listed again, because a
+ * second list is a list that goes stale: the master-KEK rotation sweep reads
+ * this, so a PII column added to the map without being added here would be
+ * a column the rotation silently skips, and the symptom only appears after
+ * the runbook's last step removes `DATA_ENCRYPTION_KEY_PREVIOUS` — at which
+ * point `decryptOnRead` nulls it and the old key is the only way back.
+ *
+ * Only the ciphertext column is named. The `hash` columns are deliberately
+ * absent: a lookup hash is an index keyed on `LOOKUP_HASH_KEY` (#5071) and
+ * must NOT move during a rotation, so the sweep rewrites ciphertext and
+ * leaves hashes exactly where they are.
+ *
+ * The split by tenant scoping cannot be derived from this map — nothing here
+ * knows the schema — so the two lists below are written out, and a guard
+ * (`tests/guardrails/pii-rotation-coverage.test.ts`) holds them to an EXACT
+ * partition of `PII_FIELD_MAP`'s keys, checked against the live schema. A PII
+ * model added without being classified fails CI rather than being skipped by
+ * whichever sweep never looks at it. The per-tenant rotation job cannot reach
+ * a global table at all: its loop skips any model with no `tenantId` column,
+ * by design, which is why `User` and `Account` need the global sweep.
+ */
+export const PII_ENCRYPTED_COLUMNS: Record<string, readonly string[]> = {};
+export const PII_TENANT_SCOPED_MODELS: readonly string[] = [
+    'AuditorAccount',
+    'UserIdentityLink',
+    'VendorContact',
+    'NotificationOutbox',
+];
+export const PII_GLOBAL_MODELS: readonly string[] = ['User', 'Account'];
+
 const PII_FIELD_MAP: Record<string, PiiFieldSpec[]> = {
     User: [
         { plain: 'email', encrypted: 'emailEncrypted', hash: 'emailHash', mapped: true },
@@ -112,6 +145,11 @@ const PII_FIELD_MAP: Record<string, PiiFieldSpec[]> = {
         { plain: 'refresh_token', encrypted: 'refreshTokenEncrypted', mapped: false },
     ],
 };
+
+// Populated from the map above, so the two cannot disagree.
+for (const [model, specs] of Object.entries(PII_FIELD_MAP)) {
+    PII_ENCRYPTED_COLUMNS[model] = specs.map((spec) => spec.encrypted);
+}
 
 // ─── Helpers ────────────────────────────────────────────────────────
 

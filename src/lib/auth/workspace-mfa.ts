@@ -15,8 +15,11 @@
  * Enrolment is per workspace (`UserMfaEnrollment` is keyed on user AND
  * tenant), so each workspace's code is its own.
  *
- * A challenge counts for this session when it was passed after the session's
- * token was issued, the rule the primary workspace already uses.
+ * A challenge counts for this session only when THIS session passed it: the
+ * pass is recorded on the session's own `UserSession` row
+ * (`mfaPassedTenantIds`). Comparing the enrolment's `lastChallengeAt` with the
+ * token's issue time, as this used to, let any session's pass clear every older
+ * session of the same person.
  */
 import type { MfaPolicy } from '@prisma/client';
 import prisma from '@/lib/prisma';
@@ -53,35 +56,47 @@ export async function workspacesAskingForCode(
 }
 
 /**
- * `pending`, minus each workspace whose challenge this person passed at or
- * after `issuedAt` (the token's `iat`, in seconds).
+ * `pending`, minus each workspace whose challenge THIS session passed:
+ * the ones its own `UserSession` row lists. No session row, or a row that is
+ * not this person's, clears nothing.
  */
 export async function workspacesStillAskingForCode(
     userId: string,
     pending: readonly string[],
-    issuedAt: number,
+    userSessionId: string | null | undefined,
 ): Promise<string[]> {
     if (pending.length === 0) return [];
-    const ids = [...pending];
-    const passed = await prisma.userMfaEnrollment.findMany({
-        where: {
-            userId,
-            tenantId: { in: ids },
-            type: 'TOTP',
-            lastChallengeAt: { gte: new Date(issuedAt * 1000) },
-        },
-        select: { tenantId: true },
-        take: ids.length,
+    const passed = await workspacesPassedBySession(userId, userSessionId);
+    return pending.filter((id) => !passed.has(id));
+}
+
+/** The workspaces whose MFA challenge the session named by `userSessionId` passed. */
+export async function workspacesPassedBySession(
+    userId: string,
+    userSessionId: string | null | undefined,
+): Promise<Set<string>> {
+    if (!userSessionId) return new Set();
+    const row = await prisma.userSession.findUnique({
+        where: { sessionId: userSessionId },
+        select: { userId: true, mfaPassedTenantIds: true },
     });
-    const cleared = new Set(passed.map((p) => p.tenantId));
-    return ids.filter((id) => !cleared.has(id));
+    if (!row || row.userId !== userId) return new Set();
+    return new Set(row.mfaPassedTenantIds);
 }
 
 /**
- * The pending set after the session's memberships were re-read: workspaces the
+ * The MFA state after the session's memberships were re-read: workspaces the
  * session left drop out, and a workspace it gained since sign-in is asked about,
- * as sign-in would have asked. `primaryTenantId` is never in the result; it is
- * `mfaPending`'s.
+ * as sign-in would have asked.
+ *
+ * The primary workspace can change on a re-read (the oldest membership was
+ * removed, its workspace deleted, or it now enforces SSO). Its pending state
+ * moves with it: everything pending before, the old primary included when
+ * `primaryPendingBefore`, is one set, and the new primary's flag is read from
+ * that set. Before, the new primary was dropped from the set and its own flag
+ * was never raised, so a workspace that still wanted a code stopped asking.
+ *
+ * `pending` never contains `primaryTenantId`; `primaryPending` is its flag.
  */
 export async function pendingAfterMembershipRefresh(
     userId: string,
@@ -90,13 +105,21 @@ export async function pendingAfterMembershipRefresh(
         before: ReadonlySet<string>;
         after: readonly string[];
         primaryTenantId: string | null | undefined;
+        /** The primary before the re-read, and whether it still wanted a code. */
+        primaryBefore?: string | null;
+        primaryPendingBefore?: boolean;
     },
-): Promise<string[]> {
+): Promise<{ pending: string[]; primaryPending: boolean }> {
     const reachable = new Set(args.after);
-    const kept = args.pending.filter((id) => reachable.has(id) && id !== args.primaryTenantId);
-    const gained = args.after.filter((id) => !args.before.has(id) && id !== args.primaryTenantId);
+    const wasPending = new Set(args.pending);
+    if (args.primaryPendingBefore && args.primaryBefore) wasPending.add(args.primaryBefore);
+    const kept = [...wasPending].filter((id) => reachable.has(id));
+    const gained = args.after.filter((id) => !args.before.has(id));
     const asking = await workspacesAskingForCode(userId, gained);
-    return [...new Set([...kept, ...asking])];
+    const all = new Set([...kept, ...asking]);
+    const primaryPending = args.primaryTenantId ? all.has(args.primaryTenantId) : false;
+    if (args.primaryTenantId) all.delete(args.primaryTenantId);
+    return { pending: [...all], primaryPending };
 }
 
 /**
@@ -111,4 +134,32 @@ export async function activeMemberWorkspaceId(userId: string, slug: string): Pro
         select: { status: true },
     });
     return membership?.status === 'ACTIVE' ? tenant.id : null;
+}
+
+/** The refusal for a workspace that still wants this session's code: the edge's own words. */
+export const WORKSPACE_MFA_REQUIRED = 'MFA verification required';
+
+/**
+ * Does this workspace still want an MFA code from this session?
+ *
+ * Sign-in asks every workspace in the session's membership claim, and the edge
+ * holds the pending ones. The claim is capped (`MAX_JWT_MEMBERSHIPS`), so a
+ * workspace past the cap was never asked and the edge cannot hold it: the
+ * server tenant gate asks here instead. A workspace in the claim costs no
+ * query; one outside it is asked whether it wants a code, and whether this
+ * session passed its challenge.
+ */
+export async function workspaceStillAsksThisSession(args: {
+    userId: string;
+    tenantId: string;
+    claimedTenantIds: readonly string[];
+    pendingTenantIds: readonly string[];
+    sessionId: () => Promise<string | null>;
+}): Promise<boolean> {
+    if (args.pendingTenantIds.includes(args.tenantId)) return true;
+    if (args.claimedTenantIds.includes(args.tenantId)) return false;
+    const asking = await workspacesAskingForCode(args.userId, [args.tenantId]);
+    if (asking.length === 0) return false;
+    const passed = await workspacesPassedBySession(args.userId, await args.sessionId());
+    return !passed.has(args.tenantId);
 }

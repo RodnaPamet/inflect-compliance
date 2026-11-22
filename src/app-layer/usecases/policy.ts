@@ -16,12 +16,18 @@ import { enqueueEmail } from '../notifications/enqueue';
 import { resolveTenantSlugForLinks, tenantPageLink } from '../notifications/tenant-link';
 import { notFound, badRequest, forbidden, conflict } from '@/lib/errors/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
+// Every policy write bumps the tenant cache version after it commits (#5316):
+// the policies page caches its first-paint list with `cachedSsrPayload`, keyed
+// on that version. Policies have no aggregation entity of their own, so this is
+// the tenant-wide half of `bumpEntityCacheVersion`. It never throws.
+import { bumpTenantCacheVersion } from '@/lib/cache/list-cache';
 import { hasOutstandingAcknowledgement } from '@/lib/policy/coverage-predicate';
 import { sanitizePolicyContent, sanitizePlainText } from '@/lib/security/sanitize';
 import { isRevisionOf, publishableVersionId } from '@/lib/policy/publication-state';
 import { parseReviewCadenceDays, parseEvidenceToRetain } from '@/lib/policy/template-skeleton';
 import { logger } from '@/lib/observability/logger';
 import { recordPolicyPublished } from '@/lib/observability/business-metrics';
+import { enqueueKnowledgeIndex, enqueueKnowledgeIndexForPolicies } from '../jobs/knowledge-index-enqueue';
 
 // ─── Slug helper ───
 
@@ -205,9 +211,10 @@ async function assertOwnerIsActiveMember(
         select: { userId: true },
     });
     if (!membership) {
+        // Sentence first, code in details (#5318): the client shows `message`.
         throw badRequest(
-            'INVALID_OWNER',
             'The selected owner is not an active member of this tenant.',
+            { reason: 'INVALID_OWNER' },
         );
     }
 }
@@ -227,7 +234,7 @@ export async function createPolicy(ctx: RequestContext, data: {
 }) {
     assertCanCreatePolicy(ctx);
 
-    return runInTenantContext(ctx, async (db) => {
+    const committed = await runInTenantContext(ctx, async (db) => {
         await assertOwnerIsActiveMember(db, ctx, data.ownerUserId);
 
         // Generate unique slug
@@ -278,6 +285,8 @@ export async function createPolicy(ctx: RequestContext, data: {
 
         return policy;
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
+    return committed;
 }
 
 export async function createPolicyFromTemplate(ctx: RequestContext, templateId: string, overrides?: {
@@ -289,7 +298,7 @@ export async function createPolicyFromTemplate(ctx: RequestContext, templateId: 
 }) {
     assertCanCreatePolicy(ctx);
 
-    return runInTenantContext(ctx, async (db) => {
+    const committed = await runInTenantContext(ctx, async (db) => {
         await assertOwnerIsActiveMember(db, ctx, overrides?.ownerUserId);
         const template = await PolicyTemplateRepository.getById(db, templateId);
         if (!template) throw notFound('Policy template not found');
@@ -380,6 +389,8 @@ export async function createPolicyFromTemplate(ctx: RequestContext, templateId: 
 
         return policy;
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
+    return committed;
 }
 
 /**
@@ -448,7 +459,7 @@ export async function applyPolicyReviewed(
 export async function markPolicyReviewed(ctx: RequestContext, policyId: string) {
     assertCanWritePolicies(ctx);
 
-    return runInTenantContext(ctx, async (db) => {
+    const committed = await runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
         if (!policy) throw notFound('Policy not found');
         // An archived policy is out of use: it is not due for review (no
@@ -463,6 +474,8 @@ export async function markPolicyReviewed(ctx: RequestContext, policyId: string) 
 
         return PolicyRepository.getById(db, ctx, policyId);
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
+    return committed;
 }
 
 // ─── Version ───
@@ -484,7 +497,7 @@ export async function createPolicyVersion(ctx: RequestContext, policyId: string,
 } = {}) {
     assertCanWritePolicies(ctx);
 
-    return runInTenantContext(ctx, async (db) => {
+    const committed = await runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
         if (!policy) throw notFound('Policy not found');
 
@@ -562,6 +575,8 @@ export async function createPolicyVersion(ctx: RequestContext, policyId: string,
 
         return version;
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
+    return committed;
 }
 
 // ─── Metadata ───
@@ -577,7 +592,7 @@ export async function updatePolicyMetadata(ctx: RequestContext, policyId: string
 }) {
     assertCanWritePolicies(ctx);
 
-    return runInTenantContext(ctx, async (db) => {
+    const committed = await runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
         if (!policy) throw notFound('Policy not found');
 
@@ -612,6 +627,8 @@ export async function updatePolicyMetadata(ctx: RequestContext, policyId: string
 
         return PolicyRepository.getById(db, ctx, policyId);
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
+    return committed;
 }
 
 // ─── Approval Workflow ───
@@ -619,7 +636,7 @@ export async function updatePolicyMetadata(ctx: RequestContext, policyId: string
 export async function requestPolicyApproval(ctx: RequestContext, policyId: string, versionId: string) {
     assertCanWritePolicies(ctx);
 
-    return runInTenantContext(ctx, async (db) => {
+    const committed = await runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
         if (!policy) throw notFound('Policy not found');
 
@@ -740,6 +757,8 @@ export async function requestPolicyApproval(ctx: RequestContext, policyId: strin
 
         return approval;
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
+    return committed;
 }
 
 /**
@@ -760,7 +779,7 @@ export async function decidePolicyApproval(ctx: RequestContext, policyId: string
 }) {
     assertCanApprovePolicies(ctx);
 
-    return runInTenantContext(ctx, async (db) => {
+    const committed = await runInTenantContext(ctx, async (db) => {
         const approval = await PolicyApprovalRepository.getById(db, ctx, approvalId, policyId);
         if (!approval) throw notFound('Approval request not found');
 
@@ -915,6 +934,19 @@ export async function decidePolicyApproval(ctx: RequestContext, policyId: string
 
         return result;
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
+    // An approved version is a knowledge source (vector store Phase 2.5).
+    // After the commit, so the job reads the approval; never fails the
+    // decision, and enqueues nothing while the index is off.
+    if (decision.decision === 'APPROVED') {
+        await enqueueKnowledgeIndex({
+            tenantId: ctx.tenantId,
+            sourceModel: 'PolicyVersion',
+            sourceId: committed.policyVersionId,
+            requestId: ctx.requestId,
+        });
+    }
+    return committed;
 }
 
 // ─── Publish / Archive ───
@@ -1084,6 +1116,13 @@ export async function publishPolicy(
         const version = await PolicyVersionRepository.getById(db, versionId);
         if (!version || version.policyId !== policyId) {
             throw badRequest('Version does not belong to this policy');
+        }
+
+        // An ARCHIVED policy is retired; the way back is `unarchivePolicy`
+        // (to DRAFT), as rollbackPolicy and requestPolicyApproval require.
+        // A bypass reason must not put it straight back live (#5318).
+        if (policy.status === 'ARCHIVED') {
+            throw conflict('This policy is archived. Restore it before publishing.');
         }
 
         // Capture the OUTGOING published version before it's replaced — used
@@ -1351,6 +1390,7 @@ export async function publishPolicy(
     }
 
     recordPolicyPublished();
+    await bumpTenantCacheVersion(ctx.tenantId);
     return published.result;
 }
 
@@ -1542,6 +1582,7 @@ export async function rollbackPolicy(ctx: RequestContext, policyId: string) {
         });
     }
 
+    await bumpTenantCacheVersion(ctx.tenantId);
     // The transaction now also carries the ack-campaign bookkeeping; callers
     // still expect just the policy.
     return result.rolledBack;
@@ -1550,11 +1591,21 @@ export async function rollbackPolicy(ctx: RequestContext, policyId: string) {
 export async function archivePolicy(ctx: RequestContext, policyId: string) {
     assertCanAdminPolicies(ctx);
 
-    return runInTenantContext(ctx, async (db) => {
+    const committed = await runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
         if (!policy) throw notFound('Policy not found');
 
         await PolicyRepository.updateStatus(db, ctx, policyId, 'ARCHIVED');
+        // Close any open approval request, as publishing does (#5149). Left
+        // PENDING, it outlived the archive: after a restore to DRAFT a new
+        // request was refused while it existed, and the old one could no
+        // longer be decided, so only the emergency bypass could publish.
+        await PolicyApprovalRepository.supersedePending(
+            db,
+            ctx,
+            policyId,
+            'Superseded — the policy was archived.',
+        );
 
         await logEvent(db, ctx, {
             action: 'POLICY_ARCHIVED',
@@ -1571,6 +1622,8 @@ export async function archivePolicy(ctx: RequestContext, policyId: string) {
 
         return { success: true };
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
+    return committed;
 }
 
 // ─── Soft Delete / Restore / Purge ───
@@ -1580,7 +1633,7 @@ import { withDeleted } from '@/lib/soft-delete';
 
 export async function deletePolicy(ctx: RequestContext, id: string) {
     assertCanAdminPolicies(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const committed = await runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, id);
         if (!policy) throw notFound('Policy not found');
 
@@ -1601,6 +1654,11 @@ export async function deletePolicy(ctx: RequestContext, id: string) {
         });
         return { success: true };
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
+    // The index follows the delete now rather than at the 90-day purge: the
+    // job finds the policy soft-deleted and removes its versions' chunks.
+    await enqueueKnowledgeIndexForPolicies(ctx, [id]);
+    return committed;
 }
 
 /**
@@ -1625,7 +1683,7 @@ export async function deletePolicy(ctx: RequestContext, id: string) {
 export async function unarchivePolicy(ctx: RequestContext, policyId: string) {
     assertCanAdminPolicies(ctx);
 
-    return runInTenantContext(ctx, async (db) => {
+    const committed = await runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
         if (!policy) throw notFound('Policy not found');
         if (policy.status !== 'ARCHIVED') {
@@ -1633,6 +1691,14 @@ export async function unarchivePolicy(ctx: RequestContext, policyId: string) {
         }
 
         await PolicyRepository.updateStatus(db, ctx, policyId, 'DRAFT');
+        // A policy archived before #5149 can still hold a PENDING request,
+        // which would refuse every new request from the restored DRAFT.
+        await PolicyApprovalRepository.supersedePending(
+            db,
+            ctx,
+            policyId,
+            'Superseded — the policy was restored from archive.',
+        );
 
         await logEvent(db, ctx, {
             action: 'POLICY_UNARCHIVED',
@@ -1650,14 +1716,22 @@ export async function unarchivePolicy(ctx: RequestContext, policyId: string) {
 
         return PolicyRepository.getById(db, ctx, policyId);
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
+    return committed;
 }
 
 export async function restorePolicy(ctx: RequestContext, id: string) {
-    return restoreEntity(ctx, 'Policy', id);
+    const committed = await restoreEntity(ctx, 'Policy', id);
+    await bumpTenantCacheVersion(ctx.tenantId);
+    // Puts back the chunks the soft delete took out of the index.
+    await enqueueKnowledgeIndexForPolicies(ctx, [id]);
+    return committed;
 }
 
 export async function purgePolicy(ctx: RequestContext, id: string) {
-    return purgeEntity(ctx, 'Policy', id);
+    const committed = await purgeEntity(ctx, 'Policy', id);
+    await bumpTenantCacheVersion(ctx.tenantId);
+    return committed;
 }
 
 export async function listPoliciesWithDeleted(ctx: RequestContext) {
@@ -1706,15 +1780,16 @@ export async function bulkAssignPolicy(
         }
         return rows.length;
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
     return { updated };
 }
 
 /** Bulk soft-delete policies selected in the table action bar. */
 export async function bulkDeletePolicy(ctx: RequestContext, policyIds: string[]) {
     assertCanAdminPolicies(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const committed = await runInTenantContext(ctx, async (db) => {
         const rows = await PolicyRepository.listByIds(db, ctx, policyIds);
-        if (rows.length === 0) return { deleted: 0 };
+        if (rows.length === 0) return { deleted: 0, ids: [] as string[] };
         await db.policy.deleteMany({ where: { id: { in: rows.map((r) => r.id) }, tenantId: ctx.tenantId } });
         for (const r of rows) {
             await logEvent(db, ctx, {
@@ -1725,8 +1800,11 @@ export async function bulkDeletePolicy(ctx: RequestContext, policyIds: string[])
                 detailsJson: { category: 'entity_lifecycle', entityName: 'Policy', operation: 'deleted', summary: 'Policy soft-deleted' },
             });
         }
-        return { deleted: rows.length };
+        return { deleted: rows.length, ids: rows.map((r) => r.id) };
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
+    await enqueueKnowledgeIndexForPolicies(ctx, committed.ids);
+    return { deleted: committed.deleted };
 }
 
 export async function bulkArchivePolicy(ctx: RequestContext, policyIds: string[]) {
@@ -1736,6 +1814,13 @@ export async function bulkArchivePolicy(ctx: RequestContext, policyIds: string[]
         if (rows.length === 0) return 0;
         await PolicyRepository.bulkUpdate(db, ctx, policyIds, { status: 'ARCHIVED' });
         for (const r of rows) {
+            // As `archivePolicy` (#5149).
+            await PolicyApprovalRepository.supersedePending(
+                db,
+                ctx,
+                r.id,
+                'Superseded — the policy was archived.',
+            );
             await logEvent(db, ctx, {
                 action: 'POLICY_ARCHIVED',
                 entityType: 'Policy',
@@ -1751,5 +1836,6 @@ export async function bulkArchivePolicy(ctx: RequestContext, policyIds: string[]
         }
         return rows.length;
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
     return { updated };
 }

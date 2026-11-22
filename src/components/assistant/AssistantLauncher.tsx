@@ -33,20 +33,34 @@
  * the numbers are read off those two files rather than picked to look low.
  */
 
-import { useCallback, useEffect, useId, useRef } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useTranslations } from 'next-intl';
-// Nucleo is the canonical icon family — `tests/guards/no-lucide.test.ts`
-// treats a new lucide import site as a regression and says so: "Migrate the
-// icon to Nucleo ... Adding to LEGACY_LUCIDE_USERS requires a written reason
-// AND confirmation that no Nucleo equivalent exists." Both of these have one.
-import { Sparkle3, Xmark } from '@inflect/ui/components/ui/icons/nucleo';
+import { Sparkle3, Xmark } from '@inflect/ui/components/ui/icons/glyphs';
 
 import { Button } from '@/components/ui/button';
 import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
 import { useTenantContext } from '@/lib/tenant-context-provider';
 
 import { useAssistantOpen } from './assistant-open-context';
-import { AssistantSheet } from './AssistantSheet';
+
+/**
+ * The sheet loads on first use, not with the page (#5054).
+ *
+ * This launcher is mounted by the tenant layout, so whatever it imports
+ * statically is First Load JS on EVERY tenant page, whether or not the person
+ * ever opens the assistant. The sheet (the textarea, the stream reducer, the
+ * history window) is most of that, and adding the multi-line input and
+ * history to it put the heaviest tenant page over its bundle budget. So it is
+ * fetched the first time the assistant opens, warmed when the pointer reaches
+ * the launcher or it takes focus, and then stays mounted: closing and
+ * reopening keeps the conversation exactly as before.
+ */
+const loadAssistantSheet = () => import('./AssistantSheet');
+const AssistantSheet = dynamic(() => loadAssistantSheet().then((m) => m.AssistantSheet), {
+    ssr: false,
+    loading: () => null,
+});
 
 export function AssistantLauncher() {
     const t = useTranslations('assistant');
@@ -81,15 +95,29 @@ export function AssistantLauncher() {
     const { open, setOpen, setAvailable } = useAssistantOpen();
     const launcherRef = useRef<HTMLButtonElement>(null);
     const labelId = useId();
+    // Once opened, by the button, the shortcut or the command palette, the
+    // sheet stays mounted for the rest of the visit. Set during render, the
+    // documented way to derive state from a prop change.
+    const [sheetMounted, setSheetMounted] = useState(false);
+    if (open && !sheetMounted) setSheetMounted(true);
+    const warmSheet = useCallback(() => {
+        void loadAssistantSheet();
+    }, []);
 
     // Tell the palette the assistant exists. This component only mounts when
     // the kill switch is on, so registering here means the palette entry
     // follows the button's real presence instead of re-deriving the gate from
     // a flag it cannot read.
+    //
+    // Only for a viewer who may USE it (#5171): a READER is never rendered the
+    // launcher, so registering for them put "Ask the assistant" in the palette
+    // and bound mod+shift+A to a sheet the server refuses them.
+    const canUse = permissions.canWrite;
     useEffect(() => {
+        if (!canUse) return;
         setAvailable(true);
         return () => setAvailable(false);
-    }, [setAvailable]);
+    }, [setAvailable, canUse]);
 
     const close = useCallback(() => {
         setOpen(false);
@@ -119,15 +147,14 @@ export function AssistantLauncher() {
         () => {
             toggle();
         },
-        { description: t('shortcutDescription') },
+        // Disabled rather than skipped, so the hook order holds: a READER gets
+        // no binding and no entry in the shortcut list (#5171).
+        { description: t('shortcutDescription'), enabled: canUse },
     );
 
     // AFTER every hook, never before: an early return above them changes the
-    // hook call order between renders, which React refuses. The shortcut
-    // registration is harmless for a reader because the button it toggles is
-    // not rendered — and `useKeyboardShortcut` is in the registry either way,
-    // which is the lesser of the two wrongs available at this position.
-    if (!permissions.canWrite) return null;
+    // hook call order between renders, which React refuses.
+    if (!canUse) return null;
 
     return (
         <>
@@ -147,6 +174,8 @@ export function AssistantLauncher() {
                     type="button"
                     variant="primary"
                     onClick={toggle}
+                    onPointerEnter={warmSheet}
+                    onFocus={warmSheet}
                     // While the window is open this button IS the close
                     // affordance, rather than a second control competing with
                     // the sheet's own dismissal.
@@ -183,7 +212,7 @@ export function AssistantLauncher() {
                 </Button>
             </div>
 
-            <AssistantSheet open={open} onClose={close} titleId={labelId} />
+            {sheetMounted && <AssistantSheet open={open} onClose={close} titleId={labelId} />}
         </>
     );
 }

@@ -17,7 +17,7 @@
  *     - empty email reject
  *     - invalid role reject
  *     - existing user → already-member reject
- *     - new email → no membership check, upsert create
+ *     - new email → no membership check, membership create (never an update, #5147)
  *     - audit-emit success + audit-emit failure (swallowed)
  *
  *   revokeOrgInvite:
@@ -74,7 +74,7 @@ jest.mock('@/lib/security/encryption', () => ({
 
 const mockPrisma: any = {
     user: { findUnique: jest.fn() },
-    orgMembership: { findUnique: jest.fn(), upsert: jest.fn() },
+    orgMembership: { findUnique: jest.fn(), create: jest.fn(), txFindUnique: jest.fn() },
     orgInvite: {
         findUnique: jest.fn(),
         findFirst: jest.fn(),
@@ -86,7 +86,13 @@ const mockPrisma: any = {
     organization: { findUnique: jest.fn() },
     $transaction: jest.fn(async (cb: any) =>
         cb({
-            orgMembership: { upsert: mockPrisma.orgMembership.upsert },
+            // The redemption reads the membership inside the transaction and
+            // creates only when none exists (#5147). `txFindUnique` is a
+            // separate mock so the invite-creation check's read stays apart.
+            orgMembership: {
+                findUnique: mockPrisma.orgMembership.txFindUnique,
+                create: mockPrisma.orgMembership.create,
+            },
             organization: { findUnique: mockPrisma.organization.findUnique },
         }),
     ),
@@ -141,7 +147,8 @@ beforeEach(() => {
     provisionCalls.length = 0;
     [
         mockPrisma.user.findUnique,
-        mockPrisma.orgMembership.findUnique, mockPrisma.orgMembership.upsert,
+        mockPrisma.orgMembership.findUnique, mockPrisma.orgMembership.create,
+        mockPrisma.orgMembership.txFindUnique,
         mockPrisma.orgInvite.findUnique, mockPrisma.orgInvite.findFirst,
         mockPrisma.orgInvite.findMany, mockPrisma.orgInvite.upsert,
         mockPrisma.orgInvite.update, mockPrisma.orgInvite.updateMany,
@@ -150,6 +157,8 @@ beforeEach(() => {
         provisionOrgAdminToTenants as jest.Mock,
     ].forEach((m: any) => m.mockReset && m.mockReset());
     // Re-arm default behaviours.
+    mockPrisma.orgMembership.txFindUnique.mockResolvedValue(null);
+    mockPrisma.orgMembership.create.mockImplementation(async (a: any) => ({ id: 'mem-1', role: a.data.role }));
     (appendOrgAuditEntry as jest.Mock).mockImplementation(async (entry: any) => {
         auditCalls.push(entry);
     });
@@ -494,7 +503,7 @@ describe('redeemOrgInvite', () => {
         expect(String((err as Error).message)).toMatch(/email does not match/i);
         expect((err as { details?: unknown }).details).toEqual({ reason: 'INVITE_EMAIL_MISMATCH' });
         // No membership write attempted on the email-mismatch branch.
-        expect(mockPrisma.orgMembership.upsert).not.toHaveBeenCalled();
+        expect(mockPrisma.orgMembership.create).not.toHaveBeenCalled();
     });
 
     it('Step-4 organization missing → internal (invariant violation)', async () => {
@@ -503,19 +512,17 @@ describe('redeemOrgInvite', () => {
             id: 'inv-1', organizationId: 'org-1', email: 'bob@example.com',
             role: 'ORG_READER', invitedById: 'u-admin',
         });
-        mockPrisma.orgMembership.upsert.mockResolvedValueOnce({ id: 'mem-1' });
         mockPrisma.organization.findUnique.mockResolvedValueOnce(null);
 
         await expect(redeemOrgInvite(redeemInput)).rejects.toThrow(/organization disappeared/i);
     });
 
-    it('ORG_READER happy path: upserts membership + emits 2 audit rows + NO provision call', async () => {
+    it('ORG_READER happy path: creates membership + emits 2 audit rows + NO provision call', async () => {
         mockPrisma.orgInvite.updateMany.mockResolvedValueOnce({ count: 1 });
         mockPrisma.orgInvite.findUnique.mockResolvedValueOnce({
             id: 'inv-1', organizationId: 'org-1', email: 'bob@example.com',
             role: 'ORG_READER', invitedById: 'u-admin',
         });
-        mockPrisma.orgMembership.upsert.mockResolvedValueOnce({ id: 'mem-1' });
         mockPrisma.organization.findUnique.mockResolvedValueOnce({ slug: 'acme' });
 
         const result = await redeemOrgInvite(redeemInput);
@@ -536,7 +543,6 @@ describe('redeemOrgInvite', () => {
             id: 'inv-1', organizationId: 'org-1', email: 'bob@example.com',
             role: 'ORG_ADMIN', invitedById: 'u-admin',
         });
-        mockPrisma.orgMembership.upsert.mockResolvedValueOnce({ id: 'mem-1' });
         mockPrisma.organization.findUnique.mockResolvedValueOnce({ slug: 'acme' });
 
         const result = await redeemOrgInvite(redeemInput);
@@ -562,7 +568,6 @@ describe('redeemOrgInvite', () => {
             id: 'inv-1', organizationId: 'org-1', email: 'bob@example.com',
             role: 'ORG_ADMIN', invitedById: 'u-admin',
         });
-        mockPrisma.orgMembership.upsert.mockResolvedValueOnce({ id: 'mem-1' });
         mockPrisma.organization.findUnique.mockResolvedValueOnce({ slug: 'acme' });
 
         await redeemOrgInvite(redeemInput);
@@ -581,7 +586,6 @@ describe('redeemOrgInvite', () => {
             id: 'inv-1', organizationId: 'org-1', email: 'bob@example.com',
             role: 'ORG_READER', invitedById: 'u-admin',
         });
-        mockPrisma.orgMembership.upsert.mockResolvedValueOnce({ id: 'mem-1' });
         mockPrisma.organization.findUnique.mockResolvedValueOnce({ slug: 'acme' });
         (appendOrgAuditEntry as jest.Mock).mockRejectedValue(new Error('audit db down'));
 
@@ -589,6 +593,33 @@ describe('redeemOrgInvite', () => {
 
         expect(result.role).toBe('ORG_READER');
         expect(result.organizationSlug).toBe('acme');
+    });
+
+    it('an EXISTING member keeps their role: the invite adds, it never changes one (#5147)', async () => {
+        // An ORG_READER invite redeemed by an owner used to write ORG_READER
+        // over the owner's membership — around the owner rule, the
+        // last-administrator guard and the audited role change.
+        mockPrisma.orgInvite.updateMany.mockResolvedValueOnce({ count: 1 });
+        mockPrisma.orgInvite.findUnique.mockResolvedValueOnce({
+            id: 'inv-1', organizationId: 'org-1', email: 'bob@example.com',
+            role: 'ORG_READER', invitedById: 'u-admin',
+        });
+        mockPrisma.orgMembership.txFindUnique.mockResolvedValueOnce({ id: 'mem-owner', role: 'ORG_OWNER' });
+        mockPrisma.organization.findUnique.mockResolvedValueOnce({ slug: 'acme' });
+
+        const result = await redeemOrgInvite(redeemInput);
+
+        expect(mockPrisma.orgMembership.create).not.toHaveBeenCalled();
+        expect(result.role).toBe('ORG_OWNER');
+        expect(provisionCalls).toHaveLength(0);
+        // The redemption is recorded and says the invite's role was not
+        // applied; no MEMBER_ADDED, because nobody was added.
+        expect(auditCalls.map((a) => a.action)).toEqual(['ORG_INVITE_REDEEMED']);
+        expect(auditCalls[0].detailsJson).toMatchObject({
+            role: 'ORG_OWNER',
+            alreadyMember: true,
+            invitedRole: 'ORG_READER',
+        });
     });
 
     it('case-insensitive email match: bob@x.y === BOB@X.Y (trimmed)', async () => {
@@ -600,7 +631,6 @@ describe('redeemOrgInvite', () => {
             email: 'BOB@example.com',
             role: 'ORG_READER', invitedById: 'u-admin',
         });
-        mockPrisma.orgMembership.upsert.mockResolvedValueOnce({ id: 'mem-1' });
         mockPrisma.organization.findUnique.mockResolvedValueOnce({ slug: 'acme' });
 
         const result = await redeemOrgInvite({

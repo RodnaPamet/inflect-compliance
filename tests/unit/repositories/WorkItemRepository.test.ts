@@ -317,6 +317,9 @@ describe('TaskRepository.countLinkedToControls', () => {
         const r = await TaskRepository.countLinkedToControls(db as any, ctx, ['c1', 'c2']);
         expect(r.get('c1')).toEqual({ total: 2, done: 1 }); // t1 (done) + t2 (open), t1 deduped
         expect(r.get('c2')).toEqual({ total: 1, done: 1 });
+        // A deleted task reached through its link is not counted (#5305): the
+        // soft-delete extension never filters a nested relation.
+        expect(db.taskLink.findMany.mock.calls[0][0].where).toMatchObject({ task: { deletedAt: null } });
     });
 });
 
@@ -337,6 +340,8 @@ describe('TaskRepository.countLinkedToEntities', () => {
         const r = await TaskRepository.countLinkedToEntities(db as any, ctx, 'ASSET' as any, ['a1', 'a2']);
         expect(r.get('a1')).toEqual({ total: 2, done: 1 });
         expect(r.get('a2')).toEqual({ total: 1, done: 1 });
+        // A deleted task reached through its link is not counted (#5305).
+        expect(db.taskLink.findMany.mock.calls[0][0].where).toMatchObject({ task: { deletedAt: null } });
     });
 });
 
@@ -589,10 +594,14 @@ describe('TaskRepository bulk ops', () => {
         expect('resolution' in data).toBe(false);
     });
 
-    it('bulkSetStatus non-terminal omits completedAt', async () => {
-        await TaskRepository.bulkSetStatus(db as any, ctx, ['t1'], 'OPEN');
+    it('bulkSetStatus non-terminal clears completedAt, as setStatus does (#5305)', async () => {
+        // A reopened task is no longer complete. The bulk path used to leave
+        // the old resolution time in place, so the task page read "Completed
+        // at <date>" on an in-progress task.
+        await TaskRepository.bulkSetStatus(db as any, ctx, ['t1'], 'IN_PROGRESS');
         const data = db.task.updateMany.mock.calls[0][0].data;
-        expect('completedAt' in data).toBe(false);
+        expect(data.completedAt).toBeNull();
+        expect('resolution' in data).toBe(false);
     });
 
     it('bulkSetDueDate with a date parses it; null clears it', async () => {

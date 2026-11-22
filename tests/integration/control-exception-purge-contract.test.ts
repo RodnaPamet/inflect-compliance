@@ -338,7 +338,21 @@ describeFn('ControlException purge contract — SQLSTATE 23502 regression', () =
             riskAcceptedByUserId: admin.userId,
         });
 
-        await deleteControl(ctxAsAdmin(), affected);
+        // THE USECASE NOW REFUSES THIS OUTRIGHT (#5083, owner decision
+        // 2026-11-13): an exception is a RESTRICT child, so a control in this
+        // state never reaches the purge through the product at all. Asserted
+        // here because it is the new first line of defence, and the database
+        // contract below is what stands behind it.
+        await expect(deleteControl(ctxAsAdmin(), affected)).rejects.toThrow(/exception/i);
+
+        // Soft-deleted RAW to reach the state this case is actually about. The
+        // usecase will not produce it any more, and what is under test here is
+        // the FK's referential action, not the usecase.
+        await globalPrisma.$executeRawUnsafe(
+            `UPDATE "Control" SET "deletedAt" = now() WHERE "id" = $1`,
+            affected,
+        );
+
         await expect(purgeControl(ctxAsAdmin(), affected)).rejects.toThrow();
 
         // Refused, not silently swallowed — the control is still there.

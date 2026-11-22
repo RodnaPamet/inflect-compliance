@@ -184,7 +184,7 @@ export async function importLibrary(
                 name: library.name,
                 description: library.description,
                 version: library.version.toString(),
-                contentHash: library.contentHash,
+                // contentHash is written LAST, with the history (#5113).
                 sourceUrn: library.urn,
                 kind: mapKindToPrisma(library.kind),
                 metadataJson: JSON.stringify({
@@ -207,7 +207,7 @@ export async function importLibrary(
                 name: library.name,
                 description: library.description,
                 version: library.version.toString(),
-                contentHash: library.contentHash,
+                // contentHash is written LAST, with the history (#5113).
                 sourceUrn: library.urn,
                 kind: mapKindToPrisma(library.kind),
                 metadataJson: JSON.stringify({
@@ -256,10 +256,14 @@ export async function importLibrary(
         updatedHistory,
     );
 
-    // Patch the metadataJson with history (preserve existing fields)
+    // Patch the metadataJson with history (preserve existing fields), and
+    // only NOW record the content hash (#5113). It was written with the
+    // framework row, before any requirement: an import that failed half way
+    // left the new hash behind, so every later sync compared equal, skipped,
+    // and the half-imported framework was never repaired.
     await db.framework.update({
         where: { id: frameworkId },
-        data: { metadataJson: updatedMetadataJson },
+        data: { metadataJson: updatedMetadataJson, contentHash: library.contentHash },
     });
 
     logger.info('Import completed', {
@@ -449,19 +453,24 @@ async function updateRequirements(
     let updated = 0;
     let deprecated = 0;
 
-    // Create new requirements
+    // Create new requirements. An UPSERT on (frameworkId, code) (#5113): the
+    // diff is computed against live requirements only, so a code the library
+    // drops and later re-adds arrives as "added" while its deprecated row still
+    // holds the unique key. A plain create failed on that row, every sync.
+    // The deprecated row is revived instead, keeping its id and the controls
+    // mapped to it.
     for (let i = 0; i < resolvedDiff.added.length; i++) {
         const req = resolvedDiff.added[i];
-        await db.frameworkRequirement.create({
-            data: {
-                frameworkId,
-                code: req.code,
-                title: req.title,
-                description: req.description,
-                category: req.category,
-                section: req.section ?? req.category,
-                sortOrder: existingReqs.length + i,
-            },
+        const fields = {
+            title: req.title,
+            description: req.description,
+            category: req.category,
+            section: req.section ?? req.category,
+        };
+        await db.frameworkRequirement.upsert({
+            where: { frameworkId_code: { frameworkId, code: req.code } },
+            create: { frameworkId, code: req.code, ...fields, sortOrder: existingReqs.length + i },
+            update: { ...fields, deprecatedAt: null },
         });
         created++;
     }

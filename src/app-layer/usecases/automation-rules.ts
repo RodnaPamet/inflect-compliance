@@ -23,7 +23,7 @@ import {
     type UpdateAutomationRuleInput,
 } from '../automation';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound, badRequest, conflict } from '@/lib/errors/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { ACTION_CONFIG_BY_TYPE } from '../schemas/automation.schemas';
@@ -145,6 +145,35 @@ export async function assertNoChainCycle(
             throw badRequest('Rule chain would create a cycle');
         }
     }
+    // And over BOTH edges at once (#5317): the dispatch follows whichever edge
+    // the filter picks at each hop, so A -next-> B -else-> C -next-> A loops at
+    // run time although neither single-edge walk above reaches A.
+    if (chainReachesRule(ruleId, roots, graph)) {
+        throw badRequest('Rule chain would create a cycle');
+    }
+}
+
+/**
+ * Whether `ruleId` is reachable from `roots` following `next` AND `else`
+ * edges in any mix. Exported for its unit test.
+ */
+export function chainReachesRule(
+    ruleId: string,
+    roots: readonly string[],
+    graph: ReadonlyMap<string, { next: string | null; else: string | null }>,
+): boolean {
+    const seen = new Set<string>();
+    const queue = [...roots];
+    while (queue.length > 0) {
+        const id = queue.shift()!;
+        if (id === ruleId) return true;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const node = graph.get(id);
+        if (node?.next) queue.push(node.next);
+        if (node?.else) queue.push(node.else);
+    }
+    return false;
 }
 
 /** Optional free-text fields are sanitised before persistence. */
@@ -239,6 +268,17 @@ export async function updateAutomationRule(
             nextRuleId: input.nextRuleId,
             elseRuleId: input.elseRuleId,
         });
+
+        // An ARCHIVED rule's status does not move through this edit (#5284).
+        // The toggle refuses an archived rule; this PUT took any status, so the
+        // canvas inspector's switch, which used it, re-enabled archived rules.
+        if (input.status !== undefined) {
+            const current = await AutomationRuleRepository.getById(db, ctx, id);
+            if (!current) throw notFound('Automation rule not found');
+            if (current.status === 'ARCHIVED' && input.status !== 'ARCHIVED') {
+                throw conflict('This rule is archived. An archived rule cannot be enabled or disabled.');
+            }
+        }
 
         // Cross-field action validation against the EFFECTIVE type.
         //

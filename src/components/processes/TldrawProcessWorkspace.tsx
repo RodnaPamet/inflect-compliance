@@ -51,6 +51,7 @@ import { useTranslations } from 'next-intl';
 import type { Editor } from 'tldraw';
 
 import type { ProcessMapSummary } from '@/lib/processes/process-map-summary';
+import { withoutHydratedDisplay } from '@/lib/processes/canvas-rule-wiring';
 import { useToast } from '@/components/ui/hooks';
 import { CanvasCommandPalette } from '@/components/processes/CanvasCommandPalette';
 import { CanvasDiffOverlay } from '@/components/processes/CanvasDiffOverlay';
@@ -60,6 +61,7 @@ import { CanvasHistorySidebar } from '@/components/processes/CanvasHistorySideba
 import { ProcessInspector } from '@/components/processes/ProcessInspector';
 import { ProcessPalette } from '@/components/processes/ProcessPalette';
 import { TldrawCanvasExportMenu } from '@/components/processes/TldrawCanvasExportMenu';
+import { usePermissions } from '@/lib/tenant-context-provider';
 import { TldrawProcessMap } from '@/components/processes/TldrawProcessMap';
 import { drillTrail } from '@/components/processes/tldraw/drill-scope-host';
 import { useCanvasDrillStack } from '@/lib/processes/use-canvas-drill-stack';
@@ -79,6 +81,7 @@ import { useTldrawCanvasCounts } from '@/lib/processes/use-tldraw-canvas-counts'
 import { CanvasOverlayProvider } from '@/lib/processes/canvas-execution-overlay';
 import { RunModeProvider, useRunMode } from '@/lib/processes/run-mode-context';
 import { CanvasRuleStatusProvider } from '@/lib/processes/canvas-rule-status';
+import { CanvasLinkedFactsProvider } from '@/lib/processes/canvas-linked-facts';
 import { useIsAutomationMode } from '@/lib/processes/canvas-mode-context';
 import { CheckpointReviewProvider } from '@/lib/processes/canvas-checkpoint-review';
 import { CheckpointReviewPanel } from '@/components/processes/CheckpointReviewPanel';
@@ -90,6 +93,8 @@ import {
     placementForClick,
 } from '@/components/processes/tldraw/create-process-node';
 import { useTldrawSelection } from '@/lib/processes/use-tldraw-selection';
+import { agentCanvasHref, agentIdOfInvokeRule } from '@/lib/processes/agent-view/agent-canvas-link';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 
 /**
  * `GraphRows` → `DiffGraphSnapshot`.
@@ -117,7 +122,13 @@ function toDiffSnapshot(rows: GraphRows): DiffGraphSnapshot {
             posX: n.posX,
             posY: n.posY,
             parentNodeKey: n.parentNodeKey ?? null,
-            dataJson: n.dataJson ?? null,
+            // Without the rule facts the load merged in (#5285): a stored
+            // version never carries them, so every linked step read as
+            // modified even when nothing had changed.
+            dataJson: withoutHydratedDisplay(n.dataJson ?? null),
+            ...(n.controlId !== undefined ? { controlId: n.controlId } : {}),
+            ...(n.riskId !== undefined ? { riskId: n.riskId } : {}),
+            ...(n.assetId !== undefined ? { assetId: n.assetId } : {}),
         })),
         edges: rows.edges.map((e) => ({
             edgeKey: e.edgeKey,
@@ -170,8 +181,24 @@ export interface TldrawProcessWorkspaceProps {
     canEdit: boolean;
     /** May the viewer delete a map? The server takes the Admin tier. */
     canDelete: boolean;
+    /**
+     * May the viewer change automation rules (`admin.manage` and the Admin
+     * tier)? The step inspector offers rule writes only then (#5283): map edits
+     * are `processes.edit`, which an Editor holds and rule writes do not take.
+     * Optional, defaulting to FALSE, the safe direction for a permission.
+     */
+    canManageRules?: boolean;
     /** A step to select once the map loads: the Rules tab's "Open on canvas". */
     focusStepKey?: string | null;
+    /**
+     * Go to an agent on the agent view (Phase 2.3 of
+     * `docs/ai-architecture/langflow.md`): the drill-down from an agent step,
+     * and the inspector's link. Given only where the viewer may read the agent
+     * register, which the agent view asks before it draws anything; absent, an
+     * agent step drills nowhere and the inspector offers no link. The page owns
+     * the router, so the workspace mounts without one.
+     */
+    onOpenAgentCanvas?: (href: string) => void;
 }
 
 export function TldrawProcessWorkspace(props: TldrawProcessWorkspaceProps) {
@@ -246,10 +273,16 @@ function Inner({
     onActiveIdChange,
     onProcessesChange,
     canEdit,
+    canManageRules = false,
     canDelete,
     focusStepKey = null,
+    onOpenAgentCanvas,
 }: TldrawProcessWorkspaceProps) {
     const toast = useToast();
+    // "Attach to evidence" is an evidence upload; offered only to a viewer the
+    // upload route would take it from (#5309).
+    // A context with no permission set (a bare test mount) reads as no.
+    const canAttachEvidence = usePermissions()?.evidence?.upload === true;
     const [editor, setEditor] = useState<Editor | null>(null);
     const [version, setVersion] = useState<number | undefined>(undefined);
     const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus>('idle');
@@ -316,6 +349,34 @@ function Inner({
         autosaveStatus === 'error';
     useUnsavedChangesWarning(hasUnsavedWork);
     useUnsavedNavigationGuard(hasUnsavedWork, t('unsavedLeaveConfirm'));
+
+    /**
+     * Drill from an agent step into the agent it invokes (Phase 2.3).
+     *
+     * The step names its RULE, and the agent is read from the rule as the
+     * server holds it, so the step cannot point the drill anywhere the rule
+     * does not. The navigation is the router's, which the unsaved-work click
+     * guard above cannot see, so the same question is asked here first.
+     */
+    const handleOpenAgent = useCallback(
+        async (ruleId: string) => {
+            if (!onOpenAgentCanvas) return;
+            let agentId: string | null = null;
+            try {
+                const res = await fetch(`/api/t/${tenantSlug}${CACHE_KEYS.automation.rules.detail(ruleId)}`);
+                if (res.ok) agentId = agentIdOfInvokeRule(await res.json());
+            } catch {
+                agentId = null;
+            }
+            if (agentId === null) {
+                toast.error(t('openAgentFailed'));
+                return;
+            }
+            if (hasUnsavedWork && !window.confirm(t('unsavedLeaveConfirm'))) return;
+            onOpenAgentCanvas(agentCanvasHref(tenantSlug, agentId));
+        },
+        [onOpenAgentCanvas, tenantSlug, toast, t, hasUnsavedWork],
+    );
 
     const handleState = useCallback(
         (s: {
@@ -538,6 +599,7 @@ function Inner({
                             tenantSlug={tenantSlug}
                             mapId={activeId}
                             disabled={bar.busy.saving}
+                            canAttachEvidence={canAttachEvidence}
                         />
                     ) : null
                 }
@@ -581,20 +643,36 @@ function Inner({
                     and the inspector. */}
                 <div className="relative min-w-0 flex-1" ref={canvasHostRef}>
                     <CheckpointReviewPanel />
-                    <TldrawProcessMap
-                        // Remounts on a conflict; see `handleConflict`.
-                        key={`${activeId ?? 'none'}:${reloadKey}`}
-                        tenantSlug={tenantSlug}
-                        mapId={activeId}
-                        drillGroupId={drill.currentGroupId}
-                        onEnterGroup={drill.enter}
-                        onEditorReady={setEditor}
-                        onStateChange={handleState}
-                        onSaveNowChange={handleSaveNowChange}
-                        focusStepKey={focusStepKey}
-                        onSaved={handleSaved}
-                        readOnly={!canEdit}
-                    />
+                    {/* Each control, risk and asset node's live card, read by
+                        the ids on the canvas and re-read at each saved version.
+                        Inside Inner because it needs the editor. */}
+                    <CanvasLinkedFactsProvider
+                        editor={editor}
+                        mapId={activeId ?? null}
+                        version={version ?? null}
+                    >
+                        <TldrawProcessMap
+                            // Remounts on a conflict; see `handleConflict`.
+                            key={`${activeId ?? 'none'}:${reloadKey}`}
+                            tenantSlug={tenantSlug}
+                            mapId={activeId}
+                            drillGroupId={drill.currentGroupId}
+                            onEnterGroup={drill.enter}
+                            onOpenAgent={
+                                onOpenAgentCanvas
+                                    ? (ruleId) => {
+                                          void handleOpenAgent(ruleId);
+                                      }
+                                    : undefined
+                            }
+                            onEditorReady={setEditor}
+                            onStateChange={handleState}
+                            onSaveNowChange={handleSaveNowChange}
+                            focusStepKey={focusStepKey}
+                            onSaved={handleSaved}
+                            readOnly={!canEdit}
+                        />
+                    </CanvasLinkedFactsProvider>
                 </div>
 
                 {/* A disabled fieldset disables every control inside the
@@ -612,6 +690,8 @@ function Inner({
                         rendererHonoursSize={false}
                         onUpdate={selection.onUpdate}
                         onEdgeUpdate={selection.onEdgeUpdate}
+                        canManageRules={canManageRules}
+                        canOpenAgentCanvas={onOpenAgentCanvas !== undefined}
                         {...(activeId ? { mapId: activeId } : {})}
                     />
                 </fieldset>

@@ -221,9 +221,16 @@ export function translitVariants(token: string): Variant[] {
 // ‾‾‾ Email ‾‾‾
 
 export interface NormalisedEmail {
-    /** `emailKey`'s answer, unmodified. The ONLY value the JML chain joins on. */
+    /**
+     * `emailKey(raw)`'s answer, unmodified — the ONLY value the JML chain joins
+     * on, and never the `baseClean`-folded form (#5619).
+     */
     readonly key: string | null;
-    /** `key` with a `+tag` removed. A SEPARATE layer — see below. */
+    /**
+     * The folded form with a `+tag` removed. A SEPARATE layer: this is where
+     * NFKC folding, invisible-character stripping and domain equivalence are
+     * allowed to act, because nothing here can produce a strong signal.
+     */
     readonly untagged: string | null;
     /** The local part of `untagged`, for name-shaped comparison. */
     readonly localPart: string | null;
@@ -247,19 +254,39 @@ export const DOMAIN_EQUIVALENCE: Readonly<Record<string, string>> = {
 /**
  * Normalise an address WITHOUT touching `emailKey`.
  *
- * `key` is whatever `emailKey` returns, unchanged, because that is the value the
- * reconciler and the joiner both already use. The extra fields are strictly
- * additive and are used for scoring, never for identity.
+ * `key` is whatever `emailKey` returns for the RAW value, unchanged, because
+ * that is the value the reconciler and the joiner both already use. The extra
+ * fields are strictly additive and are used for scoring, never for identity.
+ *
+ * This read `emailKey(baseClean(raw))` until #5619, which is a different
+ * function of a different string: `baseClean` NFKC-folds, strips invisible
+ * characters and collapses internal whitespace, while `emailKey` is only
+ * `trim().toLowerCase()`. So a fullwidth `ｊｓｍｉｔｈ@corp.com`, or an address
+ * carrying a zero-width space, folded onto a real employee's key and the engine
+ * emitted the STRONG `EMAIL_EXACT` — resolving the account LINKED with no
+ * reviewer — while the JML chain, joining the raw column values, saw two
+ * different addresses. That is an account no `IdentityAccountLink` covers and
+ * the leaver pass cannot act on, which is the failure `email-key.ts`'s own
+ * module docblock exists to prevent.
+ *
+ * The fold now lives one layer up, with `DOMAIN_EQUIVALENCE`, feeding the
+ * SUPPORTING fields only. Such a pair is still FOUND — `buildEmployeeIndex`
+ * buckets on `untagged` as well as `key` — it just arrives as a suggestion a
+ * person confirms, which is also the only way the data-quality problem behind
+ * it gets seen.
  */
 export function normaliseEmail(raw: string | null | undefined): NormalisedEmail {
-    const key = emailKey(baseClean(raw) || null);
-    if (!key) return { key: null, untagged: null, localPart: null, domain: null };
+    const key = emailKey(raw);
 
-    const at = key.lastIndexOf('@');
-    if (at <= 0 || at === key.length - 1) return { key, untagged: key, localPart: null, domain: null };
+    // The comparison layer, and the ONLY thing the fold may reach.
+    const folded = emailKey(baseClean(raw) || null);
+    if (!folded) return { key, untagged: null, localPart: null, domain: null };
 
-    const local = key.slice(0, at);
-    const rawDomain = key.slice(at + 1);
+    const at = folded.lastIndexOf('@');
+    if (at <= 0 || at === folded.length - 1) return { key, untagged: folded, localPart: null, domain: null };
+
+    const local = folded.slice(0, at);
+    const rawDomain = folded.slice(at + 1);
     const domain = DOMAIN_EQUIVALENCE[rawDomain] ?? rawDomain;
     // `+tag` stripping, as its own layer. Gmail-style tagging is a routing feature,
     // not an identity: `ivan+legacy@x` and `ivan@x` are one mailbox.

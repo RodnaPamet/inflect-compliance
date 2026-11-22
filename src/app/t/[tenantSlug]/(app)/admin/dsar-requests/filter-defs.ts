@@ -5,7 +5,7 @@
  * client where the i18n guard can bind it.
  */
 import { createTypedFilterDefs, optionsFromEnum } from '@/components/ui/filter/filter-definitions';
-import { CircleHalfDottedClock, UserFocus } from '@inflect/ui/components/ui/icons/nucleo';
+import { CircleHalfDottedClock, UserFocus } from '@inflect/ui/components/ui/icons/glyphs';
 
 export const DSAR_STATUS_KEYS = ['RECEIVED', 'VERIFIED', 'IN_PROGRESS', 'COMPLETED', 'REJECTED', 'CANCELED'] as const;
 export const DSAR_TYPE_KEYS = ['EXPORT', 'ERASURE'] as const;

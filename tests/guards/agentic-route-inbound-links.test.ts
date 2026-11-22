@@ -132,6 +132,14 @@ const AGENTIC_ROUTES: readonly string[] = [
     // inbound link is now the agent-run start form's ad-hoc question
     // (`workflow-start-plan.ts`).
     '/agents/ask',
+    // One agent, read-only, on the process canvas (Phase 2 of
+    // docs/ai-architecture/langflow.md). Inside the processes segment so its
+    // layout's module gate covers it; linked from the agent's own page, and
+    // only where the tenant has the process-canvas module.
+    '/processes/agents/[agentId]',
+    // The same agent's flow editor (Phases 3 and 4). Linked from the canvas
+    // view above ("Edit the flow"), inside the same module-gated segment.
+    '/processes/agents/[agentId]/flow',
 ] as const;
 
 /**
@@ -245,6 +253,9 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // Read by every org member; written by an org admin, audited on the org's
     // own chain. Linked from the org sidebar's Settings entry.
     'org/[orgSlug]/agent-switches/route.ts',
+    // #4594 — the organization's per-turn ceilings, read and set by the
+    // "Per-turn limits" group in the same Agent features section.
+    'org/[orgSlug]/agent-turn-caps/route.ts',
     // #3484 — the SECOND capacity axis beside the monthly token budget. The
     // budget bounds spend over a month and cannot express simultaneity, so a
     // tenant inside its budget could start runs until the shared worker pool
@@ -253,6 +264,9 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // #3777 — the FIRST capacity axis, the monthly token budget, which had a
     // reader and no writer. Set beside the cap on the register page.
     't/[tenantSlug]/admin/agents/budget/route.ts',
+    // Morpheus 1.3 — the behaviour fingerprint's panel on the agent Overview
+    // (BehaviourFingerprintCard) reads and posts here.
+    't/[tenantSlug]/admin/agents/[agentId]/behaviour-fingerprint/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/circuit-breaker/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/coverage/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/policy-card/route.ts',
@@ -273,6 +287,11 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // read and made by an operator holding admin.agent_registry, and no page
     // drives it yet.
     't/[tenantSlug]/admin/agents/[agentId]/service-principal-link/route.ts',
+    // #5333 (Agent Pay Phase 1) — an agent's declared spending authority, read
+    // and changed from the Spending authority card on the agent's overview.
+    't/[tenantSlug]/admin/agents/[agentId]/spending-authority/route.ts',
+    't/[tenantSlug]/admin/agents/[agentId]/spending-authority/[rail]/route.ts',
+    't/[tenantSlug]/admin/agents/[agentId]/spending-authority/[rail]/review/route.ts',
     // #4629 — "Use for Ask" on the agent's page designates or clears the agent
     // that answers questions on Ask, under the register key.
     't/[tenantSlug]/admin/agents/[agentId]/interactive/route.ts',
@@ -330,6 +349,12 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/admin/agents/harness-scanner-keys/[keyId]/route.ts',
     't/[tenantSlug]/admin/agents/harness-scanner-keys/route.ts',
     't/[tenantSlug]/admin/agents/harness-scans/route.ts',
+    // The third-party application ingest (`scanent-integrations/1`), the harness
+    // ingest's twin and MACHINE surface for the same reason: a scanner POSTs a
+    // signed report with an API key scoped to `admin:integrations_ingest` and
+    // nothing else. The Integrations tab on `/agents/reports` reads the scans
+    // server-side through the usecase, so no page calls it either way.
+    't/[tenantSlug]/admin/agents/integration-scans/route.ts',
     // #4472 — the discovered agents a person can start a discovered-agent
     // review with. GET only, the inventory read; the runs page's start form
     // calls it for its picker, offered only to a caller who can load it.
@@ -470,6 +495,11 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/automation/executions/agent-runs/route.ts',
     't/[tenantSlug]/agent-runs/[id]/steps/route.ts',
     't/[tenantSlug]/agent-runs/[id]/stream/route.ts',
+    // D-EV-8 (owner decision 2026-11-15) — the Art 12 rows one run wrote, as
+    // JSON, for the Inspect harness's task 8 join. A machine read: the page
+    // a person opens is `/agents/decisions`, which the run timeline already
+    // links on each model call's digest. Run's gate AND the decision log's.
+    't/[tenantSlug]/agent-runs/[id]/decisions/route.ts',
     // #3472 — one run's OPEN HUMAN CHECKPOINT: the PENDING proposals it
     // queued, each with a server-computed diff, for the canvas's inline
     // approve/reject. Agentic surface because it reads the proposal queue
@@ -495,6 +525,15 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/access-reviews/[reviewId]/agent-packs/route.ts',
     't/[tenantSlug]/access-reviews/[reviewId]/agent-narrowings/[narrowingId]/route.ts',
     't/[tenantSlug]/access-reviews/[reviewId]/agent-samples/[sampleId]/route.ts',
+    // Agent Pay 1.4 (#5333; owner decisions 2026-11-20) — decide a pack's
+    // proposed withdrawal of an agent's spending envelope, on the same detail
+    // page beside the narrowings. An ACCEPT withdraws the envelope (it only
+    // takes authority away) and opens the owner's revocation task; the key is
+    // `access_reviews.decide`, as a narrowing's.
+    't/[tenantSlug]/access-reviews/[reviewId]/agent-spending-withdrawals/[withdrawalId]/route.ts',
+    // Ground (d): the reviewer confirms the agent can no longer pay, which
+    // opens a PENDING withdrawal decided at the route above; same key.
+    't/[tenantSlug]/access-reviews/[reviewId]/agent-spending-withdrawals/route.ts',
     // #3869 — asking the workspace a question, and reading what came back. The
     // only agentic routes NOT under `admin/`, and deliberately so: ADR 0004
     // determined by test that the answer cannot reach data the asker could not
@@ -563,8 +602,28 @@ const NOT_A_LINK: readonly string[] = [
  * hole, because that is how a link to a detail page is actually written:
  * `` router.push(`/t/${tenantSlug}/agents/${row.original.id}`) ``.
  */
+/**
+ * A route whose dynamic segment is NOT the last one (`/x/[id]/flow`): every
+ * `[param]` becomes one template interpolation, and the literal tail must
+ * follow it. The trailing-segment needle below cannot express that — it strips
+ * only a LAST `[param]`, so for such a route it searched for the literal text
+ * `[id]/flow/${`, which no link contains.
+ */
+function interiorDynamicNeedle(route: string): RegExp | null {
+    const segments = route.split('/');
+    const interior = segments.slice(0, -1).some((s) => s.startsWith('['));
+    if (!interior || segments[segments.length - 1].startsWith('[')) return null;
+    const body = segments
+        .map((s) => (s.startsWith('[') ? '\\$\\{[^}]+\\}' : s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+        .join('/');
+    // Followed by the end of the string or template, so `/x/${id}/flowing` is
+    // not a link to `/x/[id]/flow`.
+    return new RegExp(`${body}(?=['"\`?#])`);
+}
+
 function inboundLinkers(route: string): string[] {
     const own = ownDir(route);
+    const interior = interiorDynamicNeedle(route);
     const needles = route.includes('[')
         ? // A dynamic route: the literal prefix followed by an interpolation.
           [route.replace(/\/\[[^\]]+\]$/, '') + '/${']
@@ -574,6 +633,7 @@ function inboundLinkers(route: string): string[] {
     return SOURCES.filter(({ rel, code }) => {
         if (rel.startsWith(own)) return false;
         if (NOT_A_LINK.includes(rel)) return false;
+        if (interior) return interior.test(code);
         return needles.some((n) => code.includes(n));
     }).map(({ rel }) => rel);
 }
@@ -591,6 +651,18 @@ describe('the scan has a population and a needle that work at all', () => {
         expect(inboundLinkers('/agents')).toContain(
             'src/components/layout/SidebarNav.tsx',
         );
+    });
+
+    it('a route with an INTERIOR dynamic segment needs its literal tail after the interpolation', () => {
+        // Planted, both ways: the parent's link is not a link to its child, and
+        // a longer sibling segment is not either.
+        const needle = interiorDynamicNeedle('/processes/agents/[agentId]/flow');
+        expect(needle).not.toBeNull();
+        expect(needle!.test('href={`/t/${slug}/processes/agents/${agent.id}/flow`}')).toBe(true);
+        expect(needle!.test('href={`/t/${slug}/processes/agents/${agent.id}`}')).toBe(false);
+        expect(needle!.test('href={`/t/${slug}/processes/agents/${agent.id}/flowing`}')).toBe(false);
+        // A trailing dynamic segment keeps the prefix needle.
+        expect(interiorDynamicNeedle('/processes/agents/[agentId]')).toBeNull();
     });
 
     it('the needle does NOT match a path that is only in prose', () => {
@@ -799,6 +871,13 @@ describe('the harness register half is called from the tab; the machine surface 
     it('no page calls the scan ingest — it is a scanner\'s, behind its own API-key scope', () => {
         const pageCallers = SOURCES.filter(
             (s) => s.rel.startsWith(APP) && s.code.includes('/admin/agents/harness-scans'),
+        ).map((s) => s.rel);
+        expect(pageCallers).toEqual([]);
+    });
+
+    it('no page calls the third-party application ingest either — the same reason, its own scope', () => {
+        const pageCallers = SOURCES.filter(
+            (s) => s.rel.startsWith(APP) && s.code.includes('/admin/agents/integration-scans'),
         ).map((s) => s.rel);
         expect(pageCallers).toEqual([]);
     });

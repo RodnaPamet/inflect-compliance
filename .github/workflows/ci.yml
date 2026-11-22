@@ -2,7 +2,7 @@
 #  CI — Enterprise-grade pipeline
 #  Jobs: lint · typecheck · test · coverage · build · e2e
 #        load-smoke · security · codeql · docker · trivy
-#        scanner-image
+#        tei-embed-image · postgres-image
 #
 #  Job graph:
 #    lint ─────────────┐
@@ -16,14 +16,16 @@
 #           └──→ trivy ┤
 #    security ─────────┤
 #    codeql ───────────┤
-#    scanner-image ────┘
+#    tei-embed-image ──┤
+#    postgres-image ───┘
 #
 #  Runs on PRs, pushes to main, and merge-queue groups.
 #
 #  Merge-queue lean set (see docs/implementation-notes/2026-08-01-merge-queue.md):
 #    RUN  in the queue — changes · lint · typecheck · test · test-summary
 #                        · build · security   (the semantic-collision gate)
-#    SKIP in the queue — e2e · docker · trivy · codeql · scanner-image
+#    SKIP in the queue — e2e · docker · trivy · codeql · tei-embed-image
+#                        · postgres-image
 #                        (different failure class; each already runs on the
 #                        PR AND on push to main)
 #    Already push/schedule-only — coverage · load-smoke.
@@ -311,6 +313,12 @@ jobs:
       # own explicit condition, so today this fallback is belt-and-braces
       # for any FUTURE consumer of this output.)
       container: ${{ steps.filter.outputs.container || 'true' }}
+      # tei-embed's image (deploy/tei-embed/). Its build context IS that
+      # directory, so nothing else can change it; the same `|| 'true'` fallback.
+      tei_embed: ${{ steps.filter.outputs.tei_embed || 'true' }}
+      # postgres-pgvector's image (deploy/postgres/). Its build context IS that
+      # directory, so nothing else can change it; the same `|| 'true'` fallback.
+      postgres_image: ${{ steps.filter.outputs.postgres_image || 'true' }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -352,6 +360,18 @@ jobs:
               # Governs the Trivy gate itself. Without this, a PR adding an
               # exemption cannot verify that the exemption works — the scan
               # that would prove it does not run.
+              - '.trivyignore'
+              - '.github/workflows/ci.yml'
+            tei_embed:
+              - 'deploy/tei-embed/**'
+              - '.github/workflows/tei-embed-image.yml'
+              # Governs its Trivy gate, as for `container`.
+              - '.trivyignore'
+              - '.github/workflows/ci.yml'
+            postgres_image:
+              - 'deploy/postgres/**'
+              - '.github/workflows/postgres-pgvector-image.yml'
+              # Governs its Trivy gate, as for `container`.
               - '.trivyignore'
               - '.github/workflows/ci.yml'
 
@@ -413,6 +433,8 @@ jobs:
           EVENT: ${{ github.event_name }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$EVENT" != "pull_request" ]; then
@@ -426,7 +448,17 @@ jobs:
           # TRUNCATED list — and a truncated list is how `prisma/` goes missing
           # from a big change and the gate passes it.
           gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename' > pr-files.txt
-          node scripts/check-significant-change-analysis.mjs pr-body.txt pr-files.txt --title "$PR_TITLE"
+          # A dependency major bump is SIGNIFICANT (#5245), and a file list
+          # cannot show one: package.json changes on every minor bump too. So
+          # when it changed, both versions go to the classifier. `set -e` makes
+          # a failed fetch fail the step rather than skip the comparison.
+          PKG_ARGS=()
+          if grep -qx 'package.json' pr-files.txt; then
+            gh api -H 'Accept: application/vnd.github.raw' "repos/${REPO}/contents/package.json?ref=${BASE_SHA}" > base-package.json
+            gh api -H 'Accept: application/vnd.github.raw' "repos/${REPO}/contents/package.json?ref=${HEAD_SHA}" > head-package.json
+            PKG_ARGS=(--base-package base-package.json --head-package head-package.json)
+          fi
+          node scripts/check-significant-change-analysis.mjs pr-body.txt pr-files.txt --title "$PR_TITLE" "${PKG_ARGS[@]}"
 
   lint:
     name: Lint
@@ -668,7 +700,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: ghcr.io/rodnapamet/postgres-pgvector:16-alpine
         env:
           POSTGRES_USER: ci
           POSTGRES_PASSWORD: ci_password
@@ -876,16 +908,17 @@ jobs:
             --selectProjects node jsdom \
             --shard=${{ matrix.shard }}/${{ matrix.total }}
 
-      # One of the EIGHT artifacts the merged gate expects. The other seven
-      # are the five sibling shards, the `Ratchets` job and `Flue` — see
-      # the population note on `coverage-gate`.
+      # One of the artifacts the merged gate expects: one per Test shard
+      # in the matrix above, plus `Ratchets` and `Flue` — see the
+      # population note on `coverage-gate`.
       #
-      # It said FIVE, and enumerated five, for as long as
-      # `coverage-shard-flue` has existed (#3253). The count the gate
-      # actually enforces is the trailing argument to
-      # `check-merged-coverage.ts` in the `coverage-gate` job, and the
-      # guard derives its expectation from this workflow rather than from
-      # a literal — so both were right and only the prose was pinned.
+      # This comment deliberately states no number. It said FIVE, then
+      # EIGHT, and was wrong both times, because nothing makes prose
+      # follow the matrix. The count the gate actually enforces is the
+      # trailing argument to `check-merged-coverage.ts` in the
+      # `coverage-gate` job, and
+      # tests/guardrails/coverage-gate-population.test.ts derives its
+      # expectation from this workflow rather than from a literal.
       - name: Upload shard coverage
         uses: actions/upload-artifact@v7
         with:
@@ -932,7 +965,7 @@ jobs:
     # The cancellations were also expensive to read: a cancelled job
     # is not a failed one, so it surfaced as "Test" and
     # "Coverage (>=60%)" failing — Test checks needs.ratchets.result,
-    # and Coverage finds four shard artifacts instead of five. Two red
+    # and Coverage finds one artifact fewer than it expects. Two red
     # checks on jobs that were never the problem.
     timeout-minutes: 20
     env:
@@ -1076,7 +1109,12 @@ jobs:
     # the merge gate — a failing ratchet would have gone red on a check
     # that nothing required. Listing it here keeps the same ground under
     # the same check name, with no branch-protection edit.
-    needs: [test, ratchets]
+    #
+    # `flue` for the same reason (#5301). The Flue runtime suites run in a
+    # job of their own (they need --experimental-vm-modules), and nothing
+    # required read its result, so a PR that broke the agent loop merged
+    # green.
+    needs: [test, ratchets, flue]
     runs-on: ubuntu-latest
     if: ${{ !cancelled() }}
     # The sweep's other finding: this was the ONLY job in the workflow
@@ -1105,8 +1143,12 @@ jobs:
             echo "::error::Architectural ratchets failed (result=${{ needs.ratchets.result }})"
             failed=1
           fi
+          if [ "${{ needs.flue.result }}" != "success" ]; then
+            echo "::error::Flue runtime tests failed (result=${{ needs.flue.result }})"
+            failed=1
+          fi
           if [ "$failed" -ne 0 ]; then exit 1; fi
-          echo "All Test shards and the ratchet suite passed."
+          echo "All Test shards, the ratchet suite and the Flue runtime tests passed."
 
   # ═══════════════════════════════════════════════════════════════
   #  Job 4: Coverage gate — merge the shards, then enforce the floors
@@ -1122,30 +1164,33 @@ jobs:
   #  main, on a check the PR author never saw.
   #
   #  The matrix is gone. Coverage now comes from the runs that already
-  #  happen — the four Test shards and the Ratchets job — so the gate
-  #  costs ~2 min/shard instead of a parallel suite, and it runs at PR
-  #  time.
+  #  happen — every Test shard, the Ratchets job and the Flue job — so
+  #  the gate costs ~2 min/shard instead of a parallel suite, and it
+  #  runs at PR time.
   #
   #  THE POPULATION IS THE LOAD-BEARING PART. `jest.thresholds.json`
   #  has five keys, and a path key REMOVES its files from `global` —
   #  so `global` is a residue, and changing WHICH tests contribute
   #  changes what every floor means without changing a single number.
-  #  The old matrix ran the whole suite in one command. The five jobs
-  #  that replace it must therefore partition that same suite exactly:
+  #  The old matrix ran the whole suite in one command. The jobs that
+  #  replace it must therefore partition that same suite exactly:
   #
-  #    Test shards 1-4  (node + jsdom projects)  1386 test files
-  #    Ratchets         (guards+guardrails+contracts, minus
-  #                      rls-coverage, which stays in the shards)
-  #                                              654 test files
-  #                                             ---- 2040 = the whole
-  #                                                  suite, disjoint
+  #    Test shards      (node + jsdom projects; one artifact per
+  #                      matrix entry in the `test` job)
+  #    Ratchets         (the `scan` project: guards + guardrails +
+  #                      contracts, minus rls-coverage, which stays
+  #                      in the shards)
+  #    Flue             (the Flue runtime tests)
   #
-  #  Verified with `jest --listTests` on 2026-08-25: the two sets are
-  #  disjoint and their union is byte-identical to the unfiltered list.
-  #  `tests/guardrails/coverage-gate-population.test.ts` re-derives that
-  #  partition from THIS file, so a fifth shard, a dropped `--coverage`,
-  #  or a missing upload fails a test rather than quietly shrinking the
-  #  measured population.
+  #  The expected artifact count is the trailing argument to
+  #  `check-merged-coverage.ts` below — one per Test shard, plus
+  #  Ratchets and Flue. Read it there; this block names no number,
+  #  because every number it used to carry (four shards, five
+  #  artifacts, eight) went stale while the argument stayed right.
+  #  `tests/guardrails/coverage-gate-population.test.ts` re-derives the
+  #  partition and the count from THIS file, so an added shard, a
+  #  dropped `--coverage`, or a missing upload fails a test rather than
+  #  quietly shrinking the measured population.
   # ═══════════════════════════════════════════════════════════════
   coverage-gate:
     name: "Coverage (≥60%)"
@@ -1172,8 +1217,9 @@ jobs:
           pattern: coverage-shard-*
           path: coverage-shards
 
-      # Merges the eight `coverage-final.json` files (six Test shards,
-      # Ratchets and Flue) and compares the total
+      # Merges the `coverage-final.json` files (one per Test shard,
+      # Ratchets and Flue; the count is the trailing argument below) and
+      # compares the total
       # against jest.thresholds.json — reproducing what Jest's own
       # `--coverageThreshold` did before the job was sharded, including
       # the rule that a path group's files are REMOVED from `global`.
@@ -2126,7 +2172,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: ghcr.io/rodnapamet/postgres-pgvector:16-alpine
         env:
           POSTGRES_USER: ci
           POSTGRES_PASSWORD: ci_password
@@ -2416,7 +2462,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: ghcr.io/rodnapamet/postgres-pgvector:16-alpine
         env:
           POSTGRES_USER: ci
           POSTGRES_PASSWORD: ci_password
@@ -3146,51 +3192,98 @@ jobs:
         # on the Security tab without breaking CI.
 
   # ═══════════════════════════════════════════════════════════════
-  #  Job 11: Scanner image — the harness scanner's container (#3686)
-  #  Builds packages/agent-harness-scanner/Dockerfile, smoke-tests the
-  #  image the way an estate runs it, and blocks on CRITICAL and HIGH
-  #  severity vulnerabilities. Built and checked here, never published
-  #  from here: a client builds it from source (owner decision, 2026-10-19).
-  #  Inflect's own copy is published by digest by the dispatch-only
-  #  scanner-image.yml (owner decision, 2026-10-20).
+  #  Job 11: TEI image — tei-embed's container (Retriever 1.1)
+  #  Builds deploy/tei-embed/Dockerfile (the upstream TEI CPU digest
+  #  plus `apt-get upgrade`), smoke-tests it the way production runs it,
+  #  and blocks on CRITICAL and HIGH vulnerabilities with fixes, as the
+  #  application image's gate does. Never published from here: the dispatch
+  #  and weekly tei-embed-image.yml publishes it by digest (owner
+  #  decision, 2026-11-15, option B on #5687).
   # ═══════════════════════════════════════════════════════════════
-  scanner-image:
-    name: "Scanner image"
-    # Runs on every pull request rather than behind a path filter. The image
-    # holds the scanner AND the application modules the scanner imports, so a
-    # filter would be a second hand-kept copy of that import closure, and a
-    # contract change it missed would ship an image nobody had started.
-    # Skipped in the merge queue with docker and trivy, for the same reason:
-    # it already ran on the PR, and runs again on push to main.
-    if: github.event_name != 'merge_group'
+  tei-embed-image:
+    name: "TEI image"
+    needs: [changes]
+    # Behind its own path filter, on pull requests AND pushes: the build context
+    # is deploy/tei-embed/ alone, so nothing outside it can change the image (the
+    # retired Laya image's job made the same argument). Debian's fixes reach the
+    # published image through the weekly rebuild in tei-embed-image.yml, not
+    # through this job. Skipped in the merge queue with docker and trivy:
+    # it already ran on the pull request.
+    if: ${{ github.event_name != 'merge_group' && needs.changes.outputs.tei_embed == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
-      # NAMED EXPLICITLY, like the application image (#3418): the subject of
-      # the check is readable from the check. BuildKit is what reads the
-      # Dockerfile's own `Dockerfile.dockerignore` allowlist.
-      - name: Build the scanner image (no push)
+      # `--pull --no-cache`: re-read the FROM digest and re-run the upgrade, so
+      # this job judges the packages Debian ships today, as the publish does.
+      - name: Build the tei-embed image (no push)
         env:
           DOCKER_BUILDKIT: "1"
-        run: docker build -f packages/agent-harness-scanner/Dockerfile -t "agent-harness-scanner:ci-${{ github.sha }}" .
+        run: docker build --pull --no-cache -f deploy/tei-embed/Dockerfile -t "tei-embed:ci-${{ github.sha }}" deploy/tei-embed
 
-      - name: Smoke-test the scanner image
-        run: packages/agent-harness-scanner/container/smoke.sh "agent-harness-scanner:ci-${{ github.sha }}"
+      - name: Smoke-test the tei-embed image
+        run: deploy/tei-embed/smoke.sh "tei-embed:ci-${{ github.sha }}"
 
-      # The same gate as the application image's: CRITICAL,HIGH, blocking,
-      # fixed vulnerabilities only, with the repository's narrow exemptions.
-      - name: "Gate: Trivy scan of the scanner image (critical+high)"
+      # The same gate as the application image's:
+      # CRITICAL,HIGH, blocking, fixed vulnerabilities only, with the
+      # repository's narrow exemptions.
+      - name: "Gate: Trivy scan of the tei-embed image (critical+high)"
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: "agent-harness-scanner:ci-${{ github.sha }}"
+          image-ref: "tei-embed:ci-${{ github.sha }}"
           format: "table"
           exit-code: "1"
           severity: "CRITICAL,HIGH"
-          # Trivy's own 5m default has expired mid-scan here before (see the
-          # application image's gate above); 15m raises the patience and leaves
-          # the threshold alone.
+          timeout: "15m"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          trivyignores: ".trivyignore"
+
+  # ═══════════════════════════════════════════════════════════════
+  #  Job 12: Postgres image — postgres-pgvector (vector store Phase 1.1)
+  #  Builds deploy/postgres/Dockerfile (postgres:16-alpine plus pgvector
+  #  at a pinned tag and commit), smoke-tests it (CREATE EXTENSION vector
+  #  and a cosine query, sequential and through HNSW), and blocks on
+  #  CRITICAL and HIGH vulnerabilities with fixes, as the application
+  #  image's gate does. Never published from here: the dispatch, weekly
+  #  and upstream-digest postgres-pgvector-image.yml publishes the line
+  #  tag (owner decisions D-L4-1 and D-L4-8).
+  # ═══════════════════════════════════════════════════════════════
+  postgres-image:
+    name: "Postgres image"
+    needs: [changes]
+    # Behind its own path filter, on pull requests AND pushes: the build context
+    # is deploy/postgres/ alone, so nothing outside it can change the image.
+    # Upstream patches reach the published image through the rebuilds in
+    # postgres-pgvector-image.yml, not through this job. Skipped in the merge
+    # queue with docker and trivy: it already ran on the pull request.
+    if: ${{ github.event_name != 'merge_group' && needs.changes.outputs.postgres_image == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      # `--pull --no-cache`: re-read the upstream 16-alpine tag and recompile
+      # pgvector against it, so this job judges what a publish today would ship.
+      - name: Build the postgres-pgvector image (no push)
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: docker build --pull --no-cache -f deploy/postgres/Dockerfile -t "postgres-pgvector:ci-${{ github.sha }}" deploy/postgres
+
+      - name: Smoke-test the postgres-pgvector image
+        run: deploy/postgres/smoke.sh "postgres-pgvector:ci-${{ github.sha }}"
+
+      # The same gate as the application image's:
+      # CRITICAL,HIGH, blocking, fixed vulnerabilities only, with the
+      # repository's narrow exemptions.
+      - name: "Gate: Trivy scan of the postgres-pgvector image (critical+high)"
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: "postgres-pgvector:ci-${{ github.sha }}"
+          format: "table"
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
           timeout: "15m"
           ignore-unfixed: true
           vuln-type: "os,library"

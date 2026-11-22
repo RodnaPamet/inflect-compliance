@@ -12,18 +12,23 @@ import { SWRConfig } from 'swr';
 jest.setTimeout(120_000);
 configure({ asyncUtilTimeout: 15_000 });
 
+// Overridable per test: `mockTier` is the coarse tier, `mockAppPermissions`
+// the granular keys (undefined: the EDITOR built-in role's).
+let mockTier = { canRead: true, canWrite: true, canAdmin: false, canAudit: false, canExport: true };
+let mockAppPermissions: unknown;
 jest.mock('@/lib/tenant-context-provider', () => {
     const { getPermissionsForRole } = jest.requireActual('@/lib/permissions');
+    const keys = () => mockAppPermissions ?? getPermissionsForRole('EDITOR');
     return {
         useTenantApiUrl: () => (p: string) => `/api/t/acme${p.startsWith('/') ? p : `/${p}`}`,
         useTenantHref: () => (p: string) => `/t/acme${p}`,
         useTenantContext: () => ({
             tenantSlug: 'acme',
             tenantName: 'Acme',
-            permissions: { canRead: true, canWrite: true, canAdmin: false, canAudit: false, canExport: true },
-            appPermissions: getPermissionsForRole('EDITOR'),
+            permissions: mockTier,
+            appPermissions: keys(),
         }),
-        usePermissions: () => getPermissionsForRole('EDITOR'),
+        usePermissions: () => keys(),
         useCurrentUserId: () => 'user-1',
     };
 });
@@ -262,5 +267,44 @@ describe('Asset page — a refused vulnerability change says why', () => {
         await markMitigated();
         expect(await screen.findByText(A.detail.vuln.updateFailed)).toBeInTheDocument();
         expect(screen.queryByText(/HTTP 502/)).toBeNull();
+    });
+});
+
+describe('Asset page — controls follow the keys the routes take (#5160)', () => {
+    afterEach(() => {
+        mockTier = { canRead: true, canWrite: true, canAdmin: false, canAudit: false, canExport: true };
+        mockAppPermissions = undefined;
+    });
+
+    it('an EDITOR-based role without assets.edit is offered no edit or status change', async () => {
+        const { getPermissionsForRole } = jest.requireActual('@/lib/permissions');
+        const editor = getPermissionsForRole('EDITOR');
+        mockAppPermissions = { ...editor, assets: { ...editor.assets, edit: false } };
+        installFetch({ status: 200, body: {} });
+        mount();
+        await waitFor(() => expect(document.getElementById('asset-title-heading')?.textContent).toBe(ASSET.name));
+        expect(document.getElementById('asset-status-select')).toBeNull();
+        expect(document.getElementById('edit-asset-btn')).toBeNull();
+    });
+
+    it('an ADMIN-based role without admin.manage is offered no Delete', async () => {
+        const { getPermissionsForRole } = jest.requireActual('@/lib/permissions');
+        const admin = getPermissionsForRole('ADMIN');
+        mockTier = { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true };
+        mockAppPermissions = { ...admin, admin: { ...admin.admin, manage: false } };
+        installFetch({ status: 200, body: {} });
+        mount();
+        await waitFor(() => expect(document.getElementById('asset-title-heading')?.textContent).toBe(ASSET.name));
+        expect(document.getElementById('asset-delete-btn')).toBeNull();
+        // The edit affordances it does hold stay.
+        expect(document.getElementById('asset-status-select')).not.toBeNull();
+    });
+
+    it('the built-in EDITOR still edits', async () => {
+        installFetch({ status: 200, body: {} });
+        mount();
+        await waitFor(() => expect(document.getElementById('asset-title-heading')?.textContent).toBe(ASSET.name));
+        expect(document.getElementById('asset-status-select')).not.toBeNull();
+        expect(document.getElementById('edit-asset-btn')).not.toBeNull();
     });
 });

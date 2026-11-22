@@ -106,6 +106,26 @@ function startOfUtcMonth(d: Date): Date {
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
 }
 
+/** Days of blank padding before the 1st, relative to the configured week start. */
+function leadingPadDays(monthStart: Date): number {
+    return (monthStart.getUTCDay() - WEEK_STARTS_ON + 7) % 7;
+}
+
+/**
+ * The instants the 42-cell grid covers for `month`: from 00:00 UTC of its
+ * first cell to the last millisecond of its last cell.
+ *
+ * The page fetches exactly this window. It used to fetch the month padded by
+ * seven days each side, but the trailing padding runs to fourteen days (a
+ * 28-day February that starts on the week's first day), so the last week's
+ * cells read as empty whatever was due on them (#5313).
+ */
+export function monthGridRange(month: Date): { from: Date; to: Date } {
+    const monthStart = startOfUtcMonth(month);
+    const fromMs = monthStart.getTime() - leadingPadDays(monthStart) * DAY_MS;
+    return { from: new Date(fromMs), to: new Date(fromMs + TOTAL_CELLS * DAY_MS - 1) };
+}
+
 /**
  * The viewer's LOCAL calendar day as `YYYY-MM-DD`.
  *
@@ -187,8 +207,7 @@ export function CalendarMonth({
     // Days of blank padding before the 1st, relative to the configured week
     // start. `getUTCDay()` alone assumes Sunday and silently mis-aligns every
     // cell for any other start day.
-    const padStart = (monthStart.getUTCDay() - WEEK_STARTS_ON + 7) % 7;
-    const gridStartMs = monthStart.getTime() - padStart * DAY_MS;
+    const gridStartMs = monthGridRange(monthStart).from.getTime();
     const cells: { date: Date; ymd: string; inMonth: boolean }[] = [];
     for (let i = 0; i < TOTAL_CELLS; i++) {
         const d = new Date(gridStartMs + i * DAY_MS);

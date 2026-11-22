@@ -329,6 +329,50 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // ─── Control test runs ─────────────────────────────
     ControlTestRun: ['notes', 'findingSummary'],
 
+    /*
+        ─── Audit-pack item snapshots (#5150) ─────────────
+
+        `snapshotTestRun` freezes a completed run into an audit pack and copies
+        `ControlTestRun.notes` and `findingSummary` — both encrypted above —
+        into this column. The middleware has already DECRYPTED them by then, so
+        the copy landed in plaintext: a database dump, a backup or the read
+        replica exposed the tester's narrative that the source row protects, and
+        neither the encryption-at-rest guarantee nor DEK rotation covered it.
+        The executor's email is in the same object.
+
+        Encrypting the COLUMN rather than dropping those two fields from the
+        snapshot (owner decision): the notes and the finding summary are the
+        most audit-relevant part of a test run, and a frozen pack that omits
+        them tells an external auditor less than the live record does.
+
+        Checked before adding, because this column is not only a test-run
+        snapshot:
+          - it is a `String` on `AuditPackItem` (audit-workflow.prisma), so the
+            middleware encrypts it. The two SIBLING `snapshotJson` columns —
+            `VendorEvidenceBundleItem` and `AccessReviewConnectedDecision` — are
+            `Json`, which the middleware skips (`typeof value !== 'string'`), so
+            this entry cannot reach them even through the name-keyed fan-out;
+          - nothing filters or sorts on it. Every reader parses it in
+            application code (`snapshotName`, `needsSnapshot`), and there are
+            ZERO raw-SQL touches of `AuditPackItem`, so all 23 read sites go
+            through the extended client and decrypt transparently — the pack
+            export and the auditor share link included;
+          - the other entity types that share the column (SOA_REPORT, FILE,
+            ISSUE) carry no encrypted content. They are encrypted now too,
+            which is incidental cost rather than benefit, and the price of the
+            column being one shape for every item type.
+
+        Rows written BEFORE this entry were plaintext, and nothing on the read
+        or rotation paths changes that: the read path passes a value without a
+        `v1:`/`v2:` envelope through (`isEncryptedValue`), and both rotation
+        sweeps select only values that already carry one. The nightly
+        `audit-pack-snapshot-encryption` job (#5455) closes them: it encrypts
+        every plaintext snapshot under its tenant's own DEK, holding the tenant
+        row against a DEK rotation for each batch, and reports the column's
+        plaintext count before and after.
+    */
+    AuditPackItem: ['snapshotJson'],
+
     // ─── Epic G-4 access review campaigns ──────────────
     //  Both columns can carry sensitive reviewer rationale that
     //  should be encrypted at rest:
@@ -354,50 +398,16 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  on REJECTED rows. Both contain narrative that may name
     //  internal users / systems, so they're encrypted at rest.
     ControlException: ['justification', 'rejectionReason'],
-    // GDPR data-subject requests. Both columns are narrative text ABOUT AN
-    // IDENTIFIED PERSON who has exercised a privacy right — why their request
-    // was refused, and what was done to fulfil it. That is the most sensitive
-    // free text the platform holds by subject matter, and it was shipping in
-    // plaintext until 20260822010000.
-    //
-    // Nothing was bypassed. The model is deliberately USER-scoped and carries
-    // no `tenantId`, so it was outside `TENANT_SCOPED_MODELS` — and the
-    // coverage guard scans tenant-scoped columns only. Listing the model for
-    // RLS put these two into that guard's denominator for the first time, and
-    // it failed immediately. One absence hid the table from two guards.
-    //
-    // The D.2 write-path requirement is met for both, but by TWO DIFFERENT
-    // mechanisms, and the distinction is the point of this comment.
-    //
-    //   `fulfilmentNotes`  — genuinely free text, sanitised via
-    //                        `sanitizeOptional` in `dsar-register.ts`.
-    //   `rejectionReason`  — written RAW at `dsar-register.ts:236`
-    //                        (`input.reason ?? null`) and NOT sanitised. What
-    //                        protects it is the allowlist at :204-212: the
-    //                        write is gated on `input.to === 'REJECTED'` and
-    //                        `requiresReason` is exactly that same condition,
-    //                        so the check always runs first and the column can
-    //                        only ever hold one of the three values in
-    //                        `DSAR_REJECTION_REASONS`. Sanitising a closed
-    //                        vocabulary would be a no-op.
-    //
-    // Written out because the protection is easy to lose by accident. Add an
-    // `other: please specify` reason, or widen the vocabulary to free text, and
-    // the allowlist stops protecting anything — while the rich-text sanitiser
-    // ratchet stays GREEN, because it is file-level and `dsar-register.ts` does
-    // sanitise the sibling column.
-    //
-    // `tests/unit/dsar-rejection-reason-allowlist.test.ts` is what fails
-    // instead: it pins every allowed value to a fixed token shape, and asserts
-    // both that a free-text reason is refused and that each allowlisted one
-    // gets through. Widening the vocabulary breaks the first; deleting the
-    // check breaks the other two.
-    //
-    // Neither column is used in a `contains` / `startsWith` / `orderBy`
-    // anywhere in `src/`, so encryption is safe.
-    // No backfill migration: production holds zero DataSubjectRequest rows
-    // (measured, not assumed).
-    DataSubjectRequest: ['rejectionReason', 'fulfilmentNotes'],
+    // DataSubjectRequest is deliberately NOT here (#5107, owner decision
+    // 2026-11-13). The model is user-scoped with no `tenantId`, and the
+    // middleware encrypts under the ACTING request's tenant DEK: a note written
+    // from tenant A could not be read from tenant B, and the tenant-DEK
+    // rotation sweep, which walks tenant-scoped rows, skipped the model and
+    // then cleared the previous DEK, leaving its v2 ciphertexts unreadable for
+    // good. Both columns are sanitised on write (`dsar-register.ts`), and
+    // `rejectionReason` is a closed vocabulary. Values written while it was
+    // listed are decrypted at container start
+    // (`scripts/decrypt-legacy-dsr-fields.ts`).
     // EU AI Act registry — a system's purpose + use-context can describe
     // sensitive business processes / data flows. Sanitised on write, encrypted
     // at rest. NOT searched (no contains/orderBy), so encryption is safe.
@@ -448,6 +458,14 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // is used in a WHERE/orderBy (queries filter on tenantId/status/runId/seq).
     WorkflowRun: ['contextJson', 'summary'],
     WorkflowStep: ['inputJson', 'outputJson'],
+    // `transcriptJson` (Step 2f, #5530) is the conversation a Tool Runner run
+    // resumes from after it deferred a tool call to a person: the request it
+    // would send next, tool results included, which carry tenant data and can
+    // name people. Exact API bytes (a thinking block's signature binds them),
+    // so never sanitised or re-serialised, and cleared to NULL when the run
+    // resumes or settles. `transcriptHash` beside it is a digest and stays
+    // plaintext, as `WorkflowRun.contextHash` does. Never filtered or sorted on.
+    WorkflowRunDeferral: ['transcriptJson'],
 
     // ─── Step 4c (#3680) — tenant-authored skills ──────
     // `instructions` is the procedure a tenant authored — third-party
@@ -469,8 +487,14 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // (`usecases/agent-profiles.ts`) before this middleware encrypts it, and
     // hashed in plaintext so a run can pin it. `rejectionReason` (Step 1b) is
     // a reviewer's sentence about those instructions, the same kind of
-    // content. Neither is filtered or sorted on.
-    AgentProfileVersion: ['instructions', 'rejectionReason'],
+    // content. `flowJson` (Phase 1 of `docs/ai-architecture/langflow.md`) is
+    // the drawn flow: its node labels are the tenant's words about the same
+    // work, sanitised at the same seam and covered by the same content hash.
+    // `subagentsJson` (Step 2e, #4594) carries each inline sub-agent's own
+    // instructions, the same kind of text, sanitised and scanned at the same
+    // seam and covered by the same content hash.
+    // None is filtered or sorted on.
+    AgentProfileVersion: ['instructions', 'rejectionReason', 'flowJson', 'subagentsJson'],
 
     // ─── Epic Agentic — the agent register ─────────────
     // `description` is the operator's own account of what an agent does and
@@ -588,6 +612,16 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  as Finding.description. Sanitised on write (sanitizePlainText)
     //  + encrypted at rest. Not searched (no contains/orderBy).
     AuditPackShareComment: ['body'],
+
+    // ─── Layer 4 — the knowledge store (vector store Phase 1.4) ──
+    // `text` is a chunk of a source row's text (a policy version's content,
+    // evidence text, a control description), cut by the index pipeline. It is
+    // the ONLY copy of chunk text anywhere (D-L4-2, vectors only): the
+    // embedding row beside it carries a key, a hash and the vector. Business
+    // content as sensitive as the field it was cut from, so encrypted. Read by
+    // key only (tenant, source, chunk index), never filtered or sorted on —
+    // which is also why there is no lexical search over it (weaviate.md § Fit).
+    KnowledgeChunk: ['text'],
 } as const;
 
 /** Set of model names with at least one encrypted field. Fast-path check. */

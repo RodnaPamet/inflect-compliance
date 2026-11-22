@@ -25,9 +25,11 @@
  * about its own depth cap.
  */
 import { runJob } from '@/lib/observability/job-runner';
+import { recordAgentInvokeDepth } from '@/lib/observability/metrics';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { resolveTenantContext } from '@/lib/tenant-context';
+import { ForbiddenError } from '@/lib/errors/types';
 import { resolveKillState } from '@/lib/agentic/kill-switch';
 import { readBreakerLatch } from '@/lib/agentic/circuit-breaker-store';
 import type { RequestContext } from '@/app-layer/types';
@@ -57,8 +59,13 @@ function projectInput(payload: AgentInvokeDispatchPayload): Record<string, unkno
  *
  * An agent run can emit events; an event can fire a rule; a rule can invoke an
  * agent. That is a cycle with a model in it, which is more expensive per lap
- * than a sub-flow cycle and no less likely — so it is capped on the same
- * counter discipline rather than trusted not to close.
+ * than a sub-flow cycle and no less likely.
+ *
+ * THE CAP BOUNDS ONLY THE DEPTH A PAYLOAD CARRIES (#5305). `invokeAgent` reads
+ * `__agentInvokeDepth` off the triggering event, but nothing writes it: a run
+ * does not record its depth and the events its effects cause carry none, so
+ * every invoke arrives at depth 1 and this refusal cannot trip through a real
+ * cycle. See the RECURSION note on `invokeAgent` in `action-executor.ts`.
  */
 export const MAX_AGENT_INVOKE_DEPTH = 5;
 
@@ -68,6 +75,7 @@ export type { AgentInvokeDispatchPayload } from './types';
 export type AgentInvokeRefusal =
     | 'depth_exceeded'
     | 'rule_has_no_owner'
+    | 'rule_owner_not_member'
     | 'agent_not_found'
     | 'agent_not_active'
     | 'agent_unscored'
@@ -83,6 +91,11 @@ export async function runAgentInvokeDispatch(
         const startMs = performance.now();
         const { tenantId, agentId, workflowKey } = payload;
         const depth = payload.depth ?? 1;
+        // BEFORE the cap check (#5716). Counting after it would censor the
+        // distribution at the cap: the data could then only ever say that
+        // nothing exceeded the ceiling, never that the ceiling is too low, and
+        // a depth above it is precisely the sample worth having.
+        recordAgentInvokeDepth({ depth });
 
         /**
          * The job's own result row, built the way `subflow-dispatcher` builds
@@ -173,7 +186,19 @@ export async function runAgentInvokeDispatch(
         // types.ts docblock is explicit that satisfying `userId` with a person
         // while writing `USER` rows made the trail "claim a person did something
         // no person did".
-        const tenant = await resolveTenantContext({ tenantId }, payload.ownerUserId);
+        //
+        // An author who has since been deactivated or removed is a rule that
+        // outlived its owner — a misconfiguration, so it REFUSES rather than
+        // throws (#5307). `resolveTenantContext` signals exactly that case with
+        // a ForbiddenError; anything else (a database fault, a removed tenant)
+        // still throws, because those are what the queue's retry is for.
+        let tenant: Awaited<ReturnType<typeof resolveTenantContext>>;
+        try {
+            tenant = await resolveTenantContext({ tenantId }, payload.ownerUserId);
+        } catch (err) {
+            if (err instanceof ForbiddenError) return refuse('rule_owner_not_member');
+            throw err;
+        }
         const ctx: RequestContext = {
             requestId: `agent-invoke-${agentId}`,
             userId: payload.ownerUserId,
@@ -184,6 +209,12 @@ export async function runAgentInvokeDispatch(
             permissions: tenant.permissions,
             appPermissions: tenant.appPermissions,
             agentId,
+            // WHAT MAKES THE CAP ABLE TO TRIP (#5716). The depth is checked
+            // above and was then dropped; carried on the context, the bus
+            // stamps it onto every event this run's effects emit, so the next
+            // lap of an agent -> rule -> agent cycle arrives at depth+1 instead
+            // of at 1.
+            agentInvokeDepth: depth,
         };
 
         const { startWorkflowRun } = await import('@/app-layer/usecases/workflow-runs');
@@ -193,6 +224,10 @@ export async function runAgentInvokeDispatch(
         // lineage lived in the queue and vanished when the job completed.
         const started = await startWorkflowRun(ctx, workflowKey, projectInput(payload), {
             parentExecutionId: payload.parentExecutionId,
+            // An `INVOKE_AGENT` rule is the AUTOMATION trigger (#5367): a profile
+            // key runs from here only when its version allows it. Ignored for a
+            // registered workflow key.
+            profileTrigger: 'AUTOMATION',
         });
         logger.info('agent-invoke: dispatched', {
             component: 'automation', tenantId, agentId, workflowKey, depth, runId: started.runId,

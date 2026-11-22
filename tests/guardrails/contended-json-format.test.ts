@@ -144,7 +144,45 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // Updated 2026-11-10 for `vm-check.yml:vm-check`, the dispatch-only
         // read-only checks of the production VM from a fixed list. Its key
         // sorts after `vm-capacity`, so it is an append again, +5/-0.
-        keyOrderSha: 'cbbac2c896e484eb61a3c42a6994a19abda1f295260c4270fdd6677050944324',
+        //
+        // Updated 2026-11-11 for `retriever-benchmark.yml:bench` and
+        // `retriever-benchmark.yml:summary`, the dispatch-only benchmark that
+        // decides D-L4-3 on a GitHub runner. Inserted in ALPHABETICAL position
+        // before `secret-rotation.yml`, so no neighbour's brace moved, +10/-0.
+        // Updated 2026-11-11 for `garak.yml:garak`, the nightly LLM red-team
+        // (docs/ai-architecture/garak.md Phase 1). Inserted in alphabetical
+        // position before `ghcr-publish.yml:build-push` ('ga' < 'gh'), +5/-0.
+        // Both 2026-11-11 entries merged together: the digest is over the file
+        // holding both, computed with the guard's own keyOrder.
+        // Updated 2026-11-12 for `vm-apply.yml:vm-apply`, the dispatch-only
+        // named changes to the production VM. Its key sorts between
+        // `scanner-vm` and `vm-capacity`, so it is a mid-file insert, +5/-0.
+        // Merged 2026-11-12: the digest is over the file holding the
+        // 2026-11-11 entries and `vm-apply.yml:vm-apply` together.
+        // Updated 2026-11-12 for `agent-evals.yml:inspect`, the nightly Inspect
+        // evaluation of the product's own engines (docs/ai-architecture/inspect.md
+        // Phase 1). Inserted in alphabetical position first, before
+        // `bundle-analyze.yml:analyze` ('ag' < 'bu'), +5/-0.
+        // Merged 2026-11-12 with #5360: the digest is over the file holding the
+        // final batch's entries and `vm-apply.yml:vm-apply` together.
+        // Updated 2026-11-15 by a DELETION: `scanner-image.yml:build-scan-push`
+        // went with the workflow and the in-repo harness scanner (scanent #26;
+        // the VM runs scanent's own image). -5/+0; no other key moved.
+        // Updated 2026-11-15 for tei-embed's patched TEI image (Retriever 1.1,
+        // owner decision option B on #5687): `ci.yml:tei-embed-image`, its
+        // path-scoped PR build, before `ci.yml:test-summary` ('tei' < 'tes'),
+        // and `tei-embed-image.yml:build-scan-push`, its dispatch and weekly
+        // publish, before `vm-apply.yml` ('t' < 'v'). Two mid-file inserts,
+        // +10/-0.
+        // Merged 2026-11-15: the digest is over the file without the scanner's
+        // entry and with both tei-embed entries.
+        // Updated 2026-11-15 for the postgres-pgvector image (vector store
+        // Phase 1.1, D-L4-1 and D-L4-8): `ci.yml:postgres-image`, its
+        // path-scoped PR build, before `ci.yml:tei-embed-image` ('p' < 't'), and
+        // `postgres-pgvector-image.yml:build-scan-push` and `:decide`, its
+        // scheduled publish, before `queue-candidate-sweep.yml` ('p' < 'q').
+        // Three mid-file inserts, +15/-0.
+        keyOrderSha: '59563706557582b8b1dc4f78fb181e6728c5fb29a3a69e04ad0c7274deb4eea2',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,
@@ -257,7 +295,14 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // and `modal-inference.md`. Two textual inserts, +6/-0 against main.
         // The previous digest was first recomputed over main's file and
         // matched, so the additions are the only change.
-        keyOrderSha: '34e5f437ef4664a904c4544381d38596eaeaf56ae05d9b595b1a60448977dff3',
+        //
+        // Moved 2026-11-18 by two sorted ADDITIONS, the docs sync's two new
+        // developer docs: docs/assistant.md, after `docs/app-layer.md`
+        // ('ap' < 'as'), and docs/knowledge-store.md, after
+        // `docs/keyboard-shortcuts.md` ('ke' < 'kn'). Two textual inserts,
+        // +6/-0 against main; the previous digest was recomputed over main's
+        // file first and matched.
+        keyOrderSha: '4774bd42cb20e315ca4c2bbc0e366613f9dc0a0df0fce474fe5dabf28064bf46',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in

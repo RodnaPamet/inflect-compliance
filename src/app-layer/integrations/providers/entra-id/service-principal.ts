@@ -68,7 +68,7 @@
  */
 import { getEntraAccessToken } from './index';
 import { assertEntraObjectId } from './writer';
-import { resilientFetch } from '../../http-resilience';
+import { IntegrationTerminalError, resilientFetch } from '../../http-resilience';
 import { graphHeaders } from '@/lib/http/graph-headers';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
@@ -215,12 +215,46 @@ export function createEntraServicePrincipalClient(options: ServicePrincipalClien
          */
         async readServicePrincipal(servicePrincipalId: string): Promise<ServicePrincipalState | null> {
             const id = assertEntraObjectId(servicePrincipalId);
-            const res = await graph(
-                'GET',
-                `/servicePrincipals/${encodeURIComponent(id)}`
-                    + '?$select=id,appId,displayName,accountEnabled,servicePrincipalType,'
-                    + 'appOwnerOrganizationId',
-            );
+            // ═══ A 404 ARRIVES AS A THROW, NOT AS A STATUS (#5311) ═══
+            //
+            // `resilientFetch` classifies 404 as terminal
+            // (`TERMINAL_STATUS = new Set([404])`) and throws
+            // `IntegrationTerminalError` before this function sees a response.
+            // So the `res.status === 404` test below was unreachable in
+            // production: a principal deleted from Entra — the ordinary state
+            // for an orphaned agent — propagated a throw instead of the null
+            // this function is declared to return. The route turned that into a
+            // protocol error and the external-write dispatch settled the row
+            // INDETERMINATE for a human, defeating BOTH `NOT_FOUND` refusals in
+            // `entra-service-principal-dispatch` that exist for exactly this.
+            //
+            // Caught rather than cloaked. `writer.ts` takes 403 and 404 back
+            // from the classifier with `cloakLocallyClassified`, but it needs
+            // the Graph error BODY for the 403 case; here only the status
+            // matters, and `IntegrationTerminalError` carries it. Duplicating
+            // the cloak for one status would be the second copy of a mechanism,
+            // and extracting it means editing the identity write path for a
+            // read-side fix.
+            //
+            // One cost, accepted: `recordIntegrationHttpAttempts` has already
+            // counted this as a `terminal` outcome by the time we catch it, so
+            // a deleted principal nudges that counter. The cloak would not have.
+            // It is one counter on a rare event, against editing the writer.
+            let res: { ok: boolean; status: number; text: string };
+            try {
+                res = await graph(
+                    'GET',
+                    `/servicePrincipals/${encodeURIComponent(id)}`
+                        + '?$select=id,appId,displayName,accountEnabled,servicePrincipalType,'
+                        + 'appOwnerOrganizationId',
+                );
+            } catch (err) {
+                if (err instanceof IntegrationTerminalError && err.status === 404) return null;
+                throw err;
+            }
+            // Still checked: an injected `doFetch` (the test seam, and any
+            // future transport that does not classify) returns the status
+            // rather than throwing it.
             if (res.status === 404) return null;
             if (!res.ok) {
                 throw new Error(

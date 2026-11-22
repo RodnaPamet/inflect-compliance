@@ -348,3 +348,29 @@ describe('a refusal carries enough to tell misconfiguration from a rogue agent',
         expect(refusals.mock.calls[0][0].riskTier).toBeNull();
     });
 });
+
+describe('the budgets are spent only by a call every gate cleared (#5233)', () => {
+    it('a call the credential SCOPE refuses spends neither the day nor the run', async () => {
+        // Reach passes (the card permits list_risks), then the key's scope
+        // refuses. The day's reservation used to be taken at the card's step,
+        // before the scope check, so a mis-scoped key burnt the agent's day.
+        const inv = invocationFor(inForce());
+        inv.ctx = { ...inv.ctx, apiKeyScopes: ['mcp:read', 'controls:read'] };
+
+        await swallow(() => runReadTool(inv, 'list_risks', {}));
+
+        expect(risksRun).not.toHaveBeenCalled();
+        expect(reserve).not.toHaveBeenCalled();
+        expect(inv.policyCard?.actionsThisRun).toBe(0);
+        expect(refusals).not.toHaveBeenCalled();
+    });
+
+    it('a cleared call still spends one unit of each', async () => {
+        const inv = invocationFor(inForce());
+
+        await runReadTool(inv, 'list_risks', {});
+
+        expect(reserve).toHaveBeenCalledTimes(1);
+        expect(inv.policyCard?.actionsThisRun).toBe(1);
+    });
+});

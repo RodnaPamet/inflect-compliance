@@ -7,6 +7,13 @@ import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity } from '@/lib/permissions';
 import { getTenantCtx } from '@/app-layer/context';
 import { computeAgentReviewQuality, readReviewQualityNames } from '@/app-layer/usecases/agent-review-quality';
+import {
+    ANSWERABLE_OUTCOMES,
+    getSampleAuditDisagreementRate,
+    listSampleAuditsForReview,
+} from '@/app-layer/usecases/agent-proposal-sample-audit';
+import { SAMPLE_AUDIT_DISSENT_CODES } from '@/lib/agentic/proposal-sampling';
+import { SampleAuditQueue } from './SampleAuditQueue';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 
@@ -79,15 +86,39 @@ export default async function AgentReviewQualityPage({
     // outstanding pattern is found, so a refused caller must not reach it.
     const report = await computeAgentReviewQuality(ctx);
 
+    /*
+        The answering queue, read here rather than fetched by the panel.
+
+        The per-row verdict on whether THIS viewer may answer is a server fact —
+        it reads the proposal's approvers — so the page that offers the control
+        is the page that has to ask for it (#4467). Read before the name lookup
+        below so the queue's agents are resolved in the same query.
+    */
+    const sampleAudits = await listSampleAuditsForReview(ctx);
+
+    /*
+        THE NUMBER (#5738), read with no window.
+
+        Lifetime rather than `report.windowDays`: that window is about DECISIONS
+        made in it, and a sample audit's population is every approval ever drawn.
+        One block mixing the two would make a rate over all time look like a rate
+        over thirty days, which is the kind of number nobody can check.
+    */
+    const sampleAuditRate = await getSampleAuditDisagreementRate(ctx);
+
     // Names, not ids: the page judges how PEOPLE review (#4932).
     const names = await readReviewQualityNames(ctx, {
         reviewerUserIds: [
             ...report.reviewers.map((r) => r.reviewerUserId),
             ...report.signals.filter((s) => s.scope === 'REVIEWER' && s.subjectId).map((s) => s.subjectId as string),
+            // Whoever the sampler asked (#5738), resolved in the same lookup
+            // rather than a second query.
+            ...sampleAudits.map((a) => a.assignedToUserId).filter((id): id is string => !!id),
         ],
         agentIds: [
             ...report.agents.map((a) => a.agentId).filter((id): id is string => !!id),
             ...report.signals.filter((s) => s.scope === 'AGENT' && s.subjectId).map((s) => s.subjectId as string),
+            ...sampleAudits.map((a) => a.agentId).filter((id): id is string => !!id),
         ],
     });
     const reviewerName = (id: string) => names.reviewers[id] ?? t('reviewQuality.formerMember');
@@ -112,6 +143,39 @@ export default async function AgentReviewQualityPage({
         }
         return reviewerName(id);
     };
+
+    /*
+        Both labels are resolved HERE, not in the panel: the kind catalogue is
+        `agents.proposals.kind.*`, which the proposal queue already owns, and the
+        agent names come from the lookup above. The panel renders strings, so it
+        needs neither catalogue and holds no label logic of its own.
+    */
+    const sampleAuditRows = sampleAudits.map((a) => ({
+        id: a.id,
+        agentLabel: agentLabel(a.agentId),
+        kindLabel: tAgents(`proposals.kind.${a.proposalKind}`),
+        sampledAt: a.sampledAt.toISOString(),
+        approvedAt: a.approvedAt ? a.approvedAt.toISOString() : null,
+        refusal: a.refusal,
+        /*
+            WHO WAS ASKED — #5738, and `null` claims nothing.
+
+            The sampler leaves the column NULL for three reasons this row cannot
+            tell apart: the proposal had no agent, the agent had no registered
+            owner, or that owner was one of the approvers (#5307). So the panel
+            says "not assigned" and never invents which of the three it was. A
+            non-null id that will not resolve is a different case, and gets the
+            page's existing former-member label.
+        */
+        assigneeLabel: a.assignedToUserId ? reviewerName(a.assignedToUserId) : null,
+        /*
+            The approval under review. The reviewer has to be able to read what
+            they are judging, and the proposals page renders each row's rationale
+            and diff — it just reads PENDING, so the link names the proposal and
+            that page fetches it by id.
+        */
+        proposalHref: tenantHref(`/agents/proposals?proposal=${encodeURIComponent(a.proposalId)}`),
+    }));
 
     const pct = (rate: number) => Math.round(rate * 100);
     const secs = (n: number) => Math.round(n * 10) / 10;
@@ -169,6 +233,101 @@ export default async function AgentReviewQualityPage({
                         </li>
                     ))}
                 </ul>
+            </section>
+
+            {/*
+                OUTSIDE the `decided === 0` branch below, deliberately. That
+                branch is about the DECISION window; a sample audit drawn weeks
+                ago is still open and still somebody's to answer, so hiding the
+                queue on a quiet window would hide exactly the backlog this
+                surface exists to show.
+            */}
+            <section className="space-y-default" data-testid="sample-audit-section">
+                <Heading level={3} as="h2">
+                    {tAgents('sampleAudit.title')}
+                </Heading>
+                <p className="text-sm text-content-muted">{tAgents('sampleAudit.intro')}</p>
+
+                {/*
+                    THE NUMBER, and the four renderings are the whole point of it.
+
+                    `disagreementRate` is `null`, never 0, when nothing has been
+                    answered — a tenant with a perfect record and a tenant nobody
+                    ever reviewed must not read alike. So a null is PRINTED as not
+                    reported, with its reason, rather than omitted or shown as 0%.
+
+                    And `null` has TWO causes that are different facts: nothing
+                    drawn, and nothing answered of what was drawn. A sampler that
+                    has never run and a backlog of forty unanswered audits both
+                    give a null, and only the second is somebody's to act on, so
+                    they get their own sentences.
+
+                    The percentage never appears without `answered` beside it. The
+                    usecase's own docstring is explicit: 0% over 2 answers and 0%
+                    over 200 are the same number and completely different
+                    evidence, and "a caller that renders the percentage without it
+                    is rendering a number that cannot be wrong".
+
+                    `pending` is printed too and never folded into the
+                    denominator — it is the one figure here that is about the
+                    queue's correctness rather than the reviewers'.
+                */}
+                <div className="space-y-tight" data-testid="sample-audit-rate">
+                    {sampleAuditRate.sampled === 0 ? (
+                        <p className="text-sm text-content-muted">
+                            {tAgents('sampleAudit.rate.neverDrawn')}
+                        </p>
+                    ) : sampleAuditRate.disagreementRate === null ? (
+                        <p className="text-sm text-content-muted">
+                            {tAgents('sampleAudit.rate.notReported', {
+                                sampled: sampleAuditRate.sampled,
+                            })}
+                        </p>
+                    ) : (
+                        <p className="text-sm">
+                            <span className="font-medium">
+                                {tAgents('sampleAudit.rate.headline', {
+                                    pct: pct(sampleAuditRate.disagreementRate),
+                                })}
+                            </span>{' '}
+                            <span className="text-content-muted">
+                                {tAgents('sampleAudit.rate.over', {
+                                    answered: sampleAuditRate.answered,
+                                    sampled: sampleAuditRate.sampled,
+                                })}
+                            </span>
+                        </p>
+                    )}
+                    {sampleAuditRate.sampled > 0 && (
+                        <p className="text-xs text-content-subtle" data-testid="sample-audit-rate-breakdown">
+                            {tAgents('sampleAudit.rate.breakdown', {
+                                concurred: sampleAuditRate.concurred,
+                                dissented: sampleAuditRate.dissented,
+                                indeterminate: sampleAuditRate.indeterminate,
+                                pending: sampleAuditRate.pending,
+                            })}
+                        </p>
+                    )}
+                    {/*
+                        The denominator is stated on the page, not only in a
+                        docstring. An INDETERMINATE answer is IN it, so it pulls
+                        the percentage down — and a reader comparing this with the
+                        workpaper-review rate, which excludes its own
+                        indeterminates, would otherwise read two differently
+                        constructed figures as one kind of thing.
+                    */}
+                    {sampleAuditRate.answered > 0 && (
+                        <p className="text-xs text-content-subtle">
+                            {tAgents('sampleAudit.rate.denominatorNote')}
+                        </p>
+                    )}
+                </div>
+
+                <SampleAuditQueue
+                    rows={sampleAuditRows}
+                    outcomes={ANSWERABLE_OUTCOMES}
+                    dissentCodes={[...SAMPLE_AUDIT_DISSENT_CODES]}
+                />
             </section>
 
             {report.decided === 0 ? (

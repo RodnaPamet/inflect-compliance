@@ -17,7 +17,7 @@
  */
 import { resilientFetch } from '../../http-resilience';
 import type { NormalizedEmployee, ListEmployeesResult } from '../hris';
-import { deriveEmploymentStatus } from '../hris/employment-status';
+import { deriveEmploymentStatus, parseVendorDate } from '../hris/employment-status';
 import { assertWorkdayHost } from './host';
 
 /**
@@ -141,8 +141,8 @@ function normalise(row: WorkdayRosterRow): NormalizedEmployee | null {
         department: row.organization?.trim() || null,
         jobTitle: row.businessTitle?.trim() || null,
         managerEmail: row.managerEmail?.trim() || null,
-        startDate: row.hireDate ? new Date(row.hireDate) : null,
-        endDate: row.terminationDate ? new Date(row.terminationDate) : null,
+        startDate: parseVendorDate(row.hireDate),
+        endDate: parseVendorDate(row.terminationDate),
     };
 }
 

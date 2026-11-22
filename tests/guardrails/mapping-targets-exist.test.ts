@@ -137,3 +137,41 @@ describe('cross-framework mappings reference nodes that exist', () => {
         expect(dead).toEqual([]);
     });
 });
+
+/**
+ * The same rule over the `mappings` block INSIDE each library file (#5174).
+ *
+ * ISO 27001's in-library SOC 2 edges pointed at the CC1..CC9 group headings.
+ * The readiness estimate lists only assessable SOC 2 nodes, so 'CC6' never met
+ * 'CC6.1' and every Common Criterion read 0% however many ISO controls the file
+ * said supported it. A heading in an in-library mapping is a dead edge exactly
+ * as it is in a mapping set, so it fails here too, named by file and URN.
+ */
+describe('in-library mappings reference assessable nodes', () => {
+    const loaded = fs
+        .readdirSync(LIB_DIR)
+        .filter((f) => f.endsWith('.yaml'))
+        .map((file) => ({ file, lib: loadLibrary(parseLibraryFile(path.join(LIB_DIR, file)), file) }));
+    const byUrn = new Map<string, { assessable: boolean }>();
+    for (const { lib } of loaded) {
+        for (const n of lib.framework.nodes) byUrn.set(n.urn, { assessable: n.assessable });
+    }
+    const edges = loaded.flatMap(({ file, lib }) => lib.mappings.map((m) => ({ file, m })));
+
+    it('finds in-library mappings to check', () => {
+        // Positive control: ISO 27001 carries its SOC 2 and NIS2 guidance here.
+        expect(edges.filter((e) => e.file === 'iso27001-2022.yaml').length).toBeGreaterThan(30);
+    });
+
+    it('no in-library mapping names a heading or an unknown node', () => {
+        const bad: string[] = [];
+        for (const { file, m } of edges) {
+            for (const urn of [m.sourceUrn, m.targetUrn]) {
+                const node = byUrn.get(urn);
+                if (!node) bad.push(`${file}: ${urn} is in no library`);
+                else if (!node.assessable) bad.push(`${file}: ${urn} is a heading`);
+            }
+        }
+        expect(bad).toEqual([]);
+    });
+});

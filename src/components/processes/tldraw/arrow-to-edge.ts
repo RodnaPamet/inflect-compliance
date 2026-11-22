@@ -50,7 +50,11 @@ import type { Editor, TLShapeId } from 'tldraw';
 
 import { inferEdgeKind, type AutomationEdgeKind } from '@/lib/processes/edge-kind-inference';
 
-import { PROCESS_EDGE_BINDING_TYPE } from './process-edge-binding';
+import {
+    PROCESS_EDGE_BINDING_TYPE,
+    edgeEndpointKeys,
+    type ProcessEdgeBinding,
+} from './process-edge-binding';
 import {
     PROCESS_EDGE_SHAPE_TYPE,
     edgeLineGeometry,
@@ -245,10 +249,9 @@ export function installArrowToEdgeConversion(
                     r.typeName === 'binding' &&
                     (r as { type?: string }).type === PROCESS_EDGE_BINDING_TYPE,
             )
-            .map((r) => {
-                const b = r as unknown as { props: { sourceKey: string; targetKey: string } };
-                return { sourceKey: b.props.sourceKey, targetKey: b.props.targetKey };
-            });
+            // Through the bound shapes, as the save resolves them: a copied
+            // binding's props still name its originals (#5309 item 24).
+            .map((r) => edgeEndpointKeys(editor, r as unknown as ProcessEdgeBinding));
 
     const convert = (arrowId: string): void => {
         const arrow = editor.getShape(arrowId as TLShapeId);

@@ -105,6 +105,17 @@ export interface FlueRunBinding {
     skills: readonly FlueSkillDocument[];
     /** `<provider-id>/<model-id>`, already resolved against the tenant's residency. */
     modelSpecifier: string;
+    /**
+     * The WORKER role's specifier (D-L3-1) — what the run's subagents ask for —
+     * resolved by the driver under the SAME residency terms as
+     * `modelSpecifier`, and checked by the engine to name the same provider.
+     *
+     * Optional so every `bindRun` that predates the role axis compiles: absent,
+     * and equal to `modelSpecifier`, both mean "the delegate inherits the
+     * parent's model", which is what `agent.ts` then does by NOT setting a
+     * model override — the exact delegate definition it always built.
+     */
+    workerModelSpecifier?: string;
 
     /**
      * HOW MANY SUBAGENTS ONE TURN OF THIS RUN MAY DELEGATE TO (#3473).
@@ -112,9 +123,9 @@ export interface FlueRunBinding {
      * Carried here for the same reason the tools and the skills are: the only
      * place a fan-out cap can be enforced is the Flue execution interceptor,
      * which runs in the ESM graph where `pg` does not load — so the VALUE is
-     * resolved by the driver, in ordinary Node, from
-     * `TenantSecuritySettings.agentMaxSubagentsPerTurn`, and the enforcement
-     * compares against what it was handed.
+     * resolved by the driver, in ordinary Node, through `readTurnCaps`: the
+     * lower of the organization's ceiling and the workspace's narrowing
+     * (#4594). The enforcement compares against what it was handed.
      *
      * OPTIONAL ON THE TYPE AND NEVER OPTIONAL IN EFFECT.
      * `normaliseFanOutCap` turns an absent, negative or non-finite value into
@@ -236,6 +247,12 @@ export interface FlueRunBinding {
          * grouping is absent, which is the right way for this to degrade.
          */
         fromSeq: number | null;
+        /**
+         * The runtime's id for the `task` call itself, when the operation
+         * carried one. It names the model call that issued the delegation
+         * (`FlueModelTurn` in `execute.ts`); absent, the step records none.
+         */
+        toolCallId?: string;
     }) => Promise<void>;
 }
 

@@ -115,6 +115,8 @@ export function useAutosaveFields<T extends Record<string, string>>(
     // is a ref and not the state.
     const fieldsRef = useRef<T>(seed);
     const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Fingerprints of the values each commit sent since the last re-seed.
+    const sentKeys = useRef<Set<string>>(new Set());
 
     // Keep the returned callbacks stable while always calling the latest
     // closures — the caller passes inline arrow functions, and rebuilding
@@ -138,9 +140,18 @@ export function useAutosaveFields<T extends Record<string, string>>(
     // echo, not a new row: re-seeding on it would flip "Saved" to "Autosaves"
     // the instant it appeared. A genuinely different row still differs after
     // trimming.
+    //
+    // The echo can also arrive AFTER the user has typed on (#5186): they
+    // type, the debounce sends "Renamed", they keep typing "Renamed again",
+    // and the refetch hands back "Renamed". Compared with the fields alone
+    // that looks like a new row, and the re-seed threw the newer typing
+    // away. So a seed matching any value this hook SENT since it was last
+    // seeded is our own echo, and is ignored too.
     const seedKey = fingerprint(seed);
     useEffect(() => {
         if (fingerprint(fieldsRef.current) === seedKey) return;
+        if (sentKeys.current.has(seedKey)) return;
+        sentKeys.current.clear();
         fieldsRef.current = seed;
         setFields(seed);
         setState("idle");
@@ -184,6 +195,7 @@ export function useAutosaveFields<T extends Record<string, string>>(
             setState("error");
             return;
         }
+        sentKeys.current.add(fingerprint(current));
         await run(() => saveRef.current(current));
     }, [run]);
 

@@ -351,6 +351,25 @@ describe('the diff opens against the live canvas', () => {
         expect(snap.edges[0]!.edgeKind).toBe('flow');
     });
 
+    it('drops the rule facts the load merged into a step, so a linked step is not "modified" (#5285)', () => {
+        mount();
+        serializeImpl = () => ({
+            rows: {
+                nodes: [
+                    {
+                        nodeKey: 'a1', nodeType: 'action', label: 'Notify', posX: 0, posY: 0,
+                        dataJson: { kind: 'action', ruleId: 'r1', ruleStatus: 'ENABLED', executionCount: 4, ruleSubtitle: 'Notify user' },
+                    },
+                ],
+                edges: [],
+            },
+            freeform: [],
+        });
+        act(() => fireDiff!(3));
+        const snap = overlayProps.at(-1)!.snapshot as { nodes: Array<{ dataJson: unknown }> };
+        expect(snap.nodes[0]!.dataJson).toEqual({ kind: 'action', ruleId: 'r1' });
+    });
+
     it('reads the canvas ONCE, not once per render', () => {
         // The stability property. The xyflow host recomputes in its render
         // body, so its baseline shifts under the reader while they look at it;

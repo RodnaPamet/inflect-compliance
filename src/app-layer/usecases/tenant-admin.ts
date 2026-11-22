@@ -8,6 +8,12 @@
  *   - Cannot demote yourself (last-admin protection)
  *   - Cannot deactivate yourself
  *   - Cannot assign a role higher than ADMIN (only ADMIN exists above EDITOR)
+ *   - Never leave the tenant without an ACTIVE OWNER. Every member change
+ *     here takes the tenant's owner lock (`lockTenantOwners`, the key the
+ *     `tenant_membership_last_owner_guard` trigger takes) FIRST in its
+ *     transaction, so its last-OWNER and last-admin counts read the committed
+ *     result of any concurrent change: without it two OWNERs demoting each
+ *     other at once each counted the other and both committed (#5388).
  *
  * @module usecases/tenant-admin
  */
@@ -42,6 +48,7 @@ import {
     logCustomRoleChange,
     writeCustomRoleInTx,
 } from './custom-roles';
+import { lockTenantOwners } from './tenant-owner-lock';
 
 // Safety cap on the two whole-tenant membership scans below. Both feed
 // surfaces that legitimately want every member (the admin roster, and the
@@ -224,6 +231,8 @@ export async function updateTenantMemberRole(
     assertRoleChangeRequested(ctx, input.role);
 
     return runInTenantContext(ctx, async (db) => {
+        // First, before the membership is read and the owners counted (#5388).
+        await lockTenantOwners(db, ctx.tenantId);
         const membership = await findActiveMembership(db, ctx, input.membershipId);
         await assertRoleChangeAllowedInTx(db, ctx, membership, input.role);
         // The custom role the member keeps must be one the NEW role may carry
@@ -274,6 +283,8 @@ export async function updateTenantMemberRoleAndCustomRole(
     assertCanManageMembers(ctx);
 
     return runInTenantContext(ctx, async (db) => {
+        // First, before the membership is read and the owners counted (#5388).
+        await lockTenantOwners(db, ctx.tenantId);
         const membership = await findActiveMembership(db, ctx, input.membershipId);
         await assertRoleChangeAllowedInTx(db, ctx, membership, input.role);
         await assertCustomRoleAssignableInTx(db, ctx, input.role, input.customRoleId);
@@ -468,6 +479,8 @@ export async function deactivateTenantMember(
     assertCanManageMembers(ctx);
 
     return runInTenantContext(ctx, async (db) => {
+        // First, before the membership is read and the owners counted (#5388).
+        await lockTenantOwners(db, ctx.tenantId);
         const membership = await findActiveMembership(db, ctx, input.membershipId);
 
         // Safety: prevent self-deactivation
@@ -537,6 +550,8 @@ export async function removeTenantMember(
     assertCanManageMembers(ctx);
 
     return runInTenantContext(ctx, async (db) => {
+        // First, before the membership is read and the owners counted (#5388).
+        await lockTenantOwners(db, ctx.tenantId);
         const membership = await db.tenantMembership.findFirst({
             where: {
                 id: input.membershipId,

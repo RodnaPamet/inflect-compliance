@@ -40,7 +40,7 @@ import { CardHeader } from '@/components/ui/card-header';
 import { KPIStat } from '@/components/ui/metric';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
-import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/glyphs';
 import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { TestStepsEditor, type TestStepDraft, serializeSteps, hasOrphanExpectedOutput } from './TestStepsEditor';
 import {

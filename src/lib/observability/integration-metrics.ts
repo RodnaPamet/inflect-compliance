@@ -16,6 +16,7 @@ import { bindObservable } from './observable-registry';
 
 import type { ServicePrincipalDisableStatus } from '@/lib/agentic/service-principal-disable';
 import type { EstateStaleReason } from '@/lib/agentic/harness-estate-staleness';
+import type { KnowledgeIndexOutcome } from '@/lib/knowledge/index-outcome';
 
 const METER_NAME = 'inflect-compliance-integrations';
 function getMeter() {
@@ -42,6 +43,7 @@ let _joinerPassOutcome: Counter | null = null;
 let _leaverNotification: Counter | null = null;
 let _scannerFindingsTruncated: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
 let _harnessScan: Counter | null = null;
+let _thirdPartyAppScan: Counter | null = null;
 let _deviceReport: Counter | null = null;
 let _aiGeneration: Counter | null = null;
 let _aiTokens: Histogram | null = null;
@@ -392,6 +394,32 @@ export function recordHarnessScanOutcome(attrs:
         : { outcome: attrs.outcome, reason: attrs.reason });
 }
 
+/**
+ * One third-party application scan submission (`scanent-integrations/1`), by
+ * how it ended: the harness scan's twin, for the scanner's second report.
+ *
+ * Emitted on every terminal path, refusals included, with `empty` beside
+ * `complete` for the reason the harness metric carries both: a scanner that
+ * stopped posting and one posting reports that list no application look alike
+ * from its side. A refusal carries its stable reason code (`BAD_SIGNATURE`,
+ * `UNTRUSTED_SIGNER`, `REPLAY`, …) — never anything from the report.
+ *
+ * No tenant label: a handful of outcomes and reasons.
+ */
+export function recordThirdPartyAppScanOutcome(attrs:
+    | { outcome: 'ingested'; complete: boolean; empty: boolean }
+    | { outcome: 'refused'; reason: string }): void {
+    if (!_thirdPartyAppScan) {
+        _thirdPartyAppScan = getMeter().createCounter('third_party_app.scan.outcome', {
+            description: 'Third-party application scan submissions by outcome',
+            unit: '1',
+        });
+    }
+    _thirdPartyAppScan.add(1, attrs.outcome === 'ingested'
+        ? { outcome: attrs.outcome, complete: String(attrs.complete), empty: String(attrs.empty) }
+        : { outcome: attrs.outcome, reason: attrs.reason });
+}
+
 let _agentReviewAttribution: Counter | null = null;
 let _auditNarrativeCapture: Counter | null = null;
 let _auditNarrativeDispatch: Counter | null = null;
@@ -418,6 +446,35 @@ export function recordAgentReviewAttribution(attrs: { outcome: string }): void {
         });
     }
     _agentReviewAttribution.add(1, { outcome: attrs.outcome.toLowerCase() });
+}
+
+let _agentRecertPackPreparation: Counter | null = null;
+
+/**
+ * One preparation of an AGENT access review's reviewer packs (#5317), by how
+ * it ended and where it ran: `request` for a campaign small enough to prepare
+ * inside the request, `job` for one handed to `agent-recert-packs-prepare`.
+ *
+ * `queued` is the request handing a campaign to the job; the job then counts
+ * `prepared`, `refused` (a named refusal: the requester no longer qualifies, a
+ * preparer stopped qualifying, a run failed) or `error` (anything else).
+ *
+ * ALERT ON — `path="job"` `outcome="error"` at any rate, and a `queued` rate
+ * with no matching `prepared` + `refused` + `error` from the job: the worker is
+ * not taking the work, and the page will say "queued" for ever. No tenant
+ * label and no identifier.
+ */
+export function recordAgentRecertPackPreparation(attrs: {
+    outcome: 'prepared' | 'queued' | 'refused' | 'error';
+    path: 'request' | 'job';
+}): void {
+    if (!_agentRecertPackPreparation) {
+        _agentRecertPackPreparation = getMeter().createCounter('agentic.recert_pack_preparation.outcome', {
+            description: 'Agent recertification pack preparations by outcome and where they ran',
+            unit: '1',
+        });
+    }
+    _agentRecertPackPreparation.add(1, { outcome: attrs.outcome, path: attrs.path });
 }
 
 /**
@@ -1623,6 +1680,77 @@ export function recordHarnessEstateStaleness(attrs: {
     }
 }
 
+// ── The agent behaviour fingerprint (Morpheus roadmap Phase 1) ─────────────
+
+let _fingerprintPass: Counter | null = null;
+let _fingerprintDays: Counter | null = null;
+
+/**
+ * One tenant's nightly behaviour-fingerprint pass, by how it ended, and the
+ * agent-days it judged, by verdict.
+ *
+ *   agentic.agent_fingerprint.pass{outcome}  every terminal path:
+ *       `evaluated`    — the tenant's active agent-days were judged
+ *       `no_activity`  — no agent was active on the day: nothing measured,
+ *                        never a clean result
+ *       `disabled`     — the sweep ran and the operator's two keys (G9) are
+ *                        not both on: nothing was read
+ *       `error`        — the pass threw; its execution row says why
+ *   agentic.agent_fingerprint.days{verdict}  agent-days judged, by `learning`,
+ *       `steady`, `anomalous_finding`, `anomalous_latch`, and `latched` for a
+ *       threshold-B day that actually latched the breaker.
+ *
+ * ALERT ON — any `verdict="anomalous_latch"` (an agent was, or would have been,
+ * stopped); any `outcome="error"`; and, on a deployment that turned the
+ * detector on, the ABSENCE of any pass outcome for two days. A long run of
+ * `learning` with no `steady` is a baseline that never forms — an agent active
+ * on fewer than `BASELINE_MIN_DAYS` days of `BASELINE_LOOKBACK_DAYS`.
+ *
+ * No tenant or agent label: which agent is the finding's to say.
+ */
+export function recordAgentFingerprintPass(attrs: {
+    outcome: 'evaluated' | 'no_activity' | 'disabled' | 'error';
+    days?: Partial<Record<'learning' | 'steady' | 'anomalous_finding' | 'anomalous_latch' | 'latched', number>>;
+}): void {
+    if (!_fingerprintPass) {
+        _fingerprintPass = getMeter().createCounter('agentic.agent_fingerprint.pass', {
+            description: 'Agent behaviour-fingerprint passes, by terminal outcome',
+            unit: '1',
+        });
+    }
+    _fingerprintPass.add(1, { outcome: attrs.outcome });
+    for (const [verdict, count] of Object.entries(attrs.days ?? {})) {
+        if (!count || count <= 0) continue;
+        if (!_fingerprintDays) {
+            _fingerprintDays = getMeter().createCounter('agentic.agent_fingerprint.days', {
+                description: 'Agent-days judged by the behaviour fingerprint, by verdict',
+                unit: '1',
+            });
+        }
+        _fingerprintDays.add(count, { verdict });
+    }
+}
+
+let _fingerprintBaselineAccepted: Counter | null = null;
+
+/**
+ * A person accepted an agent's changed behaviour as its new normal from the
+ * fingerprint panel (Morpheus 1.3) — `agentic.agent_fingerprint.baseline_accepted`.
+ * Read beside `agentic.agent_fingerprint.days{verdict="anomalous"}`: a
+ * deployment that accepts nearly every anomaly has thresholds tuned to fire on
+ * ordinary work, which is how this control would die, and it is measured
+ * rather than assumed (the breaker's close counter makes the same argument).
+ */
+export function recordAgentFingerprintBaselineAccepted(): void {
+    if (!_fingerprintBaselineAccepted) {
+        _fingerprintBaselineAccepted = getMeter().createCounter('agentic.agent_fingerprint.baseline_accepted', {
+            description: 'Agent behaviour-fingerprint anomalies a person accepted as the new normal',
+            unit: '1',
+        });
+    }
+    _fingerprintBaselineAccepted.add(1);
+}
+
 // ── Internal audit's sampling of the auditor's workpapers (#3677) ──────────
 
 let _workpaperReviewSweep: Counter | null = null;
@@ -1842,4 +1970,144 @@ export function recordIntegrationPassportSweep(attrs: { outcome: string }): void
         });
     }
     _passportSweep.add(1, { outcome: attrs.outcome });
+}
+
+// ── Vendor monitor TLS-grade fetches (Web Bot Auth Phase 0.4) ──────────────
+
+let _vendorTlsFetch: Counter | null = null;
+
+/**
+ * One vendor homepage fetch for the TLS / security-header grade, by outcome
+ * (`GRADED`, `REFUSED`, `UNREACHABLE`, `BLOCKED`).
+ *
+ * Before this, every fetch that did not grade was a null grade the sweep read
+ * as "nothing observed", so a site that began refusing the monitor looked
+ * identical to one whose grade had not changed. The `REFUSED` share measured
+ * here before the monitor signs anything is the baseline Web Bot Auth Phase 2
+ * is judged against. No vendor or tenant label: four outcomes times a handful
+ * of providers.
+ *
+ * ALERT ON — a rising `REFUSED` share (sites challenging the monitor) and any
+ * sustained `BLOCKED` (vendor records that name a host the guard refuses).
+ */
+export function recordVendorTlsFetch(attrs: {
+    provider: string;
+    outcome: 'GRADED' | 'REFUSED' | 'UNREACHABLE' | 'BLOCKED';
+    /**
+     * Web Bot Auth Phase 2. `ROBOTS` when the site's robots.txt disallowed the
+     * monitor (its stated policy, not its door), else `NONE`; and whether the
+     * requests were signed. Phase 2.5 measures the REFUSED share with
+     * `reason=NONE`, signed against the unsigned baseline. Still two small
+     * closed sets: no vendor or tenant label.
+     */
+    reason?: 'ROBOTS' | 'NONE';
+    signed?: boolean;
+}): void {
+    if (!_vendorTlsFetch) {
+        _vendorTlsFetch = getMeter().createCounter('vendor_monitor.tls_fetch', {
+            description: 'Vendor homepage fetches for the TLS / security-header grade, by outcome',
+            unit: '1',
+        });
+    }
+    _vendorTlsFetch.add(1, {
+        provider: attrs.provider,
+        outcome: attrs.outcome,
+        reason: attrs.reason ?? 'NONE',
+        signed: attrs.signed ? 'true' : 'false',
+    });
+}
+
+// ── The knowledge index (vector store Phase 2.1) ────────────────────────────
+
+let _knowledgeIndexRuns: Counter | null = null;
+let _knowledgeIndexDuration: Histogram | null = null;
+let _knowledgeIndexEmbedded: Counter | null = null;
+
+/**
+ * One run of the `knowledge-index` job, by how it ended
+ * (`docs/ai-architecture/weaviate.md` Phase 2; checklist §4).
+ *
+ *   knowledge_index.runs{source_model, outcome}   every terminal path, the
+ *       outcome lower-cased from `KnowledgeIndexOutcome`, plus `error` for a
+ *       run that threw
+ *   knowledge_index.run.duration{source_model, outcome}   wall clock, ms
+ *   knowledge_index.chunks_embedded{source_model}   chunks given a vector
+ *
+ * ALERT ON — any `outcome="embed_failed"` or `"store_refused"` or `"error"`;
+ * and, on a deployment that turned the store on, any
+ * `"vector_store_disabled"` or `"embedding_not_configured"`, which mean the
+ * two switches disagree. A run of `superseded` beside no `indexed` would be
+ * two runs racing each other forever.
+ *
+ * No tenant or source-id label: the run's log line carries those.
+ */
+export function recordKnowledgeIndexRun(attrs: {
+    sourceModel: string;
+    outcome: Lowercase<KnowledgeIndexOutcome> | 'error';
+    durationMs: number;
+    embedded?: number;
+}): void {
+    const meter = getMeter();
+    _knowledgeIndexRuns ??= meter.createCounter('knowledge_index.runs', {
+        description: 'Knowledge index runs, by source model and terminal outcome',
+        unit: '1',
+    });
+    _knowledgeIndexDuration ??= meter.createHistogram('knowledge_index.run.duration', {
+        description: 'Knowledge index run duration, by source model and outcome',
+        unit: 'ms',
+    });
+    const labels = { source_model: attrs.sourceModel, outcome: attrs.outcome };
+    _knowledgeIndexRuns.add(1, labels);
+    _knowledgeIndexDuration.record(Math.max(0, attrs.durationMs), labels);
+    if (attrs.embedded && attrs.embedded > 0) {
+        _knowledgeIndexEmbedded ??= meter.createCounter('knowledge_index.chunks_embedded', {
+            description: 'Knowledge chunks given a vector, by source model',
+            unit: '1',
+        });
+        _knowledgeIndexEmbedded.add(attrs.embedded, { source_model: attrs.sourceModel });
+    }
+}
+
+// ── Audit-pack snapshot encryption backfill (#5455) ────────────────────────
+
+let _snapshotEncryptionPass: Counter | null = null;
+let _snapshotEncryptionRows: Counter | null = null;
+
+/**
+ * One tenant's nightly snapshot-encryption pass, by how it ended, and the rows
+ * it encrypted. A run that visited no tenant is recorded once, as
+ * `NO_PLAINTEXT` (the column holds rows, none in plaintext) or `EMPTY_TABLE`
+ * (the column holds no rows at all), so "nothing to do" and "nothing read" are
+ * different series. `ROTATION_IN_FLIGHT` and `KEY_CHANGED` are deferrals, not
+ * failures: the tenant is read again the next night.
+ *
+ * No tenant label: which tenant still holds plaintext is the job's log line.
+ */
+export function recordAuditPackSnapshotEncryption(attrs: {
+    outcome:
+        | 'ENCRYPTED'
+        | 'NOTHING_TO_DO'
+        | 'ROTATION_IN_FLIGHT'
+        | 'KEY_CHANGED'
+        | 'ERROR'
+        | 'NO_PLAINTEXT'
+        | 'EMPTY_TABLE';
+    encrypted: number;
+}): void {
+    if (!_snapshotEncryptionPass) {
+        _snapshotEncryptionPass = getMeter().createCounter('security.audit_pack_snapshot_encryption.pass', {
+            description: 'Audit-pack snapshot encryption passes, by outcome',
+            unit: '1',
+        });
+    }
+    _snapshotEncryptionPass.add(1, { outcome: attrs.outcome.toLowerCase() });
+    if (attrs.encrypted > 0) {
+        if (!_snapshotEncryptionRows) {
+            _snapshotEncryptionRows = getMeter().createCounter('security.audit_pack_snapshot_encryption.rows', {
+                description: 'Plaintext audit-pack snapshots encrypted under their tenant DEK',
+                unit: '1',
+            });
+        }
+        _snapshotEncryptionRows.add(attrs.encrypted);
+    }
 }

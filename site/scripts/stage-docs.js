@@ -746,6 +746,25 @@ function publishedAddresses(sites, listFolder) {
     return { published, refusals };
 }
 
+/**
+ * Why a site's transformed landing page cannot be published, if it cannot.
+ *
+ * It links to docs by their repo paths, so it fails the way any page does
+ * when it points at one that is not published. And it is published, so it
+ * gets the same content policy as every page a manifest lists (#5310): it was
+ * the one page that could carry a production coordinate onto the public site.
+ */
+function landingPageRefusals(landing, landingRel) {
+    const problems = landing.problems.map((p) => `${landingRel}: ${p}`);
+    if (landing.missing.length || /\]\((?!https?:|\/inflect-compliance\/|#)/.test(landing.text)) {
+        problems.push(`${landingRel}: links to something that is not a published page`);
+    }
+    for (const hit of forbiddenContentIn(landing.text)) {
+        problems.push(`${landingRel}: carries ${hit.why} (${hit.id})`);
+    }
+    return problems;
+}
+
 function main() {
     const io = repoIo();
     const sites = readManifests();
@@ -793,10 +812,7 @@ function main() {
         // page that is not published.
         const landingRel = landingPage(site);
         const landing = transformMarkdown(io.readDoc(landingRel), landingRel, ctx);
-        problems.push(...landing.problems.map((p) => `${landingRel}: ${p}`));
-        if (landing.missing.length || /\]\((?!https?:|\/inflect-compliance\/|#)/.test(landing.text)) {
-            problems.push(`${landingRel}: links to something that is not a published page`);
-        }
+        problems.push(...landingPageRefusals(landing, landingRel));
         pages.set('index.md', landing.text);
         staged.set(site, { pages, count: docs.length });
     }
@@ -831,6 +847,7 @@ module.exports = {
     expandGenerated,
     expandSections,
     forbiddenContentIn,
+    landingPageRefusals,
     manifestDocs,
     neverPublishReason,
     publicationRefusals,

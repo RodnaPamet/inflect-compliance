@@ -58,6 +58,7 @@ jest.mock('@/app-layer/repositories/ControlRepository', () => ({
         listPaginated: jest.fn(),
         getById: jest.fn(),
         getHeaderById: jest.fn(),
+        kpiCounts: jest.fn(),
     },
 }));
 
@@ -94,6 +95,7 @@ import {
     getControlHeader,
     getControlActivity,
     listControlsWithDeleted,
+    listControlKpiCounts,
 } from '@/app-layer/usecases/control/queries';
 // Whole-tenant admin aggregates moved to ./dashboard (roadmap P3.3). Imported
 // from the file, not the barrel, for the same reason as above: the barrel
@@ -553,5 +555,24 @@ describe('listControlsWithDeleted', () => {
         (ControlRepository.listDeleted as jest.Mock).mockResolvedValue([]);
         (TaskRepository.countLinkedToControls as jest.Mock).mockResolvedValue(new Map());
         await expect(listControlsWithDeleted(ownerCtx)).resolves.toEqual([]);
+    });
+});
+
+describe('listControlKpiCounts resolves the URL filters as the list does (#5267)', () => {
+    it('turns `ids` and `health` into one id restriction, never the raw strings', async () => {
+        (getControlHealthVerdicts as jest.Mock).mockResolvedValue({
+            verdicts: [
+                { controlId: 'c-1', verdict: 'DEGRADED', passRate: 50 },
+                { controlId: 'c-2', verdict: 'HEALTHY', passRate: 95 },
+            ],
+            counts: {},
+        });
+        (ControlRepository.kpiCounts as jest.Mock).mockResolvedValue({});
+        await listControlKpiCounts(makeRequestContext('READER'), { ids: 'c-1, c-2', health: 'DEGRADED', due: 'bogus' });
+        const filters = (ControlRepository.kpiCounts as jest.Mock).mock.calls[0][2];
+        expect(filters.ids).toEqual(['c-1']);
+        expect(filters).not.toHaveProperty('health');
+        // Narrowed as the list narrows it: an unknown value is no filter.
+        expect(filters.due).toBeUndefined();
     });
 });

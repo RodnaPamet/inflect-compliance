@@ -6,6 +6,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import * as yaml from 'js-yaml';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 import { codeOf } from '../helpers/source-blocks';
 
@@ -17,6 +18,34 @@ const ROOT = path.resolve(__dirname, '../..');
 // YAML / JSON / Markdown — and masking would delete real text.
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 const read = (rel: string) => codeOf(readRaw(rel));
+
+/** Every host port a compose file's services publish, as service → ports. */
+function hostPorts(rel: string): Map<string, number[]> {
+    const doc = yaml.load(readRaw(rel)) as { services: Record<string, { ports?: string[] }> };
+    return new Map(
+        Object.entries(doc.services).map(([name, svc]) => [
+            name,
+            // `[ip:]host:container`: the host port is the second-to-last field.
+            (svc.ports ?? []).map((p) => Number(String(p).split(':').slice(-2)[0])),
+        ]),
+    );
+}
+
+/** The one host port a service publishes. */
+function publishedPort(rel: string, service: string): number {
+    const ports = hostPorts(rel).get(service) ?? [];
+    expect(ports).toHaveLength(1);
+    return ports[0];
+}
+
+/** The port in an env file's `KEY="postgresql://…:<port>/…"` line. */
+function urlPort(src: string, key: string): number {
+    const line = src.split(/\r?\n/).find((l) => l.startsWith(`${key}=`)) ?? '';
+    const m = /@[^:/]+:(\d+)\//.exec(line);
+    expect(m).not.toBeNull();
+    return Number(m![1]);
+}
+const directUrlPort = (src: string) => urlPort(src, 'DIRECT_DATABASE_URL');
 
 describe('Connection Pooling Configuration', () => {
 
@@ -141,13 +170,47 @@ describe('Connection Pooling Configuration', () => {
             expect(envExample).toContain('5433');
         });
 
-        test('has DIRECT_DATABASE_URL with direct Postgres port', () => {
-            expect(envExample).toContain('DIRECT_DATABASE_URL');
-            expect(envExample).toContain('5434');
+        test('DIRECT_DATABASE_URL points at the port the dev stack publishes for Postgres', () => {
+            // Derived from docker-compose.yml rather than a literal, so moving
+            // the port in one file and not the other fails here.
+            expect(directUrlPort(envExample)).toBe(publishedPort('docker-compose.yml', 'postgres'));
+        });
+
+        test('DATABASE_URL points at the port the dev stack publishes for PgBouncer', () => {
+            expect(urlPort(envExample, 'DATABASE_URL')).toBe(publishedPort('docker-compose.yml', 'pgbouncer'));
         });
 
         test('DATABASE_URL includes pgbouncer=true', () => {
             expect(envExample).toContain('pgbouncer=true');
+        });
+    });
+
+    /**
+     * The dev and test stacks both published Postgres on host port 5434, so
+     * the second to start could not bind it, and test runs that defaulted to
+     * 127.0.0.1:5434 reached the dev database instead (#5308). The dev stack's
+     * direct port moved (owner decision 2026-11-14); the test stack stays on
+     * 5434, which tests/helpers/db.ts and scripts/ci-local.mjs default to.
+     */
+    describe('the dev and test stacks can run side by side', () => {
+        const dev = hostPorts('docker-compose.yml');
+        const test_ = hostPorts('docker-compose.test.yml');
+
+        it('reads the published ports of both files (the comparison is not vacuous)', () => {
+            expect(publishedPort('docker-compose.yml', 'postgres')).toBeGreaterThan(0);
+            expect(publishedPort('docker-compose.test.yml', 'postgres-test')).toBe(5434);
+        });
+
+        it('publish no host port in common', () => {
+            const devPorts = new Set([...dev.values()].flat());
+            const shared = [...test_.values()].flat().filter((p) => devPorts.has(p));
+            expect(shared).toEqual([]);
+        });
+
+        it('the test database defaults point at the test stack, not the dev one', () => {
+            const testPort = publishedPort('docker-compose.test.yml', 'postgres-test');
+            expect(urlPort(readRaw('.env.test.example'), 'DATABASE_URL')).toBe(testPort);
+            expect(directUrlPort(readRaw('.env.example'))).not.toBe(testPort);
         });
     });
 });

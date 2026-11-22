@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { CircleCheckFill, CircleDotted } from '@inflect/ui/components/ui/icons/nucleo';
+import { CircleCheckFill, CircleDotted } from '@inflect/ui/components/ui/icons/glyphs';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
@@ -96,14 +96,21 @@ const KIND_ORDER: IncidentNotification['kind'][] = [
 
 type TabKey = 'overview' | 'timeline' | 'controls' | 'tasks';
 
-function countdown(dueAt: string, now: number): string {
+/** The time to a deadline, in the reader's language (#5313). */
+function countdown(
+    dueAt: string,
+    now: number,
+    t: (key: string, values: Record<string, string | number>) => string,
+): string {
     const ms = new Date(dueAt).getTime() - now;
     const overdue = ms < 0;
     const abs = Math.abs(ms);
     const h = Math.floor(abs / 3_600_000);
     const m = Math.floor((abs % 3_600_000) / 60_000);
-    const body = h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : `${h}h ${m}m`;
-    return overdue ? `${body} overdue` : `${body} left`;
+    const time = h >= 24
+        ? t('detail.countdown.daysHours', { days: Math.floor(h / 24), hours: h % 24 })
+        : t('detail.countdown.hoursMinutes', { hours: h, minutes: m });
+    return t(overdue ? 'detail.countdown.overdue' : 'detail.countdown.left', { time });
 }
 
 export default function IncidentDetailPage() {
@@ -454,7 +461,7 @@ export default function IncidentDetailPage() {
                                                                     : 'ml-2 text-content-warning'
                                                             }
                                                         >
-                                                            {countdown(n.dueAt, now.getTime())}
+                                                            {countdown(n.dueAt, now.getTime(), tRef)}
                                                         </span>
                                                     )}
                                                 </div>

@@ -10,12 +10,15 @@
  * - Risk generation → deterministic rules, checks existing risks by title before creating
  * - Task/team setup → creates starter tasks only if none exist for onboarding
  */
+import { calculateRiskScore } from '@/lib/risk-scoring';
+import { readRiskMatrixAxes } from './risk-matrix-axes';
 import { RequestContext } from '../types';
 import { installPack, resolveFrameworkPackKeys } from './framework';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
 import { OnboardingRepository } from '../repositories/OnboardingRepository';
 import { RiskRepository } from '../repositories/RiskRepository';
+import { TaskRepository } from '../repositories/TaskRepository';
 import { badRequest, isAppError } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
 import type { OnboardingRefusal } from '@/lib/onboarding-refusals';
@@ -410,9 +413,8 @@ async function executeRiskGeneration(ctx: RequestContext, allData: StepData, loc
     let skipped = 0;
 
     await runInTenantContext(ctx, async (db) => {
-        // Tenant table is global (no RLS) but accessible via the scoped client
-        const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId } });
-        const maxScale = tenant?.maxRiskScale || 5;
+        // Each axis is bounded by the tenant's own matrix (#5080).
+        const axes = await readRiskMatrixAxes(db, ctx.tenantId);
 
         for (const catalogueRisk of applicableRisks) {
             const risk = localizedStarterRisk(catalogueRisk, locale);
@@ -426,7 +428,7 @@ async function executeRiskGeneration(ctx: RequestContext, allData: StepData, loc
                 continue;
             }
 
-            const score = Math.round((risk.likelihood / maxScale) * (risk.impact / maxScale) * maxScale * maxScale);
+            const score = calculateRiskScore(risk.likelihood, risk.impact, axes.likelihoodLevels, axes.impactLevels);
             // Through the repository so the RSK-N key is minted — see the
             // matching note in risk-suggestions.ts. Creating directly left
             // every onboarding-seeded risk with a NULL key and a blank Code
@@ -486,16 +488,15 @@ async function executeTeamSetup(ctx: RequestContext, allData: StepData, locale: 
                 continue;
             }
 
-            await db.task.create({
-                data: {
-                    tenantId: ctx.tenantId,
-                    title: task.title,
-                    description: task.description,
-                    type: task.type,
-                    status: 'OPEN',
-                    createdByUserId: ctx.userId,
-                    assigneeUserId: ctx.userId,
-                },
+            // Through the repository so the TSK-N key is minted (#5318), as
+            // the starter risks go through RiskRepository.create. A bare
+            // `db.task.create` left every starter task with a NULL key and a
+            // blank Code column. Status defaults to OPEN in the schema.
+            await TaskRepository.create(db, ctx, {
+                title: task.title,
+                description: task.description,
+                type: task.type,
+                assigneeUserId: ctx.userId,
             });
             created++;
         }

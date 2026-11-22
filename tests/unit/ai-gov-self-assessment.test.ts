@@ -23,6 +23,7 @@ jest.mock('@/app-layer/usecases/finding', () => ({ createFinding: (...a: unknown
 import {
     getAiGovAssessmentState,
     saveAiGovAnswer,
+    completeAiGovAssessment,
     raiseFindingsFromAiGovGaps,
 } from '@/app-layer/usecases/ai-gov-self-assessment';
 
@@ -54,6 +55,15 @@ describe('getAiGovAssessmentState', () => {
         expect(state.coverage.aisvs.percent).toBe(100); // only aig-4-01 (YES) counts
     });
 
+    it('returns each answer\'s stored note, so the wizard can seed it (#5128)', async () => {
+        mockTx.aiGovSelfAssessmentAnswer.findMany.mockResolvedValue([
+            { questionId: 'aig-4-01', answer: 'PARTIALLY', note: 'Pilot only in EU region.' },
+        ]);
+        const state = await getAiGovAssessmentState(ctx, { architecture: 'NONE' });
+        expect(state.questions.find((q) => q.id === 'aig-4-01')!.note).toBe('Pilot only in EU region.');
+        expect(state.questions.find((q) => q.id === 'aig-1-05')!.note).toBeNull();
+    });
+
     it('includes a RAG question when the architecture is RAG', async () => {
         mockTx.aiGovSelfAssessmentAnswer.findMany.mockResolvedValue([]);
         const state = await getAiGovAssessmentState(ctx, { architecture: 'RAG' });
@@ -74,6 +84,19 @@ describe('saveAiGovAnswer', () => {
         await saveAiGovAnswer(ctx, { questionId: 'aig-4-01', answer: 'YES', note: 'ok' });
         expect(mockTx.aiGovSelfAssessmentAnswer.upsert).toHaveBeenCalledTimes(1);
     });
+
+    it('an answer-only change leaves the stored note; null clears it (#5128)', async () => {
+        mockTx.aiGovQuestion.findUnique.mockResolvedValue(QUESTIONS[0]);
+        mockTx.aiGovSelfAssessmentAnswer.upsert.mockResolvedValue({ id: 'ans1' });
+
+        await saveAiGovAnswer(ctx, { questionId: 'aig-4-01', answer: 'YES' });
+        const answerOnly = mockTx.aiGovSelfAssessmentAnswer.upsert.mock.calls[0][0];
+        expect(answerOnly.update).not.toHaveProperty('note');
+        expect(answerOnly.update.answer).toBe('YES');
+
+        await saveAiGovAnswer(ctx, { questionId: 'aig-4-01', answer: 'YES', note: null });
+        expect(mockTx.aiGovSelfAssessmentAnswer.upsert.mock.calls[1][0].update.note).toBeNull();
+    });
 });
 
 describe('raiseFindingsFromAiGovGaps', () => {
@@ -86,6 +109,10 @@ describe('raiseFindingsFromAiGovGaps', () => {
         const r = await raiseFindingsFromAiGovGaps(ctx, { architecture: 'NONE' });
         expect(createFinding).toHaveBeenCalledTimes(1);
         expect(r.created).toEqual(['f1']);
+        // A finding the real create accepts (#5181): 'AI governance' is not a
+        // FindingType, and the enum column refused it.
+        const { ProposedFindingSchema } = jest.requireActual('@/lib/schemas');
+        expect(ProposedFindingSchema.safeParse(createFinding.mock.calls[0][1]).success).toBe(true);
     });
 
     it('does not duplicate a finding that already exists (idempotent marker)', async () => {
@@ -98,5 +125,45 @@ describe('raiseFindingsFromAiGovGaps', () => {
         const r = await raiseFindingsFromAiGovGaps(ctx, { architecture: 'NONE' });
         expect(createFinding).not.toHaveBeenCalled();
         expect(r.created).toEqual([]);
+    });
+});
+
+describe('answering and completing are onboarding-admin acts, as NIS2 (owner decision 2026-11-14, #5317)', () => {
+    it('an EDITOR saving an answer is refused 403 ONBOARDING_ADMIN_ONLY and nothing is written', async () => {
+        await expect(
+            saveAiGovAnswer(makeRequestContext('EDITOR'), { questionId: 'aig-4-01', answer: 'YES' }),
+        ).rejects.toMatchObject({ status: 403, details: { reason: 'ONBOARDING_ADMIN_ONLY' } });
+        expect(mockTx.aiGovSelfAssessmentAnswer.upsert).not.toHaveBeenCalled();
+    });
+
+    it('an EDITOR completing the assessment is refused 403 and it is not marked COMPLETED', async () => {
+        await expect(completeAiGovAssessment(makeRequestContext('EDITOR'))).rejects.toMatchObject({
+            status: 403,
+            details: { reason: 'ONBOARDING_ADMIN_ONLY' },
+        });
+        expect(mockTx.aiGovSelfAssessment.update).not.toHaveBeenCalled();
+    });
+
+    it('an ADMIN may complete the assessment', async () => {
+        mockTx.aiGovSelfAssessment.update.mockResolvedValue({ id: 'as1', status: 'COMPLETED' });
+        await expect(completeAiGovAssessment(ctx)).resolves.toMatchObject({ status: 'COMPLETED' });
+    });
+
+    it('an EDITOR may still raise findings from the gaps (canWrite, as NIS2 materialise)', async () => {
+        mockTx.aiGovSelfAssessmentAnswer.findMany.mockResolvedValue([]);
+        mockTx.finding.findMany.mockResolvedValue([]);
+        await expect(raiseFindingsFromAiGovGaps(makeRequestContext('EDITOR'))).resolves.toEqual({ created: [] });
+    });
+});
+
+describe('an authorization refusal is a 403, not a 400 (#5317)', () => {
+    it('a READER saving an answer is refused FORBIDDEN', async () => {
+        await expect(
+            saveAiGovAnswer(makeRequestContext('READER'), { questionId: 'aig-4-01', answer: 'YES' }),
+        ).rejects.toMatchObject({ status: 403 });
+    });
+
+    it('a READER raising findings is refused FORBIDDEN', async () => {
+        await expect(raiseFindingsFromAiGovGaps(makeRequestContext('READER'))).rejects.toMatchObject({ status: 403 });
     });
 });

@@ -61,6 +61,7 @@ import {
     type WiringEdge,
     type WiringNode,
 } from '@/lib/processes/canvas-rule-wiring';
+import { linkFieldForNodeType } from '@/app-layer/schemas/process-map';
 import {
     resolveSelection,
     toSelectedEdge,
@@ -165,12 +166,14 @@ export function useTldrawSelection(editor: Editor | null) {
             const props: Record<string, unknown> = {};
             if (patch.label !== undefined) props.label = patch.label;
             if (patch.subtitle !== undefined) props.subtitle = patch.subtitle;
-            if (patch.linkedEntityId !== undefined) {
-                // Merged into `dataJson` rather than replacing it: the column is
-                // an opaque passthrough carrying whatever else the row holds,
-                // and a whole-value write would drop every sibling key.
-                const prev = (shape.props?.dataJson ?? null) as Record<string, unknown> | null;
-                props.dataJson = { ...(prev ?? {}), linkedEntityId: patch.linkedEntityId };
+            // A linked node's link is its own prop (`controlId` / `riskId` /
+            // `assetId`), persisted to its table with a real foreign key — never
+            // the opaque `dataJson` slot, which the server strips the old link
+            // key from. The picker mounts only on those three kinds, so a patch
+            // for any other kind has nowhere to go and is dropped.
+            const linkField = linkFieldForNodeType(String(shape.props?.nodeType ?? ''));
+            if (patch.linkedEntityId !== undefined && linkField !== null) {
+                props[linkField] = patch.linkedEntityId;
             }
             if (Object.keys(props).length === 0) return;
 
@@ -324,12 +327,19 @@ function inspectorDataFor(editor: Editor, shape: SelectedShape): Record<string, 
         ...props,
         kind: nodeType,
         ruleId: ruleIdOfDataJson(dataJson),
-        ...(dataJson && 'linkedEntityId' in dataJson ? { linkedEntityId: dataJson.linkedEntityId } : {}),
+        // A linked node's picker reads the node's own link, under the one name
+        // the inspector's picker reads for every kind.
+        ...linkedEntityIdOf(nodeType, props),
     };
     if (FEEDING_KINDS.has(nodeType)) {
         data.fedRules = fedRuleIds(String(props.nodeKey ?? ''), wiringNodes(editor), wiringEdges(editor));
     }
     return data;
+}
+
+function linkedEntityIdOf(nodeType: string, props: Record<string, unknown>): { linkedEntityId?: unknown } {
+    const field = linkFieldForNodeType(nodeType);
+    return field === null ? {} : { linkedEntityId: props[field] ?? null };
 }
 
 function wiringNodes(editor: Editor): WiringNode[] {

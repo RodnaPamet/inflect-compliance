@@ -7,10 +7,10 @@
  *   q             → free-text search (managed by useFilterContext's search slot)
  *   status        → ControlStatus enum (server-side)
  *   ownerUserId   → entity-ref (user IDs; options derived client-side from loaded rows)
+ *   applicability → see below; server-side.
  *
- * Two facets are resolved CLIENT-side (over the already-loaded rows), NOT via
- * the server query — see the note on each and ControlsClient's
- * `clientFilteredControls`:
+ * One facet is resolved CLIENT-side (over the already-loaded rows), NOT via
+ * the server query — see ControlsClient's `clientFilteredControls`:
  *
  *   category      → the DERIVED framework-native category (`categorizeControl`,
  *                   e.g. "Access control"), the SAME value the Category COLUMN
@@ -18,11 +18,18 @@
  *                   theme like "TECHNOLOGICAL"). Options + filtering both use
  *                   the derived value so the picker only offers values a cell
  *                   can actually show (#8a).
+ *
+ * And one is DERIVED but resolved on the server:
+ *
  *   applicability → three states matching the column exactly (Applicable /
  *                   Not applicable / Not assessed). The stored enum holds only
- *                   APPLICABLE | NOT_APPLICABLE, so the "Not assessed" backlog
- *                   (applicable, `applicabilityDecidedAt` null) is only
- *                   expressible client-side (#8b).
+ *                   APPLICABLE | NOT_APPLICABLE; the "Not assessed" backlog is
+ *                   applicable with `applicabilityDecidedAt` null. All three
+ *                   are filtered SERVER-side over those two columns
+ *                   (`applicabilityStateWhere` in
+ *                   `@/lib/controls/control-applicability`, applied by
+ *                   `ControlRepository`), so the facet sees every control,
+ *                   not only the loaded page (#8b).
  *
  * `framework` is intentionally excluded — it would require a subquery across
  * `FrameworkMapping` which the controls API does not expose today. Adding it
@@ -105,7 +112,8 @@ function applicabilityLabels(t: T): Record<string, string> {
         NOT_APPLICABLE: t('filterEnums.applicability.NOT_APPLICABLE'),
         // #8b — third state, matching the Applicability COLUMN's "Not assessed"
         // (applicable but `applicabilityDecidedAt` null). Not a stored enum
-        // member, so ControlsClient filters it CLIENT-side.
+        // member; the server filters it over both columns
+        // (`applicabilityStateWhere`).
         UNASSESSED: t('filterEnums.applicability.UNASSESSED'),
     };
 }

@@ -81,20 +81,24 @@ export const GET = withApiErrorHandling(
 );
 
 export const PUT = withApiErrorHandling(
-    requirePermission<PairingParams>('admin.tenant_lifecycle', async (req: NextRequest, _args, ctx) => {
+    requirePermission<PairingParams>('admin.tenant_lifecycle', async (req: NextRequest, { params }, ctx) => {
         const body = Body.parse(await req.json());
         // The usecase validates what no constraint can: same connection, the
         // write is a write, the read is a read, and the server advertises both.
         // Not re-checked here — a second, weaker copy is how a route ends up
-        // permitting more than the usecase does.
-        return jsonResponse(await setPriorStateRead(ctx, body));
+        // permitting more than the usecase does. The URL's connection is handed
+        // to it, so a body naming another connection's tools is refused (#5303).
+        return jsonResponse(await setPriorStateRead(ctx, body, params.connectionId));
     }),
 );
 
 export const DELETE = withApiErrorHandling(
-    requirePermission<PairingParams>('admin.tenant_lifecycle', async (req: NextRequest, _args, ctx) => {
+    requirePermission<PairingParams>('admin.tenant_lifecycle', async (req: NextRequest, { params }, ctx) => {
         const { writeToolName } = DeleteBody.parse(await req.json());
-        await clearPriorStateRead(ctx, writeToolName);
-        return jsonResponse({ writeToolName, cleared: true });
+        const removed = await clearPriorStateRead(ctx, writeToolName, params.connectionId);
+        // `cleared` reports what happened, not what was asked (#5303): a name
+        // with no pairing removes nothing, and saying otherwise would tell the
+        // operator a write was withdrawn while it stayed paired.
+        return jsonResponse({ writeToolName, cleared: removed > 0 });
     }),
 );

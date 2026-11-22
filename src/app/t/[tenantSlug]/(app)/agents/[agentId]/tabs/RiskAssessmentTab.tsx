@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { FormField } from '@/components/ui/form-field';
 import { useToast } from '@/components/ui/hooks';
-import { CircleQuestion } from '@inflect/ui/components/ui/icons/nucleo';
+import { CircleQuestion } from '@inflect/ui/components/ui/icons/glyphs';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Modal } from '@/components/ui/modal';
@@ -735,7 +735,7 @@ function StandingTier({
      * — a widening is re-scored from these same answers" is TRUE for the four
      * axis triggers and FALSE for the other two: `rescoreAgainstStandingAnswers`
      * returns early when the four axes match the stored basis, and neither
-     * `toolCount` nor `modelRef` is in that conjunction. So on a tool grant or a
+     * the grants nor `modelRef` is in that conjunction. So on a tool grant or a
      * model swap nothing is recomputed and the cap does not tighten — and an
      * operator who reads "the cap already narrowed, this is only a prompt to
      * re-answer" defers the re-answer against a control that is not in force.

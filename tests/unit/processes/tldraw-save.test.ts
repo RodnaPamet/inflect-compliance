@@ -20,7 +20,8 @@
  *
  * Every one of those is a branch here rather than a comment.
  */
-import { saveTldrawCanvas } from '@/lib/processes/tldraw-save';
+import { saveTldrawCanvas, VersionConflictError } from '@/lib/processes/tldraw-save';
+import en from '../../../messages/en.json';
 import type { EditorCanvas } from '@/components/processes/tldraw/editor-canvas';
 import type { ToastApi } from '@inflect/ui/components/ui/hooks/use-toast';
 
@@ -72,6 +73,12 @@ function input(over: Partial<Parameters<typeof saveTldrawCanvas>[0]> = {}) {
         expectedVersion: 4,
         canvas: CANVAS,
         toast: api,
+        conflictCopy: {
+            title: en.automation.canvas.versionConflictTitle,
+            lostOnReloadAtVersion: en.automation.canvas.versionConflictLostOnReloadAtVersion,
+            lostOnReload: en.automation.canvas.versionConflictLostOnReload,
+            reload: en.automation.canvas.versionConflictReload,
+        },
         onConflict: jest.fn(),
         onSaved: jest.fn(),
         fetchImpl: responder(200, SAVED),
@@ -133,19 +140,20 @@ describe('the request it sends', () => {
     });
 });
 
-describe('a version conflict RESOLVES, and does not reject', () => {
-    it('surfaces the toast, calls no onSaved, and settles', async () => {
+describe('a version conflict REJECTS after its reload toast (#5282)', () => {
+    it('surfaces the toast, calls no onSaved, and throws a VersionConflictError', async () => {
         const { api, error } = toastSpy();
         const fetchImpl = responder(409, {
             error: { code: 'STALE_DATA', details: { currentVersion: 9 } },
         });
         const onSaved = jest.fn();
 
-        // RESOLVES. Rejecting would hand autosave an error for something the
-        // reload toast owns, and the user would get two notices for one event.
+        // REJECTS. Resolving put autosave in its saved branch: the status read
+        // "Saved" and the unsaved-changes guard switched off over edits the
+        // server had refused.
         await expect(
             saveTldrawCanvas(input({ fetchImpl, toast: api, onSaved })),
-        ).resolves.toBeUndefined();
+        ).rejects.toBeInstanceOf(VersionConflictError);
 
         expect(onSaved).not.toHaveBeenCalled();
         expect(error).toHaveBeenCalledTimes(1);
@@ -164,7 +172,7 @@ describe('a version conflict RESOLVES, and does not reject', () => {
         const onConflict = jest.fn();
         await saveTldrawCanvas(
             input({ fetchImpl: responder(409, {}), toast: api, onConflict }),
-        );
+        ).catch(() => undefined);
 
         const [, opts] = error.mock.calls[0]!;
         (opts as { action: { onClick: () => void } }).action.onClick();

@@ -130,6 +130,7 @@ const LATEST: HarnessScanRow = {
 };
 
 const shadowRow = (over: Partial<ShadowRow> = {}): ShadowRow => ({
+    kind: 'SHADOW_AGENT',
     discoveredAgentId: 'da_open',
     discoveredId: 'entra:sp:open',
     discoveredVia: ['entra-sp'],
@@ -160,7 +161,7 @@ const ROWS: ShadowRow[] = [
     shadowRow({ discoveredAgentId: 'da_nofinding', discoveredId: 'entra:sp:nofinding', findingId: null }),
 ];
 
-const view = (rows: ShadowRow[] = ROWS): HarnessMatrixView => ({
+const view = (rows: ShadowRow[] = ROWS, identities: ShadowRow[] = []): HarnessMatrixView => ({
     generatedAt: '2026-10-17T09:00:00.000Z',
     scanWindow: 50,
     scans: { rows: [LATEST], truncated: false },
@@ -168,8 +169,20 @@ const view = (rows: ShadowRow[] = ROWS): HarnessMatrixView => ({
     scannersNotShown: 0,
     scannersWithoutScan: { rows: [], truncated: false },
     shadow: { rows, truncated: false, basis: 'EVIDENCED', basisAsOf: LATEST.asOf },
+    unregisteredIdentities: { rows: identities, truncated: false, basis: 'EVIDENCED', basisAsOf: LATEST.asOf },
     acceptances: { rows: [], truncated: false },
 });
+
+/** A row of the unregistered-identity list: the server's `kind`, and its own finding. */
+const identityRow = (over: Partial<ShadowRow> = {}): ShadowRow =>
+    shadowRow({
+        kind: 'UNREGISTERED_IDENTITY',
+        discoveredAgentId: 'da_identity',
+        discoveredId: 'gcp:sa:build-1',
+        discoveredVia: ['gcp-sa'],
+        findingId: 'fnd_identity',
+        ...over,
+    });
 
 function Providers({ children }: { children: React.ReactNode }) {
     return (
@@ -591,5 +604,74 @@ describe('the stored review suggestion shows in the dialog, names nobody, and is
         expect(screen.getByTestId('harness-register-modal')).toBeInTheDocument();
         expect(screen.queryByTestId('harness-register-suggestion')).not.toBeInTheDocument();
         expect(document.getElementById('harness-register-keep-suggestion')).toBeNull();
+    });
+});
+
+// ─── 6. An unregistered identity registers the same way (owner decisions, 2026-11-13) ──
+
+describe('an unregistered identity is registered from its own list, through the same intake', () => {
+    const renderWithIdentities = (identities: ShadowRow[], canRegisterShadow = true) =>
+        render(
+            <Providers>
+                <ReportsClient
+                    tab="harness"
+                    tenantSlug="acme"
+                    harness={view([], identities)}
+                    scannerKeys={{ keys: { rows: [], truncated: false }, candidates: { rows: [], truncated: false } }}
+                    estateHealth={{ generatedAt: '2026-10-19T00:00:00.000Z', scanWindow: 500, windowTruncated: false, estates: { rows: [], truncated: false } }}
+                    canRegisterShadow={canRegisterShadow}
+                    canReviewProposals
+                    canInvestigate
+                    canExport={false}
+                />
+            </Providers>,
+        );
+
+    it('the Register action is on its row, where the intake would take it, and nowhere for a caller it would refuse', () => {
+        const rows = [
+            identityRow(),
+            identityRow({
+                discoveredAgentId: 'da_identity_pending',
+                discoveredId: 'gcp:sa:build-2',
+                intake: { agentId: 'agt_pending', name: 'Build bot', linkable: true },
+            }),
+        ];
+        const { unmount } = renderWithIdentities(rows);
+        expect(screen.getByTestId('harness-identity-register-da_identity').textContent).toBe(H.register);
+        expect(screen.queryByTestId('harness-identity-register-da_identity_pending')).not.toBeInTheDocument();
+        expect(screen.getByTestId('harness-identity-intake-da_identity_pending').textContent).toBe(
+            H.shadowIntakePending.replace('{name}', 'Build bot'),
+        );
+        unmount();
+
+        renderWithIdentities(rows, false);
+        // Positive anchor: the list rendered.
+        expect(screen.getByTestId('harness-identity-table')).toBeInTheDocument();
+        expect(screen.queryByTestId('harness-identity-register-da_identity')).not.toBeInTheDocument();
+    });
+
+    it('the dialog says it is registered AS AN AGENT, and posts the identity\'s own finding', async () => {
+        const user = userEvent.setup();
+        renderWithIdentities([identityRow()]);
+        await user.click(screen.getByTestId('harness-identity-register-da_identity'));
+
+        expect(screen.getByTestId('harness-register-identity-notice').textContent).toBe(R.identityNotice);
+        expect(screen.getAllByText(R.identityTitle).length).toBeGreaterThan(0);
+        expect(screen.queryByText(R.title)).not.toBeInTheDocument();
+
+        await fillAgent(user);
+        await choose(user, 'harness-register-owner', /Bob Active/);
+        await user.click(confirmBox());
+        await user.click(submit());
+        await waitFor(() => expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1));
+        const post = calls.find((c) => c.method === 'POST')!;
+        expect(post.url).toBe('/api/t/acme/admin/agents/intake');
+        expect(post.body).toMatchObject({ findingId: 'fnd_identity', ownerUserId: 'u_bob', confirmOwner: true });
+    });
+
+    it('a shadow agent\'s dialog is unchanged: its own title, and no identity notice', () => {
+        renderModal();
+        expect(screen.getAllByText(R.title).length).toBeGreaterThan(0);
+        expect(screen.queryByTestId('harness-register-identity-notice')).not.toBeInTheDocument();
     });
 });

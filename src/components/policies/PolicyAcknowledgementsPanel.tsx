@@ -59,7 +59,8 @@ interface Roster {
     attestations: Attestation[];
 }
 
-const ROLE_VALUES = ['OWNER', 'ADMIN', 'EDITOR', 'READER', 'AUDITOR'] as const;
+// Every role the server's audience schema accepts (`z.nativeEnum(Role)`).
+const ROLE_VALUES = ['OWNER', 'ADMIN', 'EDITOR', 'READER', 'AUDITOR', 'AI_ADMIN'] as const;
 
 export function PolicyAcknowledgementsPanel({
     policyId,

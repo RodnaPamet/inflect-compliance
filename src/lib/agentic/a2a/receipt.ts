@@ -252,3 +252,30 @@ export function verifyStoredA2aReceipt(
     }
     return parsed.data.bodyDigest === a2aBodyDigest(stored.body);
 }
+
+/**
+ * The public key a STORED receipt is re-verified under, chosen by the key id
+ * the row names and never by a key the row supplies for itself:
+ *
+ *   INBOUND   the peer's registered key, when the row names its fingerprint
+ *             (a peer's fingerprint is immutable);
+ *   OUTBOUND  the tenant's own signing key with that fingerprint, in force OR
+ *             retired, so a receipt signed before a rotation verifies after it.
+ *
+ * `null` means no key with that id is held here: "cannot check here", not
+ * "forged". One answer for every reader (the receipts list, and the scheduled
+ * ASI07 check), so the two cannot disagree about which key a row answers to.
+ */
+export function storedReceiptVerificationKey(
+    row: { direction: string; signerKeyFingerprint: string },
+    peer: { signingPublicKey: string; signingKeyFingerprint: string } | null,
+    ownKeysByFingerprint: ReadonlyMap<string, string>,
+): string | null {
+    if (row.direction === 'INBOUND') {
+        return peer && row.signerKeyFingerprint === peer.signingKeyFingerprint ? peer.signingPublicKey : null;
+    }
+    if (row.direction === 'OUTBOUND') {
+        return ownKeysByFingerprint.get(row.signerKeyFingerprint) ?? null;
+    }
+    return null;
+}

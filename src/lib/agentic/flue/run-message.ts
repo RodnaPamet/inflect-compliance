@@ -56,6 +56,7 @@ import {
     type ContextIntegrityCode,
 } from '@/lib/agentic/context-integrity';
 import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
+import { renderFlowStep } from '@/lib/agentic/agent-flow';
 import {
     A2A_PEER_REPLY_SOURCE,
     peerReplyLines,
@@ -176,10 +177,20 @@ export function openDeclaredRunInput(params: {
 /**
  * The message a run's agent is given.
  *
- * The definition's description plus the steps it still has to cover. A Flue
- * run does not WALK the declared steps — that is the static engine's contract —
+ * The definition's description plus its WHOLE step list. A reasoning engine
+ * does not WALK the declared steps — that is the static engine's contract —
  * but the steps are the specification of the work, and handing the model the
  * description alone would ask it to infer a plan the definition already states.
+ *
+ * Whole on a resume too (#5372). This took the run's `fromSeq` and listed
+ * `def.steps.slice(fromSeq)`, "the steps it still has to cover" — but on a
+ * reasoning engine `fromSeq` is a LEDGER position, counting the model and tool
+ * calls already committed, not declared steps (the incommensurability
+ * `driver-plan.ts` records for #3602). A run resumed after one call lost its
+ * first step; one resumed after as many calls as the definition has steps was
+ * sent an empty specification. Nothing records which steps a reasoning run
+ * has covered, so there is no honest slice to take: the parameter is gone,
+ * and the message no longer depends on where the run resumed.
  *
  * Then, when the definition declares input, that input — fenced, labelled, and
  * followed by the data-only handling rule. Nothing about it is an instruction:
@@ -187,8 +198,7 @@ export function openDeclaredRunInput(params: {
  * and the only text in the message that is.
  */
 export function runMessage(
-    def: Pick<WorkflowDefinition, 'description' | 'steps'>,
-    fromSeq: number,
+    def: Pick<WorkflowDefinition, 'description' | 'steps' | 'profile'>,
     input: DeclaredRunInput = [],
     /**
      * Verified peer replies to tasks THIS run sent, already decided
@@ -204,8 +214,15 @@ export function runMessage(
      */
     peerReplies: readonly PeerReplyEnvelope[] = [],
 ): string {
-    const remaining = def.steps.slice(fromSeq);
-    const lines = remaining.map((step, i) => `${fromSeq + i + 1}. [${step.kind}] ${step.label}`);
+    // A profile version with a drawn flow (Phase 1 of
+    // `docs/ai-architecture/langflow.md`): its steps, in topological order.
+    // Every other definition: its declared steps. Both WHOLE, for the reason
+    // the docstring gives; a run at seq 0 gets exactly the message it always
+    // got, so no first-segment digest moves.
+    const flowSteps = def.profile?.flow?.stepsSpec;
+    const lines = flowSteps
+        ? flowSteps.map((step, i) => renderFlowStep(step, i + 1))
+        : def.steps.map((step, i) => `${i + 1}. [${step.kind}] ${step.label}`);
     const parts = [
         def.description,
         '',

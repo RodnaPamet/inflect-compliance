@@ -136,8 +136,9 @@ describe('<RiskMatrixCell>', () => {
         expect(onClick).toHaveBeenCalledTimes(3);
     });
 
-    it('does not become interactive when count is 0', () => {
+    it('an empty cell is not clickable, but stays navigable in an interactive grid (#5280)', () => {
         const onClick = jest.fn();
+        const onArrowKey = jest.fn();
         render(
             withTooltip(
                 <RiskMatrixCell
@@ -146,13 +147,55 @@ describe('<RiskMatrixCell>', () => {
                     count={0}
                     config={DEFAULT_RISK_MATRIX_CONFIG}
                     onClick={onClick}
+                    tabbable
+                    onArrowKey={onArrowKey}
                 />,
             ),
         );
         const cell = screen.getByTestId('risk-matrix-cell-1-1');
         fireEvent.click(cell);
+        fireEvent.keyDown(cell, { key: 'Enter' });
+        fireEvent.keyDown(cell, { key: ' ' });
         expect(onClick).not.toHaveBeenCalled();
-        expect(cell.getAttribute('tabindex')).toBe('-1');
+        // It is the grid's tab stop and passes arrows on, or focus that
+        // lands on it has nowhere to go.
+        expect(cell.getAttribute('tabindex')).toBe('0');
+        fireEvent.keyDown(cell, { key: 'ArrowRight' });
+        expect(onArrowKey).toHaveBeenCalledWith('ArrowRight');
+    });
+
+    it('a cell in a read-only matrix takes no tab stop', () => {
+        render(
+            withTooltip(
+                <RiskMatrixCell
+                    likelihood={1}
+                    impact={1}
+                    count={0}
+                    config={DEFAULT_RISK_MATRIX_CONFIG}
+                    tabbable
+                />,
+            ),
+        );
+        expect(screen.getByTestId('risk-matrix-cell-1-1').getAttribute('tabindex')).toBe('-1');
+    });
+
+    it('formats the ALE with the formatter it is given (#5281)', () => {
+        render(
+            withTooltip(
+                <RiskMatrixCell
+                    likelihood={2}
+                    impact={3}
+                    count={1}
+                    config={DEFAULT_RISK_MATRIX_CONFIG}
+                    aleOverlay
+                    totalAle={125000}
+                    formatMoney={(v) => `USD:${v}`}
+                />,
+            ),
+        );
+        const cell = screen.getByTestId('risk-matrix-cell-2-3');
+        expect(cell.getAttribute('aria-label')).toContain('annualised loss expectancy USD:125000');
+        expect(cell.getAttribute('aria-label')).not.toContain('€');
     });
 
     it('falls back to numeric axis labels when the vocabulary is shorter than the dimension', () => {

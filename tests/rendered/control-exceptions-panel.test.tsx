@@ -356,4 +356,97 @@ describe('ControlExceptionsPanel', () => {
         });
         expect(submit.disabled).toBe(false);
     });
+
+    it("shows a refusal's sentence, not the serialised envelope (#5228)", async () => {
+        const row = makeExceptionRow({ id: 'cex_req', status: 'REQUESTED' });
+        (global as unknown as { fetch: jest.Mock }).fetch = jest.fn(
+            async (_url: string, init?: RequestInit) =>
+                init?.method === 'POST'
+                    ? {
+                          ok: false,
+                          status: 400,
+                          json: async () => ({
+                              error: {
+                                  code: 'BAD_REQUEST',
+                                  message: 'The risk acceptor is no longer a member.',
+                                  requestId: 'req-1',
+                              },
+                          }),
+                      }
+                    : { ok: true, json: async () => ({ rows: [row] }) },
+        );
+        render(
+            withClient(
+                <ControlExceptionsPanel
+                    tenantSlug="acme"
+                    controlId="c1"
+                    compensatingControlChoices={compensatingChoices}
+                    defaultRiskAcceptedByUserId="u_admin"
+                    canWrite
+                    canAdmin
+                />,
+            ),
+        );
+        fireEvent.click(await screen.findByTestId('control-exception-reject-button-cex_req'));
+        fireEvent.change(await screen.findByTestId('exception-reject-reason'), {
+            target: { value: 'mitigation insufficient' },
+        });
+        fireEvent.click(screen.getByTestId('exception-reject-submit'));
+
+        expect(await screen.findByText('The risk acceptor is no longer a member.')).toBeInTheDocument();
+        expect(screen.queryByText(/BAD_REQUEST|requestId/)).toBeNull();
+    });
+
+    it('header badge keeps the in-force approval when a newer renewal is pending (#5309)', async () => {
+        const nextMonth = new Date(Date.now() + 30 * 86_400_000).toISOString();
+        // The list is newest first: the REQUESTED renewal sorts ahead of the
+        // approval it renews.
+        installFetch([
+            makeExceptionRow({ id: 'cex_renewal', status: 'REQUESTED', renewedFromId: 'cex_in_force' }),
+            makeExceptionRow({
+                id: 'cex_in_force',
+                status: 'APPROVED',
+                approvedAt: new Date().toISOString(),
+                expiresAt: nextMonth,
+            }),
+        ]);
+        render(
+            withClient(
+                <ControlExceptionsPanel
+                    tenantSlug="acme"
+                    controlId="c1"
+                    compensatingControlChoices={compensatingChoices}
+                    defaultRiskAcceptedByUserId="u_admin"
+                    canWrite
+                    canAdmin
+                />,
+            ),
+        );
+        const badge = await screen.findByTestId('control-exception-header-badge');
+        expect(badge.textContent).toBe('exceptedUntil');
+    });
+
+    it('offers no approve or reject on the viewer\'s own request (#5309)', async () => {
+        installFetch([
+            makeExceptionRow({ id: 'cex_mine', status: 'REQUESTED', createdByUserId: 'u_me' }),
+            makeExceptionRow({ id: 'cex_theirs', status: 'REQUESTED', createdByUserId: 'u_other' }),
+        ]);
+        render(
+            withClient(
+                <ControlExceptionsPanel
+                    tenantSlug="acme"
+                    controlId="c1"
+                    compensatingControlChoices={compensatingChoices}
+                    defaultRiskAcceptedByUserId="u_admin"
+                    canWrite
+                    canAdmin
+                    currentUserId="u_me"
+                />,
+            ),
+        );
+        await screen.findByTestId('control-exception-approve-button-cex_theirs');
+        expect(screen.getByTestId('control-exception-reject-button-cex_theirs')).toBeInTheDocument();
+        expect(screen.queryByTestId('control-exception-approve-button-cex_mine')).toBeNull();
+        expect(screen.queryByTestId('control-exception-reject-button-cex_mine')).toBeNull();
+    });
 });

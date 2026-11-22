@@ -10,7 +10,8 @@
  * Permission gating:
  *   - Anyone with read access can see the panel.
  *   - canWrite → Request / Renew buttons.
- *   - canAdmin → Approve / Reject buttons on REQUESTED rows.
+ *   - canAdmin → Approve / Reject buttons on REQUESTED rows, except on the
+ *     viewer's own request (the server refuses a self-decision).
  *
  * The panel always reflects the live state via React Query so an
  * approve from another tab refreshes the badges in this one.
@@ -18,6 +19,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import useSWR, { useSWRConfig } from 'swr';
+import { ApiClientError } from '@/lib/api-client';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
@@ -27,6 +29,7 @@ import { UserCombobox } from '@/components/ui/user-combobox';
 import { DatePicker } from '@/components/ui/date-picker';
 import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
+import { apiErrorMessage } from '@/lib/api-error';
 
 type Status = 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'EXPIRED';
 
@@ -65,6 +68,40 @@ interface Props {
     /// Permission flags resolved server-side and threaded through.
     canWrite: boolean;
     canAdmin: boolean;
+    /// The signed-in user. The server refuses an approval or rejection by the
+    /// requester (separation of duties), so neither is offered on their own
+    /// request.
+    currentUserId?: string;
+}
+
+/**
+ * The exception that describes the control right now. An APPROVED exception
+ * still in force wins over a newer REQUESTED renewal of it: the renewal is
+ * pending, the approval is what applies. Only when nothing is in force does a
+ * pending request (or a lapsed approval) speak for the control.
+ */
+export function activeExceptionOf(
+    rows: readonly ExceptionSummary[],
+    now: number = Date.now(),
+): ExceptionSummary | undefined {
+    const inForce = rows.find(
+        (r) => r.status === 'APPROVED' && r.expiresAt != null && new Date(r.expiresAt).getTime() > now,
+    );
+    if (inForce) return inForce;
+    return (
+        rows.find((r) => r.status === 'REQUESTED') ??
+        rows.find((r) => r.status === 'APPROVED')
+    );
+}
+
+/**
+ * The first day an approval may name. The server refuses an expiry that is not
+ * in the future, and the picker hands back UTC midnight of the chosen day, so
+ * today (whose UTC midnight has passed) is never acceptable. The matcher is in
+ * the picker's local calendar, carrying tomorrow's UTC Y/M/D.
+ */
+function firstApprovableDay(now: Date = new Date()): Date {
+    return new Date(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
 }
 
 const STATUS_VARIANT: Record<Status, 'warning' | 'success' | 'error'> = {
@@ -81,6 +118,7 @@ export function ControlExceptionsPanel({
     defaultRiskAcceptedByUserId,
     canWrite,
     canAdmin,
+    currentUserId,
 }: Props) {
     const { mutate: swrMutate } = useSWRConfig();
     const t = useTranslations('panels.exceptions');
@@ -91,13 +129,13 @@ export function ControlExceptionsPanel({
         apiBase,
         async (url: string) => {
             const res = await fetch(url);
-            if (!res.ok) throw new Error('Failed to fetch exceptions');
+            if (!res.ok) throw new ApiClientError('Failed to fetch exceptions', 'fetch_failed', res.status);
             return res.json();
         },
     );
 
     const rows = exceptionsQuery.data?.rows ?? [];
-    const activeException = rows.find((r) => r.status === 'APPROVED' || r.status === 'REQUESTED');
+    const activeException = activeExceptionOf(rows);
     // A renewal names the exception it renews by when that was requested
     // (#4691), never by a slice of its id.
     const renewedFromText = (previousId: string): string => {
@@ -170,7 +208,7 @@ export function ControlExceptionsPanel({
                                     ) : null}
                                 </div>
                                 <div className="flex gap-tight">
-                                    {canAdmin && r.status === 'REQUESTED' ? (
+                                    {canAdmin && r.status === 'REQUESTED' && r.createdByUserId !== currentUserId ? (
                                         <>
                                             <Button
                                                 variant="secondary"
@@ -281,14 +319,12 @@ export function ControlExceptionHeaderBadge({
         apiBase,
         async (url: string) => {
             const res = await fetch(url);
-            if (!res.ok) throw new Error('Failed to fetch exceptions');
+            if (!res.ok) throw new ApiClientError('Failed to fetch exceptions', 'fetch_failed', res.status);
             return res.json();
         },
         { dedupingInterval: 30_000 },
     );
-    const active = (exceptionsQuery.data?.rows ?? []).find(
-        (r) => r.status === 'APPROVED' || r.status === 'REQUESTED',
-    );
+    const active = activeExceptionOf(exceptionsQuery.data?.rows ?? []);
     return <ExceptionHeaderBadge ex={active} />;
 }
 
@@ -369,12 +405,15 @@ function RequestExceptionDialog({
                 body: JSON.stringify(body),
             });
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || 'Failed to request exception');
+                // The refusal is the `{ error: { code, message } }` envelope;
+                // show its sentence, never the serialised JSON (#5228).
+                setError(apiErrorMessage(await res.json().catch(() => null), t('requestFailed')));
+                return;
             }
             onSuccess();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Unknown error');
+        } catch {
+            // The request never reached the server (network, offline).
+            setError(t('requestFailed'));
         } finally {
             setSubmitting(false);
         }
@@ -482,7 +521,8 @@ function ApproveDialog({
         try {
             setError(null);
             if (!expiresAt) {
-                throw new Error(t('expiryRequired'));
+                setError(t('expiryRequired'));
+                return;
             }
             const res = await fetch(`${apiBase}/${exceptionId}/approve`, {
                 method: 'POST',
@@ -493,12 +533,15 @@ function ApproveDialog({
                 }),
             });
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || 'Failed to approve exception');
+                // The refusal is the `{ error: { code, message } }` envelope;
+                // show its sentence, never the serialised JSON (#5228).
+                setError(apiErrorMessage(await res.json().catch(() => null), t('approveFailed')));
+                return;
             }
             onSuccess();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Unknown error');
+        } catch {
+            // The request never reached the server (network, offline).
+            setError(t('approveFailed'));
         } finally {
             setSubmitting(false);
         }
@@ -510,7 +553,11 @@ function ApproveDialog({
             <Modal.Body>
                 <div className="space-y-default">
                     <FormField label={t('expiresOn')} required>
-                        <DatePicker value={expiresAt} onChange={setExpiresAt} />
+                        <DatePicker
+                            value={expiresAt}
+                            onChange={setExpiresAt}
+                            disabledDays={{ before: firstApprovableDay() }}
+                        />
                     </FormField>
                     <FormField label={t('noteOptional')}>
                         <textarea
@@ -574,12 +621,15 @@ function RejectDialog({
                 body: JSON.stringify({ reason }),
             });
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || 'Failed to reject exception');
+                // The refusal is the `{ error: { code, message } }` envelope;
+                // show its sentence, never the serialised JSON (#5228).
+                setError(apiErrorMessage(await res.json().catch(() => null), t('rejectFailed')));
+                return;
             }
             onSuccess();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Unknown error');
+        } catch {
+            // The request never reached the server (network, offline).
+            setError(t('rejectFailed'));
         } finally {
             setSubmitting(false);
         }
@@ -650,12 +700,15 @@ function RenewDialog({
                 body: JSON.stringify({}),
             });
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || 'Failed to renew exception');
+                // The refusal is the `{ error: { code, message } }` envelope;
+                // show its sentence, never the serialised JSON (#5228).
+                setError(apiErrorMessage(await res.json().catch(() => null), t('renewFailed')));
+                return;
             }
             onSuccess();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Unknown error');
+        } catch {
+            // The request never reached the server (network, offline).
+            setError(t('renewFailed'));
         } finally {
             setSubmitting(false);
         }

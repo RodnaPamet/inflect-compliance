@@ -396,3 +396,41 @@ call that needs a different budget still passes its own.
 received from somewhere else, is not a `new PrismaClient` in the file and is
 not checked. An argument passed by name, or an object built only from a
 spread, is flagged rather than trusted, because the rule cannot see inside it.
+
+### `vector-store-single-seam`
+
+Under `src/`, no file but `src/app-layer/repositories/VectorRepository.ts` and
+the backends beside it in `repositories/vector/` loads a module from
+`repositories/vector/` — by the `@/` alias or a relative path, type-only imports
+included — and no string or template literal outside them names the store's
+table, `KnowledgeChunkEmbedding`, and no member access reaches its Prisma
+delegate, `knowledgeChunkEmbedding`.
+
+**Why.** The repository is where the vector store's guarantees live: the tenant
+comes from the request context, a record carrying anything but a key, a content
+hash and a vector is refused (the vectors-only rule, D-L4-2), every read is
+bounded, and every outcome is counted. A backend reached directly, or a raw
+query against its table, skips all of it and looks like ordinary code in
+review. Policing the table NAME as well as the import is what closes the second
+route, which needs no import at all.
+
+**What it cannot see.** A computed module specifier, and a table name assembled
+from pieces at run time. Comments are not literals, so prose may name the table.
+
+### `web-bot-auth-single-seam`
+
+Under `src/`, no file but `src/lib/web-bot-auth/bot-fetch.ts` and the signer
+itself loads `src/lib/web-bot-auth/sign.ts` — by the `@/` alias or a relative
+path, type-only imports included — and no string or template literal outside
+them carries the bot's product token, `InflectCompliance-VendorMonitor`.
+
+**Why.** `botFetch` is the one seam for an unattended request to a third-party
+website (Web Bot Auth Phase 2): `safeFetch` underneath, then the bot's honest
+User-Agent, then the deployment's request signature. A signature made anywhere
+else could ride a request that skipped the SSRF checks, and a hand-written bot
+User-Agent would claim the bot's identity for a request its public page does
+not describe. Policing the token as well as the import closes the second
+route, which needs no import at all.
+
+**What it cannot see.** A computed module specifier, and a token assembled from
+pieces at run time. Comments are not literals, so prose may name the token.

@@ -10,6 +10,9 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import * as React from 'react';
 
+// `mock`-prefixed so the hoisted factory below may read it.
+let mockRisksEdit = true;
+
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantApiUrl: () => (p: string) => `/api/t/acme${p}`,
     // RQ3-OB-A — delegate to the real canonical formatter so the
@@ -20,9 +23,11 @@ jest.mock('@/lib/tenant-context-provider', () => ({
     // asserts canWrite). These tests are about calibration aids, and several
     // assert the save button stays ENABLED through a warning — so they need a
     // writer. The gate itself is covered in risk-write-permission-gates.
+    // Save also needs `risks.edit`: `PUT /risks/:id/fair` takes it.
     useTenantContext: () => ({
         tenantSlug: 'acme',
         permissions: { canRead: true, canWrite: true, canAdmin: false, canAudit: false, canExport: true },
+        appPermissions: { risks: { view: true, create: true, edit: mockRisksEdit } },
     }),
 }));
 
@@ -164,6 +169,28 @@ describe('FairAnalysisPanel — a refused save says why (#4692)', () => {
         });
         expect(await screen.findByText('This risk is closed for editing.')).toBeInTheDocument();
     });
+
+    // #5224 — the panel re-seeds from the parent's risk when it mounts again,
+    // so a successful save must make the parent re-read it; otherwise a tab
+    // switch brought back the pre-save inputs, and saving again reverted them.
+    it('asks the parent to re-read the risk after a successful save, and not after a refused one', async () => {
+        const onSaved = jest.fn();
+        (global as unknown as { fetch: unknown }).fetch = jest.fn(async () => ({ ok: true, json: async () => ({}) }));
+        const view = render(<FairAnalysisPanel riskId="r-1" initial={BLANK} onSaved={onSaved} />);
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /save/i }));
+        });
+        expect(onSaved).toHaveBeenCalledTimes(1);
+        view.unmount();
+
+        const refused = jest.fn();
+        (global as unknown as { fetch: unknown }).fetch = jest.fn(async () => ({ ok: false, status: 403, json: async () => ({}) }));
+        render(<FairAnalysisPanel riskId="r-1" initial={BLANK} onSaved={refused} />);
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /save/i }));
+        });
+        expect(refused).not.toHaveBeenCalled();
+    });
 });
 
 describe('seedTriples — backward-compatible migration', () => {
@@ -196,5 +223,18 @@ describe('seedTriples — backward-compatible migration', () => {
             fairInputsJson: { tef: { min: 0.1, mode: 0.2, max: 0.5 } },
         });
         expect(t.tef).toEqual({ min: 0.1, mode: 0.2, max: 0.5 });
+    });
+});
+
+describe('FairAnalysisPanel — Save follows risks.edit', () => {
+    afterEach(() => {
+        mockRisksEdit = true;
+    });
+
+    it('a writer without risks.edit is not offered Save, and is told the exploration is local', () => {
+        mockRisksEdit = false;
+        render(<FairAnalysisPanel riskId="r-1" initial={BLANK} />);
+        expect(screen.queryByRole('button', { name: /Save FAIR ranges/ })).toBeNull();
+        expect(screen.getByText(/changes here are not saved/)).toBeInTheDocument();
     });
 });

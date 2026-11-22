@@ -181,6 +181,13 @@ The durable record an auditor can request, all retained for the life of the repo
     `prisma/migrations/` and was squarely SIGNIFICANT by the table above — and a
     migration is the irreversible case, so the directory holding them cannot be
     the one left out.
+  - It covers the rest of the class table too (#5245): `src/middleware.ts` and
+    `src/lib/security/` (security-affecting middleware), `infra/` and `deploy/`
+    (the matrix's infrastructure row), and a dependency major bump. A major bump
+    is read from the base and head `package.json`, because a file list cannot
+    tell a major bump from a minor one; a `0.x` minor bump counts as major. A
+    cross-tenant data backfill has no path of its own and is still caught only
+    by review, or by the `prisma/` rule when it ships as a migration.
 - **Owner waiver for assistant-driven PRs** (2026-08-18). The repo owner has
   instructed Claude Code sessions not to hold a green PR waiting on the owner's
   `Sign-off:`, including SIGNIFICANT ones. Those PRs are merged once every

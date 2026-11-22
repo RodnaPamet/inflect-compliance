@@ -170,6 +170,9 @@ model Risk {
   /// `RiskTreatmentPlan.(riskId, tenantId) → Risk.(id, tenantId)`
   /// FK shape so cross-tenant treatment plans are impossible at the
   /// DB level. Same denorm-tenantId Phase-2 pattern Audit uses.
+  /// Process-map nodes that stand for this risk (`ProcessNodeRisk`).
+  processNodeRisks ProcessNodeRisk[]
+
   @@unique([id, tenantId])
   // PR-B — unique within a tenant so `RSK-1` can't collide. Allows
   // `@@unique` on a nullable column (Postgres treats NULLs as
@@ -829,7 +832,8 @@ model RiskTreatmentPlan {
   risk        Risk                 @relation(fields: [riskId, tenantId], references: [id, tenantId])
   owner       User                 @relation("RiskTreatmentPlanOwner", fields: [ownerUserId], references: [id])
   createdBy   User                 @relation("RiskTreatmentPlanCreator", fields: [createdByUserId], references: [id])
-  completedBy User?                @relation("RiskTreatmentPlanCompleter", fields: [completedByUserId], references: [id])
+  /// #5595: RESTRICT, not SetNull. A stamped decision keeps its actor (pair CHECK / one-way trigger), so a DSAR erasure of this user refuses up front.
+  completedBy User?                @relation("RiskTreatmentPlanCompleter", fields: [completedByUserId], references: [id], onDelete: Restrict)
   deletedBy   User?                @relation("RiskTreatmentPlanDeleter", fields: [deletedByUserId], references: [id])
   milestones  TreatmentMilestone[]
 
@@ -872,7 +876,8 @@ model TreatmentMilestone {
 
   tenant        Tenant            @relation(fields: [tenantId], references: [id])
   treatmentPlan RiskTreatmentPlan @relation(fields: [treatmentPlanId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  completedBy   User?             @relation("TreatmentMilestoneCompleter", fields: [completedByUserId], references: [id])
+  /// #5595: RESTRICT, not SetNull. A stamped decision keeps its actor (pair CHECK / one-way trigger), so a DSAR erasure of this user refuses up front.
+  completedBy   User?             @relation("TreatmentMilestoneCompleter", fields: [completedByUserId], references: [id], onDelete: Restrict)
 
   @@index([tenantId, treatmentPlanId])
   @@index([tenantId, dueDate])

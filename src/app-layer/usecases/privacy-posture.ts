@@ -124,7 +124,7 @@ export async function getPrivacyPosture(ctx: RequestContext): Promise<PrivacyPos
                 db.vendorRelationship.count({ where: { tenantId: ctx.tenantId } }),
             ]);
 
-        const region = tenant?.region ?? 'US_EAST_1';
+        const region = tenant?.region ?? 'EUROPE_WEST1';
 
         return {
             encryption: {

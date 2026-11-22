@@ -16,6 +16,16 @@ import {
     resolveRotationAge,
 } from '@/lib/agentic/credential-hygiene';
 import { keysRefusedWhenEnforcing } from '@/lib/agentic/agent-registration-gate';
+import {
+    TURN_CAP_MAX,
+    TURN_CAP_MIN,
+    isPermittedTurnCap,
+    resolveTurnCaps,
+    type TurnCapInputs,
+    type TurnCapKey,
+    type TurnCaps,
+} from '@/lib/agentic/turn-caps';
+import { readTurnCapInputs } from '@/lib/agentic/turn-caps-policy';
 import type { AiGuardMode, AiResidency, LegacyMatchAiMode } from '@prisma/client';
 
 /**
@@ -231,6 +241,19 @@ export interface TenantSecurityConfig {
      * default (`DEFAULT_KEY_ROTATION_DAYS`) — and says so on its row (#3708).
      */
     apiKeyRotationDays: number | null;
+    /**
+     * The workspace's stored narrowing of delegations per turn (#4594), or
+     * null when it follows the organization's ceiling.
+     */
+    agentMaxSubagentsPerTurn: number | null;
+    /** The same, for tool calls per turn. */
+    agentMaxToolCallsPerTurn: number | null;
+    /**
+     * The value of each cap that APPLIES, the ceiling it was taken under and
+     * its basis, so the page can say "narrowed by your organization" when the
+     * ceiling binds rather than show a stored number that changes nothing.
+     */
+    turnCaps: TurnCaps;
 }
 
 export interface TenantSecurityConfigPatch {
@@ -257,6 +280,42 @@ export interface TenantSecurityConfigPatch {
      * clears it, which returns the tenant to the product default.
      */
     apiKeyRotationDays?: number | null;
+    /**
+     * The workspace's narrowing of delegations per turn, 0..10 and no higher
+     * than the organization's ceiling. `null` follows the organization.
+     */
+    agentMaxSubagentsPerTurn?: number | null;
+    /** The same, for tool calls per turn, 1..10. */
+    agentMaxToolCallsPerTurn?: number | null;
+}
+
+/** The settings column for each per-turn cap (#4594). */
+const TURN_CAP_COLUMN: Readonly<Record<TurnCapKey, 'agentMaxSubagentsPerTurn' | 'agentMaxToolCallsPerTurn'>> = {
+    delegationsPerTurn: 'agentMaxSubagentsPerTurn',
+    toolCallsPerTurn: 'agentMaxToolCallsPerTurn',
+};
+
+/**
+ * The organization's two ceilings for this workspace, through the turn caps'
+ * own reader: the global client, because `Organization` is under org RLS that
+ * a workspace admin's context does not satisfy. THROWS on a failed read, so a
+ * write is refused rather than checked against a guess.
+ */
+async function organizationTurnCeilings(tenantId: string): Promise<TurnCapInputs['organization']> {
+    return (await readTurnCapInputs(tenantId)).organization;
+}
+
+/** The caps that apply, from the workspace's stored values and its organization's ceilings. */
+function turnCapsFor(
+    organization: TurnCapInputs['organization'],
+    row: { agentMaxSubagentsPerTurn: number | null; agentMaxToolCallsPerTurn: number | null } | null,
+): TurnCaps {
+    return resolveTurnCaps({
+        organization,
+        workspace: row
+            ? { delegationsPerTurn: row.agentMaxSubagentsPerTurn, toolCallsPerTurn: row.agentMaxToolCallsPerTurn }
+            : null,
+    });
 }
 
 const MAX_CONCURRENT_SESSIONS_CEILING = 100;
@@ -266,6 +325,7 @@ export async function getTenantSecurityConfig(
     ctx: RequestContext,
 ): Promise<TenantSecurityConfig> {
     assertCanManageSecuritySettings(ctx);
+    const ceilings = await organizationTurnCeilings(ctx.tenantId);
 
     return runInTenantContext(ctx, async (db) => {
         const row = await db.tenantSecuritySettings.findUnique({
@@ -283,6 +343,8 @@ export async function getTenantSecurityConfig(
                 mfaFailClosed: true,
                 requireRegisteredAgent: true,
                 apiKeyRotationDays: true,
+                agentMaxSubagentsPerTurn: true,
+                agentMaxToolCallsPerTurn: true,
             },
         });
 
@@ -307,6 +369,10 @@ export async function getTenantSecurityConfig(
             recertificationOwnerUserId: row?.recertificationOwnerUserId ?? null,
             // Null is "no setting": the pass applies the product default.
             apiKeyRotationDays: row?.apiKeyRotationDays ?? null,
+            // Null follows the organization's ceiling (#4594).
+            agentMaxSubagentsPerTurn: row?.agentMaxSubagentsPerTurn ?? null,
+            agentMaxToolCallsPerTurn: row?.agentMaxToolCallsPerTurn ?? null,
+            turnCaps: turnCapsFor(ceilings, row),
         };
     });
 }
@@ -420,6 +486,41 @@ export async function updateTenantSecurityConfig(
         changed.push('apiKeyRotationDays');
     }
 
+    // THE PER-TURN CAPS (#4594): a workspace may only NARROW its organization's
+    // ceiling. A value above the CURRENT ceiling is refused, because it would
+    // store a choice that changes nothing; null follows the organization. The
+    // range is checked here as well as in the route's schema, for callers that
+    // are not that route; the CHECKs are the last word.
+    const turnCapKeys = (Object.keys(TURN_CAP_COLUMN) as TurnCapKey[]).filter(
+        (key) => patch[TURN_CAP_COLUMN[key]] !== undefined,
+    );
+    const ceilings = await organizationTurnCeilings(ctx.tenantId);
+    if (turnCapKeys.length > 0) {
+        const applying = turnCapsFor(ceilings, null);
+        for (const key of turnCapKeys) {
+            const column = TURN_CAP_COLUMN[key];
+            const v = patch[column];
+            if (v !== null && v !== undefined) {
+                if (!isPermittedTurnCap(key, v)) {
+                    throw badRequest(
+                        `${column} must be a whole number from ${TURN_CAP_MIN[key]} to ${TURN_CAP_MAX}, ` +
+                        'or null to follow the organization.',
+                    );
+                }
+                const ceiling = applying[key].ceiling;
+                if (v > ceiling) {
+                    throw badRequest(
+                        `${column} cannot be above your organization's limit of ${ceiling}: a workspace may only ` +
+                        'narrow it. Choose a value up to the limit, or follow the organization.',
+                        { reason: 'TURN_CAP_ABOVE_ORGANIZATION_CEILING', field: column, ceiling },
+                    );
+                }
+            }
+            data[column] = v;
+            changed.push(column);
+        }
+    }
+
     if (patch.auditStreamUrl !== undefined) {
         if (patch.auditStreamUrl !== null) assertUsableAuditStreamUrl(patch.auditStreamUrl);
         data.auditStreamUrl = patch.auditStreamUrl;
@@ -471,6 +572,8 @@ export async function updateTenantSecurityConfig(
                 auditStreamUrl: true,
                 auditStreamSecretEncrypted: true,
                 apiKeyRotationDays: true,
+                agentMaxSubagentsPerTurn: true,
+                agentMaxToolCallsPerTurn: true,
             },
         });
 
@@ -672,6 +775,57 @@ export async function updateTenantSecurityConfig(
             }
         }
 
+        // THE PER-TURN CAPS GET THEIR OWN EVENT, with both values, beside
+        // `SECURITY_SETTINGS_UPDATED`, as the rotation age does (#4594): "who
+        // narrowed delegation here, and from what" is the question it answers.
+        // The value that applies rides along, so a null reads as the
+        // organization's ceiling it means rather than as an absence.
+        const movedTurnCaps = turnCapKeys.filter(
+            (key) => (before?.[TURN_CAP_COLUMN[key]] ?? null) !== patch[TURN_CAP_COLUMN[key]],
+        );
+        if (movedTurnCaps.length > 0) {
+            const priorCaps = turnCapsFor(ceilings, before ?? null);
+            const nextRow = {
+                agentMaxSubagentsPerTurn:
+                    patch.agentMaxSubagentsPerTurn !== undefined
+                        ? patch.agentMaxSubagentsPerTurn
+                        : (before?.agentMaxSubagentsPerTurn ?? null),
+                agentMaxToolCallsPerTurn:
+                    patch.agentMaxToolCallsPerTurn !== undefined
+                        ? patch.agentMaxToolCallsPerTurn
+                        : (before?.agentMaxToolCallsPerTurn ?? null),
+            };
+            const nextCaps = turnCapsFor(ceilings, nextRow);
+            const side = (caps: TurnCaps, row: Record<string, number | null>) =>
+                Object.fromEntries(
+                    movedTurnCaps.map((key) => [
+                        TURN_CAP_COLUMN[key],
+                        { stored: row[TURN_CAP_COLUMN[key]] ?? null, applies: caps[key].value },
+                    ]),
+                );
+            await logEvent(db, ctx, {
+                action: 'AGENT_TURN_CAPS_CHANGED',
+                entityType: 'TenantSecuritySettings',
+                entityId: ctx.tenantId,
+                details:
+                    'Per-turn agent limits changed: ' +
+                    movedTurnCaps
+                        .map((key) => `${TURN_CAP_COLUMN[key]} ${priorCaps[key].value} → ${nextCaps[key].value}`)
+                        .join(', '),
+                detailsJson: {
+                    category: 'entity_lifecycle',
+                    entityName: 'TenantSecuritySettings',
+                    operation: 'updated',
+                    changedFields: movedTurnCaps.map((key) => TURN_CAP_COLUMN[key]),
+                    before: side(priorCaps, {
+                        agentMaxSubagentsPerTurn: before?.agentMaxSubagentsPerTurn ?? null,
+                        agentMaxToolCallsPerTurn: before?.agentMaxToolCallsPerTurn ?? null,
+                    }),
+                    after: side(nextCaps, nextRow),
+                },
+            });
+        }
+
         await logEvent(db, ctx, {
             action: 'SECURITY_SETTINGS_UPDATED',
             entityType: 'TenantSecuritySettings',
@@ -713,6 +867,8 @@ export async function updateTenantSecurityConfig(
                 mfaFailClosed: true,
                 requireRegisteredAgent: true,
                 apiKeyRotationDays: true,
+                agentMaxSubagentsPerTurn: true,
+                agentMaxToolCallsPerTurn: true,
             },
         });
 
@@ -737,6 +893,10 @@ export async function updateTenantSecurityConfig(
             recertificationOwnerUserId: row?.recertificationOwnerUserId ?? null,
             // Null is "no setting": the pass applies the product default.
             apiKeyRotationDays: row?.apiKeyRotationDays ?? null,
+            // Null follows the organization's ceiling (#4594).
+            agentMaxSubagentsPerTurn: row?.agentMaxSubagentsPerTurn ?? null,
+            agentMaxToolCallsPerTurn: row?.agentMaxToolCallsPerTurn ?? null,
+            turnCaps: turnCapsFor(ceilings, row),
         };
     });
 }

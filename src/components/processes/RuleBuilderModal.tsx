@@ -42,6 +42,7 @@ import {
     UPDATE_STATUS_ENTITY_TYPES,
 } from '@/lib/automation/status-allowlist';
 import type { AutomationRuleRow } from '@/app/t/[tenantSlug]/(app)/processes/RulesTab';
+import type { SubflowGroupItem } from '@/lib/processes/subflow-groups';
 
 type ActionType =
     | 'NOTIFY_USER'
@@ -613,6 +614,33 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
     }));
     const [step, setStep] = useState<1 | 2 | 3>(1);
     const [form, setForm] = useState<BuilderState>(EMPTY);
+    // #5477 — the INVOKE_SUBFLOW target picker: the tenant's groups on live
+    // automation canvases, labelled by map and group. The stored value stays
+    // the group's `nodeKey`, which is what the sub-flow dispatcher matches
+    // against a rule's `subFlowGroupId`. A stored key no group carries any more
+    // (its group or map was deleted) stays selectable, labelled as missing, so
+    // opening an old rule for edit never silently drops its target.
+    const { data: subflowGroupList } = useTenantSWR<{ groups: SubflowGroupItem[] }>(
+        CACHE_KEYS.processes.subflowGroups(),
+    );
+    const storedTargetGroupId = form.subflow.targetGroupId;
+    const subflowGroupOptions: ComboboxOption[] = useMemo(() => {
+        const groups = subflowGroupList?.groups ?? [];
+        const options: ComboboxOption[] = groups.map((g) => ({
+            value: g.nodeKey,
+            label: t('subflowTargetOption', {
+                map: g.mapName,
+                group: g.label.trim() || t('subflowTargetUnnamed'),
+            }),
+        }));
+        if (storedTargetGroupId && subflowGroupList && !groups.some((g) => g.nodeKey === storedTargetGroupId)) {
+            options.push({
+                value: storedTargetGroupId,
+                label: t('subflowTargetMissing', { key: storedTargetGroupId }),
+            });
+        }
+        return options;
+    }, [subflowGroupList, storedTargetGroupId, t]);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -622,12 +650,23 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
     // never clobbers in-progress edits, and reset to EMPTY on a create open.
     // Without this, Save PUTs the blank EMPTY defaults over the stored rule.
     const editId = open && editRule ? editRule.id : null;
-    const { data: editDetail } = useTenantSWR<RuleDetail>(
+    const { data: editDetail, error: editDetailError } = useTenantSWR<RuleDetail>(
         editId ? CACHE_KEYS.automation.rules.detail(editId) : null,
     );
     const hydratedForRef = useRef<string | null>(null);
+    // The same mark as state, for render: until THIS rule's detail has been
+    // loaded into the form, the form holds EMPTY (or, before the reset below,
+    // the previous rule's values), and a Save would PUT those over this rule
+    // (#5309). Next and Save wait for it.
+    const [hydratedFor, setHydratedFor] = useState<string | null>(null);
     useEffect(() => {
         if (!open) {
+            if (hydratedForRef.current !== null) {
+                // Nothing of a closed rule carries into the next open.
+                setForm(EMPTY);
+                setStep(1);
+                setHydratedFor(null);
+            }
             hydratedForRef.current = null;
             return;
         }
@@ -636,6 +675,7 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                 setForm(EMPTY);
                 setStep(1);
                 hydratedForRef.current = '__create__';
+                setHydratedFor('__create__');
             }
             return;
         }
@@ -643,8 +683,10 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
             setForm(detailToBuilderState(editDetail));
             setStep(1);
             hydratedForRef.current = editRule.id;
+            setHydratedFor(editRule.id);
         }
     }, [open, editRule, editDetail]);
+    const awaitingDetail = Boolean(editRule) && hydratedFor !== editRule?.id;
 
     const patch = (p: Partial<BuilderState>) => setForm((f) => ({ ...f, ...p }));
 
@@ -772,7 +814,17 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                             <Combobox
                                 options={triggerOptions}
                                 selected={triggerSelected}
-                                setSelected={(o) => patch({ triggerEvent: o?.value ?? '', conditions: [] })}
+                                setSelected={(o) => {
+                                    const next = o?.value ?? '';
+                                    patch({
+                                        triggerEvent: next,
+                                        conditions: [],
+                                        // A preserved nested filter names the OLD
+                                        // event's fields; carried onto the new
+                                        // event it can never match (#5309).
+                                        ...(next !== form.triggerEvent ? { preservedFilter: null } : {}),
+                                    });
+                                }}
                                 placeholder={t('selectEvent')}
                                 forceDropdown
                                 matchTriggerWidth
@@ -1359,12 +1411,23 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                             )}
                             {form.actionType === 'INVOKE_SUBFLOW' && (
                                 <FormField label={t('subflowTargetLabel')} description={t('subflowTargetHint')} required>
-                                    <Input
-                                        value={form.subflow.targetGroupId}
-                                        onChange={(e) =>
-                                            patch({ subflow: { ...form.subflow, targetGroupId: e.target.value } })
+                                    <Combobox
+                                        options={subflowGroupOptions}
+                                        selected={
+                                            subflowGroupOptions.find(
+                                                (o) => o.value === form.subflow.targetGroupId,
+                                            ) ?? null
                                         }
-                                        placeholder={t('subflowTargetPlaceholder')}
+                                        setSelected={(o) =>
+                                            patch({ subflow: { ...form.subflow, targetGroupId: o?.value ?? '' } })
+                                        }
+                                        placeholder={
+                                            subflowGroupOptions.length === 0
+                                                ? t('subflowTargetEmpty')
+                                                : t('subflowTargetPlaceholder')
+                                        }
+                                        forceDropdown
+                                        matchTriggerWidth
                                     />
                                 </FormField>
                             )}
@@ -1505,10 +1568,7 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                                 already forks a `condition-fail` edge to an
                                 elseRuleId; the tabular builder now offers the
                                 same "when conditions fail, run this instead"
-                                target. (INVOKE_SUBFLOW stays canvas-authored:
-                                sub-flow groups are canvas topology — a group
-                                node wrapping rules — with no meaningful tabular
-                                target, so we don't offer a raw-id picker here.) */}
+                                target. */}
                             <FormField
                                 label={t('elseLabel')}
                                 description={t('elseDescription')}
@@ -1530,6 +1590,11 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                     </div>
                 )}
 
+                {awaitingDetail && (
+                    <p className="mt-default text-sm text-content-muted" data-testid="rule-builder-detail-state">
+                        {editDetailError ? t('detailLoadFailed') : t('detailLoading')}
+                    </p>
+                )}
                 {error && <p className="mt-default text-sm text-content-error">{error}</p>}
             </Modal.Body>
             <Modal.Actions align="between">
@@ -1542,7 +1607,7 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                 {step < 3 ? (
                     <Button
                         variant="primary"
-                        disabled={step === 1 && !step1Valid}
+                        disabled={awaitingDetail || (step === 1 && !step1Valid)}
                         onClick={() => setStep((s) => (s + 1) as 2 | 3)}
                     >
                         {t('next')}
@@ -1551,7 +1616,7 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                     <Button
                         variant="primary"
                         loading={submitting}
-                        disabled={!step3Valid || submitting}
+                        disabled={awaitingDetail || !step3Valid || submitting}
                         onClick={handleSave}
                     >
                         {editRule ? t('saveRule') : t('createRule')}

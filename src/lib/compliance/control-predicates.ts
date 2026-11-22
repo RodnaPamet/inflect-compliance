@@ -57,9 +57,9 @@ export function controlsDueSoonWhere(now: Date = new Date()): Prisma.ControlWher
  *
  * Three parts, each load-bearing, and each one a way to get a wrong number:
  *
- *   - `status: { not: 'NOT_APPLICABLE' }` keys on STATUS, not the
- *     `applicability` field a sibling scorer uses. Picking the other one makes
- *     this disagree with the readiness report it was derived from.
+ *   - a control scoped out by EITHER column is excluded (#4793): `status`
+ *     NOT_APPLICABLE or `applicability` NOT_APPLICABLE. Keying on one alone
+ *     counted the other kind of N/A control as missing evidence.
  *   - `evidence: coverageQualifyingEvidenceWhere(now)` is the shared
  *     APPROVED + unexpired + not-archived + not-deleted rule. Never inline it.
  *   - `tenantId` INSIDE the nested link filter: the soft-delete extension

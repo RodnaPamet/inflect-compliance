@@ -301,6 +301,35 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'agent-fingerprint',
+        pattern: '53 1 * * *',    // daily at 01:53 UTC
+        // NO tenantId: absent means "the tenants the operator named in
+        // AGENT_BEHAVIOUR_DETECTOR_TENANTS". With the operator's switch off —
+        // the default — the tick reads nothing and counts one `disabled`.
+        //
+        // The time, and each part of it is load-bearing:
+        //   - AFTER 00:00 UTC, because the job scores the UTC day that just
+        //     CLOSED (`previousUtcDay`), and nearly two hours after it so the
+        //     ledger has settled: a run started before midnight writes its last
+        //     decision-log rows and behaviour windows after it, and a scored day
+        //     is never re-scored (idempotent on tenant, agent, day).
+        //   - BEFORE the identity chain (03:00-05:15) and the 06:00 agentic
+        //     passes, which raise Findings of their own: an incident in one must
+        //     not arrive inside another's minute and be triaged as part of it.
+        //     The owner-orphan pass and the kill-switch drill write kill rows;
+        //     this pass may LATCH a breaker, and the two stops should not share
+        //     a window.
+        //   - NOT at 01:00 or 01:20 or 02:00, which carry other entries, and
+        //     01:53 is a minute no other entry fires in: not the hourly :00 or
+        //     the reaper's :37, and not a multiple of 2, 5, 10 or 15.
+        // Declaration order in this array is NOT execution order; only the cron
+        // pattern is. NO SAFETY CLAIM in the description: whether a tenant is
+        // judged, and whether it may latch, is the operator's three keys in
+        // src/lib/agentic/behaviour-detector-switch.ts — read that, not this.
+        description: 'For each tenant the operator named, score every registered agent\'s previous UTC day against its own rolling baseline of active days (counts only — never content), record the day, raise one finding per anomalous agent, and at the higher threshold latch the agent\'s existing circuit breaker when the operator\'s latch key is on. Idempotent on (tenant, agent, day).',
+        defaultPayload: {},
+    },
+    {
         name: 'integration-passport-sweep',
         pattern: '45 5 * * 0',    // weekly, Sunday 05:45 UTC
         // NO tenantId and NO asOf: absent means "every tenant with an external
@@ -453,6 +482,29 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         pattern: '0 3 * * *',     // daily at 03:00 UTC
         description: 'Purge soft-deleted records, expired evidence, JML identity artefacts and legacy access snapshots past their retention; then run the per-row retention sweep. The legacy-snapshot windows are the tenant settings legacySnapshotRetentionDays and legacySnapshotUnconsumedRetentionDays, never constants in this field — see scheduled-job-description-claims for why a description must not state a per-tenant value.',
         defaultPayload: { dryRun: false },
+    },
+    {
+        name: 'audit-pack-snapshot-encryption',
+        pattern: '23 2 * * *',    // daily at 02:23 UTC
+        // NO tenantId: absent means "find every tenant holding a plaintext
+        // snapshot and run each". See `AuditPackSnapshotEncryptionPayload`.
+        //
+        // DAILY rather than once (owner decision, 2026-11-19, #5455): the
+        // backfill needs no operator step, and anything a bypass path writes in
+        // plaintext later is closed the next night. Once no plaintext row is
+        // left a run is two counts over the table.
+        //
+        // The minute:
+        //   - in the quiet early-UTC window, away from daytime pack exports;
+        //   - BEFORE data-lifecycle (03:00), which can purge a tenant and its
+        //     rows, so the two never touch one tenant's rows in the same minute;
+        //   - 02:23 is a minute no other entry fires in: not the hourly :00, the
+        //     reaper's :37, nor a multiple of 2, 5, 10 or 15, so none of the
+        //     frequent ticks either.
+        // Declaration order in this array is NOT execution order; only the cron
+        // pattern is.
+        description: 'Encrypt audit-pack item snapshots still stored in plaintext (written before the column was encrypted) under each tenant\'s own key, skipping a tenant whose key rotation is in flight; report the column before and after (plaintext, encrypted, empty, total) so a run that found nothing is distinguishable from one that read nothing.',
+        defaultPayload: {},
     },
     {
         name: 'vendor-monitoring',

@@ -22,7 +22,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { enqueue, getQueue } from '@/app-layer/jobs/queue';
+import { enqueue } from '@/app-layer/jobs/queue';
+import { findTenantJob } from '@/app-layer/jobs/tenant-job-lookup';
 import { API_KEY_CREATE_LIMIT } from '@/lib/security/rate-limit-middleware';
 import { logEvent } from '@/app-layer/events/audit';
 import { prisma } from '@/lib/prisma';
@@ -87,24 +88,10 @@ export const GET = withApiErrorHandling(
             );
         }
 
-        const queue = getQueue();
-        const job = await queue.getJob(jobId);
+        // Only this tenant's own key-rotation job is reported; another
+        // tenant's, another kind's, or a platform-wide job is 404.
+        const job = await findTenantJob(jobId, ctx.tenantId, 'key-rotation');
         if (!job) {
-            return NextResponse.json(
-                {
-                    error: {
-                        code: 'NOT_FOUND',
-                        message: `No job with id ${jobId}`,
-                    },
-                },
-                { status: 404 },
-            );
-        }
-
-        // Defensive — in the extraordinarily unlikely event someone
-        // reuses a job id from a different tenant, we don't leak it.
-        const payload = job.data as { tenantId?: string } | undefined;
-        if (payload?.tenantId && payload.tenantId !== ctx.tenantId) {
             return NextResponse.json(
                 {
                     error: {

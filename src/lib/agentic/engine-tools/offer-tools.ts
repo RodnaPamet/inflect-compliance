@@ -23,6 +23,7 @@ import {
 } from '@/lib/agentic/autonomy-ceiling';
 import type { McpInvocation } from '@/lib/mcp/authorize';
 import { loadableReadTools } from '@/lib/mcp/tools/registry';
+import { unmountedReadTools, withheldReadToolNames } from '@/lib/mcp/mount-gated-tools';
 import { loadableProposeTools } from '@/lib/mcp/tools/propose-tools';
 import type { ExternalConnectionFacts, McpReadTool } from '@/lib/mcp/tools/types';
 
@@ -57,13 +58,16 @@ export function asToolArgs(data: unknown): Record<string, unknown> {
 
 /**
  * Why a tool was not advertised. Diagnostic only — never a refusal.
- * `READ_ONLY_WORKFLOW` is a propose tool withheld because the run's workflow
- * declares `readOnly` (#3749). `PROFILE_TOOL_NOT_GRANTED` is a tool an agent
+ * `READ_ONLY_WORKFLOW` is a tool withheld because the run's workflow declares
+ * `readOnly`: every propose tool (#3749), and every EXTERNAL tool that is a
+ * write — a write-classified external tool or an A2A send (#5365). `PROFILE_TOOL_NOT_GRANTED` is a tool an agent
  * profile names that the agent's current grants no longer reach, typically a
  * grant revoked after the profile version was approved (#4143).
  * `CONNECTION_READ_ONLY` is an EXTERNAL write-classified tool whose connection
  * sits at the ladder's `DISABLED` rung, where the dispatch would refuse it with
- * nothing sent (#3872).
+ * nothing sent (#3872). `RETRIEVER_NOT_EVALUATED` is a read tool behind a
+ * mount gate that is closed: `search_knowledge` with no passing RAG evaluation
+ * record for the deployment's retriever revision (vector store Phase 3.5).
  */
 export type ToolOmissionReason =
     | 'SCOPE'
@@ -71,7 +75,8 @@ export type ToolOmissionReason =
     | 'UNCONVERTIBLE_SCHEMA'
     | 'READ_ONLY_WORKFLOW'
     | 'PROFILE_TOOL_NOT_GRANTED'
-    | 'CONNECTION_READ_ONLY';
+    | 'CONNECTION_READ_ONLY'
+    | 'RETRIEVER_NOT_EVALUATED';
 
 /**
  * One tool that survived the narrowing, handed to the engine to put in its own
@@ -281,9 +286,12 @@ export function offerToolSet<T>(
         readonly originFor?: OriginResolver;
         /**
          * The run's workflow declares `readOnly` (#3749): offer the read
-         * surface alone. Every propose tool the registry would have offered is
-         * listed as omitted, so "offered no propose tool" is a fact the run
-         * records rather than one inferred from an empty list.
+         * surface alone, without its external writes (#5365). Every propose
+         * tool, write-classified external tool and A2A send the registry would
+         * have offered is listed as omitted, so "offered no write" is a fact
+         * the run records rather than one inferred from an empty list. The
+         * offered closures also run on a context carrying `readOnlyRun`, which
+         * the external write dispatch and the A2A send refuse.
          */
         readonly readOnly?: boolean;
         /**
@@ -296,6 +304,15 @@ export function offerToolSet<T>(
          * engine's usual offer.
          */
         readonly profileTools?: readonly string[];
+        /**
+         * The run's EXISTING latch, for a second tool set built inside the same
+         * run (Step 2e: a sub-agent's set, built over the parent's). Two
+         * latches in one run is the routing-around the latch exists to stop: a
+         * flag a child's tool raised must refuse the parent's next call, and
+         * the reverse. When given, `observe` is ignored, because the latch
+         * already reports to the run's observer. Absent means a new latch.
+         */
+        readonly review?: ReviewLatch;
     },
 ): OfferedToolSet<T> {
     // One latch for the RUN — review, once required, stays required across
@@ -304,14 +321,55 @@ export function offerToolSet<T>(
     // cross. A second latch for the propose tools would let a flagged read be
     // followed by a clean proposal, which is the routing-around it exists to
     // stop, and on the surface where it would matter most.
-    const review = new ReviewLatch(opts.observe);
+    const review = opts.review ?? new ReviewLatch(opts.observe);
 
     const profileTools = opts.profileTools === undefined ? null : new Set(opts.profileTools);
     const inProfile = (t: OfferableTool): boolean => profileTools === null || profileTools.has(t.name);
     const readCandidates = loadableReadTools(inv);
     const proposeCandidates = loadableProposeTools(inv);
+    // Read tools the invocation would load but for a closed mount gate. Not
+    // candidates — nothing that has not shown it works is offered — but named,
+    // so the run records why a granted tool is missing.
+    const unmounted = unmountedReadTools(inv).filter((t) => profileTools === null || profileTools.has(t.name));
+    const withheld = profileTools === null ? [] : withheldReadToolNames();
+    const unmountedOmitted: OfferedToolSet<T>['omitted'] = unmounted.map((t) => ({
+        name: t.name,
+        reason: 'RETRIEVER_NOT_EVALUATED' as const,
+    }));
 
-    const read = offerTools(inv, readCandidates.filter(inProfile), READ_CAPABILITY, review, build, opts.sourcePrefix);
+    // ── A READ-ONLY RUN IS OFFERED NO EXTERNAL WRITE EITHER (#5365) ─────────
+    //
+    // External tools ride the READ surface (`allReadTools` appends
+    // `inv.externalTools`), so withholding the propose list alone left every
+    // write-classified external tool and every A2A send offered to a run that
+    // declares it writes nothing — and their dispatch opens a proposal, or at
+    // AUTOMATIC a journal row the dispatch pass sends with no approval. So
+    // under `readOnly` an external candidate the dispatch would treat as a
+    // write is withheld here too. `declaresWrite` is read off the same facts
+    // the dispatch branches on (`adapterFor` sets it `true` for every A2A
+    // send), and an external READ stays offered: access-posture still reaches
+    // the directory.
+    const withheldAsWrite = (t: OfferableTool): boolean =>
+        opts.readOnly === true && t.externalConnection?.declaresWrite === true;
+    const readOffered = readCandidates.filter(inProfile);
+
+    // AND THE BACKSTOP: every closure this set hands out runs on a context that
+    // says the run is read-only, so the external write dispatch and the A2A
+    // send refuse even a call that reached them some other way than this
+    // offer. The flag only narrows.
+    const runInv: McpInvocation = opts.readOnly ? { ...inv, ctx: { ...inv.ctx, readOnlyRun: true } } : inv;
+
+    const read = offerTools(
+        runInv,
+        readOffered.filter((t) => !withheldAsWrite(t)),
+        READ_CAPABILITY,
+        review,
+        build,
+        opts.sourcePrefix,
+    );
+    const readWithheld: OfferedToolSet<T>['omitted'] = readOffered
+        .filter(withheldAsWrite)
+        .map((t) => ({ name: t.name, reason: 'READ_ONLY_WORKFLOW' as const }));
     // The origin resolver reaches only the propose surface, because only a
     // propose call writes a row that can carry one. Passing it to both would
     // read as though a read were being attributed somewhere.
@@ -341,13 +399,21 @@ export function offerToolSet<T>(
         profileTools === null
             ? []
             : [...profileTools]
-                  .filter((name) => !readCandidates.some((t) => t.name === name) && !proposeCandidates.some((t) => t.name === name))
+                  .filter(
+                      (name) =>
+                          !readCandidates.some((t) => t.name === name) &&
+                          !proposeCandidates.some((t) => t.name === name) &&
+                          // A gated tool that is not offered is not an
+                          // ungranted one: UNMOUNTED is named above, and an
+                          // ABSENT feature names nothing.
+                          !withheld.includes(name),
+                  )
                   .sort()
                   .map((name) => ({ name, reason: 'PROFILE_TOOL_NOT_GRANTED' as const }));
 
     return {
         tools: [...read.tools, ...propose.tools],
-        omitted: [...read.omitted, ...propose.omitted, ...lost],
+        omitted: [...read.omitted, ...readWithheld, ...unmountedOmitted, ...propose.omitted, ...lost],
         // External tools ride the READ surface (`allReadTools` appends
         // `inv.externalTools` to the internal set), so in practice this comes
         // from `read`. Both are concatenated anyway rather than assuming that:

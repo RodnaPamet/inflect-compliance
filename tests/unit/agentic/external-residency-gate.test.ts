@@ -14,6 +14,7 @@
  * reason about our own bookkeeping.
  */
 import { FLUE_PROVIDER_IDS } from '@/lib/agentic/flue/model-selection';
+import { TOOL_RUNNER_PROVIDER_ID } from '@/lib/agentic/tool-runner/client';
 import {
     businessSystemConnections,
     externalResidencyRefusal,
@@ -48,6 +49,41 @@ describe('a run that stays inside the deployment transfers nothing', () => {
                 acknowledgement: UNACKED,
             }),
         ).toBeNull();
+    });
+});
+
+describe('every route but the local gateway is outside the deployment (#5364)', () => {
+    it.each([
+        ['the Tool Runner\'s Anthropic route', TOOL_RUNNER_PROVIDER_ID],
+        ['an id nobody taught the gate', 'some-future-engine'],
+        ['an unparseable specifier', 'no-slash-at-all'],
+    ])('refuses %s with business data and no acknowledgement', (_label, providerId) => {
+        // The gate read `providerId !== FLUE_PROVIDER_IDS.external` as "stays
+        // inside", so any route but Flue's external one passed it. Inside is
+        // now the one named route; everything else is a transfer.
+        expect(
+            externalResidencyRefusal({ providerId, offered: [tool('sap__read_orders', true)], acknowledgement: UNACKED })?.reason,
+        ).toBe('EXTERNAL_AI_BUSINESS_DATA_UNACKNOWLEDGED');
+    });
+
+    it('names the engine in the refusal, and gives the Tool Runner a remedy it can use', () => {
+        const flue = externalResidencyRefusal({
+            providerId: FLUE_PROVIDER_IDS.external,
+            offered: [tool('sap__read_orders', true)],
+            acknowledgement: UNACKED,
+        });
+        const toolRunner = externalResidencyRefusal({
+            providerId: TOOL_RUNNER_PROVIDER_ID,
+            offered: [tool('sap__read_orders', true)],
+            acknowledgement: UNACKED,
+            enginePrefix: 'tool_runner',
+        });
+        expect(flue?.message.split(':')[0]).toBe('flue_external_ai_business_data_unacknowledged');
+        expect(toolRunner?.message.split(':')[0]).toBe('tool_runner_external_ai_business_data_unacknowledged');
+        // LOCAL_ONLY refuses a Tool Runner run outright, so its message sends
+        // the admin to the Flue engine rather than to a setting that stops it.
+        expect(toolRunner?.message).toContain('Flue engine');
+        expect(flue?.message).not.toContain('Flue engine');
     });
 });
 

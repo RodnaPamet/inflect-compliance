@@ -194,20 +194,25 @@ export async function updateRiskMatrixConfig(
                       bands: bandsJson,
                   },
               });
-        // Audit row in the same transaction as the upsert. logEvent
-        // failure must not bounce the write — swallow inside the catch.
+        // Audit row in the same transaction as the upsert. Re-banding every
+        // risk's severity is exactly what an auditor asks "who, and when"
+        // about, so the row is not optional (#5210): the payload carried no
+        // `category`, schema validation threw, and a `.catch(() => undefined)`
+        // here discarded the error, so no matrix edit was ever audited.
         await logEvent(db, ctx, {
             action: 'risk_matrix_config.updated',
             entityType: 'TENANT',
             entityId: ctx.tenantId,
             details: 'Risk matrix configuration updated.',
             detailsJson: {
+                category: 'custom',
+                event: 'risk_matrix_config_updated',
                 likelihoodLevels: merged.likelihoodLevels,
                 impactLevels: merged.impactLevels,
                 bandCount: merged.bands.length,
                 customLevelLabels: !!merged.levelLabels,
             },
-        }).catch(() => undefined);
+        });
         return row;
     });
 

@@ -144,6 +144,12 @@ function makeDb(overrides: DbOverrides = {}) {
         agentPolicyCard: {
             findUnique: jest.fn(async () => overrides.card ?? null),
         },
+        // Runs parked on a deferred call (Step 2f): none here.
+        workflowRunDeferral: {
+            findMany: jest.fn(async () => []),
+            updateMany: jest.fn(async () => ({ count: 0 })),
+        },
+        workflowRun: { updateMany: jest.fn(async () => ({ count: 0 })) },
         agentOwnershipTransfer: {
             findFirst: jest.fn(async () => overrides.openTransfer ?? null),
             updateMany: jest.fn(async () => ({ count: overrides.openTransfer ? 1 : 0 })),

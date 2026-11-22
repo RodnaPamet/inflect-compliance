@@ -28,6 +28,13 @@ const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 /** Models with a dedicated two-tenant BEHAVIOURAL isolation test. */
 const ISOLATION_TESTED: Readonly<Record<string, string>> = {
+    // Vector store Phase 1.7 — both tables, one file, against the real tables
+    // with pgvector loaded and RLS live: B's nearest-neighbour query, key
+    // listing, chunk read, write and delete never reach A's rows, the
+    // composite FK refuses a cross-tenant chunk reference even for a
+    // superuser, and purging A leaves no row of either.
+    KnowledgeChunk: 'tests/integration/vector-tenant-isolation.test.ts',
+    KnowledgeChunkEmbedding: 'tests/integration/vector-tenant-isolation.test.ts',
     // #4568 — the lease's isolation case opens a lease in each of two tenants
     // and asserts a sweep in one reaches only its own. RLS enforces it in the
     // database too (`FORCE ROW LEVEL SECURITY` + `tenant_isolation`), which is
@@ -35,6 +42,13 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     // the global client: on the global client the insert's `WITH CHECK` would
     // refuse it, so a passing test there would prove nothing about isolation.
     OpenShellSandboxLease: 'tests/unit/agentic/openshell-sandbox-lease.test.ts',
+    // A control node's link to its Control: B cannot link to A's control, its
+    // RLS-bound read sees none of A's rows, and the facts read and the reverse
+    // lookup learn nothing about A's control.
+    ProcessNodeControl: 'tests/integration/process-node-control-two-tenant.test.ts',
+    // Risk- and asset-node links, the same four refusals, in one file.
+    ProcessNodeRisk: 'tests/integration/process-node-risk-asset-two-tenant.test.ts',
+    ProcessNodeAsset: 'tests/integration/process-node-risk-asset-two-tenant.test.ts',
     // #3861 — all three. The VALUE here is a path, not prose: "every dedicated
     // isolation-test file exists" resolves it with `exists()`, so a reason
     // written in this slot would fail that sibling test. What the one file
@@ -78,6 +92,7 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     AccessReviewConnectedDecision: "tests/integration/access-review-rls.test.ts",
     AccessReviewAgentPack: "tests/integration/access-review-agent-campaign.test.ts",
     AccessReviewAgentNarrowing: "tests/integration/access-review-agent-campaign.test.ts",
+    AccessReviewAgentSpendingWithdrawal: "tests/integration/access-review-agent-spending-withdrawal.test.ts",
     AccessReviewDecisionSampleAudit: "tests/integration/access-review-agent-campaign.test.ts",
     ControlException: "tests/integration/control-exception-rls.test.ts",
     InboundQuestionnaire: "tests/integration/wave-features-rls.test.ts",
@@ -95,12 +110,17 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     AgentKillSwitch: "tests/integration/agent-kill-switch.test.ts",
     AgentKillSwitchDrill: "tests/integration/kill-switch-drill.test.ts",
     AgentBehaviourWindow: "tests/integration/agent-circuit-breaker-isolation.test.ts",
+    AgentBehaviourBaseline: "tests/integration/agent-behaviour-fingerprint.test.ts",
+    AgentBehaviourAnomaly: "tests/integration/agent-behaviour-fingerprint.test.ts",
     AgentCircuitBreaker: "tests/integration/agent-circuit-breaker-isolation.test.ts",
     AgenticEvidenceArtefact: "tests/integration/agentic-evidence-isolation.test.ts",
     AgentHarnessScannerKey: "tests/integration/agent-harness-ingest.test.ts",
     AgentHarnessScan: "tests/integration/agent-harness-ingest.test.ts",
     AgentHarnessScanItem: "tests/integration/agent-harness-ingest.test.ts",
     DiscoveredAgent: "tests/integration/agent-harness-ingest.test.ts",
+    ThirdPartyAppScan: "tests/integration/third-party-app-scans.test.ts",
+    DiscoveredThirdPartyApp: "tests/integration/third-party-app-scans.test.ts",
+    ThirdPartyAppScanItem: "tests/integration/third-party-app-scans.test.ts",
     AgentHarnessAcceptance: "tests/integration/agent-harness-ingest.test.ts",
     PeerAgentReplyDelivery: "tests/integration/a2a-reply-delivery.test.ts",
     AgentHarnessEstate: "tests/integration/agent-harness-estates.test.ts",
@@ -122,6 +142,8 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     TenantA2aSigningKey: "tests/integration/a2a-peer-messaging.test.ts",
     PeerAgentInboundCredential: "tests/integration/a2a-peer-messaging.test.ts",
     PeerInvitation: "tests/integration/peer-invitations.test.ts",
+    AgentSpendingAuthority: "tests/integration/agent-spending-authority.test.ts",
+    WorkflowRunDeferral: "tests/integration/workflow-run-deferral.test.ts",
 };
 
 /**

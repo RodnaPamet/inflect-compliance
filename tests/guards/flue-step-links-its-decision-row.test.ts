@@ -86,7 +86,7 @@ describe('the two sides compute the same key', () => {
         // ONE BINDING, TWO READERS. `const message = runMessage(…)`
         // is the single value; the step digests it and `settleTurns` passes it
         // as `sanitizedInput`. Asserting both read THE SAME LOCAL is stronger
-        // than asserting both spell `runMessage(def, fromSeq)` — two identical
+        // than asserting both spell `runMessage(def, …)` — two identical
         // spellings can drift apart one edit at a time while each still looks
         // correct, and every link would then open the wrong row silently.
         //
@@ -97,8 +97,10 @@ describe('the two sides compute the same key', () => {
         // replies are IN the binding deliberately, so the decision digest
         // covers the peer text the step actually acted on; a reply rendered
         // outside it would be a model input no stored decision mentions.
+        // And again on #5372, which took `fromSeq` out of it: the message no
+        // longer depends on where the run resumed.
         expect(body).toContain(
-            'const message = runMessage(def, fromSeq, declared.input, peerReplies);',
+            'const message = runMessage(def, declared.input, peerReplies);',
         );
         expect(body).toContain('decisionDigest: computeInputDigest(message),');
         expect(declarationOf(body, 'settleTurns')).toContain('message,');

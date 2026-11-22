@@ -18,6 +18,7 @@ import { requireOrgPermission } from '@/lib/security/org-permission-middleware';
 import { parseJsonBody } from '@/lib/validation/route';
 import { CreateOrgDashboardWidgetInput } from '@/app-layer/schemas/org-dashboard-widget.schemas';
 import {
+    assertCanReadOrgWidgets,
     listOrgDashboardWidgets,
     createOrgDashboardWidget,
 } from '@/app-layer/usecases/org-dashboard-widgets';
@@ -37,6 +38,7 @@ export const GET = withApiErrorHandling(
             aggregation: 'org-dashboard-widgets',
             dependsOn: AGGREGATIONS['org-dashboard-widgets'].dependsOn,
             ttlSeconds: AGGREGATIONS['org-dashboard-widgets'].ttlSeconds,
+            authorize: () => assertCanReadOrgWidgets(ctx),
             compute: () => listOrgDashboardWidgets(ctx),
         });
         return NextResponse.json({ widgets });

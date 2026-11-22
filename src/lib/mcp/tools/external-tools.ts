@@ -707,6 +707,21 @@ async function dispatchWrite(
         parameterSetLabel: string | null;
     },
 ): Promise<unknown> {
+    // ── A READ-ONLY RUN WRITES NOTHING, AT ANY RUNG (#5365) ─────────────────
+    //
+    // First, before the pairing lookup and the prior-state read: the read half
+    // still goes to the far end, and a run that declares it writes nothing has
+    // no write for it to describe. The offer already withholds this tool from
+    // such a run; this is the backstop for a call that reached the dispatch
+    // anyway. It refuses at every rung, DRY_RUN included — a dry run's journal
+    // row is still a write recorded on the run's behalf.
+    if (ctx.readOnlyRun) {
+        throw new Error(
+            `external_write_refused_for_read_only_run: "${call.advertisedName}" may write, and this ` +
+                'run is read-only, so no write is proposed, journalled or sent. Nothing was sent.',
+        );
+    }
+
     const pairing = await getPriorStateRead(ctx, call.qualified);
     if (!pairing) {
         throw new Error(

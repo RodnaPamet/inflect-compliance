@@ -29,6 +29,8 @@ jest.mock('@/app-layer/context', () => ({
 
 jest.mock('@/app-layer/usecases/org-dashboard-widgets', () => ({
     __esModule: true,
+    // The real read check: the route runs it before the aggregation cache.
+    assertCanReadOrgWidgets: jest.requireActual('@/app-layer/usecases/org-dashboard-widgets').assertCanReadOrgWidgets,
     listOrgDashboardWidgets: (...a: unknown[]) =>
         listOrgDashboardWidgetsMock(...a),
     createOrgDashboardWidget: (...a: unknown[]) =>

@@ -74,7 +74,8 @@ Prisma migrations are applied automatically by `scripts/entrypoint.sh` on every 
 | App | 3000 | `APP_PORT` in .env.staging |
 | Postgres | 5435 | `DB_PORT` in .env.staging |
 
-Dev DB uses 5433, test DB uses 5434, staging uses 5435 — no collisions.
+Dev uses 5433 (PgBouncer) and 5436 (direct Postgres), test DB uses 5434,
+staging uses 5435. No two of those Postgres ports collide (#5308).
 
 ## Seeding
 

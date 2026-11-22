@@ -22,7 +22,7 @@ inflect · ai architecture · mastercard agent pay · roadmap v1 · 2026-10-30
 | Wave | 2 for Phases 0–1 (data only, no Mastercard call); 3 for Phases 2–3; 4 for Phase 4, conditional on API access |
 | Depends on | nothing for Phases 0–1; Phase 2's key-directory check reuses [`web-bot-auth.md`](./web-bot-auth.md) Phase 3's verifier; Phase 4 needs Mastercard API access, which is gated |
 | Unblocks | a register that knows which agents can spend money; recertification and kill switch that reach spending authority; evidence for agent payments against the library's controls |
-| Owner decisions | **D-L1-8** (Inflect never holds a payment credential and its own agents never pay), **D-L1-9** (spending authority is a declared, reviewed privilege on the register), **D-L1-10** (reading and suspending at Mastercard only through a customer-owned connection on the external write ladder, once access exists) |
+| Owner decisions | **D-L1-8** (Inflect never holds a payment credential and its own agents never pay), **D-L1-9** (spending authority is a declared, reviewed privilege on the register), **D-L1-10** (reading and suspending at Mastercard only through a customer-owned connection on the external write ladder, once access exists) — all three **decided 2026-11-11** by the owner and carried in the master roadmap's decision table, which is where the owner's act is recorded ([decision note](../implementation-notes/2026-11-11-agent-pay-decisions.md)) |
 | Complete at | Phase 3. Phase 4 follows when Mastercard grants API access; it is not Layer 5 and completeness does not wait for it |
 
 ## At a glance
@@ -32,7 +32,7 @@ Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns 
 ```mermaid
 flowchart LR
   P0{{"Phase 0 · access and the PCI line<br/>D-L1-8, D-L1-9, D-L1-10<br/>no card data, ever<br/>what Mastercard opens"}}:::gate
-  P1["Phase 1 · on the register<br/>declared spending authority<br/>four-eyes widening<br/>kill and recert reach it"]:::todo
+  P1["Phase 1 · on the register<br/>declared spending authority<br/>four-eyes widening<br/>kill and recert reach it"]:::done
   P2["Phase 2 · discover<br/>payment-capable code<br/>KYA key directory checked"]:::todo
   P3["Phase 3 · evidence<br/>per-agent artefacts<br/>governance pack report"]:::todo
   ACC["Mastercard API access<br/>gated; AP4M is a pilot"]:::gate
@@ -121,7 +121,13 @@ on**.
   frameworks are `owasp-agentic-top10`, `eu-ai-act`, `dora`, `soc2` and
   `aiuc-1`.
 - **No card data anywhere**: Inflect is outside PCI DSS cardholder-data scope
-  today, and D-L1-8 keeps it there.
+  today, and D-L1-8 keeps it there. Since Phase 0.2 the line is a refusal in
+  code: `looksLikeSecret` (`src/lib/agentic/harness-contract-rules.ts`) treats a
+  card number (13–19 digits, first digit 2–6, contiguous or in printed card
+  groups, passing Luhn) as secret-shaped, so the harness contract and the
+  ingest's walk (`firstSecretShapedMember`) refuse a report carrying one.
+  `firstSecretShapedPath` is the same walk over any value, numbers included,
+  for Phase 1's writer.
 
 ## Fit, and what is deliberately not adopted
 
@@ -157,9 +163,10 @@ PAN, an Agentic Token value, a wallet key or a payment credential of any
 kind. It records references (the token requestor's own token reference, the
 agent platform's name) and the envelope. That keeps Inflect outside PCI DSS
 cardholder-data scope, which is worth more than any feature here. The
-harness contract already refuses a credential-shaped value
-(`firstSecretShapedMember`); Phase 0 adds a card-number shape (a 13–19 digit
-run that passes the Luhn check) to it and to the register's writer.
+harness contract refuses a credential-shaped value
+(`firstSecretShapedMember`), and since Phase 0 a card number (a 13–19 digit
+run that passes the Luhn check) is one; Phase 1's register writer refuses
+through the same walk.
 
 **Not adopted, with the reason.**
 
@@ -188,22 +195,44 @@ run that passes the Luhn check) to it and to the register's writer.
       requestor can be authorised, the AP4M early-access terms, the
       authentication scheme, and the Web Bot Auth tag and directory location
       Agent Pay uses. Record each answer, and each "not available", in the
-      implementation note.
-- [ ] 0.2 D-L1-8 initialled: no payment credential in Inflect's custody, no
+      implementation note. *Partly answered 2026-11-11*
+      ([note](../implementation-notes/2026-11-11-agent-pay-decisions.md)):
+      read through search excerpts of the named Mastercard Developers pages,
+      because the hosts were not reachable from the session. Found: an Agent
+      Pay product whose APIs are the agent platform's (Cards API enrollment,
+      Authentication API, Verifiable Intent Registration), OAuth 1.0a with
+      production access granted by Mastercard, AP4M in pilot with private
+      terms. Not found: a token-status read, a consent-policy read, a
+      suspension an outside party may call, third-party authorisation, the
+      confirmed Web Bot Auth tag values and the key directory location. Open
+      until the pages are read directly and the questions are put to
+      Mastercard.
+- [x] 0.2 D-L1-8 initialled: no payment credential in Inflect's custody, no
       payment initiated by its agents. Add the card-number shape (13–19
       digits passing Luhn) to `firstSecretShapedMember` and to every writer
-      Phase 1 adds, with a test per writer.
-- [ ] 0.3 D-L1-9 initialled, with the envelope's fields: rail (`AGENT_PAY_TOKEN`,
+      Phase 1 adds, with a test per writer. *The code half is done
+      2026-11-11 for the harness contract; each Phase 1 writer refuses
+      through `firstSecretShapedPath` and carries its own test. The decision
+      is recorded in the master, whose D-L1-8 row reads "**decided
+      2026-11-11** (owner): adopt". Ticked 2026-11-15 (#5358).*
+- [x] 0.3 D-L1-9 initialled, with the envelope's fields: rail (`AGENT_PAY_TOKEN`,
       `AP4M`, `OTHER`), per-transaction limit and currency, period budget and
       period, merchant scope (domains, merchant category codes), expiry, the
       consenting person (a member of the tenant), the token requestor (agent
       platform) and its token reference. No field may carry a credential.
-- [ ] 0.4 Framework mapping: which requirements in the existing library the
+      *Recorded in the master, with these fields; its D-L1-9 row reads
+      "**decided 2026-11-11** (owner): adopt". Ticked 2026-11-15 (#5358).*
+- [x] 0.4 Framework mapping: which requirements in the existing library the
       Phase 3 evidence is filed against (candidates: OWASP agentic ASI03 and
       ASI02, EU AI Act Article 14, SOC 2 CC6, DORA, AIUC-1), and whether a
-      PCI DSS library is wanted at all (default: no).
-- [ ] 0.5 D-L1-10 initialled, with the trigger for Phase 4: written API
-      access for at least one tenant's token requestor, plus a sandbox.
+      PCI DSS library is wanted at all (default: no). *Recorded 2026-11-11:
+      `ASI03`, `ASI02`, `Art.14`, `CC6.1`–`CC6.3`, `DORA.Art.9`, AIUC-1
+      `B006`; no PCI DSS library.*
+- [x] 0.5 D-L1-10 initialled, with the trigger for Phase 4:
+      written API access for at least one tenant's token requestor, plus a
+      sandbox. *Recorded in the master, with this trigger; its D-L1-10 row
+      reads "**decided 2026-11-11** (owner): adopt; Phases 1-3 need no
+      access". Ticked 2026-11-15 (#5358).*
 
 **Prompt.**
 ```text
@@ -242,33 +271,77 @@ customer's own connection, the way directory integrations are).
 ### Phase 1 — Spending authority on the register
 
 **Sub-phases.**
-- [ ] 1.1 `AgentSpendingAuthority`, tenant-scoped with RLS and a two-tenant
+- [x] 1.1 `AgentSpendingAuthority`, tenant-scoped with RLS and a two-tenant
       test (G7): one row per agent per rail, the envelope from 0.3, `status`
       (`DECLARED`, `REVIEWED`, `SUSPENDED_REQUESTED`, `WITHDRAWN`), and who
       declared and who reviewed it. One writer usecase,
       `usecases/agent-spending-authority.ts`, under `admin.agent_registry`,
       held by a single-write-seam guard.
-- [ ] 1.2 Four eyes: declaring an envelope or widening any field of it needs a
+- [x] 1.2 Four eyes: declaring an envelope or widening any field of it needs a
       second person to review it, never the declarer and never the agent's
       owner (the profile-approval and recertification precedents). A CHECK
       backs the usecase. Narrowing needs one person.
-- [ ] 1.3 Activation: `assertActivatable` refuses `SPENDING_AUTHORITY_UNREVIEWED`
-      for an agent with a declared envelope nobody has reviewed. A later
-      widening on an ACTIVE agent raises a HIGH finding rather than
-      suspending it (the auditor-independence precedent: a later break is a
-      finding, not a refusal).
-- [ ] 1.4 Recertification: an AGENT campaign's pack gains a spending-authority
+- [x] 1.3 Activation: `assertActivatable` refuses `SPENDING_AUTHORITY_UNREVIEWED`
+      for an agent with an envelope nobody has reviewed: DECLARED, or
+      SUSPENDED_REQUESTED by a kill before any review. A later widening on an
+      ACTIVE agent raises a HIGH finding rather than suspending it (the
+      auditor-independence precedent: a later break is a finding, not a
+      refusal); a review or a withdrawal closes it.
+- [x] 1.4 Recertification: an AGENT campaign's pack gains a spending-authority
       section, and a narrowing may propose reducing or withdrawing the
       envelope. Accepting it writes the declaration and opens a task for the
       owner to apply the change at the token requestor, because Inflect
-      cannot apply it until Phase 4.
-- [ ] 1.5 Kill switch and owner-orphan pass: engaging an AGENT-scope kill, or
+      cannot apply it until Phase 4. *The pack section is built 2026-11-20
+      (#5333), and so is the withdrawal, on every ground the owner decided
+      that day (below). It proposes withdrawing, never a lower limit, and the
+      fourth ground is a reviewer's confirmation rather than a scan.*
+- [x] 1.5 Kill switch and owner-orphan pass: engaging an AGENT-scope kill, or
       containing an orphaned agent, on an agent with spending authority
       moves the row to `SUSPENDED_REQUESTED` and opens a task naming the
       token requestor and the token reference. Lifting the kill does not
       reverse it; a person does.
-- [ ] 1.6 Retention classification in `docs/data-retention.md` (the ratchet
-      requires it) and an inventory row in the governance pack.
+- [x] 1.6 Retention classification in `docs/data-retention.md` (the ratchet
+      requires it) and an inventory row in the governance pack. *Both built;
+      the inventory row 2026-11-20 (#5333).*
+
+**Where Phase 1 stands (2026-11-20).** Every sub-phase is built. 1.1, 1.2, 1.3, 1.5 and 1.6:
+`AgentSpendingAuthority` (migration `20261112090100_agent_spending_authority`),
+its one writer `src/app-layer/usecases/agent-spending-authority.ts` and the pure
+comparison in `src/lib/agentic/spending-authority.ts`
+(`docs/implementation-notes/2026-11-11-agent-spending-authority.md`). Since
+2026-11-20 (#5333) the writer has its routes, under `admin.agent_registry`
+(`/api/t/:slug/admin/agents/:agentId/spending-authority`, `…/:rail` and
+`…/:rail/review`), and the agent's register page has a **Spending authority**
+card on its overview, which offers each act only where the writer would take it
+(`getAgentSpendingAuthorityState`). The governance pack's agent inventory
+reports each agent's rails and review standing, with two counts. An AGENT
+campaign's reviewer pack carries a spending-authority section, in the hashed
+sections, so the campaign's evidence covers it (3.3).
+
+The half of 1.4 that changes an envelope from a campaign is built too
+(2026-11-20, #5333), on the owner's decisions of that day
+(`docs/implementation-notes/2026-11-20-agent-pay-envelope-withdrawal.md`). A pack
+proposes WITHDRAWING an envelope, never reducing a limit, and records each
+ground that holds: it had lapsed by the end of the campaign's window
+(`EXPIRED_BY_WINDOW_END`), it is still SUSPENDED_REQUESTED after a kill
+(`SUSPENDED_AFTER_KILL`), no second person ever reviewed the declaration on
+the row (`NEVER_REVIEWED`), or it lapses after the window but before the
+campaign's due date (`EXPIRES_DURING_CAMPAIGN`). The fourth ground the owner
+named, that the agent can no longer pay, is never derived from a scan: the
+campaign's reviewer confirms it on a rail, which opens a proposal with the
+ground `NO_PAYMENT_ABILITY_CONFIRMED` and their name, decided like the others. The proposal is a row of
+`AccessReviewAgentSpendingWithdrawal` (migration
+`20261120120000_access_review_agent_spending_withdrawal`), a sibling of the
+grant narrowing with the same one-way triggers. Accepting it under
+`access_reviews.decide` withdraws the declaration the pack described through
+the envelope writer's one internal path
+(`withdrawSpendingAuthorityForRecertificationInTx`; the public writer keeps
+`admin.agent_registry`) and opens a task for the agent's owner to revoke the
+token at its requestor. A pending withdrawal holds the subject's verdict and
+the close; the agent's owner may not decide one.
+
+A reviewer reduces an envelope, rather than withdrawing it, on the register
+page: a pack never proposes a lower limit.
 
 **Prompt.**
 ```text
@@ -303,29 +376,65 @@ agentic IAM rule that a later break is a finding.
 ### Phase 2 — Discover payment capability the register does not know
 
 **Sub-phases.**
-- [ ] 2.1 The `code` source recognises Agent Pay and x402 client libraries,
+- [x] 2.1 The `code` source recognises Agent Pay and x402 client libraries,
       by package names confirmed in 0.1, added to `FRAMEWORK_MARKERS`. The
       fact is "this agent's code can initiate a payment", NOT MET only, as
       the Agent SDK mapping is: code shows a capability and never that a
       control works. An unresolved import is `UNPARSEABLE`, never dropped.
-- [ ] 2.2 A new fact needs a new contract id: `inflect-agent-harness/4` is
+      *Built 2026-11-12 for x402's payer clients* (`x402-fetch`,
+      `x402-axios`, `@x402/fetch`, `@x402/axios`, PyPI `x402`; confirmed from
+      the registries, since 0.1 confirmed no Mastercard package), in
+      `packages/agent-harness-scanner/src/sources/code/payment.ts` (removed
+      by scanent #26; the reader is scanent's since). Deviation,
+      stated: the libraries are NOT in `FRAMEWORK_MARKERS`, because the
+      capability is attributed to an agent the same file defines, which
+      already carries a framework marker; a payment helper in another file is
+      a stated limit, not "no capability". An entry point used as a value
+      (an alias, an argument, an object's value, a literal `getattr` or
+      subscript) is a capability; a dynamic import in an agent file, a bare
+      `import_module` and a computed `getattr` on a payment module are
+      `UNPARSEABLE`. Agent Pay tokens wait for a confirmed package.
+- [x] 2.2 A new fact needs a new contract id: `inflect-agent-harness/4` is
       `/3` plus the payment-capability fact and nothing else, a strict schema
       beside the others, produced by the reference scanner and the fake
-      scanner.
-- [ ] 2.3 The pure planner raises `SPENDING_AGENT_UNDECLARED` when a scan
+      scanner. *Built 2026-11-12: the optional per-agent
+      `paymentCapabilities[]` (protocol, library, `code://` locator), three
+      states as `models[]` has; the scanner speaks `/4` (0.13.0).*
+- [x] 2.3 The pure planner raises `SPENDING_AGENT_UNDECLARED` when a scan
       links a payment-capable agent to a register row with no envelope, and
-      closes it only on positive evidence: an envelope reviewed, or a
-      complete `code` read that no longer shows the capability.
-- [ ] 2.4 Know Your Agent cross-check: the register records the agent's Web
+      closes it only on positive evidence: an envelope reviewed. *Built
+      2026-11-12; an envelope awaiting review holds the finding.* Deviation,
+      stated: the design also let a complete `code` read that no longer shows
+      the capability close it. Review found the reader reports `[]` where it
+      cannot see (a helper module, a value it cannot resolve), so that close
+      was on absence, not evidence, and it is not built. A person who removed
+      the client closes the finding; a later scan reopens it only if it sees
+      the client again. A narrowing, for the owner to confirm.
+- [ ] 2.4 *Blocked on* [`web-bot-auth.md`](./web-bot-auth.md) *Phase 3.1–3.2,
+      whose verifier and cached directory reader are not built.* Know Your Agent cross-check: the register records the agent's Web
       Bot Auth key directory URL; Inflect fetches and validates it with
       [`web-bot-auth.md`](./web-bot-auth.md) Phase 3's verifier pieces
       (`safeFetch`, cached, capped) and records whether it is valid and which
       key ids it holds. An invalid or unreachable directory on an agent with
       spending authority is a finding, `AGENT_SIGNING_DIRECTORY_INVALID`.
-- [ ] 2.5 Fixtures: synthetic repositories that pay through each recognised
+- [x] 2.5 Fixtures: synthetic repositories that pay through each recognised
       library, one that imports and never calls, and one that hides the
       import behind a variable. Their expected facts are an evaluation
-      record (G11).
+      record (G11). *Built 2026-11-12:
+      `tests/fixtures/agent-pay-scanner/payment-capability-record.json`,
+      fifteen cases, read by
+      `tests/unit/agent-harness-scanner/payment-capability-code-source.test.ts`;
+      both were removed with the in-repo scanner by scanent #26, which carries
+      the reader.*
+
+**Where Phase 2 stands (2026-11-12).** 2.1, 2.2, 2.3 and 2.5 are built; 2.4
+waits for Web Bot Auth Phase 3's verifier. `/4` widens what the ingest
+accepts, so the scanner DPIA carries an amendment for it, which the owner
+signed on 2026-11-12; the scanner ships `/4` once that pull request merges. Of Phase 3, only 3.3 is built
+(2026-11-20, with the pack section of 1.4): 3.1 needs a CHECK widening on
+`AgenticEvidenceArtefact.kind` and the per-agent emitter path, and 3.2 a
+governance-pack report of its own beyond Phase 1.6's inventory row. See
+`docs/implementation-notes/2026-11-12-agent-pay-discover.md`.
 
 **Prompt.**
 ```text
@@ -369,8 +478,10 @@ code counts only against an agent; closes on positive evidence only), G6
       by rail, with each envelope's last review and any open finding.
       "None" is reported as a count of zero with its basis, never as a clean
       bill when the scan behind it was incomplete.
-- [ ] 3.3 The recertification evidence hash covers the spending-authority
-      section, so an auditor can recompute it from stored rows.
+- [x] 3.3 The recertification evidence hash covers the spending-authority
+      section, so an auditor can recompute it from stored rows. *Built
+      2026-11-20 (#5333): the section is in the pack's `sectionsJson`, whose
+      `contentHash` the campaign's closing evidence carries.*
 
 **Hardening.** The per-agent evidence rules, zero is never complete
 (invariant 5 of the recertification section), G11.
@@ -435,3 +546,8 @@ Mastercard's own documentation:
 - [Mastercard: Agent Pay for Machines in action](https://www.mastercard.com/global/en/news-and-trends/press/2026/october/Mastercard-Agent-Pay-for-Machines-in-action.html)
 - [Cloudflare blog: securing agentic commerce with Visa and Mastercard](https://blog.cloudflare.com/secure-agentic-commerce/)
 - [Mastercard Developers Agent Toolkit](https://developer.mastercard.com/platform/documentation/agent-toolkit/)
+
+Read on 2026-11-11 for Phase 0.1, through search excerpts of the Mastercard
+Developers pages (the hosts were not reachable from the session); each page and
+what it was taken to say is listed in the
+[Phase 0 note](../implementation-notes/2026-11-11-agent-pay-decisions.md).

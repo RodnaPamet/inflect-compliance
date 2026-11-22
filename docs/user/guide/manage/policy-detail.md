@@ -18,8 +18,11 @@ Open **{{ui:nav.policies}}** under **{{ui:nav.manage}}** and click a policy's ti
 | Write a new version, request approval, edit the review schedule, mark it reviewed | Owner, Admin, Editor |
 | Approve or reject a version, publish, publish without approval, roll back | Owner, Admin |
 | Archive and restore | Owner, Admin |
+| Add and link **{{ui:policies.evidence.title}}** items, and link, push, pull or unlink a SharePoint document | Owner, Admin, Editor |
 | See who has acknowledged the policy | Owner, Admin, Auditor |
 | Ask people to acknowledge it | Owner, Admin |
+
+If your workspace uses custom roles, each change also needs your role's permission to edit policies, approving and rejecting need its permission to approve them, and archiving needs permission to manage the workspace. A button your role could not use is not shown.
 
 Nobody can approve a version they requested or wrote themselves. The page shows the button greyed out with the reason: {{ui:policies.detail.sodApproveBlocked}}
 
@@ -39,7 +42,7 @@ Under the header, the description, category, owner, review dates and number of v
 
 | Tab | What it holds |
 | --- | --- |
-| **{{ui:policies.detail.tabCurrent}}** | The version people should follow, with a guide to what to do next |
+| **{{ui:policies.detail.tabCurrent}}** | The version people should follow, with a guide to what to do next. Below it, **{{ui:policies.evidence.title}}**, the evidence the policy says to keep, each item linked to the evidence that proves it, shown when the policy has items or you can edit it. Where the workspace has SharePoint connected and you can edit the policy, the SharePoint document it is linked to |
 | **{{ui:policies.detail.tabVersions}}** | Every version, newest first, with its change summary and its approvals |
 | **{{ui:policies.detail.tabMappings}}** | The framework requirements the policy supports, through its controls |
 | **{{ui:policies.detail.tabTraceability}}** | The controls linked to the policy |
@@ -83,9 +86,13 @@ Click **{{ui:policies.detail.editReviewSchedule}}** to set how often the policy 
 
 On **{{ui:policies.detail.tabAcknowledgements}}**, once a version is published, an Owner or Admin can ask members to acknowledge it. See [Collect policy acknowledgements](../../how-to/policies/collect-policy-acknowledgements.md).
 
+### Keep a SharePoint copy in step
+
+Where the workspace has SharePoint connected, click **{{ui:policies.sharepoint.linkDocument}}** on **{{ui:policies.detail.tabCurrent}}** and choose the document. Once it is linked, **{{ui:policies.sharepoint.push}}** sends the policy to the SharePoint document, **{{ui:policies.sharepoint.pull}}** brings the SharePoint document back as a new version, and **{{ui:policies.sharepoint.unlink}}** removes the link. When the SharePoint copy is newer than the last sync, a warning says to pull first. A refused action is shown in red.
+
 ### Archive or restore
 
-**{{ui:policies.detail.archive}}** asks you to confirm: {{ui:policies.detail.archiveConfirmBody}} **{{ui:policies.detail.restoreFromArchive}}** brings it back: {{ui:policies.detail.unarchivedToast}}
+**{{ui:policies.detail.archive}}** asks you to confirm: {{ui:policies.detail.archiveConfirmBody}} Archiving closes any approval request still waiting, so restoring the policy starts with none. **{{ui:policies.detail.restoreFromArchive}}** brings it back: {{ui:policies.detail.unarchivedToast}}
 
 ## What happens next
 

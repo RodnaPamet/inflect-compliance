@@ -485,6 +485,8 @@ describe('verifyAndTouchSession — expiry bookkeeping', () => {
         await expect(verifyAndTouchSession('sess-9')).resolves.toStrictEqual({
             revoked: true,
             rowId: 'row-9',
+            // No touch: the only write on this path is the revokedAt stamp (#5246).
+            touched: false,
         });
     });
 

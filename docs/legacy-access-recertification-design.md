@@ -269,15 +269,28 @@ assertion.
   and HRIS providers.** A provider that only syncs is never checked.
 - **`validateProviderConfig` passes an unclassified provider's `configJson` through
   unvalidated.**
-- **Three of the seven model-calling AI features do not honour `aiResidency`.**
-  Compliance posture, questionnaire autofill and vendor-document extraction each
-  construct an external provider without consulting residency.
+- **Every model-calling AI feature now honours `aiResidency`.** The three that
+  did not — compliance posture, questionnaire autofill and vendor-document
+  extraction — each constructed an external provider without consulting
+  residency, and each now short-circuits `LOCAL_ONLY` to its deterministic stub
+  before the env is read (#5073, #5192, #5445).
 
   > **This bullet said "only one AI feature honours `aiResidency`" until
-  > 2026-10-16, and "four do" until 2026-10-20.** Five do, and each is named
-  > below with the file that BRANCHES on residency, so the claim can be checked
-  > instead of believed — `tests/guards/current-state-stays-true.test.ts` checks
-  > it in both directions:
+  > 2026-10-16, "four do" until 2026-10-20, and "three of the seven do NOT" until
+  > 2026-11-13.** All of them do, and each is named below with the file that
+  > BRANCHES on residency, so the claim can be checked instead of believed —
+  > `tests/guards/current-state-stays-true.test.ts` checks it in both directions:
+  >
+  > - compliance-posture summaries —
+  >   `src/app-layer/ai/compliance-posture/provider.ts` (#5192)
+  > - questionnaire autofill — `src/app-layer/ai/questionnaire/index.ts` (#5445)
+  > - vendor-document extraction — `src/app-layer/ai/vendor-doc/index.ts`
+  >   (#5073), which also gained the AI feature gate and quota it never asked
+  >
+  > Those three, and any future surface, are pinned behaviourally by
+  > `tests/guards/every-ai-surface-honours-tenant-residency.test.ts`, which
+  > DERIVES its population from the files naming an external AI endpoint — a
+  > hand-written list is what let these three ship unguarded.
   >
   > - risk suggestions — `src/app-layer/ai/risk-assessment/index.ts`, also
   >   pinned by `tests/guards/ai-residency-enforcement.test.ts`
@@ -314,6 +327,20 @@ assertion.
   > calls it until the Tool Runner engine is switched on
   > (`docs/claude-tool-runner-design.md`, Step 2c), so it honours nothing yet and
   > is not counted among the five.
+  >
+  > An eighth file branches on residency for the same reason:
+  > `src/lib/ai/embeddings/select.ts` routes embedding and rerank calls, and its
+  > `LOCAL_ONLY` branch returns before any other route is considered. Today the
+  > only route is in-deployment, and no running path calls the seam. So it
+  > honours nothing yet and is not counted among the five
+  > (`docs/ai-architecture/nemotron-retriever.md`).
+  >
+  > A ninth file branches on residency to SCORE it, not to honour it:
+  > `src/lib/ai/evals/inspect-record.ts` holds the Inspect harness's task
+  > scorers, and task `local-only-opens-no-external-socket` reads the residency a
+  > run was RECORDED under and passes only when a `LOCAL_ONLY` run made no model
+  > call. It constructs no provider, so it is not counted among the five
+  > (`docs/ai-architecture/inspect.md`).
   >
   > The last two features arrived with steps 6c and 3b and the
   > bullet was not updated, which is criterion 11 unmet for those steps — the

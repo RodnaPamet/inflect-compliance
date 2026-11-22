@@ -1,5 +1,5 @@
 import { ENGINE_CAPS, type WorkflowDefinition } from '@/lib/agentic/workflow-types';
-import { resolveFlueModel, type FlueModelSelection, type FlueModelRefusal } from './model-selection';
+import { resolveFlueRoleModels, type FlueModelSelection, type FlueModelRefusal } from './model-selection';
 
 /**
  * EVERYTHING A FLUE RUN DECIDES BEFORE IT TOUCHES THE RUNTIME.
@@ -37,10 +37,30 @@ export type FlueStartRefusal =
      * but its message belongs with the others, so an operator reading
      * `errorMessage` sees one vocabulary rather than two.
      */
-    | 'MODEL_NOT_REGISTERED';
+    | 'MODEL_NOT_REGISTERED'
+    /**
+     * The worker's specifier names a different PROVIDER from the
+     * supervisor's. The role chooses a model id and never a route (D-L3-1,
+     * G1), so this is a configuration that would let a role do what residency
+     * forbids — refused before anything is sent, in the engine, as a second
+     * gate behind `resolveFlueModel`, which never produces it.
+     */
+    | 'WORKER_ROUTE_MISMATCH';
 
 export type FlueRunPlan =
-    | { ok: true; modelSpecifier: string; residency: 'EXTERNAL' | 'LOCAL_ONLY' }
+    | {
+          ok: true;
+          /** The SUPERVISOR's specifier — the parent run's model. */
+          modelSpecifier: string;
+          /**
+           * The WORKER's specifier — what the run's subagents ask for
+           * (D-L3-1). Equal to `modelSpecifier` unless a worker model is
+           * configured for the route.
+           */
+          workerModelSpecifier: string;
+          workerBasis: 'CONFIGURED' | 'worker_fallback';
+          residency: 'EXTERNAL' | 'LOCAL_ONLY';
+      }
     | { ok: false; reason: FlueStartRefusal };
 
 /**
@@ -96,10 +116,19 @@ export function planFlueRun(
         return { ok: false, reason: 'NO_STEPS_REMAIN' };
     }
 
-    const model = resolveFlueModel(selection);
-    if (!model.ok) return { ok: false, reason: model.reason };
+    // BOTH ROLES under the one set of terms (D-L3-1). A refusal is the run's:
+    // the role chooses a model id, never the route, so the two roles refuse
+    // together or not at all.
+    const models = resolveFlueRoleModels(selection);
+    if (!models.ok) return { ok: false, reason: models.reason };
 
-    return { ok: true, modelSpecifier: model.specifier, residency: model.residency };
+    return {
+        ok: true,
+        modelSpecifier: models.supervisor,
+        workerModelSpecifier: models.worker,
+        workerBasis: models.workerBasis,
+        residency: models.residency,
+    };
 }
 
 /**
@@ -144,6 +173,13 @@ export function refusalMessage(reason: FlueStartRefusal): string {
                 'this deployment registered at startup. Providers are registered once at ' +
                 'boot, so a per-workspace model override must also be configured on the ' +
                 'deployment.'
+            );
+        case 'WORKER_ROUTE_MISMATCH':
+            return (
+                'flue_worker_route_mismatch: the worker model this run was given names a ' +
+                'different provider from the supervisor\'s. A role chooses a model, never ' +
+                'a route, so the run is refused rather than letting its subagents leave ' +
+                'the route its residency allows.'
             );
         case 'EXTERNAL_CREDENTIAL_NOT_CONFIGURED':
             return (

@@ -133,16 +133,18 @@ describeFn('getGovernanceGraph — usecase (integration)', () => {
         mapAId = mapA.id;
         mapBId = mapB.id;
 
-        // A rule owned by Map A (referenced by an action node), pointing at
-        // a sub-flow group that lives in Map B → subflow-call link A→B.
+        // A rule owned by Map A (referenced by an action node) whose action
+        // INVOKES a sub-flow group that lives in Map B → subflow-call link
+        // A→B. Shaped as the product writes it (#5117): the target is the
+        // action's `targetGroupId`. The fixture used to set `subFlowGroupId`,
+        // which no writer sets, so it proved an edge no real rule produced.
         const ruleA = await globalPrisma.automationRule.create({
             data: {
                 tenantId: TENANT_ID,
                 name: 'rule A',
                 triggerEvent: 'evidence.expiring',
-                actionType: AutomationActionType.NOTIFY_USER,
-                actionConfigJson: {},
-                subFlowGroupId: 'grp-b',
+                actionType: AutomationActionType.INVOKE_SUBFLOW,
+                actionConfigJson: { targetGroupId: 'grp-b' },
             },
         });
         // An unreferenced rule — its execution hits the "no owning map" continue.

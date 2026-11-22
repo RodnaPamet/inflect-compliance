@@ -2,165 +2,152 @@
  * Staging Seed — Deterministic, idempotent seed for staging environments.
  *
  * Runs the base seed (prisma/seed.ts) first, then adds staging-specific
- * demo data: tasks, evidence placeholders, an audit cycle, and more.
+ * demo data: tasks, evidence placeholders, an audit cycle, and a few
+ * control → requirement links.
  *
  * Usage:
  *   npx tsx scripts/seed-staging.ts
  *   npm run seed:staging
  *
  * Idempotent: safe to run multiple times without duplicating data.
+ *
+ * Rewritten for #5134. It could not run at all: `hashForLookup` was never
+ * imported, the client had no driver adapter (Prisma 7 throws on the first
+ * query), the base seed was started as a side-effect `require` and then
+ * waited on with a three-second sleep, and the rows it wrote used field and
+ * enum names the schema no longer has (`priority: 'HIGH'`, `Evidence.name`,
+ * `AuditCycle.title`, a link without its `tenantId`).
+ *
+ * The encrypted free-text columns (`Task.description`, `Evidence.description`)
+ * are left empty on purpose: this client writes without the encryption
+ * extension, and demo rows need only their titles.
  */
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { hashForLookup } from '../src/lib/security/encryption';
 
-const { PrismaClient: StagingPrismaClient } = require('@prisma/client');
-const path = require('path');
-
-const stagingPrisma = new StagingPrismaClient();
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }) });
 
 // ── Config (override via env vars) ──
 const STAGING_TENANT_SLUG = process.env.STAGING_TENANT_SLUG || 'acme-corp';
 const STAGING_ADMIN_EMAIL = process.env.STAGING_ADMIN_EMAIL || 'admin@acme.com';
-const STAGING_ADMIN_PASSWORD = process.env.STAGING_ADMIN_PASSWORD || 'password123';
 
-async function seedStaging() {
-    console.log('╔══════════════════════════════════════════╗');
-    console.log('║  Staging Seed — Inflect Compliance       ║');
-    console.log('╚══════════════════════════════════════════╝');
+/** Runs prisma/seed.ts to completion and fails when it fails. */
+function runBaseSeed(): void {
+    const seed = path.resolve(__dirname, '../prisma/seed.ts');
+    const run = spawnSync('npx', ['tsx', seed], { stdio: 'inherit', env: process.env });
+    if (run.status !== 0) {
+        throw new Error(`base seed exited with ${run.status ?? run.signal}`);
+    }
+}
+
+const DEMO_TASKS = [
+    { title: 'Complete annual risk assessment', priority: 'P1', status: 'OPEN' },
+    { title: 'Update access control policy', priority: 'P2', status: 'IN_PROGRESS' },
+    { title: 'Schedule penetration test', priority: 'P1', status: 'OPEN' },
+    { title: 'Employee security awareness training', priority: 'P2', status: 'RESOLVED' },
+    { title: 'Review vendor SLAs', priority: 'P3', status: 'OPEN' },
+] as const;
+
+const DEMO_EVIDENCE = [
+    { title: 'Access Review Log Q1', status: 'APPROVED' },
+    { title: 'Penetration Test Report', status: 'APPROVED' },
+    { title: 'Security Training Completion Certificate', status: 'APPROVED' },
+    { title: 'Firewall Configuration Snapshot', status: 'DRAFT' },
+] as const;
+
+const AUDIT_CYCLE_NAME = 'ISO 27001 Annual Audit';
+
+async function seedStaging(): Promise<void> {
+    console.log('── Staging Seed — Inflect Compliance ──');
     console.log(`  Tenant: ${STAGING_TENANT_SLUG}`);
     console.log(`  Admin:  ${STAGING_ADMIN_EMAIL}\n`);
 
-    // ── Step 1: Run base seed ──
-    console.log('── Step 1: Running base seed ──────────────');
-    require(path.resolve(__dirname, '../prisma/seed.ts'));
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    console.log('── Step 1: base seed ──');
+    runBaseSeed();
 
-    // ── Step 2: Resolve tenant and admin ──
-    console.log('\n── Step 2: Staging-specific demo data ─────');
-    const tenant = await stagingPrisma.tenant.findUnique({ where: { slug: STAGING_TENANT_SLUG } });
-    if (!tenant) {
-        console.error(`❌ Tenant "${STAGING_TENANT_SLUG}" not found. Did the base seed run?`);
-        process.exit(1);
-    }
-    const admin = await stagingPrisma.user.findUnique({ where: { emailHash: hashForLookup(STAGING_ADMIN_EMAIL) } });
-    if (!admin) {
-        console.error(`❌ Admin user "${STAGING_ADMIN_EMAIL}" not found.`);
-        process.exit(1);
-    }
+    console.log('\n── Step 2: staging demo data ──');
+    const tenant = await prisma.tenant.findUnique({ where: { slug: STAGING_TENANT_SLUG } });
+    if (!tenant) throw new Error(`Tenant "${STAGING_TENANT_SLUG}" not found. Did the base seed run?`);
+    const admin = await prisma.user.findUnique({ where: { emailHash: hashForLookup(STAGING_ADMIN_EMAIL) } });
+    if (!admin) throw new Error(`Admin user "${STAGING_ADMIN_EMAIL}" not found.`);
 
-    // ── Step 3: Create demo tasks ──
-    const demoTasks = [
-        { title: 'Complete annual risk assessment', description: 'Perform the ISO 27001 annual risk assessment for all business units.', priority: 'HIGH', status: 'OPEN' },
-        { title: 'Update access control policy', description: 'Review and update the access control policy to reflect new cloud services.', priority: 'MEDIUM', status: 'IN_PROGRESS' },
-        { title: 'Schedule penetration test', description: 'Engage external vendor for Q2 penetration testing of production systems.', priority: 'HIGH', status: 'OPEN' },
-        { title: 'Employee security awareness training', description: 'Deploy phishing simulation and security awareness module to all staff.', priority: 'MEDIUM', status: 'DONE' },
-        { title: 'Review vendor SLAs', description: 'Audit all critical vendor SLAs for security and compliance clauses.', priority: 'LOW', status: 'OPEN' },
-    ];
-    for (const t of demoTasks) {
-        const existing = await stagingPrisma.task.findFirst({
-            where: { tenantId: tenant.id, title: t.title },
-        });
+    for (const t of DEMO_TASKS) {
+        const existing = await prisma.task.findFirst({ where: { tenantId: tenant.id, title: t.title } });
         if (!existing) {
-            await stagingPrisma.task.create({
+            await prisma.task.create({
                 data: {
                     tenantId: tenant.id,
                     title: t.title,
-                    description: t.description,
                     priority: t.priority,
                     status: t.status,
                     createdByUserId: admin.id,
-                    assigneeId: admin.id,
+                    assigneeUserId: admin.id,
                 },
             });
         }
     }
-    console.log(`✅ ${demoTasks.length} demo tasks seeded`);
+    console.log(`✅ ${DEMO_TASKS.length} demo tasks`);
 
-    // ── Step 4: Create evidence placeholders ──
-    const demoEvidence = [
-        { name: 'Access Review Log Q1', type: 'DOCUMENT', status: 'CURRENT' },
-        { name: 'Penetration Test Report 2024', type: 'DOCUMENT', status: 'CURRENT' },
-        { name: 'Security Training Completion Cert', type: 'CERTIFICATE', status: 'CURRENT' },
-        { name: 'Firewall Configuration Snapshot', type: 'SCREENSHOT', status: 'DRAFT' },
-    ];
-    for (const e of demoEvidence) {
-        const existing = await stagingPrisma.evidence.findFirst({
-            where: { tenantId: tenant.id, name: e.name },
-        });
+    for (const e of DEMO_EVIDENCE) {
+        const existing = await prisma.evidence.findFirst({ where: { tenantId: tenant.id, title: e.title } });
         if (!existing) {
-            await stagingPrisma.evidence.create({
-                data: { tenantId: tenant.id, name: e.name, type: e.type, status: e.status },
+            await prisma.evidence.create({
+                data: { tenantId: tenant.id, title: e.title, type: 'TEXT', status: e.status, ownerUserId: admin.id },
             });
         }
     }
-    console.log(`✅ ${demoEvidence.length} evidence placeholders seeded`);
+    console.log(`✅ ${DEMO_EVIDENCE.length} evidence placeholders`);
 
-    // ── Step 5: Create an audit cycle ──
-    const auditCycleTitle = 'ISO 27001 Annual Audit 2024';
-    const existingCycle = await stagingPrisma.auditCycle.findFirst({
-        where: { tenantId: tenant.id, title: auditCycleTitle },
-    });
-    if (!existingCycle) {
-        await stagingPrisma.auditCycle.create({
+    const cycle = await prisma.auditCycle.findFirst({ where: { tenantId: tenant.id, name: AUDIT_CYCLE_NAME } });
+    if (!cycle) {
+        await prisma.auditCycle.create({
             data: {
                 tenantId: tenant.id,
-                title: auditCycleTitle,
-                scope: 'Full ISO 27001:2022 Annex A compliance audit',
-                status: 'OPEN',
+                frameworkKey: 'ISO27001',
+                frameworkVersion: '2022',
+                name: AUDIT_CYCLE_NAME,
                 createdByUserId: admin.id,
             },
         });
-        console.log('✅ Demo audit cycle created');
-    } else {
-        console.log('✅ Demo audit cycle already exists');
     }
+    console.log('✅ demo audit cycle');
 
-    // ── Step 6: Link controls to ISO 27001 requirements ──
-    const controls = await stagingPrisma.control.findMany({ where: { tenantId: tenant.id }, take: 4 });
-    const iso27001 = await stagingPrisma.framework.findUnique({ where: { key: 'ISO27001' } });
+    const controls = await prisma.control.findMany({ where: { tenantId: tenant.id }, take: 4, orderBy: { id: 'asc' } });
+    const iso27001 = await prisma.framework.findFirst({ where: { key: 'ISO27001' } });
     if (iso27001 && controls.length > 0) {
-        const requirements = await stagingPrisma.frameworkRequirement.findMany({
-            where: { frameworkId: iso27001.id }, take: 4, orderBy: { sortOrder: 'asc' },
+        const requirements = await prisma.frameworkRequirement.findMany({
+            where: { frameworkId: iso27001.id, deprecatedAt: null },
+            take: 4,
+            orderBy: { sortOrder: 'asc' },
         });
-        for (let i = 0; i < Math.min(controls.length, requirements.length); i++) {
-            await stagingPrisma.controlRequirementLink.upsert({
+        const pairs = Math.min(controls.length, requirements.length);
+        for (let i = 0; i < pairs; i++) {
+            await prisma.controlRequirementLink.upsert({
                 where: { controlId_requirementId: { controlId: controls[i].id, requirementId: requirements[i].id } },
-                create: { controlId: controls[i].id, requirementId: requirements[i].id },
+                create: { tenantId: tenant.id, controlId: controls[i].id, requirementId: requirements[i].id },
                 update: {},
             });
         }
-        console.log(`✅ ${Math.min(controls.length, requirements.length)} control→requirement links seeded`);
+        console.log(`✅ ${pairs} control → requirement links`);
     }
 
-    // ── Summary ──
     const counts = {
-        tenants: await stagingPrisma.tenant.count(),
-        users: await stagingPrisma.user.count(),
-        controls: await stagingPrisma.control.count({ where: { tenantId: tenant.id } }),
-        risks: await stagingPrisma.risk.count({ where: { tenantId: tenant.id } }),
-        tasks: await stagingPrisma.task.count({ where: { tenantId: tenant.id } }),
-        evidence: await stagingPrisma.evidence.count({ where: { tenantId: tenant.id } }),
-        frameworks: await stagingPrisma.framework.count(),
-        auditCycles: await stagingPrisma.auditCycle.count({ where: { tenantId: tenant.id } }),
+        controls: await prisma.control.count({ where: { tenantId: tenant.id } }),
+        tasks: await prisma.task.count({ where: { tenantId: tenant.id } }),
+        evidence: await prisma.evidence.count({ where: { tenantId: tenant.id } }),
+        auditCycles: await prisma.auditCycle.count({ where: { tenantId: tenant.id } }),
     };
-
-    console.log('\n╔══════════════════════════════════════════╗');
-    console.log('║  Staging Seed Complete                   ║');
-    console.log('╠══════════════════════════════════════════╣');
-    console.log(`║  Tenants:      ${String(counts.tenants).padStart(4)}                     ║`);
-    console.log(`║  Users:        ${String(counts.users).padStart(4)}                     ║`);
-    console.log(`║  Controls:     ${String(counts.controls).padStart(4)}                     ║`);
-    console.log(`║  Risks:        ${String(counts.risks).padStart(4)}                     ║`);
-    console.log(`║  Tasks:        ${String(counts.tasks).padStart(4)}                     ║`);
-    console.log(`║  Evidence:     ${String(counts.evidence).padStart(4)}                     ║`);
-    console.log(`║  Frameworks:   ${String(counts.frameworks).padStart(4)}                     ║`);
-    console.log(`║  Audit Cycles: ${String(counts.auditCycles).padStart(4)}                     ║`);
-    console.log('╠══════════════════════════════════════════╣');
-    console.log(`║  Login: ${STAGING_ADMIN_EMAIL} / ${STAGING_ADMIN_PASSWORD}    ║`);
-    console.log('╚══════════════════════════════════════════╝');
+    console.log('\n── Staging seed complete ──');
+    console.log(JSON.stringify(counts));
+    console.log(`Login: ${STAGING_ADMIN_EMAIL} (password set by the base seed's SEED_PASSWORD)`);
 }
 
 seedStaging()
     .catch((err) => {
         console.error('❌ Staging seed failed:', err);
-        process.exit(1);
+        process.exitCode = 1;
     })
-    .finally(() => stagingPrisma.$disconnect());
+    .finally(() => prisma.$disconnect());

@@ -121,6 +121,7 @@ const CREATE_ROW: ProposalRow = {
     windowClosed: false,
     approvalsRecorded: 0,
     signedByViewer: false,
+    viewerMayApprove: true,
     // Made outside a run — this suite is not about provenance.
     runId: null,
     stepSeq: null,
@@ -146,6 +147,7 @@ const UPDATE_ROW: ProposalRow = {
     windowClosed: false,
     approvalsRecorded: 0,
     signedByViewer: false,
+    viewerMayApprove: true,
     // Made outside a run — this suite is not about provenance.
     runId: null,
     stepSeq: null,
@@ -172,6 +174,7 @@ const NO_CHANGES_ROW: ProposalRow = {
     windowClosed: false,
     approvalsRecorded: 0,
     signedByViewer: false,
+    viewerMayApprove: true,
     // Made outside a run — this suite is not about provenance.
     runId: null,
     stepSeq: null,
@@ -198,6 +201,7 @@ const TARGET_MISSING_ROW: ProposalRow = {
     windowClosed: false,
     approvalsRecorded: 0,
     signedByViewer: false,
+    viewerMayApprove: true,
     // Made outside a run — this suite is not about provenance.
     runId: null,
     stepSeq: null,
@@ -224,6 +228,7 @@ const UNREADABLE_ROW: ProposalRow = {
     windowClosed: false,
     approvalsRecorded: 0,
     signedByViewer: false,
+    viewerMayApprove: true,
     // Made outside a run — this suite is not about provenance.
     runId: null,
     stepSeq: null,

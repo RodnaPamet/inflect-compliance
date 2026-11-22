@@ -100,6 +100,36 @@ const boundedDataJson = z
     );
 
 
+/**
+ * The node kind that may link to a Control record (`ProcessNodeControl`).
+ * Here rather than in the repository so the canvas can import it: this module
+ * is zod-only and already client-reachable.
+ */
+export const CONTROL_NODE_TYPE = 'control';
+export const RISK_NODE_TYPE = 'risk';
+export const ASSET_NODE_TYPE = 'asset';
+
+/**
+ * The node kinds that link to a record, and the field each carries the link
+ * in: `ProcessNodeControl`, `ProcessNodeRisk`, `ProcessNodeAsset`. A node may
+ * carry its own kind's field and no other.
+ */
+export const NODE_LINK_FIELD = {
+    [CONTROL_NODE_TYPE]: 'controlId',
+    [RISK_NODE_TYPE]: 'riskId',
+    [ASSET_NODE_TYPE]: 'assetId',
+} as const;
+export type LinkedNodeType = keyof typeof NODE_LINK_FIELD;
+export type NodeLinkField = (typeof NODE_LINK_FIELD)[LinkedNodeType];
+export const LINKED_NODE_TYPES = Object.keys(NODE_LINK_FIELD) as LinkedNodeType[];
+
+/** The link field a node of this kind carries, or null for a kind that links to nothing. */
+export function linkFieldForNodeType(nodeType: string): NodeLinkField | null {
+    return Object.prototype.hasOwnProperty.call(NODE_LINK_FIELD, nodeType)
+        ? NODE_LINK_FIELD[nodeType as LinkedNodeType]
+        : null;
+}
+
 export const ProcessNodeInputSchema = z.object({
     nodeKey: z.string().min(1).max(128),
     nodeType: z.string().min(1).max(64),
@@ -113,6 +143,18 @@ export const ProcessNodeInputSchema = z.object({
     // (parentNodeKey === own nodeKey) is rejected explicitly.
     parentNodeKey: z.string().max(128).optional().nullable(),
     dataJson: boundedDataJson,
+    // The Control record a `control` node stands for (`ProcessNodeControl`).
+    // Three states, and they are NOT interchangeable: a string links, `null`
+    // says "unlinked" (a draft placeholder the map may be saved with), and
+    // ABSENT means the sender knows nothing of the field — a snapshot or a
+    // client from before it existed — so the repository lifts the legacy
+    // `dataJson.linkedEntityId` instead. A node may carry only its own kind's
+    // link field (`NODE_LINK_FIELD`); the repository refuses any other.
+    controlId: z.string().min(1).max(64).optional().nullable(),
+    // The Risk a `risk` node and the Asset an `asset` node stand for
+    // (`ProcessNodeRisk`, `ProcessNodeAsset`), with the same three states.
+    riskId: z.string().min(1).max(64).optional().nullable(),
+    assetId: z.string().min(1).max(64).optional().nullable(),
 });
 export type ProcessNodeInput = z.infer<typeof ProcessNodeInputSchema>;
 

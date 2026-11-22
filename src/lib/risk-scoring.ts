@@ -23,10 +23,12 @@
 export function calculateRiskScore(
     likelihood: number,
     impact: number,
-    maxScale: number = 5
+    maxScale: number = 5,
+    /** The impact axis's own bound (#5080); defaults to `maxScale` for a square matrix. */
+    maxImpact: number = maxScale,
 ): number {
     const clampedL = Math.max(1, Math.min(maxScale, likelihood));
-    const clampedI = Math.max(1, Math.min(maxScale, impact));
+    const clampedI = Math.max(1, Math.min(maxImpact, impact));
     return clampedL * clampedI;
 }
 

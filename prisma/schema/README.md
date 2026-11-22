@@ -17,7 +17,7 @@ current Prisma 5.22.0 it is opt-in.
 | `auth.prisma` | Tenant, Organization, User, Account, Session, UserSession, TenantMembership, OrgMembership, TenantCustomRole, TenantInviteToken, TenantSecuritySettings, SsoConnection, ScimToken |
 | `vendor.prisma` | Vendor, VendorAssessment + template/section/question/response models |
 | `audit-trail.prisma` | AuditLog, OrgAuditLog — the platform's hash-chained immutable event log |
-| `audit-workflow.prisma` | Audit, AuditChecklistItem, AuditCycle, AuditPack(+Item/Share/Comment), AuditorAccount, AuditorPackAccess, ReadinessSnapshot — the compliance-audit domain; plus the agent-recertification children of `AccessReview` (AccessReviewAgentPack, AccessReviewAgentNarrowing, AccessReviewDecisionSampleAudit — #3674) |
+| `audit-workflow.prisma` | Audit, AuditChecklistItem, AuditCycle, AuditPack(+Item/Share/Comment), AuditorAccount, AuditorPackAccess, ReadinessSnapshot — the compliance-audit domain; plus the agent-recertification children of `AccessReview` (AccessReviewAgentPack, AccessReviewAgentNarrowing, AccessReviewDecisionSampleAudit — #3674; AccessReviewAgentSpendingWithdrawal — Agent Pay 1.4, #5333) |
 | `automation.prisma` | AutomationRule/Execution/Event, IntegrationConnection/Credential, SyncMapping, Webhook, Notification |
 | `processes.prisma` | Business-process canvas graph |
 | **compliance domain split** (2026-07-10) | `compliance.prisma` held ~111 models and was split into the domain files below — see `docs/implementation-notes/2026-07-10-compliance-schema-split.md`. Keep each ≤~30 models. |
@@ -37,6 +37,7 @@ current Prisma 5.22.0 it is opt-in.
 | `trust-center.prisma` | TrustCenter + TrustCenterDocument + access requests |
 | `agentic.prisma` | AgentProposal + WorkflowRun/WorkflowStep |
 | `analytics.prisma` | ComplianceSnapshot + CompliancePostureSummary |
+| `knowledge.prisma` | KnowledgeChunk + KnowledgeChunkEmbedding — Layer 4's chunk text (encrypted) and pgvector embeddings (vector store Phase 1) |
 | `compliance.prisma` | **Empty stub.** Kept so path references resolve; do NOT add models here — use the matching domain file above. |
 | `schema.prisma` | **Transitional**. Holds models not yet relocated to a domain file. Shrinks toward empty as splits land in follow-up PRs. |
 

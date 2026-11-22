@@ -16,6 +16,7 @@
 process.env.SKIP_ENV_VALIDATION = '1';
 
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { hashForLookup } from '@/lib/security/encryption';
 
 async function main(): Promise<void> {
@@ -26,7 +27,7 @@ async function main(): Promise<void> {
         process.exit(2);
     }
 
-    const prisma = new PrismaClient();
+    const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }) });
     try {
         const tenant = await prisma.tenant.findFirst({ orderBy: { createdAt: 'asc' } });
         if (!tenant) throw new Error('No tenant found — run `npm run db:reset` first.');

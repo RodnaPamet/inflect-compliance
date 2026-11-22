@@ -164,6 +164,7 @@ function makeRow(overrides: Partial<ProposalRow> = {}): ProposalRow {
         windowClosed: false,
         approvalsRecorded: 0,
         signedByViewer: false,
+        viewerMayApprove: true,
         // Made outside a run — this suite is not about provenance.
         runId: null,
         stepSeq: null,
@@ -372,5 +373,15 @@ describe('the verdict is repeated at the moment of approving', () => {
         // approval, and an interruption on every row is the one that gets
         // clicked through unread.
         expect(screen.queryByTestId('proposal-guard-confirm-body')).not.toBeInTheDocument();
+    });
+});
+
+describe('a proposal a run is waiting on says so (Step 2f, #5530)', () => {
+    it('marks it, linking to the run, so the reviewer knows the decision continues work', () => {
+        renderQueue([makeRow({ id: 'p-wait', runId: 'run-7', stepSeq: 0, runWaits: true }), makeRow({ id: 'p-plain', runId: 'run-8', stepSeq: 0 })]);
+        expect(screen.getByTestId('proposal-run-waits-link-p-wait').getAttribute('href')).toBe('/t/acme/agents/runs/run-7');
+        expect(screen.getByTestId('proposal-run-waits-p-wait')).toHaveTextContent(en('proposals.runWaits'));
+        // A proposal no run waits on carries no such notice.
+        expect(screen.queryByTestId('proposal-run-waits-p-plain')).not.toBeInTheDocument();
     });
 });

@@ -39,10 +39,15 @@ type Action = 'review' | 'dismiss' | 'materialize';
 export function FrameworkUpdatesClient({
     initialDeltas,
     canWrite,
+    canCreateFindings,
 }: {
     tenantSlug: string;
     initialDeltas: DeltaRow[];
     canWrite: boolean;
+    /** `canWrite` AND `findings.create`: what "Create findings"
+     *  (`POST /framework-updates/:id/materialize-findings`) takes. Review and
+     *  dismiss ask the write tier only, so they follow `canWrite`. */
+    canCreateFindings: boolean;
 }) {
     const t = useTranslations('frameworkUpdates');
     const apiUrl = useTenantApiUrl();
@@ -145,7 +150,7 @@ export function FrameworkUpdatesClient({
                                         <Button variant="ghost" size="sm" disabled={busy === d.id} onClick={() => review(d.id, 'DISMISSED')} id={`delta-dismiss-${d.id}`}>
                                             {t('dismiss')}
                                         </Button>
-                                        {d.newGapCount > 0 && (
+                                        {d.newGapCount > 0 && canCreateFindings && (
                                             <Button variant="ghost" size="sm" disabled={busy === d.id} onClick={() => materialize(d.id)} id={`delta-materialize-${d.id}`}>
                                                 {t('createFindings')}
                                             </Button>

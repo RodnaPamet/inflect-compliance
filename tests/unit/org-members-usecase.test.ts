@@ -13,6 +13,7 @@ const orgMembershipDeleteMock = jest.fn();
 const orgMembershipUpdateMock = jest.fn();
 const orgMembershipCountMock = jest.fn();
 const transactionMock = jest.fn();
+const executeRawUnsafeMock = jest.fn();
 const provisionOrgAdminMock = jest.fn();
 const deprovisionOrgAdminMock = jest.fn();
 const appendAuditEntryMock = jest.fn();
@@ -97,6 +98,8 @@ beforeEach(() => {
     orgMembershipUpdateMock.mockReset();
     orgMembershipCountMock.mockReset();
     transactionMock.mockReset();
+    executeRawUnsafeMock.mockReset();
+    executeRawUnsafeMock.mockResolvedValue(0);
     provisionOrgAdminMock.mockReset();
     deprovisionOrgAdminMock.mockReset();
     appendAuditEntryMock.mockReset();
@@ -286,9 +289,29 @@ describe('the two member mutations the destructive-routes pass did not cover', (
     });
 });
 
+// Default $transaction mock — invokes the callback with a tx client whose
+// methods resolve through the outer mocks. Provisioning helpers are mocked
+// at module boundary so they don't reach the tx client; the usecases only
+// touch the organization lock (#5373) and tx.orgMembership here.
+function wireTransactionPassthrough() {
+    transactionMock.mockImplementation(async (cb: unknown) => {
+        const fn = cb as (tx: unknown) => Promise<unknown>;
+        return fn({
+            $executeRawUnsafe: executeRawUnsafeMock,
+            orgMembership: {
+                update: orgMembershipUpdateMock,
+                delete: orgMembershipDeleteMock,
+                count: orgMembershipCountMock,
+            },
+        });
+    });
+}
+
 // ── removeOrgMember ────────────────────────────────────────────────────
 
 describe('removeOrgMember', () => {
+    beforeEach(() => wireTransactionPassthrough());
+
     it('refuses a caller without canManageMembers — the check the route no longer owns', async () => {
         // Added with #2147. Before it, this usecase had NO permission check and
         // the route was the only gate, so a non-HTTP caller reached it
@@ -318,7 +341,17 @@ describe('removeOrgMember', () => {
             (orgMembershipDeleteMock.mock.invocationCallOrder[0] ?? 0);
         expect(deprovisionOrder).toBe(true);
 
-        expect(deprovisionOrgAdminMock).toHaveBeenCalledWith('org-1', 'user-2');
+        // The fan-in and the delete share ONE transaction (#5373), opened
+        // under the organization's lock and re-checked inside it.
+        expect(transactionMock).toHaveBeenCalledTimes(1);
+        expect(deprovisionOrgAdminMock).toHaveBeenCalledWith('org-1', 'user-2', expect.anything());
+        expect(executeRawUnsafeMock).toHaveBeenCalledWith(
+            'SELECT pg_advisory_xact_lock(hashtext($1))',
+            'org-owner:org-1',
+        );
+        expect(executeRawUnsafeMock.mock.invocationCallOrder[0]).toBeLessThan(
+            orgMembershipCountMock.mock.invocationCallOrder[1] ?? 0,
+        );
         expect(result.wasOrgAdmin).toBe(true);
         expect(result.deprovision).toEqual({ deleted: 3, tenantIds: ['t-1', 't-2', 't-3'] });
         expect(result.deletedMembershipId).toBe('mem-1');
@@ -331,6 +364,7 @@ describe('removeOrgMember', () => {
         const result = await removeOrgMember(ctxFor(), { userId: 'user-3' });
 
         expect(orgMembershipCountMock).not.toHaveBeenCalled();
+        expect(executeRawUnsafeMock).not.toHaveBeenCalled();
         expect(deprovisionOrgAdminMock).not.toHaveBeenCalled();
         expect(appendAuditEntryMock).not.toHaveBeenCalled();
         expect(result.wasOrgAdmin).toBe(false);
@@ -422,28 +456,6 @@ describe('removeOrgMember', () => {
 // ── changeOrgMemberRole ───────────────────────────────────────────────
 
 describe('changeOrgMemberRole', () => {
-    // Default $transaction mock — invokes the callback with the same
-    // prisma client, so methods called on `tx` resolve through the
-    // outer mocks. Each test that needs a different shape overrides
-    // this in its setup.
-    function wireTransactionPassthrough() {
-        transactionMock.mockImplementation(async (cb: unknown) => {
-            const fn = cb as (tx: unknown) => Promise<unknown>;
-            // The tx client is a structural subset of prisma — we
-            // pass the orgMembership + tenant + tenantMembership
-            // accessors the helpers might call. Provisioning helpers
-            // are mocked at module boundary so they don't reach the
-            // tx client; the role-change usecase only touches
-            // tx.orgMembership.update + tx.orgMembership.count here.
-            return fn({
-                orgMembership: {
-                    update: orgMembershipUpdateMock,
-                    count: orgMembershipCountMock,
-                },
-            });
-        });
-    }
-
     it('READER → ADMIN: updates role inside tx and triggers provisioning fan-out', async () => {
         orgMembershipFindUniqueMock.mockResolvedValue({
             id: 'mem-1',
@@ -630,8 +642,16 @@ describe('changeOrgMemberRole', () => {
         ).rejects.toMatchObject({ status: 409 });
 
         // Transaction opened, but the tx body threw before the role
-        // update or the deprovision call.
+        // update or the deprovision call — and it took the organization's
+        // lock before the count that refused (#5373).
         expect(transactionMock).toHaveBeenCalledTimes(1);
+        expect(executeRawUnsafeMock).toHaveBeenCalledWith(
+            'SELECT pg_advisory_xact_lock(hashtext($1))',
+            'org-owner:org-1',
+        );
+        expect(executeRawUnsafeMock.mock.invocationCallOrder[0]).toBeLessThan(
+            orgMembershipCountMock.mock.invocationCallOrder[1] ?? 0,
+        );
         expect(orgMembershipUpdateMock).not.toHaveBeenCalled();
         expect(deprovisionOrgAdminMock).not.toHaveBeenCalled();
     });

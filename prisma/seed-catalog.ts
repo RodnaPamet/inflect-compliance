@@ -15,6 +15,7 @@
  * Run on VM:     docker exec -it inflect-app-1 npx tsx /app/prisma/seed-catalog.ts
  */
 const { PrismaClient } = require('@prisma/client');
+const { PrismaPg } = require('@prisma/adapter-pg');
 // Shared with seed.ts and catalog-applier.ts — see prisma/generic-template-tasks.ts.
 const { GENERIC_TEMPLATE_TASKS } = require('./generic-template-tasks');
 // Granular ISO 27001 domain taxonomy — the SAME module the Controls
@@ -25,7 +26,7 @@ const { GENERIC_TEMPLATE_TASKS } = require('./generic-template-tasks');
 const { iso27001Domain } = require('../src/lib/controls/control-taxonomy');
 import { fixtureArray } from './fixture-io';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }) });
 
 
 async function main() {

@@ -28,6 +28,7 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { ExecutionsPanel } from '@/components/processes/ExecutionsPanel';
 import type { AutomationRuleRow } from '@/app/t/[tenantSlug]/(app)/processes/RulesTab';
 import type { RuleDetail } from '@/components/processes/RuleBuilderModal';
+import type { SubflowGroupItem } from '@/lib/processes/subflow-groups';
 import {
     buildRuleActionLabels,
     buildRuleStatusLabels,
@@ -133,6 +134,19 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
     );
     const ruleName = (id: string): string =>
         rulesList?.find((r) => r.id === id)?.name ?? id;
+    // #5477 — an INVOKE_SUBFLOW target reads as "map › group", not as the raw
+    // node key. Fetched only for such a rule; an unknown key shows as stored.
+    const { data: subflowGroupList } = useTenantSWR<{ groups: SubflowGroupItem[] }>(
+        open && detail?.actionType === 'INVOKE_SUBFLOW' ? CACHE_KEYS.processes.subflowGroups() : null,
+    );
+    const subflowGroupName = (key: string): string => {
+        const g = subflowGroupList?.groups.find((x) => x.nodeKey === key);
+        if (!g) return key;
+        return t('ruleDetail.subflowTargetOption', {
+            map: g.mapName,
+            group: g.label.trim() || t('ruleDetail.subflowTargetUnnamed'),
+        });
+    };
 
     /*
         The row AS THE LIST CACHE HAS IT NOW, not the snapshot the tab took on
@@ -494,7 +508,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
                                                 asStr(actionConfig.targetGroupId) && (
                                                     <ConfigRow
                                                         label={t('ruleDetail.subflowTarget')}
-                                                        value={asStr(actionConfig.targetGroupId)}
+                                                        value={subflowGroupName(asStr(actionConfig.targetGroupId))}
                                                     />
                                                 )}
                                             {detail.actionType === 'INVOKE_AGENT' && (

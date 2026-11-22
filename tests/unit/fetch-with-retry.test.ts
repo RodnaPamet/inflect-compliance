@@ -11,7 +11,7 @@
  * the suite slow — every `await` between attempts is advanced via
  * fake timers.
  */
-import { fetchWithRetry } from '@/lib/http/fetch-with-retry';
+import { fetchWithRetry, NonRetryableHttpError } from '@/lib/http/fetch-with-retry';
 
 const realFetch = global.fetch;
 
@@ -125,30 +125,29 @@ describe('fetchWithRetry', () => {
 
     // ── Non-retryable status handling ──────────────────────────────
     //
-    // Note on observed behaviour: 403 and other non-2xx-non-5xx
-    // responses throw INSIDE the per-attempt try block, so the
-    // catch handler treats them as a retryable error and re-attempts
-    // until `maxRetries` is exhausted. The surfaced message is the
-    // exhaustion wrapper carrying the last attempt's message. These
-    // tests pin that real (somewhat surprising) contract rather than
-    // an idealised "throw immediately" — a future fix that hoists
-    // those throws outside the try will flip these and should.
+    // A non-2xx answer that is neither 429 nor 5xx is the server
+    // refusing the request on its merits. It is surfaced on the FIRST
+    // attempt as a NonRetryableHttpError carrying the status — never
+    // re-sent, and never wrapped in the exhaustion message (#5316: a
+    // revoked NVD key used to burn five paced retries and then read as
+    // a transient outage).
 
-    it('surfaces "Unauthorized" via the exhaustion wrapper on a persistent 403', async () => {
+    it('throws "Unauthorized" at once on a 403, without retrying', async () => {
         mockFetch.mockResolvedValue(res({ ok: false, status: 403 }));
 
-        await expect(
-            runWithTimers(
-                fetchWithRetry('https://x.test', undefined, {
-                    maxRetries: 3,
-                    retryDelay: 5,
-                }),
-            ),
-        ).rejects.toThrow('Failed after 3 retries. Last error: Unauthorized');
-        expect(mockFetch).toHaveBeenCalledTimes(3);
+        const p = runWithTimers(
+            fetchWithRetry('https://x.test', undefined, {
+                maxRetries: 3,
+                retryDelay: 5,
+            }),
+        );
+        await expect(p).rejects.toBeInstanceOf(NonRetryableHttpError);
+        await expect(p).rejects.toThrow(/^Unauthorized$/);
+        await expect(p).rejects.toMatchObject({ status: 403 });
+        expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
-    it('surfaces the parsed error body via the exhaustion wrapper on a persistent 4xx', async () => {
+    it('throws the parsed error body at once on a 4xx, without retrying', async () => {
         mockFetch.mockResolvedValue(
             res({
                 ok: false,
@@ -157,14 +156,28 @@ describe('fetchWithRetry', () => {
             }),
         );
 
-        await expect(
-            runWithTimers(
-                fetchWithRetry('https://x.test', undefined, {
-                    maxRetries: 2,
-                    retryDelay: 5,
-                }),
-            ),
-        ).rejects.toThrow('Failed after 2 retries. Last error: bad input');
+        const p = runWithTimers(
+            fetchWithRetry('https://x.test', undefined, {
+                maxRetries: 2,
+                retryDelay: 5,
+            }),
+        );
+        await expect(p).rejects.toThrow(/^bad input$/);
+        await expect(p).rejects.toMatchObject({ status: 400 });
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not retry a 404', async () => {
+        mockFetch.mockResolvedValue(res({ ok: false, status: 404 }));
+
+        const p = runWithTimers(
+            fetchWithRetry('https://x.test', undefined, {
+                maxRetries: 5,
+                retryDelay: 5,
+            }),
+        );
+        await expect(p).rejects.toMatchObject({ status: 404 });
+        expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
     it('falls back to a generic message when the 4xx body is not JSON', async () => {

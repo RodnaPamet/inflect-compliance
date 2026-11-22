@@ -31,8 +31,7 @@ import {
     createTypedFilterDefs,
     optionsFromEnum,
 } from '@/components/ui/filter/filter-definitions';
-// `FilterDefInput.icon` is typed `LucideIcon` (the filter platform has not
-// migrated to Nucleo), so a filter-defs file has no Nucleo option — same
+// filter-defs files take their icons from lucide-react directly — same
 // precedent as every other *filter-defs.ts in this tree.
 import { Building2 } from 'lucide-react';
 

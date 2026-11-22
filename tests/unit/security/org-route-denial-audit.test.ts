@@ -98,6 +98,11 @@ jest.mock('@/app-layer/usecases/org-agent-switches', () => ({
     setOrgAgentSwitches: (...a: unknown[]) => mockSetAgentSwitches(...a),
     getOrgAgentSwitches: jest.fn(),
 }));
+const mockSetAgentTurnCaps = jest.fn();
+jest.mock('@/app-layer/usecases/org-agent-turn-caps', () => ({
+    setOrgAgentTurnCaps: (...a: unknown[]) => mockSetAgentTurnCaps(...a),
+    getOrgAgentTurnCaps: jest.fn(),
+}));
 const mockDeleteTenant = jest.fn();
 const mockCreateTenant = jest.fn();
 jest.mock('@/app-layer/usecases/org-tenants', () => ({
@@ -127,6 +132,7 @@ import { POST as widgetCreate } from '@/app/api/org/[orgSlug]/dashboard/widgets/
 import { PATCH as widgetUpdate } from '@/app/api/org/[orgSlug]/dashboard/widgets/[widgetId]/route';
 import { DELETE as tenantDelete } from '@/app/api/org/[orgSlug]/tenants/[tenantId]/route';
 import { PUT as agentSwitchesSet } from '@/app/api/org/[orgSlug]/agent-switches/route';
+import { PUT as agentTurnCapsSet } from '@/app/api/org/[orgSlug]/agent-turn-caps/route';
 
 type Handler = (req: NextRequest, args: { params: unknown }) => Promise<Response>;
 const asHandler = (h: unknown): Handler => h as Handler;
@@ -260,6 +266,11 @@ const ROUTES: Array<{
       body: { toolRunner: true },
       url: '/api/org/acme/agent-switches', params: { orgSlug: 'acme' },
       flag: 'canManageAgentSwitches', usecase: mockSetAgentSwitches },
+    // #4594 — the organization's per-turn ceilings, behind the switches' permission.
+    { name: 'PUT /agent-turn-caps', handler: asHandler(agentTurnCapsSet), method: 'PUT',
+      body: { toolCallsPerTurn: 2 },
+      url: '/api/org/acme/agent-turn-caps', params: { orgSlug: 'acme' },
+      flag: 'canManageAgentSwitches', usecase: mockSetAgentTurnCaps },
 ];
 
 beforeEach(() => {
@@ -268,7 +279,7 @@ beforeEach(() => {
      mockDeleteTenant, mockAddMember, mockChangeRole, mockCreateInvite,
      mockCreateTenant, mockSetThreatLevel, mockSetMaturity, mockCreateInitiative,
      mockUpdateInitiative, mockChangeStatus, mockLinkWork, mockCreateWidget,
-     mockUpdateWidget, mockSetAgentSwitches].forEach((m) => m.mockReset());
+     mockUpdateWidget, mockSetAgentSwitches, mockSetAgentTurnCaps].forEach((m) => m.mockReset());
     mockAppendOrgAuditEntry.mockResolvedValue({ id: 'a', entryHash: 'h', previousHash: null });
 });
 

@@ -6,7 +6,8 @@
  */
 
 // ─── Pure cycle guard ───
-import { followChainHasCycle } from '@/app-layer/usecases/automation-rules';
+import { assertNoChainCycle, followChainHasCycle } from '@/app-layer/usecases/automation-rules';
+import { makeRequestContext } from '../helpers/make-context';
 
 describe('followChainHasCycle', () => {
     const chain: Record<string, string | null> = { b: 'c', c: null };
@@ -27,11 +28,38 @@ describe('followChainHasCycle', () => {
     });
 });
 
+describe('assertNoChainCycle — a cycle mixing next and else edges (#5317)', () => {
+    const rules: Record<string, { nextRuleId: string | null; elseRuleId: string | null }> = {
+        B: { nextRuleId: null, elseRuleId: 'C' },
+        C: { nextRuleId: 'A', elseRuleId: null },
+    };
+    const db = {
+        automationRule: {
+            findFirst: jest.fn(async ({ where }: any) => (rules[where.id] ? { id: where.id, ...rules[where.id] } : null)),
+        },
+    } as any;
+    const ctx = makeRequestContext('ADMIN');
+
+    it('refuses A.next = B when B -else-> C -next-> A', async () => {
+        await expect(assertNoChainCycle(db, ctx, 'A', { nextRuleId: 'B' })).rejects.toThrow(/cycle/);
+    });
+
+    it('accepts an acyclic chain that shares a node on both edges', async () => {
+        const diamond = {
+            automationRule: {
+                findFirst: jest.fn(async ({ where }: any) =>
+                    ({ B: { id: 'B', nextRuleId: 'D', elseRuleId: 'D' }, D: { id: 'D', nextRuleId: null, elseRuleId: null } } as any)[where.id] ?? null),
+            },
+        } as any;
+        await expect(assertNoChainCycle(diamond, ctx, 'A', { nextRuleId: 'B' })).resolves.toBeUndefined();
+    });
+});
+
 // ─── Chain dispatch job ───
 jest.mock('@/lib/prisma', () => ({
     prisma: {
         automationRule: { findFirst: jest.fn(), updateMany: jest.fn() },
-        automationExecution: { create: jest.fn() },
+        automationExecution: { create: jest.fn(), updateMany: jest.fn() },
     },
 }));
 jest.mock('@/lib/observability/job-runner', () => ({
@@ -69,13 +97,19 @@ describe('runRuleChainDispatch', () => {
         const { executionId } = await runRuleChainDispatch(basePayload);
 
         expect(executionId).toBe('exec-2');
+        // Claimed RUNNING first, under the step's key (#5103)…
         const createArg = mockPrisma.automationExecution.create.mock.calls[0][0];
         expect(createArg.data).toMatchObject({
             ruleId: 'r2',
             parentExecutionId: 'exec-1',
             triggeredBy: 'chain',
-            status: 'SUCCEEDED',
+            status: 'RUNNING',
+            idempotencyKey: 'chain:exec-1:r2',
         });
+        // …then settled from RUNNING.
+        const settle = mockPrisma.automationExecution.updateMany.mock.calls[0][0];
+        expect(settle.where).toMatchObject({ id: 'exec-2', status: 'RUNNING' });
+        expect(settle.data.status).toBe('SUCCEEDED');
         expect(enqueueMock).not.toHaveBeenCalled();
     });
 
@@ -103,6 +137,49 @@ describe('runRuleChainDispatch', () => {
         expect(mockPrisma.automationExecution.create).not.toHaveBeenCalled();
     });
 
+    it('a retried step that finds its claim taken does NOT run the action again (#5103)', async () => {
+        // The step used to act and THEN write its row, so a BullMQ retry after
+        // the action ran it twice: a second task, a second webhook.
+        mockPrisma.automationRule.findFirst.mockResolvedValue({
+            id: 'r2',
+            actionType: 'NOTIFY_USER',
+            nextRuleId: 'r3',
+        });
+        const { Prisma } = jest.requireActual('@prisma/client');
+        mockPrisma.automationExecution.create.mockRejectedValue(
+            new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+                code: 'P2002',
+                clientVersion: 'test',
+            }),
+        );
+
+        const { executionId, result } = await runRuleChainDispatch(basePayload);
+
+        expect(executionId).toBeNull();
+        expect(result.details).toMatchObject({ skipped: 'already-claimed' });
+        expect(mockPrisma.automationExecution.updateMany).not.toHaveBeenCalled();
+        expect(mockPrisma.automationRule.updateMany).not.toHaveBeenCalled();
+        // And it does not chain onward a second time either.
+        expect(enqueueMock).not.toHaveBeenCalled();
+    });
+
+    it('carries the entity the chain started from to the next link (#5248)', async () => {
+        mockPrisma.automationRule.findFirst.mockResolvedValue({
+            id: 'r2',
+            actionType: 'NOTIFY_USER',
+            nextRuleId: 'r3',
+        });
+        mockPrisma.automationExecution.create.mockResolvedValue({ id: 'exec-2' });
+
+        await runRuleChainDispatch({ ...basePayload, entityType: 'Risk', entityId: 'risk-7' });
+
+        expect(enqueueMock).toHaveBeenCalledWith(
+            'rule-chain-dispatch',
+            expect.objectContaining({ entityType: 'Risk', entityId: 'risk-7' }),
+            undefined,
+        );
+    });
+
     // ─── PR-F conditional branching ───
     it('PASS branch: matching filter runs the action + follows nextRuleId', async () => {
         mockPrisma.automationRule.findFirst.mockResolvedValue({
@@ -114,9 +191,9 @@ describe('runRuleChainDispatch', () => {
 
         await runRuleChainDispatch(basePayload);
 
-        const createArg = mockPrisma.automationExecution.create.mock.calls[0][0];
-        expect(createArg.data.status).toBe('SUCCEEDED');
-        expect(createArg.data.outcomeJson.branch).toBe('pass');
+        const settle = mockPrisma.automationExecution.updateMany.mock.calls[0][0];
+        expect(settle.data.status).toBe('SUCCEEDED');
+        expect(settle.data.outcomeJson.branch).toBe('pass');
         expect(enqueueMock).toHaveBeenCalledWith(
             'rule-chain-dispatch',
             expect.objectContaining({ ruleId: 'r-pass' }),
@@ -134,9 +211,9 @@ describe('runRuleChainDispatch', () => {
 
         await runRuleChainDispatch(basePayload);
 
-        const createArg = mockPrisma.automationExecution.create.mock.calls[0][0];
-        expect(createArg.data.status).toBe('SKIPPED');
-        expect(createArg.data.outcomeJson.branch).toBe('else');
+        const settle = mockPrisma.automationExecution.updateMany.mock.calls[0][0];
+        expect(settle.data.status).toBe('SKIPPED');
+        expect(settle.data.outcomeJson.branch).toBe('else');
         // action skipped → rule counter not bumped
         expect(mockPrisma.automationRule.updateMany).not.toHaveBeenCalled();
         expect(enqueueMock).toHaveBeenCalledWith(

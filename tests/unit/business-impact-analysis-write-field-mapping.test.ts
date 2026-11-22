@@ -63,6 +63,8 @@ describe('createBia — persisted payload', () => {
                 create: jest.fn(async ({ data }: any) => ({ id: 'bia-1', name: data.name })),
             },
             biaDependency: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+            // A named owner is an active member of the tenant.
+            tenantMembership: { findFirst: jest.fn().mockResolvedValue({ id: 'm-owner' }) },
             ...over,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any);
@@ -255,6 +257,8 @@ describe('updateBia — patch semantics', () => {
                 update: jest.fn(async ({ data }: any) => ({ id: 'bia-1', name: data.name ?? 'Payroll' })),
             },
             processNode: { findFirst: jest.fn().mockResolvedValue({ processMapId: 'map-1', nodeKey: 'n2' }) },
+            // A named owner is an active member of the tenant.
+            tenantMembership: { findFirst: jest.fn().mockResolvedValue({ id: 'm-owner' }) },
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any);
     }

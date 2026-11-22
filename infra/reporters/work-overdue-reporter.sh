@@ -107,8 +107,11 @@ DRY_RUN=${WORK_OVERDUE_DRY_RUN:-0}
 # THE COLUMNS DIFFER BY TABLE, and each is the right one:
 #
 #   · `NotificationOutbox` records NO transition time — no `updatedAt`, and
-#     `processOutbox`'s failure branch writes only `status` and `lastError`, so
-#     `sendAfter` never moves. `createdAt` is therefore the only timestamp, and
+#     `processOutbox` moves `sendAfter` only to lease a row for the length of
+#     one send (#5110), putting it back if the send fails, so at rest it is
+#     still when the row first came due. (A pass that crashes mid-send leaves
+#     the lease to expire, which delays that row's overdue count by the lease.)
+#     `createdAt` is therefore the only timestamp, and
 #     it is a sound proxy: with no backoff applied, `attempts` capped at 3 and
 #     the flusher on */10, a row reaches FAILED within about half an hour of
 #     being queued. If a backoff is ever added there, this proxy weakens and
@@ -195,15 +198,19 @@ fi
 if [ "$ABANDONED_TOTAL" -gt 0 ]; then
     echo "ABANDONED work in the last 24h: notification_abandoned=$NOTIFICATION_ABANDONED audit_abandoned=$AUDIT_ABANDONED" >&2
     if [ "$NOTIFICATION_ABANDONED" -gt 0 ]; then
+        # Grouped in a subquery (#5235): grouping by the concatenation put
+        # count(*) inside GROUP BY, which Postgres refuses.
         # The error, not the recipient. `dedupeKey` embeds the address (#3577)
         # and `toEmail` is the address, so neither is printed here — a page is
         # read by whoever is on call, not only by someone entitled to the
         # recipient list.
         read_count "
-SELECT type::text || ' n=' || count(*) || ' err=' || left(coalesce(\"lastError\",'(null)'), 60)
-  FROM \"NotificationOutbox\"
- WHERE status = 'FAILED' AND \"createdAt\" > now() - interval '24 hours'
- GROUP BY 1 ORDER BY 2 DESC LIMIT 20;
+SELECT type::text || ' n=' || n || ' err=' || err
+  FROM (SELECT type, left(coalesce(\"lastError\",'(null)'), 60) AS err, count(*) AS n
+          FROM \"NotificationOutbox\"
+         WHERE status = 'FAILED' AND \"createdAt\" > now() - interval '24 hours'
+         GROUP BY 1, 2) failed
+ ORDER BY n DESC LIMIT 20;
 " >&2
     fi
 fi

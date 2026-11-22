@@ -1214,6 +1214,75 @@ exports[`API contract — per-schema snapshots schema: AuthRegisterRequest 1`] =
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AuthRegisterResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "user": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "name",
+        "role"
+      ]
+    },
+    "tenant": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "slug"
+      ]
+    },
+    "emailVerificationRequired": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "user",
+    "tenant",
+    "emailVerificationRequired"
+  ],
+  "additionalProperties": {},
+  "description": "The account created, the workspace created with it (null for an account-only registration that an invitation will attach), and whether the email must be verified before sign-in."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AuthResetPasswordRequest 1`] = `
 "{
   "type": "object",
@@ -1534,6 +1603,12 @@ exports[`API contract — per-schema snapshots schema: ControlDetail 1`] = `
                 "null"
               ]
             }
+          ]
+        },
+        "applicabilityDecidedAt": {
+          "type": [
+            "string",
+            "null"
           ]
         },
         "contributors": {
@@ -2933,11 +3008,20 @@ exports[`API contract — per-schema snapshots schema: FindingCreateRequest 1`] 
     },
     "severity": {
       "type": "string",
-      "minLength": 1
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ]
     },
     "type": {
       "type": "string",
-      "minLength": 1
+      "enum": [
+        "NONCONFORMITY",
+        "OBSERVATION",
+        "OPPORTUNITY"
+      ]
     },
     "title": {
       "type": "string",
@@ -3001,20 +3085,6 @@ exports[`API contract — per-schema snapshots schema: FindingCreateRequest 1`] 
         "string",
         "null"
       ]
-    },
-    "sourceKind": {
-      "type": [
-        "string",
-        "null"
-      ],
-      "maxLength": 64
-    },
-    "sourceRef": {
-      "type": [
-        "string",
-        "null"
-      ],
-      "maxLength": 256
     }
   },
   "required": [
@@ -3022,7 +3092,7 @@ exports[`API contract — per-schema snapshots schema: FindingCreateRequest 1`] 
     "type",
     "title"
   ],
-  "description": "Create an audit finding. auditId is optional — findings can be raised independently of an audit cycle. description, rootCause + analysis are encrypted at rest. assigneeUserId / controlId / compensatingControlId / riskIds are validated against the tenant. sourceKind/sourceRef tag auto-materialized findings."
+  "description": "Create an audit finding. auditId is optional — findings can be raised independently of an audit cycle. description, rootCause + analysis are encrypted at rest. assigneeUserId / controlId / compensatingControlId / riskIds are validated against the tenant."
 }"
 `;
 
@@ -3031,10 +3101,21 @@ exports[`API contract — per-schema snapshots schema: FindingUpdateRequest 1`] 
   "type": "object",
   "properties": {
     "severity": {
-      "type": "string"
+      "type": "string",
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ]
     },
     "type": {
-      "type": "string"
+      "type": "string",
+      "enum": [
+        "NONCONFORMITY",
+        "OBSERVATION",
+        "OPPORTUNITY"
+      ]
     },
     "title": {
       "type": "string",
@@ -4210,6 +4291,13 @@ exports[`API contract — per-schema snapshots schema: RiskCreateRequest 1`] = `
         "string",
         "null"
       ]
+    },
+    "templateId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
     }
   },
   "required": [

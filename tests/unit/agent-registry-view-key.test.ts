@@ -450,6 +450,7 @@ describe('the route-permission map', () => {
         ['/api/t/acme/admin/agents/agent-1', 'GET'],
         ['/api/t/acme/admin/agents/harness-scans', 'GET'],
         ['/api/t/acme/admin/agents/harness-estates', 'GET'],
+        ['/api/t/acme/admin/agents/integration-scans', 'GET'],
         ['/api/t/acme/admin/agents/reports', 'GET'],
     ])('%s %s is the inventory read', (path, method) => {
         expect(resolve(path, method)).toEqual(INVENTORY);
@@ -497,6 +498,7 @@ describe('the edge: an AUDITOR reaches the inventory GETs and nothing else under
         '/api/t/acme/admin/agents/agent-1',
         '/api/t/acme/admin/agents/harness-scans',
         '/api/t/acme/admin/agents/harness-estates',
+        '/api/t/acme/admin/agents/integration-scans',
         '/api/t/acme/admin/agents/reports',
         // #4898: the usecase applies the Owner's switch; the edge only admits.
         '/api/t/acme/admin/mcp/quarantine',
@@ -514,7 +516,7 @@ describe('the edge: an AUDITOR reaches the inventory GETs and nothing else under
     it('refuses every static sibling, every deeper path, every other admin root, and the export', () => {
         const refused = [
             ...AGENT_ADMIN_API_STATIC_SEGMENTS.filter(
-                (s) => s !== 'harness-scans' && s !== 'harness-estates' && s !== 'reports',
+                (s) => s !== 'harness-scans' && s !== 'harness-estates' && s !== 'integration-scans' && s !== 'reports',
             ).map((s) => `/api/t/acme/admin/agents/${s}`),
             // One estate's own path is a write path (PATCH, DELETE): the
             // allowance is the exact list template, nothing beneath it.
@@ -543,6 +545,7 @@ describe('the edge: an AUDITOR reaches the inventory GETs and nothing else under
             '/api/t/[slug]/admin/agents/[agentId]': 'src/app/api/t/[tenantSlug]/admin/agents/[agentId]/route.ts',
             '/api/t/[slug]/admin/agents/harness-scans': 'src/app/api/t/[tenantSlug]/admin/agents/harness-scans/route.ts',
             '/api/t/[slug]/admin/agents/harness-estates': 'src/app/api/t/[tenantSlug]/admin/agents/harness-estates/route.ts',
+            '/api/t/[slug]/admin/agents/integration-scans': 'src/app/api/t/[tenantSlug]/admin/agents/integration-scans/route.ts',
             '/api/t/[slug]/admin/agents/reports': 'src/app/api/t/[tenantSlug]/admin/agents/reports/route.ts',
             '/api/t/[slug]/admin/mcp/quarantine': 'src/app/api/t/[tenantSlug]/admin/mcp/quarantine/route.ts',
         };

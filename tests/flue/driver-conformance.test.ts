@@ -41,11 +41,15 @@ interface MockSettlement {
 }
 
 const mockState = {
-    tools: [] as Array<{ name: string; result: string }>,
+    tools: [] as ConformanceRun['tools'][number][],
+    /** Has the workspace acknowledged the external-AI business-data transfer (#3872)? */
+    externalAiAcknowledged: false,
     residency: 'EXTERNAL' as 'EXTERNAL' | 'LOCAL_ONLY',
     alreadyTokens: 0,
     toolCallLimit: null as number | null,
     killAfterModelCalls: null as number | null,
+    /** An operator aborts the run once this many model calls are made (#5366). */
+    abortAfterModelCalls: null as number | null,
     modelCalls: 0,
     ledger: [] as Array<{ kind: string; rec: Record<string, unknown> }>,
     decisionRows: [] as Array<{ inputDigest: string }>,
@@ -60,6 +64,10 @@ const mockState = {
 // reset to null is narrowed to `null` across the await.
 function recordedSettlement(): MockSettlement | null {
     return mockState.settlement;
+}
+
+function mockAborted(): boolean {
+    return mockState.abortAfterModelCalls !== null && mockState.modelCalls >= mockState.abortAfterModelCalls;
 }
 
 function mockKilled(): boolean {
@@ -104,7 +112,12 @@ jest.unstable_mockModule('@/lib/agentic/drivers/run-settlement', () => {
         return status;
     };
     return {
-        updateRun: jest.fn(async () => undefined),
+        // As the real one does (#5366): a write that settles does not land on
+        // a row an operator aborted, and says so.
+        updateRun: jest.fn(async (_c: unknown, _r: string, data: Record<string, unknown>) =>
+            !(typeof data.status === 'string' && mockAborted()),
+        ),
+        isRunAborted: jest.fn(async () => mockAborted()),
         failRun: jest.fn(async (_c: unknown, _r: string, message: string) => settle('FAILED', message)),
         haltRunAtKill: jest.fn(async (_c: unknown, _r: string, _kill: unknown, message: string) => settle('ABORTED', message)),
         haltRunAtCap: jest.fn(async (_c: unknown, _r: string, halt: { kind: string; message: string }) =>
@@ -148,6 +161,17 @@ jest.unstable_mockModule('@/lib/mcp/tools/registry', () => ({
             inputSchema: { type: 'object', properties: { query: { type: 'string' } } },
             resourceScope: { resource: t.name, action: 'read' },
             authorize: { basis: 'effective', mirrors: `GET /${t.name}` },
+            ...(t.externalConnection
+                ? {
+                      externalConnection: {
+                          connectionId: `conn-${t.externalConnection.name}`,
+                          connectionName: t.externalConnection.name,
+                          declaresWrite: false,
+                          connectionRefusesWrites: false,
+                          reachesBusinessSystem: t.externalConnection.reachesBusinessSystem,
+                      },
+                  }
+                : {}),
         })),
     ),
     // THE FUNNEL, at its seam. Step 0 of `authorizeToolCall` is kept: a killed
@@ -164,6 +188,15 @@ jest.unstable_mockModule('@/lib/mcp/tools/registry', () => ({
     }),
 }));
 
+// The registry's sibling: read tools behind a mount gate (`search_knowledge`).
+// None is in this suite's catalogue, so none is mounted or withheld; faked for
+// the reason the registry is, since the real module reads the gate's files.
+jest.unstable_mockModule('@/lib/mcp/mount-gated-tools', () => ({
+    readToolMounted: () => true,
+    unmountedReadTools: () => [],
+    withheldReadToolNames: () => [],
+}));
+
 jest.unstable_mockModule('@/lib/mcp/tools/propose-tools', () => ({
     loadableProposeTools: jest.fn(() => []),
     runProposeTool: jest.fn(async () => ({ content: [] })),
@@ -174,7 +207,13 @@ jest.unstable_mockModule('@/lib/mcp/tools/propose-tools', () => ({
 jest.unstable_mockModule('@/lib/db/rls-middleware', () => {
     const db = {
         tenantSecuritySettings: {
-            findUnique: async () => ({ aiResidency: mockState.residency, aiLocalBaseUrl: null, aiLocalModel: null }),
+            findUnique: async () => ({
+                aiResidency: mockState.residency,
+                aiLocalBaseUrl: null,
+                aiLocalModel: null,
+                externalAiBusinessDataAckAt: mockState.externalAiAcknowledged ? new Date('2026-11-01T00:00:00Z') : null,
+                externalAiBusinessDataAckByUserId: mockState.externalAiAcknowledged ? 'user-conformance' : null,
+            }),
         },
         registeredAgent: { findFirst: async () => ({ aiSystemId: 'ai-system-conformance' }) },
         aiDecisionLog: {
@@ -203,7 +242,15 @@ jest.unstable_mockModule('@/lib/agentic/flue/skills/tenant-mount', () => ({
         return conformanceSkillMount(mockState.skills);
     }),
 }));
-jest.unstable_mockModule('@/lib/agentic/subagent-fanout-policy', () => ({ readFanOutCap: jest.fn(async () => 1) }));
+// THE TURN CAPS' READ (#4594), and nothing else: the resolver is the real one.
+// One delegation and one tool call per turn, the serial request both engines
+// sent before the caps were the organization's.
+jest.unstable_mockModule('@/lib/agentic/turn-caps-policy', () => ({
+    readTurnCaps: jest.fn(async () => {
+        const { resolveTurnCaps } = await import('@/lib/agentic/turn-caps');
+        return resolveTurnCaps({ organization: null, workspace: { delegationsPerTurn: 1, toolCallsPerTurn: 1 } });
+    }),
+}));
 
 // ─── The wire, and nothing above it ─────────────────────────────────
 //
@@ -272,10 +319,12 @@ function offeredToolsIn(messages: ReadonlyArray<Record<string, unknown>>): strin
 
 async function runOnFlue(run: ConformanceRun): Promise<ConformanceObservation> {
     mockState.tools = [...run.tools];
+    mockState.externalAiAcknowledged = run.externalAiAcknowledged === true;
     mockState.residency = run.residency ?? 'EXTERNAL';
     mockState.alreadyTokens = run.alreadySpent?.tokens ?? 0;
     mockState.toolCallLimit = run.toolCallLimit ?? null;
     mockState.killAfterModelCalls = run.killAfterModelCalls ?? null;
+    mockState.abortAfterModelCalls = run.abortAfterModelCalls ?? null;
     mockState.modelCalls = 0;
     mockState.ledger = [];
     mockState.decisionRows = [];
@@ -332,3 +381,60 @@ async function runOnFlue(run: ConformanceRun): Promise<ConformanceObservation> {
 }
 
 describeDriverConformance({ engine: 'flue', run: runOnFlue });
+
+// ─── Flue only: which model call issued each tool call ──────────────
+//
+// Not a conformance scenario: the Tool Runner's ledger answers the question by
+// its order (one MODEL_CALL step per call, before that reply's tool calls), so
+// the property is Flue's alone, and the helper takes no engine branch. Flue
+// records ONE MODEL_CALL step per dispatch, after every call in it, so it
+// names the issuing call on each TOOL_CALL step (`FlueModelTurn`, owner
+// decision 2026-11-15, Inspect task 9) and the step projection lifts it out.
+describe('flue: a TOOL_CALL step names the model call that issued it', () => {
+    const LIST_RISKS = { name: 'list_risks', result: '{"risks":[{"id":"r1"}]}' };
+    const LIST_CONTROLS = { name: 'list_controls', result: '{"controls":[{"id":"c1"}]}' };
+
+    it('two calls from one reply share a turn; a call from the next reply has the next one', async () => {
+        await runOnFlue({
+            tools: [LIST_RISKS, LIST_CONTROLS],
+            turns: [
+                { toolCalls: [{ name: 'list_risks', args: {} }, { name: 'list_controls', args: {} }] },
+                { toolCalls: [{ name: 'list_risks', args: {} }] },
+                { text: 'Done.' },
+            ],
+        });
+        const toolSteps = mockState.ledger.filter((s) => s.kind === 'TOOL_CALL');
+        const turns = toolSteps.map((s) => (s.rec.output as { modelTurn?: unknown } | undefined)?.modelTurn);
+        expect(turns).toEqual([
+            { segment: 0, call: 1 },
+            { segment: 0, call: 1 },
+            { segment: 0, call: 2 },
+        ]);
+        // The ledger's own accounting is unchanged: one MODEL_CALL step, three calls.
+        const model = mockState.ledger.filter((s) => s.kind === 'MODEL_CALL');
+        expect(model.map((s) => (s.rec.input as { modelCalls?: unknown }).modelCalls)).toEqual([3]);
+        // And the input the model chose stays the arguments alone: the turn is not in it.
+        expect(toolSteps.map((s) => Object.keys((s.rec.input ?? {}) as object).includes('modelTurn'))).toEqual([false, false, false]);
+    });
+
+    it('the projection lifts the turn out and leaves a DONE step with no output, as before', async () => {
+        const { projectRunSteps } = await import('@/lib/agentic/run-step-projection');
+        await runOnFlue({ tools: [LIST_RISKS], turns: [{ toolCalls: [{ name: 'list_risks', args: {} }] }, { text: 'Done.' }] });
+        const steps = mockState.ledger.map((s, seq) => ({
+            id: `s${seq}`,
+            seq,
+            kind: s.kind,
+            status: String(s.rec.status ?? 'DONE'),
+            toolCalled: typeof s.rec.toolCalled === 'string' ? s.rec.toolCalled : null,
+            inputJson: s.rec.input !== undefined ? JSON.stringify(s.rec.input) : null,
+            outputJson: s.rec.output !== undefined ? JSON.stringify(s.rec.output) : null,
+            guardVerdict: null,
+            guardRuleIds: [],
+            costTokens: null,
+            at: new Date(),
+            actorUserId: null,
+        }));
+        const [tool] = projectRunSteps(undefined, steps, []).filter((r) => r.kind === 'TOOL_CALL');
+        expect({ modelTurn: tool.modelTurn, outputJson: tool.outputJson }).toEqual({ modelTurn: { segment: 0, call: 1 }, outputJson: null });
+    });
+});

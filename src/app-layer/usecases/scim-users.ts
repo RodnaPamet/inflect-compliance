@@ -49,6 +49,8 @@ import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logger } from '@/lib/observability/logger';
 import { hashForLookup } from '@/lib/security/encryption';
+import { hashEmailForLog } from '@/lib/auth/security-events';
+import { parseScimEqFilter } from '@/lib/scim/filter';
 import { ScimForbiddenError, type ScimContext } from '@/lib/scim/auth';
 import {
     SCIM_ASSIGNABLE_ROLES,
@@ -58,6 +60,7 @@ import {
     type ScimAssignableRole,
 } from '@/lib/scim/roles';
 import { SCIM_SCHEMAS, type ScimUser } from '@/lib/scim/types';
+import { normaliseScimPatchOperations, readScimBoolean } from '@/lib/scim/patch';
 import { notifyOwnersOfScimAiAdminDeprovision } from '../notifications/scim-deprovision';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
 
@@ -248,33 +251,31 @@ export async function scimListUsers(
         status: { in: ['ACTIVE', 'DEACTIVATED', 'INVITED'] },
     };
 
-    let emailFilter: string | undefined;
-    if (filter) {
-        const match = filter.match(/userName\s+eq\s+"([^"]+)"/i);
-        if (match) emailFilter = match[1].toLowerCase();
+    // THE FILTER IS PART OF THE QUERY (#5208). It used to be applied to the
+    // page AFTER skip/take, so a user past the first page was "not found" and
+    // the client created a duplicate; and an unrecognised filter fell through
+    // to the whole population. `userName` is the email, matched by its lookup
+    // hash because the address itself is encrypted; anything else is refused.
+    const parsed = parseScimEqFilter(filter, ['userName'] as const);
+    if (parsed) {
+        memberWhere.user = { emailHash: hashForLookup(parsed.value.trim().toLowerCase()) };
     }
 
-    const memberships = await prisma.tenantMembership.findMany({
-        where: memberWhere,
-        include: {
-            user: {
-                select: { id: true, email: true, name: true, createdAt: true, updatedAt: true },
+    const [memberships, total] = await Promise.all([
+        prisma.tenantMembership.findMany({
+            where: memberWhere,
+            include: {
+                user: {
+                    select: { id: true, email: true, name: true, createdAt: true, updatedAt: true },
+                },
             },
-        },
-        skip: startIndex - 1,
-        take: Math.min(count, 200),
-        orderBy: { createdAt: 'asc' },
-    });
-
-    const filtered = emailFilter
-        ? memberships.filter(m => m.user.email.toLowerCase() === emailFilter)
-        : memberships;
-
-    const total = emailFilter
-        ? filtered.length
-        : await prisma.tenantMembership.count({ where: memberWhere });
-
-    const resources = filtered.map(m => toScimUser(m.user, m, baseUrl));
+            skip: startIndex - 1,
+            take: Math.min(count, 200),
+            orderBy: { createdAt: 'asc' },
+        }),
+        prisma.tenantMembership.count({ where: memberWhere }),
+    ]);
+    const resources = memberships.map(m => toScimUser(m.user, m, baseUrl));
 
     return { resources, total, startIndex };
 }
@@ -323,12 +324,17 @@ export async function scimCreateUser(
     const { role, blocked, requestedRole } = resolveScimRole(roleInput);
 
     if (blocked) {
+        // A hash of the address, never the address (#5318): these lines go to
+        // the shared operational logs, where nothing redacts them. The
+        // tenant-scoped audit row keeps the values.
         logger.warn('SCIM role mapping blocked', {
-            component: 'scim', requestedRole, assignedRole: role, email,
+            component: 'scim', requestedRole, assignedRole: role, identifierHash: hashEmailForLog(email),
         });
     }
 
-    logger.info('SCIM create user', { component: 'scim', email, tenantId: ctx.tenantId, role });
+    logger.info('SCIM create user', {
+        component: 'scim', identifierHash: hashEmailForLog(email), tenantId: ctx.tenantId, role,
+    });
 
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
@@ -439,18 +445,30 @@ export async function scimCreateUser(
 
 // ─── Patch User ──────────────────────────────────────────────────────
 
+/**
+ * One PatchOp operation AS RECEIVED. `op` is a string, not the three-verb
+ * union: it is IdP input, and Entra sends `"Replace"` (#5370).
+ * `normaliseScimPatchOperations` validates and lower-cases it.
+ */
 export interface ScimPatchOperation {
-    op: 'add' | 'remove' | 'replace';
+    op: string;
     path?: string;
     value?: unknown;
 }
 
+/**
+ * PATCH — `op` is matched case-insensitively, `active` is read as a SCIM
+ * boolean (`"True"`/`"False"` included, anything else a 400), and an
+ * unrecognised `op` is a 400 — all before anything is written. See
+ * `@/lib/scim/patch` for why each of those was a silent wrong answer (#5370).
+ */
 export async function scimPatchUser(
     ctx: ScimContext,
     userId: string,
-    operations: ScimPatchOperation[],
+    rawOperations: readonly ScimPatchOperation[],
     baseUrl: string
 ): Promise<ScimUser | null> {
+    const operations = normaliseScimPatchOperations(rawOperations);
     const membership = await prisma.tenantMembership.findFirst({
         where: { tenantId: ctx.tenantId, userId },
         include: { user: true },
@@ -469,7 +487,7 @@ export async function scimPatchUser(
             const path = op.path?.toLowerCase();
 
             if (path === 'active') {
-                statusUpdate = op.value === true || op.value === 'true' ? 'ACTIVE' : 'DEACTIVATED';
+                statusUpdate = readScimBoolean(op.value, 'active') ? 'ACTIVE' : 'DEACTIVATED';
                 changes.push(`active=${statusUpdate}`);
             } else if (path === 'displayname' || path === 'name.formatted') {
                 userUpdates.name = String(op.value);
@@ -504,11 +522,13 @@ export async function scimPatchUser(
                     }
                 }
             } else if (!path) {
-                // Root-level replace
-                const val = op.value as Record<string, unknown> | undefined;
+                // Root-level replace. Entra's form: `{ op: "Replace", value: { active: false } }`.
+                const val = op.value && typeof op.value === 'object' && !Array.isArray(op.value)
+                    ? op.value as Record<string, unknown>
+                    : undefined;
                 if (val) {
                     if ('active' in val) {
-                        statusUpdate = val.active === true || val.active === 'true' ? 'ACTIVE' : 'DEACTIVATED';
+                        statusUpdate = readScimBoolean(val.active, 'active') ? 'ACTIVE' : 'DEACTIVATED';
                         changes.push(`active=${statusUpdate}`);
                     }
                     if ('displayName' in val) {
@@ -589,8 +609,10 @@ export async function scimPatchUser(
         tokenLabel: ctx.tokenLabel,
     });
 
+    // Attribute NAMES only (#5318): `changes` carries the values, a person's
+    // display, given and family name among them, and stays in the audit row.
     logger.info('SCIM patched user', {
-        component: 'scim', userId, changes,
+        component: 'scim', userId, changedAttributes: changes.map((c) => c.split('=')[0]),
     });
 
     return scimGetUser(ctx, userId, baseUrl);

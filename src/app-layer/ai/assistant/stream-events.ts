@@ -35,6 +35,12 @@ export type AssistantStreamEvent =
           readonly type: 'answer';
           readonly text: string;
           /**
+           * The server's seal on `text` (#5054), sent back with the answer as
+           * history so the server's own words are not re-scanned as the
+           * person's. Grants nothing. See `answer-seal.ts`.
+           */
+          readonly seal?: string;
+          /**
            * Present only when the turn QUEUED or QUARANTINED a proposal.
            *
            * `status` is carried rather than a boolean `queued`, because the

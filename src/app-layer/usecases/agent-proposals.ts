@@ -38,7 +38,11 @@ import {
     guardAgentProposal,
     type AgentProposalGuardResult,
 } from '@/app-layer/ai/guard/proposal-guard';
-import { logAiDecision, recordDecisionOutcome, recordDecisionOutcomeForDigest } from '@/app-layer/ai/decision-log';
+import {
+    logAiDecision,
+    recordDecisionOutcome,
+    recordDecisionOutcomeForProposal,
+} from '@/app-layer/ai/decision-log';
 import { latchOnGuardBlock } from '@/lib/agentic/circuit-breaker-store';
 import { NO_POLICY_CARD, narrowApprovalRung, type ApprovalRung } from '@/lib/agentic/policy-card';
 import {
@@ -53,7 +57,7 @@ import {
     CreateRiskSchema,
     CreateControlSchema,
     CreatePolicySchema,
-    CreateFindingSchema,
+    ProposedFindingSchema,
     UpdateRiskSchema,
     UpdateControlSchema,
     UpdateFindingSchema,
@@ -66,7 +70,28 @@ import { buildProposalDiff } from '@/app-layer/usecases/agent-proposal-diff';
 import { ExternalWriteProposalPayloadSchema } from '@/lib/agentic/external-write-proposal';
 import { openApprovedExternalWrite } from '@/app-layer/usecases/external-write-approval';
 import { isDiffReviewable } from '@/lib/agentic/proposal-diff';
+import { PROCESS_MAP_PROPOSALS_IMPLEMENTED } from '@/lib/agentic/proposal-kind-rollout';
+import {
+    ProposedProcessMapSchema,
+    canonicaliseProposedProcessMap,
+} from '@/lib/agentic/process-map-proposal';
+import {
+    prepareProcessMapApproval,
+    type PreparedProcessMap,
+} from '@/lib/processes/proposed-map-read';
+import {
+    applyApprovedProcessMap,
+    assertMayApproveProcessMap,
+} from '@/app-layer/usecases/process-map-proposal';
+import { assertMayApproveRecordProposal } from '@/app-layer/usecases/proposal-kind-approval';
 import type { RequestContext } from '@/app-layer/types';
+import { settleDeferralForProposal } from '@/app-layer/usecases/workflow-run-deferrals';
+
+/**
+ * The reason both PROCESS_MAP refusals carry in `details.reason` (#5053), so the
+ * review queue words the refusal rather than showing the server's sentence.
+ */
+export const PROCESS_MAP_PROPOSALS_NOT_AVAILABLE = 'PROCESS_MAP_PROPOSALS_NOT_AVAILABLE';
 
 /**
  * Mirrors the `AgentProposalKind` Prisma enum.
@@ -82,8 +107,22 @@ import type { RequestContext } from '@/app-layer/types';
  * first — stops type-checking until the new member is handled, which is the
  * mechanism the identity ladder's "a rung inherits nothing by falling through"
  * rule asks for, enforced rather than remembered.
+ *
+ * `PROCESS_MAP` (#5053) is CREATE-only and names no target: approving one
+ * creates a new DRAFT map in Document mode. Its payload is validated against
+ * `ProposedProcessMapSchema` and stored in canonical form, and approval
+ * re-reads it through `prepareProcessMapApproval`. The kind reached the
+ * database in two deploys; while `PROCESS_MAP_PROPOSALS_IMPLEMENTED` is false,
+ * `createAgentProposal` and `approveAgentProposal` both refuse it, with
+ * `details.reason` = `PROCESS_MAP_PROPOSALS_NOT_AVAILABLE`.
  */
-export type AgentProposalKind = 'RISK' | 'CONTROL' | 'POLICY' | 'FINDING' | 'EXTERNAL_WRITE';
+export type AgentProposalKind =
+    | 'RISK'
+    | 'CONTROL'
+    | 'POLICY'
+    | 'FINDING'
+    | 'EXTERNAL_WRITE'
+    | 'PROCESS_MAP';
 
 /**
  * WHAT a proposal would do. Mirrors the `AgentProposalOperation` enum.
@@ -101,7 +140,7 @@ const SCHEMA_BY_KIND = {
     RISK: CreateRiskSchema,
     CONTROL: CreateControlSchema,
     POLICY: CreatePolicySchema,
-    FINDING: CreateFindingSchema,
+    FINDING: ProposedFindingSchema,
 } as const;
 
 /**
@@ -648,14 +687,122 @@ async function assertUpdateTargetIsDiffable(
 }
 
 /**
- * Create a PENDING proposal from an agent. Validates the payload against the
- * kind's create-schema, sanitises all free text, and writes ONE AgentProposal
- * row. Does NOT create the real entity. Attributed to the API key.
+ * Step 1 of `createAgentProposal`: the payload parsed against the schema its
+ * kind and operation take, or a `badRequest` naming the kind. Exported so a
+ * caller queueing a BATCH can check every item before it queues any (#5304):
+ * `runProposeTool` used to find a malformed third item only after the first two
+ * were PENDING, and the agent, seeing a failed call with no ids, resent all
+ * three. `createAgentProposal` still runs this itself for every item; the
+ * batch's early pass refuses nothing this would not.
  */
-export async function createAgentProposal(
+export function parseProposalPayload(
+    kind: AgentProposalKind,
+    operation: AgentProposalOperation,
+    payload: unknown,
+): unknown {
+    const schema =
+        kind === 'EXTERNAL_WRITE'
+            ? ExternalWriteProposalPayloadSchema
+            : kind === 'PROCESS_MAP'
+              ? ProposedProcessMapSchema
+              : operation === 'UPDATE'
+                ? UPDATE_SCHEMA_BY_KIND[kind as UpdatableProposalKind]
+                : SCHEMA_BY_KIND[kind];
+    if (!schema) throw badRequest(`Unknown proposal kind: ${kind}`);
+
+    const parsed = schema.safeParse(payload);
+    if (!parsed.success) {
+        throw badRequest(`Proposed ${kind} is invalid: ${parsed.error.message}`);
+    }
+    return parsed.data;
+}
+
+/**
+ * Everything `createAgentProposal` decides about one item BEFORE it writes:
+ * the payload parsed and sanitised, both content guards run (their audit rows
+ * written as ever) and their verdicts applied. Held by `PreparedAgentProposal`.
+ */
+interface PreparedProposalState {
+    readonly tenantId: string;
+    readonly input: ProposeInput;
+    readonly operation: AgentProposalOperation;
+    readonly targetEntityId: string | null;
+    readonly sanitized: unknown;
+    readonly rationale: string | null;
+    readonly guard: AgentProposalGuardResult;
+}
+
+/**
+ * One item checked and guarded, not yet written (#5304).
+ *
+ * A BATCH prepares every item before it queues any, so a content-guard refusal
+ * on its third item no longer leaves the first two PENDING: the agent saw a
+ * failed call with no ids, resent all three, and reviewers got the first two
+ * twice. Each item is still guarded exactly once, here, so no guard audit row
+ * is written twice.
+ *
+ * Opaque, and issued only by `prepareAgentProposal`: `createAgentProposal`
+ * accepts one only if this module issued it (the `ISSUED` map, not the shape),
+ * and only once. An object that merely looks prepared is not a way around the
+ * guards.
+ */
+export interface PreparedAgentProposal {
+    readonly kind: AgentProposalKind;
+    /** The agentic output guard quarantined it: it will be written QUARANTINED. */
+    readonly quarantined: boolean;
+}
+
+const ISSUED = new WeakMap<object, { readonly state: PreparedProposalState; written: boolean }>();
+
+function isPreparedAgentProposal(
+    value: ProposeInput | PreparedAgentProposal,
+): value is PreparedAgentProposal {
+    return ISSUED.has(value);
+}
+
+/**
+ * Validate, sanitise and guard one proposal without writing it (#5304). Throws
+ * exactly what `createAgentProposal` would throw for the same input, before any
+ * row is written. Pass the result to `createAgentProposal` to write it.
+ */
+export async function prepareAgentProposal(
     ctx: RequestContext,
     input: ProposeInput,
-): Promise<ProposalResult> {
+): Promise<PreparedAgentProposal> {
+    const state = await prepareProposalState(ctx, input);
+    const handle: PreparedAgentProposal = {
+        kind: state.input.kind,
+        quarantined: state.guard.quarantined,
+    };
+    ISSUED.set(handle, { state, written: false });
+    return handle;
+}
+
+async function prepareProposalState(
+    ctx: RequestContext,
+    input: ProposeInput,
+): Promise<PreparedProposalState> {
+    // ═══ PROCESS_MAP: THE BRAKE, THEN CREATE-ONLY (#5053) ═══
+    //
+    // At the VERY TOP, before the operation is resolved: an UPDATE-shaped
+    // PROCESS_MAP would otherwise be refused by `requireStorableUpdateTarget`
+    // with a different sentence. While `PROCESS_MAP_PROPOSALS_IMPLEMENTED` is
+    // false every shape gets the brake's refusal; this usecase is the only
+    // `agentProposal.create` site, so the brake is what makes a release write
+    // nothing of the kind.
+    if (input.kind === 'PROCESS_MAP' && !PROCESS_MAP_PROPOSALS_IMPLEMENTED) {
+        throw badRequest(
+            'PROCESS_MAP_PROPOSALS_NOT_AVAILABLE: this release reads process-map proposals but does not accept them',
+            { reason: PROCESS_MAP_PROPOSALS_NOT_AVAILABLE },
+        );
+    }
+    if (input.kind === 'PROCESS_MAP' && (input.operation ?? 'CREATE') !== 'CREATE') {
+        // A proposed map is always a NEW draft map. An edit to an existing map
+        // is a canvas change somebody makes, with its version and snapshots.
+        throw badRequest(
+            'A PROCESS_MAP proposal is CREATE-shaped: it proposes a new draft map and names no existing one.',
+        );
+    }
     const operation: AgentProposalOperation = input.operation ?? 'CREATE';
     if (input.kind === 'EXTERNAL_WRITE' && operation !== 'CREATE') {
         // MEASURED, not stylistic. `buildProposalDiff` resolves an UPDATE's
@@ -695,21 +842,23 @@ export async function createAgentProposal(
     // guards, the policy-card pin, the approval tiering, the expiry window and
     // the audit — which is the whole reason this kind reuses this usecase
     // instead of growing a second one beside it.
-    const schema =
-        input.kind === 'EXTERNAL_WRITE'
-            ? ExternalWriteProposalPayloadSchema
-            : operation === 'UPDATE'
-              ? UPDATE_SCHEMA_BY_KIND[input.kind as UpdatableProposalKind]
-              : SCHEMA_BY_KIND[input.kind];
-    if (!schema) throw badRequest(`Unknown proposal kind: ${input.kind}`);
-
-    const parsed = schema.safeParse(input.payload);
-    if (!parsed.success) {
-        throw badRequest(`Proposed ${input.kind} is invalid: ${parsed.error.message}`);
-    }
+    //
+    // PROCESS_MAP validates against its own strict shape, for the same reason:
+    // a whole map is not one of our create bodies (#5053).
+    const payload = parseProposalPayload(input.kind, operation, input.payload);
 
     // 2. Sanitise ALL proposed free text at the boundary (Epic D).
-    const sanitized = sanitizeDeep(parsed.data);
+    let sanitized = sanitizeDeep(payload);
+    if (input.kind === 'PROCESS_MAP') {
+        // Re-parsed AFTER sanitising, because sanitising can empty a label
+        // (`<b></b>`), and then stored in CANONICAL form: step keys re-minted
+        // `n1..nN`, so no key the agent chose is ever stored (#5053).
+        const reparsed = ProposedProcessMapSchema.safeParse(sanitized);
+        if (!reparsed.success) {
+            throw badRequest(`Proposed PROCESS_MAP is invalid: ${reparsed.error.message}`);
+        }
+        sanitized = canonicaliseProposedProcessMap(reparsed.data);
+    }
     const rationale = input.rationale ? sanitizePlainText(input.rationale) : null;
 
     // 2b. AI Guard — external-agent output is the highest-risk untrusted
@@ -764,6 +913,35 @@ export async function createAgentProposal(
             });
         }
     }
+
+    return { tenantId: ctx.tenantId, input, operation, targetEntityId, sanitized, rationale, guard };
+}
+
+/**
+ * Create a PENDING proposal from an agent. Validates the payload against the
+ * kind's create-schema, sanitises all free text, and writes ONE AgentProposal
+ * row. Does NOT create the real entity. Attributed to the API key.
+ *
+ * Takes either the input, or an item `prepareAgentProposal` already checked
+ * and guarded (a batch prepares every item before it queues any, #5304). A
+ * prepared item is written once: a second write of the same one is refused.
+ */
+export async function createAgentProposal(
+    ctx: RequestContext,
+    request: ProposeInput | PreparedAgentProposal,
+): Promise<ProposalResult> {
+    let state: PreparedProposalState;
+    if (isPreparedAgentProposal(request)) {
+        const issued = ISSUED.get(request);
+        if (!issued || issued.written || issued.state.tenantId !== ctx.tenantId) {
+            throw badRequest('A prepared proposal is written once, in the tenant that prepared it.');
+        }
+        issued.written = true;
+        state = issued.state;
+    } else {
+        state = await prepareProposalState(ctx, request);
+    }
+    const { input, operation, targetEntityId, sanitized, rationale, guard } = state;
 
     // 2d. HOW MANY HUMANS WILL HAVE TO SIGN THIS — resolved once, here, and
     // PINNED onto the row. The composition (strictest of the pinned card rung,
@@ -883,7 +1061,15 @@ export async function createAgentProposal(
         // `AiDecisionLog.inputDigest` and `AgentProposal.guardInputDigest` are
         // the same string and the two records join. `logAiDecision` hashes it
         // and discards it; nothing of the content is persisted here.
+        //
+        // The digest joins CONTENT, though, not decisions: two proposals with
+        // identical content share it (#5191). So the row also names THIS
+        // proposal, and that id — never the digest — is what the Art 14 stamp
+        // keys on when a person decides it.
         await logAiDecision(db, ctx, {
+            // `AGENT_PROPOSAL_DECISION_FEATURE` in the decision-log module, which
+            // the legacy arm of the proposal stamp filters on. Spelled out here
+            // because unit suites replace that module wholesale.
             feature: 'agent-proposal',
             provider: 'mcp-agent',
             sanitizedInput: { kind: input.kind, payload: sanitized, rationale },
@@ -893,6 +1079,7 @@ export async function createAgentProposal(
             guardVerdict: `${guard.verdict} provenance=${guard.provenance} rules=${guard.ruleIds.join('|') || 'none'}`,
             guardBlocked: guard.quarantined,
             sessionRef: input.proposedBySessionRef ?? null,
+            agentProposalId: row.id,
         }).catch(() => undefined);
 
         return row;
@@ -1084,7 +1271,21 @@ const REVIEWABLE_STATUSES: SuggestionItemStatus[] = Object.values(SuggestionItem
  */
 export async function listAgentProposals(
     ctx: RequestContext,
-    opts: { status?: string; take?: number } = {},
+    opts: {
+        status?: string;
+        take?: number;
+        /**
+         * Narrow to specific proposals — #5738.
+         *
+         * For the retrospective reviewer: a sample audit names the proposal it
+         * drew, and that proposal is ACCEPTED or EDITED while this page's own
+         * read asks for PENDING, so without this the one row they have to read
+         * is the one row they cannot reach. ANDed with the status vocabulary
+         * below and never instead of it, so `QUARANTINED` and `EXPIRED` stay
+         * unreachable however a caller asks.
+         */
+        ids?: readonly string[];
+    } = {},
 ) {
     assertCanRead(ctx);
     // `opts.status` is a raw `?status=` query-string value — the `as never`
@@ -1104,7 +1305,11 @@ export async function listAgentProposals(
     const status = requested ?? { in: REVIEWABLE_STATUSES };
     return runInTenantContext(ctx, (db) =>
         db.agentProposal.findMany({
-            where: { tenantId: ctx.tenantId, status },
+            where: {
+                tenantId: ctx.tenantId,
+                status,
+                ...(opts.ids ? { id: { in: [...opts.ids] } } : {}),
+            },
             orderBy: { createdAt: 'desc' },
             take: opts.take ?? 100,
         }),
@@ -1421,6 +1626,28 @@ async function refuseFourEyes(
 }
 
 /**
+ * An Art 14 stamp that THREW after an approval had committed. The approval
+ * stands — undoing an applied proposal over a logging failure would be worse —
+ * but the register is now missing a decision, and that must reach a log line
+ * rather than a `.catch(() => undefined)`. Ids and the error's message only.
+ */
+function logStampFailure(
+    ctx: RequestContext,
+    failed: { readonly proposalId: string; readonly stamp: 'proposal' | 'run' },
+    err: unknown,
+): void {
+    // Member reads, never bare locals — see the quarantine bell's note on
+    // `local/no-raw-prompt-logging`.
+    logger.warn('ai-decision-log: Art 14 stamp failed after approval', {
+        component: 'agent-proposals',
+        tenantId: ctx.tenantId,
+        proposalId: failed.proposalId,
+        stamp: failed.stamp,
+        error: err instanceof Error ? err.message : 'non-Error thrown',
+    });
+}
+
+/**
  * Approve a PENDING proposal — a privileged HUMAN action. Merges any edits,
  * runs the REAL create-usecase for the kind (which re-validates + re-sanitises
  * + audits its own creation), and records the human+agent dual attribution.
@@ -1479,6 +1706,49 @@ export async function approveAgentProposal(
     await assertNotComposer(ctx, proposal);
     if (proposal.status !== 'PENDING') {
         throw badRequest(`Proposal is already ${proposal.status}`);
+    }
+    // ═══ A PROCESS_MAP IS NOT APPROVED WHILE THE BRAKE IS ON (#5053) ═══
+    //
+    // A row written by a newer container mid-rollout reaches here. Refused
+    // before the edits check, the diff, both guard re-scans, the signature
+    // insert and the claim, so the row stays PENDING with no signature. It is
+    // never burned ACCEPTED with no created record, which is what the dispatch
+    // switch's unknown-kind throw would do once the claim had been taken.
+    if (proposal.kind === 'PROCESS_MAP' && !PROCESS_MAP_PROPOSALS_IMPLEMENTED) {
+        throw badRequest(
+            'PROCESS_MAP_PROPOSALS_NOT_AVAILABLE: this release reads process-map proposals but cannot approve them',
+            { reason: PROCESS_MAP_PROPOSALS_NOT_AVAILABLE },
+        );
+    }
+    // ═══ A PROCESS_MAP IS APPROVED EXACTLY AS IT WAS REVIEWED (#5053) ═══
+    //
+    // Pure, so it sits early: edits are refused (the shallow merge below could
+    // swap the steps without the arrows), and the stored map is re-read
+    // through the SAME reader and layout the review diff used. A map the review
+    // surfaces could not render is never approved, and the map is created at
+    // the boxes the reviewer was shown. Before the guard re-scans, the
+    // signature insert and the claim, so a refusal leaves the row PENDING.
+    let preparedMap: PreparedProcessMap | null = null;
+    if (proposal.kind === 'PROCESS_MAP') {
+        preparedMap = prepareProcessMapApproval({
+            payloadJson: proposal.payloadJson,
+            hasEdits: parsedEdits !== undefined,
+        });
+    }
+
+    // ═══ AN EXTERNAL WRITE IS APPROVED EXACTLY AS PROPOSED (#5317) ═══
+    //
+    // Its arguments and prior state are bound to what the paired read returned,
+    // and `openApprovedExternalWrite` opens the journal row from the STORED
+    // payload. Edits were accepted, stamped EDITED and then dropped from the
+    // write actually sent, so they are refused here, before the claim, leaving
+    // the row PENDING. To send something different, reject and re-propose.
+    if (proposal.kind === 'EXTERNAL_WRITE' && parsedEdits !== undefined) {
+        throw badRequest(
+            'EXTERNAL_WRITE_PROPOSAL_NOT_EDITABLE: an external write is approved exactly as proposed. ' +
+                'To send something different, reject it and propose the corrected write.',
+            { reason: 'EXTERNAL_WRITE_PROPOSAL_NOT_EDITABLE' },
+        );
     }
 
     // ═══ HOW MANY HUMANS THIS ONE NEEDS ═══
@@ -1621,6 +1891,26 @@ export async function approveAgentProposal(
         }).catch(() => undefined);
         throw forbidden('agent_proposal_human_review_required');
     }
+
+    // ═══ A PROCESS MAP'S APPROVER MAY EDIT PROCESS MAPS (#5053) ═══
+    //
+    // Approval creates the map as the approver, so the approver needs the key
+    // both human process-map routes take (owner decision, 2026-11-11). After
+    // the API-key refusal, so a credential is refused as one; before the
+    // signature and the claim, so the row stays PENDING. One audited
+    // `AUTHZ_DENIED` row. The review surfaces read the same table
+    // (`viewerMayApproveProposal`) and do not offer Approve to this viewer.
+    if (preparedMap) {
+        await assertMayApproveProcessMap(ctx, proposal.id);
+    }
+    // ═══ A FINDING'S OR A RISK'S APPROVER HOLDS ITS ROUTE'S KEY (#5369) ═══
+    //
+    // Same place and the same reason: approval runs `createFinding` /
+    // `updateFinding` / `createRisk` / `updateRisk` as the approver, which floor
+    // on the granular keys their routes take. Asked here so a refusal leaves the
+    // row PENDING with no signature — the usecase's own floor would refuse
+    // only after the claim, and a claim is never handed back.
+    await assertMayApproveRecordProposal(ctx, proposal.id, kind, operation);
 
     // ═══ RECORD THIS HUMAN'S SIGNATURE. THE DATABASE ARBITRATES. ═══
     //
@@ -1809,8 +2099,14 @@ export async function approveAgentProposal(
                     break;
                 }
                 case 'FINDING': {
-                    const finding = await createFinding(ctx, CreateFindingSchema.parse(merged));
+                    const finding = await createFinding(ctx, ProposedFindingSchema.parse(merged));
                     createdEntityId = finding.id;
+                    break;
+                }
+                case 'PROCESS_MAP': {
+                    // Prepared before the claim; `null` only for another kind.
+                    if (!preparedMap) throw badRequest('This proposal carries no process map');
+                    createdEntityId = await applyApprovedProcessMap(ctx, preparedMap, proposal.id);
                     break;
                 }
                 default:
@@ -1942,25 +2238,40 @@ export async function approveAgentProposal(
     // vocabulary `AiDecisionOutcome` uses, so the reviewer's edit is carried
     // rather than flattened to a plain accept.
     //
-    // Keyed by the guard digest, never by `sessionRef`: an ordinary agent
-    // proposal carries no session, so a session-keyed stamp would match nothing
-    // and report success. Best-effort — a failed stamp must not undo an applied
-    // proposal — but the count is asserted in the tests, because a stamp that
-    // silently touches zero rows is indistinguishable from one that worked.
-    if (proposal.guardInputDigest) {
-        await runInTenantContext(ctx, (db) =>
-            recordDecisionOutcomeForDigest(db, ctx, proposal.guardInputDigest!, status),
-        ).catch(() => undefined);
-    }
+    // Keyed by THIS PROPOSAL's id, which its row carries — never by
+    // `sessionRef` (an ordinary agent proposal has none, so a session-keyed
+    // stamp would match nothing and report success) and never by the guard
+    // digest alone (identical content shares it, so a digest-keyed stamp wrote
+    // this decision onto every identical proposal's row too — #5191).
+    //
+    // Best-effort — a failed stamp must not undo an applied proposal, which has
+    // already committed — but never silent: a stamp that lands on no row logs
+    // why from inside the stamp, and one that throws is logged here.
+    await runInTenantContext(ctx, (db) =>
+        recordDecisionOutcomeForProposal(
+            db,
+            ctx,
+            { proposalId: proposal.id, inputDigest: proposal.guardInputDigest },
+            status,
+        ),
+    ).catch((err: unknown) => logStampFailure(ctx, { proposalId: proposal.id, stamp: 'proposal' }, err));
     // …and the model calls of the RUN that proposed it (#4896): a person has
     // now reviewed what that run produced. Keyed by the run id, which those
     // rows carry as `sessionRef`. One-way, so the first decision on a run's
     // proposals is the one its calls record.
     if (proposal.runId) {
         await runInTenantContext(ctx, (db) => recordDecisionOutcome(db, ctx, proposal.runId!, status)).catch(
-            () => undefined,
+            (err: unknown) => logStampFailure(ctx, { proposalId: proposal.id, stamp: 'run' }, err),
         );
     }
+
+    // ═══ A RUN WAITING ON THIS PROPOSAL CONTINUES (Step 2f) ═══
+    //
+    // After the decision has committed, and only on this exit: a signature
+    // short of the requirement is not a decision. A no-op for a proposal no
+    // run waits on, and it never throws: the approval above stands whatever
+    // the hook does.
+    await settleDeferralForProposal(ctx, id);
 
     return { proposalId: id, kind, operation, createdEntityId, status };
 }
@@ -1993,17 +2304,30 @@ export async function rejectAgentProposal(ctx: RequestContext, id: string): Prom
         throw badRequest(`Proposal is already ${proposal.status}`);
     }
     await runInTenantContext(ctx, async (db) => {
-        await db.agentProposal.updateMany({
+        const moved = await db.agentProposal.updateMany({
             where: { id, tenantId: ctx.tenantId, status: 'PENDING' },
             data: { status: 'REJECTED', reviewedByUserId: ctx.userId, reviewedAt: new Date() },
         });
+        // The claim decides (#5111). The status read above is a snapshot; an
+        // approval landing between it and this write leaves nothing PENDING to
+        // move. The rejection used to report success anyway, stamp the decision
+        // log REJECTED over an approved proposal and write
+        // AGENT_PROPOSAL_REJECTED — a record of a refusal that never happened.
+        if (moved.count === 0) {
+            throw staleData('This proposal was decided by someone else before your rejection landed.', {
+                reason: 'PROPOSAL_ALREADY_DECIDED',
+            });
+        }
         // ART 14, the rejection half. In the SAME transaction as the status
         // write: a rejection recorded on the proposal but not on the decision
         // log is a register that says a human is still deciding something they
         // have already refused.
-        if (proposal.guardInputDigest) {
-            await recordDecisionOutcomeForDigest(db, ctx, proposal.guardInputDigest, 'REJECTED');
-        }
+        await recordDecisionOutcomeForProposal(
+            db,
+            ctx,
+            { proposalId: proposal.id, inputDigest: proposal.guardInputDigest },
+            'REJECTED',
+        );
         // …and the model calls of the run that proposed it (#4896).
         if (proposal.runId) {
             await recordDecisionOutcome(db, ctx, proposal.runId, 'REJECTED');
@@ -2019,6 +2343,8 @@ export async function rejectAgentProposal(ctx: RequestContext, id: string): Prom
         requestId: ctx.requestId,
         detailsJson: { category: 'access' },
     }).catch(() => undefined);
+    // A run waiting on this proposal continues with the rejection (Step 2f).
+    await settleDeferralForProposal(ctx, id);
 }
 
 /** Why a proposal named in a bulk reject was not rejected. */
@@ -2187,8 +2513,13 @@ export async function bulkRejectAgentProposals(
         });
         const ids = new Set(written.map((r) => r.id));
         for (const row of accepted) {
-            if (ids.has(row.id) && row.guardInputDigest) {
-                await recordDecisionOutcomeForDigest(db, ctx, row.guardInputDigest, 'REJECTED');
+            if (ids.has(row.id)) {
+                await recordDecisionOutcomeForProposal(
+                    db,
+                    ctx,
+                    { proposalId: row.id, inputDigest: row.guardInputDigest },
+                    'REJECTED',
+                );
             }
             // …and the model calls of the run that proposed it (#4896).
             if (ids.has(row.id) && row.runId) {
@@ -2220,6 +2551,10 @@ export async function bulkRejectAgentProposals(
             }).catch(() => undefined),
         ),
     );
+
+    // Each run waiting on one of them continues with the rejection (Step 2f),
+    // one hook per moved row, as the single-row path calls it.
+    for (const id of rejected) await settleDeferralForProposal(ctx, id);
 
     return { rejected, skipped };
 }

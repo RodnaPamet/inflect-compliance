@@ -131,6 +131,7 @@ function renderPage(cache: Map<string, { data: unknown }>) {
                     permissions={PERMISSIONS}
                     bulkPermissions={{ canEdit: true, canDelete: false }}
                     canCreate
+                    canLinkControls
                     translations={TRANSLATIONS}
                 />
             </TooltipProvider>

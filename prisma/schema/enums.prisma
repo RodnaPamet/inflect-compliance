@@ -40,8 +40,10 @@ enum Role {
   /// this role holds less tenant authority than every role above it — so it
   /// must never sort ahead of ADMIN, or EDITOR. Appended by plain `ADD VALUE`.
   ///
-  /// Deploy 1 of 2: readers handle the value, and nothing writes it until
-  /// deploy 2 lets an OWNER assign it on the members page.
+  /// Added in two deploys. Its writers are exactly two: an OWNER on the members
+  /// page (`MEMBER_ROLE_CHANGE_ROLES`) and an Entra group mapping an OWNER made;
+  /// `ASSIGNABLE_TENANT_ROLES` still excludes it, so invites, the direct add and
+  /// an access review's MODIFY never write it (`ai-admin-role-writers.test.ts`).
   AI_ADMIN
 }
 
@@ -50,21 +52,29 @@ enum Role {
 /// Distinct from `Role` (which scopes per-tenant permissions). Org
 /// roles scope portfolio-level access:
 ///
+///   - ORG_OWNER — an ORG_ADMIN who also holds the owner-only powers
+///     (promoting, demoting and removing owners; managing tenants). Every
+///     organization keeps at least one (`org_membership_last_owner_guard`).
+///     Provisioned into child tenants exactly as an ORG_ADMIN is.
+///
 ///   - ORG_ADMIN — manage the organization (create tenants, add/remove
 ///     org members, view portfolio dashboard, drill into individual
-///     tenants). Triggers AUDITOR auto-provisioning into every child
-///     tenant via the Epic O-2 service. CISO-class identity.
+///     tenants). Triggers ADMIN auto-provisioning into every child
+///     tenant via the Epic O-2 service (`org-provisioning.ts`) — full
+///     tenant administration, not read-only. CISO-class identity.
 ///
 ///   - ORG_READER — portfolio-only. Sees org summary cards but is NOT
 ///     auto-provisioned into child tenants. Can be elevated to
-///     ORG_ADMIN later, at which point provisioning fans out
-///     idempotently.
+///     ORG_ADMIN or ORG_OWNER later, at which point provisioning fans
+///     out idempotently.
 enum OrgRole {
   ORG_ADMIN
   ORG_READER
-  /// The organization's owner (#4576). Deploy 1 adds the value and teaches
-  /// every reader; nothing writes it until deploy 2. Declared LAST so a sort on
-  /// the column never moves the existing values. Compare roles through
+  /// The organization's owner (#4576), added in two deploys. Written when an
+  /// organization is created (its creator owns it) and by the role change
+  /// (`changeOrgMemberRole`), where only an owner may promote to it; the
+  /// direct add and the invite refuse it. Declared LAST so a sort on the
+  /// column never moves the existing values. Compare roles through
   /// `src/lib/org-roles.ts`, never with a literal 'ORG_ADMIN'.
   ORG_OWNER
 }
@@ -118,6 +128,10 @@ enum OrgAuditAction {
   /// An org admin turned an agent switch on or off for the organization's
   /// workspaces (#4557). Carries both values of each switch that moved.
   ORG_AGENT_SWITCHES_CHANGED
+  /// An org admin changed the ceiling of delegations or tool calls one agent
+  /// turn may start, for the organization's workspaces (#4594). Carries the
+  /// before and after of each cap that moved.
+  ORG_AGENT_TURN_CAPS_CHANGED
 }
 
 enum MembershipStatus {
@@ -953,12 +967,22 @@ enum AgentContentProvenance {
 /// It reuses this queue for what the queue already carries — the four-eyes
 /// database trigger, the output guard, the expiry window, the sample audits —
 /// rather than growing a second approval mechanism beside it.
+///
+/// PROCESS_MAP (#5053) is CREATE-only: its `targetEntityId` is always NULL, it
+/// has no UPDATE path and no diff target. On approval it becomes one new DRAFT,
+/// DOCUMENT-mode `ProcessMap`, created through the process-map usecases. It
+/// ships in two deploys, because a generated client fails the whole read on a
+/// stored value it was not generated with: this release stores and reads the
+/// value and writes none (`createAgentProposal` refuses the kind by name, and
+/// `approveAgentProposal` refuses it while `PROCESS_MAP_PROPOSALS_IMPLEMENTED`
+/// in `src/lib/agentic/proposal-kind-rollout.ts` is false).
 enum AgentProposalKind {
   RISK
   CONTROL
   POLICY
   FINDING
   EXTERNAL_WRITE
+  PROCESS_MAP
 }
 
 /// WHAT a proposal would do to the record it names — the discriminator the
@@ -1655,6 +1679,10 @@ enum TenantRegion {
   US_EAST_1
   EU_WEST_1
   AP_SOUTHEAST_1
+  /// GCP europe-west1 (Belgium), where production runs (#5288). Added in its
+  /// own deploy, before any row carries it: a running container whose Prisma
+  /// client predates a value fails every Tenant read that meets it.
+  EUROPE_WEST1
 }
 
 /// DSAR request type — GDPR Art. 15 (export) vs Art. 17 (erasure).
@@ -1813,12 +1841,14 @@ enum AiSystemStatus {
 /// FLUE   — an external agent runtime decides what to try; `runReadTool` still
 ///          decides what is permitted, so every register control stays in front
 ///          of it.
-/// TOOL_RUNNER — the in-process Tool Runner engine (Step 2b). READ_ONLY in this
-///          build: every reader understands it and no writer accepts it until
-///          Step 2c, which ships its writers once production reads it.
+/// TOOL_RUNNER — the in-process Tool Runner engine (Step 2b). Written since
+///          Step 2c (#4150): `AGENT_DRIVER_MODES` holds it, so an owner can
+///          choose it on Admin → AI features.
 ///
 /// This column is ONE OF TWO switches and cannot enable anything on its own:
-/// the operator's `AGENT_DRIVER_FLUE` must also be on. `STATIC` is the default
+/// the engine's deployment switch must also be on — `AGENT_DRIVER_FLUE` for
+/// FLUE, `AGENT_DRIVER_TOOL_RUNNER` (or, while that is unset, the
+/// organization's choice) for TOOL_RUNNER. `STATIC` is the default
 /// and the fail-closed answer for an absent row, a NULL, or a value this build
 /// does not recognise. See `src/lib/agentic/agent-driver.ts`.
 enum AgentDriverMode {
@@ -2116,6 +2146,38 @@ enum AgentProfileOutputKind {
   ANSWER_AND_PROPOSALS
 }
 
+/// The payment rail an agent's declared spending authority runs on
+/// (docs/ai-architecture/mastercard-agent-pay.md, D-L1-9). AGENT_PAY_TOKEN is a
+/// Mastercard Agentic Token, AP4M is Agent Pay for Machines (x402), OTHER is any
+/// rail Inflect has no name for yet.
+enum AgentSpendingRail {
+  AGENT_PAY_TOKEN
+  AP4M
+  OTHER
+}
+
+/// Lifecycle of one declared spending authority (Phase 1 of the Agent Pay
+/// roadmap). DECLARED is unreviewed: a declaration or a widening nobody else has
+/// looked at, and an agent holding one cannot be activated. REVIEWED is a second
+/// person's review of exactly that envelope. SUSPENDED_REQUESTED is set by an
+/// AGENT-scope kill or an orphan containment: a person has been asked to suspend
+/// the token at its requestor, and lifting the kill does not reverse it.
+/// WITHDRAWN is a declaration taken away. Re-declaring from SUSPENDED_REQUESTED
+/// or WITHDRAWN is a widening and starts at DECLARED again.
+enum AgentSpendingAuthorityStatus {
+  DECLARED
+  REVIEWED
+  SUSPENDED_REQUESTED
+  WITHDRAWN
+}
+
+/// The window an agent's period budget covers.
+enum AgentSpendingBudgetPeriod {
+  DAY
+  WEEK
+  MONTH
+}
+
 /// Lifecycle of one version of a tenant-authored skill (#3680, step 4c). A
 /// version's text never changes: an edit is a NEW version, which starts here at
 /// DRAFT. DRAFT → IN_REVIEW (submitted, with a passing evaluation record) →
@@ -2223,10 +2285,12 @@ enum ExternalWriteOutcome {
   /// compares enum values as a SET and cannot see the disagreement, and
   /// `enum-member-order-matches-migrations` is what holds the two in step.
   ///
-  /// NOTHING PROMOTES IT YET. A row settled here stays here; resolving it to
-  /// APPLIED or FAILED on evidence needs a reconcile pass that does not exist.
-  /// That is deliberate and tracked — an honest terminal state beats a false
-  /// one — but it means this value is not yet a transient.
+  /// The delivery reconcile (`usecases/external-write-reconcile.ts`, #3334)
+  /// promotes it to APPLIED, and only on positive evidence: the tool's paired
+  /// read, through its delivery verifier, shows the change landed. It never
+  /// writes FAILED on a timer, so a row that never delivers stays ACCEPTED and
+  /// is looked at again; an A2A send whose peer reports the task failed, in a
+  /// signed answer, becomes INDETERMINATE.
   ACCEPTED
 }
 

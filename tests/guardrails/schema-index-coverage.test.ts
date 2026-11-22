@@ -274,6 +274,19 @@ interface CompositeIndex {
 }
 
 const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
+    // ── The Training list, paged (#5764 item 6) ─────────────────────
+    {
+        model: 'TrainingAssignment',
+        fields: ['tenantId', 'createdAt'],
+        justification:
+            'usecases/training.ts::listTrainingAssignments pages the Training list: equality on '
+            + 'tenantId, ORDER BY createdAt DESC, id DESC with a keyset cursor on those two columns, '
+            + 'bounded take TRAINING_PAGE_SIZE + 1, and a count over the same filters. The search '
+            + '(employee / course) and the status filter are residual predicates on that scan. The '
+            + 'other reads are served by the existing indexes: the training provider by tenantId '
+            + '(bounded take INTERNAL_CHECK_READ_TAKE) and the compliance calendar by '
+            + '@@index([tenantId, dueAt]).',
+    },
     // ── Internal audit's sampling of the auditor's workpapers (#3677) ──
     {
         model: 'AuditWorkpaperSampleReview',
@@ -452,6 +465,13 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         fields: ['tenantId', 'asOf'],
         justification:
             'agent-harness-scans.listHarnessScans filters by tenantId and orders by asOf desc, bounded take ≤200',
+    },
+    // ── Third-party application scans (`scanent-integrations/1`) ─────
+    {
+        model: 'ThirdPartyAppScan',
+        fields: ['tenantId', 'asOf'],
+        justification:
+            'third-party-app-scans.listThirdPartyAppScans and getThirdPartyAppInventory filter by tenantId and order by asOf desc, then createdAt and id; bounded take ≤200 (the list) and ≤51 (the inventory window)',
     },
     {
         model: 'AgentHarnessAcceptance',
@@ -675,6 +695,10 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'proposedItemsSoFar filters (tenantId, runId) + kind/status with no sort — covered by @@index([tenantId, runId]); bounded take = ENGINE_RUN_CAPS.STEPS, and the residual is one run\'s steps.',
     AgentBehaviourWindow:
         'Every read filters (tenantId, agentId) and either orders by windowStart desc (the operator surface, take ≤ 48) or ranges on it (the baseline load the MCP tool boundary makes once per active window, take ≤ 169) — covered exactly by the tenant-leading @@unique([tenantId, agentId, windowStart]), which is also the ON CONFLICT target of the per-call upsert and so cannot be dropped as merely a read optimisation. It sits HERE rather than in LIST_QUERY_INDEXES because that layer matches @@index blocks only, and adding a duplicate @@index over the same three columns would put a second B-tree on a table written once per tool call to satisfy a matcher.',
+    AgentBehaviourBaseline:
+        'Three tenant-leading reads. The nightly agent-fingerprint pass reads the day\'s already-scored rows by (tenantId, day, agentId IN the active agents), served by the @@unique([tenantId, agentId, day]) and @@index([tenantId, day]), bounded take = the active-agent count; and the baseline by (tenantId, agentId IN the agents to score, inBaseline, day in the 90-day look-back), served by @@index([tenantId, day]) as a range, drained in DRAIN_PAGE_SIZE pages over at most one row per agent per active day. inBaseline is a boolean residual on a set the day range has already bounded. The operator panel (agent-behaviour-fingerprint-read) reads one agent\'s scored days by (tenantId, agentId) ORDER BY day DESC, take = FINGERPRINT_PANEL_DAYS (30) — the @@unique([tenantId, agentId, day]) read backwards; the reports tab reads the newest scored day by tenantId ORDER BY day DESC take 1 off @@index([tenantId, day]).',
+    AgentBehaviourAnomaly:
+        'Two tenant-leading reads, both from agent-behaviour-fingerprint-read. The agent panel filters (tenantId, agentId) ORDER BY day DESC, take = FINGERPRINT_PANEL_ANOMALIES — the @@unique([tenantId, agentId, day]) read backwards, with at most one row per agent per day so the id tie-break sorts nothing; the reports tab ranges (tenantId, day >= since) ORDER BY day DESC, take = FINGERPRINT_REPORT_LIMIT + 1, served by @@index([tenantId, day]). Neither shape needs a composite the two existing indexes do not already give.',
     AgentProposalApproval: 'approveAgentProposal reads the signatures on ONE proposal by (tenantId, proposalId) plus a small outcome equality — covered by @@index([tenantId, proposalId]), which the @@unique([tenantId, proposalId, approverUserId]) four-eyes index also serves as a prefix of; bounded take \u2264 32 and, in practice, by requiredApprovals.',
     AiSystemRequirementLink: 'computeAgentRiskCoverage reads the agent\'s own scope by (tenantId, aiSystemId, requirementId IN [ten ASI rows]) \u2014 covered by @@index([tenantId, aiSystemId]); bounded by the framework\'s requirement count, not by tenant data.',
     AuditChecklistItem: 'updateAudit prefetches the touched checklist rows by (id IN […], tenantId) for FAIL-transition detection — a PK IN lookup + RLS-bound tenantId; @@index([tenantId, auditId]) is more than sufficient; bounded by the request payload size.',
@@ -709,11 +733,11 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     ConnectedIdentityAccount: 'personnel provider reads all accounts for a tenant (offboarded-access join) — covered by @@index([tenantId, status]); bounded take ≤10000.',
     Device: 'listDevices + device provider read by tenantId (+platform) — covered by @@index([tenantId, platform]); bounded take ≤10000.',
     TenantDeviceToken: 'listDeviceTokens by tenantId — covered by @@index([tenantId]) / @@index([tenantId, revokedAt]); bounded take ≤200.',
-    TrainingAssignment: 'listTrainingAssignments + training provider by tenantId (+status) — covered by @@index([tenantId, status]) / @@index([tenantId, employeeId]); bounded take ≤10000.',
     BackgroundCheck: 'listBackgroundChecks + training provider by tenantId (+status) — covered by @@index([tenantId, status]) / @@index([tenantId, employeeId]); bounded take ≤10000.',
     AccessReviewConnectedDecision: 'listConnectedDecisions + close by (tenantId, accessReviewId) — covered by @@index([tenantId, accessReviewId]); bounded take ≤5000.',
     AccessReviewAgentPack: 'getAgentReviewPacks + the agent close read one campaign\'s packs by (tenantId, accessReviewId) — covered by @@index([tenantId, accessReviewId]); bounded take ≤ MAX_AGENT_SUBJECTS + 1 (501). One pack per subject (@@unique([decisionId, tenantId])).',
     AccessReviewAgentNarrowing: 'getAgentReviewPacks + the agent close read one campaign\'s narrowings by (tenantId, accessReviewId) — covered by @@index([tenantId, accessReviewId, outcome]), whose outcome suffix also serves the PENDING count; bounded take ≤ MAX_AGENT_SUBJECTS × 50.',
+    AccessReviewAgentSpendingWithdrawal: 'getAgentReviewPacks + the agent close + the evidence build read one campaign\'s proposed spending withdrawals by (tenantId, accessReviewId) — covered by @@index([tenantId, accessReviewId, outcome]), whose outcome suffix also serves the PENDING count; bounded take ≤ MAX_AGENT_SUBJECTS × SPENDING_RAILS.length (one per pack per rail, @@unique([packId, rail])).',
     AccessReviewDecisionSampleAudit: 'getAgentReviewPacks + the evidence build read one campaign\'s drawn sample by (tenantId, accessReviewId) — covered by @@index([tenantId, accessReviewId]); bounded take ≤ MAX_AGENT_SUBJECTS.',
     TrustCenterDocument: 'listTrustCenterDocuments by tenantId — covered by @@index([tenantId]) / @@index([tenantId, trustCenterId]); bounded take ≤200.',
     TrustCenterAccessRequest: 'listTrustCenterAccessRequests by tenantId (+status) — covered by @@index([tenantId, status]); bounded take ≤500.',
@@ -768,11 +792,22 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // Agent profiles (#4143) — one profile per agent, a handful of versions each.
     AgentProfileVersion:
         'getAgentProfile reads one profile\'s versions by (tenantId, profileId) ordered by version desc — exactly @@unique([tenantId, profileId, version]); every other read is by (tenantId, profileId, version) or (tenantId, profileId, status), covered by the same unique and the partial uniques on status; bounded take ≤50.',
+    // Spending authority (Agent Pay Phase 1) — at most one row per agent per rail.
+    AgentSpendingAuthority:
+        'every read is one agent\'s rows by (tenantId, agentId[, status]) ordered by rail — the leading columns of @@unique([tenantId, agentId, rail]); bounded take ≤ the three rails.',
     DiscoveredAgent:
         'the scan ingest reads discovered agents by (tenantId, discoveredId IN …) — exactly the @@unique([tenantId, discoveredId]), bounded by the report\'s agent count; the harness matrix\'s shadow list filters by tenantId and registeredAgentId IS NULL (or a deleted register row) and orders by lastSeenAt desc — covered by @@index([tenantId, registeredAgentId]) + @@index([tenantId, lastSeenAt]); the runs page\'s discovered-agent picker (#4472) filters by tenantId alone and orders by lastSeenAt desc, id — the same @@index([tenantId, lastSeenAt]); bounded take ≤201.',
+    // Third-party application scans — read by (tenantId, applicationId IN …) and (tenantId, scanId IN …).
+    DiscoveredThirdPartyApp:
+        'the third-party application ingest reads the applications a report names by (tenantId, applicationId IN …) — exactly the @@unique([tenantId, applicationId]); no order; bounded take by the report\'s application count (≤5000).',
+    ThirdPartyAppScanItem:
+        'the Integrations tab reads the latest scans\' items by (tenantId, scanId IN …) ordered by scanId, appId — the leading columns of @@unique([tenantId, scanId, appId]); bounded take ≤15001 (three scans of at most 5000 applications, one past the cap).',
     // The auditor agent's narrative of a workpaper (#3749) — at most one per workpaper.
     AuditWorkpaperNarrative:
         'the period read\'s narrated flag and the capture read narratives by (tenantId, workpaperId IN …) — exactly the @@unique([tenantId, workpaperId]); no order; bounded take by the ids asked about (≤50 shown workpapers, ≤6 narratives an answer carries), one row per workpaper.',
+    // A run's deferred tool calls (Step 2f, #5530) — a handful per run, one per proposal.
+    WorkflowRunDeferral:
+        'the runs list reads by (tenantId, runId IN …, status), the proposals page and the expiry heal by (tenantId, proposalId IN …, status) and the retirement cascade by (tenantId, status, run.agentId) — the first is the @@index([tenantId, runId]) prefix, the second the @@unique([tenantId, proposalId]); bounded take by the page or batch size; a run defers a handful of calls in its life, so status is a filter over very few rows.',
     // A review run's stored owner suggestion (#3728) — at most one per discovered agent.
     DiscoveredAgentAttribution:
         'the harness matrix\'s shadow list reads suggestions by (tenantId, discoveredAgentId IN …) and the intake and the capture by (tenantId, discoveredAgentId) — exactly the @@unique([tenantId, discoveredAgentId]); no order; bounded take by the shown shadow rows (≤200), one row per agent.',
@@ -898,6 +933,16 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // RQ-5 — links fetched by tenantId+nodeId (roll-up) and tenantId+riskId (risk form).
     RiskHierarchyLink:
         'RQ-5 loadTree filters by tenantId + nodeId, getRiskNodes by tenantId + riskId — covered by @@index([tenantId, nodeId]) + @@index([tenantId, riskId]); bounded take.',
+    // Vector store Phase 2.1 — the index job reads one source's chunks.
+    KnowledgeChunk:
+        'Two list reads. KnowledgeChunkRepository.listForSource (the index job): equality on '
+        + '(tenantId, sourceModel, sourceId) ordered by chunkIndex, bounded take = '
+        + 'MAX_CHUNKS_PER_SOURCE + 1 (2001); the tenant-leading @@unique([tenantId, sourceModel, '
+        + 'sourceId, chunkIndex]) is exactly that shape, read in order, and is also what makes a '
+        + 'position one row. listForTenant (the rebuild, scripts/knowledge-reindex.ts): tenantId '
+        + 'with an id cursor, ordered by id, take = REINDEX_PAGE_SIZE (200); the @@unique([id, '
+        + 'tenantId]) is that order with the tenant as its residual. A duplicate @@index over '
+        + 'either would be a second B-tree on a table the job rewrites to satisfy a matcher.',
     // RQ-6 — KRIs listed by tenantId (+ optional riskId/isActive) ordered by createdAt.
     KeyRiskIndicator:
         'RQ-6 listKris filters by tenantId (+ optional riskId/isActive) — covered by @@index([tenantId]) + @@index([tenantId, riskId]) + @@index([tenantId, isActive]); bounded take:500.',
@@ -1008,6 +1053,12 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'fetched per policy via a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed today.',
     ProcessEdgeControl:
         'Epic P2-PR-C reverse-lookup: filtered by (tenantId, controlId) which is the model\'s leading `@@index([tenantId, controlId])`. Result set bounded by the number of edges referencing one control (typically <10) — Layer A already covers it.',
+    ProcessNodeAsset:
+        'asset-node links: the reverse lookup filters by (tenantId, assetId), the model\'s leading `@@index([tenantId, assetId])`; bounded by the nodes linking one asset. Layer A covers it.',
+    ProcessNodeControl:
+        'control-node links: the reverse lookup filters by (tenantId, controlId), the model\'s leading `@@index([tenantId, controlId])`, and the coverage read by tenantId alone; bounded by the control nodes linking one control. Layer A covers it.',
+    ProcessNodeRisk:
+        'risk-node links: the reverse lookup filters by (tenantId, riskId), the model\'s leading `@@index([tenantId, riskId])`, and the facts read by (tenantId, processMapId); bounded by one map\'s graph. Layer A covers it.',
     ProcessMap:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     ProcessMapSnapshot:

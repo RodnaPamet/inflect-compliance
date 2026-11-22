@@ -120,7 +120,7 @@ describe('what comes back is bounded and distrusted', () => {
         expect(payload.length).toBeLessThan(MCP_MAX_RESPONSE_BYTES);
         safeFetchMock.mockResolvedValue(bodyOf(payload));
 
-        await expect(listTools(OPTS)).resolves.toEqual({ tools, refusedNames: 0 });
+        await expect(listTools(OPTS)).resolves.toEqual({ tools, refusedNames: 0, truncated: false });
     });
 
     it('does not echo a non-JSON body into the error', async () => {
@@ -143,6 +143,59 @@ describe('what comes back is bounded and distrusted', () => {
         });
     });
 
+    it('BOUNDS a JSON-RPC error message, and strips its control characters', async () => {
+        // The rule the non-JSON test above states, applied to the other place
+        // a server supplies text. `error.message` was interpolated verbatim,
+        // and the body cap was its only limit — so most of a megabyte of
+        // arbitrary text could reach the thrown error, the API error response,
+        // the logs, and any run step or audit text built from them.
+        const flood = 'A'.repeat(5000);
+        safeFetchMock.mockResolvedValue(
+            bodyOf(JSON.stringify({
+                jsonrpc: '2.0',
+                id: 1,
+                error: { code: -32000, message: `head\u0007\u0000${flood}` },
+            })),
+        );
+
+        // `then(_, onRejected)` rather than `.catch`, so the captured value is
+        // typed `Error | null` instead of `Error | McpToolResult` — the latter
+        // does not narrow to `.message` and is a Typecheck failure, not a test
+        // failure, so it passes locally under jest and fails in CI.
+        const err = await callTool(OPTS, 'nope', {}).then(
+            () => null,
+            (e: unknown) => e as Error,
+        );
+        expect(err).toBeInstanceOf(Error);
+        if (!err) throw new Error('expected a rejection');
+        // Bounded: nowhere near the 5000 the server sent, and the ellipsis says
+        // it was cut rather than that the server was terse.
+        expect(err.message.length).toBeLessThan(400);
+        expect(err.message).toContain('…');
+        // The readable head survives — a bound that threw the diagnosis away
+        // would be worse than the flood.
+        expect(err.message).toContain('head');
+        // No control characters reach whatever reads this.
+        expect(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(err.message)).toBe(false);
+    });
+
+    it('keeps a short error message intact, and says so when there is none', async () => {
+        // The other side of the boundary: a bound that mangled ordinary
+        // messages would satisfy the test above while making every real
+        // refusal unreadable.
+        safeFetchMock.mockResolvedValue(
+            bodyOf(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32601, message: 'no such tool' } })),
+        );
+        await expect(callTool(OPTS, 'nope', {})).rejects.toThrow(/no such tool/);
+
+        // A server that sends no message at all is reported as that, rather
+        // than as a truncated-looking blank.
+        safeFetchMock.mockResolvedValue(
+            bodyOf(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32601 } })),
+        );
+        await expect(callTool(OPTS, 'nope', {})).rejects.toThrow(/\(no message\)/);
+    });
+
     it('refuses an initialize that names no protocol version', async () => {
         // A handshake that agreed nothing is not a handshake. Carrying on
         // would mean every later call assumed a dialect neither side stated.
@@ -157,7 +210,7 @@ describe('what comes back is bounded and distrusted', () => {
         // list anyway — it is input to a pin — but the direction matters.
         safeFetchMock.mockResolvedValue(bodyOf(JSON.stringify({ jsonrpc: '2.0', id: 1, result: {} })));
 
-        await expect(listTools(OPTS)).resolves.toEqual({ tools: [], refusedNames: 0 });
+        await expect(listTools(OPTS)).resolves.toEqual({ tools: [], refusedNames: 0, truncated: false });
     });
 
     it('refuses an unusable tool NAME and counts it, keeping the order of the rest (#4238)', async () => {
@@ -409,5 +462,99 @@ describe('an HTTP failure reports the challenge', () => {
         await expect(listTools({ url: 'https://mcp.example.com' })).rejects.toThrow(
             /answered HTTP 503/,
         );
+    });
+});
+
+
+// ─── tools/list is paginated (#5311) ──────────────────────────────────────
+
+describe('listTools follows nextCursor', () => {
+    /**
+     * It read ONE page and dropped `nextCursor`. Against a server that
+     * paginates its catalogue, every tool on a later page was invisible —
+     * never offered for pinning or granting — and nothing said so, because
+     * `refusedNames` counts bad names rather than missing pages. A tool nobody
+     * can see cannot be granted, so this was a silent hole in the catalogue the
+     * operator approves from.
+     */
+    const page = (tools: string[], nextCursor?: unknown) =>
+        bodyOf(JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            result: {
+                tools: tools.map((name) => ({ name, description: 'd', inputSchema: {} })),
+                ...(nextCursor === undefined ? {} : { nextCursor }),
+            },
+        }));
+
+    it('concatenates every page and sends the cursor back as a param', async () => {
+        safeFetchMock
+            .mockResolvedValueOnce(page(['a'], 'C1'))
+            .mockResolvedValueOnce(page(['b'], 'C2'))
+            .mockResolvedValueOnce(page(['c']));
+
+        const out = await listTools(OPTS);
+
+        expect(out.tools.map((t) => t.name)).toEqual(['a', 'b', 'c']);
+        expect(out.truncated).toBe(false);
+        // The cursor travels in the JSON-RPC params, not in a URL — there is no
+        // URL here to put it in, which is why this needs no host validation.
+        const second = JSON.parse(safeFetchMock.mock.calls[1][1].body as string);
+        expect(second.params).toEqual({ cursor: 'C1' });
+        // The FIRST call sends no cursor, or a server would page from the wrong
+        // place on every fresh read.
+        const first = JSON.parse(safeFetchMock.mock.calls[0][1].body as string);
+        expect(first.params).toBeUndefined();
+    });
+
+    it('reports truncation when it runs out of PAGES, with a server that keeps advancing', async () => {
+        // DISTINCT cursors on purpose. The first version of this test reused one
+        // cursor, which trips the repeated-cursor check at page 2 — so it never
+        // reached the page bound and the bound's `truncated = true` was
+        // untested. A mutation removing that flag passed the whole suite, which
+        // is how I found out.
+        let n = 0;
+        safeFetchMock.mockImplementation(async () => page(['x'], `C${n++}`));
+
+        const out = await listTools(OPTS);
+
+        expect(out.truncated).toBe(true);
+        // It really did walk to the bound rather than stopping early.
+        expect(safeFetchMock.mock.calls.length).toBe(20);
+    });
+
+    it('stops at once on a REPEATED cursor, and still calls the catalogue incomplete', async () => {
+        // A server that does not advance. The page bound would catch it
+        // eventually; stopping here makes it 2 requests instead of 20 — and the
+        // flag matters more than the saving, because otherwise hitting the
+        // bound looks like a natural end.
+        safeFetchMock
+            .mockResolvedValueOnce(page(['a'], 'SAME'))
+            .mockResolvedValue(page(['b'], 'SAME'));
+
+        const out = await listTools(OPTS);
+
+        expect(out.truncated).toBe(true);
+        expect(safeFetchMock.mock.calls.length).toBe(2);
+    });
+
+    it('treats a non-string nextCursor as the END, not as "keep going"', async () => {
+        // The spec says a string or absent. Following a number or an object
+        // would hand the far end a way to make us loop on a value we cannot
+        // even send — and this is a COMPLETE read, so it must not be flagged.
+        safeFetchMock.mockResolvedValueOnce(page(['only'], 42));
+
+        const out = await listTools(OPTS);
+
+        expect(out.tools.map((t) => t.name)).toEqual(['only']);
+        expect(out.truncated).toBe(false);
+        expect(safeFetchMock.mock.calls.length).toBe(1);
+    });
+
+    it('treats an EMPTY-STRING cursor as the end too', async () => {
+        safeFetchMock.mockResolvedValueOnce(page(['only'], ''));
+        const out = await listTools(OPTS);
+        expect(out.truncated).toBe(false);
+        expect(safeFetchMock.mock.calls.length).toBe(1);
     });
 });

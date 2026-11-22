@@ -28,7 +28,7 @@ import {
     UserArrowRight,
     Workflow,
     Xmark,
-} from '@inflect/ui/components/ui/icons/nucleo';
+} from '@inflect/ui/components/ui/icons/glyphs';
 import { cn } from '@inflect/ui/lib/cn';
 // From the leaf module, NOT `@/lib/permissions`: this component renders on
 // every tenant page, and a value import from there ships that whole module.
@@ -54,7 +54,7 @@ import { useSidebarCollapsed } from './sidebar-collapse-context';
 interface NavItemDef {
     href: string;
     label: string;
-    /** Lucide OR Nucleo — see the `NavGlyph` note on `NavItemProps.icon`. */
+    /** A lucide component or a local glyph — see the `NavGlyph` note on `NavItemProps.icon`. */
     icon: NavGlyph;
     badge?: string | number;
     /** Accessible description of what `badge` counts (see NavItem). */
@@ -165,10 +165,8 @@ export function useNavSections(): NavSectionDef[] {
                 // bag missing the key) silently disappears with no error, so
                 // the expression is coerced rather than passed through.
                 //
-                // Nucleo `Robot`: already the glyph on both existing agent
+                // `Robot`: already the glyph on both existing agent
                 // surfaces (the admin pill and the register's own header).
-                // The rest of this file followed it — every icon here is now
-                // Nucleo and the file is off `LEGACY_LUCIDE_USERS`.
                 {
                     href: tenantHref('/agents'),
                     label: t('agents'),
@@ -228,6 +226,9 @@ export function SidebarContent({ user, onLogout, onNavClick, onToggleCollapse }:
     const pathname = usePathname();
     const tc = useTranslations('common');
     const tn = useTranslations('nav');
+    // The role under the user's name, by its label as the workspace switcher
+    // shows it — the stored value only where no label exists (#5309).
+    const tRoles = useTranslations('roles');
     const tenant = useTenantContext();
     const tenantHref = useTenantHref();
     const perms = usePermissions();
@@ -409,7 +410,9 @@ export function SidebarContent({ user, onLogout, onNavClick, onToggleCollapse }:
                                 4.25:1 — below WCAG AA's 4.5:1 for small text — and
                                 the role line is informational, not a brand
                                 accent. */}
-                            <p className="text-xs text-content-muted">{tenant.role}</p>
+                            <p className="text-xs text-content-muted">
+                                {tRoles.has?.(tenant.role) ? tRoles(tenant.role) : tenant.role}
+                            </p>
                         </div>
                     )}
                     <div className={cn('flex gap-tight', collapsed ? 'flex-col items-center' : 'items-center')}>

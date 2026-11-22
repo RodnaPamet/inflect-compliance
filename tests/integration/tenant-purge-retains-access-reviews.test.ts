@@ -47,6 +47,7 @@ const RETAINED_CAMPAIGN_TABLES = [
     'AccessReview',
     'AccessReviewAgentNarrowing',
     'AccessReviewAgentPack',
+    'AccessReviewAgentSpendingWithdrawal',
     'AccessReviewConnectedDecision',
     'AccessReviewDecision',
     'AccessReviewDecisionSampleAudit',
@@ -256,6 +257,14 @@ async function seedTenant(tenantId: string): Promise<void> {
             executedAt: AT, executionResult: 'GRANT_DELETED',
         },
     });
+    await prisma.accessReviewAgentSpendingWithdrawal.create({
+        data: {
+            tenantId, accessReviewId: id.agent, decisionId: id[`dec_${subject}`], packId: id.pack,
+            agentId: subject, rail: 'AGENT_PAY_TOKEN', declaredAt: window.windowStart, statusAtPack: 'DECLARED',
+            expiresAt: window.windowEnd, grounds: ['NEVER_REVIEWED'], subjectOwnerUserId: u.alice,
+            outcome: 'REJECTED', decidedAt: AT, decidedByUserId: u.reviewer,
+        },
+    });
     await prisma.accessReviewDecisionSampleAudit.create({
         data: {
             tenantId, accessReviewId: id.agent, decisionId: id[`dec_${subject}`],
@@ -278,6 +287,7 @@ async function clearOwnRows(): Promise<void> {
     const t = { tenantId: { in: TENANTS } };
     await prisma.accessReviewDecisionSampleAudit.deleteMany({ where: t });
     await prisma.accessReviewAgentNarrowing.deleteMany({ where: t });
+    await prisma.accessReviewAgentSpendingWithdrawal.deleteMany({ where: t });
     await prisma.accessReviewAgentPack.deleteMany({ where: t });
     await prisma.accessReviewConnectedDecision.deleteMany({ where: t });
     await prisma.accessReviewDecision.deleteMany({ where: t });
@@ -325,6 +335,7 @@ describe('a tenant purge keeps every access-review campaign, whole', () => {
             AccessReviewConnectedDecision: 4,
             AccessReviewAgentPack: 2,
             AccessReviewAgentNarrowing: 1,
+            AccessReviewAgentSpendingWithdrawal: 1,
             AccessReviewDecisionSampleAudit: 1,
             Control: 1,
             Evidence: 1,
@@ -356,6 +367,7 @@ describe('a tenant purge keeps every access-review campaign, whole', () => {
             AccessReview: 4,
             AccessReviewAgentNarrowing: 1,
             AccessReviewAgentPack: 2,
+            AccessReviewAgentSpendingWithdrawal: 1,
             AccessReviewConnectedDecision: 4,
             AccessReviewDecision: 2,
             AccessReviewDecisionSampleAudit: 1,

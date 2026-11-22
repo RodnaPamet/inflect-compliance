@@ -25,6 +25,7 @@
  *
  * @module usecases/identity-disable-account
  */
+import { LEAVER_RECENCY_ORDER } from '@/lib/identity/leaver-recency';
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
@@ -1237,6 +1238,9 @@ const DISABLE_AUDIT_ACTION: Readonly<Record<DisableOutcome, string>> = {
     REFUSED_UNMEASURED: 'IDENTITY_ACCOUNT_DISABLE_NOT_ATTEMPTED',
 };
 
+/** The outcomes in which the pass itself issued a write to the directory. */
+const WRITE_ISSUED_OUTCOMES: ReadonlySet<DisableOutcome> = new Set<DisableOutcome>(['DISABLED', 'FAILED', 'INDETERMINATE']);
+
 /** The batch catch-all. Not an outcome — `disableAccount` never returns it. */
 const ERRORED_ACTION = 'IDENTITY_ACCOUNT_DISABLE_ERRORED';
 
@@ -1294,8 +1298,19 @@ async function auditDirectoryWrite(
     // and unconfirmed" here would put up to fifty uncorrectable rows in an
     // immutable table claiming the product may have disabled people it never
     // reached. The journal is authoritative on that question; this field defers.
-    const writeAttempted = threw ? null : result.outcome !== 'ALREADY_DISABLED';
-    const action = threw ? ERRORED_ACTION : DISABLE_AUDIT_ACTION[result.outcome];
+    //
+    // And `true` only for the outcomes in which THIS pass issued a directory
+    // write (#5317). A refusal carries a `journalId` only because it settled an
+    // EARLIER unconfirmed write (`reconcileStrandedWrite`), and said "attempted"
+    // while its action said NOT_ATTEMPTED — neither true. Such a row is audited
+    // as what it is: no write now, an earlier one reconciled.
+    const writeAttempted = threw ? null : WRITE_ISSUED_OUTCOMES.has(result.outcome);
+    const reconciledEarlierWrite = !threw && !writeAttempted && result.outcome !== 'ALREADY_DISABLED';
+    const action = threw
+        ? ERRORED_ACTION
+        : reconciledEarlierWrite
+          ? DISABLE_AUDIT_ACTION.ALREADY_DISABLED
+          : DISABLE_AUDIT_ACTION[result.outcome];
 
     try {
         await appendAuditEntry({
@@ -1321,6 +1336,7 @@ async function auditDirectoryWrite(
                 provider: writer.provider,
                 outcome: threw ? 'ERRORED' : result.outcome,
                 writeAttempted,
+                ...(reconciledEarlierWrite ? { reconciledEarlierWrite: true } : {}),
                 mode: result.mode ?? null,
                 journalId: result.journalId ?? null,
                 journalUnsettled: result.journalSettled === false,
@@ -1699,7 +1715,7 @@ export async function disableAccountsForLeaver(
 }
 
 /** Bound on candidates read in one pass. */
-const MAX_CANDIDATES = 1_000;
+export const MAX_LEAVER_CANDIDATES = 1_000;
 
 /**
  * The links belonging to workers the HR feed reports as gone.
@@ -1713,8 +1729,8 @@ export async function findLeaverCandidates(
     provider: string,
     employeeIds: readonly string[],
     staleBefore: Date,
-): Promise<DisableAccountInput[]> {
-    if (employeeIds.length === 0) return [];
+): Promise<{ candidates: DisableAccountInput[]; truncated: boolean }> {
+    if (employeeIds.length === 0) return { candidates: [], truncated: false };
     return runInTenantContext(ctx, async (db) => {
         const rows = await db.identityAccountLink.findMany({
             where: {
@@ -1773,9 +1789,18 @@ export async function findLeaverCandidates(
                     },
                 },
             },
-            take: MAX_CANDIDATES,
+            // Newest departure first, and ONE PAST the cap (#5142): whether
+            // the population was cut is a fact the pass holds and records,
+            // never one it cannot observe.
+            orderBy: [
+                { employee: LEAVER_RECENCY_ORDER[0] },
+                { employee: LEAVER_RECENCY_ORDER[1] },
+                { id: 'asc' },
+            ],
+            take: MAX_LEAVER_CANDIDATES + 1,
         });
-        return rows.map((r) => ({
+        const truncated = rows.length > MAX_LEAVER_CANDIDATES;
+        const candidates = rows.slice(0, MAX_LEAVER_CANDIDATES).map((r) => ({
             linkId: r.id,
             externalUserId: r.connectedAccount.externalUserId,
             email: r.connectedAccount.email,
@@ -1839,6 +1864,7 @@ export async function findLeaverCandidates(
             // connection leaves behind are precisely the ones nothing sweeps.
             connectionEnabled: r.connectedAccount.connection?.isEnabled === true,
         }));
+        return { candidates, truncated };
     });
 }
 

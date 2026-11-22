@@ -97,7 +97,7 @@ jest.mock('next-intl', () => {
 
 jest.mock('@/components/layout/PageBreadcrumbs', () => ({ PageBreadcrumbs: () => null }));
 
-import ReconciliationQueuePage from '@/app/t/[tenantSlug]/(app)/admin/integrations/[connectionId]/reconciliation/page';
+import { ReconciliationQueueClient as ReconciliationQueuePage } from '@/app/t/[tenantSlug]/(app)/admin/integrations/[connectionId]/reconciliation/ReconciliationQueueClient';
 
 const en = require('../../messages/en.json');
 const L = en.admin.integrations.legacyQueue;
@@ -120,12 +120,10 @@ beforeEach(() => {
     window.history.replaceState({}, '', '/t/acme/admin/integrations/conn-1/reconciliation');
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
         const url = new URL(String(input), 'https://test.local');
-        const body = url.pathname.endsWith('/executions')
+        const body = url.pathname.endsWith('/queue/latest-run')
             ? {
-                  connection: { id: 'conn-1', name: 'Payroll', provider: 'legacy-mcp', isEnabled: true, ownerUserId: null },
-                  executions: [
-                      { id: 'exec-1', automationKey: 'legacy-mcp.reconcile', status: 'PASSED', executedAt: '2026-02-01T00:00:00.000Z' },
-                  ],
+                  connection: { id: 'conn-1', name: 'Payroll' },
+                  execution: { id: 'exec-1', automationKey: 'legacy-mcp.reconcile', status: 'PASSED', executedAt: '2026-02-01T00:00:00.000Z' },
               }
             : url.pathname.endsWith('/queue')
               ? { rows: ROWS, people: {} }

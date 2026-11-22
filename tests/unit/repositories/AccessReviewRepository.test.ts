@@ -29,9 +29,6 @@ function freshDb() {
             findMany: jest.fn().mockResolvedValue([]),
             updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
-        userSession: {
-            groupBy: jest.fn().mockResolvedValue([]),
-        },
         tenantMembership: {
             findMany: jest.fn().mockResolvedValue([]),
         },
@@ -80,31 +77,6 @@ describe('AccessReviewRepository.getById', () => {
         const arg = (db.accessReview.findFirst as jest.Mock).mock.calls[0][0];
         expect(arg.where).toEqual({ id: 'ar1', tenantId: 'tenant-1', deletedAt: null });
         expect(arg.include).toBeDefined();
-    });
-});
-
-describe('AccessReviewRepository.getLastActivityByUser', () => {
-    it('returns empty map without querying when userIds is empty', async () => {
-        // Branch: userIds.length === 0 early return.
-        const r = await AccessReviewRepository.getLastActivityByUser(db, ctx, []);
-        expect(r).toEqual({});
-        expect(db.userSession.groupBy).not.toHaveBeenCalled();
-    });
-
-    it('builds the map, including only rows with a non-null _max.lastActiveAt', async () => {
-        const d = new Date('2026-01-01T00:00:00Z');
-        (db.userSession.groupBy as jest.Mock).mockResolvedValue([
-            { userId: 'u1', _max: { lastActiveAt: d } }, // Branch: truthy → included
-            { userId: 'u2', _max: { lastActiveAt: null } }, // Branch: falsy → skipped
-        ]);
-        const r = await AccessReviewRepository.getLastActivityByUser(db, ctx, ['u1', 'u2']);
-        expect(r).toEqual({ u1: d });
-        const arg = (db.userSession.groupBy as jest.Mock).mock.calls[0][0];
-        expect(arg.where).toEqual({
-            tenantId: 'tenant-1',
-            userId: { in: ['u1', 'u2'] },
-            revokedAt: null,
-        });
     });
 });
 

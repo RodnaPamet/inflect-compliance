@@ -193,7 +193,6 @@ const GRANDFATHERED: ReadonlySet<string> = new Set([
     'risk-appetite-monitor.test.ts',
     'risk-asset-evidence-usecase.test.ts',
     'risk-hierarchy-crud.test.ts',
-    'risk-matrix-config.test.ts',
     'risk-snapshot-job.test.ts',
     'risks-list-owner-attach.test.ts',
     'rls-middleware.test.ts',

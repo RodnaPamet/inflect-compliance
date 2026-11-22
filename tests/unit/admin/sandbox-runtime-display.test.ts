@@ -46,9 +46,9 @@ const declaration = (over: Partial<SandboxRuntimeDeclaration> = {}): SandboxRunt
 describe('1. every kind is reachable, and the set is exhausted', () => {
     it('each of the five kinds is produced by some input', () => {
         const produced = new Set<RuntimeRowKind>([
-            displayForChannel('otlp-traces', declaration({ configured: false })).kind,
-            displayForChannel('otlp-traces', declaration({ reachableVersion: null })).kind,
-            displayForChannel('otlp-traces', declaration()).kind,
+            displayForChannel('otlp-traces', declaration({ configured: false }), 'answered').kind,
+            displayForChannel('otlp-traces', declaration({ reachableVersion: null }), 'unreachable').kind,
+            displayForChannel('otlp-traces', declaration(), 'answered').kind,
             displayForEnforcement().kind,
             displayForExecutionSwitch(true, false).kind,
         ]);
@@ -66,7 +66,9 @@ describe('1. every kind is reachable, and the set is exhausted', () => {
 describe('2. nothing on this page is actionable', () => {
     it.each(REPORTING_CHANNELS.map((c) => c.key))('the %s channel is never actionable', (key) => {
         for (const d of [declaration(), declaration({ configured: false }), declaration({ reachableVersion: null })]) {
-            expect(displayForChannel(key, d).actionable).toBe(false);
+            for (const outcome of ['not-probed', 'unreachable', 'answered', 'answered-without-version'] as const) {
+                expect(displayForChannel(key, d, outcome).actionable).toBe(false);
+            }
         }
     });
 
@@ -117,13 +119,13 @@ describe('2. nothing on this page is actionable', () => {
         } as const;
 
         // Each precedence position, driven by the input that should reach it.
-        expect(displayForChannel('otlp-traces', { ...base, configured: false }).kind).toBe(
+        expect(displayForChannel('otlp-traces', { ...base, configured: false }, 'answered').kind).toBe(
             CHANNEL_KIND_PRECEDENCE[0],
         );
         expect(
-            displayForChannel('otlp-traces', { ...base, reachableVersion: null }).kind,
+            displayForChannel('otlp-traces', { ...base, reachableVersion: null }, 'unreachable').kind,
         ).toBe(CHANNEL_KIND_PRECEDENCE[1]);
-        expect(displayForChannel('otlp-traces', base).kind).toBe(CHANNEL_KIND_PRECEDENCE[2]);
+        expect(displayForChannel('otlp-traces', base, 'answered').kind).toBe(CHANNEL_KIND_PRECEDENCE[2]);
 
         // And the HIGHER position wins when both conditions hold, which is what
         // "precedence" means and what a plain branch order does not state.
@@ -132,7 +134,7 @@ describe('2. nothing on this page is actionable', () => {
                 ...base,
                 configured: false,
                 reachableVersion: null,
-            }).kind,
+            }, 'unreachable').kind,
         ).toBe('not-configured');
     });
 
@@ -172,9 +174,9 @@ describe('2. nothing on this page is actionable', () => {
         // shipping a button over a decision the page does not own.
         const every: RuntimeRowDisplay[] = [
             ...REPORTING_CHANNELS.flatMap((c) => [
-                displayForChannel(c.key, declaration()),
-                displayForChannel(c.key, declaration({ configured: false })),
-                displayForChannel(c.key, declaration({ reachableVersion: null })),
+                displayForChannel(c.key, declaration(), 'answered'),
+                displayForChannel(c.key, declaration({ configured: false }), 'answered'),
+                displayForChannel(c.key, declaration({ reachableVersion: null }), 'unreachable'),
             ]),
             displayForEnforcement(),
             displayForExecutionSwitch(false, false),
@@ -188,21 +190,28 @@ describe('2. nothing on this page is actionable', () => {
 });
 
 describe('3. the order is the contract', () => {
+    it('a null version alone is not "unreachable" — only the probe says that (#5275)', () => {
+        const d = declaration({ reachableVersion: null });
+        expect(displayForChannel('ocsf-file', d, 'not-probed').kind).toBe('declared-not-observed');
+        expect(displayForChannel('ocsf-file', d, 'answered-without-version').kind).toBe('declared-not-observed');
+        expect(displayForChannel('ocsf-file', d, 'unreachable').kind).toBe('unreachable');
+    });
+
     it('an unconfigured deploy reports that, not the declaration or the reachability', () => {
         const d = declaration({ configured: false, reachableVersion: null, configDigest: null });
-        expect(displayForChannel('ocsf-file', d).kind).toBe('not-configured');
+        expect(displayForChannel('ocsf-file', d, 'unreachable').kind).toBe('not-configured');
     });
 
     it('an unreachable runtime is reported BEFORE what was declared to it', () => {
         // A reader must not be told what was declared to something that may not
         // be running.
         const d = declaration({ reachableVersion: null });
-        expect(displayForChannel('ocsf-file', d).kind).toBe('unreachable');
+        expect(displayForChannel('ocsf-file', d, 'unreachable').kind).toBe('unreachable');
     });
 
     it('a configured, reachable runtime reports declared-not-observed — never "on" or "off"', () => {
         const d = declaration({ channels: { ...declaration().channels, 'anonymous-telemetry': true } });
-        const row = displayForChannel('anonymous-telemetry', d);
+        const row = displayForChannel('anonymous-telemetry', d, 'answered');
         expect(row.kind).toBe('declared-not-observed');
         // The channel's declared value is true, and the row still does not
         // claim the runtime is using it. That is the whole point.

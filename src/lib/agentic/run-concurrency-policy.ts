@@ -221,7 +221,16 @@ export async function setConcurrencyCap(
     // fractional cap silently.
     if (!isSettableConcurrencyCap(cap)) throw badRequest(CONCURRENCY_CAP_SETTING_MESSAGE);
     const next = normaliseCap(cap);
-    const previous = await readCap(ctx);
+    // NOT `readCap`. That read resolves a failure to "no cap" so an outage
+    // never stops a run, and here it would put `previousCap: null` — "there
+    // was no cap" — into a hash-chained row when the truth is "unreadable"
+    // (#5376 follow-up). A setter that cannot read the old value fails, and
+    // writes neither the cap nor a row that misstates it.
+    const previousRow = await prisma.tenantSecuritySettings.findUnique({
+        where: { tenantId: ctx.tenantId },
+        select: { agentMaxConcurrentRuns: true },
+    });
+    const previous = previousRow?.agentMaxConcurrentRuns ?? null;
 
     await prisma.tenantSecuritySettings.upsert({
         where: { tenantId: ctx.tenantId },

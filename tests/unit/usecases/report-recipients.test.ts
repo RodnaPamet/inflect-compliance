@@ -22,10 +22,12 @@ jest.mock('@/lib/db-context', () => ({
 
 import {
     resolveScheduleRecipients,
+    currentlyDeliverableRecipients,
     parseRecipientAllowlist,
     MAX_SCHEDULE_RECIPIENTS,
     MAX_EMAIL_ATTACHMENT_BYTES,
 } from '@/app-layer/usecases/report-recipients';
+import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const ctx = makeRequestContext('ADMIN');
@@ -34,7 +36,9 @@ function primeDb(memberEmails: string[], allowlist: unknown = null) {
     mockDbHolder.db = {
         tenantMembership: {
             findMany: jest.fn().mockResolvedValue(
-                memberEmails.map((email) => ({ user: { email } })),
+                // Members are matched on the lookup hash (#5185): `User.email`
+                // is stored encrypted, so a relation filter on it never matched.
+                memberEmails.map((email) => ({ user: { emailHash: hashForLookup(email) } })),
             ),
         },
         tenantSecuritySettings: {
@@ -192,7 +196,8 @@ describe('resolveScheduleRecipients — the exfiltration gate', () => {
             mockDbHolder.db as { tenantMembership: { findMany: jest.Mock } }
         ).tenantMembership.findMany.mock.calls[0][0];
         expect(arg.where.status).toBe('ACTIVE');
-        expect(arg.where.user.email.in).toEqual(['a@acme.test']);
+        // On the lookup hash, never the encrypted column (#5185).
+        expect(arg.where.user).toEqual({ emailHash: { in: [hashForLookup('a@acme.test')] } });
         expect(arg.take).toBe(MAX_SCHEDULE_RECIPIENTS);
     });
 
@@ -213,3 +218,22 @@ describe('attachment cap', () => {
         expect(MAX_EMAIL_ATTACHMENT_BYTES * 1.34).toBeLessThan(25 * 1024 * 1024);
     });
 });
+
+// #5213 — a schedule's list was validated when a person saved it; delivery
+// re-asks membership and the allowlist, so an offboarded member or a
+// de-allowlisted domain stops receiving the report.
+describe('currentlyDeliverableRecipients — re-resolved at delivery', () => {
+    it('keeps current members and still-allowlisted externals, and drops everyone else', async () => {
+        primeDb(['ciso@acme.test'], ['@kpmg.com']);
+        const out = await currentlyDeliverableRecipients(editorish, [
+            'ciso@acme.test',
+            'auditor@kpmg.com',
+            'left@acme.test',
+            'auditor@old-firm.test',
+        ]);
+        // No elevation is asked at delivery: the save was the person's act.
+        expect(out.deliverable).toEqual(['ciso@acme.test', 'auditor@kpmg.com']);
+        expect(out.dropped).toBe(2);
+    });
+});
+

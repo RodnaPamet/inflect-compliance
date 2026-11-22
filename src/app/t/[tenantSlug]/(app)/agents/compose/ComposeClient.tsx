@@ -74,6 +74,25 @@ interface WireField {
  * "Target user id". The name is the tool's own, so it cannot be translated;
  * this only stops it reading as code.
  */
+
+/**
+ * The values as the server's schema reads them. An `integer` open field is
+ * validated as a number, and the input holds a string, so every template with
+ * an integer field was refused (#5216). A value that is not a whole number is
+ * sent as typed, so the server's own refusal names it.
+ */
+function wireValues(
+    fields: readonly { name: string; kind: string }[] | null | undefined,
+    values: Record<string, string>,
+): Record<string, string | number> {
+    const integers = new Set((fields ?? []).filter((f) => f.kind === 'integer').map((f) => f.name));
+    const out: Record<string, string | number> = {};
+    for (const [name, value] of Object.entries(values)) {
+        out[name] = integers.has(name) && /^-?\d+$/.test(value.trim()) ? Number(value.trim()) : value;
+    }
+    return out;
+}
+
 export function fieldNameInWords(name: string): string {
     const words = name
         .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -183,7 +202,7 @@ export function ComposeClient({
             const res = await fetch(apiUrl('/agent-proposals/compose'), {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ parameterSetId: templateId, openFieldValues: values }),
+                body: JSON.stringify({ parameterSetId: templateId, openFieldValues: wireValues(fields, values) }),
             });
             const body: unknown = await res.json().catch(() => null);
             const outcome = body as { proposalId?: string; status?: string } | null;
@@ -200,7 +219,7 @@ export function ComposeClient({
         } finally {
             setSubmitting(false);
         }
-    }, [apiUrl, templateId, values, t]);
+    }, [apiUrl, templateId, fields, values, t]);
 
 
     const chosen = templates.find((x) => x.id === templateId) ?? null;

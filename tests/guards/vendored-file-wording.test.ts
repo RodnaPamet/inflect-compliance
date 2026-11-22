@@ -10,11 +10,16 @@
  *
  * This is the near half of that loop: the same class, caught here.
  *
+ * The same holds for the whole of `packages/ui`: Islestone mirrors that
+ * package byte for byte, so a word added anywhere in it reaches another
+ * product unchanged. Its population is DERIVED from git, every file under the
+ * package, so a new file is covered the day it lands (Islestone #7).
+ *
  * ─── Three limits, each stated because each is real ──────────────────
  *
  * 1. NOT THE GENERAL GUARD. #3048 owns that, including the harder half —
- *    deciding which of ~490 UI files are in scope. A file absent from
- *    `VENDORED` below is unguarded, NOT clean.
+ *    deciding which of ~490 UI files are in scope. A file outside
+ *    `VENDORED` and outside `packages/ui` is unguarded, NOT clean.
  *
  * 2. COMPLIANCE NOUNS ONLY, not brands. The brand half cannot be mirrored
  *    here honestly: `src/lib/ui-storage.ts` holds `UI_STORAGE_PREFIX =
@@ -34,6 +39,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { repoRelativeFiles } from '../helpers/repo-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -45,6 +51,9 @@ const VENDORED = [
     'src/lib/auth/session-expiry.ts',
     'src/lib/ui-storage.ts',
 ] as const;
+
+/** Every file of the package Islestone mirrors byte for byte, from git. */
+const MIRRORED = repoRelativeFiles().filter((rel) => rel.startsWith('packages/ui/'));
 
 /** projectZ's compliance nouns, transcribed from `portable-rules.mjs`. */
 const NOUNS = [
@@ -84,6 +93,16 @@ describe('vendored files carry no compliance vocabulary', () => {
 
     it.each(VENDORED)('%s', (rel) => {
         expect(hits(rel)).toEqual([]);
+    });
+
+    it('every file of the mirrored package, packages/ui', () => {
+        // One case for the whole package rather than one per file: it holds
+        // a few hundred files, and the findings list names each line anyway.
+        // The floor keeps it from passing on an empty population. It was 300
+        // until #5772 deleted the Nucleo set (271 files, 105 glyphs back),
+        // which left 231; the floor moved down with it, keeping a margin.
+        expect(MIRRORED.length).toBeGreaterThan(200);
+        expect(MIRRORED.flatMap(hits)).toEqual([]);
     });
 
     it('the matcher can actually fire — positive control', () => {

@@ -41,6 +41,7 @@ import Redis from 'ioredis';
 
 import { beat } from '../src/app-layer/jobs/worker-heartbeat';
 import { createProcessLogger } from '../src/lib/observability/process-logger';
+import { jobPayloadLogFields } from '../src/lib/observability/job-payload-log';
 import {
     QUEUE_NAME,
     type JobName,
@@ -138,7 +139,8 @@ log.info({ queueName: QUEUE_NAME, redisUrl: REDIS_URL.replace(/\/\/.*@/, '//***@
         '../src/lib/db/rls-middleware'
     );
     const { prisma } = await import('../src/lib/prisma');
-    installAutomationBusDispatcher();
+    // 'worker': never gated by AUTOMATION_WEB_EVENTS_ENABLED (bus-bootstrap.ts).
+    installAutomationBusDispatcher('worker');
     installRlsTripwire(prisma);
     // Swap the mailer to SMTP when configured — the worker runs the
     // notification outbox + digests, which send email. Without this the
@@ -276,7 +278,14 @@ async function bootstrap(): Promise<void> {
                     const startTime = performance.now();
                     const payload = stripTraceCarrier(job.data as Record<string, unknown>);
 
-                    log.info({ jobName, jobId: job.id, payload }, 'processing job');
+                    // NOT the whole payload (#5635): it ships to Cloud Logging and
+                    // carries email addresses, remote issue bodies and entity
+                    // titles. Flat, so pino's root-level redaction can see what
+                    // does go out.
+                    log.info(
+                        { jobName, jobId: job.id, ...jobPayloadLogFields(payload) },
+                        'processing job',
+                    );
 
                     // GAP-22: forward the BullMQ Job's progress channel so
                     // executors that report mid-run progress (currently

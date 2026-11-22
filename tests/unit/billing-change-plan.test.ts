@@ -37,6 +37,7 @@ jest.mock('@/lib/observability', () => ({
 }));
 
 import { changeTenantPlan } from '@/app-layer/usecases/billing';
+import { isManualCustomerId } from '@/lib/billing/manual-customer';
 
 const ctx = makeRequestContext('OWNER');
 
@@ -62,6 +63,13 @@ describe('changeTenantPlan', () => {
         expect(res.direction).toBe('downgraded');
         expect(mockDowngraded).toHaveBeenCalledWith({ fromPlan: 'PRO', toPlan: 'FREE' });
         expect(mockUpgraded).not.toHaveBeenCalled();
+    });
+
+    it('mints a customer id the checkout path knows is not a Stripe customer (#5120)', async () => {
+        mockFindUnique.mockResolvedValue(null);
+        await changeTenantPlan(ctx, 'PRO');
+        const created = mockUpsert.mock.calls[0][0].create.stripeCustomerId as string;
+        expect(isManualCustomerId(created)).toBe(true);
     });
 
     it('treats a missing BillingAccount as the FREE baseline', async () => {

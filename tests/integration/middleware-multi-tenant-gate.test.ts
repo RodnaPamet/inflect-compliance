@@ -103,15 +103,12 @@ describe('checkTenantAccess — R-1 multi-tenant memberships array', () => {
     });
 });
 
-describe('/tenants page is public (R-1 carve-out)', () => {
-    it('/tenants is in PUBLIC_PATH_PREFIXES', () => {
-        expect(isPublicPath('/tenants')).toBe(true);
-    });
-
-    it('/tenants/anything is also public (prefix match)', () => {
-        // The prefix '/tenants' would match '/tenants/...' too — ensure the
-        // carve-out is broad enough for any future sub-routes.
-        expect(isPublicPath('/tenants')).toBe(true);
+describe('/tenants is NOT public (DAST 10044, 2026-11-13)', () => {
+    // It was an R-1 carve-out, but no edge gate needs an active tenant for a
+    // path outside `/t/`, so the carve-out only meant an unauthenticated
+    // request got the page's own redirect, carrying the whole root layout.
+    it('/tenants is not in PUBLIC_PATH_PREFIXES', () => {
+        expect(isPublicPath('/tenants')).toBe(false);
     });
 
     it('/t/acme/dashboard is still NOT public', () => {

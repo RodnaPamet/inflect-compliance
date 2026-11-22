@@ -56,7 +56,74 @@ export async function assertAgentKeyMayActAtRest(
     ctx: RequestContext,
     surface: { method: string; path: string },
 ): Promise<void> {
-    if (!ctx.agentId) return;
+    const verdict = await agentKeyStopVerdict(ctx);
+    if (!verdict) return;
+
+    await auditRefusal(ctx, verdict.reason, surface, 'agent_key_rest', verdict.kill, verdict.status);
+
+    // A kill is the more specific answer, and the one an operator acts on.
+    throw forbidden(
+        verdict.reason === 'agent_killed' && verdict.kill
+            ? killRefusalMessage(verdict.kill.scope)
+            : NOT_ACTIVE_MESSAGE,
+    );
+}
+
+/**
+ * THE SAME CONTROLS, FOR A JOB THE KEY QUEUED (#5189).
+ *
+ * `resolveKeyInitiatorContext` re-reads an agent-bound key by id so that, in its
+ * own words, the job holds "key now ∧ the initiator's membership now" — the
+ * point being that a key revoked while the job sat in the queue does not run.
+ * That re-read goes through `resolveApiKeyForJob`, which checks revoked, expired
+ * and tenant_deleted and nothing about the AGENT. So an operator could engage
+ * the kill switch, or suspend the agent, and a queued evidence import or
+ * SharePoint delta sync would still write evidence and link controls for a
+ * stopped agent — while a REST request with the same key at the same moment got
+ * a 403 and an `AUTHZ_DENIED` row.
+ *
+ * That is the owner's 2026-10-29 decision defeated by the QUEUE rather than
+ * disagreed with: stopping an agent is meant to stop its credential, and a
+ * surface that reads the key "now" while ignoring its agent is not reading now.
+ *
+ * RETURNS rather than throws, because that is this caller's contract — the job
+ * context resolver answers with a refusal reason and its callers decide. The
+ * audit row carries gate `agent_key_job`, so an operator can tell a job refusal
+ * from a REST one; before this the job path wrote no row at all.
+ */
+export async function agentKeyJobRefusal(
+    ctx: RequestContext,
+    jobName: string,
+): Promise<AgentKeyRestRefusal | null> {
+    const verdict = await agentKeyStopVerdict(ctx);
+    if (!verdict) return null;
+
+    await auditRefusal(
+        ctx,
+        verdict.reason,
+        { method: 'JOB', path: jobName },
+        'agent_key_job',
+        verdict.kill,
+        verdict.status,
+    );
+    return verdict.reason;
+}
+
+/**
+ * Is this agent-bound key's agent stopped? `null` means it may act.
+ *
+ * ONE read for both surfaces, so the two doors cannot disagree about which
+ * switches count — the same reason this gate reads the funnel's own
+ * `resolveKillState` rather than a query of its own. A key bound to no agent is
+ * not this gate's concern and returns `null`.
+ *
+ * A read that FAILS propagates: the kill state is never assumed clear because
+ * it could not be read.
+ */
+async function agentKeyStopVerdict(ctx: RequestContext): Promise<
+    { reason: AgentKeyRestRefusal; kill: KillVerdict | null; status: string | null } | null
+> {
+    if (!ctx.agentId) return null;
 
     const [agent, kill] = await Promise.all([
         prisma.registeredAgent.findFirst({
@@ -66,15 +133,11 @@ export async function assertAgentKeyMayActAtRest(
         resolveKillState(ctx.tenantId, ctx.agentId),
     ]);
 
-    // A kill is the more specific answer, and the one an operator acts on.
-    if (kill) {
-        await auditRefusal(ctx, 'agent_killed', surface, kill);
-        throw forbidden(killRefusalMessage(kill.scope));
-    }
+    if (kill) return { reason: 'agent_killed', kill, status: agent?.status ?? null };
     if (agent?.status !== ADMITTED_STATUS) {
-        await auditRefusal(ctx, 'agent_not_active', surface, null, agent?.status ?? null);
-        throw forbidden(NOT_ACTIVE_MESSAGE);
+        return { reason: 'agent_not_active', kill: null, status: agent?.status ?? null };
     }
+    return null;
 }
 
 /**
@@ -85,6 +148,7 @@ async function auditRefusal(
     ctx: RequestContext,
     reason: AgentKeyRestRefusal,
     surface: { method: string; path: string },
+    gate: 'agent_key_rest' | 'agent_key_job',
     kill: KillVerdict | null,
     status: string | null = null,
 ): Promise<void> {
@@ -100,7 +164,16 @@ async function auditRefusal(
             detailsJson: {
                 category: 'access',
                 event: 'authz_denied',
-                gate: 'agent_key_rest',
+                // SPELLED AS LITERALS, not as the `gate` variable.
+                // `no-raw-prompt-logging` counts value positions at an audit
+                // sink that it cannot read, and caps them — a bare `gate,`
+                // made this one opaque and pushed that ceiling from 225 to
+                // 226. Raising the ceiling would loosen
+                // `HOLES_PER_SINK_CEILING`, which that guard's own history
+                // says a diff should not do. Enumerating the two values at the
+                // sink is what the rule wants to see, and it is also the
+                // honest statement: these are the only gates that write here.
+                gate: gate === 'agent_key_job' ? 'agent_key_job' : 'agent_key_rest',
                 reason,
                 apiKeyId: ctx.apiKeyId ?? null,
                 agentId: ctx.agentId ?? null,

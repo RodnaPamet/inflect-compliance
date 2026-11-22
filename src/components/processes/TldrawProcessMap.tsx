@@ -84,6 +84,8 @@ export interface TldrawProcessMapProps {
     drillGroupId?: string | null;
     /** A group was entered on the canvas; the owner pushes it on the stack. */
     onEnterGroup?: (nodeKey: string) => void;
+    /** An agent step was drilled into; the owner opens the agent it invokes. */
+    onOpenAgent?: (ruleId: string) => void;
     /**
      * Reports the state the document BAR needs: the concurrency token for its
      * version pill, and the autosave status for its saved-state indicator.
@@ -216,6 +218,7 @@ export function TldrawProcessMap({
     onStateChange,
     drillGroupId = null,
     onEnterGroup,
+    onOpenAgent,
     onSaveNowChange,
     focusStepKey = null,
 }: TldrawProcessMapProps) {
@@ -240,6 +243,8 @@ export function TldrawProcessMap({
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [editor, setEditor] = useState<Editor | null>(null);
+    // Bumped by the conflict toast's Reload to re-run the load (#5081).
+    const [reloadKey, setReloadKey] = useState(0);
 
     /** Only the map currently asked for — never a previous one's rows. */
     const current = loaded && loaded.mapId === mapId ? loaded : null;
@@ -299,7 +304,7 @@ export function TldrawProcessMap({
         return () => {
             cancelled = true;
         };
-    }, [tenantSlug, mapId, doFetch, failLoad]);
+    }, [tenantSlug, mapId, doFetch, failLoad, reloadKey]);
 
     // The editor, for applying what a save returns; a ref because the save
     // callback is memoised once and the editor arrives after it.
@@ -315,11 +320,13 @@ export function TldrawProcessMap({
         onSavedRef.current?.(saved);
     }, []);
 
+    // The 409 toast's Reload action (#5081). It used to clear the version
+    // token and nothing else, so "Reload" reloaded nothing and the next save
+    // went out with no token at all. It now re-reads the map: the loading state
+    // unmounts the canvas, and the fresh rows and version mount in its place.
+    // Autosave stops by itself on a conflict, because the save throws.
     const handleConflict = useCallback(() => {
-        // The save path already surfaced the 409 to the user. Clearing the
-        // version stops the next autosave firing another doomed write with the
-        // same stale token; the parent's reload path is what recovers.
-        setLoaded((prev) => (prev ? { ...prev, version: undefined } : prev));
+        setReloadKey((k) => k + 1);
     }, []);
 
     /**
@@ -409,6 +416,7 @@ export function TldrawProcessMap({
                 drillGroupId={drillGroupId}
                 focusNodeKey={focusStepKey}
                 onEnterGroup={onEnterGroup}
+                onOpenAgent={onOpenAgent}
                 onEditorReady={(e) => {
                     setEditor(e);
                     onEditorReady?.(e);

@@ -74,13 +74,13 @@ export const exampleProgressMetric: ProgressMetric = {
     current: 72,
     target: 100,
     unit: '%',
-    label: 'Control coverage',
+    label: 'Coverage',
 };
 
 export const exampleProgressSegments: ProgressSegment[] = [
     {
-        id: 'implemented',
-        label: 'Implemented',
+        id: 'done',
+        label: 'Done',
         value: 15,
         colorClassName: 'bg-brand-emphasis',
     },
@@ -101,12 +101,12 @@ export const exampleProgressSegments: ProgressSegment[] = [
 // ─── KPI metric ──────────────────────────────────────────────────────
 
 export const exampleKpiMetric: KpiMetric = {
-    label: 'Control coverage',
+    label: 'Coverage',
     value: 75.3,
     format: 'percent',
     delta: 2.4,
     deltaLabel: 'vs. last quarter',
-    subtitle: '15 of 20 implemented',
+    subtitle: '15 of 20 done',
 };
 
 // ─── Freshly constructed sparkline — for test convenience ─────────────

@@ -241,7 +241,9 @@ if (require.main === module) {
     // Only instantiate PrismaClient when running as a standalone script
 
     const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
+
+    const { PrismaPg } = require('@prisma/adapter-pg');
+    const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }) });
 
     const args = process.argv.slice(2);
     const execute = args.includes('--execute');

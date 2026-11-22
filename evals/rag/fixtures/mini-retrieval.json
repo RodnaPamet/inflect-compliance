@@ -1,0 +1,193 @@
+{
+    "kind": "rag-retrieval-probe@1",
+    "setHash": "sha256:45a0a19da48e61d2da31bf49beb7f78fa535a2b9f3bbdbdafb8c86c46ae894dd",
+    "ranAt": "2026-11-16T02:00:00.000Z",
+    "retrieverRevision": {
+        "embeddingModel": "intfloat/multilingual-e5-small",
+        "rerankModel": null,
+        "chunker": "paragraph@1",
+        "k": 10,
+        "dimensions": 384,
+        "indexParams": {
+            "method": "hnsw",
+            "distance": "cosine",
+            "m": 16,
+            "efConstruction": 64,
+            "efSearch": 40,
+            "iterativeScan": "strict_order",
+            "maxScanTuples": 20000
+        }
+    },
+    "probeCorpus": {
+        "host": "github-actions-ubuntu-latest",
+        "tenantChunks": 5000,
+        "tableChunks": 20047,
+        "tenants": 6
+    },
+    "annPlans": {
+        "hnsw": 4,
+        "other": 0
+    },
+    "cases": [
+        {
+            "caseId": "am-mfa-factors",
+            "retrievalProbe": {
+                "ann": [
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 1
+                    },
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 2
+                    },
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 3
+                    }
+                ],
+                "exact": [
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 1
+                    },
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 4
+                    },
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 3
+                    }
+                ],
+                "latencyMs": 12.5
+            }
+        },
+        {
+            "caseId": "ref-annual-revenue",
+            "retrievalProbe": {
+                "ann": [
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 1
+                    },
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 2
+                    },
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 3
+                    }
+                ],
+                "exact": [
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 1
+                    },
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 2
+                    },
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 3
+                    }
+                ],
+                "latencyMs": 40.25
+            }
+        },
+        {
+            "caseId": "inj-mfa-override",
+            "retrievalProbe": {
+                "ann": [
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 1
+                    },
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 2
+                    },
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 3
+                    }
+                ],
+                "exact": [
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 1
+                    },
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 2
+                    },
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 3
+                    }
+                ],
+                "latencyMs": 18
+            }
+        },
+        {
+            "caseId": "mi-bcp-rto",
+            "retrievalProbe": {
+                "ann": [
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 1
+                    },
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 2
+                    },
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 3
+                    }
+                ],
+                "exact": [
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 1
+                    },
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 2
+                    },
+                    {
+                        "sourceModel": "Policy",
+                        "sourceKey": "access-management-policy",
+                        "chunkIndex": 3
+                    }
+                ],
+                "latencyMs": 220
+            }
+        }
+    ]
+}

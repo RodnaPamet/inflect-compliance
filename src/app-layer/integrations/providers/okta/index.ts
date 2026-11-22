@@ -274,15 +274,16 @@ export class OktaProvider implements ScheduledCheckProvider, IdentitySyncProvide
         // measure real signals instead of vacuously passing. Opt-out via
         // `enrichPerUser: false` on a directory too large to fan out over.
         const enrichPerUser = String((config as { enrichPerUser?: unknown }).enrichPerUser ?? 'true').toLowerCase() !== 'false';
-        if (enrichPerUser) {
-            await this.enrichAccounts(orgUrl, apiToken, out, doFetch);
-        }
+        // Opted out: every signal stays null and the checks read NOT_APPLICABLE,
+        // which is honest. Enriched in part: a check over the enriched accounts
+        // is a check over a slice, and is stated as one (#5074).
+        const signalsComplete = enrichPerUser ? await this.enrichAccounts(orgUrl, apiToken, out, doFetch) : true;
 
         // H3 — if we stopped with a `next` link still present, we hit MAX_USERS
         // mid-directory: the enumeration is KNOWN-PARTIAL (do not deprovision).
         // H3-2 — carry that link out so the next run continues rather than
         // restarting at page one and stopping in the same place.
-        return { accounts: out, complete: url === null, resumeToken: url };
+        return { accounts: out, complete: url === null, resumeToken: url, signalsComplete };
     }
 
     /**
@@ -296,7 +297,7 @@ export class OktaProvider implements ScheduledCheckProvider, IdentitySyncProvide
         apiToken: string,
         accounts: NormalizedIdentityAccount[],
         doFetch: typeof fetch,
-    ): Promise<void> {
+    ): Promise<boolean> {
         const toEnrich = accounts.slice(0, MAX_ENRICH);
         if (accounts.length > MAX_ENRICH) {
             logger.warn('Okta per-user enrichment capped; accounts past the cap keep null (NOT_APPLICABLE) signals', {
@@ -375,6 +376,9 @@ export class OktaProvider implements ScheduledCheckProvider, IdentitySyncProvide
                 enrichAttempted: toEnrich.length,
             });
         }
+        // Complete only when every account was attempted and every attempt
+        // answered. Anything less leaves null signals behind (#5074).
+        return accounts.length <= MAX_ENRICH && enrichFailures === 0;
     }
 
     async runCheck(input: CheckInput): Promise<CheckResult> {
@@ -386,10 +390,11 @@ export class OktaProvider implements ScheduledCheckProvider, IdentitySyncProvide
             // never read. `runIdentityCheck` turns a truncated PASS into an
             // ERROR and leaves a truncated FAIL standing, because a violation
             // found in a subset is still a violation.
-            const { accounts, complete } = await this.listAccounts(input.connectionConfig);
+            const { accounts, complete, signalsComplete } = await this.listAccounts(input.connectionConfig);
             const result = runIdentityCheck(input.parsed.checkType, accounts, input.connectionConfig, new Date(), {
                 complete,
                 accountsRead: accounts.length,
+                signalsComplete,
             });
             return { ...result, durationMs: Date.now() - start };
         } catch (err) {

@@ -62,11 +62,13 @@ describe('traceability mapping routes are gated on the FROM entity', () => {
         }
     });
 
-    // `requirePermission<` names the CALL and occurs once per file — the import
-    // carries no type argument. The key literal occurs once as well.
+    // `requirePermission<` names the CALL — the import carries no type
+    // argument. Where the file also gates its GET (the anchor's view key,
+    // #5376), the needle names the POST's call, which occurs once. The key
+    // literal occurs once as well.
     it('POST /assets/:id/risks asks assets.edit', () => {
         const src = read('assets/[id]/risks/route.ts');
-        expect(src).toContain('requirePermission<');
+        expect(src).toMatch(/export const POST = withApiErrorHandling\(\s*requirePermission</);
         expect(src).toContain("'assets.edit'");
         expect(src).not.toContain("'controls.edit'");
     });
@@ -80,7 +82,7 @@ describe('traceability mapping routes are gated on the FROM entity', () => {
 
     it('POST /assets/:id/controls asks assets.edit, not the other end', () => {
         const src = read('assets/[id]/controls/route.ts');
-        expect(src).toContain('requirePermission<');
+        expect(src).toMatch(/export const POST = withApiErrorHandling\(\s*requirePermission</);
         expect(src).toContain("'assets.edit'");
         expect(src).not.toContain("'controls.edit'");
     });
@@ -98,7 +100,7 @@ describe('traceability mapping routes are gated on the FROM entity', () => {
 
     it('POST /controls/:id/risks asks controls.edit', () => {
         const src = read('controls/[controlId]/risks/route.ts');
-        expect(src).toContain('requirePermission<');
+        expect(src).toMatch(/export const POST = withApiErrorHandling\(\s*requirePermission</);
         expect(src).toContain("'controls.edit'");
         expect(src).not.toContain("'assets.edit'");
     });

@@ -12,7 +12,7 @@ import { DatePicker } from '@/components/ui/date-picker/date-picker';
 import { toYMD } from '@/components/ui/date-picker/date-utils';
 import { Input } from '@/components/ui/input';
 import { useEnterSubmit, useToast, useToastWithUndo } from '@/components/ui/hooks';
-import { PenWriting } from '@inflect/ui/components/ui/icons/nucleo/pen-writing';
+import { PenWriting } from '@inflect/ui/components/ui/icons/glyphs/pen-writing';
 import { ownerDisplayName } from '@/lib/owner-display';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
@@ -22,7 +22,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { CopyText } from '@/components/ui/copy-text';
 import { Button } from '@/components/ui/button';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
-import { Pen2, Trash } from '@inflect/ui/components/ui/icons/nucleo';
+import { Pen2, Trash } from '@inflect/ui/components/ui/icons/glyphs';
 import { Tooltip, InfoTooltip } from '@/components/ui/tooltip';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { DataTable, type ColumnDef } from '@/components/ui/table';
@@ -74,7 +74,22 @@ interface AssetVulnRow {
     ownerUserId: string | null;
     cve: { id: string; cvssScore: number | null; cvssSeverity: string | null; summary: string } | null;
     ownerUser: { id: string; name: string | null; email: string | null } | null;
+    /** What To Risk / To Finding made, if anything (#4465). A deleted one no longer counts. */
+    convertedRisk?: { id: string; key: string | null; deletedAt: string | null } | null;
+    convertedFinding?: { id: string; deletedAt: string | null } | null;
 }
+
+/** A conversion's target, unless it was deleted since (then the button is offered again). */
+function liveTarget<T extends { deletedAt: string | null }>(target: T | null | undefined): T | null {
+    return target && !target.deletedAt ? target : null;
+}
+
+/**
+ * The most rows `GET /vulnerabilities` returns when asked for none
+ * (`listVulnerabilities`' default `take`). A tab holding this many may hold
+ * fewer than the asset has, so it says so (#5313).
+ */
+const ASSET_VULN_READ_CAP = 200;
 
 /** One scanner finding resolved to this asset (GET /assets/[id]/scanner-findings). */
 interface AssetScannerFindingRow {
@@ -148,7 +163,13 @@ export default function AssetDetailPage() {
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const { permissions, appPermissions, tenantSlug } = useTenantContext();
-    const canConvertVuln = permissions.canWrite && appPermissions.assets.edit;
+    // Each control follows the route behind it, coarse tier AND key, as the
+    // list page does (#5160): PATCH /assets/:id and /vulnerabilities/:id take
+    // `assets.edit`, DELETE /assets/:id takes `admin.manage`. The coarse tier
+    // alone offered a custom role without the key buttons it was refused.
+    const canEditAsset = permissions.canWrite && appPermissions.assets.edit;
+    const canDeleteAsset = permissions.canAdmin && appPermissions.admin.manage;
+    const canConvertVuln = canEditAsset;
     const canConvertToRisk = canConvertVuln && appPermissions.risks.create;
     const canConvertToFinding = canConvertVuln && appPermissions.findings.create;
     const t = useTranslations('assets');
@@ -239,9 +260,16 @@ export default function AssetDetailPage() {
     const activityLoading = activityQuery.isLoading;
 
     // ─── Vulnerabilities feed (lazy, only while that tab is open) ───
+    // The Open/Resolved toggle filters on the SERVER (#5313). The read is
+    // capped and ordered by score, so filtering a capped all-status read in the
+    // browser dropped open rows that sat past the cap behind resolved ones.
+    const [showResolved, setShowResolved] = useState(false);
     const vulnQuery = useTenantSWR<{ rows: AssetVulnRow[] }>(
-        activeTab === 'vulnerabilities' ? `/vulnerabilities?assetId=${assetId}` : null,
+        activeTab === 'vulnerabilities'
+            ? `/vulnerabilities?assetId=${assetId}${showResolved ? '' : '&status=OPEN'}`
+            : null,
     );
+    const vulnRowsCapped = (vulnQuery.data?.rows.length ?? 0) >= ASSET_VULN_READ_CAP;
     const vulnRows = vulnQuery.data?.rows ?? [];
     const vulnLoading = vulnQuery.isLoading;
     // Scanner findings resolved to this asset — rendered alongside the CVE
@@ -285,7 +313,6 @@ export default function AssetDetailPage() {
     // The two feeds default to OPEN — matching the "open vulnerabilities" framing
     // of the list column — with a toggle to reveal resolved rows. Edits reuse the
     // same PATCH endpoints the global Vulnerabilities / Security-testing pages use.
-    const [showResolved, setShowResolved] = useState(false);
     const [vulnOverrides, setVulnOverrides] = useState<Record<string, Partial<AssetVulnRow>>>({});
     const [scannerOverrides, setScannerOverrides] = useState<Record<string, Partial<AssetScannerFindingRow>>>({});
 
@@ -507,7 +534,7 @@ export default function AssetDetailPage() {
                     >
                         {tWhereUsed('button')}
                     </Button>
-                    {permissions.canWrite && (
+                    {canEditAsset && (
                         <Combobox
                             hideSearch
                             id="asset-status-select"
@@ -522,7 +549,7 @@ export default function AssetDetailPage() {
                             buttonProps={{ variant: 'primary', className: 'text-sm' }}
                         />
                     )}
-                    {permissions.canAdmin && (
+                    {canDeleteAsset && (
                         <Tooltip content={t('detail.deleteAsset')}>
                             <Button
                                 variant="secondary"
@@ -584,7 +611,7 @@ export default function AssetDetailPage() {
 
             {/* Edit modal — modal-form P2. Always mounted so the
                 modal's own open/close state survives tab switches. */}
-            {permissions.canWrite && (
+            {canEditAsset && (
                 <EditAssetModal
                     key={`edit-${assetId}-${editSeed}`}
                     open={editing}
@@ -635,6 +662,14 @@ export default function AssetDetailPage() {
                             {t('detail.vuln.seeAll')} →
                         </Link>
                     </div>
+                    {vulnRowsCapped && (
+                        <p
+                            className="border-b border-border-subtle px-3 py-2 text-xs text-content-muted"
+                            data-testid="asset-vulns-capped"
+                        >
+                            {t('detail.vuln.capped', { count: ASSET_VULN_READ_CAP })}
+                        </p>
+                    )}
                     <DataTable<AssetVulnRow>
                         data={visibleVulnRows}
                         loading={vulnLoading}
@@ -675,7 +710,7 @@ export default function AssetDetailPage() {
                                 header: t('detail.vuln.status'),
                                 cell: ({ row }) => {
                                     const r = row.original;
-                                    if (!permissions.canWrite) {
+                                    if (!canEditAsset) {
                                         return (
                                             <StatusBadge variant={vulnStatusVariant(r.status)} size="sm">
                                                 {labelFor(tVuln, 'filterEnums.status', r.status)}
@@ -704,7 +739,7 @@ export default function AssetDetailPage() {
                                 header: t('detail.vuln.owner'),
                                 cell: ({ row }) => {
                                     const r = row.original;
-                                    if (!permissions.canWrite) {
+                                    if (!canEditAsset) {
                                         return (
                                             <span className="text-sm text-content-muted">
                                                 {r.ownerUser?.name || r.ownerUser?.email || t('detail.vuln.unassigned')}
@@ -737,7 +772,7 @@ export default function AssetDetailPage() {
                                 header: t('detail.vuln.due'),
                                 cell: ({ row }) => {
                                     const r = row.original;
-                                    if (!permissions.canWrite) {
+                                    if (!canEditAsset) {
                                         return (
                                             <span className="text-sm text-content-muted">
                                                 {r.remediationDueAt ? formatDate(r.remediationDueAt) : t('detail.vuln.none')}
@@ -765,7 +800,7 @@ export default function AssetDetailPage() {
                                 cell: ({ row }) => (
                                     <VulnNoteCell
                                         row={row.original}
-                                        canWrite={permissions.canWrite}
+                                        canWrite={canEditAsset}
                                         onSave={(id, note) => patchVulnRow(id, { note }, { note })}
                                         emptyLabel={t('detail.vuln.addNote')}
                                         editLabel={t('detail.vuln.editNote')}
@@ -782,30 +817,61 @@ export default function AssetDetailPage() {
                                 ? [{
                                       id: 'actions',
                                       header: t('detail.vuln.actions'),
-                                      cell: ({ row }: { row: { original: AssetVulnRow } }) => (
-                                          <div className="flex items-center gap-compact">
-                                              {canConvertToRisk && (
-                                                  <Button
-                                                      variant="secondary"
-                                                      size="sm"
-                                                      disabled={convertingId === row.original.id}
-                                                      onClick={() => convertVuln(row.original.id, 'risk')}
-                                                  >
-                                                      {t('detail.vuln.convertToRisk')}
-                                                  </Button>
-                                              )}
-                                              {canConvertToFinding && (
-                                                  <Button
-                                                      variant="secondary"
-                                                      size="sm"
-                                                      disabled={convertingId === row.original.id}
-                                                      onClick={() => convertVuln(row.original.id, 'finding')}
-                                                  >
-                                                      {t('detail.vuln.convertToFinding')}
-                                                  </Button>
-                                              )}
-                                          </div>
-                                      ),
+                                      // Each conversion works once (#4465): once it
+                                      // has made its item, the button becomes a
+                                      // link to it, as on the Vulnerabilities page.
+                                      // It stayed a button here, and every press
+                                      // was a 409 (#5313).
+                                      cell: ({ row }: { row: { original: AssetVulnRow } }) => {
+                                          const risk = liveTarget(row.original.convertedRisk);
+                                          const finding = liveTarget(row.original.convertedFinding);
+                                          return (
+                                              <div className="flex items-center gap-compact">
+                                                  {risk ? (
+                                                      <Link
+                                                          href={tenantHref(`/risks/${risk.id}`)}
+                                                          data-testid={`asset-vuln-converted-risk-${row.original.id}`}
+                                                          className="text-sm font-medium text-content-link hover:underline"
+                                                      >
+                                                          {risk.key ?? t('detail.vuln.viewRisk')}
+                                                      </Link>
+                                                  ) : (
+                                                      canConvertToRisk && (
+                                                          <Button
+                                                              variant="secondary"
+                                                              size="sm"
+                                                              disabled={convertingId === row.original.id}
+                                                              onClick={() => convertVuln(row.original.id, 'risk')}
+                                                          >
+                                                              {t('detail.vuln.convertToRisk')}
+                                                          </Button>
+                                                      )
+                                                  )}
+                                                  {finding ? (
+                                                      // Findings have no page of their own; the
+                                                      // link opens the register it is in.
+                                                      <Link
+                                                          href={tenantHref('/findings')}
+                                                          data-testid={`asset-vuln-converted-finding-${row.original.id}`}
+                                                          className="text-sm font-medium text-content-link hover:underline"
+                                                      >
+                                                          {t('detail.vuln.viewFinding')}
+                                                      </Link>
+                                                  ) : (
+                                                      canConvertToFinding && (
+                                                          <Button
+                                                              variant="secondary"
+                                                              size="sm"
+                                                              disabled={convertingId === row.original.id}
+                                                              onClick={() => convertVuln(row.original.id, 'finding')}
+                                                          >
+                                                              {t('detail.vuln.convertToFinding')}
+                                                          </Button>
+                                                      )
+                                                  )}
+                                              </div>
+                                          );
+                                      },
                                   }]
                                 : []),
                         ] as ColumnDef<AssetVulnRow, unknown>[]}
@@ -874,7 +940,8 @@ export default function AssetDetailPage() {
                         apiBase={apiUrl('')}
                         entityType="asset"
                         entityId={assetId}
-                        canWrite={permissions.canWrite}
+                        canLinkControlRisk={permissions.canWrite && appPermissions.controls.edit}
+                        canLinkAsset={canEditAsset}
                         tenantHref={tenantHref}
                     />
                     <div className="border-t border-border-subtle pt-default">
@@ -1013,7 +1080,7 @@ export default function AssetDetailPage() {
                         <p className="text-sm font-medium text-content-default">{t('detail.identityHintTitle')}</p>
                         <p className="text-xs text-content-muted">{t('detail.identityHintBody')}</p>
                     </div>
-                    {permissions.canWrite && (
+                    {canEditAsset && (
                         <Button
                             variant="secondary"
                             size="sm"
@@ -1028,7 +1095,7 @@ export default function AssetDetailPage() {
 
             {/* Detail card — read-only view; edits flow through EditAssetModal. */}
             <div className={cn(cardVariants(), 'space-y-default')} id="asset-detail">
-                {permissions.canWrite && (
+                {canEditAsset && (
                     <div className="flex justify-end -mt-1 -mb-2">
                         {/* B2 — icon-only edit affordance; opens the Edit
                             Asset modal, mirroring the control overview. */}

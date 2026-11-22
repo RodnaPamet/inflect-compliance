@@ -1103,7 +1103,7 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
         try {
             res = await this.patch(url, token.token, body);
         } catch (err) {
-            return await this.settleLostResponse(err, id);
+            return await this.settleLostResponse(err, id, 'disable');
         }
 
         // ── A 401 is the ONE status it is safe to retry after. ──
@@ -1128,7 +1128,7 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
             try {
                 res = await this.patch(url, token.token, body);
             } catch (retryErr) {
-                return await this.settleLostResponse(retryErr, id);
+                return await this.settleLostResponse(retryErr, id, 'disable');
             }
         }
 
@@ -1161,13 +1161,26 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
      * most of its disabling. Named rather than hidden, which is the standard
      * this file already holds `disable` to.
      *
-     * ═══ THE ON-PREM REFUSALS APPLY UNCHANGED ═══
+     * ═══ THE ON-PREM REFUSALS, AND WHICH READ EACH ONE USES ═══
      *
      * A directory-synced account restored through Graph is reverted at the next
      * Azure AD Connect cycle, exactly as a disable would be — and would report
      * success while the account stayed disabled. Unknown is refused for the
      * same reason it is on the way down: it is not the same as cloud-only, and
      * the two differ precisely where it matters.
+     *
+     * There are THREE refusals and they do not read the same state, which is
+     * the part this paragraph used to leave out:
+     *
+     *   • the CAPTURE's `onPremisesSyncEnabled`, before any token is fetched —
+     *     cheapest, and true of what it tests: the account was already synced
+     *     when this product disabled it.
+     *   • the FRESH read's `onPremisesSyncEnabled`, after the enabled check.
+     *   • the FRESH read's `onPremStateObserved`, likewise.
+     *
+     * Only the first existed until #5569, so an account brought under Azure AD
+     * Connect in between — the whole case the paragraph describes — passed. The
+     * capture cannot answer for today, and today is what reverts the write.
      */
     async restore(externalUserId: string, captured: DirectoryAccountState): Promise<void> {
         const id = assertEntraObjectId(externalUserId);
@@ -1214,6 +1227,46 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
             );
         }
 
+        // ── THE ON-PREM RAILS, ON THE READ TAKEN JUST NOW (#5569) ──
+        //
+        // The captured flag checked above says what was true when the DISABLE
+        // ran. These say what is true now, and a restore is reverted by
+        // whatever masters the account today. An account that was cloud-only
+        // when this product disabled it and has since been brought under Azure
+        // AD Connect passes the captured check and fails these — which was the
+        // defect: the PATCH went out, the journal recorded RESTORED, and the
+        // next Connect cycle disabled the account again.
+        //
+        // The docblock above has claimed these refusals all along. It said
+        // "THE ON-PREM REFUSALS APPLY UNCHANGED" and that unknown "is refused
+        // for the same reason it is on the way down", while the method checked
+        // neither. A reader asking whether the hazard was handled found a
+        // paragraph saying yes.
+        //
+        // Read from the FRESH state rather than the capture for a second reason
+        // as well: a `v1` journal row predates `onPremStateObserved`, so an
+        // absent key there cannot be told from one Graph did not answer. A read
+        // taken now is always the current capture schema's shape.
+        if (current.priorState.onPremisesSyncEnabled === true) {
+            throw new DirectoryWriteError(
+                `Refusing to restore account ${id} through Graph: a read taken just now reports it ` +
+                    `directory-synced (onPremisesSyncEnabled: true), so it is mastered on-premises and this ` +
+                    `write would be reverted at the next Azure AD Connect cycle — the account would report ` +
+                    `enabled and then disable itself again, with an audit trail saying the restore ` +
+                    `succeeded. The captured state said otherwise, so the account was brought under Azure ` +
+                    `AD Connect after it was disabled; restore it in Active Directory instead.`,
+                { definitivelyNotApplied: true },
+            );
+        }
+        if (current.priorState.onPremStateObserved !== true) {
+            throw new DirectoryWriteError(
+                `Refusing to restore account ${id}: its on-premises sync state was not observed on the read ` +
+                    `taken just now. Unknown is not the same as cloud-only, and the two differ exactly where ` +
+                    `it matters.`,
+                { definitivelyNotApplied: true },
+            );
+        }
+
         // Pre-serialized and absolute, for the same reason the disable body is:
         // `createResilientFetch` reuses one `init` across attempts, and
         // `{"accountEnabled": true}` applied twice yields the same state.
@@ -1224,7 +1277,7 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
         try {
             res = await this.patch(url, token.token, body);
         } catch (err) {
-            return await this.settleLostResponse(err, id);
+            return await this.settleLostResponse(err, id, 'restore');
         }
 
         // 401 is the one status safe to retry after — it proves the request was
@@ -1235,7 +1288,7 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
             try {
                 res = await this.patch(url, token.token, body);
             } catch (retryErr) {
-                return await this.settleLostResponse(retryErr, id);
+                return await this.settleLostResponse(retryErr, id, 'restore');
             }
         }
 
@@ -1410,8 +1463,16 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
      *
      * Returns (rather than throws) when the confirming read shows the desired end
      * state, so `disable` resolves and the usecase records APPLIED.
+     *
+     * The desired end state is the OPERATION's (#5095): a disable lands as
+     * `accountEnabled: false`, a restore as `true`. This used to test for
+     * `false` whatever the caller, so a restore whose response was lost, and
+     * which had NOT landed, read the still-disabled account as proof the
+     * restore succeeded — reporting access returned to a person who still had
+     * none.
      */
-    private async settleLostResponse(err: unknown, id: string): Promise<void> {
+    private async settleLostResponse(err: unknown, id: string, op: 'disable' | 'restore'): Promise<void> {
+        const expectedEnabled = op === 'restore';
         if (err instanceof IntegrationAuthError) {
             // 401 after a refresh. 403 never reaches here — it is cloaked into a
             // response and handled by classifyGraphFailure. Evaluated and
@@ -1431,9 +1492,9 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
             (err.lastStatus === 429 || err.lastStatus === null);
 
         const observed = await this.readEnabledQuietly(id);
-        if (observed === false) {
+        if (observed === expectedEnabled) {
             logger.warn(
-                'Entra disable lost its response but the account now reads disabled — treating as applied',
+                `Entra ${op} lost its response but the account now reads ${expectedEnabled ? 'enabled' : 'disabled'} — treating as applied`,
                 {
                     component: 'integration-entra-id-writer',
                     externalUserId: id,
@@ -1460,14 +1521,14 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
         // asymmetry is deliberate — INDETERMINATE costs an operator a look, a
         // wrong FAILED costs them the account.
         const suffix =
-            observed === true
-                ? ' A confirming read reports the account still ENABLED, which suggests the write did not ' +
+            observed === !expectedEnabled
+                ? ` A confirming read reports the account still ${expectedEnabled ? 'DISABLED' : 'ENABLED'}, which suggests the write did not ` +
                   'land — but a read-back is not the provider rejecting the request, so this stays ' +
                   'unconfirmed.'
                 : ' The confirming read also failed, so the outcome is genuinely unknown.';
 
         throw new DirectoryWriteError(
-            `The disable of account ${id} did not report back` +
+            `The ${op} of account ${id} did not report back` +
                 `${throttled ? ' (throttled beyond the absorb budget)' : ''}: ${detail}. The directory may ` +
                 `or may not have changed.${suffix}`,
         );

@@ -35,6 +35,7 @@ import { Readable } from 'node:stream';
 import JSZip from 'jszip';
 
 import { DB_AVAILABLE } from './db-helper';
+import { understateUncompressedSize } from '../helpers/zip-size-lie';
 import { prismaTestClient } from '../helpers/db';
 import type { PrismaClient } from '@prisma/client';
 import {
@@ -89,15 +90,16 @@ async function stageZip(
     userId: string,
     entries: ZipEntry[],
     fileNamePrefix = 'evidence-import-test',
+    rewrite: (zip: Buffer) => Buffer = (zip) => zip,
 ): Promise<BuiltZip> {
     const zip = new JSZip();
     for (const e of entries) {
         zip.file(e.name, e.body);
     }
-    const buffer = await zip.generateAsync({
+    const buffer = rewrite(await zip.generateAsync({
         type: 'nodebuffer',
         compression: 'DEFLATE',
-    });
+    }));
 
     const storage = getStorageProvider();
     const pathKey = buildTenantObjectKey(
@@ -128,6 +130,16 @@ async function stageZip(
     });
 
     return { buffer, pathKey, fileRecordId: fileRecord.id };
+}
+
+/** The staged ZIP's object and its live FileRecord are both gone. */
+async function expectStagingGone(staged: BuiltZip): Promise<void> {
+    await expect(getStorageProvider().head(staged.pathKey)).rejects.toThrow();
+    const row = await prismaTestClient().fileRecord.findUnique({
+        where: { id: staged.fileRecordId },
+    });
+    // Hard- or soft-deleted: either way no live row lingers under that id.
+    if (row) expect(row.deletedAt).not.toBeNull();
 }
 
 // Generous per-test timeout — staging + extraction touches storage,
@@ -356,6 +368,84 @@ describeFn('evidence-import — integration', () => {
                 stagingFileRecordId: staged.fileRecordId,
             }),
         ).rejects.toThrow(/not an active member/);
+    });
+
+    test('an entry that inflates past its declared size aborts the whole archive', async () => {
+        // The central directory says 1000 bytes; the entry inflates to 2 MiB.
+        // Every check before inflation reads the declared size, so the lie is
+        // caught while inflating, and nothing after it is imported.
+        const staged = await stageZip(
+            tenantA,
+            adminUserId,
+            [
+                { name: 'liar.pdf', body: Buffer.alloc(2 * 1024 * 1024, 0x25) },
+                { name: 'after.pdf', body: '%PDF-1.5\nafter' },
+            ],
+            'evidence-import-liar',
+            (zip) => understateUncompressedSize(zip, 'liar.pdf', 1000),
+        );
+
+        await expect(
+            runEvidenceImport({
+                tenantId: tenantA,
+                initiatedByUserId: adminUserId,
+                stagingPathKey: staged.pathKey,
+                stagingFileRecordId: staged.fileRecordId,
+            }),
+        ).rejects.toThrow(/inflated past .*refusing the archive/);
+
+        const landed = await testPrisma.evidence.count({
+            where: { tenantId: tenantA, title: { in: ['liar.pdf', 'after.pdf'] } },
+        });
+        expect(landed).toBe(0);
+
+        // A refused archive can never succeed on re-enqueue, so its staged
+        // copy is dropped rather than left in temp/ for good (#5307).
+        await expectStagingGone(staged);
+    });
+
+    test('a corrupt archive is refused AND its staged ZIP + FileRecord are removed (#5307)', async () => {
+        const staged = await stageZip(
+            tenantA,
+            adminUserId,
+            [{ name: 'x.pdf', body: '%PDF-1.5\nx' }],
+            'evidence-import-corrupt',
+            () => Buffer.from('this is not a zip archive at all'),
+        );
+
+        await expect(
+            runEvidenceImport({
+                tenantId: tenantA,
+                initiatedByUserId: adminUserId,
+                stagingPathKey: staged.pathKey,
+                stagingFileRecordId: staged.fileRecordId,
+            }),
+        ).rejects.toThrow();
+
+        await expectStagingGone(staged);
+    });
+
+    test('a refusal that is NOT about the archive leaves the staging for re-enqueue', async () => {
+        // A lost permission is not a property of the archive: the documented
+        // recovery is an operator re-enqueue, which needs the staged ZIP.
+        const staged = await stageZip(tenantA, readerUserId, [
+            { name: 'kept.pdf', body: '%PDF-1.5\nkept' },
+        ], 'evidence-import-kept');
+
+        await expect(
+            runEvidenceImport({
+                tenantId: tenantA,
+                initiatedByUserId: readerUserId,
+                stagingPathKey: staged.pathKey,
+                stagingFileRecordId: staged.fileRecordId,
+            }),
+        ).rejects.toThrow(/lacks evidence\.upload permission/);
+
+        const row = await testPrisma.fileRecord.findUnique({ where: { id: staged.fileRecordId } });
+        expect(row).not.toBeNull();
+        expect(row?.deletedAt).toBeNull();
+        await expect(getStorageProvider().head(staged.pathKey)).resolves.toBeDefined();
+        await getStorageProvider().delete(staged.pathKey);
     });
 
     test('macOS metadata entries are silently dropped (no skip noise)', async () => {

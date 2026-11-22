@@ -171,4 +171,26 @@ describe('Statement of Applicability page', () => {
         await waitFor(() => expect(toast.error).toHaveBeenCalledWith(R.soaView.writeRestricted));
         expect(toast.error).not.toHaveBeenCalledWith(R.soaView.justificationFailed);
     });
+
+    it('saves the justification through the applicability endpoint (#5218)', async () => {
+        renderPage();
+        await expandRow();
+        await act(async () => { fireEvent.click(document.getElementById('soa-edit-justification-ctl-1')!); });
+        const box = await screen.findByDisplayValue('Fully remote company.');
+        fireEvent.change(box, { target: { value: '  Fully remote; no office.  ' } });
+        const save = await screen.findByRole('button', { name: R.soaView.saveJustification });
+        await act(async () => { fireEvent.click(save); });
+
+        const fetchMock = global.fetch as jest.Mock;
+        await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+        const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        expect(url).toBe('/api/t/acme/controls/ctl-1/applicability');
+        expect(init.method).toBe('POST');
+        expect(JSON.parse(String(init.body))).toEqual({
+            applicability: 'NOT_APPLICABLE',
+            justification: 'Fully remote; no office.',
+        });
+        await waitFor(() => expect(refresh).toHaveBeenCalled());
+        expect(toast.error).not.toHaveBeenCalled();
+    });
 });

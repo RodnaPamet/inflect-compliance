@@ -378,6 +378,14 @@ export interface RuleChainDispatchPayload {
     data: Record<string, unknown>;
     /** Chain depth — a runtime cycle backstop (capped in the job). */
     depth: number;
+    /**
+     * The entity the chain started from (#5248). Carried link to link so an
+     * action that keys on it — CREATE_TASK dedupes per entity — sees the same
+     * entity at every step instead of collapsing every firing into one.
+     * Optional: a job enqueued before this field existed carries none.
+     */
+    entityType?: string;
+    entityId?: string;
 }
 
 /**
@@ -420,6 +428,9 @@ export interface SubflowDispatchPayload {
     parentExecutionId: string;
     triggerEvent: string;
     data: Record<string, unknown>;
+    /** The entity the invoking execution acted on (#5248), forwarded as for a chain step. */
+    entityType?: string;
+    entityId?: string;
     /**
      * Recursion depth, mirroring `RuleChainDispatchPayload.depth`.
      *
@@ -803,6 +814,18 @@ export interface AgentRunExecutePayload {
     tenantId: string;
     /** The `WorkflowRun` to execute. */
     runId: string;
+    /**
+     * Epoch ms the engine's `RUNTIME_MS` clock is measured from, set ONLY by a
+     * person's resume of a reasoning-engine run (#5534). Absent on a start, so
+     * the clock runs from the run's own `startedAt`.
+     *
+     * In the PAYLOAD, not read off the row, because a BullMQ retry re-delivers
+     * the same payload: a SIGTERM retry of a resumed segment keeps the resume's
+     * base and does not buy a fresh hour, which a `Date.now()` taken in the
+     * worker would. `executeQueuedWorkflowRun` ignores a value that is not a
+     * finite time between the run's start and now, falling back to `startedAt`.
+     */
+    clockBase?: number;
 }
 
 /**
@@ -880,6 +903,7 @@ export interface JobPayloadMap {
     'compliance-posture-summary-dispatch': CompliancePostureDispatchPayload;
     'legacy-access-pull': LegacyAccessPullPayload;
     'legacy-reconcile': LegacyReconcilePayload;
+    'agent-recert-packs-prepare': AgentRecertPacksPreparePayload;
     'identity-sync': IdentitySyncPayload;
     'identity-sync-dispatch': IdentitySyncDispatchPayload;
     'identity-leaver-pass': IdentityLeaverPassPayload;
@@ -905,6 +929,41 @@ export interface JobPayloadMap {
     'agent-owner-orphan-pass': AgentOwnerOrphanPassPayload;
     'agent-credential-hygiene': AgentCredentialHygienePayload;
     'agent-harness-estate-staleness': AgentHarnessEstateStalenessPayload;
+    'audit-pack-snapshot-encryption': AuditPackSnapshotEncryptionPayload;
+    'agent-fingerprint': AgentFingerprintPayload;
+    'knowledge-index': KnowledgeIndexPayload;
+}
+
+/**
+ * knowledge-index — index one source row into the knowledge store (vector
+ * store Phase 2.1, `docs/ai-architecture/weaviate.md`): cut its text into
+ * chunks, store them encrypted, embed the ones that need a vector and file the
+ * vectors through `VectorRepository`.
+ *
+ * All three fields REQUIRED: the unit is one row, and there is no sweep shape.
+ * `sourceModel` is a string here (this file imports nothing) and is checked
+ * against `KNOWLEDGE_SOURCE_MODELS` by the job, which refuses an unknown one by
+ * name (`UNKNOWN_SOURCE_MODEL`). The payload carries no text: the job reads the
+ * row itself, under RLS, when it runs, so a retry indexes the row as it is
+ * then, never as it was when the job was queued.
+ */
+export interface KnowledgeIndexPayload {
+    tenantId: string;
+    /** A Prisma model name in `KNOWLEDGE_SOURCE_MODELS`, e.g. `PolicyVersion`. */
+    sourceModel: string;
+    sourceId: string;
+    requestId?: string;
+}
+
+/**
+ * agent-fingerprint — the nightly agent behaviour fingerprint (Morpheus roadmap
+ * Phase 1). `tenantId` absent is the scheduled sweep over the tenants the
+ * operator named in `AGENT_BEHAVIOUR_DETECTOR_TENANTS`; present runs that one
+ * tenant, and only if the same two keys admit it. Scores the UTC day before the
+ * run; idempotent on (tenant, agent, day).
+ */
+export interface AgentFingerprintPayload {
+    tenantId?: string;
 }
 
 /**
@@ -962,6 +1021,17 @@ export interface AgentCredentialHygienePayload {
  * Findings only: no shape of this payload writes an estate or a scan.
  */
 export interface AgentHarnessEstateStalenessPayload {
+    tenantId?: string;
+}
+
+/**
+ * audit-pack-snapshot-encryption — encrypt audit-pack snapshots written in
+ * plaintext before #5150, under each tenant's own DEK (#5455). `tenantId`
+ * absent is the scheduled sweep, which finds every tenant holding a plaintext
+ * snapshot; present runs that one tenant. No shape of this payload decrypts,
+ * deletes or rewrites a value that is already ciphertext.
+ */
+export interface AuditPackSnapshotEncryptionPayload {
     tenantId?: string;
 }
 
@@ -1067,6 +1137,27 @@ export interface LegacyAccessPullPayload {
 export interface LegacyReconcilePayload {
     tenantId: string;
     snapshotId: string;
+}
+
+/**
+ * Prepare an AGENT access review's reviewer packs off the request (#5317).
+ * Enqueued by `requestAgentReviewPacks` when a campaign needs more pack runs
+ * than one request should hold (`SYNC_PACK_RUN_LIMIT`), with a job id fixed
+ * per campaign (`agentPackPreparationJobId`) so a second press finds the first.
+ */
+export interface AgentRecertPacksPreparePayload {
+    /** Tenant of the campaign. Required for isolation. */
+    tenantId: string;
+    accessReviewId: string;
+    /**
+     * The person who asked. The job runs as them, re-read when it runs
+     * (`resolveInitiatorContext`): a member who left, was deactivated or lost
+     * `access_reviews.create` or the admin tier in between is refused, and
+     * nothing is prepared on their behalf.
+     */
+    requestedByUserId: string;
+    /** The asking request's id, for log correlation. */
+    requestId?: string;
 }
 
 export interface IdentityLeaverPassPayload {
@@ -1192,6 +1283,17 @@ export const JOB_DEFAULTS: Record<JobName, {
     removeOnComplete: number | boolean;
     removeOnFail: number | boolean;
 }> = {
+    'agent-recert-packs-prepare': {
+        // ONE attempt. Every refusal it can reach is a fact a retry seconds
+        // later does not change (the requester lost the key, the preparer was
+        // killed, the packs exist), and a retry of a run that broke would start
+        // every page's workflow run again. The page shows the failure and the
+        // person presses Prepare again, which removes the failed job first.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 0 },
+        removeOnComplete: 100,
+        removeOnFail: 200,
+    },
     'legacy-reconcile': {
         // NOT retried, same reasoning as the pull it follows. A refusal is
         // already a PARTIAL execution row carrying a named reason — the snapshot
@@ -1223,8 +1325,10 @@ export const JOB_DEFAULTS: Record<JobName, {
         //
         // Three attempts cannot triple the cost: the run budget is seeded from
         // what earlier segments already spent (`actionsAlready`, `spent.TOKENS`),
-        // and `RUNTIME_MS` is measured from the RUN's own start, so a retry of
-        // an old run halts at the wall clock instead of buying a fresh one.
+        // and `RUNTIME_MS` is measured from the RUN's own start — or, for a
+        // person's resume, from the `clockBase` that resume put in the payload
+        // (#5534) — never from the attempt, so a retry re-delivers the same
+        // base and halts at the wall clock instead of buying a fresh one.
         attempts: 3,
         backoff: { type: 'exponential', delay: 5000 },
         removeOnComplete: 100,
@@ -1346,6 +1450,38 @@ export const JOB_DEFAULTS: Record<JobName, {
         attempts: 1,
         backoff: { type: 'fixed', delay: 1000 },
         removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'audit-pack-snapshot-encryption': {
+        // ONE attempt. The work is idempotent — a row once encrypted is never
+        // selected again — so a retry minutes later would meet the same fault
+        // on the same rows. Tomorrow's tick is the retry.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 1000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'agent-fingerprint': {
+        // ONE attempt. The pass is idempotent on (tenant, agent, day), so a
+        // retry would find the scored days and write nothing — but it would
+        // add an execution row per tenant. Tomorrow's tick scores tomorrow's
+        // day; a missed night is re-run by hand with `tenantId`.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 1000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'knowledge-index': {
+        // RETRIED, because a retry can only finish what an attempt started:
+        // chunks are kept by content hash and a chunk whose vector already
+        // carries its hash is not embedded again, so a second attempt skips
+        // the batches the first stored. Only a transient embedding failure (a
+        // timeout, a refused connection, a 5xx) is retried at all; every other
+        // failure is named and marked `noRetry`. The backoff gives a busy
+        // `tei-embed` (one CPU, about 0.7 s a passage) room to drain.
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 30_000 },
+        removeOnComplete: 200,
         removeOnFail: 500,
     },
     'agent-kill-switch-drill': {

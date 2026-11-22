@@ -12,7 +12,7 @@ import { AgentProposalKind } from '@prisma/client';
 
 import {
     CreateControlSchema,
-    CreateFindingSchema,
+    ProposedFindingSchema,
     CreatePolicySchema,
     CreateRiskSchema,
     UpdateControlSchema,
@@ -20,11 +20,13 @@ import {
     UpdateRiskSchema,
 } from '@/lib/schemas';
 import { ExternalWriteProposalPayloadSchema } from '@/lib/agentic/external-write-proposal';
+import { ProposedProcessMapSchema } from '@/lib/agentic/process-map-proposal';
 import {
     PROPOSAL_FIELD_NAMES,
     PROPOSAL_KINDS,
     proposalFieldLabelKey,
     proposalKindLabelKey,
+    proposalKindNoun,
 } from '@/lib/agentic/proposal-labels';
 
 const en = require('../../messages/en.json') as Record<string, unknown>;
@@ -59,9 +61,11 @@ const PAYLOAD_SCHEMAS = {
     CreateControlSchema,
     UpdateControlSchema,
     CreatePolicySchema,
-    CreateFindingSchema,
+    ProposedFindingSchema,
     UpdateFindingSchema,
     ExternalWriteProposalPayloadSchema,
+    // Reached through `.superRefine`: `keysOf` walks the wrapper to the shape.
+    ProposedProcessMapSchema,
 };
 
 describe('proposal labels', () => {
@@ -104,5 +108,21 @@ describe('proposal labels', () => {
         expect(proposalFieldLabelKey('legacyColumn')).toBeNull();
         // A prototype key is not a field name.
         expect(proposalFieldLabelKey('constructor')).toBeNull();
+    });
+});
+
+describe('proposalKindNoun', () => {
+    it('names every kind in words, never as its stored code', () => {
+        for (const kind of PROPOSAL_KINDS) {
+            const noun = proposalKindNoun(kind);
+            expect({ kind, noun: /^[a-z ]+$/.test(noun) }).toEqual({ kind, noun: true });
+        }
+        expect(proposalKindNoun('PROCESS_MAP')).toBe('process map');
+        expect(proposalKindNoun('EXTERNAL_WRITE')).toBe('external write');
+    });
+
+    it('an unknown kind, or a prototype key, reads as "item"', () => {
+        expect(proposalKindNoun('SOMETHING_NEW')).toBe('item');
+        expect(proposalKindNoun('constructor')).toBe('item');
     });
 });

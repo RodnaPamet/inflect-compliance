@@ -30,13 +30,15 @@ import { ProgressBar } from '@/components/ui/progress-bar';
 import { Loader2 } from 'lucide-react';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { isFinalizedNis2Run } from '@/lib/nis2-run-status';
+import { nis2QuestionLanguage, nis2Text } from '@/lib/nis2/question-language';
 
 // Required CC BY 4.0 attribution — MUST render wherever the questions show.
 export const NIS2_ATTRIBUTION_TEXT =
     'NIS2 gap-assessment questions © NISD2 contributors (Kardashev Catalyst UG / nisd2.eu), CC BY 4.0';
 const NIS2_SOURCE_URL = 'https://github.com/NISD2/nis2-gap-assessment-schema';
 
-type Bilingual = { en: string; de: string };
+/** The source's `{ en, de }`, plus `bg` where #4929 translated the text. */
+type Bilingual = { en: string; de?: string; bg?: string };
 type Domain = { id: number; code: string; name: Bilingual; day: number };
 type Question = {
     id: string;
@@ -65,8 +67,9 @@ type AssessmentState = {
 };
 
 // The step's own words are `onboarding.nis2Step.*` (#4701). The questions
-// and domain names are the source's (English and German only, CC BY 4.0) and
-// are shown as published.
+// and domain names are the source's (CC BY 4.0), shown in the reader's
+// language where a translation exists and in English otherwise — the same
+// rule as the readiness page (`nis2QuestionLanguage`, #5764).
 const ANSWER_OPTIONS: readonly AnswerVal[] = ['NA', 'NO', 'PARTIALLY', 'YES'];
 
 function criticalityVariant(c: string): 'error' | 'warning' | 'info' | 'neutral' {
@@ -94,7 +97,7 @@ export function Nis2SelfAssessmentStep({
     const label = (group: 'answer' | 'respondent' | 'criticality', value: string) =>
         tn.has(`${group}.${value}`) ? tn(`${group}.${value}`) : value;
     const locale = useLocale();
-    const lang = locale === 'de' ? 'de' : 'en';
+    const lang = nis2QuestionLanguage(locale);
     const [state, setState] = useState<AssessmentState | null>(null);
     const [answers, setAnswers] = useState<Record<string, Answer>>({});
     const [loading, setLoading] = useState(true);
@@ -236,7 +239,7 @@ export function Nis2SelfAssessmentStep({
                                     <StatusBadge variant="neutral" size="sm">
                                         {domain.code}
                                     </StatusBadge>
-                                    <span className="font-medium">{domain.name[lang]}</span>
+                                    <span className="font-medium">{nis2Text(domain.name, lang)}</span>
                                     <span className="text-xs text-content-muted">
                                         {domAnswered}/{qs.length}
                                     </span>
@@ -264,10 +267,10 @@ export function Nis2SelfAssessmentStep({
                                             >
                                                 <div className="flex items-start gap-tight flex-wrap">
                                                     <span className="text-sm text-content-default flex-1 min-w-[12rem]">
-                                                        {q.plainText[lang]}
+                                                        {nis2Text(q.plainText, lang)}
                                                     </span>
                                                     <InfoTooltip
-                                                        content={q.text[lang]}
+                                                        content={nis2Text(q.text, lang)}
                                                         aria-label={t('regulatorWording')}
                                                     />
                                                     <StatusBadge

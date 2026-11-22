@@ -6,17 +6,19 @@ import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers/types';
 import { recordStep } from '@/lib/agentic/drivers/step-recorder';
 import { recordExternalToolDecision } from './tool-decision';
+import { toolCallIdsOf } from './turn-tool-calls';
 import {
     externalResidencyRefusal,
     type ExternalAiAcknowledgement,
 } from '../external-residency-gate';
-import { providerIdOf } from './model-selection';
+import { onSameRoute, providerIdOf, type FlueModelRole } from './model-selection';
 import {
     updateRun,
     failRun,
     haltRunAtCap,
     haltRunAtGuard,
     haltRunAtKill,
+    isRunAborted,
     type CapBesideKill,
 } from '@/lib/agentic/drivers/run-settlement';
 import { getRunRow, proposedItemsSoFar } from '@/lib/agentic/drivers/run-store';
@@ -41,7 +43,7 @@ import { SkillLoadError } from './skills/index';
 import { skillPinDrift } from './skills/resolve';
 import { resolveRunSkillMount } from './skills/tenant-mount';
 import { bindRun, releaseRun } from './run-binding';
-import { readFanOutCap } from '@/lib/agentic/subagent-fanout-policy';
+import { readTurnCaps } from '@/lib/agentic/turn-caps-policy';
 import { releaseDelegationCounts, DELEGATION_TOOL_NAME } from './delegation-gate';
 import {
     resolveKillState,
@@ -157,7 +159,7 @@ function capBesideKill(latch: CapLatch, killed: KillLatch): CapBesideKill | null
 // app-layer reader importing the constant from here failed to LOAD rather than
 // failing an assertion. Re-exported so every existing importer is unaffected.
 export { EMPTY_TOOLSET_MESSAGE } from './empty-toolset-message';
-import { EMPTY_TOOLSET_MESSAGE } from './empty-toolset-message';
+import { emptyCatalogueMessage } from '@/lib/agentic/empty-catalogue-message';
 
 
 /**
@@ -180,6 +182,54 @@ interface TurnRecord {
     tokensOut: number;
     /** The call's own wall clock. `null` on the aggregate fallback below. */
     durationMs: number | null;
+    /**
+     * WHICH ROLE made the call (D-L3-1). A `turn` event emitted inside a
+     * delegation carries the runtime's `taskId`; the parent's own calls carry
+     * none. So `taskId` present is a WORKER call and absent is the
+     * SUPERVISOR's. The aggregate fallback is labelled supervisor: it is the
+     * parent response's own roll-up.
+     */
+    role: FlueModelRole;
+}
+
+/**
+ * WHICH MODEL CALL ISSUED A TOOL CALL, recorded on that call's TOOL_CALL step
+ * as `outputJson.modelTurn` (owner decision 2026-11-15, Inspect task 9).
+ *
+ * Flue records ONE MODEL_CALL step per dispatch, after every call in it, so
+ * the ledger alone cannot say whether two tool calls came from the same model
+ * reply or from two. The runtime can: its `turn` event (one per model call,
+ * emitted when the reply ends and BEFORE that reply's tool calls run) carries
+ * the reply, whose `toolCall` blocks name the ids the tool `run`s then receive
+ * as `toolCallId`. So each id is mapped to the call that issued it, and the
+ * step names it.
+ *
+ * `segment` is the seq the dispatch started at (`fromSeq`) and `call` the
+ * 1-based ordinal of the model call within it, in the order the runtime
+ * reported them (a worker's calls and a compaction count too: each is a model
+ * call). The pair, because the ordinal restarts with every dispatch and a
+ * resumed run's dispatches are not always separated by a MODEL_CALL step (a
+ * dispatch that throws records none). Absent where the runtime named no turn
+ * for the id, and on every step written before this existed: a reader treats
+ * absence as "not recorded", never as a turn.
+ *
+ * In `outputJson`, not `inputJson`: a TOOL_CALL's input is the model's
+ * arguments, and a key added to them could not be told from an argument of
+ * that name (the reason `WorkflowStep.subagentName` is a column). Flue's tool
+ * outputs are the engine's own objects (`{ error }`, `{ refused }`), and the
+ * step projection lifts this key out into `RunStepFeedRow.modelTurn`, so the
+ * `outputJson` every reader of the feed sees is what it was.
+ */
+export interface FlueModelTurn {
+    segment: number;
+    call: number;
+}
+
+/** A dispatch's tokens split by the role that spent them. Sums to the total. */
+function tokensByRole(turns: readonly TurnRecord[]): Record<FlueModelRole, number> {
+    const out: Record<FlueModelRole, number> = { supervisor: 0, worker: 0 };
+    for (const t of turns) out[t.role] += t.totalTokens;
+    return out;
 }
 
 // `recordModelDecision` and `aiSystemIdFor` USED TO LIVE HERE. #2791 moved
@@ -210,8 +260,17 @@ export async function executeFlueRun(
      * Optional so every existing caller and test compiles unchanged; absent
      * reads as unacknowledged, which is the refusing direction.
      */
-    postures: { externalAiAcknowledgement?: ExternalAiAcknowledgement } = {},
+    postures: {
+        externalAiAcknowledgement?: ExternalAiAcknowledgement;
+        /**
+         * The WORKER role's specifier (D-L3-1): the model the run's subagents
+         * ask for. Absent means the supervisor's, which is every caller that
+         * predates the role axis — so their runs are unchanged.
+         */
+        workerModelSpecifier?: string;
+    } = {},
 ): Promise<RunDriverOutcome> {
+    const workerModelSpecifier = postures.workerModelSpecifier ?? modelSpecifier;
     // BOOT FIRST, and check the specifier against what actually got
     // registered. An unregistered model would otherwise surface from inside pi
     // as a stream error, mid-run, with the run row already created and an
@@ -246,8 +305,23 @@ export async function executeFlueRun(
         return { status, stepFailures: 0 };
     }
 
+    // THE ROLE NEVER CHOOSES THE ROUTE (D-L3-1, G1). Both specifiers were
+    // resolved under one set of residency terms and `resolveFlueModel` never
+    // gives them different providers; this is the engine's own check of that,
+    // before the runtime boots, so a worker can never be the way a run's
+    // content reaches a provider its supervisor could not.
+    if (!onSameRoute(workerModelSpecifier, modelSpecifier)) {
+        const status = await failRun(ctx, runId, refusalMessage('WORKER_ROUTE_MISMATCH'));
+        return { status, stepFailures: 0 };
+    }
+
     const providers = await ensureFlueRuntime();
-    if (!flueModelIsRegistered(modelSpecifier, providers)) {
+    // BOTH ROLES must be registered: a worker model the runtime does not carry
+    // would otherwise fail inside pi on the first delegation, mid-run.
+    if (
+        !flueModelIsRegistered(modelSpecifier, providers) ||
+        !flueModelIsRegistered(workerModelSpecifier, providers)
+    ) {
         const status = await failRun(ctx, runId, refusalMessage('MODEL_NOT_REGISTERED'));
         return { status, stepFailures: 0 };
     }
@@ -317,7 +391,7 @@ export async function executeFlueRun(
     //
     // The peer replies go in HERE for that reason: the digest must cover them,
     // because they are part of the prompt the model saw.
-    const message = runMessage(def, fromSeq, declared.input, peerReplies);
+    const message = runMessage(def, declared.input, peerReplies);
 
     // The SETTLED terms — membership, key scopes, policy card, autonomy
     // ceiling — resolved once, here, exactly as the static driver does.
@@ -405,8 +479,17 @@ export async function executeFlueRun(
      * exit below.
      */
     const turns: TurnRecord[] = [];
+    // WHICH MODEL CALL ISSUED EACH TOOL CALL (`FlueModelTurn`). Counted before
+    // the usage check below: a call the provider reported no usage for is
+    // still a call, and its tool calls still came from it. Taken (deleted) by
+    // the step that records the call, as `seen` is.
+    let modelCallsSeen = 0;
+    const turnOfCall = new Map<string, FlueModelTurn>();
     const onTurn = (event: FlueEvent, eventCtx: FlueEventContext): void => {
         if (event.type !== 'turn' || eventCtx.id !== runId) return;
+        modelCallsSeen += 1;
+        // The reply's tool-call IDS, never its text (`toolCallIdsOf`).
+        for (const id of toolCallIdsOf(event.response)) turnOfCall.set(id, { segment: fromSeq, call: modelCallsSeen });
         const usage = event.response.usage;
         // Absent "when the provider reported none". Nothing was measured, so
         // nothing is claimed — the same reading `readUsage` takes.
@@ -420,7 +503,15 @@ export async function executeFlueRun(
             tokensIn: usage.input,
             tokensOut: usage.output,
             durationMs: event.durationMs,
+            role: event.taskId ? 'worker' : 'supervisor',
         });
+    };
+    /** The call that issued this tool call, once: the entry is that call's. */
+    const takeTurn = (toolCallId: string | undefined): FlueModelTurn | undefined => {
+        if (toolCallId === undefined) return undefined;
+        const turn = turnOfCall.get(toolCallId);
+        turnOfCall.delete(toolCallId);
+        return turn;
     };
     /**
      * Registered inside the `try` so the `finally` below is its only disposer —
@@ -468,7 +559,10 @@ export async function executeFlueRun(
                 // THIS call's tokens, not the dispatch aggregate — the whole
                 // point of reading the event stream.
                 { tokensIn: turn.tokensIn, tokensOut: turn.tokensOut },
-                modelSpecifier,
+                // THE ROLE'S model, not the run's: a worker call recorded
+                // under the supervisor's model would put the wrong model on
+                // the Art 12 row the moment the two differ (D-L3-1).
+                turn.role === 'worker' ? workerModelSpecifier : modelSpecifier,
                 turn.durationMs,
             );
         }
@@ -578,6 +672,8 @@ export async function executeFlueRun(
     }
     const latch: CapLatch = { halt: null };
     const killed: KillLatch = { verdict: null, afterCap: false };
+    /** An operator's Abort, found before a model call (#5366). */
+    const aborted = { byOperator: false };
     let seq = fromSeq;
     let stepFailures = 0;
 
@@ -593,6 +689,10 @@ export async function executeFlueRun(
      * In order:
      *   1. The kill switch, uncached, for the reason the boot check gives. A
      *      read that throws refuses the call, as `assertNotKilled` does.
+     *   1b. The run's own status (#5366). An operator's Abort writes ABORTED
+     *      on the row while the dispatch runs; without this read the model was
+     *      called again and the run settled over the abort. Read only when no
+     *      kill is engaged, so a kill costs no extra query.
      *   2. A cap that latched at a tool call, or at a check below on an
      *      earlier call.
      *   3. The wall clock, which was otherwise re-checked only at a tool call.
@@ -624,6 +724,11 @@ export async function executeFlueRun(
             throw new Error(killRefusalMessage(kill.scope));
         }
 
+        if (aborted.byOperator || (await isRunAborted(ctx, runId))) {
+            aborted.byOperator = true;
+            throw new Error('This run was aborted by an operator.');
+        }
+
         if (latch.halt) throw new Error(latch.halt.message);
 
         const runtimeHalt = budget.charge('RUNTIME_MS', 0);
@@ -653,6 +758,8 @@ export async function executeFlueRun(
             seen.delete(id);
             return o;
         },
+        // TAKEN, as the verdict is, and for the same two reasons.
+        takeTurn: (id) => takeTurn(id),
     }));
 
     // THE SKILLS THIS DEFINITION ASKS FOR, resolved here rather than in the
@@ -695,25 +802,32 @@ export async function executeFlueRun(
     // driver reads the number and the enforcement compares against what it was
     // handed — the same shape as every other authority term in this binding.
     //
-    // Never throws and never resolves to "unlimited": see
-    // `subagent-fanout-policy` for why a failed read here takes the opposite
-    // direction to the concurrent-run cap's.
-    const maxSubagentsPerTurn = await readFanOutCap(ctx.tenantId, ctx.requestId);
+    // The value is the delegations half of the org-level turn caps (#4594):
+    // the lower of the organization's ceiling and the workspace's narrowing.
+    // Tool calls per turn is the Tool Runner's alone: Flue's runtime
+    // dispatches the model's tool calls itself and offers no per-turn bound.
+    //
+    // Never throws and never resolves to "unlimited": see `turn-caps-policy`
+    // for why a failed read here takes the opposite direction to the
+    // concurrent-run cap's.
+    const maxSubagentsPerTurn = (await readTurnCaps(ctx.tenantId, ctx.requestId)).delegationsPerTurn.value;
 
     bindRun(runId, {
         tools,
         modelSpecifier,
+        workerModelSpecifier,
         skills,
         maxSubagentsPerTurn,
         // THE DELEGATE'S ANSWER, SCANNED ON RE-ENTRY (#3473, applying #3468's
         // rule to a new inbound edge). Built here because the guard reaches
         // `app-layer/ai/guard` and Prisma, which the interceptor's ESM graph
         // cannot load — the same reason the tools and the cap are resolved
-        // here. It throws to block, and reports through `noteVerdict`, so a
-        // flagged answer trips the same latch a flagged tool result does and
-        // settles the run `AWAITING_APPROVAL`.
+        // here. It records through the run's own latch (`offered.review`,
+        // whose observer is `noteVerdict`), so a flagged answer refuses every
+        // later tool call as a flagged tool result does (#5290) and settles
+        // the run `AWAITING_APPROVAL`.
         guardDelegateOutput: (text, taskId) =>
-            guardDelegateAnswer(ctx, text, taskId, noteVerdict),
+            guardDelegateAnswer(ctx, text, taskId, offered.review),
         // THE KILL SWITCH AND THE CAPS, before every model call (#4196).
         beforeModelCall,
         // THE DELEGATION, IN THE LEDGER (#3473 part 3).
@@ -754,13 +868,10 @@ export async function executeFlueRun(
                 // the upper. Together they say which steps the delegate
                 // produced.
                 input: { agent: d.agent, taskId: d.taskId, fromSeq: d.fromSeq },
-                ...(d.answerAccepted
-                    ? {}
-                    : {
-                        // A REFUSED answer is the one outcome a reader cannot
-                        // infer from the row's existence, so it is stated.
-                        output: { refused: 'ai_guard_blocked' },
-                    }),
+                // A REFUSED answer is the one outcome a reader cannot infer
+                // from the row's existence, so it is stated. The model call
+                // that issued the `task` call rides beside it (`FlueModelTurn`).
+                ...delegationOutput(d.answerAccepted, takeTurn(d.toolCallId)),
             });
         },
     });
@@ -814,6 +925,7 @@ export async function executeFlueRun(
                 tokensIn: usage.tokensIn,
                 tokensOut: usage.tokensOut,
                 durationMs: null,
+                role: 'supervisor',
             });
         }
 
@@ -837,6 +949,11 @@ export async function executeFlueRun(
                 // the dispatch, and its seq feeds the step caps — but a reader
                 // must not have to assume that meant one call.
                 modelCalls: turns.length,
+                // THE SAME SPEND, BY ROLE (D-L3-1). Labels only: the run's
+                // `costTokens`, its caps and the monthly budget are charged
+                // the total exactly as before — a worker's tokens are the
+                // parent run's tokens.
+                tokensByRole: tokensByRole(turns),
                 // THE KEY TO THIS STEP'S ART 12 ROWS.
                 //
                 // `AiDecisionLog` carries no `runId` — deliberately, it is the
@@ -856,7 +973,7 @@ export async function executeFlueRun(
                 // input, already stored on the decision row; recording it adds
                 // no prompt text to a ledger that deliberately holds none.
                 // `message`, the SAME local `settleTurns` passes as
-                // `sanitizedInput` — not a second `runMessage(def, fromSeq)`
+                // `sanitizedInput` — not a second `runMessage(def, …)`
                 // call. Two spellings of one value is how the step and the row
                 // drift into digesting different things while both look right.
                 decisionDigest: computeInputDigest(message),
@@ -869,6 +986,11 @@ export async function executeFlueRun(
         // charges `costTokens` and persists it, before any settle below reads
         // it.
         await settleTurns(reply.text ?? null);
+
+        // AN OPERATOR'S ABORT is the settlement (#5366): their ABORTED stands,
+        // and nothing below writes over it. `settleTurns` above is accounting
+        // and lands — the calls before the abort were made.
+        if (aborted.byOperator) return { status: 'ABORTED', stepFailures };
 
         // A KILL FOUND BEFORE A MODEL CALL wins over the reply (#4196). The
         // runtime may turn the refusal into a tidy finish; reporting that as
@@ -954,13 +1076,26 @@ export async function executeFlueRun(
 
         // ONE write, so the two outcomes cannot drift apart in the fields they
         // share — only `status` and `errorMessage` differ.
-        await updateRun(ctx, runId, {
+        const settled = await updateRun(ctx, runId, {
             status: emptyCatalogue ? 'EMPTY_CATALOGUE' : 'COMPLETED',
             completedAt: new Date(),
             stepCount: seq,
             costTokens,
-            ...(emptyCatalogue ? { errorMessage: EMPTY_TOOLSET_MESSAGE } : {}),
+            // WHY it is empty (#5045): "holds no grants" only when it holds none.
+            ...(emptyCatalogue
+                ? {
+                      errorMessage: emptyCatalogueMessage('flue', {
+                          grantedTools: invocation.grantedTools,
+                          permittedTools: invocation.policyCard?.inForce.value.permittedTools ?? null,
+                          offeredTools: invocation.offeredTools,
+                          omitted: offered.omitted,
+                      }),
+                  }
+                : {}),
         });
+        // Aborted after the last model call: the write above did not land on
+        // the operator's ABORTED, and the run is not reported as finished (#5366).
+        if (!settled) return { status: 'ABORTED', stepFailures };
         // TWO literal returns rather than one ternary, deliberately. The output
         // guard pins each return expression as a literal — the assertion is
         // that model prose never escapes through the return value — so a
@@ -979,6 +1114,10 @@ export async function executeFlueRun(
         // response never settled, and inventing one from a throw would put
         // text in the regulator's record that the model did not finish saying.
         await settleTurns(null);
+
+        // An operator's Abort explains the throw (#5366): the interceptor
+        // refused the call, and their ABORTED is the settlement.
+        if (aborted.byOperator) return { status: 'ABORTED', stepFailures };
 
         // A kill found before a model call explains the throw (#4196): the
         // interceptor refused the call. Before the cap, for the reason the
@@ -1036,6 +1175,18 @@ export async function executeFlueRun(
     }
 }
 
+/** A delegation step's output: the refusal when the answer was refused, and the issuing call when known. */
+function delegationOutput(
+    answerAccepted: boolean,
+    turn: FlueModelTurn | undefined,
+): { output?: { refused?: 'ai_guard_blocked'; modelTurn?: FlueModelTurn } } {
+    const output = {
+        ...(answerAccepted ? {} : { refused: 'ai_guard_blocked' as const }),
+        ...(turn ? { modelTurn: turn } : {}),
+    };
+    return Object.keys(output).length > 0 ? { output } : {};
+}
+
 /**
  * One offered tool, wrapped so the ledger and the budget see every call.
  *
@@ -1055,6 +1206,7 @@ function wrapForLedger(
         forgetOrigin: (toolCallId: string) => void;
         onFailure: () => void;
         takeVerdict: (toolCallId: string) => StepGuardObservation | undefined;
+        takeTurn: (toolCallId: string) => FlueModelTurn | undefined;
     },
 ): FlueToolDefinition {
     return {
@@ -1130,6 +1282,9 @@ function wrapForLedger(
             // BEFORE the call, because the call is what reads it.
             ledger.noteOrigin(context.toolCallId, seq);
             const startedAt = Date.now();
+            // Read before the call: the `turn` event that named this id was
+            // emitted before the runtime ran it.
+            const turn = ledger.takeTurn(context.toolCallId);
             try {
                 const result = await tool.run(context);
                 const verdict = ledger.takeVerdict(context.toolCallId);
@@ -1147,6 +1302,9 @@ function wrapForLedger(
                     // version and the manifest digest, not the input), and
                     // they are the reviewable half.
                     input: context.data,
+                    // Which model call issued it (`FlueModelTurn`); nothing
+                    // else, so a DONE step's output stays the engine's own.
+                    ...(turn ? { output: { modelTurn: turn } } : {}),
                 });
                 // The Art 12 disclosure, for an external tool only — a no-op
                 // for every built-in, which is why it is called unconditionally
@@ -1172,7 +1330,10 @@ function wrapForLedger(
                     guardVerdict: verdict?.verdict,
                     guardRuleIds: verdict?.ruleIds,
                     input: context.data,
-                    output: { error: err instanceof Error ? err.message : String(err) },
+                    output: {
+                        error: err instanceof Error ? err.message : String(err),
+                        ...(turn ? { modelTurn: turn } : {}),
+                    },
                 });
                 // A call that threw still SENT something. Disclosing only the
                 // successes would record the calls that worked rather than the

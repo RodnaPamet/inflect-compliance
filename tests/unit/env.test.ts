@@ -311,4 +311,52 @@ describe('Environment Variable Validation', () => {
             // new password check — the not-present branch returns early.
         });
     });
+
+    // ─── Web Bot Auth deployment signing seed (web-bot-auth Phase 1) ───
+    //
+    // Optional; when present it must be a 32-byte Ed25519 seed that is
+    // not another purpose's secret, and in production not a published
+    // test seed. The value never appears in the refusal.
+    describe('WEB_BOT_AUTH_SIGNING_KEY refusals', () => {
+        const PROD = {
+            NODE_ENV: 'production',
+            DATA_ENCRYPTION_KEY: 'a-real-production-key-at-least-32-chars-long-deterministic',
+            REDIS_URL: 'redis://user:pass@redis.example.internal:6379',
+            STORAGE_PROVIDER: 'local',
+        };
+        // A fixture seed, not a credential — the refusal tests need a well-formed value.
+        const WELL_FORMED_SEED = '4f3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e'; // pragma: allowlist secret
+
+        it('boots production with a well-formed seed', () => {
+            const result = runEnvScript({ ...PROD, WEB_BOT_AUTH_SIGNING_KEY: WELL_FORMED_SEED });
+            if (!result.success) console.error(result.error);
+            expect(result.success).toBe(true);
+        });
+
+        it('refuses a malformed seed without echoing it', () => {
+            const result = runEnvScript({ ...PROD, WEB_BOT_AUTH_SIGNING_KEY: 'not-a-seed-value-xyzzy' });
+            expect(result.success).toBe(false);
+            expect(result.error).toContain('WEB_BOT_AUTH_SIGNING_KEY is not a 32-byte Ed25519 seed');
+            expect(result.error).not.toContain('not-a-seed-value-xyzzy');
+        });
+
+        it('refuses a seed that is also the DATA_ENCRYPTION_KEY', () => {
+            const result = runEnvScript({
+                ...PROD,
+                DATA_ENCRYPTION_KEY: WELL_FORMED_SEED,
+                WEB_BOT_AUTH_SIGNING_KEY: WELL_FORMED_SEED,
+            });
+            expect(result.success).toBe(false);
+            expect(result.error).toContain('WEB_BOT_AUTH_SIGNING_KEY equals DATA_ENCRYPTION_KEY');
+        });
+
+        it('refuses a published test seed in production', () => {
+            const result = runEnvScript({
+                ...PROD,
+                WEB_BOT_AUTH_SIGNING_KEY: '9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60',
+            });
+            expect(result.success).toBe(false);
+            expect(result.error).toContain('WEB_BOT_AUTH_SIGNING_KEY is a published test seed');
+        });
+    });
 });

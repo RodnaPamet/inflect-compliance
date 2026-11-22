@@ -174,6 +174,18 @@ describe('the app and worker are given only variables the code declares', () => 
         ),
     );
 
+    /**
+     * Variables the RUNTIME reads before any of our code runs, so `env.ts`
+     * cannot declare them and they still configure something. Each entry says
+     * what reads it. Keep this to the Node binary's own variables: an entry here
+     * is a variable this guard stops asking about.
+     */
+    const READ_BY_THE_RUNTIME: Record<string, string> = {
+        // The `node` binary reads it at start. Capacity C1 states the V8 heap
+        // on app and worker with it, below their mem_limit (#5324).
+        NODE_OPTIONS: 'node',
+    };
+
     /** The keys of a Compose `environment`, in either of its two shapes. */
     const keysOf = (env: ComposeService['environment']): string[] =>
         Array.isArray(env) ? env.map((e) => e.split('=')[0]) : Object.keys(env ?? {});
@@ -189,7 +201,9 @@ describe('the app and worker are given only variables the code declares', () => 
         it.each(['app', 'worker'])('%s sets nothing src/env.ts does not declare', (name) => {
             const service = services[name];
             expect(service).toBeDefined();
-            const undeclared = keysOf(service?.environment).filter((k) => !declared.has(k));
+            const undeclared = keysOf(service?.environment).filter(
+                (k) => !declared.has(k) && !(k in READ_BY_THE_RUNTIME),
+            );
             expect({ [name]: undeclared }).toEqual({ [name]: [] });
         });
     });

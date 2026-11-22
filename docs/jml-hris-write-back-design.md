@@ -480,10 +480,14 @@ product filled apart from one HR filled, during an access review months later. (
 description of the row this design would write, not a quotation — no such row exists yet.) The
 non-empty-capture rule (`identity-write-journal.ts:92-93`) is handled in Decision 3.
 
-**What it does not need: a revert verb.** The journal's read half already notes that `DirectoryWriter`
-declares no `enable()` deliberately. Here the point is sharper — the prior state is *empty*, and
-re-applying emptiness to a work-email field is a **destructive act, not a restore**. So the journal
-for this direction is read-only evidence. `findRestorableState`
+**What it does not need: a revert verb.** The directory journal's own framing has since moved —
+`DirectoryWriter` declares an optional `restore?()`, both live writers implement it, and
+`admin/identity-write-journal/restorable/[accountId]` POSTs to it (#5570) — and the argument here is
+UNAFFECTED, in fact sharper for the contrast. A directory restore can undo something this product
+did and still prove it did, by re-applying one specific captured value and refusing unless the
+account is untouched. Here the prior state is *empty*, and re-applying emptiness to a work-email
+field is a **destructive act, not a restore**: there is nothing to prove and nothing to put back. So
+the journal for this direction is read-only evidence. `findRestorableState`
 (`identity-write-journal.ts:410`) should not be wired to it.
 
 #### 4. Blast-radius breaker — **needs one; cannot reuse `checkDisableBlastRadius`**
@@ -640,9 +644,21 @@ strictly worse than unverified. Likewise the structural guards that enumerate pr
 job is to notice a registered provider that has fallen out of a list.
 
 **The rule for a contributor.** When new HRIS behaviour needs to be shown to work —
-rather than shown to typecheck — point it at the OrangeHRM instance and record what came
-back. When it needs to be shown to work *for BambooHR specifically*, it cannot be, and
+rather than shown to typecheck — point it at a live OrangeHRM instance and record what
+came back. When it needs to be shown to work *for BambooHR specifically*, it cannot be, and
 that limitation belongs in the PR body rather than in a fixture that implies otherwise.
+
+**The lab instance this section was written against is retired.** The OrangeHRM lab — the
+`orangehrm/orangehrm:5.9` instance, its MariaDB and the `orangehrm-mcp` adapter, with
+their two public vhosts — was retired by owner decision on 2026-11-12 and removed from
+the repo-canonical deploy set, to free memory under the production VM's capacity budget. It
+leaves the running VM when the operator runs the retirement runbook
+([`implementation-notes/2026-11-12-capacity-c1.md`](implementation-notes/2026-11-12-capacity-c1.md)).
+The findings in the table above were measured against it and stay true as findings. What
+is missing is a place to measure the next one: proving new HRIS behaviour against a live
+OrangeHRM now needs a NON-production instance, and standing one up is an open item. Until
+it exists, a pull request that would have been proven against the lab says in its body
+that it was not, rather than claiming a proof nobody could run.
 
 ### Phasing
 

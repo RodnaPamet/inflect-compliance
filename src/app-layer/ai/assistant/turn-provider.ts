@@ -116,9 +116,16 @@ function isAnthropicReplay(part: unknown): part is AnthropicReplay {
  * interleaves roles the API rejects, and the error it returns does not say so.
  */
 export function buildMessages(req: ProviderRequest): Array<{ role: 'user' | 'assistant'; content: unknown }> {
-    const out: Array<{ role: 'user' | 'assistant'; content: unknown }> = [
-        { role: 'user', content: req.question },
-    ];
+    // EARLIER TURNS FIRST (#5054), as plain user and assistant messages, then
+    // the question. They are the person's own text, guarded like the question:
+    // the system prompt tells the model they are context, never instructions.
+    // With none, the messages are exactly what they were before.
+    const out: Array<{ role: 'user' | 'assistant'; content: unknown }> = [];
+    for (const turn of req.priorTurns ?? []) {
+        out.push({ role: 'user', content: turn.question });
+        out.push({ role: 'assistant', content: turn.answer });
+    }
+    out.push({ role: 'user', content: req.question });
     let pendingResults: Array<{ type: 'tool_result'; tool_use_id: string; content: string }> = [];
 
     const flush = (): void => {
@@ -220,6 +227,16 @@ export class AnthropicAssistantProvider implements AssistantTurnProvider {
     constructor(
         private readonly apiKey: string,
         private readonly workspaceId?: string,
+        /**
+         * Where the Messages call goes. The deployment never passes it
+         * (`assistantProviderFor` builds with two arguments, and
+         * `tests/guards/rag-evaluation-mount-unreachable.test.ts` fails if any
+         * file under `src/` passes a third), so a deployed assistant always
+         * calls Anthropic. The Ragas answer stage passes its loopback metering
+         * proxy, which holds the real key and charges the call to the ragas
+         * share.
+         */
+        private readonly endpoint: string = ANTHROPIC_API_URL,
     ) {}
 
     async complete(req: ProviderRequest): Promise<ProviderTurn> {
@@ -238,7 +255,7 @@ export class AnthropicAssistantProvider implements AssistantTurnProvider {
 
         let response: Response;
         try {
-            response = await fetch(ANTHROPIC_API_URL, {
+            response = await fetch(this.endpoint, {
                 method: 'POST',
                 headers: {
                     'x-api-key': this.apiKey,

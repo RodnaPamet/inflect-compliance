@@ -74,6 +74,7 @@
  *
  * @module usecases/identity-leaver-pass
  */
+import { LEAVER_RECENCY_ORDER } from '@/lib/identity/leaver-recency';
 import { logger } from '@/lib/observability/logger';
 import { runInTenantContext } from '@/lib/db-context';
 import { passRequestRecord, resolvePassActor, type PassTrigger } from './identity-pass-requester';
@@ -155,6 +156,9 @@ export const LINK_FRESHNESS_MS = OBSERVATION_FRESHNESS_MS;
  */
 export const MAX_REPORTED_DECISIONS = 200;
 
+/** Bound on TERMINATED workers read in one pass (#5142: read one past it). */
+export const MAX_TERMINATED_READ = 5_000;
+
 /**
  * The status of a pass, derived ONCE and read by both the row and the return.
  *
@@ -219,9 +223,13 @@ export const MAX_REPORTED_DECISIONS = 200;
 export function leaverPassStatus(
     refused: string | undefined,
     resultCount: number,
+    populationTruncated = false,
 ): LeaverPassRanStatus {
     if (refused) return 'NOT_APPLICABLE';
-    return resultCount > MAX_REPORTED_DECISIONS ? 'PARTIAL' : 'PASSED';
+    // A pass that read only the newest slice of the terminated workers or of
+    // their links did not consider everybody (#5142). It acted on what it read,
+    // and says it did not read everything — never PASSED.
+    return resultCount > MAX_REPORTED_DECISIONS || populationTruncated ? 'PARTIAL' : 'PASSED';
 }
 
 /**
@@ -272,6 +280,7 @@ async function recordPassExecution(
     results: readonly LeaverDisableResult[],
     summary: Record<string, unknown>,
     refused: string | undefined,
+    populationTruncated = false,
 ): Promise<void> {
     const identifierByLink = new Map(candidates.map((c) => [c.linkId, c.externalUserId]));
     const reported = results.slice(0, MAX_REPORTED_DECISIONS);
@@ -340,7 +349,7 @@ async function recordPassExecution(
 
     // Why each status: see `leaverPassStatus`. The choice is made there because
     // the value handed back to the job has to make the identical one.
-    await writeExecutionRow(ctx, trigger, provider, leaverPassStatus(refused, results.length), {
+    await writeExecutionRow(ctx, trigger, provider, leaverPassStatus(refused, results.length, populationTruncated), {
         ...summary,
         ...(refused ? { refusal: 'BATCH_REFUSED' } : {}),
         decisions,
@@ -1083,15 +1092,21 @@ export async function runIdentityLeaverPass(input: {
         }
 
         // ── 2. Who the FEED says has left. Never inferred from absence.
-        const terminated = await runInTenantContext(ctx, (db) =>
+        const terminatedRead = await runInTenantContext(ctx, (db) =>
             db.employee.findMany({
                 where: { tenantId: ctx.tenantId, status: 'TERMINATED' },
                 select: { id: true },
-                // Bounded: past this, the roster is not a departure wave, and the
-                // breaker downstream refuses a batch this size anyway.
-                take: 5000,
+                // Bounded, newest departure first, and ONE PAST the cap
+                // (#5142). TERMINATED rows accumulate — nothing deletes them —
+                // so this is a history, not a departure wave. Unordered, a
+                // history past the cap returned an arbitrary slice and this
+                // week's leavers could be left out of it on a green pass.
+                orderBy: [...LEAVER_RECENCY_ORDER],
+                take: MAX_TERMINATED_READ + 1,
             }),
         );
+        const terminatedTruncated = terminatedRead.length > MAX_TERMINATED_READ;
+        const terminated = terminatedRead.slice(0, MAX_TERMINATED_READ);
         if (terminated.length === 0) {
             recordLeaverPassOutcome({ provider: input.provider, outcome: 'no_terminated' });
             const detail = 'No worker is marked TERMINATED in the HR feed.';
@@ -1104,12 +1119,22 @@ export async function runIdentityLeaverPass(input: {
 
         // ── 3. Which of their accounts we have OBSERVED recently enough to act on.
         const staleBefore = new Date(now.getTime() - LINK_FRESHNESS_MS);
-        const candidates = await findLeaverCandidates(
+        const { candidates, truncated: candidatesTruncated } = await findLeaverCandidates(
             ctx,
             input.provider,
             terminated.map((e) => e.id),
             staleBefore,
         );
+        const populationTruncated = terminatedTruncated || candidatesTruncated;
+        if (populationTruncated) {
+            logger.warn('leaver pass read a truncated population; acting on the newest departures only', {
+                component: 'identity-leaver-pass',
+                tenantId: ctx.tenantId,
+                provider: input.provider,
+                terminatedTruncated,
+                candidatesTruncated,
+            });
+        }
         if (candidates.length === 0) {
             // Distinct from "nobody left". An empty candidate set with terminated
             // workers present means the link table is stale or empty — which is
@@ -1294,6 +1319,8 @@ export async function runIdentityLeaverPass(input: {
                         unsettledOnEntry,
                         terminatedWorkers: terminated.length,
                         candidates: candidates.length,
+                        // Which read was cut, when one was (#5142).
+                        ...(populationTruncated ? { terminatedTruncated, candidatesTruncated } : {}),
                         population,
                 protectedInScope,
                         batchRefused: outcome.refused ?? null,
@@ -1324,6 +1351,7 @@ export async function runIdentityLeaverPass(input: {
                         },
                     },
                     outcome.refused,
+                    populationTruncated,
                 );
             } catch (err) {
                 logger.error('leaver pass ran but its record could not be written', {
@@ -1347,7 +1375,7 @@ export async function runIdentityLeaverPass(input: {
                 // sync RETURNED PARTIAL while PERSISTING PASSED) reproduced here
                 // in mirror image — same two sites disagreeing, opposite way
                 // round, which is why fixing that one did not find this one.
-                status: leaverPassStatus(outcome.refused, results.length),
+                status: leaverPassStatus(outcome.refused, results.length, populationTruncated),
                 ...(outcome.refused ? { refusal: 'BATCH_REFUSED' as const } : {}),
                 mode,
                 counts,

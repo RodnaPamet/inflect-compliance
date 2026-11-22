@@ -17,6 +17,7 @@
 
 const mockDb = {
     tenant: { findUnique: jest.fn() },
+    riskMatrixConfig: { findUnique: jest.fn() },
     user: { findMany: jest.fn() },
     risk: { findFirst: jest.fn(), findMany: jest.fn() },
     riskScoreEvent: { create: jest.fn(), findMany: jest.fn() },
@@ -85,7 +86,7 @@ import { makeRequestContext } from '../helpers/make-context';
 
 beforeEach(() => {
     jest.clearAllMocks();
-    (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1', maxRiskScale: 5 });
+    (mockDb.riskMatrixConfig.findUnique as jest.Mock).mockResolvedValue(null);
     (mockDb.riskScoreEvent.create as jest.Mock).mockResolvedValue({ id: 'ev-1' });
 });
 
@@ -192,6 +193,21 @@ describe('updateRisk → ledger entries', () => {
         expect(mockDb.riskScoreEvent.create).toHaveBeenCalledTimes(1);
         const args = (mockDb.riskScoreEvent.create as jest.Mock).mock.calls[0][0].data;
         expect(args).toMatchObject({ kind: 'INHERENT', likelihood: 5, impact: 5, score: 25, source: 'USER' });
+    });
+
+    it('one axis alone re-scores against the stored other axis and appends an INHERENT event (#5318)', async () => {
+        (RiskRepository.getById as jest.Mock).mockResolvedValue({ id: 'r-1', ownerUserId: null, likelihood: 2, impact: 3 });
+
+        await updateRisk(editorCtx, 'r-1', { likelihood: 5 });
+
+        const updateArgs = (RiskRepository.update as jest.Mock).mock.calls[0][3];
+        expect(updateArgs.likelihood).toBe(5);
+        expect(updateArgs.impact).toBeUndefined();
+        expect(updateArgs.inherentScore).toBe(15);
+        expect(updateArgs.score).toBe(15);
+        expect(mockDb.riskScoreEvent.create).toHaveBeenCalledTimes(1);
+        expect((mockDb.riskScoreEvent.create as jest.Mock).mock.calls[0][0].data)
+            .toMatchObject({ kind: 'INHERENT', likelihood: 5, impact: 3, score: 15 });
     });
 
     it('non-score edits append NO events', async () => {

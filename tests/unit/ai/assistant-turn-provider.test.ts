@@ -247,3 +247,65 @@ describe('usage is read both-or-neither (#3833)', () => {
         expect(parseTurn({ content: [] }).usage).toBeUndefined();
     });
 });
+
+describe('earlier turns of the conversation (#5054)', () => {
+    const PRIOR = [
+        { question: 'Step 1\nStep 2', answer: 'Two steps.' },
+        { question: 'and the owners?', answer: 'Ana owns both.' },
+    ];
+
+    it('sends each earlier turn as a user message and an assistant message, before the question', () => {
+        const msgs = buildMessages(
+            req({
+                priorTurns: PRIOR,
+                history: [
+                    { role: 'assistant', text: null, toolCalls: [{ id: 'a', name: 'list_risks', args: {} }] },
+                    { role: 'tool', id: 'a', name: 'list_risks', content: 'rows' },
+                ],
+            }),
+        );
+
+        expect(msgs.slice(0, 5)).toEqual([
+            { role: 'user', content: 'Step 1\nStep 2' },
+            { role: 'assistant', content: 'Two steps.' },
+            { role: 'user', content: 'and the owners?' },
+            { role: 'assistant', content: 'Ana owns both.' },
+            { role: 'user', content: 'how many open findings?' },
+        ]);
+        // The turn's own round trips follow, unchanged.
+        expect(msgs.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant', 'user', 'assistant', 'user']);
+    });
+
+    it('sends exactly what it sent before when there are no earlier turns', () => {
+        const base = req({
+            history: [
+                { role: 'assistant', text: 'Let me check.', toolCalls: [{ id: 'a', name: 'list_risks', args: {} }] },
+                { role: 'tool', id: 'a', name: 'list_risks', content: 'rows' },
+            ],
+        });
+        expect(JSON.stringify(buildMessages({ ...base, priorTurns: [] }))).toBe(
+            JSON.stringify(buildMessages(base)),
+        );
+        expect(buildMessages(base)[0]).toEqual({ role: 'user', content: 'how many open findings?' });
+    });
+
+    it('puts them in the request body, and never in the system prompt', async () => {
+        const f = fakeFetch({ content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' });
+        global.fetch = f.impl;
+
+        await new AnthropicAssistantProvider('key').complete(req({ priorTurns: PRIOR }));
+
+        const sent = JSON.parse(String(f.calls[0].init.body)) as {
+            system: string;
+            messages: Array<{ role: string; content: unknown }>;
+        };
+        expect(sent.messages.map((m) => m.content)).toEqual([
+            'Step 1\nStep 2',
+            'Two steps.',
+            'and the owners?',
+            'Ana owns both.',
+            'how many open findings?',
+        ]);
+        expect(sent.system).toBe('you are a compliance assistant');
+    });
+});

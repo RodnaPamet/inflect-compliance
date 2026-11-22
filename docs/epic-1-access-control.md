@@ -15,32 +15,38 @@
 │  Layer 1 — Authentication (UNCHANGED)                                 │
 │    NextAuth OAuth / credentials. Produces User row. No tenant.        │
 │                                                                       │
-│  Layer 2 — Tenant membership (NEW — explicit, opt-in)                 │
-│    Only THREE creation paths exist:                                   │
+│  Layer 2 — Tenant membership (explicit, opt-in)                       │
+│    Exactly the EIGHT sites in ALLOWLISTED_MEMBERSHIP_SITES             │
+│    (tests/guardrails/no-auto-join.test.ts) write a TenantMembership;  │
+│    a ninth fails CI:                                                  │
 │                                                                       │
 │    a. redeemInvite (tenant-invites.ts)                                │
 │         Token-bound. Email-bound. Atomic claim via updateMany         │
 │         with (acceptedAt IS NULL AND expiresAt > now()) predicate.    │
 │         Leaked token → burnt on email mismatch.                       │
-│                                                                       │
 │    b. createTenantWithOwner (tenant-lifecycle.ts)                     │
 │         Platform-admin. Atomic: Tenant + DEK + OWNER membership +     │
 │         TenantOnboarding + audit entries.                             │
-│                                                                       │
 │    c. /api/auth/register (credentials self-service signup)            │
-│         Signing-up user creates their own tenant as ADMIN.            │
-│         AUTH_TEST_MODE-gated today.                                   │
+│         With a workspace name, creates the workspace and makes the    │
+│         new account its OWNER. NOT AUTH_TEST_MODE-gated: open in      │
+│         every environment, throttled by TENANT_CREATE_LIMIT (5/hour). │
+│    d. SSO JIT provisioning (sso.ts)                                   │
+│    e. SCIM user provisioning (scim-users.ts)                          │
+│    f. org provisioning — ADMIN rows fanned into an org's tenants      │
+│         for an org admin (org-provisioning.ts)                        │
+│    g. createTenantUnderOrg — the OWNER row (org-tenants.ts)           │
+│    h. the staging-only seed route (api/staging/seed)                  │
 │                                                                       │
-│    (Plus the legitimate SSO + SCIM provisioning paths — each          │
-│     allowlisted in tests/guardrails/no-auto-join.test.ts.)            │
-│                                                                       │
-│  Layer 3 — Permission gate (UNCHANGED — Epic C.1)                     │
+│  Layer 3 — Permission gate (Epic C.1)                                 │
 │    requirePermission('admin.members', ...) and friends.               │
 │                                                                       │
-│  Middleware gate (NEW)                                                │
-│    /t/:slug/** + /api/t/:slug/** — the JWT's tenantSlug must match    │
-│    the URL's slug. Mismatch → /no-tenant (web) or 403 (api). No       │
-│    per-request DB hit.                                                │
+│  Middleware gate                                                      │
+│    /t/:slug/** + /api/t/:slug/** — the URL's slug must appear in the  │
+│    JWT's memberships[] (checkTenantAccess). Mismatch → /no-tenant     │
+│    (web) or 403 cross_tenant_access_denied (api); no memberships at   │
+│    all → /no-tenant or 403 no_tenant_access. No per-request DB hit;   │
+│    a capped (truncated) claim defers a miss to the DB-backed gate.    │
 │                                                                       │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -48,22 +54,28 @@
 ## Role model
 
 ```
-OWNER   — tenant lifecycle + owner management (delete tenant, rotate
-          DEK, transfer ownership, invite/remove OWNERs, assign OWNER
-          role). Last ACTIVE OWNER of a tenant cannot be removed or
-          demoted (DB trigger + usecase guard).
+OWNER    — tenant lifecycle + owner management (delete tenant, rotate
+           DEK, transfer ownership, invite/remove OWNERs, assign OWNER
+           role) + agent ownership. Last ACTIVE OWNER of a tenant cannot
+           be removed or demoted (DB trigger + usecase guard). Only an
+           OWNER creates or re-points SSO trust (issuer, client, entity,
+           certificate, domains, JIT) — SSO_TRUST_IS_OWNER_TIER.
 
-ADMIN   — operational control: invite/manage EDITOR/READER/AUDITOR,
-          configure SSO/SCIM/billing/settings. Cannot touch OWNERs.
-          Cannot assign OWNER role.
+ADMIN    — operational control: invite/manage EDITOR/READER/AUDITOR,
+           configure SSO (non-trust fields)/SCIM/billing/settings.
+           Cannot touch OWNERs. Cannot assign OWNER role.
 
-EDITOR  — create/edit all business entities.
+EDITOR   — create/edit all business entities.
 
-AUDITOR — read-only everything + downloads + audit-pack share.
-          For external auditors.
+AUDITOR  — read-only everything + downloads + audit-pack share.
+           For external auditors.
 
-READER  — read-only business entities. Least privileged. Default for
-          invites that omit a role.
+READER   — read-only business entities. Least privileged. Default for
+           invites that omit a role.
+
+AI_ADMIN — runs the agent register; holds the agent keys and no
+           tenant-wide admin key. READER's rung on the coarse ladder.
+           Only an OWNER moves a member into or out of it.
 ```
 
 **Permission keys added by Epic 1:**

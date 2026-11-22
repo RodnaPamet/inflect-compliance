@@ -276,6 +276,41 @@ describeFn('Epic G-5 expiry monitor — DB integration', () => {
         expect(r.enqueued).toBe(0);
     });
 
+    // #5298 — somebody who has left the workspace is not emailed about its
+    // controls, and a removed workspace reminds nobody.
+    it('skips an approver who is no longer an ACTIVE member', async () => {
+        await globalPrisma.tenantMembership.updateMany({
+            where: { tenantId: TENANT_A_ID, userId: approver.userId },
+            data: { status: MembershipStatus.DEACTIVATED },
+        });
+        try {
+            await makeException({ expiresAt: futureMidnight(30) });
+            const r = await runExceptionExpiryMonitor(globalPrisma, { tenantId: TENANT_A_ID });
+            expect(r.enqueued).toBe(1);
+            const outbox = await globalPrisma.notificationOutbox.findMany({
+                where: { tenantId: TENANT_A_ID, type: 'EXCEPTION_EXPIRING' },
+            });
+            expect(outbox.map((o) => o.toEmail)).toEqual([admin.email]);
+        } finally {
+            await globalPrisma.tenantMembership.updateMany({
+                where: { tenantId: TENANT_A_ID, userId: approver.userId },
+                data: { status: MembershipStatus.ACTIVE },
+            });
+        }
+    });
+
+    it('a removed workspace reminds nobody', async () => {
+        await makeException({ expiresAt: futureMidnight(30) });
+        await globalPrisma.tenant.update({ where: { id: TENANT_A_ID }, data: { deletedAt: new Date() } });
+        try {
+            const r = await runExceptionExpiryMonitor(globalPrisma, { tenantId: TENANT_A_ID });
+            expect(r.scanned).toBe(0);
+            expect(r.enqueued).toBe(0);
+        } finally {
+            await globalPrisma.tenant.update({ where: { id: TENANT_A_ID }, data: { deletedAt: null } });
+        }
+    });
+
     it('non-APPROVED rows are skipped', async () => {
         await makeException({
             expiresAt: futureMidnight(30),

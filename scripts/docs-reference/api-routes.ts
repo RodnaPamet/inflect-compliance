@@ -30,7 +30,17 @@ function permissionKeys(node: ts.Node, locals: Map<string, ts.Expression>, depth
     const keys: string[] = [];
     walk(node, (n) => {
         if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'requirePermission') {
-            const arg = n.arguments[0];
+            let arg: ts.Expression | undefined = n.arguments[0];
+            // `requirePermission({ keys: [...], mode })` names its keys in a
+            // property (#5135). Read as no keys, its routes were published as
+            // "checked in the use case".
+            if (arg && ts.isObjectLiteralExpression(arg)) {
+                const prop = arg.properties.find(
+                    (p): p is ts.PropertyAssignment =>
+                        ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && p.name.text === 'keys',
+                );
+                arg = prop?.initializer;
+            }
             const one = literalText(arg);
             if (one) keys.push(one);
             else if (arg && ts.isArrayLiteralExpression(arg)) {

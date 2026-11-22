@@ -63,7 +63,10 @@ function linksQueryOf(code: string, fnName: string): string {
 describe('every report family excludes soft-deleted rows', () => {
     it('the Risk Register PDF filters soft-deleted risks', () => {
         // This was the whole of the where clause: `{ tenantId: ctx.tenantId }`.
-        expect(REPORT_REPO).toMatch(/where:\s*\{[^}]*deletedAt:\s*null/);
+        // Anchored on the RISK's own where clause: the controls include has a
+        // nested `control: { deletedAt: null }` too (#5376), and an unanchored
+        // needle would be satisfied by either one alone.
+        expect(REPORT_REPO).toMatch(/where:\s*\{\s*tenantId:\s*ctx\.tenantId,\s*deletedAt:\s*null\s*\}/);
     });
 
     it('the risk-report engine filters soft-deleted risks', () => {

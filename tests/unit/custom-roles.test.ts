@@ -319,6 +319,7 @@ describe('Custom Roles — Delete', () => {
             update: jest.fn(async () => ({ id: 'cr-1', isActive: false })),
         };
         mockTx.tenantMembership = {
+            findMany: jest.fn(async () => [{ role: 'EDITOR' }, { role: 'READER' }]),
             updateMany: jest.fn(async () => ({ count: 3 })),
         };
 
@@ -339,6 +340,38 @@ describe('Custom Roles — Delete', () => {
         };
 
         await expect(deleteCustomRole(makeCtx(), 'missing')).rejects.toThrow(/not found/i);
+    });
+
+    // #5317 — deleting the role clears it from every carrier; on a legacy
+    // OWNER carrier that is the OWNER-tier clear assignCustomRole refuses.
+    function roleCarriedBy(roles: string[]) {
+        mockTx.tenantCustomRole = {
+            findFirst: jest.fn(async () => ({ id: 'cr-1', tenantId: 'tenant-1', name: 'Narrow', baseRole: 'READER', isActive: true })),
+            update: jest.fn(async () => ({ id: 'cr-1', isActive: false })),
+        };
+        mockTx.tenantMembership = {
+            findMany: jest.fn(async () => roles.map((role) => ({ role }))),
+            updateMany: jest.fn(async () => ({ count: roles.length })),
+        };
+    }
+
+    it('an ADMIN deleting a role a legacy OWNER carries is refused 403 OWNER-tier, and nothing is written', async () => {
+        roleCarriedBy(['EDITOR', 'OWNER']);
+        await expect(deleteCustomRole(makeCtx('ADMIN'), 'cr-1')).rejects.toMatchObject({
+            status: 403,
+            details: { reason: 'CLEARING_OWNER_CUSTOM_ROLE_IS_OWNER_TIER' },
+        });
+        expect(mockTx.tenantCustomRole.update).not.toHaveBeenCalled();
+        expect(mockTx.tenantMembership.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('a caller holding admin.owner_management may delete it, clearing the OWNER carrier', async () => {
+        roleCarriedBy(['OWNER']);
+        const ctx = makeCtx('OWNER');
+        ctx.permissions.canAdmin = true;
+        const result = await deleteCustomRole(ctx, 'cr-1');
+        expect(result.membersCleared).toBe(1);
+        expect(mockTx.tenantMembership.findMany).not.toHaveBeenCalled();
     });
 });
 

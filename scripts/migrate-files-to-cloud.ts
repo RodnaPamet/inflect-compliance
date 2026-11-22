@@ -26,6 +26,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { createReadStream, existsSync } from 'fs';
 import { unlink } from 'fs/promises';
 import path from 'path';
@@ -42,7 +43,7 @@ const BATCH_SIZE = BATCH_FLAG ? parseInt(BATCH_FLAG.split('=')[1], 10) : 50;
 
 // ─── Setup ───
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }) });
 const FILE_STORAGE_ROOT = process.env.FILE_STORAGE_ROOT || process.env.UPLOAD_DIR || '/data/uploads';
 
 // Stats

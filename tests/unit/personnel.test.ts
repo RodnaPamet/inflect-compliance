@@ -312,6 +312,17 @@ describe('runHrisSync', () => {
         // ...and NOTHING is reconciled, because a partial pass has not seen
         // the whole roster and cannot conclude anyone left.
         expect(mockDb.employee.updateMany).not.toHaveBeenCalled();
+        // The stored row says PARTIAL too. It said PASSED, so a half-read roster
+        // read as a completed sync and passed the FRESH-roster gate (#5258).
+        expect(mockDb.integrationExecution.update).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { id: 'exec-1' },
+                data: expect.objectContaining({ status: 'PARTIAL', resultJson: expect.objectContaining({ resuming: true }) }),
+            }),
+        );
+        expect(mockDb.integrationExecution.update).not.toHaveBeenCalledWith(
+            expect.objectContaining({ data: expect.objectContaining({ status: 'PASSED' }) }),
+        );
     });
 
     it('H3 — a TRUNCATED roster fails ERROR and does NOT run the departure reconcile', async () => {

@@ -42,6 +42,7 @@ import { PrismaAdapter } from '@next-auth/prisma-adapter';
 import prisma from '@/lib/prisma';
 import { env } from '@/env';
 import { authenticateWithPassword } from '@/lib/auth/credentials';
+import { hashEmailForLog } from '@/lib/auth/security-events';
 import { EMAIL_NOT_VERIFIED_SIGN_IN_ERROR } from '@/lib/auth/register-refusals';
 import type { Role } from '@prisma/client';
 import { edgeLogger } from '@/lib/observability/edge-logger';
@@ -52,10 +53,12 @@ import type { SignInMethod } from '@/lib/auth/sso-enforcement';
 import {
     pendingAfterMembershipRefresh,
     workspacesAskingForCode,
+    workspacesPassedBySession,
     workspacesStillAskingForCode,
 } from '@/lib/auth/workspace-mfa';
 import { SessionRevokedError } from '@/lib/auth/session-revoked';
 import { isTenantSystemUserId } from '@/lib/tenant-system-user';
+import { claimAccountForVerifiedEmail, oauthEmailIsVerified } from '@/lib/auth/oauth-email-trust';
 
 // ─── Type augmentation ──────────────────────────────────────────────
 //
@@ -112,6 +115,8 @@ declare module 'next-auth' {
             tenantId?: string | null;
             role: Role;
             mfaPending?: boolean;
+            /** Workspaces other than the primary whose MFA challenge this session has not passed. */
+            mfaPendingTenantIds?: string[];
             /** R-1: all active memberships, for the tenant picker and middleware gate. */
             memberships?: MembershipEntry[];
             /** Org-layer memberships, for the org-route middleware gate. */
@@ -555,9 +560,9 @@ async function ensureTenantMembershipFromInvite(
  * whose email matches the just-signed-in user's OAuth-verified email,
  * so "add the role, they sign in, they're in" works without the email.
  *
- * OAuth-only by construction: the caller gates this to
- * `account.provider !== 'credentials'` and the signIn callback already
- * rejects `email_verified === false`, so the email is IdP-verified.
+ * Only for an email the provider vouches for: the callers gate this on
+ * `oauthEmailIsVerified` (Google's `email_verified`, Microsoft's `xms_edov`),
+ * never on the credentials provider.
  * Best-effort — a failure logs and never blocks sign-in.
  */
 async function ensureTenantMembershipsFromPendingInvites(
@@ -643,17 +648,29 @@ function membershipTenantIds(token: JWT): Set<string> {
  * it wants a code, as sign-in would have asked (`pendingAfterMembershipRefresh`).
  * A failed read leaves the set as it was.
  */
-async function refreshPendingMfaWorkspaces(token: JWT, before: ReadonlySet<string>): Promise<void> {
+async function refreshPendingMfaWorkspaces(
+    token: JWT,
+    before: ReadonlySet<string>,
+    primary: { tenantId: string | null | undefined; pending: boolean },
+): Promise<void> {
     if (!token.userId) return;
     try {
-        token.mfaPendingTenantIds = await pendingAfterMembershipRefresh(token.userId, {
+        const next = await pendingAfterMembershipRefresh(token.userId, {
             pending: token.mfaPendingTenantIds ?? [],
             // A token minted before the set existed has never asked its other
             // workspaces: every one of them counts as gained.
             before: token.mfaPendingTenantIds === undefined ? new Set<string>() : before,
             after: (token.memberships ?? []).map((m) => m.tenantId),
             primaryTenantId: token.tenantId,
+            primaryBefore: primary.tenantId,
+            primaryPendingBefore: primary.pending,
         });
+        token.mfaPendingTenantIds = next.pending;
+        // A new primary takes the state it had as a pending workspace. An
+        // unchanged primary keeps its flag: only its own challenge clears it.
+        if (token.tenantId !== primary.tenantId) {
+            token.mfaPending = next.primaryPending;
+        }
     } catch {
         // Unchanged.
     }
@@ -738,20 +755,44 @@ export const authOptions: NextAuthOptions = {
                 edgeLogger.warn('signIn rejected: provider reported email_verified=false', {
                     component: 'auth',
                     provider: account.provider,
-                    email: user.email ?? undefined,
+                    // Never the raw address: the operational log carries no
+                    // tenant scope or retention policy. The hash is the same
+                    // per-identifier key the other auth events log.
+                    identifierHash: user.email ? hashEmailForLog(user.email) : undefined,
                 });
                 return false;
             }
 
             const inviteTokens = await readInviteTokenFromCookies();
 
+            // Whether this provider vouches that the person owns the email it
+            // reports (src/lib/auth/oauth-email-trust.ts). Only a vouched
+            // email links an existing account, claims one nobody verified, or
+            // redeems an invite by address.
+            const isOAuth = account.provider !== 'credentials';
+            const emailVouched = isOAuth && oauthEmailIsVerified(account.provider, profile as Record<string, unknown> | undefined);
+            const claimMethod = account.provider === 'google' ? 'google' : 'microsoft-entra-id';
+
             // 1. Account linking for OAuth (not credentials).
-            if (account.provider !== 'credentials' && user.email) {
+            if (isOAuth && user.email) {
                 const existingUser = await prisma.user.findUnique({
                     where: { emailHash: hashForLookup(user.email) },
                 });
 
                 if (existingUser && user.id !== existingUser.id) {
+                    if (!emailVouched) {
+                        edgeLogger.warn('signIn refused: email not vouched by provider, not linking', {
+                            component: 'auth',
+                            provider: account.provider,
+                        });
+                        return '/login?error=OAuthAccountNotLinked';
+                    }
+                    await claimAccountForVerifiedEmail({
+                        userId: existingUser.id,
+                        email: user.email,
+                        keep: { provider: account.provider, providerAccountId: account.providerAccountId },
+                        method: claimMethod,
+                    });
                     const existingAccount = await prisma.account.findUnique({
                         where: {
                             provider_providerAccountId: {
@@ -810,10 +851,21 @@ export const authOptions: NextAuthOptions = {
                     user.email,
                     inviteTokens.orgToken,
                 );
-                // Email-verified provisioning (OAuth only — the credentials
-                // provider's email is not IdP-verified). Redeems any pending
-                // invite matching the verified email; no invite ⇒ no-op.
-                if (account.provider !== 'credentials') {
+                // A returning sign-in whose provider vouches for the email
+                // claims the account if its address was never verified and
+                // somebody else could hold a credential on it.
+                if (emailVouched) {
+                    await claimAccountForVerifiedEmail({
+                        userId: user.id,
+                        email: user.email,
+                        keep: { provider: account.provider, providerAccountId: account.providerAccountId },
+                        method: claimMethod,
+                    });
+                }
+                // Email-verified provisioning: only an email the provider
+                // vouches for (never the credentials provider's) redeems a
+                // pending invite by address; no invite ⇒ no-op.
+                if (emailVouched) {
                     await ensureTenantMembershipsFromPendingInvites(
                         user.id,
                         user.email,
@@ -875,12 +927,15 @@ export const authOptions: NextAuthOptions = {
                 //    `groups` claim is omitted for users in > ~200 groups
                 //    (Entra sets `_claim_names.groups` instead) — fall back to
                 //    a Graph `/me/memberOf` fetch in that overage case. A Graph
-                //    failure resolves to [] and never blocks sign-in.
+                //    failure never blocks sign-in: the read reports itself
+                //    incomplete and the sync below declines to decide, which is
+                //    not the same as the `[]` this comment used to claim
+                //    (#5600).
                 if (account.provider === 'microsoft-entra-id') {
                     const { resolveEntraGroupClaims } = await import(
                         '@/lib/auth/entra-group-claims'
                     );
-                    const { groups, overage } = await resolveEntraGroupClaims({
+                    const { groups, overage, complete } = await resolveEntraGroupClaims({
                         profile,
                         accessToken: account.access_token as string | undefined,
                     });
@@ -906,6 +961,11 @@ export const authOptions: NextAuthOptions = {
                             const results = await syncEntraMembershipRolesAtSignIn({
                                 userId: token.userId,
                                 aadGroups: groups,
+                                // A PREFIX of the membership decides nothing
+                                // (#5600): the sync then writes no role and
+                                // reaches no gate verdict, rather than demoting
+                                // the member on groups it has not read yet.
+                                aadGroupsComplete: complete,
                                 // Mappings apply only to each workspace's own
                                 // Microsoft directory and allowed domains
                                 // (src/lib/auth/entra-group-sync.ts).
@@ -928,13 +988,41 @@ export const authOptions: NextAuthOptions = {
                 token.mfaPending = false;
                 const activeTenantId = token.tenantId ?? null;
                 if (activeTenantId) {
+                    // ── THE FLAG FIRST, AND IN ITS OWN READ (#5588) ──
+                    //
+                    // `mfaFailClosed` governs what the policy read's catch does,
+                    // and it used to be assigned INSIDE that read's try. So when
+                    // the read threw it had never been assigned on this pass: on
+                    // a fresh sign-in the token carried no previous value, the
+                    // catch saw `undefined`, and the tenant's opt-in was ignored
+                    // at precisely the moment it was chosen for. It worked on
+                    // later requests only because the token still held a value a
+                    // previous SUCCESSFUL read had written — reliable only while
+                    // it was not needed.
+                    //
+                    // One column, so this fails independently of the policy read
+                    // rather than with it. What it cannot fix is a total outage,
+                    // where both reads fail and there is nothing to read the
+                    // flag from; it then keeps whatever a previous pass
+                    // established, which is better than `undefined` and is the
+                    // most an extra query can buy. Making an unreadable row mean
+                    // fail-closed would change behaviour for tenants that never
+                    // opted in, which is a different decision.
+                    try {
+                        const flagRow = await prisma.tenantSecuritySettings.findUnique({
+                            where: { tenantId: activeTenantId },
+                            select: { mfaFailClosed: true },
+                        });
+                        token.mfaFailClosed = flagRow?.mfaFailClosed ?? false;
+                    } catch {
+                        token.mfaFailClosed = token.mfaFailClosed ?? false;
+                    }
+
                     try {
                         const secSettings = await prisma.tenantSecuritySettings.findUnique({
                             where: { tenantId: activeTenantId },
                         });
                         const policy = secSettings?.mfaPolicy ?? 'DISABLED';
-                        const failClosed = secSettings?.mfaFailClosed ?? false;
-                        token.mfaFailClosed = failClosed;
 
                         if (policy === 'REQUIRED' || policy === 'OPTIONAL') {
                             const enrollment = await prisma.userMfaEnrollment.findUnique({
@@ -1008,8 +1096,9 @@ export const authOptions: NextAuthOptions = {
             // session-revocation + OAuth-refresh checks below.
             if (trigger === 'update' && token.email) {
                 const before = membershipTenantIds(token);
+                const primary = { tenantId: token.tenantId, pending: token.mfaPending === true };
                 await applyMembershipClaims(token);
-                await refreshPendingMfaWorkspaces(token, before);
+                await refreshPendingMfaWorkspaces(token, before, primary);
             }
 
             // Epic C.3 — verify session row still exists + isn't revoked.
@@ -1017,6 +1106,12 @@ export const authOptions: NextAuthOptions = {
             // treats the session as invalid and every server gate sees none
             // (src/lib/auth/session-revoked.ts). Returning the token with an
             // `error` flag, as this did, kept every claim and refused nothing.
+            //
+            // Two of the row's facts are needed further down, by the claims
+            // refresh (#5246), so they are declared out here rather than inside
+            // the block that reads them.
+            let claimsReadDue = false;
+            let sessionRowFound = false;
             if (typeof token.userSessionId === 'string' && token.userSessionId) {
                 let revoked = false;
                 try {
@@ -1027,6 +1122,10 @@ export const authOptions: NextAuthOptions = {
                         token.userSessionId,
                     );
                     revoked = result.revoked;
+                    // The only 5-minute cadence on this path that survives a
+                    // request (#5246) — see the claims refresh below.
+                    claimsReadDue = result.touched;
+                    sessionRowFound = result.rowId !== null;
                 } catch {
                     // Helper already logs; fail-open on telemetry-side
                     // failures so a transient DB blip doesn't sign every
@@ -1050,54 +1149,58 @@ export const authOptions: NextAuthOptions = {
             // needs the live provider token, refresh it on-demand from the
             // stored Account.refresh_token at the point of use (not per request).
 
-            // MFA challenge completion check.
+            // MFA challenge completion check. The pass must be THIS session's:
+            // the challenge records it on the session's own UserSession row,
+            // so another session passing the challenge clears nothing here.
             if (token.mfaPending === true && token.userId && token.tenantId) {
                 try {
-                    const enrollment = await prisma.userMfaEnrollment.findUnique({
-                        where: {
-                            userId_tenantId_type: {
-                                userId: token.userId,
-                                tenantId: token.tenantId,
-                                type: 'TOTP',
-                            },
-                        },
-                        select: { lastChallengeAt: true, isVerified: true },
-                    });
-
-                    if (enrollment?.lastChallengeAt) {
-                        const tokenIat = (token.iat as number | undefined) ?? 0;
-                        const challengeTime = Math.floor(enrollment.lastChallengeAt.getTime() / 1000);
-                        if (challengeTime >= tokenIat) {
-                            token.mfaPending = false;
-                        }
-                    }
-                } catch {
-                    if (token.mfaFailClosed) {
-                        token.error = 'MfaDependencyFailure';
-                    } else {
+                    const passed = await workspacesPassedBySession(token.userId, token.userSessionId);
+                    if (passed.has(token.tenantId)) {
                         token.mfaPending = false;
                     }
+                } catch {
+                    // STAYS PENDING, for every tenant (#5587, owner decision
+                    // 2026-11-14). This arm used to clear `mfaPending` unless
+                    // the tenant had set `mfaFailClosed` — which defaults to
+                    // false — so one transient failure on the read above turned
+                    // a KNOWN pending challenge into a passed one, and the
+                    // session held full access on a password alone. The `jwt`
+                    // callback runs on every server read, so it was reachable
+                    // by retrying `GET /api/auth/session` until the read failed.
+                    //
+                    // "Could not confirm the challenge was passed" is not
+                    // evidence that it was. The block below has always read it
+                    // that way for the session's OTHER workspaces — "A read
+                    // failure leaves them pending; the person can still pass
+                    // the challenge" — and this is the same question.
+                    //
+                    // `mfaFailClosed` is deliberately NOT consulted here. It
+                    // answers a different question, at sign-in: if we cannot
+                    // read WHETHER a workspace requires MFA, do we admit the
+                    // session? That has a real availability trade-off and a
+                    // tenant switch. Whether THIS session passed a challenge we
+                    // already know it owes has neither.
+                    token.error = 'MfaDependencyFailure';
                 }
             }
 
             // The same check for the session's other pending workspaces: each
-            // leaves the set once its own challenge was passed since this token
-            // was issued. A read failure leaves them pending; the person can
+            // leaves the set once THIS session passed its challenge. A read
+            // failure leaves them pending; the person can
             // still pass the challenge.
             if (token.mfaPendingTenantIds?.length && token.userId) {
                 try {
                     token.mfaPendingTenantIds = await workspacesStillAskingForCode(
                         token.userId,
                         token.mfaPendingTenantIds,
-                        (token.iat as number | undefined) ?? 0,
+                        token.userSessionId,
                     );
                 } catch {
                     // Stays pending.
                 }
             }
 
-            // Throttled revocation check AND membership-claims refresh
-            // (5-minute interval, one shared timestamp).
+            // Throttled revocation check AND membership-claims refresh.
             //
             // The refresh is here because it is the only place it can be.
             // Membership claims are minted at sign-in and re-minted on
@@ -1108,12 +1211,35 @@ export const authOptions: NextAuthOptions = {
             // `/api/auth/session`. Every other way a membership appears —
             // org auto-provisioning, an accepted invite, an admin adding you to
             // a tenant — happens in a request the affected user is not making,
-            // so no client-side refresh can ever reach it. Before this, those
-            // memberships were invisible to the Edge gate and to the workspace
-            // switcher until a full re-login, with nothing on screen to say so:
-            // the org page rendered (it is DB-gated server-side) while the
-            // switcher, which reads only the token, said the user belonged to
-            // no organizations.
+            // so no client-side refresh can ever reach it.
+            //
+            // ── WHAT THIS REACHES, AND WHAT IT DOES NOT (#5246) ─────────────
+            //
+            // It reaches every SERVER-SIDE reader of the token in this request:
+            // the workspace switcher (which previously said the user belonged
+            // to no organizations while the DB-gated org page rendered),
+            // `getTenantCtx`, and the server gates.
+            //
+            // It does NOT reach the EDGE. This comment used to claim it did —
+            // that those memberships were "invisible to the Edge gate … until a
+            // full re-login", and below, that the refresh "SHRINKS the token"
+            // so the Edge stops authorizing a removed slug. Both are false, for
+            // the reason stated two blocks up and in
+            // `lib/auth/refresh-session-cookie.ts`: in the App Router a server
+            // read never writes the re-signed cookie back, and the middleware
+            // reads ONLY the cookie (`getToken`). So:
+            //
+            //   • a membership added while signed in stays invisible to
+            //     `checkTenantAccess`, which returns `cross_tenant` for its
+            //     slug and sends the person to `/no-tenant` — where a button
+            //     now calls the NextAuth session route, the one path that does
+            //     rewrite the cookie;
+            //   • a REVOKED membership likewise stays in the cookie, so the
+            //     Edge keeps admitting its slug. The authoritative server-side
+            //     gate refuses it, so this is stale defence-in-depth rather
+            //     than a breach — which is what the old comment said, correctly,
+            //     about the state BEFORE the refresh. The refresh did not
+            //     change it.
             //
             // Revocation is checked BEFORE the refresh, because the refresh
             // overwrites `token.sessionVersion` with the value it is compared
@@ -1138,18 +1264,43 @@ export const authOptions: NextAuthOptions = {
                     // Outside the try, for the same reason as the row check above.
                     if (versionBumped) throw new SessionRevokedError('session_version_bumped');
                     try {
-                        // Claims re-read from the database on the same cadence.
-                        // This also SHRINKS the token when a membership is
-                        // revoked: previously a removed membership stayed in the
-                        // JWT until re-login, so the Edge gate kept authorizing
-                        // the slug (the authoritative server-side gate refused
-                        // it, so this was stale defence-in-depth rather than a
-                        // breach — but the gate was answering from a token that
-                        // no longer described reality).
-                        if (token.email) {
+                        // ── THE CLAIMS RE-READ, ON A CADENCE THAT PERSISTS ──
+                        //
+                        // Gated on the session row's own touch rather than on
+                        // `token.sessionVersionCheckedAt` (#5246). That
+                        // timestamp lives in the token, and in the App Router
+                        // the re-signed cookie is never written back — so it
+                        // persisted exactly ONCE, at sign-in, where the cookie
+                        // IS written. Five minutes later every server request
+                        // re-ran this: a joined user+memberships+orgs query plus
+                        // a `tenantsEnforcingSso` query, on every page render,
+                        // for the life of the session. The outer throttle was
+                        // not throttling anything.
+                        //
+                        // `claimsReadDue` is true only when
+                        // `verifyAndTouchSession` actually stamped
+                        // `lastActiveAt`, which is DB state on a row this
+                        // callback already reads — a real 5-minute cadence for
+                        // no extra query and no new column.
+                        //
+                        // With NO session row (`!sessionRowFound` — a token
+                        // minted before session tracking, or a flow that writes
+                        // none) there is no persisted signal, so fall back to
+                        // the old timing rather than never refreshing.
+                        //
+                        // The REVOCATION check above is deliberately NOT gated
+                        // this way: it stays on the token's timing, so it keeps
+                        // running at least as often as it does today. Narrowing
+                        // it would make a `sessionVersion` bump take up to five
+                        // minutes to notice, and that is a security cadence, not
+                        // a performance one. Per-session revocation is
+                        // unaffected either way — `verifyAndTouchSession` reads
+                        // `revokedAt` on EVERY pass, unthrottled.
+                        if (token.email && (claimsReadDue || !sessionRowFound)) {
                             const before = membershipTenantIds(token);
+                            const primary = { tenantId: token.tenantId, pending: token.mfaPending === true };
                             await applyMembershipClaims(token);
-                            await refreshPendingMfaWorkspaces(token, before);
+                            await refreshPendingMfaWorkspaces(token, before, primary);
                         }
                         // Stamped LAST so a failed read retries on the next
                         // request instead of being skipped for five minutes.
@@ -1173,6 +1324,7 @@ export const authOptions: NextAuthOptions = {
                 session.user.tenantId = token.tenantId ?? null;
                 session.user.role = token.role ?? 'READER';
                 session.user.mfaPending = token.mfaPending ?? false;
+                session.user.mfaPendingTenantIds = token.mfaPendingTenantIds ?? [];
                 session.user.memberships = token.memberships ?? [];
                 session.user.orgMemberships = token.orgMemberships ?? [];
                 session.user.ssoTenantId = token.ssoTenantId ?? null;

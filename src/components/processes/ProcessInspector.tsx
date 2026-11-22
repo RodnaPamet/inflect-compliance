@@ -31,6 +31,7 @@
  *     as "is anything happening?"
  */
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 // NO ENGINE IMPORT. The inspector edits MEANING — node type, size, linked
@@ -131,6 +132,14 @@ export interface EdgeControlRef {
 export interface ProcessInspectorProps {
     /** Selected node, or null when nothing is selected. */
     node: SelectedCanvasNode | null;
+    /** May the viewer change automation rules? See the automation panel (#5283). */
+    canManageRules?: boolean;
+    /**
+     * May an agent step link to the agent it invokes on the agent view (Phase
+     * 2.3 of `docs/ai-architecture/langflow.md`)? Only where the viewer may read
+     * the agent register. Defaults to FALSE.
+     */
+    canOpenAgentCanvas?: boolean;
     /**
      * R28 — selected edge, or null when nothing is selected. Mutually
      * exclusive with `node` in practice: an engine may let you select both,
@@ -213,6 +222,8 @@ export function ProcessInspector({
     onUpdate,
     onEdgeUpdate,
     mapId,
+    canManageRules = false,
+    canOpenAgentCanvas = false,
 }: ProcessInspectorProps) {
     // Local state mirrors the node's data so the user can type
     // without every keystroke flushing to the canvas state. The
@@ -232,6 +243,7 @@ export function ProcessInspector({
     // VR-4 — automation-mode inspector branch (hook stays unconditional).
     const isAutomation = useIsAutomationMode();
     const t = useTranslations("automation.inspector");
+    const tKinds = useTranslations("automation.palette.kinds");
 
     // Sync local mirror when the selected node changes.
     useEffect(() => {
@@ -277,6 +289,8 @@ export function ProcessInspector({
                         ruleIds={ruleIds}
                         unsavedOwners={fed?.unsavedOwners ?? 0}
                         tenantSlug={tenantSlug ?? ""}
+                        canManageRules={canManageRules}
+                        canOpenAgentCanvas={canOpenAgentCanvas}
                     />
                 </div>
             </AsidePanel>
@@ -319,7 +333,7 @@ export function ProcessInspector({
             >
                 {kindMeta && (
                     <span className="text-[10px] uppercase tracking-wide text-content-subtle">
-                        {kindMeta.label}
+                        {tKinds(kindMeta.id)}
                     </span>
                 )}
                 <label className="flex flex-col gap-tight">
@@ -528,6 +542,17 @@ function NodeLinkedEntityPicker({
                           : t("pickOne")
                 }
             />
+            {/* The control node's record, one click away. The card on the
+                canvas shows its live status; this opens the control itself. */}
+            {nodeKind === "control" && selectedId && tenantSlug ? (
+                <Link
+                    href={`/t/${tenantSlug}/controls/${encodeURIComponent(selectedId)}`}
+                    className="text-xs text-content-link hover:underline"
+                    data-testid="inspector-node-open-control"
+                >
+                    {t("openControl")}
+                </Link>
+            ) : null}
         </div>
     );
 }

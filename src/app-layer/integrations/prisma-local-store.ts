@@ -122,42 +122,27 @@ function buildUpdatePayload(
 ): Record<string, unknown> {
     switch (entityType) {
         case 'control': {
-            // Allowlist of fields that can be updated from sync
+            // Allowlist of fields that can be updated from sync, each naming a
+            // REAL Control column. The branch-protection fields
+            // (protectionEnabled, requiredReviewCount, dismissStaleReviews,
+            // requireCodeOwnerReviews, enforceAdmins) used to map to an
+            // `automationResultJson` column that Control has never had, so
+            // every GitHub pull failed in Prisma before the control was
+            // updated (#5250). They are dropped rather than stored: keeping
+            // them would need a column, and a migration, of their own.
             const ALLOWED_CONTROL_FIELDS: Record<string, string> = {
                 // sync field → Prisma column
                 'status': 'status',
-                'protectionEnabled': 'automationResultJson',
-                'requiredReviewCount': 'automationResultJson',
-                'dismissStaleReviews': 'automationResultJson',
-                'requireCodeOwnerReviews': 'automationResultJson',
-                'enforceAdmins': 'automationResultJson',
             };
 
             const payload: Record<string, unknown> = {};
-            const automationResult: Record<string, unknown> = {};
-
             for (const [field, value] of Object.entries(data)) {
                 if (value === undefined) continue;
                 const target = ALLOWED_CONTROL_FIELDS[field];
                 if (!target) continue;
-
-                if (target === 'automationResultJson') {
-                    automationResult[field] = value;
-                } else {
-                    // Map sync status values to Prisma ControlStatus enum
-                    if (field === 'status' && typeof value === 'string') {
-                        payload[target] = mapControlStatus(value);
-                    } else {
-                        payload[target] = value;
-                    }
-                }
+                // Map sync status values to Prisma ControlStatus enum
+                payload[target] = field === 'status' && typeof value === 'string' ? mapControlStatus(value) : value;
             }
-
-            // If we have automation result fields, store as JSON
-            if (Object.keys(automationResult).length > 0) {
-                payload['automationResultJson'] = automationResult;
-            }
-
             return payload;
         }
         default:

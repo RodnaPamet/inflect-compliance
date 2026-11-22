@@ -1,0 +1,21 @@
+-- An MFA pass is bound to the session that answered it, and a TOTP code is
+-- accepted once.
+--
+--   UserSession.mfaPassedTenantIds   workspaces whose challenge THIS session
+--                                    passed. The jwt callback clears a pending
+--                                    workspace only when the session's own row
+--                                    lists it. It used to compare the
+--                                    enrolment's lastChallengeAt with the
+--                                    token's iat, which any session passing the
+--                                    challenge satisfied for every older one.
+--   UserMfaEnrollment.lastAcceptedTotpStep
+--                                    the time step of the last accepted code; a
+--                                    code is accepted only for a later step.
+--
+-- Additive. The array has a constant default, so the ADD COLUMN is a catalogue
+-- change; the integer is nullable with no default. An old container never
+-- reads either column. Sessions open at deploy hold no pass on their rows, so a
+-- session still pending its challenge passes it again; one already cleared
+-- keeps its cleared token.
+ALTER TABLE "UserSession" ADD COLUMN "mfaPassedTenantIds" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];
+ALTER TABLE "UserMfaEnrollment" ADD COLUMN "lastAcceptedTotpStep" INTEGER;

@@ -66,6 +66,7 @@ worked example:
 |----------|----------|-----|
 | `uuid` → `^11.1.1` | GHSA-w5hq-g745-h8pq — missing buffer bounds check in uuid v3/v5/v6 when `buf` is provided (moderate) | `next-auth@4` declares `uuid@^8.3.2`; the whole `<11.1.1` line is vulnerable, so the only fix is forcing the patched major. `next-auth` uses the version-stable named `uuid` exports (`v4`, …), which are unchanged v8 → v11. Drop this entry if `next-auth` itself moves to a patched `uuid` range. |
 | `sharp` → `0.35.3` | GHSA-f88m-g3jw-g9cj — sharp `<0.35.0` inherits libvips CVEs CVE-2026-33327 / 33328 / 35590 / 35591 (high) | `next@16.2.10` pulls `sharp@0.34.5` transitively for image optimisation; the whole `<0.35.0` line is vulnerable. `sharp` 0.35.x is a drop-in for Next's optimiser (same API surface), so force the patched `0.35.3`. Drop this entry once `next` itself depends on `sharp >=0.35.0`. |
+| `effect` → `^3.22.1` | GHSA-7589-6fvf-x4pw — ReDoS in `Schema.TemplateLiteral`'s compiled regex, `effect` ≤3.22.0 (high) | `prisma@7.10.1` → `@prisma/config@7.10.1` depends on `effect@3.20.0`, which turned the npm-audit gate red on `main` (2026-11-19). The patched 3.22.x line is the same major; `@prisma/config` uses it only to load `prisma.config.ts`. Drop this entry once `@prisma/config` depends on `effect >=3.22.1`. |
 
 A security override is NOT a bridge to drop on convenience — keep it
 until the upstream package legitimately depends on a patched range.

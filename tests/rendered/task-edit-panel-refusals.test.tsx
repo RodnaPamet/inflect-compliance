@@ -203,3 +203,37 @@ describe('TaskEditPanel — a refused write shows the server’s reason', () => 
         expect(screen.queryByText(ASSIGN_FAILED)).not.toBeInTheDocument();
     });
 });
+
+describe('TaskEditPanel — before the task has loaded (#5309)', () => {
+    it('blocks editing until the GET lands, so nothing typed is thrown away', async () => {
+        let land: () => void = () => {};
+        installFetch('TRIAGED');
+        const loadedFetch = global.fetch as jest.Mock;
+        global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+            if (String(input).endsWith('/tasks/task-1') && (init?.method ?? 'GET') === 'GET') {
+                return new Promise<Response>((resolve) => {
+                    land = () => resolve(loadedFetch(input, init));
+                });
+            }
+            return loadedFetch(input, init);
+        }) as unknown as typeof fetch;
+        render(
+            <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
+                <TaskEditPanel
+                    tenantSlug="acme"
+                    task={{ id: 'task-1', title: 'Rotate the admin keys', status: 'TRIAGED', severity: 'MEDIUM' }}
+                    canWrite
+                    onSaved={jest.fn()}
+                />
+            </SWRConfig>,
+        );
+
+        const title = document.getElementById('task-panel-title') as HTMLInputElement;
+        expect(title).toBeDisabled();
+        expect(screen.queryByTestId('task-edit-autosave-status')).toBeNull();
+
+        land();
+        await loaded();
+        expect(title).not.toBeDisabled();
+    });
+});

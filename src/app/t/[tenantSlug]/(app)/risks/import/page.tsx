@@ -12,6 +12,7 @@ import { BackAffordance } from '@/components/nav/BackAffordance';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { useRiskMatrixConfig } from '@/lib/hooks/use-risk-matrix-config';
 import { parseCsvRecords } from '@/lib/csv/parse-csv';
+import { RISK_IMPORT_MAX_ROWS } from '@/lib/risk-import-limits';
 import { cn } from '@inflect/ui/lib/cn';
 import { extractMutationError } from '@/lib/mutations';
 import { apiErrorMessage } from '@/lib/api-error';
@@ -109,6 +110,8 @@ export default function RiskImportPage() {
         reader.readAsText(file);
     };
 
+    const overImportCap = rows.length > RISK_IMPORT_MAX_ROWS;
+
     const doImport = async () => {
         setImporting(true);
         try {
@@ -192,12 +195,21 @@ export default function RiskImportPage() {
                 </>
             )}
 
+            {/* One import takes at most RISK_IMPORT_MAX_ROWS (#5313): above it
+                the server refuses the whole batch, so the page says so and does
+                not offer the import. */}
+            {overImportCap && !result && (
+                <div className={cn(cardVariants({ density: 'compact' }), 'text-sm text-content-warning')} role="alert" data-testid="import-over-cap">
+                    {t('tooManyRows', { count: rows.length, max: RISK_IMPORT_MAX_ROWS })}
+                </div>
+            )}
+
             {/* Preview */}
             {rows.length > 0 && !result && (
                 <div className={cn(cardVariants({ density: 'none' }), 'overflow-hidden')}>
                     <div className="p-3 border-b border-border-default/50 flex justify-between items-center">
                         <span className="text-sm font-medium">{t('risksToImport', { count: rows.length })}</span>
-                        <Button variant="primary" size="sm" onClick={doImport} disabled={importing} id="import-btn">
+                        <Button variant="primary" size="sm" onClick={doImport} disabled={importing || overImportCap} id="import-btn">
                             {importing ? t('importing', { count: rows.length }) : t('confirmImport', { count: rows.length })}
                         </Button>
                     </div>

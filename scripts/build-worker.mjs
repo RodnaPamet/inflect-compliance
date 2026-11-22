@@ -154,6 +154,12 @@ await build({
 
 await build({
     ...common,
+    entryPoints: ['scripts/decrypt-legacy-dsr-fields.ts'],
+    outfile: 'dist/decrypt-legacy-dsr-fields.mjs',
+});
+
+await build({
+    ...common,
     entryPoints: ['scripts/catalog-check.ts'],
     outfile: 'dist/catalog-check.mjs',
 });
@@ -167,4 +173,4 @@ await build({
     outfile: 'dist/seed-vendor-questionnaires.mjs',
 });
 
-console.log('✓ built dist/worker.mjs + dist/scheduler.mjs + dist/seed-self-assessments.mjs + dist/seed-policy-templates.mjs + dist/seed-risk-templates.mjs + dist/seed-vendor-questionnaires.mjs + dist/seed-control-template-tasks.mjs + dist/seed-framework-catalogs.mjs + dist/sync-framework-libraries.mjs + dist/backfill-task-checklists.mjs + dist/catalog-check.mjs');
+console.log('✓ built dist/worker.mjs + dist/scheduler.mjs + dist/seed-self-assessments.mjs + dist/seed-policy-templates.mjs + dist/seed-risk-templates.mjs + dist/seed-vendor-questionnaires.mjs + dist/seed-control-template-tasks.mjs + dist/seed-framework-catalogs.mjs + dist/sync-framework-libraries.mjs + dist/backfill-task-checklists.mjs + dist/decrypt-legacy-dsr-fields.mjs + dist/catalog-check.mjs');

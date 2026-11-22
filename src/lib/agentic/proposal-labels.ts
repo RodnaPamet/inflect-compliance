@@ -12,7 +12,7 @@
  * A stored payload is the PARSED output of the kind's schema
  * (`createAgentProposal` writes `schema.safeParse(...).data`), so its keys are
  * exactly the schemas' keys: the create and update schemas of the four record
- * kinds and the external-write payload. `tests/unit/agent-proposal-labels.test.ts`
+ * kinds, the external-write payload and the proposed process map. `tests/unit/agent-proposal-labels.test.ts`
  * reads those schemas and fails when one gains a key this list does not name,
  * or when this list names one no schema has.
  *
@@ -24,7 +24,14 @@
  */
 
 /** `AgentProposalKind`, mirrored; the label test compares it with the enum. */
-export const PROPOSAL_KINDS = ['RISK', 'CONTROL', 'POLICY', 'FINDING', 'EXTERNAL_WRITE'] as const;
+export const PROPOSAL_KINDS = [
+    'RISK',
+    'CONTROL',
+    'POLICY',
+    'FINDING',
+    'EXTERNAL_WRITE',
+    'PROCESS_MAP',
+] as const;
 
 /** Every key a stored proposal payload can carry. */
 export const PROPOSAL_FIELD_NAMES = [
@@ -91,6 +98,10 @@ export const PROPOSAL_FIELD_NAMES = [
     'advertisedToolName',
     'arguments',
     'priorState',
+    // Process map (#5053). The diff carries only `name` and `description` as
+    // fields and the graph as its preview, but a stored payload has all four.
+    'nodes',
+    'edges',
 ] as const;
 
 const KINDS: ReadonlySet<string> = new Set(PROPOSAL_KINDS);
@@ -104,4 +115,23 @@ export function proposalKindLabelKey(kind: string): string | null {
 /** The `agents` message key naming a payload field, or null for a field not on the list. */
 export function proposalFieldLabelKey(field: string): string | null {
     return FIELDS.has(field) ? `proposals.field.${field}` : null;
+}
+
+/**
+ * The English noun for a proposal kind, for sentences written on the server:
+ * the propose tools' result message and the assistant's outcome line. A
+ * `Record` over the kind list, so a kind added without a noun fails `tsc`;
+ * an unknown stored kind reads as "item".
+ */
+const KIND_NOUN: Readonly<Record<(typeof PROPOSAL_KINDS)[number], string>> = {
+    RISK: 'risk',
+    CONTROL: 'control',
+    POLICY: 'policy',
+    FINDING: 'finding',
+    EXTERNAL_WRITE: 'external write',
+    PROCESS_MAP: 'process map',
+};
+
+export function proposalKindNoun(kind: string): string {
+    return KINDS.has(kind) ? KIND_NOUN[kind as (typeof PROPOSAL_KINDS)[number]] : 'item';
 }

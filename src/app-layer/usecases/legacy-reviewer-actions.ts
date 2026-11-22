@@ -209,11 +209,21 @@ function proposedEmployeeId(
 
 async function readSeenResolution(
     ctx: RequestContext,
-    input: Pick<DecideInput, 'accountKey' | 'executionId'>
+    input: Pick<DecideInput, 'accountKey' | 'executionId' | 'connectionId'>
 ): Promise<SeenResolution> {
+    // SCOPED TO THE CONNECTION (#5144). Account keys are the legacy
+    // application's own logins, so two connections can share one: `jsmith`
+    // in the ERP and `jsmith` in the HR system. Unscoped, the newest
+    // resolution of EITHER answered "is this still the run you looked at", and
+    // a pull of the other application refused a valid decision as stale, or
+    // let one be decided against the other application's evidence.
     const rows = await runInTenantContext(ctx, (db) =>
         db.legacyAccountResolution.findMany({
-            where: { tenantId: ctx.tenantId, accountKey: input.accountKey },
+            where: {
+                tenantId: ctx.tenantId,
+                accountKey: input.accountKey,
+                snapshot: { connectionId: input.connectionId },
+            },
             orderBy: { createdAt: 'desc' },
             take: 2,
             select: {
@@ -288,7 +298,9 @@ async function requireTenantEmployee(ctx: RequestContext, employeeId: string): P
 async function requireActiveOwner(ctx: RequestContext, userId: string): Promise<void> {
     const found = await runInTenantContext(ctx, (db) =>
         db.tenantMembership.findFirst({
-            where: { userId, tenantId: ctx.tenantId },
+            // ACTIVE only: a DEACTIVATED or REMOVED membership is an owner who
+            // has left, which is the state this check exists to refuse.
+            where: { userId, tenantId: ctx.tenantId, status: 'ACTIVE' },
             select: { userId: true },
         })
     );
@@ -676,6 +688,7 @@ export async function bulkConfirmLegacyAccounts(
             const seen = await readSeenResolution(ctx, {
                 accountKey: row.accountKey,
                 executionId: input.executionId,
+                connectionId: input.connectionId,
             });
 
             // SUGGESTED only. An AMBIGUOUS row is one the engine refused to

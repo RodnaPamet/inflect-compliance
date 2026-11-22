@@ -1,0 +1,22 @@
+# The judge image's TEST stage dependencies, pinned by hash
+# (docs/ai-architecture/ragas.md 1.1; evals/rag/Dockerfile, `--target test`).
+#
+# pytest 9.0.3 as pyproject.toml's `test` extra names it, and the two of its
+# requirements the runtime set (requirements.lock) does not already carry:
+# iniconfig and pluggy, at the newest release uploaded before 2026-01-14, the
+# runtime lock's cut-off (packaging and Pygments come from requirements.lock).
+# pytest itself is past that cut-off on purpose: 9.0.3 (2026-04-07) fixes
+# CVE-2025-71176 (insecure temporary directory) and declares the same
+# requirements as 9.0.2, so iniconfig and pluggy stay where they were.
+# Installed with --no-deps --require-hashes and checked with pip check.
+# Hashes: every distribution file PyPI lists for each version, read from
+# PyPI's JSON API on 2026-11-16 (pytest 9.0.3's on 2026-11-19).
+pytest==9.0.3 \
+    --hash=sha256:2c5efc453d45394fdd706ade797c0a81091eccd1d6e4bccfcd476e2b8e0ab5d9 \
+    --hash=sha256:b86ada508af81d19edeb213c681b1d48246c1a91d304c6c81a427674c17eb91c
+iniconfig==2.3.0 \
+    --hash=sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730 \
+    --hash=sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12
+pluggy==1.6.0 \
+    --hash=sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3 \
+    --hash=sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746

@@ -470,6 +470,36 @@ describe('CLOSED after a hand close is not CLOSED and clear', () => {
         expect(screen.getByText('user-42')).toBeInTheDocument();
     });
 
+    it('says the close answered the trip while it still does', () => {
+        renderTab(makePayload({ breaker: CLOSED_AFTER_TRIP }));
+        expect(screen.getByTestId('breaker-hand-closed')).toBeInTheDocument();
+    });
+
+    it('a trip after the close is not reported as closed by hand (#5124)', () => {
+        // The trip writers latch OPEN without clearing the close fields.
+        renderTab(makePayload({
+            breaker: {
+                ...CLOSED_AFTER_TRIP,
+                state: 'OPEN',
+                anomalousStreak: 3,
+                trippedAt: '2026-09-01T09:00:00.000Z',
+                trippedWindow: '2026-09-01T09',
+            },
+        }));
+        expect(screen.queryByTestId('breaker-hand-closed')).not.toBeInTheDocument();
+        expect(screen.queryByText(S('factClosedAt'))).not.toBeInTheDocument();
+        expect(screen.queryByText(S('factCloseReason'))).not.toBeInTheDocument();
+        expect(screen.queryByText('user-42')).not.toBeInTheDocument();
+    });
+
+    it('a steady verdict after the close drops the notice but keeps the close on record (#5124)', () => {
+        renderTab(makePayload({ breaker: { ...CLOSED_AFTER_TRIP, lastVerdict: 'STEADY' } }));
+        expect(within(badgeRow()).getByText(BADGE.watching)).toBeInTheDocument();
+        expect(screen.queryByTestId('breaker-hand-closed')).not.toBeInTheDocument();
+        expect(screen.getByText(S('factClosedAt'))).toBeInTheDocument();
+        expect(screen.getByText('user-42')).toBeInTheDocument();
+    });
+
     it('the watching copy is renderable — a genuinely steady breaker gets it', () => {
         // The positive control for the two absences above. Without this the
         // pair could pass because the watching strings are unreachable from

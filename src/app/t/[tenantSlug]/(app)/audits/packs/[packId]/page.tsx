@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { useParams, useRouter } from 'next/navigation';
 import { AppIcon, type AppIconName } from '@/components/icons/AppIcon';
-import { RequirePermission } from '@/components/require-permission';
+import { useTenantContext } from '@/lib/tenant-context-provider';
 import { IconAction } from '@/components/ui/icon-action';
 import { Tooltip } from '@/components/ui/tooltip';
 import { buttonVariants } from '@/components/ui/button-variants';
@@ -17,6 +17,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FormField } from '@/components/ui/form-field';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
+import { endOfUtcDay } from '@/components/ui/date-picker/date-utils';
 import { useCelebration, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
@@ -24,7 +25,7 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { celebrationDedupe, scopedMilestone } from '@/lib/celebrations';
 import { Package, MessageSquare } from 'lucide-react';
-import { Xmark } from '@inflect/ui/components/ui/icons/nucleo';
+import { Xmark } from '@inflect/ui/components/ui/icons/glyphs';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { SharePointExportButton } from './SharePointExportButton';
 import { Heading } from '@/components/ui/typography';
@@ -132,6 +133,8 @@ export default function PackDetailPage() {
     // #4129 — every control below is gated on what the SERVER allows this role
     // (`lib/audit-readiness/access.ts`), not on `audits.manage` / `audits.share`.
     const access = useAuditReadinessAccess();
+    const { permissions: tier, appPermissions } = useTenantContext();
+    const mayExportToSharePoint = !!tier?.canAdmin && !!appPermissions?.admin?.manage;
 
     // #10 — localize a raw enum value through the audits catalog, falling back
     // to a humanized form for any value not (yet) in the catalog (mirrors the
@@ -541,7 +544,11 @@ export default function PackDetailPage() {
     // hook order stays stable across loading → loaded transitions.
     const { celebrate } = useCelebration(celebrationDedupe);
     const packStatus: string | undefined = pack?.status;
-    const packComplete = packStatus === 'FROZEN' || packStatus === 'EXPORTED';
+    // Not while the freeze is in flight (#5313): its optimistic FROZEN is a
+    // prediction, and a refused freeze rolls it back after the celebration had
+    // already played — and, deduped per pack, it would not play again on the
+    // real freeze later. Celebrate the status the server confirmed.
+    const packComplete = (packStatus === 'FROZEN' || packStatus === 'EXPORTED') && !freezing;
     const packName: string | undefined = pack?.name;
     useEffect(() => {
         if (!packComplete) return;
@@ -667,7 +674,19 @@ export default function PackDetailPage() {
                                 of firing on a single click. The trigger stays icon-only
                                 (locked by icon-only-action-discipline); the confirm surface
                                 below carries the visible label + irreversibility warning. */}
-                            <IconAction variant="primary" onClick={() => setFreezeConfirmOpen(true)} loading={freezing} id="freeze-pack-btn" icon={<AppIcon name="lock" size={16} />} label={tx('packs.freezePack')} />
+                            {/* The server refuses to freeze an empty pack
+                                (PACK_EMPTY), so an empty draft offers the control
+                                disabled (#5313); the empty item list below says
+                                what to add. */}
+                            <IconAction
+                                variant="primary"
+                                onClick={() => setFreezeConfirmOpen(true)}
+                                loading={freezing}
+                                disabled={(pack.items?.length ?? 0) === 0}
+                                id="freeze-pack-btn"
+                                icon={<AppIcon name="lock" size={16} />}
+                                label={tx('packs.freezePack')}
+                            />
                         </>
                     )}
                     {/* Owner and Admin only: an Auditor holds `audits.share`
@@ -687,10 +706,12 @@ export default function PackDetailPage() {
                             label={tx('packs.cloneForRetest')}
                         />
                     )}
-                    {isFrozen && (
-                        <RequirePermission resource="audits" action="manage">
-                            <SharePointExportButton packId={packId} />
-                        </RequirePermission>
+                    {/* The export route takes `admin.manage` and its usecase the
+                        coarse admin tier (`assertCanAdmin`), so the button asks the
+                        same two — `audits.manage` offered it to Editors, whose
+                        every export was refused. */}
+                    {isFrozen && mayExportToSharePoint && (
+                        <SharePointExportButton packId={packId} />
                     )}
                 </>
             }
@@ -989,7 +1010,11 @@ export default function PackDetailPage() {
                                 clearable
                                 align="start"
                                 value={shareExpiry}
-                                onChange={(next) => setShareExpiry(next)}
+                                // The picker answers with the picked DAY at 00:00 UTC.
+                                // A link chosen to expire "on" a day expires at the END
+                                // of it: at its start, picking today made a link that
+                                // was already expired.
+                                onChange={(next) => setShareExpiry(next ? endOfUtcDay(next) : null)}
                                 disabledDays={{ before: new Date() }}
                                 aria-label={tx('packs.shareModal.expiryLabel')}
                             />

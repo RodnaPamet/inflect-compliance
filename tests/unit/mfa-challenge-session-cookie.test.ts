@@ -5,7 +5,7 @@
  * A correct MFA code must get the user past the edge gate.
  *
  * The edge middleware reads `mfaPending` from the session COOKIE. After a
- * correct code, `verifyMfaChallenge` stamps `lastChallengeAt`, and the `jwt`
+ * correct code, `verifyMfaChallenge` records the pass on THIS session's row, and the `jwt`
  * callback in `src/auth.ts` clears `mfaPending` on its next run — but in the
  * App Router a server read never writes the re-signed cookie back. Only
  * NextAuth's session route does. The challenge page used to navigate straight
@@ -26,14 +26,21 @@
  * The page half — that the challenge page calls the session route before it
  * navigates — is tests/rendered/mfa-challenge-refresh.test.tsx.
  */
-const enrollment = { lastChallengeAt: null as Date | null, isVerified: true };
+/** The UserSession rows by sessionId: which workspaces each session passed. */
+const sessions: Record<string, { userId: string; mfaPassedTenantIds: string[] }> = {};
 jest.mock('@/lib/prisma', () => {
     const prisma = {
-        userMfaEnrollment: { findUnique: jest.fn(async () => enrollment) },
+        userSession: {
+            findUnique: jest.fn(async ({ where }: any) => sessions[where.sessionId] ?? null),
+        },
         user: { findUnique: jest.fn(async () => ({ sessionVersion: 1 })) },
     };
     return { __esModule: true, default: prisma, prisma };
 });
+jest.mock('@/lib/security/session-tracker', () => ({
+    recordNewSession: jest.fn(async () => ({ sessionId: 'sess-1' })),
+    verifyAndTouchSession: jest.fn(async () => ({ revoked: false })),
+}));
 // NextAuth's App Router handler reads the incoming cookies and headers through
 // `next/headers`, which Next fills from the live request. Here that request is
 // the one the test hands the handler.
@@ -76,6 +83,7 @@ async function signedInCookie(): Promise<string> {
             memberships: [{ slug: 'acme', role: 'READER', tenantId: 'tenant-1' }],
             orgMemberships: [],
             sessionVersion: 1,
+            userSessionId: 'sess-1',
             // Checked just now, so the 5-minute claims refresh stays out of the way.
             sessionVersionCheckedAt: now,
         } as any,
@@ -107,19 +115,20 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-    enrollment.lastChallengeAt = null;
+    sessions['sess-1'] = { userId: 'user-1', mfaPassedTenantIds: [] };
+    sessions['sess-other'] = { userId: 'user-1', mfaPassedTenantIds: [] };
 });
 
 describe('MFA challenge → session cookie → edge gate', () => {
     it('the unrefreshed sign-in cookie is still sent to the challenge after the code is recorded', async () => {
         const cookie = await signedInCookie();
-        enrollment.lastChallengeAt = new Date(Date.now() + 2000);
+        sessions['sess-1'].mfaPassedTenantIds.push('tenant-1');
         expect(await gateFor(cookie)).toBe('/t/acme/auth/mfa');
     });
 
     it('the session route rewrites the cookie once the code is recorded, and the gate lets the user through', async () => {
         const cookie = await signedInCookie();
-        enrollment.lastChallengeAt = new Date(Date.now() + 2000);
+        sessions['sess-1'].mfaPassedTenantIds.push('tenant-1');
 
         const refreshed = await refreshThroughSessionRoute(cookie);
         const claims = await decode({ token: refreshed, secret: SECRET });
@@ -129,6 +138,18 @@ describe('MFA challenge → session cookie → edge gate', () => {
 
     it('the session route does not clear it before a code is recorded', async () => {
         const cookie = await signedInCookie();
+        const refreshed = await refreshThroughSessionRoute(cookie);
+        const claims = await decode({ token: refreshed, secret: SECRET });
+        expect(claims?.mfaPending).toBe(true);
+        expect(await gateFor(refreshed)).toBe('/t/acme/auth/mfa');
+    });
+
+    it('a pass recorded by ANOTHER session of the same person does not clear this one', async () => {
+        // Somebody holding only the password signs in and waits. The real
+        // person signs in elsewhere and passes the challenge. That pass is
+        // the other session's, so this cookie stays held at the challenge.
+        const cookie = await signedInCookie();
+        sessions['sess-other'].mfaPassedTenantIds.push('tenant-1');
         const refreshed = await refreshThroughSessionRoute(cookie);
         const claims = await decode({ token: refreshed, secret: SECRET });
         expect(claims?.mfaPending).toBe(true);

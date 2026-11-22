@@ -11,6 +11,8 @@
  */
 import { PrismaClient, MembershipStatus, Role } from '@prisma/client';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
+import appPrisma from '@/lib/prisma';
+import { runWithAuditContext } from '@/lib/audit-context';
 import { makeRequestContext } from '../helpers/make-context';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { hashForLookup } from '@/lib/security/encryption';
@@ -162,6 +164,30 @@ function parse<T>(json: string): T {
     return JSON.parse(json) as T;
 }
 
+/**
+ * Read a pack item's snapshot THE WAY THE PRODUCT DOES (#5150).
+ *
+ * `AuditPackItem.snapshotJson` is in the Epic B manifest, so it is ciphertext at
+ * rest. `prismaTestClient` carries only the PII extension, so reading the column
+ * through it yields `v2:…` and `JSON.parse` fails on the `v`. The field
+ * encryption decrypts on the APP's client, and only inside an ambient audit
+ * context — without one `resolveTenantDekPair` returns NO_DEK_PAIR and the
+ * reader gets `null` by design, not plaintext.
+ *
+ * So this is the real read path, which is also the honest thing for this suite
+ * to exercise: it asserts on snapshot CONTENT, and content is what a reader with
+ * a tenant context gets.
+ */
+async function snapshotJsonOf(tenantId: string, itemId: string): Promise<string> {
+    return runWithAuditContext({ tenantId, source: 'api' }, async () => {
+        const row = await appPrisma.auditPackItem.findFirstOrThrow({
+            where: { id: itemId },
+            select: { snapshotJson: true },
+        });
+        return row.snapshotJson;
+    }) as Promise<string>;
+}
+
 beforeAll(async () => {
     await resetDatabase(prisma);
     await clearOwnRows();
@@ -311,7 +337,7 @@ describe('every control in scope has a pack with workpapers, sampling records an
         const item = await prisma.auditPackItem.findFirstOrThrow({
             where: { auditPackId: packId, entityId: fx[T1].leaverControlId },
         });
-        const snap = parse<RelianceControlSnapshot>(item.snapshotJson);
+        const snap = parse<RelianceControlSnapshot>(await snapshotJsonOf(T1, item.id));
         expect(snap.code).toBe('A.5.16');
         expect(snap.reliance.workpapers.map((w) => w.id).sort()).toEqual(papers.slice(0, 3).map((p) => p.id).sort());
         const state = new Map(snap.reliance.workpapers.map((w) => [w.id, w.sampling.state] as const));
@@ -333,7 +359,7 @@ describe('every control in scope has a pack with workpapers, sampling records an
         const item = await prisma.auditPackItem.findFirstOrThrow({
             where: { auditPackId: packId, entityId: fx[T1].agentControlId },
         });
-        const snap = parse<RelianceControlSnapshot>(item.snapshotJson);
+        const snap = parse<RelianceControlSnapshot>(await snapshotJsonOf(T1, item.id));
         expect(snap.reliance.workpapers).toEqual([]);
         expect(snap.reliance.limits).toContain('NO_WORKPAPERS_IN_PERIOD');
         expect(snap.reliance.sampling.agreementRate).toBeNull();
@@ -343,7 +369,7 @@ describe('every control in scope has a pack with workpapers, sampling records an
         const item = await prisma.auditPackItem.findFirstOrThrow({
             where: { auditPackId: packId, entityType: 'FRAMEWORK_COVERAGE' },
         });
-        const summary = parse<RelianceSummarySnapshot>(item.snapshotJson);
+        const summary = parse<RelianceSummarySnapshot>(await snapshotJsonOf(T1, item.id));
         expect(summary.framework).toEqual({ key: 'ISO42001', version: '2023' });
         expect(summary.agreement).toMatchObject({ workpapers: 3, concluded: 2, agreementRate: 0.5 });
         expect(summary.definitions.map((d) => d.id)).toEqual([
@@ -399,11 +425,12 @@ describe('one tenant’s pack holds nothing of another', () => {
         const t1Pack = await assembleAgentAuditReliancePack(fx[T1].contexts.admin, fx[T1].cycleId);
 
         const t1Items = await prisma.auditPackItem.findMany({ where: { auditPackId: t1Pack.packId } });
-        for (const item of t1Items) expect(item.snapshotJson).not.toContain(t2Paper.id);
+        for (const item of t1Items) expect(await snapshotJsonOf(T1, item.id)).not.toContain(t2Paper.id);
         expect(t1Items.map((i) => i.entityId)).not.toContain(fx[T2].leaverControlId);
 
         const t2Items = await prisma.auditPackItem.findMany({ where: { auditPackId: t2Pack.packId } });
-        expect(t2Items.some((i) => i.snapshotJson.includes(t2Paper.id))).toBe(true);
+        const t2Snaps = await Promise.all(t2Items.map((i) => snapshotJsonOf(T2, i.id)));
+        expect(t2Snaps.some((j) => j.includes(t2Paper.id))).toBe(true);
 
         await expect(assembleAgentAuditReliancePack(fx[T1].contexts.admin, fx[T2].cycleId)).rejects.toBeInstanceOf(
             NotFoundError,

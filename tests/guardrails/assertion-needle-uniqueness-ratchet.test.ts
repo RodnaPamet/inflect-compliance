@@ -632,7 +632,40 @@ const HIGH_MULTIPLICITY = 5;
 // 'production'` line was a second match for the encryption-key guard's
 // `/NODE_ENV.*['"]production['"]/` in each file. The fail-fast check is now the
 // only line that satisfies it. No test changed. Measured.
-const AMBIGUOUS_NEEDLE_BASELINE = 1133;
+//
+// 1133 -> 1132 on 2026-11-11 (web-bot-auth Phase 1). src/env.ts gained two
+// refined variables, which took the encryption-key guard's whole-file
+// `toMatch(/\.superRefine\(/)` from four positions to five. It now asks for the
+// ONE `superRefine` call carrying the DATA_ENCRYPTION_KEY production refusal
+// (`allCallExpressionsOf` + `toHaveLength(1)`), which binds where the regex
+// never did. Measured.
+//
+// 1131 -> 1128 on 2026-11-13 (#5117, #5103). Three automation guards stopped
+// asking a whole file for a bare name. VR-10 asked the governance builder for
+// `/subFlowGroupId/` — the field #5117 removed from it because nothing writes
+// it; it now asks for the `.targetGroupId;` read the edges come from. VR-7 and
+// the Epic 7 chain guard asked their dispatchers for `/parentExecutionId/`,
+// which the claim-before-act change (#5103) took to nine positions in each;
+// they now ask for the execution row's `triggeredBy: …, parentExecutionId,`
+// pair, the one place lineage is written. Measured.
+//
+// 1127 -> 1126 on 2026-11-14 (#5308). The connection-pooling guard asked
+// `.env.example` for `toContain('5434')`, which the comment above the URL also
+// satisfied. It now reads the DIRECT_DATABASE_URL line's port and compares it
+// with the port docker-compose.yml publishes, which moved to 5436. Measured.
+//
+// 1126 -> 1122 on 2026-11-19. The process-map snapshot guard
+// (p5a-snapshots-table-sidebar) read all of processes.prisma for the
+// ProcessMapSnapshot model's columns, unique and cascade, and adding the
+// ProcessNodeRisk / ProcessNodeAsset models carrying the same `processMap`
+// relation and `createdAt` pushed its cascade needle to six places. Its
+// assertions now read the model's own braces (`braceBlockAfter`). Measured.
+// 1122 -> 1120 on 2026-11-20 (#5772). The Nucleo set was replaced by the
+// lucide-backed `glyphs` set, and `rq4-2-arrow-left-icon` lost the two
+// needles the old inline SVG repeated (`currentColor` three times,
+// `strokeWidth="1.5"` twice) for assertions naming the one lucide element.
+// Measured.
+const AMBIGUOUS_NEEDLE_BASELINE = 1120;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
@@ -765,7 +798,12 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1133;
 //   several places to one satisfied in the panel's props alone. Measured.
 // 157 -> 156 (2026-11-08): `toContain('privacyRiskTemplates')` over prisma/seed.ts,
 // retired when the risk templates moved to fixtures. Measured.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 156;
+// 156 -> 155 (2026-11-13): the Epic 7 chain guard's `/parentExecutionId/` over
+// rule-chain-dispatch.ts (five positions on main, nine after #5103), narrowed
+// to the execution row's lineage write — see the ambiguous baseline. Measured.
+// 154 -> 153 on 2026-11-19: the same p5a narrowing, whose `createdAt` needle
+// had sat at eight positions in processes.prisma. Measured.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 153;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -1264,7 +1302,10 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 156;
 // follow are analysed. Without that second half the same migration measured
 // 1418: the old `.replace().replace()` chains had sat in the uncapped
 // `not-a-file-read` bucket. Measured.
-const UNANALYSABLE_READ_BASELINE = 1370;
+// 1370 -> 1367 on 2026-11-15 (scanent #26). The in-repo harness scanner and its
+// suites were deleted, and three unanalysable whole-file reads went with them.
+// Measured.
+const UNANALYSABLE_READ_BASELINE = 1367;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

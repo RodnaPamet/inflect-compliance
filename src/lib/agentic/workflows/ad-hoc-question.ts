@@ -66,10 +66,24 @@
  * requires definition files to be pure data with no usecase imports.
  *
  * So the cap LIVES here as a plain number, because the definition and the
- * usecase must agree on one value, and the ENFORCEMENT lives in the usecase
+ * usecase must agree on one value, and the SANITISATION lives in the usecase
  * where `sanitizePlainText` can be reached. A cap declared in two places
  * eventually disagrees, and the half that is wrong is whichever one nobody
  * tested.
+ *
+ * The CAP is also enforced HERE, at admission, through `validateInput`
+ * (#5304). The usecase is the Ask page's door, and the generic start route
+ * (`POST /agent-runs`) used to admit this key too: a 50 KB "question" posted
+ * there reached the model uncapped, which is the context and cost lever the
+ * cap exists to close. `validateInput` runs in `startWorkflowRun` for every
+ * caller, before the run row, and needs nothing a client bundle cannot carry —
+ * a type check and a length.
+ *
+ * The generic route now refuses the key outright
+ * (`AD_HOC_QUESTION_USE_QUESTIONS_ROUTE` in `resolveRunDefinition`; owner
+ * decision 2026-11-14). The paths that still start it are the questions
+ * route (the ASK trigger), an automation rule and an A2A delivery, and the cap
+ * here holds for all three.
  */
 import type { WorkflowContext, WorkflowDefinition } from '../workflow-types';
 import { requiredString } from './required-input';
@@ -98,6 +112,21 @@ export const adHocQuestionWorkflow: WorkflowDefinition = {
      * runs for an input nothing consumes.
      */
     requiredInput: ['question'],
+    /**
+     * The cap, at admission for every caller (#5304) — see the header.
+     * Measured on the raw value, as `readAdHocQuestion` measures it, so the
+     * Ask page's sanitised question (never longer than the raw one) always
+     * passes. The generic start route never reaches it: it is refused this
+     * key before the definition's input is read.
+     */
+    validateInput: (input) => {
+        const question = input['question'];
+        if (typeof question !== 'string') return 'question must be text';
+        if (question.length > AD_HOC_QUESTION_MAX_CHARS) {
+            return `question is ${question.length} characters; the limit is ${AD_HOC_QUESTION_MAX_CHARS}`;
+        }
+        return null;
+    },
 
     key: 'ad-hoc-question',
     name: 'Ad-hoc question',

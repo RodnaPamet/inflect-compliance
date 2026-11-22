@@ -240,8 +240,24 @@ async function rpc(
     }
 
     if ('error' in parsed && parsed.error) {
+        // BOUNDED and control-character-stripped, for the reason the catch four
+        // lines up already gives about the raw body: this is attacker-influenced
+        // text of unknown shape, and an error string is one of the few places in
+        // this codebase that reliably reaches a log.
+        //
+        // It used to be interpolated verbatim. The body cap is the only limit a
+        // JSON-RPC `error.message` had, so a hostile or merely broken server
+        // could put most of a megabyte of arbitrary text into the thrown error
+        // — and from there into the API error response, the logs, and any run
+        // step or audit text built from it. Control characters could break the
+        // line structure of whatever read it.
+        //
+        // The same call `describeAuthChallenge` makes below, and for the same
+        // stated reason: "a hostile server could otherwise put a megabyte into a
+        // header and have us paste it into every log line." The CODE is passed
+        // through untouched — it is a number, and it is the part worth acting on.
         throw new McpClientError(
-            `MCP server refused ${method}: ${parsed.error.message}`,
+            `MCP server refused ${method}: ${boundedServerText(parsed.error.message)}`,
             parsed.error.code,
         );
     }
@@ -310,6 +326,26 @@ function sseReplyTo(body: string, requestId: string): string | null {
  * and "the server said something I could not read" both mean there is nothing
  * to add, and a half-parsed challenge would be worse than none.
  */
+/**
+ * The most of a server-supplied string we are willing to repeat.
+ *
+ * 200 characters, matching `describeAuthChallenge`'s bound below rather than
+ * inventing a second number, and control characters removed with the strip the
+ * AI and CSP paths already use. Long enough for a real diagnosis ("tool not
+ * found", "rate limited, retry in 30s"), short enough that it cannot be used to
+ * flood a log line or an error response.
+ *
+ * Returns a fixed placeholder rather than an empty string when there is nothing
+ * usable: `refused tools/call: ` reads like the message was lost on our side,
+ * and "the server said nothing" is itself worth knowing.
+ */
+function boundedServerText(message: unknown): string {
+    if (typeof message !== 'string' || message.length === 0) return '(no message)';
+    const clean = message.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim();
+    if (clean.length === 0) return '(no message)';
+    return clean.length > 200 ? `${clean.slice(0, 200)}…` : clean;
+}
+
 export function describeAuthChallenge(header: string | null | undefined): string | null {
     if (!header) return null;
     const scheme = header.trim().split(/[\s,]/, 1)[0];
@@ -349,6 +385,16 @@ export interface AdvertisedTools {
      * and screens.
      */
     refusedNames: number;
+    /**
+     * The catalogue we read is INCOMPLETE (#5311).
+     *
+     * Set when the server kept offering a `nextCursor` past
+     * `TOOLS_LIST_MAX_PAGES`, or repeated a cursor we had already followed. In
+     * both cases some of its tools were never read, so the caller must not
+     * present the list as everything the server advertises — the whole point of
+     * following the cursor is that a tool nobody can see cannot be granted.
+     */
+    truncated: boolean;
 }
 
 /**
@@ -405,19 +451,69 @@ function isUsableToolName(name: unknown): name is string {
  * would then belong to whichever tool came first. The refusals are counted so
  * the caller can say that tools were left out.
  */
+/**
+ * How many `tools/list` pages we will follow before giving up (#5311).
+ *
+ * Bounded for the reason every other walk in this codebase is — `listSites` and
+ * `getDelta` in the SharePoint client both take a `maxPages` — because the
+ * cursor comes from the far end and a server that always returns one would
+ * otherwise page for ever.
+ *
+ * 20 pages against the per-connection cap of `MAX_EXTERNAL_TOOLS` is far more
+ * than any real catalogue needs: the cap truncates the list long before this
+ * does.
+ */
+const TOOLS_LIST_MAX_PAGES = 20;
+
 export async function listTools(opts: McpClientOptions): Promise<AdvertisedTools> {
-    const result = (await rpc(opts, 'tools/list')) as { tools?: unknown } | undefined;
-    const advertised: unknown[] = Array.isArray(result?.tools) ? result.tools : [];
     const tools: McpToolDescriptor[] = [];
     let refusedNames = 0;
-    for (const descriptor of advertised) {
-        if (isUsableToolName((descriptor as { name?: unknown } | null)?.name)) {
-            tools.push(descriptor as McpToolDescriptor);
-        } else {
-            refusedNames++;
+    let truncated = false;
+    let cursor: string | undefined;
+    const seenCursors = new Set<string>();
+
+    for (let page = 0; ; page++) {
+        // ═══ FOLLOW nextCursor — A SERVER MAY LIST MORE THAN ONE PAGE ═══
+        //
+        // This read one page and dropped `nextCursor` on the floor. Against a
+        // server that paginates its catalogue, every tool on a later page was
+        // invisible: never offered for pinning or granting, and nothing said
+        // so — `refusedNames` counts bad names, not missing pages.
+        const result = (await rpc(opts, 'tools/list', cursor ? { cursor } : undefined)) as
+            | { tools?: unknown; nextCursor?: unknown }
+            | undefined;
+        const advertised: unknown[] = Array.isArray(result?.tools) ? result.tools : [];
+        for (const descriptor of advertised) {
+            if (isUsableToolName((descriptor as { name?: unknown } | null)?.name)) {
+                tools.push(descriptor as McpToolDescriptor);
+            } else {
+                refusedNames++;
+            }
         }
+
+        const next = result?.nextCursor;
+        // Anything but a non-empty string ENDS the walk. The spec says a string
+        // or absent; treating a number or an object as "keep going" would hand
+        // the far end a way to make us loop on a value we cannot even send.
+        if (typeof next !== 'string' || next.length === 0) break;
+
+        // A cursor we have already followed means the server is not advancing.
+        // The page bound would stop it eventually; this stops it at once and,
+        // more importantly, reports the catalogue as incomplete rather than
+        // letting the bound look like a natural end.
+        if (seenCursors.has(next)) {
+            truncated = true;
+            break;
+        }
+        if (page + 1 >= TOOLS_LIST_MAX_PAGES) {
+            truncated = true;
+            break;
+        }
+        seenCursors.add(next);
+        cursor = next;
     }
-    return { tools, refusedNames };
+
+    return { tools, refusedNames, truncated };
 }
 
 /** Call one tool. Authority is the caller's problem — see the header. */

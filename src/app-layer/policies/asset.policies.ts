@@ -31,6 +31,31 @@ function granularAssetsDenied(
     return ctx.appPermissions.assets?.[flag] !== true;
 }
 
+/**
+ * Viewing assets: the coarse read tier AND `assets.view` — the key the asset
+ * routes already ask (#5376, owner decision 2026-11-12). Its first callers are
+ * the traceability reads; every built-in role that can read holds the key.
+ */
+export function assertCanReadAssets(ctx: RequestContext) {
+    if (!ctx.permissions.canRead || granularAssetsDenied(ctx, 'view')) {
+        throw forbidden('You do not have permission to view assets.');
+    }
+}
+
+/**
+ * Whether `assertCanReadAssets` admits this context — the same rule, asked
+ * rather than enforced, for a read that shows assets only as the far side of a
+ * link and omits them rather than refusing.
+ */
+export function canReadAssets(ctx: RequestContext): boolean {
+    try {
+        assertCanReadAssets(ctx);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 /** Editing an asset — including the traceability lines drawn from it. */
 export function assertCanEditAsset(ctx: RequestContext) {
     if (!ctx.permissions.canWrite || granularAssetsDenied(ctx, 'edit')) {

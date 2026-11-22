@@ -23,11 +23,13 @@ import { z } from 'zod';
 import { Role } from '@prisma/client';
 import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
+import { bumpTenantCacheVersion } from '@/lib/cache/list-cache';
 import { assertCanRead, assertCanAdmin, assertCanAudit } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { PolicyRepository } from '../repositories/PolicyRepository';
 import { resolveTenantSlugForLinks, tenantPageLink } from '../notifications/tenant-link';
+import { assertActingAsPerson } from '../policies/person-only.policies';
 
 export interface AttestPolicyResult {
     acknowledgementId: string;
@@ -78,8 +80,11 @@ export async function attestPolicy(
     policyId: string,
 ): Promise<AttestPolicyResult> {
     assertCanRead(ctx);
+    // An acknowledgement is a statement by a person that they read the
+    // policy; a key or an agent acting in their name cannot make it.
+    assertActingAsPerson(ctx, 'Acknowledging a policy');
 
-    return runInTenantContext(ctx, async (db) => {
+    const committed = await runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
         if (!policy) throw notFound('Policy not found');
 
@@ -144,6 +149,8 @@ export async function attestPolicy(
             created: true,
         };
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
+    return committed;
 }
 
 /**
@@ -219,7 +226,7 @@ export async function requirePolicyAcknowledgement(
     assertCanAdmin(ctx);
     const { audience } = RequireAcknowledgementSchema.parse(input);
 
-    return runInTenantContext(ctx, async (db) => {
+    const committed = await runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
         if (!policy) throw notFound('Policy not found');
         if (policy.status !== 'PUBLISHED') {
@@ -299,6 +306,8 @@ export async function requirePolicyAcknowledgement(
 
         return { policyVersionId, assignedCount: userIds.length };
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
+    return committed;
 }
 
 /**

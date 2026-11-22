@@ -10,6 +10,7 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { apiErrorMessage } from '@/lib/api-error';
 
 import type { AgentSummary, OwnerChoice, VendorChoice } from './AgentDetailClient';
 
@@ -96,7 +97,8 @@ export function AgentAmendModal({
 }: {
     agent: AgentSummary;
     owners: OwnerChoice[];
-    vendors: VendorChoice[];
+    /** `null` when the supplier list could not be read: the field is disabled (#5313). */
+    vendors: VendorChoice[] | null;
     onClose: () => void;
     onAmended: () => void;
 }) {
@@ -151,8 +153,10 @@ export function AgentAmendModal({
             if (!res.ok) {
                 const body = await res.json().catch(() => ({}));
                 // Verbatim. The tier-ceiling refusal tells the operator what to
-                // do about it; a generic message would throw that away.
-                setError(body?.error ?? t('agentDetail.amend.failed'));
+                // do about it; a generic message would throw that away. The
+                // body's `error` is the envelope OBJECT, so it is read through
+                // `apiErrorMessage`: rendering the object threw (#5151).
+                setError(apiErrorMessage(body, t('agentDetail.amend.failed')));
                 return;
             }
             onAmended();
@@ -255,18 +259,22 @@ export function AgentAmendModal({
                         <Input value={ownerLabel} readOnly data-testid="agent-amend-owner" />
                     </FormField>
 
-                    <FormField label={t('agentDetail.amend.vendor')}>
+                    <FormField
+                        label={t('agentDetail.amend.vendor')}
+                        description={vendors === null ? t('agentDetail.amend.vendorUnavailable') : undefined}
+                    >
                         <Combobox
                             id="agent-amend-vendor"
+                            disabled={vendors === null}
                             selected={
                                 [{ value: '', label: t('agentDetail.amend.vendorNone') },
-                                 ...vendors.map((v) => ({ value: v.id, label: v.name }))]
+                                 ...(vendors ?? []).map((v) => ({ value: v.id, label: v.name }))]
                                     .find((o) => o.value === draft.vendorId) ?? null
                             }
                             setSelected={(o) => set('vendorId', o?.value ?? '')}
                             options={[
                                 { value: '', label: t('agentDetail.amend.vendorNone') },
-                                ...vendors.map((v) => ({ value: v.id, label: v.name })),
+                                ...(vendors ?? []).map((v) => ({ value: v.id, label: v.name })),
                             ]}
                             matchTriggerWidth
                             buttonProps={{ className: 'w-full' }}

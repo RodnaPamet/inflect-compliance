@@ -69,6 +69,9 @@ const ADMIN_ONLY_ROUTES = [
     // lives under admin/, and this guard's question is "is every admin route
     // authorised", not "is every admin route admin.manage".
     'admin/legacy-access/queue/route.ts',
+    // #5695 — which run the queue opens; `identity_reconciliation.view`, the
+    // queue's own key (owner decision 2026-11-15).
+    'admin/legacy-access/queue/latest-run/route.ts',
     'admin/legacy-access/queue/decide/route.ts',
     'admin/legacy-access/queue/bulk-confirm/route.ts',
     // /admin/* routes
@@ -85,6 +88,9 @@ const ADMIN_ONLY_ROUTES = [
     // P1 — connection-level run + per-connection outcomes + identity roster.
     'admin/integrations/[connectionId]/sync/route.ts',
     'admin/integrations/[connectionId]/executions/route.ts',
+    // #5313 item 10 — the newest run of one kind on a connection, so a match
+    // run older than the 50-row history is not read as never run.
+    'admin/integrations/[connectionId]/executions/latest/route.ts',
     'admin/integrations/identity-accounts/route.ts',
     // #3672 — the accountable owner of an external agent connection
     // (integration passport P11). admin.manage, the connection-write key.
@@ -164,6 +170,12 @@ const ADMIN_ONLY_ROUTES = [
     // agent's own (#3671) — the register's key, `admin.agent_registry`: the
     // condition for an unattended disable of that principal.
     'admin/agents/[agentId]/service-principal-link/route.ts',
+    // An agent's declared spending authority (Agent Pay Phase 1, #5333) — the
+    // register's key, `admin.agent_registry`: read, declare, narrow, withdraw,
+    // and the second person's review (four eyes held by the writer and a CHECK).
+    'admin/agents/[agentId]/spending-authority/route.ts',
+    'admin/agents/[agentId]/spending-authority/[rail]/route.ts',
+    'admin/agents/[agentId]/spending-authority/[rail]/review/route.ts',
     // Which agent answers on Ask (#4629) — the register's key,
     // `admin.agent_registry` (owner decision, 2026-10-30): designating the
     // agent that reads the workspace for every person who asks is register
@@ -193,6 +205,12 @@ const ADMIN_ONLY_ROUTES = [
     // agent may act. A narrower key would let somebody who cannot activate an
     // agent un-stop one that stopped itself.
     'admin/agents/[agentId]/circuit-breaker/route.ts',
+    // The behaviour fingerprint (Morpheus 1.3) — the nightly detector's findings
+    // for one agent, and the audited act of accepting a changed behaviour as its
+    // new normal. Same `admin.agent_registry` key as the circuit breaker, because
+    // the acceptance moves the breaker's own `baselineEpoch`: re-baselining is
+    // the authority to decide what the agent's normal is.
+    'admin/agents/[agentId]/behaviour-fingerprint/route.ts',
     // Tool-manifest pinning (OWASP ASI04) — the tenant's record of which tool
     // DEFINITION it has accepted, and the audited act of re-approving one that
     // changed. Same `admin.agent_registry` key as the register, and for the same
@@ -241,6 +259,10 @@ const ADMIN_ONLY_ROUTES = [
     // deciding whose reports count, and accepting a shortfall, are the
     // register's authority.
     'admin/agents/harness-scans/route.ts',
+    // The third-party application ingest (`scanent-integrations/1`): its POST
+    // has its own rule, `admin.integrations_ingest`, and its GET the inventory
+    // read, both above the subtree rule, as the harness scan route's are.
+    'admin/agents/integration-scans/route.ts',
     'admin/agents/harness-scanner-keys/route.ts',
     'admin/agents/harness-scanner-keys/[keyId]/route.ts',
     'admin/agents/harness-acceptances/route.ts',
@@ -374,7 +396,6 @@ const ADMIN_ONLY_ROUTES = [
     'admin/identity-write-journal/[journalId]/route.ts',
     'admin/identity-write-journal/restorable/[accountId]/route.ts',
     'admin/identity-write-journal/unsettled/route.ts',
-    'admin/billing/plan/route.ts',
     'admin/rotate-dek/route.ts',
     'admin/sessions/route.ts',
     // Epic 1, PR 3 — token-redemption invite flow (admin invite management)

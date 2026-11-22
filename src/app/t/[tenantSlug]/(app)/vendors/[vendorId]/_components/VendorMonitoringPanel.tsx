@@ -16,6 +16,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { Switch } from '@/components/ui/switch';
 import { Heading } from '@/components/ui/typography';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
@@ -32,6 +33,9 @@ interface Monitor {
     breachCount: number;
     tlsGrade: string | null;
     tlsCheckedAt: string | null;
+    /** What the latest TLS-grade fetch came to; NULL before the first one. */
+    tlsFetchOutcome?: 'GRADED' | 'REFUSED' | 'UNREACHABLE' | 'BLOCKED' | null;
+    tlsFetchOutcomeAt?: string | null;
     attestationExpiresAt: string | null;
 }
 interface PostureEvent {
@@ -50,6 +54,8 @@ interface Posture {
     monitor: Monitor | null;
     events: PostureEvent[];
     providers?: Providers;
+    /** The server's verdict: a grade is stale once the latest fetch did not grade. */
+    tlsGradeStale?: boolean;
 }
 
 /** The five monitor booleans the PATCH endpoint accepts. */
@@ -90,7 +96,12 @@ export function VendorMonitoringPanel({
     const [loading, setLoading] = useState(true);
     const [running, setRunning] = useState(false);
     const [saving, setSaving] = useState<MonitorToggleField | null>(null);
-    const [error, setError] = useState<string | null>(null);
+    // Two kinds of failure (#5313). A failed READ with nothing to show yet
+    // replaces the panel; a failed toggle or "Run now" is a notice inside it,
+    // cleared by the next action. They shared one `error`, so one refused
+    // toggle replaced the whole panel for good.
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [actionError, setActionError] = useState<string | null>(null);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -98,11 +109,11 @@ export function VendorMonitoringPanel({
             const res = await fetch(apiUrl(`/vendors/${vendorId}/monitor`));
             if (!res.ok) throw new Error(t('monitoring.loadFailed'));
             setPosture(await res.json());
-            setError(null);
+            setLoadError(null);
         } catch {
             // The panel's own sentence: the only other message here is the
             // browser's network error, which is English and says nothing (#4696).
-            setError(t('monitoring.loadFailed'));
+            setLoadError(t('monitoring.loadFailed'));
         } finally {
             setLoading(false);
         }
@@ -113,6 +124,7 @@ export function VendorMonitoringPanel({
 
     const runNow = async () => {
         setRunning(true);
+        setActionError(null);
         try {
             const res = await fetch(apiUrl(`/vendors/${vendorId}/monitor/run`), { method: 'POST' });
             if (!res.ok) throw new Error(t('monitoring.runFailed'));
@@ -121,7 +133,7 @@ export function VendorMonitoringPanel({
         } catch {
             // The panel's own sentence: the only other message here is the
             // browser's network error, which is English and says nothing (#4696).
-            setError(t('monitoring.runFailed'));
+            setActionError(t('monitoring.runFailed'));
         } finally {
             setRunning(false);
         }
@@ -130,6 +142,7 @@ export function VendorMonitoringPanel({
     /** PATCH a single monitor boolean, then reload posture. */
     const patchMonitor = async (field: MonitorToggleField, value: boolean) => {
         setSaving(field);
+        setActionError(null);
         try {
             const res = await fetch(apiUrl(`/vendors/${vendorId}/monitor`), {
                 method: 'PATCH',
@@ -142,18 +155,20 @@ export function VendorMonitoringPanel({
         } catch {
             // The panel's own sentence: the only other message here is the
             // browser's network error, which is English and says nothing (#4696).
-            setError(t('monitoring.settingsSaveFailed'));
+            setActionError(t('monitoring.settingsSaveFailed'));
         } finally {
             setSaving(null);
         }
     };
 
-    if (loading) {
+    // A reload after an action keeps the panel on screen.
+    if (loading && !posture) {
         return <div className={cn(cardVariants(), 'text-sm text-content-muted')}>{t('monitoring.loading')}</div>;
     }
-    if (error) {
-        return <div className={cn(cardVariants(), 'text-sm text-content-error')}>{error}</div>;
+    if (loadError && !posture) {
+        return <div className={cn(cardVariants(), 'text-sm text-content-error')}>{loadError}</div>;
     }
+    const notice = actionError ?? loadError;
 
     const m = posture?.monitor;
     const events = posture?.events ?? [];
@@ -168,6 +183,11 @@ export function VendorMonitoringPanel({
 
     return (
         <div className="space-y-section">
+            {notice && (
+                <InlineNotice variant="error" id="vendor-monitor-error">
+                    {notice}
+                </InlineNotice>
+            )}
             {/* Monitor state card */}
             <div className={cn(cardVariants(), 'space-y-default')}>
                 <div className="flex items-center justify-between">
@@ -187,12 +207,24 @@ export function VendorMonitoringPanel({
                         <div className="text-content-muted">{t('monitoring.tlsGrade')}</div>
                         <div className="mt-1 flex items-center gap-tight">
                             <StatusBadge variant={GRADE_VARIANT(m?.tlsGrade ?? null)}>{m?.tlsGrade ?? '—'}</StatusBadge>
+                            {posture?.tlsGradeStale && (
+                                <StatusBadge variant="warning" id="vendor-tls-grade-stale">{t('monitoring.tlsStale')}</StatusBadge>
+                            )}
                             {providers?.tls === 'stub' && (
                                 <span className="text-xs font-medium uppercase tracking-wide text-content-subtle">
                                     {t('monitoring.stubMode')}
                                 </span>
                             )}
                         </div>
+                        {/* Why the grade did not move: a refusal is shown, never read as no change. */}
+                        {m?.tlsFetchOutcome && m.tlsFetchOutcome !== 'GRADED' && m.tlsFetchOutcomeAt && (
+                            <div className="mt-1 text-xs text-content-muted" id="vendor-tls-last-fetch">
+                                {t('monitoring.tlsLastFetch', {
+                                    date: formatDateTime(m.tlsFetchOutcomeAt),
+                                    outcome: t(`monitoring.tlsFetchOutcome.${m.tlsFetchOutcome}`),
+                                })}
+                            </div>
+                        )}
                     </div>
                     <div>
                         <div className="text-content-muted">{t('monitoring.breachLastSeen')}</div>

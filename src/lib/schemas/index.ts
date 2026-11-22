@@ -13,6 +13,7 @@
  * `.openapi(...)` to every NEW request schema when you add it.
  */
 import { EVIDENCE_DESCRIPTION_MAX } from '@/lib/evidence-description';
+import { RISK_IMPORT_MAX_ROWS } from '@/lib/risk-import-limits';
 import { z } from '@/lib/openapi/zod';
 // `AssetType` is a Prisma enum on a NOT NULL column. Declaring it as
 // `z.string()` let any value through Zod and fail at the driver, which
@@ -20,7 +21,7 @@ import { z } from '@/lib/openapi/zod';
 // reported as a server fault. `z.nativeEnum` moves the rejection back to
 // the boundary where it belongs. Safe to import here: this module is
 // server-only (no 'use client' file imports it).
-import { AssetType } from '@prisma/client';
+import { AssetType, FindingSeverity, FindingType } from '@prisma/client';
 
 export const EmptyBodySchema = z.object({}).strip().openapi('EmptyBody', {
     description: 'Empty request body. Used by mutation endpoints whose semantics live entirely in the URL (e.g. POST /restore on a soft-deleted resource).',
@@ -148,6 +149,10 @@ export const CreateRiskSchema = z.object({
     ownerUserId: z.string().optional().nullable(),    // Real user reference — the risk owner (people picker)
     targetDate: z.string().optional().nullable(),
     nextReviewAt: z.string().optional().nullable(),
+    // The template the form started from (#5313 item 48). Provenance only:
+    // validated against the template library and recorded in the creation
+    // audit row's detailsJson. It was stripped here while the form sent it.
+    templateId: z.string().min(1).optional().nullable(),
 }).strip().openapi('RiskCreateRequest', {
     description: 'Payload for creating a risk. Inherent score = impact × likelihood; the server computes residualScore separately when treatment data lands. treatmentNotes is encrypted at rest (Epic B field-encryption manifest).',
 });
@@ -518,10 +523,15 @@ export const LinkEvidenceControlSchema = z.object({
 
 // ─── Findings ───
 
-export const CreateFindingSchema = z.object({
+const FindingCreateFieldsSchema = z.object({
     auditId: z.string().optional().nullable(),
-    severity: z.string().min(1, 'Severity is required'),
-    type: z.string().min(1, 'Type is required'),
+    // Prisma enums, as `AssetType` above (#5181, #5316): a free string passed
+    // here and failed at the driver — a 500 for what is a 400.
+    severity: z.nativeEnum(FindingSeverity, { message: 'Severity is required' }),
+    // A Prisma enum, as `AssetType` above (#5181): a free string let
+    // audit-prep propose findings typed 'Coverage Gap', which passed here and
+    // failed at the driver when a person approved them.
+    type: z.nativeEnum(FindingType, { message: 'Type is required' }),
     title: z.string().min(1, 'Title is required'),
     description: z.string().optional(),
     rootCause: z.string().optional().nullable(),
@@ -538,18 +548,42 @@ export const CreateFindingSchema = z.object({
     // Risks this finding implicates (many-to-many).
     riskIds: z.array(z.string()).max(100).optional(),
     dueDate: z.string().optional().nullable(),
-    // Generic provenance tag for auto-materialized findings (e.g.
-    // sourceKind='NIS2_SELF_ASSESSMENT', sourceRef=<questionId>) — lets a
-    // materializer dedupe + reconcile. Omitted for hand-raised findings.
-    sourceKind: z.string().max(64).optional().nullable(),
-    sourceRef: z.string().max(256).optional().nullable(),
-}).strip().openapi('FindingCreateRequest', {
-    description: 'Create an audit finding. auditId is optional — findings can be raised independently of an audit cycle. description, rootCause + analysis are encrypted at rest. assigneeUserId / controlId / compensatingControlId / riskIds are validated against the tenant. sourceKind/sourceRef tag auto-materialized findings.',
 });
 
+/**
+ * Creating a finding over HTTP. It carries NO provenance (`sourceKind` /
+ * `sourceRef`): those tag findings a system materializer raises, and the
+ * materializers dedupe on the pair, so a person who could set it could
+ * pre-empt the finding a scanner would raise. A body that sends them has them
+ * stripped. Materializers pass provenance to `createFinding` in code.
+ */
+export const CreateFindingSchema = FindingCreateFieldsSchema.strip().openapi('FindingCreateRequest', {
+    description: 'Create an audit finding. auditId is optional — findings can be raised independently of an audit cycle. description, rootCause + analysis are encrypted at rest. assigneeUserId / controlId / compensatingControlId / riskIds are validated against the tenant.',
+});
+
+/**
+ * Provenance a system materializer stamps on the finding it raises (e.g.
+ * sourceKind='NIS2_SELF_ASSESSMENT', sourceRef=<questionId>), so it can dedupe
+ * and reconcile. Never accepted from an HTTP body.
+ */
+export const FindingProvenanceSchema = z.object({
+    sourceKind: z.string().max(64).optional().nullable(),
+    sourceRef: z.string().max(256).optional().nullable(),
+});
+
+/**
+ * A FINDING agent proposal's payload: the create fields plus provenance. The
+ * auditor's procedures and a dissenting workpaper review raise their findings
+ * as proposals, and a person approves each one, so the payload keeps the tag.
+ */
+export const ProposedFindingSchema = FindingCreateFieldsSchema.extend(FindingProvenanceSchema.shape).strip();
+
+/** What `createFinding` accepts: the create fields and, from code, provenance. */
+export type CreateFindingInput = z.infer<typeof ProposedFindingSchema>;
+
 export const UpdateFindingSchema = z.object({
-    severity: z.string().optional(),
-    type: z.string().optional(),
+    severity: z.nativeEnum(FindingSeverity).optional(),
+    type: z.nativeEnum(FindingType).optional(),
     title: z.string().min(1).optional(),
     description: z.string().optional(),
     rootCause: z.string().optional().nullable(),
@@ -848,7 +882,7 @@ export const BulkImportRisksSchema = z.object({
         impact: z.coerce.number().int().min(1).max(10).optional(),
         owner: z.string().optional().nullable(),
         ownerUserId: z.string().optional().nullable(),
-    }).strip()).min(1).max(500),
+    }).strip()).min(1).max(RISK_IMPORT_MAX_ROWS),
 }).strip().openapi('RiskBulkImportRequest', {
     description: 'Bulk-create risks from a parsed CSV in a single request. Server dedupes by title and resolves owner names/emails to members.',
 });

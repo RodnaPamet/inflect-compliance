@@ -17,6 +17,11 @@
  *      complete read of that source no longer sees it unbound; an incomplete or
  *      absent source closes nothing.
  *   4. TWO TENANTS. One tenant's report opens and closes nothing in the other.
+ *   5. A CODED AGENT'S UNPINNED_WRITE_TOOL IS JUDGED BY THE CODE READ (owner
+ *      answer on #3754, 2026-10-19): an incomplete `code` read closes nothing,
+ *      and a complete one whose definition has no unpinned write tool left
+ *      closes it, with no `mcp` source in the scan. (Ported from the in-repo
+ *      scanner's code-source suite when that scanner was removed, scanent #26.)
  */
 import { MembershipStatus, PrismaClient, Role } from '@prisma/client';
 
@@ -344,7 +349,7 @@ describe('2. a refused report writes nothing', () => {
         const before = await harnessRowCounts(T1);
         const auditsBefore = await prisma.auditLog.count({ where: { tenantId: T1 } });
         await expect(ingest(T1, v1For(T1))).rejects.toThrow(
-            'harness_report_refused: SCHEMA: contract: inflect-agent-harness/1 is retired; the scanner must speak inflect-agent-harness/3',
+            'harness_report_refused: SCHEMA: contract: inflect-agent-harness/1 is retired; the scanner must speak inflect-agent-harness/4',
         );
         expect(await harnessRowCounts(T1)).toEqual(before);
         expect(await prisma.auditLog.count({ where: { tenantId: T1 } })).toBe(auditsBefore);
@@ -466,5 +471,58 @@ describe('4. two tenants', () => {
             tx.agentHarnessScanItem.findMany({ where: { tenantId: T1 }, select: { modelsJson: true } }),
         );
         expect(JSON.stringify(seenByT1)).toContain(marker);
+    });
+});
+
+describe('5. a coded agent\'s UNPINNED_WRITE_TOOL is judged by the code read (owner answer on #3754)', () => {
+    const SUPPORT = 'code:acme/support/agent.py#support_executor';
+    const refundTool = {
+        server: 'code://acme/support/agent.py#L17',
+        name: 'refund_order',
+        manifestHash: null,
+        pinned: false,
+        readOnlyHint: false,
+    };
+    /** A scan whose ONLY source is `code`: the support agent, with its tools, read in full or stopped early. */
+    const codeOnly = (tools: (typeof refundTool)[], code: 'COMPLETE' | 'INCOMPLETE') =>
+        v2For(T1, (b) => {
+            b.population.sources = [
+                code === 'COMPLETE'
+                    ? { kind: 'code', status: 'COMPLETE', rows: 1 }
+                    : { kind: 'code', status: 'INCOMPLETE', reason: 'UNPARSEABLE', rows: 2 },
+            ];
+            b.agents = [
+                {
+                    discoveredId: SUPPORT,
+                    discoveredVia: ['code'],
+                    registeredAgentId: null,
+                    owner: null,
+                    credentials: [],
+                    tools,
+                    skills: [],
+                    verdicts: [],
+                },
+            ];
+            b.findings = [];
+            b.unboundCredentials = [];
+        });
+
+    it('an incomplete code read closes nothing; a complete one with no unpinned write tool left closes it, with no mcp source', async () => {
+        await ingest(T1, codeOnly([refundTool], 'COMPLETE'));
+        expect(await findingStatus(T1, `UNPINNED_WRITE_TOOL:${SUPPORT}`)).toBe('OPEN');
+
+        // The tool is gone from the definition, but the code source stopped
+        // early: it is no evidence, and the finding stands.
+        const partial = await ingest(T1, codeOnly([], 'INCOMPLETE'));
+        expect(partial.complete).toBe(false);
+        expect(await findingStatus(T1, `UNPINNED_WRITE_TOOL:${SUPPORT}`)).toBe('OPEN');
+
+        // Read in full: the definition, which the code source alone reports,
+        // has no unpinned write tool, and the scan lists no mcp source at all.
+        const full = await ingest(T1, codeOnly([], 'COMPLETE'));
+        expect(full.complete).toBe(true);
+        const scan = await prisma.agentHarnessScan.findUniqueOrThrow({ where: { id: full.scanId }, select: { sourcesJson: true } });
+        expect(parseStoredHarnessSources(scan.sourcesJson)?.map((x) => x.kind)).toEqual(['code']);
+        expect(await findingStatus(T1, `UNPINNED_WRITE_TOOL:${SUPPORT}`)).toBe('CLOSED');
     });
 });

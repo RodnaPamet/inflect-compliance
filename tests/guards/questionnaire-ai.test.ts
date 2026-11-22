@@ -44,11 +44,31 @@ describe('questionnaire AI — governance + wiring', () => {
         expect(usecase).toMatch(/questionnaireAnswerLibrary\.create/);
     });
 
-    it('the provider factory is env-gated with a stub fallback', () => {
+    it('the provider factory is env-gated, and returns the stub on BOTH stub paths', () => {
         const idx = read('src/app-layer/ai/questionnaire/index.ts');
         expect(idx).toMatch(/AI_QUESTIONNAIRE_PROVIDER === 'openrouter'/);
         expect(idx).toMatch(/env\.OPENROUTER_API_KEY/);
-        expect(idx).toMatch(/return new StubQuestionnaireProvider\(\)/);
+        /*
+            COUNTED, not matched. `toMatch(/return new StubQuestionnaireProvider\(\)/)`
+            against this whole-file read was UNIQUE until the LOCAL_ONLY
+            short-circuit (#5445) added a second identical return — at which
+            point the needle named two sites and either could be deleted with
+            this assertion still green. That is the Class D class exactly, and
+            `assertion-needle-uniqueness-ratchet` counted it: +1 over a ceiling
+            that only ever comes down.
+
+            A count is the honest assertion now, because there are genuinely two
+            stub paths and both matter:
+              - residency: a LOCAL_ONLY tenant's question text never leaves;
+              - configuration: no provider selected, or no key.
+            Deleting either drops this to 1 and fails here, which a single
+            `toMatch` could not do.
+        */
+        const stubReturns = idx.match(/return new StubQuestionnaireProvider\(\)/g) ?? [];
+        expect(stubReturns).toHaveLength(2);
+        // And the residency one is the FIRST, before the env is read — a check
+        // made after an external provider is chosen is one refactor from none.
+        expect(idx.indexOf('LOCAL_ONLY')).toBeLessThan(idx.indexOf('AI_QUESTIONNAIRE_PROVIDER'));
     });
 
     it('the stub drafts ONLY from grounding (no fabrication on no-match)', () => {

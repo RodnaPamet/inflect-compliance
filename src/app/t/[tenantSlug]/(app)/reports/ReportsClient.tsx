@@ -1,5 +1,5 @@
 'use client';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import {
@@ -21,6 +21,7 @@ import { PdfExportButton } from '@/components/PdfExportButton';
 import { RequirePermission } from '@/components/require-permission';
 import { UpgradeGate } from '@/components/UpgradeGate';
 import useSWR from 'swr';
+import { ApiClientError } from '@/lib/api-client';
 import { Tooltip } from '@/components/ui/tooltip';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { LoadingSpinner } from '@inflect/ui/components/ui/icons/loading-spinner';
@@ -94,7 +95,7 @@ export function ReportsClient({
         `/api/t/${tenantSlug}/risks/reports`,
         async (url: string) => {
             const r = await fetch(url);
-            if (!r.ok) throw new Error(`templates ${r.status}`);
+            if (!r.ok) throw new ApiClientError(`templates ${r.status}`, 'fetch_failed', r.status);
             return r.json();
         },
     );
@@ -109,8 +110,15 @@ export function ReportsClient({
     const isIso = selectedFw?.hasStatementOfApplicability ?? false;
     const frameworkLabel = selectedFw?.name ?? readiness.framework.name;
 
+    // Which switch is current. A slow answer for a framework the user has
+    // since moved off used to overwrite the report for the one now selected
+    // (#5313); each answer is applied only if no later switch has begun.
+    const latestSwitch = useRef(0);
+
     const switchFramework = useCallback(
         async (key: string) => {
+            const ticket = ++latestSwitch.current;
+            const isCurrent = () => ticket === latestSwitch.current;
             setSelectedKey(key);
             // The default framework's report was computed server-side — reuse it.
             if (key === defaultFrameworkKey) {
@@ -125,11 +133,12 @@ export function ReportsClient({
                     `/api/t/${tenantSlug}/reports/readiness?framework=${encodeURIComponent(key)}`,
                 );
                 if (!res.ok) throw new Error(`status ${res.status}`);
-                setReadiness((await res.json()) as ReadinessReport);
+                const report = (await res.json()) as ReadinessReport;
+                if (isCurrent()) setReadiness(report);
             } catch {
-                setError(tx('readinessLoadError'));
+                if (isCurrent()) setError(tx('readinessLoadError'));
             } finally {
-                setLoading(false);
+                if (isCurrent()) setLoading(false);
             }
         },
         [tenantSlug, defaultFrameworkKey, initialReadiness, tx],

@@ -249,6 +249,21 @@ export interface ToolExecOptions {
     maxBuffer: number;
     /** Aborted when the wrapper's own deadline fires. */
     signal: AbortSignal;
+    /**
+     * For an executor with clean-up of its own to do AFTER the tool (#5304).
+     *
+     * Call it with the tool's result the moment that result is captured, and
+     * before the clean-up starts. The wrapper then takes the result, disarms
+     * its deadline, and waits for the executor to finish OUTSIDE the deadline
+     * race. So the deadline bounds the tool and never the clean-up: a tool that
+     * finished just inside its deadline used to lose its output while the
+     * OpenShell backend was still waiting for its sandbox to be deleted.
+     *
+     * Optional. An executor that never calls it is raced exactly as before.
+     * The clean-up still has to be bounded by the executor itself, because
+     * nothing here times it.
+     */
+    onResultCaptured?: (result: RawExecResult) => void;
 }
 
 /**
@@ -372,19 +387,38 @@ export async function runBoundedTool(input: BoundedToolInput): Promise<BoundedTo
     // executor answers. Ordering the other way needs the exec promise inside
     // the timer's own constructor, which is a hoisting trap rather than a
     // design.
+    // An executor that reports its result early (`onResultCaptured`) resolves
+    // this before its own clean-up has run. The deadline is disarmed at that
+    // moment, so whatever the clean-up costs cannot turn a finished tool into
+    // a timed-out one.
+    let handle: unknown = null;
+    let resultCaptured = false;
+    let captureResult!: (result: RawExecResult) => void;
+    const captured = new Promise<RawExecResult>((resolve) => {
+        captureResult = resolve;
+    });
     const settled = exec(file, args, {
         env,
         timeout: timeoutMs,
         maxBuffer: maxOutputBytes,
         signal: controller.signal,
+        onResultCaptured: (result) => {
+            // First answer wins: a result after the deadline does not count,
+            // and the deadline cannot fire after a result was taken (the
+            // timer may not even exist yet if the executor reports at once).
+            if (deadlineFired || resultCaptured) return;
+            resultCaptured = true;
+            timers.clearTimeout(handle);
+            captureResult(result);
+        },
     });
 
     // The deadline is a RACE, not a hope. An executor that ignores its
     // `timeout` option still loses to this, and the abort is what stops the
     // child rather than orphaning it behind a resolved promise.
-    let handle: unknown = null;
     const deadline = new Promise<'timed-out'>((resolve) => {
         handle = timers.setTimeout(() => {
+            if (resultCaptured) return;
             deadlineFired = true;
             // Raised to the child, not merely recorded: an unaborted subprocess
             // outlives the promise that stopped waiting for it.
@@ -400,7 +434,7 @@ export async function runBoundedTool(input: BoundedToolInput): Promise<BoundedTo
         () => timers.clearTimeout(handle),
     );
 
-    const raced = await Promise.race([settled, deadline]);
+    const raced = await Promise.race([captured, settled, deadline]);
 
     if (raced === 'timed-out' || deadlineFired) {
         logger.warn('bounded tool execution aborted at its deadline', {
@@ -409,6 +443,24 @@ export async function runBoundedTool(input: BoundedToolInput): Promise<BoundedTo
             timeoutMs,
         });
         throw new ToolExecutionTimeoutError(tool, timeoutMs);
+    }
+    // The tool is done, so the deadline is too (also for an executor that
+    // reported early and before the timer existed).
+    timers.clearTimeout(handle);
+
+    // The clean-up, OUTSIDE the race: the executor finishes on its own bound.
+    // Awaited so its work (a sandbox deletion and its audit row) is done
+    // before the caller sees the result. A clean-up that fails after the
+    // result was captured does not discard the result: losing a finished
+    // tool's output is the failure this module exists to prevent.
+    try {
+        await settled;
+    } catch (err) {
+        logger.warn('tool executor clean-up failed after its result was captured', {
+            component: 'agentic-tool-exec',
+            tool,
+            error: err instanceof Error ? err.message : String(err),
+        });
     }
 
     // The `||` above already excludes the `'timed-out'` arm, so this narrows a

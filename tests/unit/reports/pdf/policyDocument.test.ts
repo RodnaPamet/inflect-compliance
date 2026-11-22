@@ -101,6 +101,19 @@ describe('generatePolicyDocumentPdf — happy path & audit', () => {
     });
 });
 
+describe('generatePolicyDocumentPdf — the granular read key', () => {
+    it('refuses a role whose policies.view is off, before reading the policy', async () => {
+        const base = makeRequestContext('EDITOR');
+        const denied = {
+            ...base,
+            appPermissions: { ...base.appPermissions, policies: { ...base.appPermissions.policies, view: false } },
+        };
+        getByIdMock.mockClear();
+        await expect(generatePolicyDocumentPdf(denied, 'pol-1')).rejects.toThrow(/permission to view policies/);
+        expect(getByIdMock).not.toHaveBeenCalled();
+    });
+});
+
 describe('parseSections branches', () => {
     it('multiple top-level headings + `##` and `-` body transforms', async () => {
         getByIdMock.mockResolvedValue(

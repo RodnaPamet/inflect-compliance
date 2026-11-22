@@ -46,6 +46,7 @@ import { runAgentProposalSampleAudit } from '@/app-layer/jobs/agent-proposal-sam
 import {
     getSampleAuditDisagreementRate,
     listAgentProposalSampleAudits,
+    listSampleAuditsForReview,
     recordSampleAuditOutcome,
 } from '@/app-layer/usecases/agent-proposal-sample-audit';
 import {
@@ -88,6 +89,12 @@ const approverCtx = () =>
     makeRequestContext('OWNER', { tenantId: TENANT, tenantSlug: TENANT, userId: APPROVER });
 const reviewerCtx = () =>
     makeRequestContext('OWNER', { tenantId: TENANT, tenantSlug: TENANT, userId: REVIEWER });
+/** The FIRST signer of a two-approver proposal — never `reviewedByUserId` (#5112). */
+const FIRST_SIGNER = `u-${SUITE}-first-signer`;
+/** Neither approver — the positive control that the bar refuses approvers, not everyone. */
+const THIRD_HUMAN = `u-${SUITE}-third`;
+const firstSignerCtx = () =>
+    makeRequestContext('OWNER', { tenantId: TENANT, tenantSlug: TENANT, userId: FIRST_SIGNER });
 
 /**
  * Insert one proposal in a chosen terminal state.
@@ -128,7 +135,7 @@ describeFn('approved agent proposals are sample-audited, and disagreement is rec
             update: {},
             create: { id: TENANT, name: TENANT, slug: TENANT },
         });
-        for (const id of [APPROVER, REVIEWER]) {
+        for (const id of [APPROVER, REVIEWER, FIRST_SIGNER, THIRD_HUMAN]) {
             const email = `${id}@example.test`;
             await prisma.user.upsert({
                 where: { id },
@@ -197,7 +204,7 @@ describeFn('approved agent proposals are sample-audited, and disagreement is rec
             }
         });
 
-        it('opens them PENDING, assigned to the agent’s registered owner', async () => {
+        it('opens them PENDING — and UNASSIGNED here, because the agent’s owner approved them (#5307)', async () => {
             const audits = await prisma.agentProposalSampleAudit.findMany({
                 where: { tenantId: TENANT },
             });
@@ -208,7 +215,11 @@ describeFn('approved agent proposals are sample-audited, and disagreement is rec
                 expect(audit.outcome).toBe('PENDING');
                 expect(audit.reviewedByUserId).toBeNull();
                 expect(audit.reviewedAt).toBeNull();
-                expect(audit.assignedToUserId).toBe(APPROVER);
+                // The agent's owner IS the approver of every seeded proposal,
+                // and the answer path refuses an approver — so the review is
+                // not routed to them. The positive case (owner assigned when
+                // they did not approve) is its own describe below.
+                expect(audit.assignedToUserId).toBeNull();
                 expect(audit.samplingEpoch).toBe(EPOCH);
             }
         });
@@ -345,6 +356,94 @@ describeFn('approved agent proposals are sample-audited, and disagreement is rec
             expect(row.reviewedByUserId).toBeNull();
         });
 
+        /**
+         * #5112 — THE FIRST SIGNER OF A TWO-APPROVER PROPOSAL.
+         *
+         * At the two-approver rung `approveAgentProposal` records each signature
+         * in `AgentProposalApproval` and writes only the LAST signer to
+         * `AgentProposal.reviewedByUserId`. The bar read that column alone, so
+         * the first signer could answer the retrospective audit of their own
+         * approval — on exactly the proposals held to the highest bar, which is
+         * where a disagreement rate of zero is most misleading. The sampler
+         * draws by status with no `requiredApprovals` filter, so these
+         * proposals are in scope by default.
+         *
+         * The sibling test above covers the single-approver case through
+         * `reviewedByUserId`; this one covers the signature the column does not
+         * mention, and the audit row's `basis` is what tells them apart.
+         */
+        it('the FIRST SIGNER of a two-approver proposal cannot answer it either (#5112)', async () => {
+            // Both humans are seeded by the suite's own loop: the audit append
+            // carries a FK to `User` and is wrapped in `.catch(() => undefined)`,
+            // so a missing row makes the refusal SILENT — the assertion below
+            // would read "no denial was written" when the denial happened.
+            const proposalId = await seedProposal('ACCEPTED', 9101);
+            await prisma.agentProposal.update({
+                where: { id: proposalId },
+                // The final signer is REVIEWER; FIRST_SIGNER appears nowhere on
+                // this row, which is the whole point.
+                data: { requiredApprovals: 2, reviewedByUserId: REVIEWER },
+            });
+            await prisma.agentProposalApproval.create({
+                data: {
+                    tenantId: TENANT,
+                    proposalId,
+                    approverUserId: FIRST_SIGNER,
+                    outcome: 'ACCEPTED',
+                    requiredApprovals: 2,
+                },
+            });
+            const audit = await prisma.agentProposalSampleAudit.create({
+                data: {
+                    tenantId: TENANT,
+                    proposalId,
+                    samplingEpoch: 'epoch-5112',
+                    outcome: 'PENDING',
+                },
+                select: { id: true },
+            });
+
+            await expect(
+                recordSampleAuditOutcome(firstSignerCtx(), audit.id, { outcome: 'CONCURRED' }),
+            ).rejects.toThrow('sample_audit_self_review');
+
+            const denial = await prisma.auditLog.findFirstOrThrow({
+                where: { tenantId: TENANT, entityId: audit.id, action: 'AUTHZ_DENIED' },
+                orderBy: { createdAt: 'desc' },
+            });
+            const details = denial.detailsJson as Record<string, unknown>;
+            expect(details.reason).toBe('sample_audit_self_review');
+            // Distinguishes a first-signer refusal from a sole-approver one.
+            expect(details.basis).toBe('recorded_signature');
+
+            // The refusal is ahead of the claim: the row is untouched.
+            const row = await prisma.agentProposalSampleAudit.findFirstOrThrow({
+                where: { id: audit.id },
+            });
+            expect(row.outcome).toBe('PENDING');
+            expect(row.reviewedByUserId).toBeNull();
+
+            // POSITIVE CONTROL: an unrelated human still CAN answer it, so the
+            // bar refuses approvers rather than refusing everyone.
+            const third = await recordSampleAuditOutcome(
+                makeRequestContext('OWNER', {
+                    tenantId: TENANT, tenantSlug: TENANT, userId: THIRD_HUMAN,
+                }),
+                audit.id,
+                { outcome: 'CONCURRED' },
+            );
+            expect(third.outcome).toBe('CONCURRED');
+
+            // CLEAN UP THIS TEST'S OWN ROWS. The sibling tests below assert
+            // COUNTS over the suite's audits and the disagreement rate's
+            // denominator, so an extra answered audit left behind makes them
+            // fail by one — which reads as a defect in the rate, not as this
+            // test's litter. Order would also fix it, and is fragile.
+            await prisma.agentProposalSampleAudit.deleteMany({ where: { id: audit.id } });
+            await prisma.agentProposalApproval.deleteMany({ where: { proposalId } });
+            await prisma.agentProposal.deleteMany({ where: { id: proposalId } });
+        });
+
         it('a SECOND human records DISSENTED with codes, and the rate moves', async () => {
             const [open] = await listAgentProposalSampleAudits(reviewerCtx(), { take: 1 });
             const result = await recordSampleAuditOutcome(reviewerCtx(), open.id, {
@@ -439,6 +538,296 @@ describeFn('approved agent proposals are sample-audited, and disagreement is rec
      * isolation only if the same read returns something for its own tenant —
      * otherwise a listing that was simply broken would pass.
      */
+    /**
+     * THE AFFORDANCE — what the answering surface may OFFER.
+     *
+     * `/agents/review-quality` renders an Answer control per row, and an admin
+     * page offers a write only where the server takes it (#4467). So the queue
+     * read carries a per-row verdict, and these tests hold it to the SAME answer
+     * the write gives — most of all for the first signer, which is the case a
+     * rule reimplemented in a page forgets (#5112) and the case where a wrongly
+     * offered button means an approver re-reviewing their own approval.
+     *
+     * The verdict crosses to the browser; the approver identities that produce
+     * it must not. The last test is what holds that line.
+     */
+    describe('the answering surface offers a control only where the write would take it', () => {
+        let proposalId: string;
+        let auditId: string;
+
+        beforeAll(async () => {
+            // A two-approver proposal. FIRST_SIGNER signed it, REVIEWER closed
+            // it — so only REVIEWER is on `reviewedByUserId`, and FIRST_SIGNER
+            // exists nowhere but the signature rows.
+            proposalId = await seedProposal('ACCEPTED', 9201);
+            await prisma.agentProposal.update({
+                where: { id: proposalId },
+                data: { requiredApprovals: 2, reviewedByUserId: REVIEWER },
+            });
+            await prisma.agentProposalApproval.create({
+                data: {
+                    tenantId: TENANT,
+                    proposalId,
+                    approverUserId: FIRST_SIGNER,
+                    outcome: 'ACCEPTED',
+                    requiredApprovals: 2,
+                },
+            });
+            // A REJECTED signature on the same proposal. It is NOT an approval,
+            // so its holder is not an approver and must still be offered the
+            // control — the filter is load-bearing in both directions.
+            await prisma.agentProposalApproval.create({
+                data: {
+                    tenantId: TENANT,
+                    proposalId,
+                    approverUserId: APPROVER,
+                    outcome: 'REJECTED',
+                    requiredApprovals: 2,
+                },
+            });
+            auditId = (
+                await prisma.agentProposalSampleAudit.create({
+                    data: {
+                        tenantId: TENANT,
+                        proposalId,
+                        samplingEpoch: 'epoch-affordance',
+                        outcome: 'PENDING',
+                    },
+                    select: { id: true },
+                })
+            ).id;
+        });
+
+        afterAll(async () => {
+            // This describe's own rows, as the #5112 test cleans up its own: the
+            // isolation describe below reads this tenant's queue.
+            //
+            // GUARDED, because these are bare `let`s: if `beforeAll` threw they
+            // are undefined, Prisma DROPS an undefined filter value rather than
+            // rejecting it, and each `deleteMany` would then empty its whole
+            // table without throwing.
+            if (auditId) {
+                await prisma.agentProposalSampleAudit.deleteMany({ where: { id: auditId } });
+            }
+            if (proposalId) {
+                await prisma.agentProposalApproval.deleteMany({ where: { proposalId } });
+                await prisma.agentProposal.deleteMany({ where: { id: proposalId } });
+            }
+        });
+
+        /** This describe's audit, as one reader sees it. */
+        async function asSeenBy(ctx: ReturnType<typeof reviewerCtx>) {
+            const rows = await listSampleAuditsForReview(ctx, { take: 200 });
+            const found = rows.find((r) => r.id === auditId);
+            // A miss here reads as "undefined.refusal" at every call site, which
+            // looks like a broken verdict rather than a row that was not listed.
+            if (!found) throw new Error(`audit ${auditId} was not in the queue read`);
+            return found;
+        }
+
+        it('refuses the FINAL signer, who is the one on reviewedByUserId', async () => {
+            expect((await asSeenBy(reviewerCtx())).refusal).toBe('SELF_REVIEW');
+        });
+
+        it('refuses the FIRST signer too, whom that column never mentions (#5112)', async () => {
+            expect((await asSeenBy(firstSignerCtx())).refusal).toBe('SELF_REVIEW');
+        });
+
+        it('offers the control to a third human', async () => {
+            const ctx = makeRequestContext('OWNER', {
+                tenantId: TENANT,
+                tenantSlug: TENANT,
+                userId: THIRD_HUMAN,
+            });
+            expect((await asSeenBy(ctx)).refusal).toBeNull();
+        });
+
+        it('does not treat a REJECTED signature as an approval', async () => {
+            // APPROVER holds one on this proposal and is not its reviewer, so
+            // they are not an approver of it and may answer.
+            expect((await asSeenBy(approverCtx())).refusal).toBeNull();
+        });
+
+        it('refuses a reader, as the usecase does before it reads anything', async () => {
+            const reader = makeRequestContext('READER', {
+                tenantId: TENANT,
+                tenantSlug: TENANT,
+                userId: THIRD_HUMAN,
+            });
+            expect((await asSeenBy(reader)).refusal).toBe('NOT_A_WRITER');
+        });
+
+        it('returns the VERDICT and never the APPROVER identities', async () => {
+            /*
+                The approver ids are read to compute the refusal and dropped. A
+                client holding them could render a self-review refusal as an
+                accusation naming somebody, and who approved what is the
+                review-quality report's business under its own gate.
+
+                `assignedToUserId` is the DELIBERATE exception, added with #5738:
+                it is the row's own "who was asked", which the queue exists to
+                show, and it is the sampler's assignment rather than anybody's
+                judgement. It still does not reach a browser — the page resolves
+                it to a NAME and hands the panel `assigneeLabel`, never the id.
+                This row's assignee is null here (the describe seeds the audit
+                directly), so the loop below is unambiguous about approvers.
+            */
+            const row = await asSeenBy(reviewerCtx());
+            expect(row.assignedToUserId).toBeNull();
+            const serialised = JSON.stringify(row);
+            for (const who of [APPROVER, REVIEWER, FIRST_SIGNER, THIRD_HUMAN]) {
+                expect(serialised).not.toContain(who);
+            }
+            expect(Object.keys(row).sort()).toEqual([
+                'agentId',
+                'approvedAt',
+                'assignedToUserId',
+                'dissentCodes',
+                'id',
+                'outcome',
+                'proposalId',
+                'proposalKind',
+                'refusal',
+                'sampledAt',
+            ]);
+        });
+        it('agrees with the write: every row it offers, the write accepts', async () => {
+            // The affordance and the refusal are one rule, and this is the
+            // assertion that says so rather than restating the rule twice.
+            const offered = await asSeenBy(
+                makeRequestContext('OWNER', {
+                    tenantId: TENANT, tenantSlug: TENANT, userId: THIRD_HUMAN,
+                }),
+            );
+            expect(offered.refusal).toBeNull();
+            const refused = await asSeenBy(firstSignerCtx());
+            expect(refused.refusal).toBe('SELF_REVIEW');
+            await expect(
+                recordSampleAuditOutcome(firstSignerCtx(), auditId, { outcome: 'CONCURRED' }),
+            ).rejects.toThrow('sample_audit_self_review');
+            // …and the row the surface DID offer is answerable, which is the
+            // half that would be missing if the verdict simply refused everyone.
+            const ok = await recordSampleAuditOutcome(
+                makeRequestContext('OWNER', {
+                    tenantId: TENANT, tenantSlug: TENANT, userId: THIRD_HUMAN,
+                }),
+                auditId,
+                { outcome: 'CONCURRED' },
+            );
+            expect(ok.outcome).toBe('CONCURRED');
+
+            // Now answered: re-read including answered rows and the verdict
+            // moves to ALREADY_ANSWERED for a reader who could have answered it.
+            const after = (
+                await listSampleAuditsForReview(
+                    makeRequestContext('OWNER', {
+                        tenantId: TENANT, tenantSlug: TENANT, userId: THIRD_HUMAN,
+                    }),
+                    { open: false, take: 200 },
+                )
+            ).find((r) => r.id === auditId);
+            expect(after?.refusal).toBe('ALREADY_ANSWERED');
+        });
+
+    });
+
+    describe('the review is never ASSIGNED to an approver of the proposal (#5307)', () => {
+        const ASSIGN_TENANT = `t-${SUITE}-assign`;
+        const OWNER_U = `u-${SUITE}-agent-owner`;
+        const OTHER_APPROVER = `u-${SUITE}-other-approver`;
+        // No case for the owner holding a FIRST signature: the database refuses
+        // that already (AGENT_PROPOSAL_APPROVAL_OWNER_SELF_REVIEW), so the
+        // reachable shape is the owner as the sole, final approver.
+        const proposals: Record<'byOther' | 'byOwner', string> = { byOther: '', byOwner: '' };
+
+        beforeAll(async () => {
+            await prisma.tenant.upsert({
+                where: { id: ASSIGN_TENANT },
+                update: {},
+                create: { id: ASSIGN_TENANT, name: ASSIGN_TENANT, slug: ASSIGN_TENANT },
+            });
+            for (const id of [OWNER_U, OTHER_APPROVER]) {
+                const email = `${id}@example.test`;
+                await prisma.user.upsert({
+                    where: { id },
+                    update: {},
+                    create: { id, email, emailHash: hashForLookup(email) },
+                });
+                await prisma.tenantMembership.upsert({
+                    where: { tenantId_userId: { tenantId: ASSIGN_TENANT, userId: id } },
+                    update: { role: 'OWNER', status: 'ACTIVE' },
+                    create: { tenantId: ASSIGN_TENANT, userId: id, role: 'OWNER', status: 'ACTIVE' },
+                });
+            }
+            const aiSystem = await prisma.aiSystem.create({
+                data: { tenantId: ASSIGN_TENANT, name: `${SUITE} assign host`, ownerUserId: OWNER_U },
+            });
+            const agent = await prisma.registeredAgent.create({
+                data: {
+                    tenantId: ASSIGN_TENANT,
+                    aiSystemId: aiSystem.id,
+                    name: `${SUITE} assign agent`,
+                    autonomyLevel: 2,
+                    dataAccessScope: 'READ_TENANT_DATA',
+                    reversibility: 'REVERSIBLE',
+                    provenance: 'FIRST_PARTY',
+                    ownerUserId: OWNER_U,
+                    status: 'ACTIVE',
+                    riskTier: 'LOW',
+                    riskTierScoredAt: new Date(),
+                },
+            });
+            const make = async (n: number, reviewedByUserId: string) =>
+                (await prisma.agentProposal.create({
+                    data: {
+                        tenantId: ASSIGN_TENANT,
+                        kind: 'RISK',
+                        status: 'ACCEPTED',
+                        payloadJson: JSON.stringify({ title: `${SUITE} assign ${n}`, description: 'seeded' }),
+                        rationale: `${SUITE} assign rationale ${n}`,
+                        agentId: agent.id,
+                        policyCardVersion: 1,
+                        reviewedByUserId,
+                        reviewedAt: new Date(),
+                        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+                    },
+                    select: { id: true },
+                })).id;
+            proposals.byOther = await make(1, OTHER_APPROVER);
+            proposals.byOwner = await make(2, OWNER_U);
+            // Each run draws at least one of what is left, so two runs in two
+            // epochs sample both.
+            for (const epoch of ['assign-1', 'assign-2']) {
+                await runAgentProposalSampleAudit(prisma, {
+                    tenantId: ASSIGN_TENANT, seed: TEST_SEED, epoch,
+                });
+            }
+        }, 60_000);
+
+        const assigneeOf = async (proposalId: string) =>
+            (await prisma.agentProposalSampleAudit.findFirstOrThrow({
+                where: { tenantId: ASSIGN_TENANT, proposalId },
+            })).assignedToUserId;
+
+        it('assigns the agent’s owner when somebody else approved the proposal', async () => {
+            expect(await assigneeOf(proposals.byOther)).toBe(OWNER_U);
+        });
+
+        it('leaves it unassigned when the owner was the final approver', async () => {
+            expect(await assigneeOf(proposals.byOwner)).toBeNull();
+        });
+
+        it('the AGENT_PROPOSAL_SAMPLED row names the same assignee as the audit', async () => {
+            const audit = await prisma.agentProposalSampleAudit.findFirstOrThrow({
+                where: { tenantId: ASSIGN_TENANT, proposalId: proposals.byOwner },
+            });
+            const row = await prisma.auditLog.findFirstOrThrow({
+                where: { tenantId: ASSIGN_TENANT, entityId: audit.id, action: 'AGENT_PROPOSAL_SAMPLED' },
+            });
+            expect((row.detailsJson as Record<string, unknown>).assignedToUserId).toBeNull();
+        });
+    });
+
     describe('tenant isolation — a second tenant reaches none of this', () => {
         const OTHER_TENANT = `t-${SUITE}-other`;
         const OTHER_USER = `u-${SUITE}-other`;

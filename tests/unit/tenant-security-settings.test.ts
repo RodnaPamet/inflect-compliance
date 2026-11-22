@@ -35,6 +35,13 @@ jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: any, fn: (db: any) => any) => fn(mockDb)),
 }));
 
+// The organization's ceilings (#4594), read through the turn caps' own reader
+// on the global client: faked here, as the tenant-context read is above.
+const mockOrgCeilings: { value: { delegationsPerTurn: number; toolCallsPerTurn: number } | null } = { value: null };
+jest.mock('@/lib/agentic/turn-caps-policy', () => ({
+    readTurnCapInputs: jest.fn(async () => ({ organization: mockOrgCeilings.value, workspace: null })),
+}));
+
 const mockLogEvent = jest.fn().mockResolvedValue(undefined);
 jest.mock('@/app-layer/events/audit', () => ({
     logEvent: (...a: unknown[]) => mockLogEvent(...a),
@@ -84,6 +91,7 @@ beforeEach(() => {
     mockLogEvent.mockClear();
     mockDb.tenantSecuritySettings.findUnique.mockResolvedValue(null);
     mockDb.tenantSecuritySettings.upsert.mockResolvedValue({});
+    mockOrgCeilings.value = null;
 });
 
 // ─── Authorization ──────────────────────────────────────────────────
@@ -426,6 +434,95 @@ describe('apiKeyRotationDays', () => {
         expect((await getTenantSecurityConfig(adminCtx)).apiKeyRotationDays).toBeNull();
         mockDb.tenantSecuritySettings.findUnique.mockResolvedValue({ apiKeyRotationDays: 45 });
         expect((await getTenantSecurityConfig(adminCtx)).apiKeyRotationDays).toBe(45);
+    });
+});
+
+/**
+ * The workspace's narrowing of the org-level turn caps (#4594): it may only
+ * narrow, a value above the organization's ceiling is refused with the ceiling
+ * named, null follows the organization, and a change writes its own event.
+ */
+describe('agent turn caps', () => {
+    const turnCapsEvent = () =>
+        mockLogEvent.mock.calls.map((c) => c[2] as any).find((p) => p.action === 'AGENT_TURN_CAPS_CHANGED');
+
+    it('the schema holds the CHECKs\' ranges and admits null', () => {
+        for (const ok of [0, 10, null]) {
+            expect(UpdateTenantSecuritySettingsInput.safeParse({ agentMaxSubagentsPerTurn: ok }).success).toBe(true);
+        }
+        for (const ok of [1, 10, null]) {
+            expect(UpdateTenantSecuritySettingsInput.safeParse({ agentMaxToolCallsPerTurn: ok }).success).toBe(true);
+        }
+        for (const bad of [-1, 11, 1.5, '2']) {
+            expect(UpdateTenantSecuritySettingsInput.safeParse({ agentMaxSubagentsPerTurn: bad }).success).toBe(false);
+        }
+        for (const bad of [0, 11]) {
+            expect(UpdateTenantSecuritySettingsInput.safeParse({ agentMaxToolCallsPerTurn: bad }).success).toBe(false);
+        }
+    });
+
+    it('refuses a value above the organization\'s ceiling, naming it, and writes nothing', async () => {
+        mockOrgCeilings.value = { delegationsPerTurn: 2, toolCallsPerTurn: 3 };
+        const err = await updateTenantSecurityConfig(adminCtx, { agentMaxToolCallsPerTurn: 4 }).catch((e) => e);
+        expect(err).toMatchObject({
+            status: 400,
+            details: { reason: 'TURN_CAP_ABOVE_ORGANIZATION_CEILING', field: 'agentMaxToolCallsPerTurn', ceiling: 3 },
+        });
+        await expect(updateTenantSecurityConfig(adminCtx, { agentMaxSubagentsPerTurn: 3 })).rejects.toMatchObject({
+            details: { reason: 'TURN_CAP_ABOVE_ORGANIZATION_CEILING', ceiling: 2 },
+        });
+        expect(mockDb.tenantSecuritySettings.upsert).not.toHaveBeenCalled();
+        expect(mockLogEvent).not.toHaveBeenCalled();
+    });
+
+    it('a workspace with no organization is bounded by the product defaults (3, 1)', async () => {
+        await expect(updateTenantSecurityConfig(adminCtx, { agentMaxToolCallsPerTurn: 2 })).rejects.toMatchObject({
+            details: { reason: 'TURN_CAP_ABOVE_ORGANIZATION_CEILING', ceiling: 1 },
+        });
+        await updateTenantSecurityConfig(adminCtx, { agentMaxSubagentsPerTurn: 3 });
+        expect(mockDb.tenantSecuritySettings.upsert.mock.calls[0][0].update).toEqual({ agentMaxSubagentsPerTurn: 3 });
+    });
+
+    it('stores a narrowing, or an explicit null, and audits the move with both values', async () => {
+        mockOrgCeilings.value = { delegationsPerTurn: 5, toolCallsPerTurn: 4 };
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValue({ agentMaxSubagentsPerTurn: 3, agentMaxToolCallsPerTurn: null });
+        await updateTenantSecurityConfig(adminCtx, { agentMaxSubagentsPerTurn: null, agentMaxToolCallsPerTurn: 2 });
+        expect(mockDb.tenantSecuritySettings.upsert.mock.calls[0][0].update).toEqual({
+            agentMaxSubagentsPerTurn: null,
+            agentMaxToolCallsPerTurn: 2,
+        });
+        const event = turnCapsEvent();
+        expect(event.detailsJson).toEqual({
+            category: 'entity_lifecycle',
+            entityName: 'TenantSecuritySettings',
+            operation: 'updated',
+            changedFields: ['agentMaxSubagentsPerTurn', 'agentMaxToolCallsPerTurn'],
+            before: {
+                agentMaxSubagentsPerTurn: { stored: 3, applies: 3 },
+                agentMaxToolCallsPerTurn: { stored: null, applies: 4 },
+            },
+            after: {
+                agentMaxSubagentsPerTurn: { stored: null, applies: 5 },
+                agentMaxToolCallsPerTurn: { stored: 2, applies: 2 },
+            },
+        });
+        expect(() => validateAuditDetailsJson(event.detailsJson)).not.toThrow();
+    });
+
+    it('a PUT that leaves the value where it was writes no turn-caps event', async () => {
+        mockOrgCeilings.value = { delegationsPerTurn: 5, toolCallsPerTurn: 4 };
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValue({ agentMaxSubagentsPerTurn: null, agentMaxToolCallsPerTurn: 2 });
+        await updateTenantSecurityConfig(adminCtx, { agentMaxToolCallsPerTurn: 2 });
+        expect(turnCapsEvent()).toBeUndefined();
+    });
+
+    it('the read reports the stored values and the values that apply', async () => {
+        mockOrgCeilings.value = { delegationsPerTurn: 1, toolCallsPerTurn: 4 };
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValue({ agentMaxSubagentsPerTurn: 3, agentMaxToolCallsPerTurn: 2 });
+        const config = await getTenantSecurityConfig(adminCtx);
+        expect(config.agentMaxSubagentsPerTurn).toBe(3);
+        expect(config.turnCaps.delegationsPerTurn).toEqual({ value: 1, basis: 'ORGANIZATION_CEILING', ceiling: 1, workspace: 3 });
+        expect(config.turnCaps.toolCallsPerTurn).toEqual({ value: 2, basis: 'WORKSPACE', ceiling: 4, workspace: 2 });
     });
 });
 

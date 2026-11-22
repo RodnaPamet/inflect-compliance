@@ -472,6 +472,39 @@ describe('cloneTemplate — SAME_KEY_NEW_VERSION mode', () => {
     });
 });
 
+describe('cloneTemplate — SAME_KEY_NEW_VERSION from a version that is not the latest (#5318)', () => {
+    const v1 = {
+        id: 't-v1', tenantId: 'tenant-1', key: 'soc2', version: 1, name: 'SOC 2',
+        description: null, isGlobal: false, sections: [], questions: [],
+    };
+
+    test('takes the key\'s latest version + 1, not the source\'s', async () => {
+        mockTx.vendorAssessmentTemplate.findFirst
+            .mockResolvedValueOnce(v1)
+            .mockResolvedValueOnce({ id: 't-v2', version: 2, isPublished: true });
+        mockTx.vendorAssessmentTemplate.updateMany.mockResolvedValueOnce({ count: 1 });
+        mockTx.vendorAssessmentTemplate.create.mockResolvedValueOnce({ id: 't-v3', version: 3 });
+
+        await cloneTemplate(makeCtx(), 't-v1', { mode: 'SAME_KEY_NEW_VERSION' });
+
+        expect(mockTx.vendorAssessmentTemplate.create.mock.calls[0][0].data.version).toBe(3);
+    });
+
+    test('refuses, pointing at the draft, when the latest version is still an unpublished draft', async () => {
+        mockTx.vendorAssessmentTemplate.findFirst
+            .mockResolvedValueOnce(v1)
+            .mockResolvedValueOnce({ id: 't-v2', version: 2, isPublished: false });
+
+        const err = await cloneTemplate(makeCtx(), 't-v1', { mode: 'SAME_KEY_NEW_VERSION' })
+            .then(() => null, (e: unknown) => e) as { status?: number; details?: unknown } | null;
+
+        expect(err?.status).toBe(409);
+        expect(err?.details).toEqual({ reason: 'DRAFT_VERSION_EXISTS', draftTemplateId: 't-v2', draftVersion: 2 });
+        expect(mockTx.vendorAssessmentTemplate.updateMany).not.toHaveBeenCalled();
+        expect(mockTx.vendorAssessmentTemplate.create).not.toHaveBeenCalled();
+    });
+});
+
 // ═══════════════════════════════════════════════════════════════════
 // 5. publishTemplate
 // ═══════════════════════════════════════════════════════════════════
@@ -499,9 +532,12 @@ describe('publishTemplate', () => {
             isPublished: true,
             _count: { questions: 5 },
         });
-        await expect(publishTemplate(makeCtx(), 't-1')).rejects.toThrow(
-            /ALREADY_PUBLISHED/,
-        );
+        // The sentence is the message the builder shows; the code rides in
+        // details (#5318), so the page never shows the raw code.
+        const err = await publishTemplate(makeCtx(), 't-1').then(() => null, (e: unknown) => e) as
+            { message: string; details?: unknown } | null;
+        expect(err?.message).toBe('Template "SOC 2" is already published.');
+        expect(err?.details).toEqual({ reason: 'ALREADY_PUBLISHED' });
         expect(mockTx.vendorAssessmentTemplate.update).not.toHaveBeenCalled();
     });
 
@@ -514,9 +550,10 @@ describe('publishTemplate', () => {
             isPublished: false,
             _count: { questions: 0 },
         });
-        await expect(publishTemplate(makeCtx(), 't-1')).rejects.toThrow(
-            /EMPTY_TEMPLATE/,
-        );
+        const err = await publishTemplate(makeCtx(), 't-1').then(() => null, (e: unknown) => e) as
+            { message: string; details?: unknown } | null;
+        expect(err?.message).toBe('Cannot publish a template with no questions');
+        expect(err?.details).toEqual({ reason: 'EMPTY_TEMPLATE' });
         expect(mockTx.vendorAssessmentTemplate.update).not.toHaveBeenCalled();
     });
 

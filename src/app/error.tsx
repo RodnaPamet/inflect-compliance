@@ -55,7 +55,7 @@ export default function GlobalError({
                     secondaryAction={{
                         label: t('goToDashboard'),
                         onClick: () => {
-                            window.location.href = '/dashboard';
+                            window.location.href = '/tenants';
                         },
                     }}
                     data-testid="global-error"

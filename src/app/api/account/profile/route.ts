@@ -15,6 +15,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { unauthorized, badRequest } from '@/lib/errors/types';
 import { updateOwnDisplayName, DISPLAY_NAME_MAX } from '@/lib/account/profile';
+import { assertAccountWideWriteInScope } from '@/lib/account/sso-scope';
 
 const ProfileNameSchema = z.object({
     firstName: z.string().max(DISPLAY_NAME_MAX).optional(),
@@ -24,6 +25,9 @@ const ProfileNameSchema = z.object({
 export const PATCH = withApiErrorHandling(async (req: NextRequest) => {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) throw unauthorized();
+    // A session opened by one workspace's single sign-on may rename the
+    // account only while it belongs to nothing else.
+    await assertAccountWideWriteInScope({ userId: session.user.id, ssoTenantId: session.user.ssoTenantId });
 
     const parsed = ProfileNameSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) throw badRequest('Invalid profile payload.');

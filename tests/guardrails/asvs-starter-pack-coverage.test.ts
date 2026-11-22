@@ -29,6 +29,7 @@ import { codeOf } from '../helpers/source-blocks';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 import { parseMappingSetFile } from '@/app-layer/services/mapping-set-importer';
+import { loadAndValidateCatalogFile } from '../../prisma/catalog-loader';
 
 import { deliveredRiskTemplates, riskTemplateDeliveryGap } from '../helpers/risk-template-delivery';
 
@@ -55,9 +56,10 @@ const asvs = lib(ASVS);
 const chapters = asvs.framework.nodes.filter((n) => !n.assessable);
 const requirements = asvs.framework.nodes.filter((n) => n.assessable);
 
-// The authored counts — 259 requirements: 128 L1, 119 L2, 12 L3.
+// The authored counts — 259 requirements: 129 L1, 120 L2, 10 L3 (seven levels
+// corrected against the ASVS 4.0.3 table in #5316).
 const EXPECTED_REQUIREMENTS = 259;
-const EXPECTED_L1 = 128;
+const EXPECTED_L1 = 129;
 
 describe('ASVS 4.0.3 — library structure', () => {
     it('parses with ref_id OWASP-ASVS-4.0.3 and kind INDUSTRY_STANDARD', () => {
@@ -90,6 +92,31 @@ describe('ASVS 4.0.3 — library structure', () => {
     it('carries the expected number of L1 requirements', () => {
         const l1 = requirements.filter((r) => r.category === 'L1');
         expect(l1.length).toBe(EXPECTED_L1);
+    });
+
+    // #5316: these seven carried a level the ASVS 4.0.3 table does not give
+    // them, so the L1 pack left out three real L1 obligations and shipped an
+    // L2 one. A requirement's level is the lowest column ticked in the table.
+    it.each([
+        ['V2.4.5', 'L2'],
+        ['V2.6.1', 'L2'],
+        ['V3.7.1', 'L1'],
+        ['V7.1.1', 'L1'],
+        ['V7.1.2', 'L1'],
+        ['V11.1.6', 'L2'],
+        ['V14.2.4', 'L2'],
+    ])('%s carries the ASVS 4.0.3 level %s', (refId, level) => {
+        expect(requirements.find((r) => r.refId === refId)?.category).toBe(level);
+    });
+
+    // #5316: the two titles were swapped. In ASVS 4.0.3, V7.1.1 is the
+    // requirement not to log credentials or payment details, and V7.1.2 the
+    // requirement not to log other sensitive data.
+    it.each([
+        ['V7.1.1', 'No Credentials or Payment Details in Logs'],
+        ['V7.1.2', 'No Other Sensitive Data in Logs'],
+    ])('%s carries the ASVS 4.0.3 title "%s"', (refId, title) => {
+        expect(requirements.find((r) => r.refId === refId)?.name).toBe(title);
     });
 
     it('every requirement ref_id is V-prefixed and parented to a chapter', () => {
@@ -303,5 +330,45 @@ describe('ASVS 4.0.3 — cross-framework mapping validity', () => {
         const l1 = requirements.filter((r) => r.category === 'L1').map((r) => r.refId);
         const missing = l1.filter((r) => !covered.has(r));
         expect(missing).toEqual([]);
+    });
+
+    // #5316: both sets kept their V2.6.1 and V11.1.6 edges after both moved to
+    // L2, and asvs-to-ssdf also lacked V3.7.1, V7.1.1 and V7.1.2, which moved
+    // to L1.
+    it.each(['asvs-to-iso27001.yaml', 'asvs-to-ssdf.yaml'])('%s maps the Level 1 requirements its description names, and only those', (file) => {
+        const ms = parseMappingSetFile(path.join(MAP, file));
+        expect(ms.description).toContain('Level 1 requirements');
+        const level = new Map(requirements.map((r) => [r.refId, r.category]));
+        const sources = [...new Set(ms.mapping_entries.map((e) => e.source_ref))];
+        expect(sources.length).toBeGreaterThan(0);
+        // Exactly the L1 tier: no source outside it, and no L1 requirement left out.
+        expect(sources.filter((s) => level.get(s) !== 'L1')).toEqual([]);
+        const sourceSet = new Set(sources);
+        const l1 = requirements.filter((r) => r.category === 'L1').map((r) => r.refId);
+        expect(l1.filter((r) => !sourceSet.has(r))).toEqual([]);
+    });
+});
+
+describe('ASVS 4.0.3 — a requirement that left the L1 tier leaves existing databases', () => {
+    // #5644 moved V2.6.1 and V11.1.6 to L2 and out of the L1 catalogue. The
+    // applier only adds, so a database that installed the catalogue before
+    // then keeps them L1 and linked unless the file declares them out of
+    // scope (tests/integration/catalog-out-of-scope-requirements.test.ts
+    // proves what the declaration does to such a database).
+    const catalog = appliedCatalogFor('OWASP-ASVS');
+    const outOfScope = catalog
+        ? loadAndValidateCatalogFile(path.join(ROOT, catalog.file)).outOfScopeRequirements
+        : [];
+
+    it.each([
+        ['V2.6.1', 'ASVS-V2'],
+        ['V11.1.6', 'ASVS-V11'],
+    ])('%s is declared out of scope, at its library level, unlinked from %s', (code, template) => {
+        const entry = outOfScope.find((o) => o.code === code);
+        expect(entry).toEqual(
+            expect.objectContaining({ category: requirements.find((r) => r.refId === code)?.category }),
+        );
+        expect(entry?.category).toBe('L2');
+        expect(entry?.unlinkTemplateCodes).toEqual([template]);
     });
 });

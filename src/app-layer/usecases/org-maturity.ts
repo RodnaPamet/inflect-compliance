@@ -240,7 +240,8 @@ export async function setOrgMaturityRating(
 }
 
 /**
- * Overall-maturity-over-time series. Folds the per-domain rating events
+ * Overall-maturity-over-time series. Seeds each domain with its standing
+ * rating at the window's start, then folds the in-window rating events
  * (oldest→newest), maintaining the then-current level per domain, and
  * emits the overall average at each event. The trend is "free" — every
  * re-rating is already a history row, no snapshot job needed.
@@ -255,13 +256,26 @@ export async function getOrgMaturityTrend(
     const since = new Date();
     since.setMonth(since.getMonth() - Math.min(Math.max(months, 1), 60));
 
-    const rows = await prisma.orgMaturityRating.findMany({
-        where: { organizationId: ctx.organizationId, ratedAt: { gte: since } },
-        orderBy: { ratedAt: 'asc' },
-        take: 2000,
-    });
+    const [rows, priorRows] = await Promise.all([
+        prisma.orgMaturityRating.findMany({
+            where: { organizationId: ctx.organizationId, ratedAt: { gte: since } },
+            orderBy: { ratedAt: 'asc' },
+            take: 2000,
+        }),
+        // Each domain's standing rating at the window's start (#5318): the
+        // newest row per domain before `since`. Without it every in-window
+        // point averaged only the domains re-rated inside the window, so one
+        // re-rating of GOVERN to 5 drew the whole portfolio at 5.0.
+        prisma.orgMaturityRating.findMany({
+            where: { organizationId: ctx.organizationId, ratedAt: { lt: since } },
+            orderBy: [{ ratedAt: 'desc' }, { id: 'desc' }],
+            distinct: ['domain'],
+            take: MATURITY_DOMAINS.length,
+        }),
+    ]);
 
     const current = new Map<string, number>();
+    for (const r of priorRows) current.set(r.domain, MATURITY_LEVEL_NUM[r.level]);
     const series: Array<{ date: string; overall: number }> = [];
     for (const r of rows) {
         current.set(r.domain, MATURITY_LEVEL_NUM[r.level]);

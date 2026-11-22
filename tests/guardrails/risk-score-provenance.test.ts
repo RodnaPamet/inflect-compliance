@@ -57,7 +57,7 @@ describe('RQ2-1 — every score write is paired with a provenance event', () => 
 
     test('updateRisk derives residualScore via calculateRiskScore (never accepts a raw rollup)', () => {
         expect(riskUsecase).toMatch(
-            /calculateRiskScore\(data\.residualLikelihood,\s*data\.residualImpact,\s*maxScale\)/,
+            /calculateRiskScore\(\s*data\.residualLikelihood,\s*data\.residualImpact,\s*axes\.likelihoodLevels,\s*axes\.impactLevels,?\s*\)/,
         );
         // The update payload type must NOT accept a caller-supplied
         // residualScore (derived-only contract).
@@ -144,6 +144,6 @@ describe('RQ2-2 — control-derived residual (divisors stay dead)', () => {
     });
 
     test('the derived rollup goes through calculateRiskScore (one scoring seam)', () => {
-        expect(residualLib).toMatch(/calculateRiskScore\(residualLikelihood,\s*residualImpact,\s*maxScale\)/);
+        expect(residualLib).toMatch(/calculateRiskScore\(residualLikelihood,\s*residualImpact,\s*maxScale,\s*maxImpact\)/);
     });
 });

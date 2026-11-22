@@ -94,7 +94,7 @@ model AuditLog {
 //   ORG_ADMIN_DEPROVISIONED_FROM_TENANTS — fan-in summary
 //
 // Provisioning fan-out is summarized as ONE org audit row carrying
-// `{ tenantCount, tenantIds[], role: 'AUDITOR' }` in detailsJson.
+// `{ trigger, tenantCount, tenantIds[], role: 'ADMIN' }` in detailsJson.
 // Per-tenant rows still land in AuditLog (existing behaviour) so
 // each tenant's own ledger remains complete.
 
@@ -113,8 +113,12 @@ model OrgAuditLog {
   version        Int            @default(1)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  actor        User?        @relation("OrgAuditLogActor", fields: [actorUserId], references: [id], onDelete: SetNull)
-  target       User?        @relation("OrgAuditLogTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+  /// #5595: RESTRICT, not SetNull. Both user columns are hashed into the chain
+  /// and the trigger refuses every UPDATE, so a SET NULL could only fail
+  /// mid-delete. A DSAR erasure of a user named here refuses up front instead
+  /// (owner decision 2026-11-14); pseudonymising this trail is not built.
+  actor     User?        @relation("OrgAuditLogActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  target       User?        @relation("OrgAuditLogTarget", fields: [targetUserId], references: [id], onDelete: Restrict)
 
   @@index([organizationId, occurredAt])
   @@index([organizationId, action])

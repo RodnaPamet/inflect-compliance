@@ -27,7 +27,9 @@ export const GET = withApiErrorHandling(
         // (Tenant.organizationId, OrgMembership.organizationId).
         const [tenantCount, memberCount] = await Promise.all([
             prisma.tenant.count({
-                where: { organizationId: ctx.organizationId },
+                // Soft-deleted (org-removed) tenants are not counted, as
+                // GET /api/org/[orgSlug]/tenants does not list them (#5303).
+                where: { organizationId: ctx.organizationId, deletedAt: null },
             }),
             prisma.orgMembership.count({
                 where: { organizationId: ctx.organizationId },

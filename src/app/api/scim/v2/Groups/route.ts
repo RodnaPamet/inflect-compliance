@@ -8,6 +8,7 @@
  */
 import { NextRequest } from 'next/server';
 import { authenticateScimRequest, ScimAuthError } from '@/lib/scim/auth';
+import { ScimFilterError, scimPage } from '@/lib/scim/filter';
 import { scimError, scimListResponse, isScimGroupExternalId } from '@/lib/scim/types';
 import {
     scimListGroups,
@@ -19,12 +20,17 @@ import { jsonResponse } from '@/lib/api-response';
 export async function GET(req: NextRequest) {
     try {
         const ctx = await authenticateScimRequest(req);
-        const groups = await scimListGroups(ctx);
+        const params = req.nextUrl.searchParams;
+        const page = scimPage(params.get('startIndex'), params.get('count'), { count: 100, max: 200 });
+        const { groups, total, startIndex } = await scimListGroups(ctx, { ...page, filter: params.get('filter') });
         const resources = groups.map(scimGroupResource);
-        return jsonResponse(scimListResponse(resources, resources.length, 1), {
+        return jsonResponse(scimListResponse(resources, total, startIndex), {
             headers: { 'Content-Type': 'application/scim+json' },
         });
     } catch (e) {
+        if (e instanceof ScimFilterError) {
+            return jsonResponse(scimError(e.status, e.message, e.scimType), { status: e.status });
+        }
         if (e instanceof ScimAuthError) {
             return jsonResponse(scimError(e.status, e.message, e.scimType), { status: e.status });
         }

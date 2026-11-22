@@ -13,7 +13,7 @@
  * `onConfirm(items)`. All data comes from the SP-2 browse/sites routes; the
  * Graph boundary is never touched directly here.
  */
-import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react';
+import { useState, useEffect, useCallback, useRef, type Dispatch, type SetStateAction } from 'react';
 import { useTranslations } from 'next-intl';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
@@ -22,9 +22,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { LoadingSpinner } from '@inflect/ui/components/ui/icons/loading-spinner';
-import { Folder5 } from '@inflect/ui/components/ui/icons/nucleo/folder5';
-import { FileContent } from '@inflect/ui/components/ui/icons/nucleo/file-content';
-import { ChevronRight } from '@inflect/ui/components/ui/icons/nucleo/chevron-right';
+import { Folder5 } from '@inflect/ui/components/ui/icons/glyphs/folder5';
+import { FileContent } from '@inflect/ui/components/ui/icons/glyphs/file-content';
+import { ChevronRight } from '@inflect/ui/components/ui/icons/glyphs/chevron-right';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { formatDate } from '@inflect/ui/lib/format-date';
 
@@ -90,6 +90,14 @@ export function SharePointFilePicker({
     const [filter, setFilter] = useState<Filter>('all');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // Graph pages a folder's children (#5309). The cursor of the next page,
+    // null when the listing is whole; and the folder it belongs to.
+    const [nextPageToken, setNextPageToken] = useState<string | null>(null);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const listedFolder = useRef<string | undefined>(undefined);
+    // Bumped by every new listing, so a page that lands after the user moved
+    // to another folder (or drive) is dropped rather than shown there.
+    const listingSeq = useRef(0);
 
     // Load sites + drives once the modal opens.
     useEffect(() => {
@@ -118,26 +126,58 @@ export function SharePointFilePicker({
         return () => { cancelled = true; };
     }, [showModal, connectionId, apiUrl, t]);
 
+    const browseUrl = useCallback(
+        (folderId?: string, pageToken?: string) => {
+            const q = new URLSearchParams({ connectionId, driveId });
+            if (folderId) q.set('itemId', folderId);
+            if (pageToken) q.set('pageToken', pageToken);
+            return apiUrl(`/integrations/sharepoint/browse?${q.toString()}`);
+        },
+        [apiUrl, connectionId, driveId],
+    );
+
     const loadFolder = useCallback(
         async (folderId?: string) => {
             if (!driveId) return;
+            const seq = ++listingSeq.current;
+            listedFolder.current = folderId;
             setLoading(true);
             setError(null);
+            setNextPageToken(null);
             try {
-                const q = new URLSearchParams({ connectionId, driveId });
-                if (folderId) q.set('itemId', folderId);
-                const res = await fetch(apiUrl(`/integrations/sharepoint/browse?${q.toString()}`));
+                const res = await fetch(browseUrl(folderId));
                 if (!res.ok) throw new Error();
                 const data = await res.json();
+                if (seq !== listingSeq.current) return;
                 setItems(data.items);
+                setNextPageToken(data.nextPageToken ?? null);
             } catch {
-                setError(t('couldNotList'));
+                if (seq === listingSeq.current) setError(t('couldNotList'));
             } finally {
-                setLoading(false);
+                if (seq === listingSeq.current) setLoading(false);
             }
         },
-        [apiUrl, connectionId, driveId, t],
+        [browseUrl, driveId, t],
     );
+
+    const loadMore = async () => {
+        if (!nextPageToken) return;
+        const seq = listingSeq.current;
+        setLoadingMore(true);
+        setError(null);
+        try {
+            const res = await fetch(browseUrl(listedFolder.current, nextPageToken));
+            if (!res.ok) throw new Error();
+            const data = await res.json();
+            if (seq !== listingSeq.current) return;
+            setItems((cur) => [...cur, ...data.items]);
+            setNextPageToken(data.nextPageToken ?? null);
+        } catch {
+            if (seq === listingSeq.current) setError(t('couldNotList'));
+        } finally {
+            setLoadingMore(false);
+        }
+    };
 
     // Reset to the drive root whenever the drive changes.
     useEffect(() => {
@@ -145,6 +185,19 @@ export function SharePointFilePicker({
         setPath([{ name: t('library') }]);
         void loadFolder(undefined);
     }, [driveId, loadFolder, t]);
+
+    // A SITE CHANGE MOVES TO THAT SITE'S LIBRARY (#5173). Setting the site
+    // alone left `driveId`, the listing and the path on the previous site's
+    // library, so the picker went on browsing it and "Use folder" returned
+    // its drive under the new site's name.
+    const selectSite = (next: string) => {
+        setSiteId(next);
+        setDriveId(drives[next]?.[0]?.value ?? '');
+        listingSeq.current++;
+        setItems([]);
+        setNextPageToken(null);
+        setPath([{ name: t('library') }]);
+    };
 
     const enterFolder = (f: SpBrowseItem) => {
         setPath((p) => [...p, { id: f.id, name: f.name }]);
@@ -195,7 +248,7 @@ export function SharePointFilePicker({
                         id="sp-site"
                         options={sites}
                         selected={sites.find((o) => o.value === siteId) ?? null}
-                        setSelected={(o) => setSiteId(o?.value ?? '')}
+                        setSelected={(o) => selectSite(o?.value ?? '')}
                         placeholder={t('site')}
                         matchTriggerWidth
                     />
@@ -279,8 +332,22 @@ export function SharePointFilePicker({
                                     )}
                                 </li>
                             ))}
-                            {folders.length === 0 && files.length === 0 && (
+                            {folders.length === 0 && files.length === 0 && !nextPageToken && (
                                 <li className="px-4 py-6 text-center text-sm text-content-muted">{t('empty')}</li>
+                            )}
+                            {nextPageToken && (
+                                <li className="flex items-center justify-between gap-default px-4 py-default">
+                                    <span className="text-xs text-content-muted">{t('morePages')}</span>
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={() => void loadMore()}
+                                        loading={loadingMore}
+                                        data-testid="sp-load-more"
+                                    >
+                                        {t('loadMore')}
+                                    </Button>
+                                </li>
                             )}
                         </ul>
                     )}

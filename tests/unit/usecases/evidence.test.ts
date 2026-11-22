@@ -24,6 +24,8 @@ jest.mock('@/app-layer/repositories/EvidenceRepository', () => ({
         create: jest.fn(),
         getById: jest.fn(),
         update: jest.fn(),
+        // #5317 — the review's status move is conditional on the read status.
+        transitionStatus: jest.fn(async () => true),
         addReview: jest.fn(),
         // SoD source (ep1 review gate) — empty map ⇒ fall back to owner.
         getLatestSubmitters: jest.fn(async () => new Map()),
@@ -59,7 +61,7 @@ import { makeRequestContext } from '../../helpers/make-context';
 const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenantContext>;
 const mockCreate = EvidenceRepository.create as jest.MockedFunction<typeof EvidenceRepository.create>;
 const mockGetById = EvidenceRepository.getById as jest.MockedFunction<typeof EvidenceRepository.getById>;
-const mockUpdate = EvidenceRepository.update as jest.MockedFunction<typeof EvidenceRepository.update>;
+const mockTransition = EvidenceRepository.transitionStatus as jest.MockedFunction<typeof EvidenceRepository.transitionStatus>;
 const mockLog = logEvent as jest.MockedFunction<typeof logEvent>;
 const mockFilterControls = EvidenceRepository.filterExistingControlIds as jest.MockedFunction<typeof EvidenceRepository.filterExistingControlIds>;
 const mockCreateLinks = EvidenceRepository.createControlLinks as jest.MockedFunction<typeof EvidenceRepository.createControlLinks>;
@@ -231,7 +233,7 @@ describe('reviewEvidence — separation of duty', () => {
             action: 'SUBMITTED',
             comment: null,
         });
-        expect(mockUpdate).toHaveBeenCalled();
+        expect(mockTransition).toHaveBeenCalled();
 
         await expect(
             reviewEvidence(makeRequestContext('READER'), 'e1', {
@@ -251,7 +253,7 @@ describe('reviewEvidence — separation of duty', () => {
         // Regression: separation-of-duty gate — the user who CAN
         // submit must NOT be able to approve. A bug that collapses
         // both gates to canWrite would let any EDITOR self-approve.
-        expect(mockUpdate).not.toHaveBeenCalled();
+        expect(mockTransition).not.toHaveBeenCalled();
     });
 
     it('REJECTED also requires canAdmin', async () => {
@@ -284,11 +286,12 @@ describe('reviewEvidence — separation of duty', () => {
             comment: 'looks good',
         });
 
-        expect(mockUpdate).toHaveBeenCalledWith(
+        expect(mockTransition).toHaveBeenCalledWith(
             expect.anything(),
             expect.anything(),
             'e1',
-            { status: 'APPROVED' },
+            'SUBMITTED',
+            'APPROVED',
         );
         expect(mockLog).toHaveBeenCalledWith(
             expect.anything(),
@@ -312,7 +315,7 @@ describe('reviewEvidence — separation of duty', () => {
                 comment: null,
             }),
         ).rejects.toThrow(/Invalid review action/);
-        expect(mockUpdate).not.toHaveBeenCalled();
+        expect(mockTransition).not.toHaveBeenCalled();
     });
 
     it('throws notFound for cross-tenant evidence id', async () => {

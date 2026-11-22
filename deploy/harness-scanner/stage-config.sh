@@ -10,6 +10,10 @@
 # carrying a quote or a newline, which the single-quoted dotenv line could not
 # hold as written.
 #
+# The configuration is scanent's (scanent #26): the template's `outputs` and
+# every other member pass through as written. `remote.sh configure` has the
+# pinned image parse it before installing anything.
+#
 set -euo pipefail
 
 OUT="${1:?output directory}"
@@ -17,7 +21,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATE="$HERE/config.pilot.example.json"
 
 for name in SCANNER_TENANT_SLUG SCANNER_AGENT_ID SCANNER_ENTRA_DIRECTORY_ID SCANNER_ENTRA_CLIENT_ID \
-    INFLECT_INGEST_KEY ENTRA_CLIENT_SECRET SCANNER_GITHUB_READ_TOKEN GCP_SCANNER_KEY; do
+    INFLECT_INGEST_KEY INFLECT_INTEGRATIONS_KEY ENTRA_CLIENT_SECRET SCANNER_GITHUB_READ_TOKEN \
+    SCANNER_GITHUB_INTEGRATIONS_TOKEN GCP_SCANNER_KEY; do
     [ -n "${!name:-}" ] || { echo "the production environment has no secret $name" >&2; exit 1; }
 done
 
@@ -30,7 +35,7 @@ jq --arg slug "$SCANNER_TENANT_SLUG" \
     --arg client "$SCANNER_ENTRA_CLIENT_ID" \
     '.scanner.agentId = $agent
      | .inflect.tenantSlug = $slug
-     | .sources |= map(if .kind == "entra-sp" then .directoryId = $dir | .clientId = $client else . end)' \
+     | .sources |= map(if .kind == "entra-sp" or .kind == "entra-integrations" then .directoryId = $dir | .clientId = $client else . end)' \
     "$TEMPLATE" >"$OUT/config.json"
 
 # The GCP key on one line: the JSON escapes inside `private_key` stay as JSON
@@ -47,8 +52,10 @@ line() {
 
 {
     line INFLECT_INGEST_KEY "$INFLECT_INGEST_KEY"
+    line INFLECT_INTEGRATIONS_KEY "$INFLECT_INTEGRATIONS_KEY"
     line ENTRA_CLIENT_SECRET "$ENTRA_CLIENT_SECRET"
     line GITHUB_READ_TOKEN "$SCANNER_GITHUB_READ_TOKEN"
+    line GITHUB_INTEGRATIONS_TOKEN "$SCANNER_GITHUB_INTEGRATIONS_TOKEN"
     line GCP_SCANNER_KEY "$gcp_key"
 } >"$OUT/env.partial"
 unset gcp_key

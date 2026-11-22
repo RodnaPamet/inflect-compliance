@@ -174,7 +174,16 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
 
     const poll = useCallback(
         async (runId: string, attempt: number) => {
-            const res = await fetch(`/api/t/${tenantSlug}/agents/questions/${runId}`);
+            let res: Response;
+            try {
+                res = await fetch(`/api/t/${tenantSlug}/agents/questions/${runId}`);
+            } catch {
+                // The network failed, not the run (#5125). The run id is kept,
+                // so "Check again" resumes waiting on the same run instead of
+                // leaving the page spinning with the button disabled.
+                setPhase('timedOut');
+                return;
+            }
             if (!res.ok) {
                 const body: unknown = await res.json().catch(() => null);
                 setRefusal(refusalText(body));
@@ -214,11 +223,19 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
         setResult(null);
         setRefusal(null);
         setRunId(null);
-        const res = await fetch(`/api/t/${tenantSlug}/agents/questions`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ question }),
-        });
+        let res: Response;
+        try {
+            res = await fetch(`/api/t/${tenantSlug}/agents/questions`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ question }),
+            });
+        } catch {
+            // Nothing reached the server, so no run was started (#5125).
+            setRefusal(t('networkError'));
+            setPhase('refused');
+            return;
+        }
         if (!res.ok) {
             // THE NAMED REASON, shown as given. The server's refusals carry a
             // code and a sentence — "designate an agent", "lift the kill
@@ -232,7 +249,7 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
         const started = (await res.json()) as { runId: string };
         setRunId(started.runId);
         await poll(started.runId, 1);
-    }, [tenantSlug, question, poll, refusalText]);
+    }, [tenantSlug, question, poll, refusalText, t]);
 
     /** Resume waiting on the run a timeout stopped watching. */
     const checkAgain = useCallback(async () => {

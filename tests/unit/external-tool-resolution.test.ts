@@ -244,6 +244,35 @@ describe('an unreachable server', () => {
     });
 });
 
+describe('a connection whose secret will not decrypt or parse (#5317)', () => {
+    it('loses its own tools, costs no socket, and the other connection still resolves', async () => {
+        const BROKEN = 'cmconnbbb';
+        mockTx.integrationConnection.findMany.mockResolvedValue([
+            {
+                id: BROKEN,
+                name: 'Broken MCP',
+                configJson: { url: 'https://broken.example.com' },
+                // decryptField is the identity here, so this is what a failed
+                // decrypt or a corrupted row hands JSON.parse.
+                secretEncrypted: 'v2:not-a-decryptable-json-secret',
+                externalWriteMode: 'DRY_RUN',
+            },
+            {
+                id: CONN,
+                name: 'Example MCP',
+                configJson: { url: 'https://mcp.example.com' },
+                secretEncrypted: JSON.stringify({ authorization: 'Bearer abc' }),
+                externalWriteMode: 'DRY_RUN',
+            },
+        ]);
+        const brokenTool = externalToolName(BROKEN, 'list_alerts');
+        const tools = await resolveExternalReadTools(ctx, new Set([QUALIFIED, brokenTool]), NO_POLICY_CARD);
+        expect(tools.map((t) => t.name)).toEqual([QUALIFIED]);
+        expect(listToolsMock).toHaveBeenCalledTimes(1);
+        expect(listToolsMock.mock.calls[0][0]).toMatchObject({ url: 'https://mcp.example.com' });
+    });
+});
+
 /**
  * SAVED PARAMETERS: the tenant owns the values, the model owns only the choice.
  *

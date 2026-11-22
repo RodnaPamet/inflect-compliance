@@ -30,6 +30,7 @@
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, forbidden } from '@/lib/errors/types';
+import { hashForLookup } from '@/lib/security/encryption';
 
 /**
  * Hard cap on recipients per schedule.
@@ -105,14 +106,7 @@ export async function resolveScheduleRecipients(
 ): Promise<ResolvedRecipients> {
     // De-duplicate case-insensitively but keep the caller's order, so the
     // rejection message below points at the address they actually typed.
-    const seen = new Set<string>();
-    const unique: string[] = [];
-    for (const r of recipients) {
-        const v = norm(r);
-        if (!v || seen.has(v)) continue;
-        seen.add(v);
-        unique.push(v);
-    }
+    const unique = uniqueNormalised(recipients);
 
     if (unique.length > MAX_SCHEDULE_RECIPIENTS) {
         throw badRequest(
@@ -121,52 +115,12 @@ export async function resolveScheduleRecipients(
     }
     if (unique.length === 0) return { recipients: [], internal: [], external: [] };
 
-    const [members, settings] = await Promise.all([
-        // Bounded by the recipient cap above, and matched in the DATABASE rather
-        // than by loading the membership list — a large tenant's roster is not
-        // something a schedule save should pull into memory.
-        runInTenantContext(ctx, (db) =>
-            db.tenantMembership.findMany({
-                where: {
-                    tenantId: ctx.tenantId,
-                    status: 'ACTIVE',
-                    user: { email: { in: unique, mode: 'insensitive' } },
-                },
-                select: { user: { select: { email: true } } },
-                take: MAX_SCHEDULE_RECIPIENTS,
-            }),
-        ),
-        runInTenantContext(ctx, (db) =>
-            db.tenantSecuritySettings.findUnique({
-                where: { tenantId: ctx.tenantId },
-                select: { reportRecipientAllowlistJson: true },
-            }),
-        ),
-    ]);
-
-    const memberEmails = new Set(
-        members
-            .map((m: { user: { email: string | null } | null }) => m.user?.email)
-            .filter((e): e is string => typeof e === 'string')
-            .map(norm),
-    );
-    const { exact, domains } = parseRecipientAllowlist(
-        settings?.reportRecipientAllowlistJson,
-    );
-
-    const internal: string[] = [];
-    const external: string[] = [];
-    for (const r of unique) {
-        if (memberEmails.has(r)) {
-            internal.push(r);
-        } else if (exact.has(r) || domains.has(domainOf(r))) {
-            external.push(r);
-        } else {
-            throw badRequest(
-                `"${r}" is not a member of this tenant and is not on the report-recipient allowlist. ` +
-                    `Add it under Security settings, or remove it from the schedule.`,
-            );
-        }
+    const { internal, external, rejected } = await classifyRecipients(ctx, unique);
+    if (rejected.length > 0) {
+        throw badRequest(
+            `"${rejected[0]}" is not a member of this tenant and is not on the report-recipient allowlist. ` +
+                `Add it under Security settings, or remove it from the schedule.`,
+        );
     }
 
     if (external.length > 0 && !ctx.appPermissions.reports.schedule_external) {
@@ -178,3 +132,98 @@ export async function resolveScheduleRecipients(
 
     return { recipients: unique, internal, external };
 }
+
+/** Normalise and de-duplicate case-insensitively, keeping the given order. */
+function uniqueNormalised(recipients: string[]): string[] {
+    const seen = new Set<string>();
+    const unique: string[] = [];
+    for (const r of recipients) {
+        const v = norm(r);
+        if (!v || seen.has(v)) continue;
+        seen.add(v);
+        unique.push(v);
+    }
+    return unique;
+}
+
+/**
+ * Sort addresses into ACTIVE members, allowlisted externals, and the rest.
+ *
+ * Membership is matched on `User.emailHash` (#5185). `User.email` is stored
+ * encrypted with a random IV, and the PII middleware rewrites an equality on
+ * it to the hash column only for the queried model's OWN fields, never a
+ * relation filter, so `user: { email: { in } }` compared plaintext with
+ * ciphertext and no member was ever recognised.
+ */
+async function classifyRecipients(
+    ctx: RequestContext,
+    unique: string[],
+): Promise<{ internal: string[]; external: string[]; rejected: string[] }> {
+    if (unique.length === 0) return { internal: [], external: [], rejected: [] };
+    const hashByEmail = new Map(unique.map((e) => [e, hashForLookup(e)]));
+
+    const [members, settings] = await Promise.all([
+        // Bounded by the recipient cap, and matched in the DATABASE rather
+        // than by loading the membership list — a large tenant's roster is not
+        // something a schedule save should pull into memory.
+        runInTenantContext(ctx, (db) =>
+            db.tenantMembership.findMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    status: 'ACTIVE',
+                    user: { emailHash: { in: [...hashByEmail.values()] } },
+                },
+                select: { user: { select: { emailHash: true } } },
+                take: MAX_SCHEDULE_RECIPIENTS,
+            }),
+        ),
+        runInTenantContext(ctx, (db) =>
+            db.tenantSecuritySettings.findUnique({
+                where: { tenantId: ctx.tenantId },
+                select: { reportRecipientAllowlistJson: true },
+            }),
+        ),
+    ]);
+
+    const memberHashes = new Set(
+        members
+            .map((m: { user: { emailHash: string | null } | null }) => m.user?.emailHash)
+            .filter((h): h is string => typeof h === 'string'),
+    );
+    const { exact, domains } = parseRecipientAllowlist(settings?.reportRecipientAllowlistJson);
+
+    const internal: string[] = [];
+    const external: string[] = [];
+    const rejected: string[] = [];
+    for (const r of unique) {
+        if (memberHashes.has(hashByEmail.get(r)!)) internal.push(r);
+        else if (exact.has(r) || domains.has(domainOf(r))) external.push(r);
+        else rejected.push(r);
+    }
+    return { internal, external, rejected };
+}
+
+/**
+ * The recipients a stored schedule may be delivered to NOW (#5213).
+ *
+ * A schedule's list was validated when a person saved it, but membership and
+ * the allowlist change afterwards: an offboarded member, or an audit firm
+ * whose domain was removed from the allowlist, kept receiving the PDFs for
+ * as long as the schedule ran. Delivery re-asks both, without the save-time
+ * elevation check (that was the saver's act), and drops anybody who no
+ * longer qualifies.
+ */
+export async function currentlyDeliverableRecipients(
+    ctx: RequestContext,
+    recipients: string[],
+): Promise<{ deliverable: string[]; dropped: number }> {
+    const all = uniqueNormalised(recipients);
+    const unique = all.slice(0, MAX_SCHEDULE_RECIPIENTS);
+    const { internal, external, rejected } = await classifyRecipients(ctx, unique);
+    const keep = new Set([...internal, ...external]);
+    return {
+        deliverable: unique.filter((r) => keep.has(r)),
+        dropped: rejected.length + (all.length - unique.length),
+    };
+}
+

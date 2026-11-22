@@ -28,7 +28,7 @@
 import { createHash } from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import * as prismaModule from '../prisma';
-import { computeEntryHash, toCanonicalTimestamp } from './canonical-hash';
+import { computeEntryHash, nextChainTimestamp, toCanonicalTimestamp, toStoredAuditJson } from './canonical-hash';
 import {
     collectPseudonymizationTolerances,
     isToleratedPseudonymization,
@@ -289,10 +289,12 @@ export async function appendAuditEntryWithin(
     // Build the structured detailsJson for hashing.
     // If caller provides detailsJson, use it directly.
     // If only legacy details text is provided, wrap it in a custom payload.
-    const detailsForHash: unknown = input.detailsJson ?? {
+    // Normalised to its stored form, so the hash covers exactly what is
+    // stored (#5069).
+    const detailsForHash: unknown = toStoredAuditJson(input.detailsJson ?? {
         category: 'custom',
         legacyText: input.details || null,
-    };
+    });
 
     // 1. Acquire per-tenant advisory lock
     //    hashtext() returns a 32-bit int from a string — perfect for advisory locks
@@ -301,10 +303,6 @@ export async function appendAuditEntryWithin(
         input.tenantId,
     );
 
-    // Create timestamp AFTER lock acquisition so concurrent inserts
-    // get distinct, ordered timestamps (lock serializes them).
-    const now = new Date();
-    const occurredAt = toCanonicalTimestamp(now);
 
     // 2. Fetch the latest entryHash for this tenant's chain
     //
@@ -322,8 +320,10 @@ export async function appendAuditEntryWithin(
     // time-ordered — but to be a TOTAL ORDER that this query and the
     // verifier both compute identically. `org-audit-writer.ts` has carried
     // exactly this form since it was written; the tenant writer did not.
-    const lastRows: Array<{ entryHash: string | null }> = await tx.$queryRawUnsafe(
-        `SELECT "entryHash" FROM "AuditLog"
+    const lastRows: Array<{ entryHash: string | null; createdAtMs: number }> = await tx.$queryRawUnsafe(
+        `SELECT "entryHash",
+                (EXTRACT(EPOCH FROM "createdAt") * 1000)::float8 AS "createdAtMs"
+         FROM "AuditLog"
          WHERE "tenantId" = $1 AND "entryHash" IS NOT NULL
          ORDER BY "createdAt" DESC, "id" DESC
          LIMIT 1`,
@@ -333,6 +333,12 @@ export async function appendAuditEntryWithin(
     const previousHash: string | null = lastRows.length > 0
         ? lastRows[0].entryHash
         : null;
+
+    // Timestamp AFTER the lock and strictly after the predecessor (#5180).
+    // The lock serialises appends, but two inside one millisecond used to
+    // share a `createdAt`, and the verifier's id tie-break could then walk
+    // them in the opposite order to the one they were chained in.
+    const occurredAt = toCanonicalTimestamp(nextChainTimestamp(lastRows[0]?.createdAtMs));
 
     // 3. Compute entry hash
     const entryHash = computeEntryHash({

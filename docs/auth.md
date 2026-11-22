@@ -2,7 +2,7 @@
 
 > **New to the codebase?** Start at [CONTRIBUTING.md](../CONTRIBUTING.md) — the developer onboarding guide.
 
-Inflect's auth stack is **NextAuth v4.24.14 (stable)** with the
+Inflect's auth stack is **NextAuth v4.24.15 (stable)** with the
 `@next-auth/prisma-adapter@1.0.7` Prisma adapter and a JWT session
 strategy. Provider paths share one session shape:
 
@@ -11,7 +11,7 @@ strategy. Provider paths share one session shape:
 | Credentials (email + password) | `src/lib/auth/credentials.ts`, `src/lib/auth/passwords.ts`, `src/lib/auth/credential-rate-limit.ts` | JWT with `userId`, `tenantId`, `role` |
 | Google OAuth | `src/auth.ts` | Same JWT shape, tenant resolved post-signIn |
 | Microsoft Entra ID (via v4's `azure-ad` provider — same OAuth endpoints, Microsoft renamed the product to "Entra ID") | `src/auth.ts` | Same JWT shape |
-| SAML/SSO | `src/app/api/auth/sso/` | Same JWT shape, tenant resolved via SAML attribute |
+| Enterprise SSO (SAML / OIDC) | `src/app/api/auth/sso/`, `src/lib/auth/sso-handoff.ts` | The callback verifies the identity provider's answer and issues a single-use hand-off; the `sso-handoff` Credentials provider redeems it, so the session is NextAuth's own, scoped to that one workspace (`ssoTenantId`). See [enterprise SSO](./enterprise-sso.md) |
 
 This doc is the operator-facing reference for the credentials path. For
 a deeper architectural rationale, see
@@ -21,7 +21,8 @@ a deeper architectural rationale, see
 
 > [!IMPORTANT]
 > **GAP-04 — production stack.** This codebase migrated off
-> `next-auth@5.0.0-beta.30` to `4.24.14` (stable) on 2026-04-25.
+> `next-auth@5.0.0-beta.30` to the v4 stable line on 2026-04-25, and
+> runs `4.24.15` today.
 > Both `next-auth` and `@next-auth/prisma-adapter` are pinned exactly
 > in `package.json`; silent drift is blocked by lockfile + a
 > structural guardrail at `tests/guardrails/auth-stack-pinning.test.ts`.
@@ -89,6 +90,28 @@ secret: env.AUTH_SECRET })` and applies five gates:
 
 All gate decisions read from the JWT — zero DB hits per request.
 
+## OAuth sign-in and account linking
+
+The `signIn` callback links a Google or Microsoft sign-in to the existing
+account holding the same email, and redeems pending invites addressed to
+it, only when the provider vouches that the person owns the address
+(`oauthEmailIsVerified` in `src/lib/auth/oauth-email-trust.ts`, #5322):
+Google's `email_verified`, and Microsoft's optional `xms_edov` claim.
+Any other provider, or a Microsoft token without the claim, links nothing
+— the sign-in is refused `OAuthAccountNotLinked` when an account already
+holds the address — and redeems no invite by address. An emailed invite
+link still works, because it proves possession of the token.
+
+Email verification at registration is off by default, so a password
+account can be registered under somebody else's address. When the
+address's owner later signs in through a provider that vouches for it,
+and the account carries a competing credential (a password or another
+provider link), the sign-in claims it: the password and other provider
+links are removed, every session is revoked, outstanding reset links are
+spent, the address is stamped verified, and the claim is audited as
+`AUTH_UNVERIFIED_ACCOUNT_CLAIMED`. MFA enrolments are kept. An account
+with no competing credential is only stamped verified.
+
 ## Credentials flow
 
 ```
@@ -102,11 +125,13 @@ All gate decisions read from the JWT — zero DB hits per request.
                         │
                         ├─▶ checkCredentialsAttempt (per-email rate limit)
                         ├─▶ prisma.user.findUnique by lowercased email
-                        ├─▶ verifyPassword vs stored bcrypt hash
-                        │      (dummy-compare on unknown email → timing-safe)
+                        ├─▶ verifyPasswordWithScheme vs stored bcrypt hash
+                        │      (pre-hashed or legacy scheme; dummy-compare
+                        │       on unknown email → timing-safe)
                         ├─▶ if AUTH_REQUIRE_EMAIL_VERIFICATION=1 and
                         │   user.emailVerified is null → reject
-                        ├─▶ silent rehash-on-verify (if BCRYPT_COST ↑)
+                        ├─▶ silent rehash-on-verify (legacy scheme, or
+                        │   BCRYPT_COST ↑)
                         ├─▶ resetCredentialsBackoff (clear rate bucket)
                         └─▶ recordLoginSuccess → audit + structured log
                                 │
@@ -115,13 +140,33 @@ All gate decisions read from the JWT — zero DB hits per request.
                    userId / tenantId / role / MFA state
                                 │
                                 ▼
-                    __Secure-authjs.session-token cookie
-                    (HttpOnly, Secure, SameSite=lax, JWT in body)
+                    __Secure-next-auth.session-token cookie
+                    (HttpOnly, Secure over https, SameSite=lax)
 ```
 
 Every failure path that isn't rate-limited runs the same bcrypt CPU
 cost as the real-verify path (via `dummyVerify` in `passwords.ts`), so
-an attacker can't enumerate registered emails via response time.
+an attacker can't enumerate registered emails via response time. That
+includes an empty or over-long input and a missing or malformed stored
+hash (#5392); the input handed to bcrypt is capped at
+`MAX_PASSWORD_LENGTH`.
+
+### The pre-hashed password scheme
+
+bcrypt reads only the first 72 bytes of its input, so two passwords that
+shared their first 72 UTF-8 bytes used to verify alike. `hashPassword`
+now passes `prehashForBcrypt(plaintext)` — SHA-256, then base64, 44 bytes
+whatever the input — to bcrypt, so every byte of the password counts
+(#5592). It is the only `bcrypt.hash` call in `src/` and `prisma/`, and
+every password writer (registration, both password-management paths,
+the rehash-on-verify, the seeds) reaches bcrypt through it.
+
+A stored hash cannot be converted, and no column records which scheme
+wrote it. `verifyPasswordWithScheme` therefore tries the pre-hashed form
+and falls back to the legacy raw form, reporting `legacyScheme`; on a
+successful sign-in with a legacy hash, `credentials.ts` rewrites it in
+the new scheme while the plaintext is in hand. A user who never signs in
+again keeps a legacy hash that still verifies.
 
 Every failure path collapses to `CredentialsSignin` on the client —
 "Invalid credentials" regardless of whether the email exists, the
@@ -142,27 +187,14 @@ to decide whether to show the "check your inbox" copy.
 exclusively through NextAuth. `AuthLoginSchema` is gone from
 `src/lib/schemas/`.
 
-### Legacy `token` cookie — deprecated
+### Legacy `token` cookie — removed
 
-> [!CAUTION]
-> The register route also sets a legacy `token` HttpOnly cookie
-> (signed via `signToken` from `@/lib/auth`, separate
-> `LEGACY_JWT_SECRET`). **This cookie is unused by the product** —
-> NextAuth's `__Secure-authjs.session-token` carries the session,
-> and there are **zero callers of `verifyToken`** anywhere in the
-> codebase, so the legacy cookie is never validated server-side.
->
-> Kept for one more release in case any external integration reads
-> it. The next release will:
->   - Drop the `cookies.set('token', ...)` in `register/route.ts`.
->   - Drop the `cookies.set('token', '', ...)` in `logout/route.ts`.
->   - Remove `signToken` + `verifyToken` from `@/lib/auth` (and the
->     `LEGACY_JWT_SECRET` env var).
->   - Add a structural ratchet rejecting reintroduction.
->
-> **If an external integration depends on this cookie:** open an
-> issue *during this window* with the consumer details, otherwise
-> the next release will break it.
+The register route used to set a second, legacy `token` cookie signed
+with `JWT_SECRET`, and `getSession` in `src/lib/auth.ts` read it as a
+fallback session that honoured neither `sessionVersion` nor
+`UserSession.revokedAt`. Both the writer and the reader are gone, so an
+outstanding cookie is inert; `/api/auth/logout` still clears a `token`
+cookie a browser may hold. NextAuth's session cookie is the only session.
 
 ## Verification flow
 
@@ -270,12 +302,15 @@ than 500ing a successful login on a Redis blip.
 
 ## Cookie / session settings
 
-`src/auth.ts` configures NextAuth cookies:
+`src/auth.ts` sets neither `cookies` nor `useSecureCookies`, so
+NextAuth v4's own default decides the session cookie's name: it adds the
+`__Secure-` prefix, and the `Secure` flag, when the deployment URL is
+https.
 
-| Env | Cookie name | `Secure` | `SameSite` | `HttpOnly` |
+| Deployment URL | Cookie name | `Secure` | `SameSite` | `HttpOnly` |
 |---|---|---|---|---|
-| Prod (`NODE_ENV=production && AUTH_TEST_MODE !== '1'`) | `__Secure-authjs.session-token` | yes | lax | yes |
-| Dev / test (`NODE_ENV=development` or `AUTH_TEST_MODE=1`) | `authjs.session-token` | no | lax | yes |
+| https (every hosted deployment) | `__Secure-next-auth.session-token` | yes | lax | yes |
+| http (local dev) | `next-auth.session-token` | no | lax | yes |
 
 `SameSite=lax` is the NextAuth default and the right choice for OAuth
 callback flows — `strict` breaks the redirect-from-Google step. Since
@@ -283,10 +318,14 @@ every mutating action in the app goes through either NextAuth's CSRF
 token or per-endpoint double-submit patterns, `lax` doesn't weaken CSRF
 protection.
 
-Session is **JWT-only** — no server-side session table. The JWT carries
-`userId`, `tenantId`, `role`, and MFA state (`mfaPending`,
-`mfaFailClosed`). Revocation is through `User.sessionVersion` — the JWT
-callback revalidates every 5 minutes in non-hot paths.
+The session itself is a JWT carrying `userId`, `tenantId`, `role`, the
+membership claims and MFA state (`mfaPending`, `mfaPendingTenantIds`,
+`mfaFailClosed`). Each sign-in also writes a `UserSession` row (Epic C.3),
+named by the JWT's `userSessionId`, which every JWT pass checks through
+`verifyAndTouchSession`: a revoked or expired row ends the session at
+once. `User.sessionVersion` is the coarse backstop, re-read at most every
+five minutes (`SESSION_CHECK_INTERVAL`); a bump revokes every JWT the
+person holds. See [MFA and session security](./mfa-session-security.md).
 
 ## Environment variable reference
 
@@ -295,8 +334,8 @@ Every flag the credentials path honors:
 | Var | Required | Default | Effect |
 |---|---|---|---|
 | `AUTH_SECRET` | **yes** | — | NextAuth JWT signing secret (≥16 chars) |
-| `JWT_SECRET` | yes (legacy) | — | Legacy `signToken` cookie (still issued by `/api/auth/register`) |
-| `AUTH_TEST_MODE` | no | unset | `1` disables the `__Secure-` cookie prefix + `Secure` flag + **both** rate-limit gates. E2E tests set this |
+| `JWT_SECRET` | yes (env schema) | — | Still required (≥16 chars) by `src/env.ts`, but nothing reads it since the legacy `token` cookie was removed |
+| `AUTH_TEST_MODE` | no | unset | `1` disables **both** credentials rate-limit gates. It does not change the session cookie, whose name and `Secure` flag follow the deployment URL's scheme. E2E tests set this |
 | `AUTH_REQUIRE_EMAIL_VERIFICATION` | no | unset | `1` rejects credentials login when `User.emailVerified` is null. Default OFF so existing deployments behave unchanged |
 | `RATE_LIMIT_ENABLED` | no | unset (= enabled) | `0` disables both rate-limit gates. Operator kill switch |
 | `RATE_LIMIT_MODE` | no | `upstash` | `memory` to use in-process fallback (dev/CI) |
@@ -309,7 +348,7 @@ Every flag the credentials path honors:
 - **`AUTH_REQUIRE_EMAIL_VERIFICATION=1` requires a working mailer.**
   Otherwise newly-registered users can't log in. Test SMTP before
   flipping this flag in prod.
-- **`AUTH_TEST_MODE=1` bypasses all rate-limit and cookie-hardening.**
+- **`AUTH_TEST_MODE=1` bypasses both credentials rate-limit gates.**
   Never set in prod except as a rollback measure. Prefer
   `AUTH_REQUIRE_EMAIL_VERIFICATION=0` + OAuth-only if that's the goal.
 - **Mailer failure does not fail register.** The token row is written

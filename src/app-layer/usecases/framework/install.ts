@@ -6,7 +6,7 @@ import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { notFound, badRequest, ConflictError } from '@/lib/errors/types';
 import type { FrameworkInstallRefusal } from '@/lib/framework-install-refusals';
 import { prisma } from '@/lib/prisma';
-import { getEffectivePlan } from '@/lib/billing/entitlements';
+import { getEffectivePlan, assertWithinLimit } from '@/lib/billing/entitlements';
 import { recordFrameworkInstalled } from '@/lib/observability/business-metrics';
 import { controlDataFromTemplate, resolveRelatedPolicyIds } from '../control/template-projection';
 import { taskFromTemplateTask, installableTemplateTasks } from '../control/task-from-template';
@@ -18,6 +18,59 @@ import type { FrameworkTemplateRefusal } from '@/lib/framework-template-refusals
 interface TemplateForPreview {
     code: string;
     requirementLinks: { requirementId: string }[];
+}
+
+/**
+ * How many controls an install of these template codes would create: the
+ * distinct codes with no control in this workspace yet. It asks what each
+ * install loop asks (`findFirst` by tenant and code, deleted rows included),
+ * so the number refused is the number that would have been written.
+ */
+async function controlsToBeCreated(ctx: RequestContext, codes: readonly (string | null)[]): Promise<number> {
+    const distinct = [...new Set(codes.filter((c): c is string => Boolean(c)))];
+    if (distinct.length === 0) return 0;
+    const existing = await runInTenantContext(ctx, (db) =>
+        db.control.findMany({
+            where: { tenantId: ctx.tenantId, code: { in: distinct } },
+            select: { code: true },
+            take: distinct.length,
+        }),
+    );
+    const taken = new Set(existing.map((c) => c.code));
+    return distinct.filter((code) => !taken.has(code)).length;
+}
+
+/**
+ * Every framework install creates controls, so each is held to the plan's
+ * control limit, as `createControl` and the template install are (#5263).
+ * The whole install is refused before any row is written, rather than
+ * stopping half way through a pack.
+ */
+async function assertInstallWithinControlLimit(ctx: RequestContext, codes: readonly (string | null)[]): Promise<void> {
+    await assertWithinLimit(ctx, 'control', await controlsToBeCreated(ctx, codes));
+}
+
+/** The workspace's policies by normalised title, for a template's related-policy names. */
+async function policyIdsByTitle(tdb: PrismaTx, tenantId: string): Promise<Map<string, string>> {
+    const policies = await tdb.policy.findMany({ where: { tenantId }, select: { id: true, title: true } });
+    return new Map(policies.map((p) => [p.title.trim().toLowerCase(), p.id]));
+}
+
+/** Link a control to the workspace policies its template names; never creates a policy. */
+async function linkRelatedPolicies(
+    tdb: PrismaTx,
+    tenantId: string,
+    controlId: string,
+    relatedPolicies: string | null,
+    policyByTitle: Map<string, string>,
+): Promise<number> {
+    const policyIds = resolveRelatedPolicyIds(relatedPolicies, policyByTitle);
+    if (!policyIds.length) return 0;
+    const res = await tdb.policyControlLink.createMany({
+        data: policyIds.map((policyId) => ({ tenantId, policyId, controlId })),
+        skipDuplicates: true,
+    });
+    return res.count;
 }
 
 /**
@@ -139,11 +192,7 @@ async function installPacksInTenant(ctx: RequestContext, packs: PackForInstall[]
         // Tenant policies by normalised title — the internal controls carry
         // their related-policy NAMES; link each to the tenant's matching policy
         // where one exists (never create a policy here).
-        const tenantPolicies = await tdb.policy.findMany({
-            where: { tenantId: ctx.tenantId },
-            select: { id: true, title: true },
-        });
-        const policyByTitle = new Map(tenantPolicies.map((p) => [p.title.trim().toLowerCase(), p.id]));
+        const policyByTitle = await policyIdsByTitle(tdb, ctx.tenantId);
 
         for (const pack of packs) {
             let controlsCreated = 0;
@@ -152,14 +201,7 @@ async function installPacksInTenant(ctx: RequestContext, packs: PackForInstall[]
             let policyLinksCreated = 0;
 
             const linkPolicies = async (controlId: string, relatedPolicies: string | null) => {
-                if (!relatedPolicies) return;
-                const policyIds = resolveRelatedPolicyIds(relatedPolicies, policyByTitle);
-                if (!policyIds.length) return;
-                const res = await tdb.policyControlLink.createMany({
-                    data: policyIds.map((policyId) => ({ tenantId: ctx.tenantId, policyId, controlId })),
-                    skipDuplicates: true,
-                });
-                policyLinksCreated += res.count;
+                policyLinksCreated += await linkRelatedPolicies(tdb, ctx.tenantId, controlId, relatedPolicies, policyByTitle);
             };
 
             // A pack installs EXACTLY the controls its standard defines, and
@@ -275,6 +317,7 @@ export async function installPack(ctx: RequestContext, packKey: string) {
     });
     if (!pack) throw notFound('Pack not found', { reason: 'PACK_NOT_FOUND' satisfies FrameworkInstallRefusal });
 
+    await assertInstallWithinControlLimit(ctx, pack.templateLinks.map((l) => l.template.code));
     const [counts] = await installPacksInTenant(ctx, [pack]);
     const result = { ...counts, framework: pack.framework.key };
 
@@ -409,13 +452,26 @@ export async function previewPacksInstall(ctx: RequestContext, frameworkKey: str
         }
     }
     const list = [...templates.values()];
-    const { existingCodes, missingByCode, missingMappings } = await runInTenantContext(ctx, (db) =>
-        installedState(db, ctx.tenantId, list),
-    );
+    const { existingCodes, missingByCode, missingMappings, chosenPackIds } = await runInTenantContext(ctx, async (db) => ({
+        ...(await installedState(db, ctx.tenantId, list)),
+        chosenPackIds: new Set(
+            (await db.tenantFrameworkPack.findMany({
+                where: { tenantId: ctx.tenantId, packId: { in: packs.map((p) => p.id) } },
+                select: { packId: true },
+                take: packs.length,
+            })).map((r) => r.packId),
+        ),
+    }));
     const fw = packs[0].framework;
 
     return {
         packKeys: packs.map((p) => p.key),
+        // Chosen packs not yet in this workspace's scope (#5277). Installing
+        // them records the choice even when every control and mapping already
+        // exists, so a pack taken out of scope, or one whose controls another
+        // pack installed, can be put back. Without it the wizard saw nothing
+        // to install and disabled the button.
+        packsToAdd: packs.filter((p) => !chosenPackIds.has(p.id)).map((p) => p.key),
         packs: packs.map((p) => ({ key: p.key, name: p.name })),
         framework: { key: fw.key, name: fw.name, version: fw.version },
         totalTemplates: list.length,
@@ -444,6 +500,7 @@ export async function installPacks(ctx: RequestContext, frameworkKey: string, pa
         keys,
         await prisma.frameworkPack.findMany({ where: { key: { in: keys } }, include: PACK_INSTALL_INCLUDE }),
     );
+    await assertInstallWithinControlLimit(ctx, packs.flatMap((p) => p.templateLinks.map((l) => l.template.code)));
     const perPack = await installPacksInTenant(ctx, packs);
     const sum = (k: 'controlsCreated' | 'tasksCreated' | 'mappingsCreated' | 'policyLinksCreated') =>
         perPack.reduce((n, p) => n + p[k], 0);
@@ -487,6 +544,8 @@ export async function installSingleTemplate(ctx: RequestContext, templateCode: s
     });
     if (!tmpl) throw notFound('Template not found', { reason: 'TEMPLATE_NOT_FOUND' satisfies FrameworkTemplateRefusal });
 
+    await assertInstallWithinControlLimit(ctx, [tmpl.code]);
+
     return runInTenantContext(ctx, async (tdb) => {
         // Idempotent: check existing
         const existing = await tdb.control.findFirst({
@@ -506,17 +565,16 @@ export async function installSingleTemplate(ctx: RequestContext, templateCode: s
             return { controlId: existing.id, code: tmpl.code, alreadyExisted: true, mappingsCreated };
         }
 
+        // The shared projection (#5265), as the pack install and
+        // POST /controls/templates/install use. This path wrote a thin control
+        // (code, name, category, frequency), so the same template installed
+        // three ways produced three different controls.
         const control = await tdb.control.create({
-            data: {
-                tenantId: ctx.tenantId,
-                code: tmpl.code,
-                name: tmpl.title,
-                category: tmpl.category,
-                frequency: tmpl.defaultFrequency,
-                status: 'NOT_STARTED',
-                createdByUserId: ctx.userId,
-            },
+            data: controlDataFromTemplate(tmpl, { tenantId: ctx.tenantId, userId: ctx.userId }),
         });
+        if (tmpl.relatedPolicies) {
+            await linkRelatedPolicies(tdb, ctx.tenantId, control.id, tmpl.relatedPolicies, await policyIdsByTitle(tdb, ctx.tenantId));
+        }
 
         let tasksCreated = 0;
         for (const tt of installableTemplateTasks(tmpl.tasks)) {
@@ -584,21 +642,21 @@ export async function bulkMapControls(
         const invalidCtrlIds = controlIds.filter((id) => !validCtrlIds.has(id));
         if (invalidCtrlIds.length > 0) throw badRequest(`Invalid control IDs: ${invalidCtrlIds.join(', ')}`);
 
-        let created = 0;
-        let existing = 0;
+        // One insert that skips the pairs already linked (#5264). The loop it
+        // replaces caught each unique violation INSIDE this interactive
+        // transaction, but Postgres aborts the transaction at the first
+        // failed statement, so every later insert, and the audit row, failed
+        // with "current transaction is aborted": one pre-existing mapping
+        // failed the whole batch.
+        const pairs = new Map<string, { tenantId: string; controlId: string; requirementId: string }>();
         for (const mapping of mappings) {
-            for (const reqId of mapping.requirementIds) {
-                try {
-                    await tdb.controlRequirementLink.create({
-                        data: { tenantId: ctx.tenantId, controlId: mapping.controlId, requirementId: reqId },
-                    });
-                    created++;
-                } catch {
-                    // Unique constraint violation = already exists
-                    existing++;
-                }
+            for (const requirementId of mapping.requirementIds) {
+                pairs.set(`${mapping.controlId}:${requirementId}`, { tenantId: ctx.tenantId, controlId: mapping.controlId, requirementId });
             }
         }
+        const inserted = await tdb.controlRequirementLink.createMany({ data: [...pairs.values()], skipDuplicates: true });
+        const created = inserted.count;
+        const existing = pairs.size - created;
 
         await logEvent(tdb, ctx, {
             action: 'BULK_REQUIREMENTS_MAPPED',
@@ -632,7 +690,13 @@ export async function bulkInstallTemplates(
     const notFound_codes = templateCodes.filter((c) => !foundCodes.has(c));
     if (notFound_codes.length > 0) throw badRequest(`Templates not found: ${notFound_codes.join(', ')}`, { reason: 'TEMPLATE_NOT_FOUND' satisfies FrameworkTemplateRefusal });
 
+    await assertInstallWithinControlLimit(ctx, templates.map((t) => t.code));
+
     return runInTenantContext(ctx, async (tdb) => {
+        // Read once, and only when a template names a related policy.
+        const policyByTitle = templates.some((t) => t.relatedPolicies)
+            ? await policyIdsByTitle(tdb, ctx.tenantId)
+            : new Map<string, string>();
         let controlsCreated = 0;
         let tasksCreated = 0;
         let mappingsCreated = 0;
@@ -654,17 +718,11 @@ export async function bulkInstallTemplates(
                 continue;
             }
 
+            // The shared projection (#5265); see installSingleTemplate.
             const control = await tdb.control.create({
-                data: {
-                    tenantId: ctx.tenantId,
-                    code: tmpl.code,
-                    name: tmpl.title,
-                    category: tmpl.category,
-                    frequency: tmpl.defaultFrequency,
-                    status: 'NOT_STARTED',
-                    createdByUserId: ctx.userId,
-                },
+                data: controlDataFromTemplate(tmpl, { tenantId: ctx.tenantId, userId: ctx.userId }),
             });
+            await linkRelatedPolicies(tdb, ctx.tenantId, control.id, tmpl.relatedPolicies, policyByTitle);
             controlsCreated++;
 
             for (const tt of installableTemplateTasks(tmpl.tasks)) {

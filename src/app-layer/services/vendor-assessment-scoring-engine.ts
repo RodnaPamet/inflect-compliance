@@ -298,6 +298,7 @@ export function parseScoringConfig(
     const r = raw as {
         mode?: unknown;
         threshold?: unknown;
+        thresholdScale?: unknown;
         ratingThresholds?: unknown;
     };
     const mode =
@@ -311,6 +312,12 @@ export function parseScoringConfig(
     const config: ScoringConfig = { mode };
     if (typeof r.threshold === 'number' && Number.isFinite(r.threshold)) {
         config.threshold = r.threshold;
+    }
+    // Carried, not dropped: a template declaring PERCENT was rated on the raw
+    // average because this parse lost the field on the way to the engine
+    // (#5136). An unknown value is left out, which the engine reads as RAW.
+    if (r.thresholdScale === 'RAW' || r.thresholdScale === 'PERCENT') {
+        config.thresholdScale = r.thresholdScale;
     }
     if (Array.isArray(r.ratingThresholds)) {
         const out: RatingThreshold[] = [];

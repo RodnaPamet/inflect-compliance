@@ -38,6 +38,8 @@
  */
 import type { RequestContext } from '@/app-layer/types';
 import type { BaseIntegrationClient } from './base-client';
+import { createHash } from 'crypto';
+import { isValidBullMqJobId } from '@/app-layer/jobs/fan-out';
 import type { BaseFieldMapper } from './base-mapper';
 import type {
     SyncMapping,
@@ -539,7 +541,12 @@ export abstract class BaseSyncOrchestrator {
         }
 
         // 5. Defer pull to background job
-        const jobId = `sync-pull:${tenantId}:${provider}:${existingMapping.remoteEntityType}:${existingMapping.remoteEntityId}`;
+        const jobId = syncPullJobId(
+            tenantId,
+            provider,
+            existingMapping.remoteEntityType,
+            existingMapping.remoteEntityId,
+        );
 
         await enqueue(
             'sync-pull',
@@ -806,3 +813,29 @@ export function findConflictingFields(
 
     return conflicting;
 }
+
+/**
+ * The BullMQ job id for a webhook-triggered pull of one mapped entity.
+ *
+ * Stable per (tenant, provider, remote entity), so two webhooks for the same
+ * entity dedupe onto one queued pull. It is a DIGEST of those parts rather than
+ * their colon-joined text (#5060): that text had five colon-separated segments,
+ * which `enqueue` refuses (and BullMQ itself rejects), so every webhook-triggered
+ * pull threw and none ever ran. A remote id can carry any character, a colon
+ * included, so the parts are hashed, not escaped.
+ */
+export function syncPullJobId(
+    tenantId: string,
+    provider: string,
+    remoteEntityType: string,
+    remoteEntityId: string,
+): string {
+    const digest = createHash('sha256')
+        .update(JSON.stringify([tenantId, provider, remoteEntityType, remoteEntityId]))
+        .digest('hex')
+        .slice(0, 32);
+    const id = `sync-pull-${digest}`;
+    if (!isValidBullMqJobId(id)) throw new Error(`syncPullJobId: invalid job id ${id}`);
+    return id;
+}
+

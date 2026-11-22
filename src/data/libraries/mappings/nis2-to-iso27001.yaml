@@ -19,7 +19,7 @@ description: >
   references ISO 27001 as a relevant implementation standard (Recital 79).
   NIS2 obligations are broad; ISO 27001 provides granular controls.
   Mappings are structural guidance, not compliance guarantees.
-version: 1
+version: 2
 source_framework_ref: NIS2-2022
 target_framework_ref: ISO27001-2022
 
@@ -121,13 +121,13 @@ mapping_entries:
 
   - source_ref: NIS2-AM
     target_ref: A.5.17
-    strength: SUBSET
-    rationale: Authentication information management is one aspect of NIS2 MFA and access requirements.
+    strength: INTERSECT
+    rationale: Both govern authentication; NIS2 adds multi-factor authentication and secure communication, while A.5.17's controlled allocation and handling of credentials is not something NIS2-AM spells out.
 
   - source_ref: NIS2-AM
     target_ref: A.8.2
-    strength: SUBSET
-    rationale: Privileged access rights management is one component of NIS2 access management obligations.
+    strength: SUPERSET
+    rationale: Defining and enforcing privileged access management is one component of NIS2 access management obligations, so meeting NIS2-AM restricts and manages privileged access as A.8.2 requires.
 
   # ─── NIS2-RE: Reporting ──────────────────────────────────────────
   - source_ref: NIS2-RE

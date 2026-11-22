@@ -36,6 +36,8 @@ export interface NewPolicyFormFields {
 }
 
 export interface NewPolicyFormReturn {
+    /** Discard the draft: every field back to empty, no error, not dirty. */
+    reset: () => void;
     fields: NewPolicyFormFields;
     setField: <K extends keyof NewPolicyFormFields>(
         key: K,
@@ -80,6 +82,16 @@ export interface UseNewPolicyFormOptions {
     }) => void;
 }
 
+/** A fresh form: what the dialog opens on, and what Discard puts back. */
+const EMPTY_FIELDS: NewPolicyFormFields = {
+    title: '',
+    description: '',
+    category: '',
+    content: '',
+    contentType: 'MARKDOWN',
+    templateId: '',
+};
+
 export function useNewPolicyForm({
     isTemplateMode = false,
     onSuccess,
@@ -88,14 +100,7 @@ export function useNewPolicyForm({
     const telemetry = useFormTelemetry('NewPolicyPage');
     const t = useTranslations('policies');
 
-    const [fields, setFields] = useState<NewPolicyFormFields>({
-        title: '',
-        description: '',
-        category: '',
-        content: '',
-        contentType: 'MARKDOWN',
-        templateId: '',
-    });
+    const [fields, setFields] = useState<NewPolicyFormFields>(EMPTY_FIELDS);
     // null until the first answer arrives — that IS the loading state, so the
     // effect below never sets state synchronously.
     const [templatesLoad, setTemplatesLoad] = useState<
@@ -216,9 +221,21 @@ export function useNewPolicyForm({
         }
     };
 
+    /**
+     * Throw the draft away (#5313). The list page keeps the dialog mounted
+     * while it is closed, so without this "Discard draft" only closed it and
+     * the draft came back on the next open.
+     */
+    const reset = () => {
+        setFields(EMPTY_FIELDS);
+        setError(null);
+        setIsDirty(false);
+    };
+
     return {
         fields,
         setField,
+        reset,
         templates,
         templatesStatus,
         templatesError,

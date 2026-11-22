@@ -1,4 +1,5 @@
 'use client';
+import { unwrapCappedList } from '@/lib/list-backfill-cap';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -148,7 +149,9 @@ export default function AIRiskAssessmentPage() {
             const res = await fetch(apiUrl('/assets'));
             if (!res.ok) throw new Error(String(res.status));
             const data = await res.json();
-            const list = Array.isArray(data) ? data : data.data ?? [];
+            // GET /assets returns the capped envelope `{ rows, truncated }`;
+            // reading `data.data` found nothing, so no asset was ever offered (#5221).
+            const list = unwrapCappedList<AssetOption>(data);
             setAssets(list.map((a: AssetOption) => ({ id: a.id, name: a.name, type: a.type, criticality: a.criticality })));
             setAssetsLoaded(true);
         } catch {
@@ -744,13 +747,12 @@ export default function AIRiskAssessmentPage() {
 
                     {/* Action bar */}
                     <div className={cn(cardVariants({ density: 'compact' }), 'flex items-center justify-between')} id="ai-action-bar">
-                        {/* `dismissSession` asserts ctx.permissions.canWrite,
-                            and the dismiss route takes no granular key — but
-                            this button was the one left ungated. Gate on the
-                            coarse flag the usecase actually reads. (The page
-                            as a whole needs `canCreate`, so the sibling
-                            RequirePermission gates always pass here.) */}
-                        {permissions.canWrite && (
+                        {/* The dismiss route takes `risks.create` and
+                            `dismissSession` the write tier (#5303, reversing
+                            #4327's ungated dismiss) — the two gates
+                            `canCreate` reads. (The page as a whole needs
+                            `canCreate`, so this always passes here.) */}
+                        {canCreate && (
                             <Button variant="secondary" onClick={handleDismiss} id="dismiss-btn">{tx('ai.dismissAll')}</Button>
                         )}
                         <RequirePermission resource="risks" action="create">

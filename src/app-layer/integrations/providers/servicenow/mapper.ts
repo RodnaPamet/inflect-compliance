@@ -16,7 +16,7 @@
  * @module integrations/providers/servicenow/mapper
  */
 import { BaseFieldMapper, type FieldMappings } from '../../base-mapper';
-import { snValue, type ServiceNowRow } from './client';
+import { snRawValue, snValue, type ServiceNowRow } from './client';
 
 /**
  * The five states a change_request approval can be in.
@@ -52,8 +52,15 @@ export function mapApproval(raw: string): ChangeApproval {
  */
 export function mapChangeState(raw: string): 'CLOSED_COMPLETE' | 'CLOSED_INCOMPLETE' | 'OPEN' {
     const s = raw.trim().toLowerCase();
-    if (s.includes('closed complete') || s === 'closed_complete' || s === 'review') return 'CLOSED_COMPLETE';
-    if (s.includes('closed') || s.includes('cancel')) return 'CLOSED_INCOMPLETE';
+    // A change that did NOT land says so in its state: cancelled, incomplete,
+    // skipped, unsuccessful. Checked first, so "Closed Incomplete" and
+    // "Closed Skipped" never read as complete.
+    if (/cancel|incomplete|skipped|unsuccessful/.test(s)) return 'CLOSED_INCOMPLETE';
+    // The out-of-box change_request model ends an implemented change in plain
+    // "Closed" (state 3); "Closed Complete" is the generic task label. Reading
+    // only the latter dropped every completed change on a default instance, so
+    // the approval check judged nothing and passed (#5198).
+    if (s.includes('closed') || s === 'review') return 'CLOSED_COMPLETE';
     return 'OPEN';
 }
 
@@ -94,7 +101,10 @@ export class ServiceNowChangeMapper extends BaseFieldMapper {
             case 'closedAt':
             case 'plannedStart':
             case 'plannedEnd':
-                return parseServiceNowDate(raw);
+                // The stored UTC value, not the user-rendered one (#5197).
+                return parseServiceNowDate(snRawValue(value as ServiceNowRow[string]));
+            case 'externalId':
+                return snRawValue(value as ServiceNowRow[string]);
             default:
                 return raw;
         }

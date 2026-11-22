@@ -9,7 +9,7 @@ try {
 } catch(e) {
   console.log('DB_AVAILABLE: false');
   // Try direct URL
-  const directUrl = 'postgresql://postgres:postgres@127.0.0.1:5434/inflect_compliance?schema=public';
+  const directUrl = 'postgresql://postgres:postgres@127.0.0.1:5436/inflect_compliance?schema=public';
   try {
     execSync(
       `node -e "const{PrismaClient}=require('@prisma/client');const p=new PrismaClient({datasources:{db:{url:'${directUrl}'}}});p.\\$connect().then(()=>p.\\$queryRaw\\\`SELECT 1\\\`).then(()=>{p.\\$disconnect();process.exit(0)}).catch(()=>{p.\\$disconnect().catch(()=>{});process.exit(1)})"`,

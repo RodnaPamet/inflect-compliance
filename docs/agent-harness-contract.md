@@ -5,10 +5,12 @@ runs inside the client's perimeter, enumerates agent-shaped principals and the
 harness each one runs under, and returns one signed report. This document is
 normative: `MUST`, `MUST NOT`, `SHOULD` and `MAY` carry their RFC 2119 meanings.
 
-Two contract ids are in force:
+Three contract ids are in force:
 - `inflect-agent-harness/2` (#3754): the first id, `inflect-agent-harness/1`
   (#3660), plus five additions.
 - `inflect-agent-harness/3` (#3785): `/2` plus one source kind, `gcp-sa`.
+- `inflect-agent-harness/4` (Agent Pay Phase 2): `/3` plus one optional
+  per-agent member, `paymentCapabilities[]`.
 
 `/1` is retired (#3686): the ingest refuses a report that names it.
 [The ids](#the-ids) says what each id added and how `/1` was retired.
@@ -17,10 +19,16 @@ Two contract ids are in force:
 implementation**. Where this prose and that file disagree, the file is the one
 the suite validates against the schemas, so it is the one to copy. The schemas
 and the verifier are `src/lib/agentic/harness-contract.ts`; the ladder that
-scores the verdicts is `src/lib/agentic/harness-ladder.ts`.
-`packages/agent-harness-scanner` is the deployable scanner (#3678). It emits
-`/3`, builds its report against those schemas and refuses to sign one they
-would refuse.
+scores the verdicts is `src/lib/agentic/harness-ladder.ts`. Both, and the
+other modules this page names under `src/lib`, re-export the
+`@rodnapamet/scanent-contract` package: the contract's code is the standalone
+scanent product's ([RodnaPamet/scanent](https://github.com/RodnaPamet/scanent),
+`docs/contract.md` there), installed at one exact version from its release
+file.
+The deployable scanner is scanent's, the image `ghcr.io/rodnapamet/scanent`,
+which Inflect's own estate runs (`deploy/harness-scanner/README.md`); its report
+is contract `/4`, built from the same package. Inflect's in-repo copy,
+`packages/agent-harness-scanner` (#3678), was removed in scanent #26.
 Putting a client estate under it, and the labels it reads owners and principals
 from, is [`docs/agent-harness-scanner-onboarding.md`](agent-harness-scanner-onboarding.md).
 
@@ -39,6 +47,27 @@ from, is [`docs/agent-harness-scanner-onboarding.md`](agent-harness-scanner-onbo
 
 ## The ids
 
+**`/4` is `/3` with exactly one addition** (Agent Pay Phase 2,
+`docs/ai-architecture/mastercard-agent-pay.md`): the optional per-agent member
+`paymentCapabilities[]`, each entry `protocol` (`x402`), `library` (one of
+`PAYMENT_CLIENT_LIBRARIES`: `x402-fetch`, `x402-axios`, `@x402/fetch`,
+`@x402/axios`, `x402`) and `at`, the `code://` locator where the agent's code
+calls that payment client. It says the agent CAN pay, never what or with what:
+no amount, wallet, key or token, and a secret-shaped `at` is refused like any
+reference. It has three states, as `models[]` has: absent is not reported, `[]`
+is a `code` read that saw no payment client called in the agent's own file,
+entries are what it saw. `[]` is what that reader saw, not evidence that the
+agent cannot pay: a static reader of one file does not see a client wrapped in a
+helper module, so the receiving side closes nothing on it.
+Only an agent discovered via `code` MAY carry it, and each (library, `at`)
+appears once. A `/3` report carrying the member is refused as `SCHEMA`. The
+receiving side derives `SPENDING_AGENT_UNDECLARED` from it for a REGISTERED
+agent whose register row holds no spending authority, and closes it only when a
+reviewed spending authority is in force.
+
+- A scanner SHOULD emit `/4`; scanent's scanner does. `/2` and `/3` reports
+  stay accepted.
+
 **`/3` is `/2` with exactly one addition** (#3785, owner decision 2026-10-19):
 the source kind `gcp-sa`, a Google Cloud project's service accounts. It is
 valid wherever a kind is: `population.sources[].kind`,
@@ -49,8 +78,8 @@ naming `gcp-sa`, and so does this one: each report is held to the schema of the
 id it names, so a `/2` report that names `gcp-sa` anywhere is refused as
 `SCHEMA`.
 
-- A scanner SHOULD emit `/3`; the reference scanner does. A `/2` report stays
-  accepted, as it was.
+- A scanner SHOULD emit `/3` or later. A `/2` report stays accepted, as it
+  was.
 - A `/3` report MUST carry `unboundCredentials`, as a `/2` one must.
 
 `/2` is `/1` with exactly these additions (owner decisions, 2026-10-19):
@@ -68,18 +97,18 @@ The two optional additions carry counts and references only: no input, no
 output, no prompt — a model entry or a tool with any other member is refused.
 
 **`/1` is retired.** The owner set the moment on 2026-10-19: `/1` was retired at
-the release of the scanner container (#3686), the reference scanner's first
-deployment, which emits `/2`. No other scanner ever spoke `/1`.
+the release of the scanner container (#3686), the in-repo scanner's first
+deployment, which emitted `/2`. No other scanner ever spoke `/1`.
 
-- A scanner MUST emit `/2` or `/3`. A `/2` report MUST carry
+- A scanner MUST emit `/2`, `/3` or `/4`. A `/2` report MUST carry
   `unboundCredentials`, empty when it saw none.
 - A report naming `/1` is checked like any other — size, JSON, signature by a
   trusted key — and then refused as `SCHEMA` with the issue
   `contract: inflect-agent-harness/1 is retired; the scanner must speak
-  inflect-agent-harness/3`. The ingest writes nothing. An id that was never in
+  inflect-agent-harness/4`. The ingest writes nothing. An id that was never in
   force is refused as `SCHEMA` without the refusal repeating it.
 - The ids the verifier accepts are `HARNESS_CONTRACT_IDS` in
-  `src/lib/agentic/harness-contract-rules.ts`, which holds `/2` and `/3`.
+  `src/lib/agentic/harness-contract-rules.ts`, which holds `/2`, `/3` and `/4`.
 - Scans already stored from `/1` and `/2` reports stay readable: a stored scan
   is read against `/3`'s source kinds and `/2`'s reasons, which contain every
   earlier id's. The agents of a scan stored from a `/1` report read their model
@@ -113,7 +142,7 @@ refusal.
 
 | Member | Meaning |
 |---|---|
-| `contract` | Exactly `inflect-agent-harness/2` or `inflect-agent-harness/3`. The retired `inflect-agent-harness/1` is refused. |
+| `contract` | Exactly `inflect-agent-harness/2`, `inflect-agent-harness/3` or `inflect-agent-harness/4`. The retired `inflect-agent-harness/1` is refused. |
 | `scan.id` | The scanner's id for this run, unique per tenant. |
 | `scan.asOf` | ISO 8601 time the scan describes. |
 | `scan.scanner` | The scanner's own `agentId` in the register, its `version`, and the `sha256:` manifest hash of its own tool surface. |
@@ -172,6 +201,7 @@ is left out. How it fills the members every source shares:
 | `credentials[]` | `ref` (a `scheme://locator` reference), `ageDays`, `expires`, `boundToAgent`, and `grant`: `delegated`, `app-only` or `unknown`. |
 | `tools[]` | `server` (URL), `name`, `manifestHash` (`sha256:` or `null`), `pinned`, and `readOnlyHint` as the server declares it. An undeclared hint counts as a write. In `/2` a tool MAY carry `calls`, the number of times the agent called it, with `windowDays`, the days it was counted over (1 to 366): both or neither. |
 | `models[]` | From `/2` on, optional. One entry per model endpoint the agent calls: `endpoint`, a `scheme://locator` (`https://api.openai.com/v1`, `env://AZURE_OPENAI_ENDPOINT`, `code://…`) or a bare host, and `model`, the model's id there or `null`. An endpoint MUST NOT carry userinfo or a secret's shape. |
+| `paymentCapabilities[]` | `/4` only, optional, and only on an agent discovered via `code`: `protocol`, `library` and `at` (a `code://` locator) for each place its code calls a payment client. `[]` is a code read that saw none. |
 | `skills[]` | `name`, `license` (or `null`), `declared`. |
 | `verdicts[]` | `criterion` (an id from the harness ladder), `met`, and `evidence`: a pointer to where the scanner saw it, or `null`. |
 
@@ -293,15 +323,66 @@ tools, and links `registeredAgentId` only when the register holds that row; a
 claimed id the register does not hold is treated as no link at all. An agent the
 report links to nothing is linked by the register's own record when the
 registration intake registered a row from it (`RegisteredAgent.intakeDiscoveredAgentId`)
-and that row is live and not RETIRED; such a link resolves `SHADOW_AGENT` only
-on a complete scan, and a report that names a different live row wins, with the
+and that row is live and not RETIRED; such a link resolves `SHADOW_AGENT` (and
+`UNREGISTERED_IDENTITY`) only on a complete scan, and a report that names a different live row wins, with the
 disagreement audited as `AGENT_INTAKE_LINK_CONFLICT` on the intake row. The
 report's own `findings` member is not acted on: the ingest raises its own
 findings, with `sourceKind = 'AGENT_HARNESS'`, from what it derived —
-`SHADOW_AGENT`, `UNPINNED_WRITE_TOOL`, `HARNESS_SHORTFALL`, `LEVEL_DROP`,
-`EMPTY_SCAN`, `INCOMPLETE_SOURCE` and `ORPHAN_CREDENTIAL` — and resolves one
-only on positive evidence. An agent absent from a scan resolves nothing about
-it.
+`SHADOW_AGENT`, `UNREGISTERED_IDENTITY`, `UNPINNED_WRITE_TOOL`,
+`HARNESS_SHORTFALL`, `LEVEL_DROP`, `EMPTY_SCAN`, `INCOMPLETE_SOURCE` and
+`ORPHAN_CREDENTIAL` — and resolves one only on positive evidence. An agent
+absent from a scan resolves nothing about it.
+
+**`SHADOW_AGENT` or `UNREGISTERED_IDENTITY`: a principal with no register row
+is one or the other** (owner decisions, 2026-11-13). The report says nothing
+about which: the ingest decides, from what the report already carries, and the
+contract does not change. A principal the register is not linked to is a
+**shadow agent** when the report shows a sign that it runs a model, and an
+**unregistered automated identity** when it shows none. A service account, a
+build workflow that holds a credential and a directory application are typical
+identities. The signs are these five, and no others:
+
+| Sign | The report says |
+|---|---|
+| `FOUND_IN_CODE` | `discoveredVia` includes `code` |
+| `FOUND_IN_RUNTIME` | `discoveredVia` includes `runtime` |
+| `FOUND_ON_MCP_SERVER` | `discoveredVia` includes `mcp` |
+| `LISTS_A_TOOL` | `tools[]` holds at least one tool |
+| `LISTS_A_MODEL` | `models[]` holds at least one endpoint |
+
+The name of a credential is not a sign: a secret named after a model provider
+is a guess about what holds it. A model list reported empty, or not reported,
+is not a sign either.
+
+| | `SHADOW_AGENT` | `UNREGISTERED_IDENTITY` |
+|---|---|---|
+| Severity and type | HIGH, nonconformity | MEDIUM, observation |
+| `sourceRef` | `SHADOW_AGENT:<discoveredId>` | `UNREGISTERED_IDENTITY:<discoveredId>` |
+| Held to the harness bar | Yes: `HARNESS_SHORTFALL` is raised when it is below it | No: it has no `HARNESS_SHORTFALL` |
+| Its row, derived level and verdicts | Kept | Kept |
+| Closes | When a scan finds it linked to the register | The same |
+
+The identity finding says that the scan cannot show the principal runs no
+model. If it is an agent, registering it makes it one: it is then scored
+against the bar. If it is not, it still needs an owner on record, or the
+principal retired. The registration intake takes either finding.
+
+A sign is a presence, and counts on any scan. The absence of a sign counts only
+as far as the scan read:
+
+| The scan | The principal shows | The ingest |
+|---|---|---|
+| Complete or not | A sign | Asserts `SHADOW_AGENT`; resolves `UNREGISTERED_IDENTITY` |
+| Complete | No sign | Asserts `UNREGISTERED_IDENTITY`; resolves `SHADOW_AGENT` and `HARNESS_SHORTFALL` |
+| Incomplete | No sign, and its `SHADOW_AGENT` or `HARNESS_SHORTFALL` finding is open | Treats it as the agent it is on record as, and resolves nothing |
+| Incomplete | No sign, and neither finding is open | Asserts `UNREGISTERED_IDENTITY`, and resolves nothing |
+
+So a missing sign on an incomplete scan closes nothing, the class does not move
+back and forth between scans, and a principal holds one of the two findings
+open, not both. What is on record is the open finding, not the stored scan
+rows, which every scan overwrites. A principal the register IS linked to is an
+agent whatever it shows, and its link resolves both findings under the rule
+above for `SHADOW_AGENT`.
 
 **`UNPINNED_WRITE_TOOL`: which read closes it.** A scan in which an agent has
 no unpinned write tool closes the finding only when every source that could

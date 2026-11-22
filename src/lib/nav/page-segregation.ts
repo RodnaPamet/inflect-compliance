@@ -318,6 +318,11 @@ export const SUBPAGES: readonly string[] = [
 
     // Processes
     '/processes/governance',
+    // One agent, read-only, on the process canvas (Phase 2 of
+    // docs/ai-architecture/langflow.md). Reached from the agent's own page.
+    '/processes/agents/[agentId]',
+    // The same agent's flow editor (Phases 3 and 4). Reached from the canvas view.
+    '/processes/agents/[agentId]/flow',
 
     // Reports
     '/reports/soa',
@@ -380,8 +385,17 @@ export function normalizePathname(pathname: string): string | null {
     const stripped = pathname.replace(/^\/t\/[^/]+/, '');
     if (!stripped.startsWith('/')) return null;
 
+    // Longest first; among patterns of one length, the one with FEWER
+    // `[param]` segments first, so a literal route (`/agents/parameter-sets`)
+    // wins over a dynamic sibling that also matches it (`/agents/[agentId]`).
+    // Declaration order used to decide, and resolved `/agents/parameter-sets`
+    // to the agent detail page, so its Back link skipped External tools (#5316).
+    const dynamicSegments = (p: string): number =>
+        p.split('/').filter((seg) => seg.startsWith('[') && seg.endsWith(']')).length;
     const sorted = [...MAIN_PAGES, ...SUBPAGES].sort(
-        (a, b) => b.split('/').length - a.split('/').length,
+        (a, b) =>
+            b.split('/').length - a.split('/').length ||
+            dynamicSegments(a) - dynamicSegments(b),
     );
 
     for (const pattern of sorted) {

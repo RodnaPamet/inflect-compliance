@@ -170,3 +170,34 @@ export function toCanonicalTimestamp(date: Date | string): string {
     const d = typeof date === 'string' ? new Date(date) : date;
     return d.toISOString(); // Always produces YYYY-MM-DDTHH:mm:ss.SSSZ
 }
+
+/**
+ * The value an audit append both hashes and stores (#5069).
+ *
+ * `canonicalJsonStringify` walks an object's own keys, so a `Date` (or a
+ * Prisma `Decimal`, or anything with `toJSON`) hashed as `{}`, while
+ * `JSON.stringify` stored its `toJSON` form. The verifier recomputes from the
+ * STORED jsonb, so such a row reported a hash mismatch: a forgery that never
+ * happened, and every later row went unverified. A JSON round trip makes the
+ * hashed value exactly what is stored.
+ */
+export function toStoredAuditJson(value: unknown): unknown {
+    return value === undefined ? null : JSON.parse(JSON.stringify(value));
+}
+
+/**
+ * The append's timestamp, strictly after the chain's last one (#5180).
+ *
+ * Appends are serialised by the advisory lock but not distinct: two inside
+ * one millisecond shared a timestamp, the predecessor was then chosen by a
+ * random id tie-break, and the verifier could walk them in an order other
+ * than the one they were chained in. Taken inside the lock, this keeps each
+ * chain's timestamps strictly increasing, so timestamp order IS chain order.
+ */
+export function nextChainTimestamp(lastMs: number | string | null | undefined, now: Date = new Date()): Date {
+    if (lastMs === null || lastMs === undefined) return now;
+    const last = Math.round(Number(lastMs));
+    if (!Number.isFinite(last)) return now;
+    return now.getTime() > last ? now : new Date(last + 1);
+}
+

@@ -21,6 +21,23 @@
  * running total keeps Save shut over the budget, so it arrives only when the
  * skills cost more than the view said.
  *
+ * A DRAWN FLOW IS CARRIED THROUGH (#5374). A version with a flow takes its
+ * tools from the flow, and the save refuses a tool list beside one, so the
+ * editor cannot redraw it: it posts the starting version's flow unchanged, in
+ * place of the tool list, and shows the flow's tools read-only. Leaving `flow`
+ * out of the body, as the sheet used to, wrote a version with no flow and
+ * retired the open one that had it, which nobody had asked for.
+ *
+ * COMPACTION (Step 2g, #5531): "Summarise long conversations" is the engine's
+ * default, off, or a lower threshold in a stepper bounded by the tier's engine
+ * threshold. The server refuses a value below the minimum or above the tier,
+ * by name, and the refusal is shown beside the control.
+ *
+ * SUB-AGENTS (Step 2e, #4594) are written in their own section
+ * (`BehaviourSubagentsSection`), whose pickers offer only the tools and skills
+ * this version has selected. A version with a drawn flow carries none (owner
+ * decision 1), so the section is absent beside a flow and the save sends none.
+ *
  * The actions sit at the end of the body, not in a `Sheet.Footer`: a footer's
  * last action must be a primary (`modal-action-order`) and the product-wide
  * primary ceiling has no slot to spend on it (`primary-secondary-ratio`), the
@@ -46,6 +63,7 @@ import {
     PROFILE_MODEL_TIERS,
     PROFILE_OUTPUT_KINDS,
     PROFILE_TRIGGERS,
+    isProfileProposeTool,
     type ProfileEffort,
     type ProfileModelTier,
     type ProfileOutputKind,
@@ -54,8 +72,18 @@ import {
 } from '@/lib/agentic/agent-profile';
 
 import { catalogueOverBudget, refusalReason, type ProfileVersionView, type ProfileView } from './behaviour-types';
+import {
+    BehaviourSubagentsSection,
+    newSubagentKey,
+    subagentDraftReady,
+    type SubagentDraft,
+} from './BehaviourSubagentsSection';
 
-type Field = 'instructions' | 'tools' | 'skills';
+type Field = 'instructions' | 'tools' | 'skills' | 'subagents' | 'compaction' | 'deferral';
+
+/** The three answers to "Summarise long conversations" (Step 2g). */
+type CompactionMode = 'default' | 'off' | 'lower';
+const COMPACTION_MODES: readonly CompactionMode[] = ['default', 'off', 'lower'];
 
 /** Which field a refusal from the save concerns. Any other reason is shown above the form. */
 const FIELD_OF_REFUSAL: Readonly<Record<string, Field>> = {
@@ -65,6 +93,23 @@ const FIELD_OF_REFUSAL: Readonly<Record<string, Field>> = {
     TOOL_NOT_GRANTED: 'tools',
     SKILL_UNKNOWN: 'skills',
     SKILL_CATALOGUE_OVER_BUDGET: 'skills',
+    SUBAGENTS_TOO_MANY: 'subagents',
+    SUBAGENTS_WITH_FLOW: 'subagents',
+    SUBAGENT_NAME_INVALID: 'subagents',
+    SUBAGENT_NAME_DUPLICATE: 'subagents',
+    SUBAGENT_INSTRUCTIONS_EMPTY: 'subagents',
+    SUBAGENT_INSTRUCTIONS_TOO_LONG: 'subagents',
+    SUBAGENT_INSTRUCTIONS_REFUSED: 'subagents',
+    SUBAGENT_NAMES_NO_TOOL: 'subagents',
+    SUBAGENT_TOOL_NOT_IN_VERSION: 'subagents',
+    SUBAGENT_SKILL_NOT_IN_VERSION: 'subagents',
+    SUBAGENT_MAX_TURNS_ABOVE_VERSION: 'subagents',
+    COMPACTION_THRESHOLD_BELOW_MINIMUM: 'compaction',
+    COMPACTION_THRESHOLD_ABOVE_TIER: 'compaction',
+    DEFERRED_TOOL_NOT_IN_VERSION: 'deferral',
+    DEFERRED_TOOL_NOT_A_PROPOSE_TOOL: 'deferral',
+    DEFERRED_TOOLS_WITH_FLOW: 'deferral',
+    SUBAGENT_TOOL_DEFERRED: 'deferral',
 };
 
 const skillKey = (s: ProfileSkillRef) => `${s.origin}:${s.name}`;
@@ -95,6 +140,8 @@ export function BehaviourEditorSheet({
     const toast = useToast();
 
     const granted = view.options.tools;
+    // The starting version's flow, kept as drawn. Its tools are derived from it.
+    const flow = from?.flow ?? null;
     const mountable = useMemo(() => new Set(view.options.skills.map(skillKey)), [view.options.skills]);
     const lostTools = (from?.toolNames ?? []).filter((n) => !granted.includes(n));
     const lostSkills = (from?.skillRefs ?? []).filter((s) => !mountable.has(skillKey(s))).map(skillKey);
@@ -107,8 +154,35 @@ export function BehaviourEditorSheet({
     const [modelTier, setModelTier] = useState<ProfileModelTier>(from?.modelTier ?? 'balanced');
     const [effort, setEffort] = useState<ProfileEffort>(from?.effort ?? 'medium');
     const [maxTurns, setMaxTurns] = useState(from?.maxTurns ?? 10);
+    const startingThreshold = from?.compactionThresholdTokens ?? null;
+    const [compactionMode, setCompactionMode] = useState<CompactionMode>(
+        startingThreshold === null ? 'default' : startingThreshold === 0 ? 'off' : 'lower',
+    );
+    const [compactionThreshold, setCompactionThreshold] = useState<number>(
+        startingThreshold !== null && startingThreshold > 0
+            ? startingThreshold
+            : view.limits.compactionThreshold.engineDefaultByTier[from?.modelTier ?? 'balanced'],
+    );
     const [outputKind, setOutputKind] = useState<ProfileOutputKind>(from?.outputKind ?? 'ANSWER_ONLY');
+    // The propose tools whose calls wait for a person (Step 2f), from the
+    // starting version. Only a tool still selected and still a propose tool is
+    // offered or sent: the picker is over the version's own propose tools.
+    const [deferredTools, setDeferredTools] = useState<string[]>(from?.deferredToolNames ?? []);
     const [triggers, setTriggers] = useState<ProfileTrigger[]>(from?.allowedTriggers ?? ['TEST_RUN']);
+    // The starting version's sub-agents, kept as written: a sub-agent naming
+    // something the version has since lost is marked in place, never trimmed.
+    const [subagents, setSubagents] = useState<SubagentDraft[]>(
+        flow !== null
+            ? []
+            : (from?.subagents ?? []).map((s) => ({
+                  key: newSubagentKey(),
+                  name: s.name,
+                  instructions: s.instructions,
+                  toolNames: [...s.toolNames],
+                  skillKeys: s.skillRefs.map(skillKey),
+                  maxTurns: s.maxTurns,
+              })),
+    );
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<{ field: Field | null; message: string } | null>(null);
 
@@ -130,15 +204,34 @@ export function BehaviourEditorSheet({
         .filter((s) => skillKeys.includes(skillKey(s)))
         .reduce((n, s) => n + s.catalogueBytes, 0);
     const overBudget = catalogueBytes > budget;
+    // What a sub-agent's pickers may offer: this version's own selections.
+    const versionSkillChoices = view.options.skills
+        .filter((s) => skillKeys.includes(skillKey(s)))
+        .map((s) => ({ key: skillKey(s), label: t(`editor.skillOption.${s.origin}`, { name: s.name }) }));
+    const subagentsReady = subagents.every((s) =>
+        subagentDraftReady(s, { toolNames, skillKeys, maxTurns }, max),
+    );
+    // The stepper's bounds: never below the minimum, never above the tier's
+    // engine threshold. A version may lower the threshold, never raise it.
+    const compactionMin = view.limits.compactionThreshold.min;
+    const compactionMax = view.limits.compactionThreshold.maxByTier[modelTier];
+    const compactionReady =
+        compactionMode !== 'lower' || (compactionThreshold >= compactionMin && compactionThreshold <= compactionMax);
     const canSave =
         !busy &&
         instructions.trim().length > 0 &&
         instructions.length <= max &&
-        toolNames.length > 0 &&
+        (flow !== null || toolNames.length > 0) &&
         triggers.length > 0 &&
-        !overBudget;
+        !overBudget &&
+        subagentsReady &&
+        compactionReady;
 
     const fieldError = (field: Field) => (error?.field === field ? error.message : undefined);
+    // "Wait for a person" is over the version's selected propose tools, and a
+    // version that only answers, or carries a flow, proposes nothing to wait on.
+    const deferrable = flow === null && outputKind !== 'ANSWER_ONLY' ? toolNames.filter(isProfileProposeTool) : [];
+    const deferredToSend = deferrable.filter((n) => deferredTools.includes(n));
 
     const save = async () => {
         if (!canSave) return;
@@ -146,7 +239,9 @@ export function BehaviourEditorSheet({
         setError(null);
         const body = {
             instructions,
-            toolNames,
+            // With a flow the tools are the flow's, and naming them beside it
+            // is refused (`FLOW_TOOLS_ARE_DERIVED`): the flow travels instead.
+            ...(flow !== null ? { flow } : { toolNames }),
             // The ref only: the save's schema is strict, and the cost is the server's own figure.
             skillRefs: view.options.skills
                 .filter((s) => skillKeys.includes(skillKey(s)))
@@ -154,8 +249,26 @@ export function BehaviourEditorSheet({
             modelTier,
             effort,
             maxTurns,
+            compactionThresholdTokens:
+                compactionMode === 'default' ? null : compactionMode === 'off' ? 0 : compactionThreshold,
             outputKind,
             allowedTriggers: PROFILE_TRIGGERS.filter((x) => triggers.includes(x)),
+            // The calls that wait for a person (Step 2f): sent only when there are any.
+            ...(deferredToSend.length > 0 ? { deferredToolNames: deferredToSend } : {}),
+            // Sent only when there are any, and never beside a flow.
+            ...(flow === null && subagents.length > 0
+                ? {
+                      subagents: subagents.map((s) => ({
+                          name: s.name.trim(),
+                          instructions: s.instructions,
+                          toolNames: s.toolNames,
+                          skillRefs: view.options.skills
+                              .filter((o) => s.skillKeys.includes(skillKey(o)))
+                              .map((o) => ({ origin: o.origin, name: o.name })),
+                          maxTurns: s.maxTurns,
+                      })),
+                  }
+                : {}),
         };
         try {
             const path = view.profile ? `/admin/agents/${agentId}/profile/versions` : `/admin/agents/${agentId}/profile`;
@@ -233,23 +346,40 @@ export function BehaviourEditorSheet({
                         />
                     </FormField>
 
-                    <FormField
-                        label={t('field.tools')}
-                        description={t('editor.toolsHint')}
-                        error={fieldError('tools')}
-                        required
-                    >
-                        <Combobox<true, unknown>
-                            multiple
-                            id="behaviour-tools"
-                            options={toolOptions}
-                            selected={toolOptions.filter((o) => toolNames.includes(o.value))}
-                            setSelected={(opts) => setToolNames(opts.map((o) => o.value))}
-                            placeholder={t('editor.toolsPlaceholder')}
-                            emptyState={t('editor.toolsEmpty')}
-                            matchTriggerWidth
-                        />
-                    </FormField>
+                    {flow !== null ? (
+                        // Read-only, so plain text rather than a FormField: there
+                        // is no control to label, and the flow is not editable here.
+                        <div className="space-y-tight" data-testid="behaviour-editor-flow">
+                            <p className="text-sm font-medium text-content-emphasis">{t('field.tools')}</p>
+                            <InlineNotice variant="info" data-testid="behaviour-editor-flow-kept">
+                                {t('editor.flowKept', { nodes: flow.nodes.length })}
+                            </InlineNotice>
+                            <p className="text-sm text-content-default" data-testid="behaviour-editor-flow-tools">
+                                {(from?.toolNames ?? []).length > 0 ? (from?.toolNames ?? []).join(', ') : t('none')}
+                            </p>
+                            {fieldError('tools') ? (
+                                <p className="text-xs text-content-error" role="alert">{fieldError('tools')}</p>
+                            ) : null}
+                        </div>
+                    ) : (
+                        <FormField
+                            label={t('field.tools')}
+                            description={t('editor.toolsHint')}
+                            error={fieldError('tools')}
+                            required
+                        >
+                            <Combobox<true, unknown>
+                                multiple
+                                id="behaviour-tools"
+                                options={toolOptions}
+                                selected={toolOptions.filter((o) => toolNames.includes(o.value))}
+                                setSelected={(opts) => setToolNames(opts.map((o) => o.value))}
+                                placeholder={t('editor.toolsPlaceholder')}
+                                emptyState={t('editor.toolsEmpty')}
+                                matchTriggerWidth
+                            />
+                        </FormField>
+                    )}
 
                     <FormField
                         label={t('field.skills')}
@@ -272,6 +402,19 @@ export function BehaviourEditorSheet({
                     <p className="text-xs text-content-muted" data-testid="behaviour-skills-budget">
                         {t('editor.skillsBudget', { used: catalogueBytes, budget })}
                     </p>
+
+                    {flow === null ? (
+                        <BehaviourSubagentsSection
+                            subagents={subagents}
+                            onChange={setSubagents}
+                            versionTools={toolNames}
+                            versionSkills={versionSkillChoices}
+                            versionMaxTurns={maxTurns}
+                            instructionsMaxChars={max}
+                            disabled={busy}
+                            error={fieldError('subagents')}
+                        />
+                    ) : null}
 
                     <FormField label={t('field.modelTier')} description={t('editor.modelTierHint')}>
                         <RadioGroup
@@ -315,6 +458,53 @@ export function BehaviourEditorSheet({
                         />
                     </FormField>
 
+                    <div className="space-y-tight" data-testid="behaviour-editor-compaction">
+                        <FormField
+                            label={t('field.compaction')}
+                            description={t('editor.compactionHint', {
+                                tokens: view.limits.compactionThreshold.engineDefaultByTier[modelTier],
+                            })}
+                        >
+                            <RadioGroup
+                                value={compactionMode}
+                                onValueChange={(v) => setCompactionMode(v as CompactionMode)}
+                                aria-label={t('field.compaction')}
+                            >
+                                {COMPACTION_MODES.map((mode) => (
+                                    <label key={mode} htmlFor={`behaviour-compaction-${mode}`} className="flex items-center gap-compact text-sm">
+                                        <RadioGroupItem id={`behaviour-compaction-${mode}`} value={mode} size="sm" disabled={busy} />
+                                        <span>{t(`compaction.${mode}`)}</span>
+                                    </label>
+                                ))}
+                            </RadioGroup>
+                        </FormField>
+                        {compactionMode === 'lower' ? (
+                            <FormField
+                                label={t('editor.compactionThresholdLabel')}
+                                description={t('editor.compactionThresholdHint', { min: compactionMin, max: compactionMax })}
+                            >
+                                <NumberStepper
+                                    id="behaviour-compaction-threshold"
+                                    value={compactionThreshold}
+                                    onChange={setCompactionThreshold}
+                                    min={compactionMin}
+                                    max={compactionMax}
+                                    step={1_000}
+                                    disabled={busy}
+                                    ariaLabel={t('editor.compactionThresholdLabel')}
+                                />
+                            </FormField>
+                        ) : null}
+                        {/* The refusal beside the control, as plain text: a
+                            FormField error would set `invalid` on the radio
+                            group's root, which renders it onto a div. */}
+                        {fieldError('compaction') ? (
+                            <p className="text-xs text-content-error" role="alert" data-testid="behaviour-editor-compaction-error">
+                                {fieldError('compaction')}
+                            </p>
+                        ) : null}
+                    </div>
+
                     <FormField label={t('field.outputKind')} description={t('editor.outputKindHint')}>
                         <RadioGroup
                             value={outputKind}
@@ -329,6 +519,35 @@ export function BehaviourEditorSheet({
                             ))}
                         </RadioGroup>
                     </FormField>
+
+                    {deferrable.length > 0 ? (
+                        <div className="space-y-tight" data-testid="behaviour-editor-deferral">
+                            <FormField label={t('field.deferral')} description={t('editor.deferralHint')}>
+                                <div className="space-y-tight" role="group" aria-label={t('field.deferral')}>
+                                    {deferrable.map((tool) => (
+                                        <label key={tool} htmlFor={`behaviour-deferral-${tool}`} className="flex items-center gap-compact text-sm">
+                                            <Checkbox
+                                                id={`behaviour-deferral-${tool}`}
+                                                checked={deferredTools.includes(tool)}
+                                                disabled={busy}
+                                                onCheckedChange={(checked) =>
+                                                    setDeferredTools((prev) =>
+                                                        checked === true ? [...prev.filter((x) => x !== tool), tool] : prev.filter((x) => x !== tool),
+                                                    )
+                                                }
+                                            />
+                                            <span>{tool}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </FormField>
+                            {fieldError('deferral') ? (
+                                <p className="text-xs text-content-error" role="alert" data-testid="behaviour-editor-deferral-error">
+                                    {fieldError('deferral')}
+                                </p>
+                            ) : null}
+                        </div>
+                    ) : null}
 
                     <FormField label={t('field.triggers')} description={t('editor.triggersHint')} required>
                         <div className="space-y-tight" role="group" aria-label={t('field.triggers')}>

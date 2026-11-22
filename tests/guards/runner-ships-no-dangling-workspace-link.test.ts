@@ -11,7 +11,7 @@
  *
  * So the image contained a symlink pointing at a path it does not have (#3204).
  * It was harmless while `packages/ui` was an empty skeleton; as of #3046 step 2b
- * the package holds the Nucleo barrel and `cn.ts`, which 218 modules import.
+ * the package holds the glyph barrel and `cn.ts`, which 218 modules import.
  *
  * ═══ WHY THIS SHAPE OF ASSERTION ═══
  *

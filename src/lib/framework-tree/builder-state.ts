@@ -75,6 +75,12 @@ export function moveRequirement(
     source: { sectionId: string; requirementId: string },
     target: { sectionId: string; index: number },
 ): BuilderSection[] {
+    // Within a section only (#5231). A requirement's section is derived from
+    // the framework (section / theme / category / code), and the saved order
+    // records positions, not sections, so a requirement dropped into another
+    // section went back to its own on reload, and could drag its old
+    // section's position with it.
+    if (source.sectionId !== target.sectionId) return sections.slice();
     const result = sections.map((s) => ({ ...s, requirements: [...s.requirements] }));
     const sourceSection = result.find((s) => s.id === source.sectionId);
     const targetSection = result.find((s) => s.id === target.sectionId);

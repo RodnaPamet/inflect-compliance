@@ -28,6 +28,7 @@ import {
     type NormalizedIdentityAccount,
 } from '../identity/types';
 import { IntegrationAuthError, resilientFetch } from '../../http-resilience';
+import { logger } from '@/lib/observability/logger';
 import { fetchOAuthToken } from '../../oauth-token-fetch';
 
 const MAX_USERS = 5000;
@@ -40,6 +41,107 @@ interface SsoCoverage {
     customerWide: boolean;
     /** At least one SAML_SSO assignment exists (possibly OU/group-scoped only). */
     hasSaml: boolean;
+    /**
+     * Org-unit ids a SAML assignment targets, WITHOUT the `orgUnits/` prefix.
+     *
+     * Optional so every existing `listSsoAssignments` double stays valid, and
+     * an omitted value reads as "no OU targets", which is the pre-#5571
+     * behaviour. The real reader always populates it.
+     */
+    samlOrgUnitIds?: readonly string[];
+    /**
+     * A SAML assignment targets a GROUP.
+     *
+     * Load-bearing for the fail-closed reading: this sync does not read group
+     * memberships, so an account not covered by any OU may still be covered by
+     * a group, and must therefore be UNKNOWN rather than NOT ENROLLED.
+     */
+    hasGroupTargetedSaml?: boolean;
+}
+
+/** One org unit, as the Directory API reports it. */
+interface GoogleOrgUnit {
+    orgUnitId?: string;
+    orgUnitPath?: string;
+    parentOrgUnitId?: string;
+    parentOrgUnitPath?: string;
+}
+
+/**
+ * Org-unit paths by id, plus the ROOT's id — which the API does not hand over.
+ *
+ * `orgunits.list` returns the org units UNDER the root and never the root
+ * itself, so the root's id is derived: it is the `parentOrgUnitId` shared by
+ * every unit whose `parentOrgUnitPath` is `/`. Exactly one such id must exist,
+ * or the derivation is refused rather than guessed.
+ *
+ * AN EMPTY LIST RESOLVES NOTHING, deliberately. A customer with no sub-units
+ * has exactly one org unit — the root — so arguing that any targeted OU "must
+ * therefore be the root" is tempting and is NOT done here. The inference is
+ * sound only while the emptiness is real, and it fails in the one direction
+ * that matters: a response that lost its `organizationUnits` key for any other
+ * reason would mark every account SSO-enrolled, turning a security control into
+ * a guaranteed pass. Unresolved stays unresolved, and the verdict is unknown.
+ */
+export function buildOrgUnitPaths(units: readonly GoogleOrgUnit[]): {
+    pathById: Map<string, string>;
+    rootId: string | null;
+} {
+    const pathById = new Map<string, string>();
+    for (const u of units) {
+        if (u.orgUnitId && u.orgUnitPath) pathById.set(u.orgUnitId, u.orgUnitPath);
+    }
+    const topLevelParents = new Set(
+        units.filter((u) => u.parentOrgUnitPath === '/').map((u) => u.parentOrgUnitId ?? ''),
+    );
+    topLevelParents.delete('');
+    const rootId = topLevelParents.size === 1 ? [...topLevelParents][0] : null;
+    if (rootId) pathById.set(rootId, '/');
+    return { pathById, rootId };
+}
+
+/**
+ * Does an org-unit path lie at or under one of `coveredPaths`?
+ *
+ * The separator matters. A bare `path.startsWith(covered)` reports `/Eng` as
+ * covering `/Engineering`, which would mark a whole unrelated unit as
+ * SSO-enrolled on a name prefix. Comparison is therefore on whole segments,
+ * with `/` — the root — covering everything.
+ */
+export function orgUnitCovers(coveredPaths: readonly string[], path: string): boolean {
+    return coveredPaths.some((covered) =>
+        covered === '/' ? true : path === covered || path.startsWith(`${covered}/`),
+    );
+}
+
+/**
+ * One account's `ssoEnrolled`, given what the assignments say and what we could
+ * resolve. Pure, because this is the rule the control reports and it has four
+ * outcomes that are easy to collapse into three.
+ *
+ * FAIL-CLOSED ON WHAT WE CANNOT SEE. `false` is a positive claim that an
+ * account is not federated, and `sso_enforced` turns it into a FAILED control
+ * naming that person. So it is returned only when every SAML assignment was
+ * resolved and none covers the account. An unresolved OU target, or any
+ * group-targeted assignment, yields `null` — unknown — because this sync does
+ * not read group memberships and cannot rule coverage out.
+ */
+export function googleSsoVerdict(args: {
+    coverage: SsoCoverage;
+    coveredPaths: readonly string[];
+    unresolvedOuTarget: boolean;
+    accountOrgUnitPath: string | undefined;
+}): boolean | null {
+    const { coverage, coveredPaths, unresolvedOuTarget, accountOrgUnitPath } = args;
+    if (coverage.customerWide) return true;
+    if (!coverage.hasSaml) return false;
+    // An account with no reported path sits in the root as far as Google is
+    // concerned, but treating an ABSENT field as `/` would turn a projection
+    // change into a tenant-wide pass. Unknown instead.
+    if (!accountOrgUnitPath) return null;
+    if (orgUnitCovers(coveredPaths, accountOrgUnitPath)) return true;
+    if (unresolvedOuTarget || coverage.hasGroupTargetedSaml) return null;
+    return false;
 }
 
 interface GwsDeps {
@@ -60,6 +162,8 @@ interface GwsDeps {
     getAccessToken?: (config: Record<string, unknown>) => Promise<string>;
     /** Injectable SSO-assignment reader (defaults to the Cloud Identity API). */
     listSsoAssignments?: (token: string) => Promise<SsoCoverage>;
+    /** Injectable org-unit reader (defaults to the Directory API). */
+    listOrgUnits?: (token: string) => Promise<readonly GoogleOrgUnit[]>;
     fetchImpl?: typeof fetch;
 }
 
@@ -73,6 +177,11 @@ interface GoogleUser {
     isDelegatedAdmin?: boolean;
     isEnrolledIn2Sv?: boolean;
     lastLoginTime?: string | null;
+    /**
+     * Already on the wire — the users read asks for `projection=full` — and
+     * simply never read until #5571.
+     */
+    orgUnitPath?: string;
 }
 
 function mapGoogleStatus(u: GoogleUser): NormalizedIdentityAccount['status'] {
@@ -129,6 +238,7 @@ export class GoogleWorkspaceProvider implements ScheduledCheckProvider, Identity
             { key: 'maxAdmins', label: 'Max active admins', type: 'number', required: false, description: 'Threshold for admin_count_within_threshold (default 5).' },
             { key: 'dormantDays', label: 'Dormant admin threshold (days)', type: 'number', required: false, description: 'Admin considered dormant after this many days idle (default 90).' },
             { key: 'enrichSso', label: 'SAML SSO enrichment', type: 'boolean', required: false, description: 'Read inbound SAML assignments so the SSO check reflects real coverage (default on; needs the cloud-identity.inboundsso.readonly scope).' },
+            { key: 'enrichOrgUnits', label: 'Org-unit SSO resolution', type: 'boolean', required: false, description: 'Resolve which org units a SAML assignment covers, so the SSO check can pass for a tenant that enforces SAML through its top-level org unit and can name the accounts a partial rollout leaves out. OFF by default, because it needs ONE MORE scope authorised in your Admin console for this service account: https://www.googleapis.com/auth/admin.directory.orgunit.readonly. It is requested in a token exchange of its own, so leaving it unauthorised costs only this enrichment and never the directory sync. Without it, a SAML assignment scoped to an org unit reads as unknown rather than as coverage.' },
         ],
         secretFields: [
             { key: 'serviceAccountJson', label: 'Service-account JSON', type: 'textarea', required: true, description: 'A domain-wide-delegated service-account key (JSON) — paste the whole file.' },
@@ -225,6 +335,12 @@ export class GoogleWorkspaceProvider implements ScheduledCheckProvider, Identity
             : await getGoogleAccessToken(config);
         const domain = String(config.domain ?? '');
         const out: NormalizedIdentityAccount[] = [];
+        /**
+         * Each account's org-unit path, kept beside `out` rather than put on
+         * `NormalizedIdentityAccount`: it is an input to one check's verdict,
+         * not a fact about an identity that anything downstream stores.
+         */
+        const orgUnitPathById = new Map<string, string>();
         // Google's continuation is an opaque token rather than a URL, so unlike
         // Okta/Entra it cannot redirect our credentialed request anywhere — it
         // is only ever appended as a query parameter to our own base URL.
@@ -240,7 +356,10 @@ export class GoogleWorkspaceProvider implements ScheduledCheckProvider, Identity
             });
             if (!res.ok) throw new Error(`Google directory fetch failed (HTTP ${res.status})`);
             const body = (await res.json()) as { users?: GoogleUser[]; nextPageToken?: string };
-            for (const u of body.users ?? []) out.push(normalizeGoogleUser(u));
+            for (const u of body.users ?? []) {
+                out.push(normalizeGoogleUser(u));
+                if (u.orgUnitPath) orgUnitPathById.set(u.id, u.orgUnitPath);
+            }
             pageToken = body.nextPageToken;
         } while (pageToken && out.length < MAX_USERS);
 
@@ -261,6 +380,73 @@ export class GoogleWorkspaceProvider implements ScheduledCheckProvider, Identity
                     : await fetchSsoCoverage(token, doFetch);
                 const value: boolean | null = cov.customerWide ? true : cov.hasSaml ? null : false;
                 for (const a of out) a.ssoEnrolled = value;
+
+                // ═══ PER-ACCOUNT, WHEN THE ORG-UNIT READ IS AUTHORISED (#5571) ═══
+                //
+                // The coarse verdict above cannot tell a tenant-wide rollout
+                // from a departmental one, because a customer enforcing SAML
+                // for everyone does it through the ROOT org unit — so the
+                // assignment carries a `targetOrgUnit` and lands in the
+                // "OU-scoped → unknown" bucket. `sso_enforced` then reported
+                // NOT_APPLICABLE for ever, and the outcome was inverted with
+                // respect to effort: a customer with NO SSO got a clean FAILED,
+                // one who had done the work got silence.
+                //
+                // OPT-IN, because resolving an OU id to a path needs
+                // `admin.directory.orgunit.readonly`, and a scope is a question
+                // put to the customer — they authorise it in their own Admin
+                // console against this service account's client id.
+                const enrichOrgUnits =
+                    String((config as { enrichOrgUnits?: unknown }).enrichOrgUnits ?? 'false').toLowerCase() === 'true';
+                const ouTargets = cov.samlOrgUnitIds ?? [];
+                if (enrichOrgUnits && !cov.customerWide && ouTargets.length > 0) {
+                    try {
+                        // ITS OWN EXCHANGE. See `GWS_ORG_UNIT_SCOPE`: appending
+                        // this scope to the sync's own would risk a token
+                        // endpoint refusal that `fetchOAuthToken` turns into an
+                        // `IntegrationAuthError`, marking the connection
+                        // credential-failed and taking the whole sync with it.
+                        const ouToken = this.deps.getAccessToken
+                            ? await this.deps.getAccessToken(config)
+                            : await getGoogleAccessToken(config, doFetch, GWS_ORG_UNIT_SCOPE);
+                        const units = this.deps.listOrgUnits
+                            ? await this.deps.listOrgUnits(ouToken)
+                            : await fetchOrgUnits(ouToken, doFetch);
+                        const { pathById } = buildOrgUnitPaths(units);
+                        const coveredPaths = ouTargets
+                            .map((id) => pathById.get(id))
+                            .filter((p): p is string => p !== undefined);
+                        const unresolvedOuTarget = coveredPaths.length < ouTargets.length;
+                        for (const a of out) {
+                            a.ssoEnrolled = googleSsoVerdict({
+                                coverage: cov,
+                                coveredPaths,
+                                unresolvedOuTarget,
+                                accountOrgUnitPath: orgUnitPathById.get(a.externalUserId),
+                            });
+                        }
+                    } catch (err) {
+                        // The org-unit scope is not authorised, or the read
+                        // failed. The coarse verdict above stands: this
+                        // enrichment only ever REFINES, so its failure must
+                        // never be worse than not having run it.
+                        //
+                        // SAID, NOT SWALLOWED, and that is what makes this
+                        // catch load-bearing rather than decorative. The outer
+                        // catch would swallow the same throw and leave the same
+                        // verdicts, so without a line here no test could tell
+                        // the two apart — and an administrator who ticked the
+                        // box and did not authorise the scope in their Admin
+                        // console would get silence on the one surface that
+                        // could tell them why nothing changed.
+                        logger.warn('google-workspace org-unit SSO resolution failed; coarse verdict kept', {
+                            component: 'google-workspace',
+                            // The reason only. No account, no org unit, no
+                            // token: this line is about OUR read failing.
+                            error: err instanceof Error ? err.message : String(err),
+                        });
+                    }
+                }
             } catch {
                 // SSO scope not authorised / API blip — leave null (NOT_APPLICABLE).
             }
@@ -310,6 +496,29 @@ export class GoogleWorkspaceProvider implements ScheduledCheckProvider, Identity
 }
 
 /**
+ * The scopes the sync itself needs. Every connection's DWD grant authorises
+ * these two, and nothing may be added here without every customer re-authorising
+ * in their own Admin console — which is why the org-unit scope is separate.
+ */
+export const GWS_SYNC_SCOPE =
+    'https://www.googleapis.com/auth/admin.directory.user.readonly https://www.googleapis.com/auth/cloud-identity.inboundsso.readonly';
+
+/**
+ * The org-unit read's scope, requested in a token exchange OF ITS OWN (#5571).
+ *
+ * NEVER append this to `GWS_SYNC_SCOPE`. A DWD assertion naming a scope the
+ * customer has not authorised can be refused at the token endpoint, and
+ * `getGoogleAccessToken` routes through `fetchOAuthToken`, which turns a 400
+ * `invalid_grant` into an `IntegrationAuthError` — so the caller MARKS THE
+ * CONNECTION as credential-failed. Adding the scope to the shared string would
+ * therefore risk taking the whole directory sync, the freshness surface and the
+ * leaver pass down for every customer who had not re-authorised, to enrich one
+ * check. Its own exchange, inside its own try/catch, can only cost the
+ * enrichment.
+ */
+export const GWS_ORG_UNIT_SCOPE = 'https://www.googleapis.com/auth/admin.directory.orgunit.readonly';
+
+/**
  * Exchange a domain-wide-delegated service account for an access token
  * (JWT bearer grant, impersonating `adminEmail`). Isolated so the live
  * token exchange is the only part requiring real Google credentials.
@@ -320,6 +529,8 @@ export async function getGoogleAccessToken(
     // builds is only observable from the request body, so without a seam the
     // `exp` margin below cannot be asserted by a test.
     doFetch: typeof fetch = resilientFetch,
+    /** Defaults to the sync's own scopes; the org-unit read passes its own. */
+    scope: string = GWS_SYNC_SCOPE,
 ): Promise<string> {
     const crypto = await import('node:crypto');
     const saRaw = (config as { serviceAccountJson?: unknown }).serviceAccountJson;
@@ -340,11 +551,11 @@ export async function getGoogleAccessToken(
     const claim = {
         iss: sa.client_email,
         sub: adminEmail,
-        // GAP-4 — cloud-identity.inboundsso.readonly is added so the SSO
+        // GAP-4 — cloud-identity.inboundsso.readonly is here so the SSO
         // enrichment can read inbound SAML assignments. The DWD grant must
         // authorise both scopes; if the SSO scope is not authorised the
         // assignments fetch 403s and SSO falls back to unknown (NOT_APPLICABLE).
-        scope: 'https://www.googleapis.com/auth/admin.directory.user.readonly https://www.googleapis.com/auth/cloud-identity.inboundsso.readonly',
+        scope,
         aud: 'https://oauth2.googleapis.com/token',
         iat: now,
         exp: now + ASSERTION_LIFETIME_SECONDS,
@@ -399,6 +610,8 @@ interface InboundSsoAssignment {
 async function fetchSsoCoverage(token: string, doFetch: typeof fetch): Promise<SsoCoverage> {
     let customerWide = false;
     let hasSaml = false;
+    let hasGroupTargetedSaml = false;
+    const samlOrgUnitIds = new Set<string>();
     let pageToken: string | undefined;
     do {
         const url = new URL(`${CLOUD_IDENTITY_BASE}/inboundSsoAssignments`);
@@ -412,8 +625,30 @@ async function fetchSsoCoverage(token: string, doFetch: typeof fetch): Promise<S
             if (a.ssoMode !== 'SAML_SSO') continue;
             hasSaml = true;
             if (!a.targetOrgUnit && !a.targetGroup) customerWide = true;
+            // `orgUnits/{id}` on the wire; the Directory API keys org units by
+            // the bare id, so strip the collection prefix once, here.
+            if (a.targetOrgUnit) samlOrgUnitIds.add(a.targetOrgUnit.replace(/^orgUnits\//, ''));
+            if (a.targetGroup) hasGroupTargetedSaml = true;
         }
         pageToken = body.nextPageToken;
     } while (pageToken);
-    return { customerWide, hasSaml };
+    return { customerWide, hasSaml, samlOrgUnitIds: [...samlOrgUnitIds], hasGroupTargetedSaml };
+}
+
+/**
+ * The org units, for resolving an assignment's target to a path.
+ *
+ * `type=all` because an assignment may target a unit at any depth, and
+ * `my_customer` because the token already names the customer — passing an id we
+ * do not otherwise hold would be a second source of truth for it.
+ */
+async function fetchOrgUnits(token: string, doFetch: typeof fetch): Promise<GoogleOrgUnit[]> {
+    const url = new URL(`${DIRECTORY_BASE}/customer/my_customer/orgunits`);
+    url.searchParams.set('type', 'all');
+    const res = await doFetch(url.toString(), {
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    });
+    if (!res.ok) throw new Error(`Google org-unit fetch failed (HTTP ${res.status})`);
+    const body = (await res.json()) as { organizationUnits?: GoogleOrgUnit[] };
+    return body.organizationUnits ?? [];
 }

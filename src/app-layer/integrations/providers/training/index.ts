@@ -14,6 +14,7 @@ import type {
     EvidencePayload,
 } from '../../types';
 import { runTrainingCheck, TRAINING_CHECKS, type CheckAssignment, type CheckBackgroundCheck } from './checks';
+import { INTERNAL_CHECK_READ_TAKE, refusePassOnTruncatedRead, withinCap } from '../internal-check-read-cap';
 
 interface TrainingDeps {
     load?: (tenantId: string) => Promise<{ assignments: CheckAssignment[]; backgroundChecks: CheckBackgroundCheck[] }>;
@@ -39,23 +40,28 @@ export class TrainingProvider implements ScheduledCheckProvider {
         return { valid: true };
     }
 
-    private async load(tenantId: string): Promise<{ assignments: CheckAssignment[]; backgroundChecks: CheckBackgroundCheck[] }> {
+    private async load(tenantId: string): Promise<{ assignments: CheckAssignment[]; backgroundChecks: CheckBackgroundCheck[]; truncated?: boolean }> {
         if (this.deps.load) return this.deps.load(tenantId);
         const [assignments, backgroundChecks] = await Promise.all([
             prisma.trainingAssignment.findMany({
                 where: { tenantId },
                 select: { employeeId: true, status: true, dueAt: true, completedAt: true, employee: { select: { workEmail: true } }, course: { select: { cadenceDays: true } } },
-                take: 10000,
+                orderBy: { id: 'asc' },
+                take: INTERNAL_CHECK_READ_TAKE,
             }),
             prisma.backgroundCheck.findMany({
                 where: { tenantId },
                 select: { employeeId: true, status: true, employee: { select: { workEmail: true } } },
-                take: 10000,
+                orderBy: { id: 'asc' },
+                take: INTERNAL_CHECK_READ_TAKE,
             }),
         ]);
+        const cappedAssignments = withinCap(assignments);
+        const cappedChecks = withinCap(backgroundChecks);
         return {
-            assignments: assignments.map((a) => ({ employeeId: a.employeeId, employeeEmail: a.employee.workEmail, status: a.status, dueAt: a.dueAt, completedAt: a.completedAt, cadenceDays: a.course.cadenceDays })),
-            backgroundChecks: backgroundChecks.map((b) => ({ employeeId: b.employeeId, employeeEmail: b.employee.workEmail, status: b.status })),
+            truncated: cappedAssignments.truncated || cappedChecks.truncated,
+            assignments: cappedAssignments.rows.map((a) => ({ employeeId: a.employeeId, employeeEmail: a.employee.workEmail, status: a.status, dueAt: a.dueAt, completedAt: a.completedAt, cadenceDays: a.course.cadenceDays })),
+            backgroundChecks: cappedChecks.rows.map((b) => ({ employeeId: b.employeeId, employeeEmail: b.employee.workEmail, status: b.status })),
         };
     }
 
@@ -64,7 +70,11 @@ export class TrainingProvider implements ScheduledCheckProvider {
         try {
             const data = await this.load(input.tenantId);
             const now = this.deps.now ? this.deps.now() : new Date();
-            const result = runTrainingCheck(input.parsed.checkType, data, now);
+            const result = refusePassOnTruncatedRead(
+                runTrainingCheck(input.parsed.checkType, data, now),
+                data.truncated === true,
+                'Training',
+            );
             return { ...result, durationMs: Date.now() - start };
         } catch (err) {
             return { status: 'ERROR', summary: 'Training check failed to run.', details: {}, durationMs: Date.now() - start, errorMessage: err instanceof Error ? err.message : String(err) };

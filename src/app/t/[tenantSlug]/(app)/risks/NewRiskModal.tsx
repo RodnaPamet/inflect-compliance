@@ -18,8 +18,10 @@
  *   - `POST /api/t/:slug/risks` with
  *       { title, description?, category?, likelihood, impact,
  *         treatmentOwner?, nextReviewAt?, templateId? }
- *   - When a template is selected, `templateId` rides along so the
- *     server-side usecase can record the provenance.
+ *   - When a template is selected, `templateId` rides along. The server
+ *     checks it names a template and records it in the risk's creation
+ *     audit row (`detailsJson.templateId`); the risk itself has no column
+ *     for it (#5313 item 48).
  *   - After the risk is created, sequential best-effort POSTs to
  *     `/risks/:id/controls` for every selected control id — identical
  *     to the legacy wizard's two-phase behaviour.
@@ -33,6 +35,7 @@
  */
 
 import useSWR from 'swr';
+import { noteUnauthorized } from '@/lib/auth/session-expiry';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useToast } from '@/components/ui/hooks';
 import { useSWRConfig } from 'swr';
@@ -98,6 +101,13 @@ export interface NewRiskModalProps {
     setOpen: Dispatch<SetStateAction<boolean>>;
     tenantSlug: string;
     apiUrl: (path: string) => string;
+    /**
+     * Linking a control to the new risk is `POST /risks/:id/controls`, which
+     * takes `controls.edit`. A role without it is not offered the picker, so
+     * the create never ends in a "some controls could not be linked" warning
+     * the role could not have avoided.
+     */
+    canLinkControls: boolean;
 }
 
 // ─── Component ──────────────────────────────────────────────────────
@@ -107,6 +117,7 @@ export function NewRiskModal({
     setOpen,
     tenantSlug,
     apiUrl,
+    canLinkControls,
 }: NewRiskModalProps) {
     const tx = useTranslations('risks');
     // #4692 — the stored value stays English; the label is the user's language.
@@ -128,7 +139,9 @@ export function NewRiskModal({
     // `useZodForm` shape every other entity surface uses). `templateId` and
     // `selectedControlIds` stay HERE deliberately: the first drives a fetch
     // and rewrites fields, the second is a second-phase write after the risk
-    // exists. Neither is part of the risk payload.
+    // exists. Neither is form state. `templateId` is still SENT with the risk,
+    // as provenance the server records in the creation audit row; the
+    // control ids are not sent with it at all.
     const [templateId, setTemplateId] = useState('');
     const [selectedControlIds, setSelectedControlIds] = useState<Set<string>>(
         new Set(),
@@ -136,7 +149,7 @@ export function NewRiskModal({
 
     // ─── Lookups — controls + templates load while the modal is open ───
     const controlsQuery = useTenantSWR<CappedList<ControlOption> | ControlOption[]>(
-        open ? CACHE_KEYS.controls.list() : null,
+        open && canLinkControls ? CACHE_KEYS.controls.list() : null,
     );
     const controls = useMemo<ControlOption[]>(() => {
         // GET /controls returns the backfill-capped `{ rows, truncated }`
@@ -157,7 +170,12 @@ export function NewRiskModal({
         open ? '/api/risk-templates' : null,
         async (url: string) => {
             const res = await fetch(url);
-            if (!res.ok) return [];
+            if (!res.ok) {
+                // The empty fallback carries no status for the SWR 401 seam
+                // to read, so a lapsed session is reported here (#5313).
+                noteUnauthorized(res.status, url);
+                return [];
+            }
             const data = await res.json();
             return Array.isArray(data) ? data : [];
         },
@@ -523,6 +541,7 @@ export function NewRiskModal({
                         </FormField>
 
                         {/* Linked controls (optional, collapsible feel) */}
+                        {canLinkControls && (
                         <details className="rounded-lg border border-border-subtle bg-bg-subtle">
                             <summary
                                 className="cursor-pointer px-4 py-2 text-sm text-content-default"
@@ -575,6 +594,7 @@ export function NewRiskModal({
                                 )}
                             </div>
                         </details>
+                        )}
                     </FormSection>
                     </fieldset>
                 </Modal.Body>

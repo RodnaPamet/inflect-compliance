@@ -3,7 +3,7 @@
  *
  * The unit test holds the rule with the repository mocked. This one holds the
  * part a mock cannot: `AuditRepository.lockStatus` is raw SQL, and the reason
- * it reads `FOR UPDATE` is a race only Postgres can show — a cancel committed
+ * it locks the row is a race only Postgres can show — a cancel committed
  * while an edit is in flight must refuse the edit, not let it land on the
  * cancelled audit.
  */
@@ -14,6 +14,7 @@ import { makeRequestContext } from '../helpers/make-context';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { hashForLookup } from '@/lib/security/encryption';
 import { updateAudit } from '@/app-layer/usecases/audit';
+import { createFinding, createFindingFromRequest } from '@/app-layer/usecases/finding';
 import type { RequestContext } from '@/app-layer/types';
 
 const prisma: PrismaClient = prismaTestClient();
@@ -95,6 +96,20 @@ describe('updateAudit on a closed audit', () => {
         expect((await prisma.auditChecklistItem.findUniqueOrThrow({ where: { id: itemId } })).result).toBe('PASS');
     });
 
+    it('an open audit takes a checklist FAIL, and the finding and task it cascades into (#5063)', async () => {
+        // The cascade inserts the Finding in a transaction of its own, while
+        // the edit's transaction holds the audit row. With the row read
+        // FOR UPDATE that insert's foreign-key check waited on the edit, which
+        // waited on the insert, until the transaction timed out.
+        const { auditId, itemId } = await auditWith('IN_PROGRESS');
+        await updateAudit(ctx, auditId, { checklistUpdates: [{ id: itemId, result: 'FAIL' }] });
+        expect((await prisma.auditChecklistItem.findUniqueOrThrow({ where: { id: itemId } })).result).toBe('FAIL');
+        expect(await prisma.finding.count({ where: { auditId } })).toBe(1);
+        expect(await prisma.task.count({
+            where: { tenantId: T1, type: 'AUDIT_FINDING', title: 'Remediate finding: Access reviewed' },
+        })).toBeGreaterThanOrEqual(1);
+    }, 30_000);
+
     it('another tenant’s audit is not found, whatever its status', async () => {
         const { auditId } = await auditWith('PLANNED');
         await expect(updateAudit(otherCtx, auditId, { title: 'Theirs now' })).rejects.toMatchObject({ status: 404 });
@@ -125,5 +140,40 @@ describe('updateAudit on a closed audit', () => {
         await expect(edit).rejects.toMatchObject({ status: 409, details: { reason: 'AUDIT_CANCELLED_READ_ONLY' } });
         const row = await prisma.audit.findUniqueOrThrow({ where: { id: auditId } });
         expect(row).toMatchObject({ status: 'CANCELLED', title: 'Audit PLANNED' });
+    });
+});
+
+describe('POST /findings naming a closed audit (#5313 item 29)', () => {
+    const body = (auditId: string) => ({
+        auditId, title: 'Access not reviewed', severity: 'HIGH' as const, type: 'NONCONFORMITY' as const,
+    });
+
+    it.each([
+        ['COMPLETED', 'AUDIT_COMPLETED_READ_ONLY'],
+        ['CANCELLED', 'AUDIT_CANCELLED_READ_ONLY'],
+    ] as const)('refuses a finding on a %s audit with a 409, and writes none', async (status, reason) => {
+        const { auditId } = await auditWith(status);
+        await expect(createFindingFromRequest(ctx, body(auditId))).rejects.toMatchObject({
+            status: 409,
+            details: { reason },
+        });
+        expect(await prisma.finding.count({ where: { auditId } })).toBe(0);
+    });
+
+    it('accepts a finding on an open audit, and one naming no audit', async () => {
+        const { auditId } = await auditWith('IN_PROGRESS');
+        await createFindingFromRequest(ctx, body(auditId));
+        expect(await prisma.finding.count({ where: { auditId } })).toBe(1);
+        const loose = await createFindingFromRequest(ctx, { title: 'No audit', severity: 'LOW', type: 'OBSERVATION' });
+        expect(loose.auditId).toBeNull();
+    });
+
+    it('leaves createFinding alone: the shared-pack comment path still raises a finding on a completed audit', async () => {
+        // `audit-readiness/sharing.ts` materialises an auditor's comment into a
+        // finding against the pack's audit through `createFinding`, and the
+        // owner kept that path open. The checklist cascade is held above.
+        const { auditId } = await auditWith('COMPLETED');
+        await createFinding(ctx, { ...body(auditId), sourceKind: 'AUDITOR_SHARE_COMMENT', sourceRef: 'comment-1' });
+        expect(await prisma.finding.count({ where: { auditId } })).toBe(1);
     });
 });

@@ -18,7 +18,9 @@ import type {
 } from '../types';
 import { runPowerpipeBenchmark, type RunBenchmarkInput } from '../cloud-posture/powerpipe-core';
 import { collectorExecForDeploy } from '../cloud-posture/sandboxed-collector-exec';
+import { postureProviderNameFor } from '../cloud-posture/provider-name';
 import { sandboxDecisionRecorderForScan } from '../openshell-audit-bridge';
+import { baseCollectorEnv } from '../collector-child-env';
 
 export interface AzurePostureSecrets {
     clientId?: string;
@@ -63,7 +65,11 @@ const AZURE_CREDENTIAL_PATTERNS: RegExp[] = [
 ];
 
 function buildEnv(secrets: AzurePostureSecrets, config: AzurePostureConfig): NodeJS.ProcessEnv {
-    const env: NodeJS.ProcessEnv = { ...process.env };
+    // An ALLOWLIST, not `process.env` (#5253) — see collector-child-env.ts. An
+    // inherited ambient AZURE_* would let a benchmark run as the platform and
+    // be stored as this tenant's evidence, and the worker's own secrets have no
+    // business reaching the CLI.
+    const env: NodeJS.ProcessEnv = baseCollectorEnv();
     if (config.tenantId) env.AZURE_TENANT_ID = config.tenantId;
     if (config.subscriptionId) env.AZURE_SUBSCRIPTION_ID = config.subscriptionId;
     if (secrets.clientId) env.AZURE_CLIENT_ID = secrets.clientId;
@@ -155,13 +161,28 @@ export class AzurePostureProvider implements ScheduledCheckProvider {
      */
     private execForScan(input: CheckInput, benchmarkId: string): RunBenchmarkInput['exec'] {
         if (!this.execFromDeploy) return this.exec;
+        // #5476: the gateway provider holding THIS connection's credential.
+        // `undefined` when the check carries no connection id, which makes
+        // `collectorExecForDeploy` refuse rather than attach a shared
+        // credential — see `postureProviderNameFor`. Never defaulted.
+        const providerName = postureProviderNameFor({
+            tenantId: input.tenantId,
+            connectionId: input.connectionId,
+        });
         return (
             collectorExecForDeploy({
                 benchmarkId,
+                providerName,
                 onDecision: sandboxDecisionRecorderForScan({
                     tenantId: input.tenantId,
                     job: 'azure-posture-collect',
                     discriminator: input.jobRunId,
+                    // The lease row names the provider ACTUALLY attached. Left
+                    // to default it would record `inflect-collector` — the
+                    // shared one #5251 refused — while the sandbox held this
+                    // connection's own, making an operational table disagree
+                    // with the gateway.
+                    providerName,
                 }),
             }) ?? undefined
         );

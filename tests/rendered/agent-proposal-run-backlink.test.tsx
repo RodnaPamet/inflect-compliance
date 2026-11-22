@@ -114,6 +114,12 @@ jest.mock('@/app-layer/usecases/workflow-run-provenance', () => ({
     readWorkflowRunProvenance: async () => ({ startedBy: null, ruleName: null }),
 }));
 
+// The run's deferred call (Step 2f): a database read too. None here.
+jest.mock('@/app-layer/usecases/workflow-run-deferral-views', () => ({
+    __esModule: true,
+    readRunDeferralView: async () => null,
+}));
+
 jest.mock('next-intl/server', () => ({
     __esModule: true,
     getTranslations: async () => (key: string) => key,
@@ -180,6 +186,7 @@ function row(overrides: Partial<ProposalRow> = {}): ProposalRow {
         windowClosed: false,
         approvalsRecorded: 0,
         signedByViewer: false,
+        viewerMayApprove: true,
         runId: RUN_ID,
         stepSeq: 2,
         guardVerdict: 'CLEAN',
@@ -233,6 +240,9 @@ function runStep(over: Partial<RunStepRow> = {}): RunStepRow {
         // #3473 part 3 — null for every step that is not a delegation, which
         // is every step in these fixtures.
         delegation: null,
+        subagent: null,
+        compaction: null,
+        modelTurn: null,
         proposals: [],
         ...over,
     };

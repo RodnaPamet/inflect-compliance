@@ -8,10 +8,40 @@ import { policyCountsWhere } from '@/lib/policy/coverage-predicate';
 // The real read gate. A file-local `assertCanRead(ctx) {}` no-op used to
 // shadow this import, silently un-gating every list*/get*Traceability read —
 // the traceability graph exposes control/risk/asset titles, so it must sit
-// behind the same canRead check as every other read surface.
+// behind the same canRead check as every other read surface. Since #5376 the
+// per-entity reads ask their anchor's own view assertion (which includes this
+// coarse check); `coverageSummary` still asks this one, and omits its name
+// lists per kind (#5442).
 import { assertCanRead } from '../policies/common';
-import { assertCanEditAsset } from '../policies/asset.policies';
-import { assertCanUpdateControl } from '../policies/control.policies';
+import { assertCanEditAsset, assertCanReadAssets, canReadAssets } from '../policies/asset.policies';
+import { assertCanUpdateControl, assertCanReadControls, canReadControls } from '../policies/control.policies';
+import { assertCanReadRisk, canReadRisks } from '../policies/risk.policies';
+import { assertCanReadPolicies } from '../policies/policy.policies';
+
+/**
+ * Each side of a link answers to its OWN view key (#5376, owner decision
+ * 2026-11-12).
+ *
+ * These reads gated on the coarse read tier alone, so a custom role without
+ * `risks.view` still read risk titles through a control's traceability panel,
+ * while the graph over the same links (`traceability-graph.ts`) already
+ * dropped them. Now every read decides per side:
+ *
+ *   - the ANCHOR — the entity in the URL, whose panel this is — must be
+ *     viewable, or the read is REFUSED (403), as the anchor's own detail read
+ *     is. The routes ask the same key through `requirePermission`, which is
+ *     where the `AUTHZ_DENIED` row is written; this is the usecase floor.
+ *   - a LINKED kind the caller may not view is OMITTED — an empty list, and
+ *     its query is not run — never an error: the panel still shows the sides
+ *     the caller may see.
+ *
+ * Every built-in role that can read holds all four view keys, so no built-in
+ * role moves. An entirely absent `appPermissions` honours the coarse check
+ * alone, the fallback every granular policy here uses.
+ */
+async function sideIf<T>(visible: boolean, read: () => Promise<T[]>): Promise<T[]> {
+    return visible ? read() : [];
+}
 
 /**
  * A mapping is governed by the key of the entity you edit FROM (#4413, owner
@@ -35,13 +65,15 @@ const assertCanMapFromControl = assertCanUpdateControl;
 // ─── Control ↔ Risk ───
 
 export async function listControlRisks(ctx: RequestContext, controlId: string) {
-    assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) => ControlRiskRepository.listByControl(db, ctx.tenantId, controlId));
+    assertCanReadControls(ctx);
+    return sideIf(canReadRisks(ctx), () =>
+        runInTenantContext(ctx, (db) => ControlRiskRepository.listByControl(db, ctx.tenantId, controlId)));
 }
 
 export async function listRiskControls(ctx: RequestContext, riskId: string) {
-    assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) => ControlRiskRepository.listByRisk(db, ctx.tenantId, riskId));
+    assertCanReadRisk(ctx);
+    return sideIf(canReadControls(ctx), () =>
+        runInTenantContext(ctx, (db) => ControlRiskRepository.listByRisk(db, ctx.tenantId, riskId)));
 }
 
 export async function mapControlToRisk(ctx: RequestContext, controlId: string, riskId: string, rationale?: string) {
@@ -74,13 +106,15 @@ export async function unmapControlFromRisk(ctx: RequestContext, controlId: strin
 // ─── Asset ↔ Control ───
 
 export async function listAssetControls(ctx: RequestContext, assetId: string) {
-    assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) => AssetControlRepository.listByAsset(db, ctx.tenantId, assetId));
+    assertCanReadAssets(ctx);
+    return sideIf(canReadControls(ctx), () =>
+        runInTenantContext(ctx, (db) => AssetControlRepository.listByAsset(db, ctx.tenantId, assetId)));
 }
 
 export async function listControlAssets(ctx: RequestContext, controlId: string) {
-    assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) => AssetControlRepository.listByControl(db, ctx.tenantId, controlId));
+    assertCanReadControls(ctx);
+    return sideIf(canReadAssets(ctx), () =>
+        runInTenantContext(ctx, (db) => AssetControlRepository.listByControl(db, ctx.tenantId, controlId)));
 }
 
 export async function mapAssetToControl(ctx: RequestContext, assetId: string, controlId: string, coverageType?: string, rationale?: string) {
@@ -113,13 +147,15 @@ export async function unmapAssetFromControl(ctx: RequestContext, assetId: string
 // ─── Asset ↔ Risk ───
 
 export async function listAssetRisks(ctx: RequestContext, assetId: string) {
-    assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) => AssetRiskRepository.listByAsset(db, ctx.tenantId, assetId));
+    assertCanReadAssets(ctx);
+    return sideIf(canReadRisks(ctx), () =>
+        runInTenantContext(ctx, (db) => AssetRiskRepository.listByAsset(db, ctx.tenantId, assetId)));
 }
 
 export async function listRiskAssets(ctx: RequestContext, riskId: string) {
-    assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) => AssetRiskRepository.listByRisk(db, ctx.tenantId, riskId));
+    assertCanReadRisk(ctx);
+    return sideIf(canReadAssets(ctx), () =>
+        runInTenantContext(ctx, (db) => AssetRiskRepository.listByRisk(db, ctx.tenantId, riskId)));
 }
 
 export async function mapAssetToRisk(ctx: RequestContext, assetId: string, riskId: string, exposureLevel?: string, rationale?: string) {
@@ -166,15 +202,16 @@ export type TraceabilityMapPlacement = {
 };
 
 export async function getControlTraceability(ctx: RequestContext, controlId: string) {
-    assertCanRead(ctx);
+    assertCanReadControls(ctx);
+    const [seeRisks, seeAssets] = [canReadRisks(ctx), canReadAssets(ctx)];
     return runInTenantContext(ctx, async (db) => {
         const [risks, assets, edgeMaps, nodeMaps] = await Promise.all([
-            ControlRiskRepository.listByControl(db, ctx.tenantId, controlId),
-            AssetControlRepository.listByControl(db, ctx.tenantId, controlId),
+            sideIf(seeRisks, () => ControlRiskRepository.listByControl(db, ctx.tenantId, controlId)),
+            sideIf(seeAssets, () => AssetControlRepository.listByControl(db, ctx.tenantId, controlId)),
             // A control gates edges (processEdgeControl) AND/OR sits on `control`
-            // nodes (ProcessNode.linkedEntityId) — union both.
+            // nodes (processNodeControl) — union both.
             ProcessMapRepository.listMapsByControl(db, ctx, controlId),
-            ProcessMapRepository.listMapsByLinkedEntity(db, ctx, 'control', controlId),
+            ProcessMapRepository.listMapsByControlNode(db, ctx, controlId),
         ]);
         const processMaps: TraceabilityMapPlacement[] = [
             ...edgeMaps.map((e) => ({
@@ -191,12 +228,13 @@ export async function getControlTraceability(ctx: RequestContext, controlId: str
 }
 
 export async function getRiskTraceability(ctx: RequestContext, riskId: string) {
-    assertCanRead(ctx);
+    assertCanReadRisk(ctx);
+    const [seeControls, seeAssets] = [canReadControls(ctx), canReadAssets(ctx)];
     return runInTenantContext(ctx, async (db) => {
         const [controls, assets, nodeMaps] = await Promise.all([
-            ControlRiskRepository.listByRisk(db, ctx.tenantId, riskId),
-            AssetRiskRepository.listByRisk(db, ctx.tenantId, riskId),
-            ProcessMapRepository.listMapsByLinkedEntity(db, ctx, 'risk', riskId),
+            sideIf(seeControls, () => ControlRiskRepository.listByRisk(db, ctx.tenantId, riskId)),
+            sideIf(seeAssets, () => AssetRiskRepository.listByRisk(db, ctx.tenantId, riskId)),
+            ProcessMapRepository.listMapsByRiskNode(db, ctx, riskId),
         ]);
         const processMaps: TraceabilityMapPlacement[] = nodeMaps.map((n) => ({
             mapId: n.mapId, mapName: n.mapName, mapStatus: n.mapStatus,
@@ -207,12 +245,13 @@ export async function getRiskTraceability(ctx: RequestContext, riskId: string) {
 }
 
 export async function getAssetTraceability(ctx: RequestContext, assetId: string) {
-    assertCanRead(ctx);
+    assertCanReadAssets(ctx);
+    const [seeControls, seeRisks] = [canReadControls(ctx), canReadRisks(ctx)];
     return runInTenantContext(ctx, async (db) => {
         const [controls, risks, nodeMaps] = await Promise.all([
-            AssetControlRepository.listByAsset(db, ctx.tenantId, assetId),
-            AssetRiskRepository.listByAsset(db, ctx.tenantId, assetId),
-            ProcessMapRepository.listMapsByLinkedEntity(db, ctx, 'asset', assetId),
+            sideIf(seeControls, () => AssetControlRepository.listByAsset(db, ctx.tenantId, assetId)),
+            sideIf(seeRisks, () => AssetRiskRepository.listByAsset(db, ctx.tenantId, assetId)),
+            ProcessMapRepository.listMapsByAssetNode(db, ctx, assetId),
         ]);
         const processMaps: TraceabilityMapPlacement[] = nodeMaps.map((n) => ({
             mapId: n.mapId, mapName: n.mapName, mapStatus: n.mapStatus,
@@ -238,43 +277,52 @@ export async function getAssetTraceability(ctx: RequestContext, assetId: string)
 const POLICY_TRACE_TAKE = 200;
 
 export async function getPolicyTraceability(ctx: RequestContext, policyId: string) {
-    assertCanRead(ctx);
+    assertCanReadPolicies(ctx);
+    // The policy's controls are read even when the caller may not view
+    // controls: they are the path the inherited risks and assets are reached
+    // through. Only the OUTPUT omits them.
+    const [seeControls, seeRisks, seeAssets] = [canReadControls(ctx), canReadRisks(ctx), canReadAssets(ctx)];
     return runInTenantContext(ctx, async (db) => {
         const t = ctx.tenantId;
+        // Items in the trash are hidden on every traceability panel (#5442,
+        // owner decision 2026-11-12): a trashed control is neither listed nor
+        // a path to inherited risks and assets, and a trashed risk or asset is
+        // not inherited.
         const links = await db.policyControlLink.findMany({
-            where: { tenantId: t, policyId },
+            where: { tenantId: t, policyId, control: { deletedAt: null } },
             select: {
                 id: true,
                 control: { select: { id: true, code: true, name: true, status: true, category: true } },
             },
             take: POLICY_TRACE_TAKE,
         });
-        const controls = links
+        const linkedControls = links
             .filter((l) => l.control)
             .map((l) => ({ id: l.id, control: l.control! }));
-        const controlIds = controls.map((c) => c.control.id);
+        const controlIds = linkedControls.map((c) => c.control.id);
+        const controls = seeControls ? linkedControls : [];
 
         if (controlIds.length === 0) {
             return { policyId, controls, risks: [], assets: [] };
         }
 
         const [riskLinks, assetLinks] = await Promise.all([
-            db.riskControl.findMany({
-                where: { tenantId: t, controlId: { in: controlIds } },
+            sideIf(seeRisks, () => db.riskControl.findMany({
+                where: { tenantId: t, controlId: { in: controlIds }, risk: { deletedAt: null } },
                 select: {
                     controlId: true,
                     risk: { select: { id: true, title: true, status: true, score: true, category: true } },
                 },
                 take: POLICY_TRACE_TAKE,
-            }),
-            db.controlAsset.findMany({
-                where: { tenantId: t, controlId: { in: controlIds } },
+            })),
+            sideIf(seeAssets, () => db.controlAsset.findMany({
+                where: { tenantId: t, controlId: { in: controlIds }, asset: { deletedAt: null } },
                 select: {
                     controlId: true,
                     asset: { select: { id: true, name: true, type: true, criticality: true, status: true } },
                 },
                 take: POLICY_TRACE_TAKE,
-            }),
+            })),
         ]);
 
         // Dedup inherited entities by id; count the distinct policy
@@ -308,8 +356,28 @@ export async function getPolicyTraceability(ctx: RequestContext, policyId: strin
 /** How many rows each coverage gap list shows; the totals are counted apart. */
 export const COVERAGE_GAP_ROWS = 10;
 
+/**
+ * The coverage dashboard. Gated on the coarse read tier, and its COUNTS are
+ * the same for every reader. Its NAME LISTS — the unmapped risks' titles, the
+ * uncovered critical assets' names, the hot controls' names — answer to each
+ * kind's own view key (#5442, owner decision 2026-11-12), the rule the
+ * traceability panels above follow: a kind the caller may not view comes back
+ * as an empty list whose query is not run, and `withheld` says so, so the page
+ * never reads an omitted list as "nothing is uncovered".
+ */
+/**
+ * A risk↔control link counts toward coverage only while both ends are out of
+ * the trash (#5442, owner decision 2026-11-12: a link to an item in the trash
+ * is not shown, and a trashed control mitigates nothing — the residual
+ * suggestion ignores it too). Without it a risk whose only control is in the
+ * trash read as mapped, and `hotControls` could rank a trashed control, which
+ * then came back with a count and no name.
+ */
+const LIVE_RISK_CONTROL = { control: { deletedAt: null }, risk: { deletedAt: null } } as const;
+
 export async function coverageSummary(ctx: RequestContext) {
     assertCanRead(ctx);
+    const withheld = { risks: !canReadRisks(ctx), assets: !canReadAssets(ctx), controls: !canReadControls(ctx) };
     return runInTenantContext(ctx, async (db) => {
         const t = ctx.tenantId;
 
@@ -324,12 +392,14 @@ export async function coverageSummary(ctx: RequestContext) {
 
         // Mapped counts (distinct)
         const [risksWithControls, controlsWithRisks, assetsWithControls, policiesWithControls] = await Promise.all([
-            db.riskControl.findMany({ where: { tenantId: t }, select: { riskId: true }, distinct: ['riskId'] }),
-            db.riskControl.findMany({ where: { tenantId: t }, select: { controlId: true }, distinct: ['controlId'] }),
-            db.controlAsset.findMany({ where: { tenantId: t }, select: { assetId: true }, distinct: ['assetId'] }),
+            db.riskControl.findMany({ where: { tenantId: t, ...LIVE_RISK_CONTROL }, select: { riskId: true }, distinct: ['riskId'] }),
+            db.riskControl.findMany({ where: { tenantId: t, ...LIVE_RISK_CONTROL }, select: { controlId: true }, distinct: ['controlId'] }),
+            // `status: 'ACTIVE'` as the denominator counts (#5318): a RETIRED
+            // asset's control links pushed this past 100%.
+            db.controlAsset.findMany({ where: { tenantId: t, control: { deletedAt: null }, asset: { deletedAt: null, status: 'ACTIVE' } }, select: { assetId: true }, distinct: ['assetId'] }),
             // Counting policies is gated by the same predicate, applied to the
             // linked policy so an unpublished policy's links don't inflate coverage.
-            db.policyControlLink.findMany({ where: { tenantId: t, policy: policyCountsWhere(t) }, select: { policyId: true }, distinct: ['policyId'] }),
+            db.policyControlLink.findMany({ where: { tenantId: t, policy: policyCountsWhere(t), control: { deletedAt: null } }, select: { policyId: true }, distinct: ['policyId'] }),
         ]);
 
         const risksWithControlsCount = risksWithControls.length;
@@ -351,28 +421,29 @@ export async function coverageSummary(ctx: RequestContext) {
         const uncoveredWhere = { ...criticalWhere, id: { notIn: Array.from(mappedAssetIds) } };
 
         const [unmappedRisks, unmappedRisksTotal, uncoveredCriticalAssets, uncoveredCriticalAssetsTotal, totalCriticalAssets] = await Promise.all([
-            db.risk.findMany({
+            sideIf(!withheld.risks, () => db.risk.findMany({
                 where: unmappedWhere,
                 select: { id: true, title: true, score: true, status: true },
                 orderBy: { score: 'desc' },
                 take: COVERAGE_GAP_ROWS,
-            }),
+            })),
             db.risk.count({ where: unmappedWhere }),
-            db.asset.findMany({
+            sideIf(!withheld.assets, () => db.asset.findMany({
                 where: uncoveredWhere,
                 select: { id: true, name: true, type: true, criticality: true },
                 take: COVERAGE_GAP_ROWS,
-            }),
+            })),
             db.asset.count({ where: uncoveredWhere }),
             // The population the asset gap is drawn from, so "none uncovered"
             // over no critical asset is said as what it is.
             db.asset.count({ where: criticalWhere }),
         ]);
 
-        // Hot controls (most risks)
-        const hotControls = await db.riskControl.groupBy({
+        // Hot controls (most risks) — a list of control names, so withheld
+        // from a caller who may not view controls.
+        const hotControls = withheld.controls ? [] : await db.riskControl.groupBy({
             by: ['controlId'],
-            where: { tenantId: t },
+            where: { tenantId: t, ...LIVE_RISK_CONTROL },
             _count: { riskId: true },
             orderBy: { _count: { riskId: 'desc' } },
             take: 5,
@@ -387,24 +458,18 @@ export async function coverageSummary(ctx: RequestContext) {
         }));
 
         // PR-D — process coverage. A control is "embedded in an operational
-        // process" when it is placed on a process-map edge (ProcessEdgeControl,
-        // real FK) OR linked from a `control` node (dataJson.linkedEntityId).
-        // This closes the loop: the canvas linkage now shows up in the same
+        // process" when it is placed on a process-map edge (ProcessEdgeControl)
+        // OR linked from a `control` node (ProcessNodeControl); both are real
+        // FKs. This closes the loop: the canvas linkage now shows up in the same
         // coverage graph as risk / asset / policy mapping, so an auditor sees
         // which controls are actually wired into how the org operates.
-        const [processEdgeControlIds, controlNodeRows] = await Promise.all([
+        const [processEdgeControlIds, processNodeControlIds] = await Promise.all([
             db.processEdgeControl.findMany({ where: { tenantId: t }, select: { controlId: true }, distinct: ['controlId'] }),
-            db.processNode.findMany({ // guardrail-allow: unbounded — bounded by the small process-node graph; JSON linkedEntityId can't be distinct-queried
-                where: { tenantId: t, nodeType: 'control' },
-                select: { dataJson: true },
-            }),
+            db.processNodeControl.findMany({ where: { tenantId: t }, select: { controlId: true }, distinct: ['controlId'] }),
         ]);
         const processControlIds = new Set<string>();
         for (const r of processEdgeControlIds) processControlIds.add(r.controlId);
-        for (const n of controlNodeRows) {
-            const linkedId = (n.dataJson as { linkedEntityId?: unknown } | null)?.linkedEntityId;
-            if (typeof linkedId === 'string' && linkedId.length > 0) processControlIds.add(linkedId);
-        }
+        for (const r of processNodeControlIds) processControlIds.add(r.controlId);
         // Count only real, tenant-owned controls (a node link could reference a
         // since-deleted control); the IN-list bounds the query.
         const controlsWithProcessCount = processControlIds.size > 0
@@ -435,6 +500,7 @@ export async function coverageSummary(ctx: RequestContext) {
             uncoveredCriticalAssetsTotal,
             totalCriticalAssets,
             hotControls: hotControlsResult,
+            withheld,
         };
     });
 }

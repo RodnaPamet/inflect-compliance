@@ -22,7 +22,7 @@ import { resilientFetch } from '../../http-resilience';
 // Imported, not re-exported. A provider that needs the rule imports it from
 // `providers/hris/employment-status` — one canonical path, so "which import of
 // deriveEmploymentStatus is the real one" is never a question anybody has to ask.
-import { deriveEmploymentStatus, type EmploymentStatusValue } from './employment-status';
+import { deriveEmploymentStatus, parseVendorDate, type EmploymentStatusValue } from './employment-status';
 
 /** A roster row normalized across HRIS vendors. */
 export interface NormalizedEmployee {
@@ -401,8 +401,8 @@ export class BambooHrProvider implements ScheduledCheckProvider, HrisSyncProvide
             department: r.department || null,
             jobTitle: r.jobTitle || null,
             managerEmail: r.supervisorEmail || null,
-            startDate: r.hireDate ? new Date(r.hireDate) : null,
-            endDate: r.terminationDate ? new Date(r.terminationDate) : null,
+            startDate: parseVendorDate(r.hireDate),
+            endDate: parseVendorDate(r.terminationDate),
         })).filter((e) => e.workEmail);
         return { employees, complete };
     }

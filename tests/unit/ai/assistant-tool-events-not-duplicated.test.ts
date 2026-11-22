@@ -61,6 +61,9 @@ jest.mock('@/lib/mcp/auth', () => ({
 
 // The three seams that would otherwise short-circuit before the loop.
 jest.mock('@/lib/agentic/flue/model-selection', () => ({
+    // The real module underneath (`providerIdOf`, `FLUE_PROVIDER_IDS`): the
+    // external-AI transfer gate reads both since the owner's 2026-11-16 decision.
+    ...jest.requireActual('@/lib/agentic/flue/model-selection'),
     RESIDENCY_SELECT: { aiResidency: true },
     residencyTermsFrom: () => ({}),
     resolveFlueModel: () => ({ ok: true, specifier: 'inflect-external/claude-haiku-4-5' }),
@@ -91,6 +94,7 @@ jest.mock('@/app-layer/ai/assistant/tools', () => ({
         ],
         reviewRequired: () => false,
         omitted: [],
+        externalConnections: [],
         // Required since #3882: `answerFromToolLoop` reads `set.proposals()`.
         // Without it the call threw, the turn's catch emitted a `refusal`
         // instead of an `answer`, and this suite's event-shape assertion is
@@ -98,6 +102,9 @@ jest.mock('@/app-layer/ai/assistant/tools', () => ({
         // changed.
         proposals: () => [],
     }),
+    // Read for the system prompt's proposing rule (#5053); this set offers
+    // only read tools, so it can queue nothing.
+    offeredProposeKinds: () => [],
 }));
 
 import { streamAssistant } from '@/app-layer/usecases/assistant';

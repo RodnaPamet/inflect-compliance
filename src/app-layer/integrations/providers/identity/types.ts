@@ -128,6 +128,13 @@ export interface ListAccountsResult {
      * apparent non-admin. Absent means "not stated", i.e. complete.
      */
     adminComplete?: boolean;
+    /**
+     * False when a PER-ACCOUNT signal (MFA enrolment, admin role) was read for
+     * only part of the accounts — a cap on the enrichment, or calls that
+     * failed. The accounts past it keep null signals, so a check over the rest
+     * is a check over a slice (#5074). Absent means "not stated", i.e. complete.
+     */
+    signalsComplete?: boolean;
 }
 
 export interface IdentitySyncProvider {
@@ -219,6 +226,8 @@ export interface IdentityCheckScope {
      * were all read and the roles were not.
      */
     adminComplete?: boolean;
+    /** False when per-account MFA / role signals were read for only part of the accounts (#5074). */
+    signalsComplete?: boolean;
 }
 
 /**
@@ -250,7 +259,21 @@ export interface IdentityCheckScope {
  * make a provider that simply exposes no admin signal look broken.
  */
 function applyScopeToVerdict(result: CheckResult, scope: IdentityCheckScope): CheckResult {
-    if (scope.complete !== false && scope.adminComplete !== false) return result;
+    if (scope.complete !== false && scope.adminComplete !== false && scope.signalsComplete !== false) return result;
+    if (scope.complete !== false && scope.adminComplete !== false && scope.signalsComplete === false) {
+        // Every account was read; their MFA / role signals were not. Same rule,
+        // its own sentence, because the account cap did not bind.
+        const details = { ...result.details, truncated: true, signalsTruncated: true };
+        if (result.status !== 'PASSED') return { ...result, details };
+        return {
+            status: 'ERROR',
+            summary:
+                'Cannot certify this control: per-account MFA and role signals were read for only part ' +
+                'of the directory, so an account the read did not reach would be indistinguishable from a compliant one.',
+            details,
+            errorMessage: 'per-account signal enrichment incomplete',
+        };
+    }
     if (scope.complete !== false && scope.adminComplete === false) {
         // Accounts were all read; ROLE MEMBERSHIP was not. Saying "only N
         // accounts were read" here would be false — every account was read.

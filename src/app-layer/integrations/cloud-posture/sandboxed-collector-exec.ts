@@ -59,6 +59,7 @@ import {
 import { env } from '@/env';
 import { openShellToolExecutor } from '@/lib/agentic/openshell/executor';
 import {
+    ProviderNotReadyError,
     SandboxExecIncompleteError,
     SandboxUnreachableError,
     unconfiguredTransport,
@@ -259,7 +260,9 @@ export function sandboxedCollectorExec(deps: SandboxedCollectorDeps): CollectorE
                 const start = await startGateway();
                 if (!gatewayIsReady(start.outcome)) {
                     throw new SandboxUnreachableError(
-                        `the gateway VM did not become ready: ${start.outcome} after ${start.waitedMs}ms`,
+                        `the gateway VM did not become ready: ${start.outcome}` +
+                            (start.status !== undefined ? ` (HTTP ${start.status})` : '') +
+                            ` after ${start.waitedMs}ms`,
                     );
                 }
             }
@@ -290,9 +293,31 @@ export function sandboxedCollectorExec(deps: SandboxedCollectorDeps): CollectorE
             // one sandbox per execution and never hands the id out.
             const exec = openShellToolExecutor(transport, {
                 onSandboxReady: async ({ sandboxId, signal }) => {
-                    await transport.attachProvider({
+                    /*
+                        ATTACH, THEN WAIT FOR THE OBSERVATION — #5739.
+
+                        The attach reply is a PERSISTED INTENT, not an installed
+                        credential: the proto's own comment on its `receipt` field
+                        says "readiness requires current supervisor observations".
+                        This hook used to await the attach and return, and the
+                        executor then ran powerpipe — against a credential that
+                        may not have been there yet. A benchmark that found
+                        nothing and a benchmark of a clean account are the same
+                        bytes, and both were stored as this tenant's Evidence.
+
+                        So the wait is here, inside the hook the executor runs
+                        after the sandbox exists and BEFORE the tool, which is
+                        the only place that can still decline to run it.
+                    */
+                    const attachment = await transport.attachProvider({
                         sandboxId,
                         providerName: deps.providerName,
+                        signal,
+                    });
+                    await transport.awaitProviderReady({
+                        sandboxId,
+                        providerName: deps.providerName,
+                        receiptId: attachment.receiptId,
                         signal,
                     });
                 },
@@ -335,6 +360,16 @@ export function sandboxedCollectorExec(deps: SandboxedCollectorDeps): CollectorE
                 // The issue's own words: never a partial success.
                 return didNotComplete('SANDBOX_EXEC_INCOMPLETE', scrub(err.message));
             }
+            if (err instanceof ProviderNotReadyError) {
+                /*
+                    A DISTINCT refusal from `SANDBOX_UNREACHABLE`, because the
+                    gateway answered: it is up, it took the attachment, and it
+                    says the credential is not installed. Reporting that as an
+                    outage would send an operator to check the wrong thing —
+                    the provider record and its credential, not the gateway.
+                */
+                return didNotComplete(PROVIDER_NOT_READY_REFUSAL, scrub(err.message));
+            }
             if (err instanceof ToolExecutionBoundError) {
                 return didNotComplete(`SANDBOX_BOUND_${err.name}`, scrub(err.message));
             }
@@ -365,12 +400,60 @@ export function sandboxedCollectorExec(deps: SandboxedCollectorDeps): CollectorE
  */
 export const COLLECTOR_PROVIDER_NAME = 'inflect-collector';
 
+/**
+ * The refusal when a collection would run on a provider that is not this
+ * tenant's — #5251.
+ *
+ * It used to default to `COLLECTOR_PROVIDER_NAME`, and the singleton posture
+ * providers are dispatched by `automation-runner` for EVERY tenant, so with
+ * the switch on every tenant's scan attached the same gateway credential.
+ * Worse than ignoring the tenant's own credential: the scan benchmarked
+ * whatever account that one credential reaches and the results were stored as
+ * this tenant's `IntegrationExecution` and `Evidence`.
+ *
+ * The other half of the defect is in the collectors, and it is why returning
+ * `null` here would NOT be a fix: the GCP provider writes the tenant's service
+ * -account key only on the on-host path (`if (saJson && !exec)`), because in a
+ * sandbox "the gateway injects the credential as an attached provider". That
+ * comment is correct about the intent and was written against an attachment
+ * that is per-tenant — which nothing builds. So a `null` would quietly drop
+ * back to the host and ignore a switch the operator deliberately set, and a
+ * shared attachment runs the wrong account. Refusing is the only answer that
+ * is neither.
+ *
+ * Owner decision (2026-11-13, #5251): refuse, and build per-tenant gateway
+ * providers as its own piece of work. Until that exists, sandboxed posture
+ * collection is inert BY DESIGN and says so on every attempt rather than
+ * reporting another account's posture as yours.
+ */
+export const SHARED_PROVIDER_REFUSAL = 'SANDBOX_PROVIDER_NOT_TENANT_SCOPED';
+
+/**
+ * The refusal when the attached provider never became ready — #5739.
+ *
+ * A SIBLING of the one above and not a replacement: that one fires when no
+ * tenant-scoped provider was named at all, this one when a named provider was
+ * attached and the gateway's own observation says its credential is not
+ * installed. Both end with no benchmark run, which is the point — the collector
+ * reads its credential from the attachment and from nothing else, so a run
+ * without it produces output nobody can attribute to an account.
+ */
+export const PROVIDER_NOT_READY_REFUSAL = 'SANDBOX_PROVIDER_NOT_READY';
+
 export function collectorExecForDeploy(
     deps: Omit<SandboxedCollectorDeps, 'providerName'> & { providerName?: string } = {},
 ): CollectorExec | null {
     if (!readSandboxExecutionPlatformEnabled()) return null;
-    return sandboxedCollectorExec({
-        ...deps,
-        providerName: deps.providerName ?? COLLECTOR_PROVIDER_NAME,
-    });
+    if (!deps.providerName) {
+        // No sandbox is created and no credential is attached: the refusal is
+        // returned before the transport is touched, so a scan that cannot be
+        // run for the right tenant does not run at all.
+        return async () =>
+            didNotComplete(
+                SHARED_PROVIDER_REFUSAL,
+                'sandboxed collection needs a provider holding THIS tenant and connection\'s '
+                    + 'credential; the shared collector provider is refused (#5251)',
+            );
+    }
+    return sandboxedCollectorExec({ ...deps, providerName: deps.providerName });
 }

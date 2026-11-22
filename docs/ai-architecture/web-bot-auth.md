@@ -20,7 +20,7 @@ inflect · ai architecture · web bot auth · roadmap v1 · 2026-10-30
 | Wave | 1 for Phases 0–2 (no dependency, zero GPU, and it fixes a live blind spot in vendor monitoring); 3 for Phase 3 |
 | Depends on | nothing for Phases 0–2; Phase 3 waits on Phase 1's verifier pieces |
 | Unblocks | vendor monitoring that can tell "refused" from "unreachable"; registration as a verified bot; a signed-agent label on the public trust center; [`mastercard-agent-pay.md`](./mastercard-agent-pay.md) Phase 2, whose Know Your Agent check validates a customer agent's key directory with Phase 3's verifier |
-| Owner decisions | **D-L1-5** (the signing identity is the deployment, never a tenant), **D-L1-6** (outbound conduct: honest User-Agent, bot page, robots.txt, Cloudflare registration), **D-L1-7** (inbound verification: label only, never authorization) |
+| Owner decisions | **D-L1-5** (the signing identity is the deployment, never a tenant), **D-L1-6** (outbound conduct: honest User-Agent, bot page, robots.txt, Cloudflare registration), **D-L1-7** (inbound verification: label only, never authorization) — all three decided by the owner on 2026-11-11, defaults adopted |
 | Complete at | Phase 3 |
 
 ## At a glance
@@ -31,7 +31,7 @@ Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns 
 flowchart LR
   P0{{"Phase 0 · read and decide<br/>D-L1-5, D-L1-6, D-L1-7<br/>monitor on safeFetch: landed<br/>refused vs unreachable"}}:::gate
   P1["Phase 1 · key and directory<br/>one deployment Ed25519 key<br/>signed JWKS at .well-known<br/>absent key builds nothing"]:::todo
-  P2["Phase 2 · sign the monitor<br/>one bot seam, honest UA<br/>bot page, robots.txt"]:::todo
+  P2["Phase 2 · sign the monitor<br/>one bot seam, honest UA<br/>bot page, robots.txt: landed<br/>registration open"]:::todo
   REG["Operator registers<br/>Cloudflare Verified Bots<br/>method: Request Signature"]:::gate
   P3["Phase 3 · verify at the door<br/>trust center labels signed agents<br/>never authorization"]:::todo
   REC["Conformance record<br/>reference verifier + vectors"]:::eval
@@ -114,13 +114,23 @@ network allowlist, so **Phase 0.1 re-reads both before any code is written**.
   `tests/guards/ssrf-egress-coverage.test.ts`. The breach check queries a
   fixed HIBP host named in code, with the domain URL-encoded into the query,
   so it stays on `fetchWithRetry` (G6 admits code-constant hosts).
-- **A refusal is invisible.** The TLS provider retries a 429, a 5xx or a
-  network failure once, and maps every outcome but a 2xx (a 403, a challenge,
-  an address the SSRF guard refused, a timeout) to `grade: null`; and the
-  sweep treats `null` as "nothing observed", leaving
-  `tlsGrade` and `tlsCheckedAt` as they were and recording no event. A vendor
-  that puts the monitor behind a bot wall keeps its last grade indefinitely,
-  dated to when the site was last readable, and nothing says it refused us.
+- **A refusal is recorded, never read as no change** (2026-11-11, sub-phase
+  0.4). The TLS provider returns an outcome on every signal (`TlsSignal.outcome`,
+  `TLS_FETCH_OUTCOMES`): `GRADED`; `REFUSED` for any 4xx (a 403, a 429 that
+  outlasted the one retry) or a recognised challenge, read from headers only
+  (`cf-mitigated: challenge`, `x-amzn-waf-action: challenge|captcha`), on
+  whatever status it rides, including a 2xx, which is never graded;
+  `UNREACHABLE` for a network failure, a timeout, a name that does not
+  resolve, a 5xx that outlasted the retry, or a redirect chain that reached no
+  page; `BLOCKED` for a value that is not a bare host name, or a start URL or
+  redirect target the SSRF guard refused. The sweep still leaves `tlsGrade`
+  and `tlsCheckedAt` on a fetch that did not grade, and now writes
+  `VendorMonitor.tlsFetchOutcome` and `tlsFetchOutcomeAt` on every fetch
+  (a CHECK pins the four values and pairs the two columns), emits
+  `vendor_monitor.tls_fetch{provider,outcome}`, and the vendor page marks
+  the grade **Stale** with the reason whenever the last outcome is not
+  `GRADED` (`isTlsGradeStale`, decided on the server). No response body is
+  read or stored.
 - **There is no second crawler.** `SimpleMetadataProvider`
   (`services/vendor-enrichment.ts`) fetched homepages with a browser-like
   User-Agent and a bare `fetch`, and nothing selected it. It was deleted on
@@ -212,23 +222,52 @@ makes a refusal visible either way.
 ### Phase 0 — Read the standard, decide, and make refusals visible
 
 **Sub-phases.**
-- [ ] 0.1 Read the primary texts: the current revision of
-      `draft-ietf-webbotauth-httpsig-protocol` and Cloudflare's Web Bot Auth
-      verifier documentation. Record, in the implementation note: the
-      `Signature-Agent` form each accepts (string or Dictionary), the
-      required covered components, the `created`/`expires` window limits,
-      whether a `nonce` is required, the directory media type and response
-      signing, and the `keyid` derivation. Where the two disagree, the
-      verifiers in use win, and the note says which form is sent and why.
-- [ ] 0.2 D-L1-5, D-L1-6 and D-L1-7 initialled (master decisions table).
-- [ ] 0.3 Library decision, by risk review (G5): Cloudflare's `web-bot-auth`
-      as a runtime dependency, or an in-house signer on `node:crypto` (the A2A
-      precedent) with the reference library as a devDependency test oracle.
-      Default: in-house for signing, which is a few dozen lines over code
-      the repository already trusts; the inbound verifier's structured-field
-      parser is attacker-facing, and is decided with Phase 3 on the same
-      review.
-- [ ] 0.4 Make the monitor's refusals visible **before** signing anything.
+- [x] 0.1 Read the primary texts (2026-11-11,
+      [`2026-11-11-web-bot-auth-decisions.md`](../implementation-notes/2026-11-11-web-bot-auth-decisions.md)):
+      `draft-ietf-webbotauth-httpsig-protocol-01` (submitted 2026-10-29) and
+      its editor's copy of 2026-11-10, read from the working group's source
+      repository; Cloudflare's Web Bot Auth and Verified Bots documentation,
+      read from its source repository; Cloudflare's directory validator
+      `http-signature-directory` 0.8.0. The IETF and Cloudflare sites
+      themselves were refused by the session's network, and the note lists
+      exactly what was not read. **The conflict is real**: the draft says a
+      signer MUST send the Dictionary form, and Cloudflare's verifier fails
+      it (and the `key` parameter covering a member needs). Inflect sends the
+      legacy String form carrying the full well-known directory URL, the one
+      value correct under every text read, with the switch to the Dictionary
+      form held as one named choice. Covered components `("@method"
+      "@authority" "@path" "signature-agent")`, falling back to the draft's
+      minimum `("@authority" "signature-agent")` only on a measured refusal;
+      `created`, `expires = created + 60` s, `keyid`, `alg="ed25519"`, a
+      64-byte random `nonce` (required by neither verifier, sent anyway),
+      `tag="web-bot-auth"`. `keyid` is the base64url RFC 7638 thumbprint over
+      `{"crv","kty","x"}`. The directory is served as
+      `application/http-message-signatures-directory+json`, 200 only and never
+      a redirect, with one response signature per key over
+      `("@authority";req "content-digest")`, made only for the operator's own
+      authority. The draft's four Ed25519 vectors (thumbprint, both request
+      forms, the signed directory) reproduce byte for byte on `node:crypto`.
+- [x] 0.2 D-L1-5, D-L1-6 and D-L1-7 adopted by the owner on 2026-11-11 at
+      their defaults, and only those: one Ed25519 key per deployment, never
+      per tenant; named User-Agent, public bot page, robots.txt honoured,
+      Cloudflare registration by the operator after Phase 2; inbound a label
+      only, with an open directory fetch, cached and capped. The note lists
+      what the draft and Cloudflare's policy add (crawl directives, lookup on
+      the URL-and-key pair, three distinct outcomes, a failed fetch never
+      evicting a cached directory) as proposals for the owner, not as part of
+      what was adopted. The master decision table's rows are the coordinator's
+      edit and are not made here.
+- [x] 0.3 Library decision, by risk review (G5), 2026-11-11: **sign in-house
+      on `node:crypto`**; `web-bot-auth@0.2.0` (Apache-2.0, 0.x, one npm
+      maintainer, "not audited") is an exactly pinned devDependency used only
+      as the conformance oracle, and Cloudflare's Rust validator runs in CI
+      as a tool, not an app dependency. The inbound parser stays a Phase 3
+      decision on the same review, with an exact-pinned `structured-headers`
+      (MIT, no dependencies, the parser the reference library uses) as the
+      default carried there.
+- [x] 0.4 Make the monitor's refusals visible **before** signing anything
+      (2026-11-11; see "What Inflect sends to third-party websites today" and
+      `docs/implementation-notes/2026-11-11-vendor-monitor-tls-fetch-outcome.md`).
       The TLS provider returns an outcome: `GRADED`, `REFUSED` (403, a 429
       that outlasted the retries, or a recognised challenge response),
       `UNREACHABLE` (network failure, timeout, 5xx) or `BLOCKED` (the domain
@@ -287,31 +326,54 @@ before signing is the baseline; a change without one is an anecdote).
 
 ### Phase 1 — The deployment key and the signed directory
 
-**Sub-phases.**
-- [ ] 1.1 `WEB_BOT_AUTH_SIGNING_KEY` (a 32-byte Ed25519 seed) and
+**Sub-phases.** The first slice landed on 2026-11-11
+(`docs/implementation-notes/2026-11-11-web-bot-auth-key-directory.md`); what
+it left open is named on each line.
+- [x] 1.1 `WEB_BOT_AUTH_SIGNING_KEY` (a 32-byte Ed25519 seed) and
       `WEB_BOT_AUTH_PREVIOUS_SIGNING_KEY` (rotation grace) in `src/env.ts`,
-      both optional. Absent means no signer is constructed and the directory
-      route answers 404 (G9). A malformed value fails startup in production,
-      and so does a seed equal to `DATA_ENCRYPTION_KEY`, because a key reused
-      across purposes is a key whose compromise spreads.
-- [ ] 1.2 `src/lib/web-bot-auth/`, pure: `key.ts` (seed to key, public JWK,
-      RFC 7638 thumbprint as `keyid`), `sign.ts` (`signRequest(request, key,
-      now)` returns the three headers, covering the components 0.1 names,
-      with `created`, `expires` inside 0.1's window and
-      `tag="web-bot-auth"`), and `directory.ts` (the JWKS document, current
-      key plus previous key during the grace).
-- [ ] 1.3 `GET /.well-known/http-message-signatures-directory` on the
-      operator's public origin: the media type from 0.1, the response signed
-      once per published key, `Cache-Control` with a short max-age, added to
-      `PUBLIC_PATH_EXACT` and to an edge rate limit. GET only.
-- [ ] 1.4 Conformance as a record (G11): the reference verifier from 0.3
-      verifies signatures made by `sign.ts` and the served directory;
-      the draft's own examples reproduce byte for byte; Cloudflare's
-      `http-signature-directory` validator passes against a CI-built
-      instance. Committed under `evals/web-bot-auth/records/`.
-- [ ] 1.5 The tenant-free assertion: a test signs requests under several
-      tenant contexts and asserts the headers, the signature base and the
-      directory are byte-identical across them.
+      both optional. Absent means no key is constructed and the directory
+      route answers 404 (G9). The env schema refuses a malformed seed, a seed
+      equal to either `DATA_ENCRYPTION_KEY` (judged on the decoded bytes, so
+      a second spelling is the same key), a previous key equal to the current
+      one, and in production a published test seed. The route's loader asks
+      the same again and fails closed, because tests and
+      `SKIP_ENV_VALIDATION` builds skip the schema.
+- [ ] 1.2 `src/lib/web-bot-auth/`, pure: `seed.ts` (strict decoding and the
+      refusals), `key.ts` (seed to key, public JWK, RFC 7638 thumbprint as
+      `keyid`), `message-signature.ts` (the RFC 9421 signature base,
+      `@signature-params` and Ed25519 members, which both the directory and a
+      later request signer use), and `directory.ts` (the JWKS document,
+      current key plus previous key during the grace) are on `main`.
+      **Open:** `signRequest(request, key, now)`, the three request headers,
+      waits for 0.1's reading of the covered components, the window and the
+      `Signature-Agent` form, and has no caller until Phase 2.
+- [x] 1.3 `GET /.well-known/http-message-signatures-directory`
+      (`src/app/.well-known/…/route.ts`): the media type
+      `application/http-message-signatures-directory+json`, the response
+      signed once per published key over `"@authority";req` with
+      `tag="http-message-signatures-directory"`, the authority taken from
+      `APP_URL` and never from the request's `Host`, `Cache-Control:
+      public, max-age=300` inside a one-hour signature, the exact path added
+      to `PUBLIC_PATH_EXACT`. GET only. The per-IP read budget
+      (`API_READ_LIMIT`) is charged in the handler rather than at the edge,
+      so `src/middleware.ts` did not change.
+- [ ] 1.4 Conformance as a record (G11). **Landed:** the vector set
+      `evals/web-bot-auth/vectors.json`: RFC 8037 A.3's thumbprint, RFC
+      8032 TEST 1, and RFC 9421 B.2.6's signature base and signature,
+      reproduced byte for byte, plus regression vectors of the served
+      directory judged by an independent verifier
+      (`tests/helpers/web-bot-auth-verifier.ts`). **Open:** the reference
+      verifier from 0.3 and Cloudflare's `http-signature-directory`
+      validator against a CI-built instance, and the record under
+      `evals/web-bot-auth/records/` they produce. The draft gives no test
+      vector of its own as far as could be read; the primary texts were
+      unreachable from this session too.
+- [x] 1.5 The tenant-free assertion, for the directory: requests carrying
+      different tenants' cookies, slugs, hosts and forwarded hosts get a
+      byte-identical body, `Signature-Input` and `Signature`. The route
+      takes no context, so nothing a request carries can reach it. The same
+      assertion over request headers and the signature base belongs with
+      `signRequest`.
 
 **Prompt.**
 ```text
@@ -346,27 +408,61 @@ test against our own parser), D-L1-5 (the tenant-free test).
 
 ### Phase 2 — Sign the vendor monitor, and say who it is
 
-**Sub-phases.**
-- [ ] 2.1 One seam, `botFetch(url, init)`: `safeFetch`, then `signRequest`,
-      then the User-Agent from D-L1-6, which names the bot and links its
-      page. The TLS and breach providers use it. An ESLint rule in
-      `eslint-rules/` refuses a call to `signRequest`, or a bot User-Agent
-      literal, outside the seam.
-- [ ] 2.2 A public page describing the bot at a stable URL on the operator's
-      origin: what it fetches (one homepage request per monitored vendor per
-      day; the HIBP catalogue), when, from where, the directory URL, and how
-      a site owner contacts the operator or opts out.
-- [ ] 2.3 `robots.txt`, per D-L1-6: fetched once per domain per sweep through
-      the same seam and honoured for the monitor's token. A disallowed site
-      records `REFUSED` with reason `ROBOTS`, never a grade.
+**Sub-phases.** The first slice landed on 2026-11-12
+(`docs/implementation-notes/2026-11-12-web-bot-auth-sign-monitor.md`); what
+it left open is named on each line.
+- [x] 2.1 One seam, `botFetch(url, init)` (`src/lib/web-bot-auth/bot-fetch.ts`):
+      `safeFetch`, then `signRequest` (`sign.ts`, closing 1.2's open item:
+      `@method`, `@authority`, `@path`, `signature-agent` in the legacy String
+      form naming the directory URL, `expires = created + 60`, a fresh 64-byte
+      nonce, `tag="web-bot-auth"`, GET and HEAD only, every hop and retry
+      signed on its own), then the User-Agent
+      `InflectCompliance-VendorMonitor/1.1 (+<APP_URL>/bots/vendor-monitor)`.
+      No key, or a refused one, sends unsigned as before; the previous key
+      never signs. The TLS grade's requests all go through it, and
+      `tests/guards/ssrf-egress-coverage.test.ts` holds that its file calls no
+      other fetch. `local/web-bot-auth-single-seam` refuses a load of
+      `sign.ts`, or a literal carrying the bot's token, anywhere under `src/`
+      but the seam. **Open:** the breach provider sends the bot's User-Agent
+      (imported from the seam) but stays unsigned on `fetchWithRetry` to the
+      fixed HIBP host.
+- [x] 2.2 The public page `/bots/vendor-monitor` (exact path in
+      `PUBLIC_PATH_EXACT`, en and bg): what the monitor fetches (robots.txt,
+      one homepage GET, the HIBP query), its schedule (the daily sweep, plus
+      on-demand checks, once per monitoring organisation), the User-Agent, the key
+      directory and current `keyid` when the deployment signs, and the
+      robots.txt opt-out. Every fact is read from the seam. It names no
+      tenant and reads no row. **Open:** a contact address of the operator's
+      own; the page points to the site's published contact details.
+- [x] 2.3 `robots.txt` per D-L1-6, RFC 9309 (`robots.ts`): read through the
+      seam before the homepage, once per origin per grade (a redirect to
+      another origin reads that origin's too), and every URL requested — each
+      redirect hop, same-origin ones included — is judged by its own path; groups by the product token,
+      falling back to `*`; longest match wins, allow wins a tie; 500 KiB read.
+      A disallow is `REFUSED` with `refusalReason: 'ROBOTS'` and no homepage
+      request; a 4xx restricts nothing; a 5xx or network failure requests
+      nothing (complete disallow) and is `UNREACHABLE`. The reason reaches
+      `vendor_monitor.tls_fetch{reason,signed}` and the sweep's audit row.
+      `crawl-delay` is not honoured: the decisions note proposed it to the
+      owner and it has not been adopted. **Open:** a column for the reason,
+      so the vendor page can say the site opted out.
 - [ ] 2.4 Operator act: register the directory with Cloudflare Verified Bots
       (verification method "Request Signature", the directory URL) and with
-      any other verifier that asks. A runbook section in
-      `docs/vendor-monitoring.md`; the registration is not code and not
-      automated.
-- [ ] 2.5 Measure: the `REFUSED` share for 14 days after registration against
-      Phase 0's baseline, recorded in the phase's implementation note,
-      whatever the result.
+      any other verifier that asks. **Landed:** the runbook section
+      "Registering with Cloudflare Verified Bots" in
+      `docs/vendor-monitoring.md`. **Open:** the registration itself, and
+      before it the directory's response signature must also cover
+      `content-digest`, which Cloudflare's validator requires and the Phase 1
+      directory does not yet carry.
+- [ ] 2.5 Measure: the `REFUSED` share (`reason="NONE"`) for 14 days after
+      registration against Phase 0's baseline, recorded in the phase's
+      implementation note, whatever the result.
+- [x] The request half of the conformance record (G11, gates signed
+      crawling): `evals/web-bot-auth/records/2026-11-12-request-signing.json`,
+      recomputed by `tests/unit/web-bot-auth/request-signing-conformance.test.ts`.
+      The pinned devDependency `web-bot-auth@0.2.0` verifies our request and
+      refuses it at another path, authority or method, with another
+      `Signature-Agent`, after its window and under another key.
 
 **Prompt.**
 ```text

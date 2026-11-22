@@ -23,7 +23,7 @@ import {
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, notFound } from '@/lib/errors/types';
 import { prisma } from '@/lib/prisma';
-import { buildFrameworkTree } from '@/lib/framework-tree/build';
+import { buildFrameworkTree, sectionKeyOf } from '@/lib/framework-tree/build';
 import {
     decorateTreeWithCompliance,
     type ControlForCompliance,
@@ -102,12 +102,12 @@ export async function getFrameworkTree(
     // on this framework's own requirement ids alone decorated every node as
     // uncovered for such a tenant — while `computeCoverage` reported a
     // percentage for the same tenant off the same links. `control.id` is
-    // selected because the collapse keys the dedupe on it. That dedupe cannot
-    // change THIS surface's verdict today — the decorator below reads
-    // `Control.applicability`, the global column, so two links for one control
-    // carry identical values — which is precisely why it is the seam's job and
-    // not this file's assumption. See
-    // `services/framework-representation-aliases.ts`.
+    // selected because the collapse keys the dedupe on it, and the dedupe now
+    // decides this surface's verdict: the decorator reads the link's
+    // per-framework `applicability` override first and the control's global
+    // column only when the link inherits (#5317) — as the SoA, coverage and
+    // the readiness report do — and the collapse keeps the own-framework
+    // link's override on a tie. See `services/framework-representation-aliases.ts`.
     //
     // A framework with several packs is scoped to the packs this workspace
     // chose, as `computeCoverage` is (`pack-scope.ts`): its other requirements
@@ -118,9 +118,12 @@ export async function getFrameworkTree(
               const { outOfScope } = partitionByScope(scope, requirements);
               const aliases = await resolveFamilyRequirementAliases(tdb, fw, requirements);
               const rows = await tdb.controlRequirementLink.findMany({
-                  where: { tenantId: ctx.tenantId, requirementId: { in: aliases.lookupIds } },
+                  // A soft-deleted control covers nothing (#5268), as the
+                  // coverage report and the SoA already count it.
+                  where: { tenantId: ctx.tenantId, requirementId: { in: aliases.lookupIds }, control: { deletedAt: null } },
                   select: {
                       requirementId: true,
+                      applicability: true,
                       control: { select: { id: true, status: true, applicability: true } },
                   },
               });
@@ -137,7 +140,8 @@ export async function getFrameworkTree(
         const list = controlsByReqId.get(l.requirementId) ?? [];
         list.push({
             status: l.control.status,
-            applicability: l.control.applicability,
+            // The per-framework override wins; NULL inherits the global column.
+            applicability: l.applicability ?? l.control.applicability,
         });
         controlsByReqId.set(l.requirementId, list);
     }
@@ -198,7 +202,7 @@ export async function reorderFrameworkRequirements(
 
     const live = await prisma.frameworkRequirement.findMany({
         where: { frameworkId: fw.id, deprecatedAt: null },
-        select: { id: true },
+        select: { id: true, code: true, section: true, theme: true, category: true },
     });
     const liveIds = new Set(live.map((r) => r.id));
 
@@ -225,6 +229,27 @@ export async function reorderFrameworkRequirements(
             `Reorder payload covers ${total} of ${liveIds.size} requirements — partial reorders are not supported`,
         );
     }
+
+    // Each payload section must hold exactly one of the framework's own
+    // sections, and no section may be split across two (#5231). The overlay
+    // stores positions only, so a requirement moved into another section
+    // came back in its own on reload while the save answered 200.
+    const keyById = new Map(live.map((r) => [r.id, sectionKeyOf(r)]));
+    const payloadSectionOfKey = new Map<string, number>();
+    sections.forEach((s, index) => {
+        const keys = new Set(s.requirementIds.map((id) => keyById.get(id)));
+        if (keys.size > 1) {
+            throw badRequest('A requirement cannot move to another section: its section comes from the framework.', { reason: 'REQUIREMENT_SECTION_FIXED' });
+        }
+        for (const key of keys) {
+            if (key === undefined) continue;
+            const seenAt = payloadSectionOfKey.get(key);
+            if (seenAt !== undefined && seenAt !== index) {
+                throw badRequest('A requirement cannot move to another section: its section comes from the framework.', { reason: 'REQUIREMENT_SECTION_FIXED' });
+            }
+            payloadSectionOfKey.set(key, index);
+        }
+    });
 
     const overlay = flattenOrderedSectionsToOverlay(sections);
 

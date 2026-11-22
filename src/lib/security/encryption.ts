@@ -59,6 +59,15 @@ const HMAC_INFO = 'inflect-data-lookup-hash';
 let _cachedEncryptKey: Buffer | null = null;
 let _cachedHmacKey: Buffer | null = null;
 let _lastKeySource: string | null = null;
+/**
+ * The lookup-hash key's OWN cache source (#5071).
+ *
+ * Separate from `_lastKeySource` because the two keys no longer derive from
+ * the same material. One shared source would serve a stale HMAC key for as
+ * long as the KEK happened not to change — which is precisely the window a
+ * rotation opens.
+ */
+let _lastHmacKeySource: string | null = null;
 
 /**
  * Gets the raw encryption key material from environment.
@@ -108,6 +117,100 @@ function deriveKey(rawMaterial: string, info: string): Buffer {
 }
 
 /**
+ * The material the LOOKUP-HASH key derives from — #5071.
+ *
+ * `LOOKUP_HASH_KEY` when set, otherwise the master KEK's material, which is
+ * exactly what this derived from before. That fallback is what makes the
+ * change invisible to every deployment that does nothing: the derivation is
+ * byte-identical, so no stored `*Hash` column moves.
+ *
+ * ═══ WHY A LOOKUP HASH MUST NOT FOLLOW THE KEK ═══
+ *
+ * `hashForLookup` is an INDEX, not a ciphertext. `decryptField` can fall back
+ * to `DATA_ENCRYPTION_KEY_PREVIOUS`, so a rotation leaves ciphertext readable;
+ * a hash has no such fallback, because the stored value is the lookup KEY —
+ * a miss is indistinguishable from "no such row". So the documented master-KEK
+ * rotation silently broke every email-based sign-in from the first request:
+ * credentials, OAuth and SSO account matching, and invite redemption all read
+ * `User.emailHash`, and nothing recomputes it.
+ *
+ * Deriving it from its own secret removes the coupling permanently rather than
+ * papering over one rotation. The zero-backfill adoption path is to set
+ * `LOOKUP_HASH_KEY` to the CURRENT `DATA_ENCRYPTION_KEY` value BEFORE rotating:
+ * the material is unchanged, so every existing hash still resolves, and the
+ * KEK is then free to rotate without touching the index.
+ *
+ * Reusing that material under two HKDF `info` strings is not key reuse in the
+ * harmful sense — `ENCRYPT_INFO` and `HMAC_INFO` already separate them, and
+ * this file has derived both from one material since it was written. An
+ * operator who wants genuinely independent material can set a fresh value,
+ * but that CHANGES every hash and needs a backfill of every `*Hash` column
+ * first; it is not the migration path.
+ */
+function getLookupHashKeyMaterial(): string {
+    const key = process.env.LOOKUP_HASH_KEY;
+    if (key && key.length >= 32) {
+        return key;
+    }
+    return getRawKeyMaterial();
+}
+
+/**
+ * The material every HKDF SUBKEY derives from — #5500.
+ *
+ * `DERIVED_SUBKEY_KEY` when set, otherwise the master KEK's material, which is
+ * exactly what this derived from before. That fallback is what makes the change
+ * invisible to a deployment that does nothing: the derivation is byte-identical,
+ * so no stored sample seed, seal or outstanding token moves.
+ *
+ * ═══ WHY A SUBKEY MUST NOT FOLLOW THE KEK ═══
+ *
+ * `deriveSubkey` has six consumers and for most of them stability is a
+ * documented property the subsystem relies on, not an incidental one:
+ *
+ *   * four SAMPLING SEEDS — the workpaper review draw, the ASI09 proposal
+ *     audit, the audit-procedure sample and the agent-recertification sample.
+ *     A sample is the record that a population was checked. The workpaper draw
+ *     is specified as "a keyed decision PER WORKPAPER … re-derived identically
+ *     by every sweep", which is the whole reason the daily sweep is idempotent
+ *     and a second run the same day changes nothing. After a KEK rotation it
+ *     re-decides every workpaper differently, and each row records the seed
+ *     fingerprint it was drawn under, so rows from either side of the rotation
+ *     stop being comparable — an evidence record that silently disagrees with
+ *     itself.
+ *   * the assistant ANSWER SEAL. Its purpose string carries a version for the
+ *     express purpose of retiring every seal deliberately; a KEK rotation pulls
+ *     that lever by accident, and stored seals stop verifying.
+ *   * the MCP exchanged-token signing key. Outstanding `ifxt_` tokens fail, and
+ *     the token's `kid` names the API KEY rather than a signing-key version, so
+ *     nothing can verify one signed under the old material.
+ *
+ * None of those has the fallback a ciphertext has: `decryptField` can read
+ * under `DATA_ENCRYPTION_KEY_PREVIOUS`, a derived seed cannot.
+ *
+ * This is #5071's defect one subsystem over, and takes #5071's remedy: its own
+ * secret, so the coupling is removed permanently rather than papered over for
+ * one rotation. The zero-backfill adoption path is to set `DERIVED_SUBKEY_KEY`
+ * to the CURRENT `DATA_ENCRYPTION_KEY` value BEFORE rotating — the material is
+ * unchanged, every existing seed and seal still derives, and the KEK is then
+ * free to rotate without touching any of them.
+ *
+ * It is a SIBLING of `LOOKUP_HASH_KEY`, not the same variable (owner decision,
+ * 2026-11-15). A lookup hash is an index that can never rotate, because the
+ * stored value IS the lookup key; a token signing key should be rotatable
+ * deliberately. Sharing one secret would mean neither could move without the
+ * other — rotating the signing material would re-index every email hash and
+ * break sign-in, which is the failure #5071 exists to prevent.
+ */
+function getDerivedSubkeyMaterial(): string {
+    const key = process.env.DERIVED_SUBKEY_KEY;
+    if (key && key.length >= 32) {
+        return key;
+    }
+    return getRawKeyMaterial();
+}
+
+/**
  * Gets the encryption key, caching it for performance.
  * Cache is invalidated if the underlying key material changes.
  */
@@ -117,7 +220,6 @@ function getEncryptionKey(): Buffer {
         return _cachedEncryptKey;
     }
     _cachedEncryptKey = deriveKey(raw, ENCRYPT_INFO);
-    _cachedHmacKey = deriveKey(raw, HMAC_INFO);
     _lastKeySource = raw;
     return _cachedEncryptKey;
 }
@@ -202,20 +304,24 @@ export function deriveSubkey(purpose: string): Buffer {
     if (!purpose || purpose.length < 8) {
         throw new Error('deriveSubkey: purpose must be a stable, descriptive string');
     }
-    return deriveKey(getRawKeyMaterial(), purpose);
+    return deriveKey(getDerivedSubkeyMaterial(), purpose);
 }
 
 /**
  * Gets the HMAC key for deterministic lookup hashes.
  */
 function getHmacKey(): Buffer {
-    const raw = getRawKeyMaterial();
-    if (_cachedHmacKey && _lastKeySource === raw) {
+    // Its OWN material and its own cache source (#5071). This used to read the
+    // KEK's material and delegate to `getEncryptionKey()`, which populated both
+    // caches under one source — so the two keys could not move independently
+    // even in principle.
+    const raw = getLookupHashKeyMaterial();
+    if (_cachedHmacKey && _lastHmacKeySource === raw) {
         return _cachedHmacKey;
     }
-    // Calling getEncryptionKey() populates both caches
-    getEncryptionKey();
-    return _cachedHmacKey!;
+    _cachedHmacKey = deriveKey(raw, HMAC_INFO);
+    _lastHmacKeySource = raw;
+    return _cachedHmacKey;
 }
 
 // ─── Public API ─────────────────────────────────────────────────────
@@ -565,6 +671,7 @@ export function _resetKeyCache(): void {
     _cachedEncryptKey = null;
     _cachedHmacKey = null;
     _lastKeySource = null;
+    _lastHmacKeySource = null;
     _cachedPreviousEncryptKey = null;
     _lastPreviousKeySource = undefined;
 }

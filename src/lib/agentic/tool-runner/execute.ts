@@ -5,62 +5,130 @@
  * The runner calls the model, runs the tools it asks for, and calls it again;
  * this file decides, after every call, whether the run may go on.
  *
- * ── PER YIELDED MESSAGE (one message = one model call) ──────────────────────
+ * ── ONE LOOP BODY, FOR THE PARENT AND EVERY SUB-AGENT (Step 2e, #4594) ─────
+ *
+ * `runModelLoop` is the loop both the parent and a delegated sub-agent run, with
+ * the sub-agent's name as a parameter (null for the parent). A second copy would
+ * drift. Its body, per yielded message (one message = one model call):
  *
  *   1. the AI Guard's egress scan on the call's text, which Flue cannot do;
- *   2. a MODEL_CALL step and an Art 12 row, both naming the digest of the
- *      request that produced the call (`runner.params`), and the run's tokens
- *      and step count persisted. The row's output summary is the call's text
- *      only when the scan was clean, so a secret in model output never reaches
- *      the stored summary;
- *   3. the kill switch, uncached; a kill breaks the loop, so the turn's tools
- *      never run;
- *   4. a stop latched while the previous turn's tools ran (a cap, a kill, a
- *      guard verdict);
- *   5. the token and wall-clock caps;
- *   6. the scan's verdict: anything but CLEAN settles the run at the guard;
+ *   2. a MODEL_CALL step (labelled with the sub-agent, in a child) and an Art 12
+ *      row, both naming the digest of the request that produced the call
+ *      (`runner.params`), and the run's tokens and step count persisted. The
+ *      row's output summary is the call's text only when the scan was clean,
+ *      so a secret in model output never reaches the stored summary;
+ *   3. the scan's verdict, noted: anything but CLEAN settles the run at the
+ *      guard. Noted before the caps (#5372), so a blocked answer that also
+ *      crossed a cap still latches the breaker and writes the guard's row;
+ *   4. the kill switch, uncached, and then the run's own status: a kill, or an
+ *      operator's Abort (#5366), breaks the loop, so the turn's tools never
+ *      run;
+ *   5. a stop latched by now (a cap, a kill, the breaker, a guard verdict, this
+ *      answer's included);
+ *   6. the token and wall-clock caps;
  *   7. the stop reason: `refusal`, `max_tokens` and a full context window each
- *      settle the run with a named reason, and run no tool from that turn.
+ *      end the loop with a named reason, and run no tool from that turn: the
+ *      parent settles the run with it, a child returns it to the parent;
+ *   8. in a child, every `tool_use` naming a tool it was not offered
+ *      (`delegate` among them) recorded as a FAILED step,
+ *      `SUBAGENT_TOOL_NOT_OFFERED`;
+ *   9. BEFORE THE NEXT MODEL CALL (owner decision 4 of 2026-11-13): the turn's
+ *      tools are run (`runner.generateToolResponse()`, which the runner then
+ *      reuses rather than running them twice); then, when the next request
+ *      would cross the run's compaction threshold, the earlier turns are
+ *      SUMMARISED (Step 2g, below); and then the kill switch and the BREAKER
+ *      are read and one STEPS is charged. The same three happen before the
+ *      loop's first call. Both only narrow, in both loops.
  *
- * The loop body runs BEFORE the runner reads the stop reason and runs the
- * turn's tools, so every `break` above happens before any tool of that turn.
+ * ── COMPACTION (Step 2g, #5531) ─────────────────────────────────────────────
+ *
+ * Inflect's own summary call, never the SDK's (owner decision 3 of
+ * 2026-11-13), and in this one loop body, so a sub-agent compacts its own
+ * history on the run's one budget. The run-state block is built first, from
+ * the run's own record, so a block that cannot be built sends nothing. Then
+ * the summary call is a model call like any other: the kill switch, the
+ * breaker and one STEPS before it (`stoppedBeforeModelCall`); its tokens
+ * charged to TOKENS and the caps read after it; the egress scan and the
+ * injection scan on its text, any verdict but CLEAN stopping the run at the
+ * guard with the summary unused; a MODEL_CALL step with `purpose:
+ * 'compaction'` naming the digests before and after; and its own Art 12 row.
+ * The request after it is rebuilt by `compaction.ts`, by code. A summary that
+ * fails is discarded, the run carries on uncompacted, and compaction is off
+ * for the rest of the segment. The ledger keeps every original step.
+ *
+ * ── A SEGMENT RESUMED FROM A DEFERRAL (Step 2f, #5530) ─────────────────────
+ *
+ * A run parked on a deferred call continues, once a person decided the
+ * proposal in the queue, from the transcript it parked on, never from its
+ * opening message. Before anything is sent: the kill switch and the skill pins
+ * (as for every segment), then the transcript's seal, its envelope and the
+ * decision as the PROPOSAL ROW records it (`openResume`); a failure halts the
+ * run, and nothing is repaired. The offer is re-resolved; the request sends the
+ * stored `system`, `tools` and `model` (`lockedParams`' `resume` option), each
+ * stored tool taking its runnable from the new offer (`resumedToolsFor`: a
+ * withdrawn tool refuses, a newly granted one is not added). The wall clock
+ * starts at `elapsedMsAtPark`. The first MODEL_CALL step moves the deferral to
+ * RESUMED and clears its transcript in its own transaction. The API refusing
+ * the resumed conversation settles the run by name
+ * (`tool_runner_resume_transcript_refused`); nothing is stripped and retried.
+ *
+ * The body runs BEFORE the runner reads the stop reason and runs the turn's
+ * tools, so every `break` in 1-7 happens before any tool of that turn.
  *
  * ── BETWEEN CALLS ───────────────────────────────────────────────────────────
  *
- * The runner sends the next request straight after the turn's tools. A stop
- * found AT a tool (a cap refused, a guard verdict, a kill read when the call
- * finished) aborts the run's signal, so that request is never sent: the
- * equivalent of Flue's check before every model call (#4196), placed where this
- * engine can place it.
+ * A stop found AT a tool (a cap refused, a guard verdict, a kill read when the
+ * call finished) aborts the run's signal, so the next request is never sent,
+ * and step 9 finds it latched. A child's request signal is
+ * `AbortSignal.any([parent, child])`, so every stop the parent latches aborts a
+ * child request in flight too.
  *
  * ── SETTLEMENT ──────────────────────────────────────────────────────────────
  *
- * In the order the Flue engine settles, for the reasons it gives (#4230): a
- * kill, then a cap, then a guard verdict, then the named stop reasons, then the
- * iteration bound, then the empty catalogue, then COMPLETED. Model text is
+ * An operator's Abort first, and it writes no settlement: the operator's
+ * ABORTED stands (#5366). Then, in the order the Flue engine settles, for the
+ * reasons it gives (#4230): a kill, then the breaker (Step 2e), then a cap,
+ * then a guard verdict, then a skill whose pin a compaction found moved
+ * (Step 2g), then the
+ * named stop reasons, then the iteration bound, then the empty catalogue, then
+ * COMPLETED. Before the first call, a run whose offer would carry a business
+ * system's rows to Anthropic with no acknowledgement on record is refused
+ * outright (#5364). Model text is
  * never written to the step ledger: it reaches only the decision row's bounded,
  * sanitised summary.
  */
+import { createHash, randomUUID } from 'crypto';
+
 import type Anthropic from '@anthropic-ai/sdk';
-import type { BetaMessage } from '@anthropic-ai/sdk/resources/beta/messages/messages';
+import type { BetaMessage, BetaMessageParam } from '@anthropic-ai/sdk/resources/beta/messages/messages';
+import type { BetaToolRunnerParams } from '@anthropic-ai/sdk/lib/tools/BetaToolRunner';
 
 import { computeInputDigest } from '@/app-layer/ai/decision-log';
-import { guardEgress } from '@/app-layer/ai/guard';
+import { guardEgress, guardUntrustedInput } from '@/app-layer/ai/guard';
 import type { RequestContext } from '@/app-layer/types';
-import { latchOnGuardBlock } from '@/lib/agentic/circuit-breaker-store';
+import { latchOnGuardBlock, readBreakerLatch } from '@/lib/agentic/circuit-breaker-store';
 import {
     failRun,
     haltRunAtCap,
     haltRunAtGuard,
     haltRunAtKill,
+    isRunAborted,
     updateRun,
     type CapBesideKill,
 } from '@/lib/agentic/drivers/run-settlement';
-import { getRunRow, proposedItemsSoFar } from '@/lib/agentic/drivers/run-store';
+import {
+    markDeferralResumedInTx,
+    parkRun,
+    readCallProposals,
+    readDecidedDeferral,
+    readDeferredProposal,
+} from '@/lib/agentic/drivers/deferral-store';
+import { getRunRow, proposedItemsSoFar, readCompactionRecord } from '@/lib/agentic/drivers/run-store';
 import { recordStep } from '@/lib/agentic/drivers/step-recorder';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers/types';
 import { stepVerdictOf, type StepGuardObservation } from '@/lib/agentic/engine-tools';
-import { EMPTY_TOOLSET_MESSAGE } from '@/lib/agentic/flue/empty-toolset-message';
+import { emptyCatalogueMessage } from '@/lib/agentic/empty-catalogue-message';
+import { externalResidencyRefusal, type ExternalAiAcknowledgement } from '@/lib/agentic/external-residency-gate';
 import { openDeclaredRunInput, runMessage } from '@/lib/agentic/flue/run-message';
 import { SkillLoadError } from '@/lib/agentic/flue/skills';
 import { parseMountedSkillPins } from '@/lib/agentic/flue/skills/mount-gate';
@@ -72,18 +140,47 @@ import {
     resolveKillState,
     type KillVerdict,
 } from '@/lib/agentic/kill-switch';
-import { createRunBudget, resolveRunCaps, type RunCapHalt } from '@/lib/agentic/run-caps';
-import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
+import { createRunBudget, resolveRunCaps, type RunBudget, type RunCapHalt } from '@/lib/agentic/run-caps';
+import { readTurnCaps } from '@/lib/agentic/turn-caps-policy';
+import { estimateTokens, type WorkflowDefinition } from '@/lib/agentic/workflow-types';
+import type { PrismaTx } from '@/lib/db-context';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
 import { recordAgentKillRefusal } from '@/lib/observability/integration-metrics';
 import { logger } from '@/lib/observability/logger';
 import { recordWorkflowContextIntegrityHalt } from '@/lib/observability/metrics';
 
 import { lastRequestShape } from './client';
+import {
+    buildRunStateBlock,
+    compactedMessages,
+    compactionSkip,
+    compactionThresholdFor,
+    type CompactionLedgerStep,
+} from './compaction';
+import { delegateTool, type ChildLoopResult } from './delegate';
 import { recordToolRunnerDecision } from './model-decision';
-import { lockedParams } from './params';
+import { compactionParams, DEFAULT_TIER, lockedParams, toolDefinitionOf } from './params';
 import { activateSkillTool, skillCatalogueText, type RunSkills } from './skills';
-import { SerialQueue, toolRunnerToolsFor, type RunStop, type ToolRunBinding } from './tools';
+import {
+    TRANSCRIPT_FORMAT,
+    decisionResult,
+    openTranscript,
+    resumedMessages,
+    sealTranscript,
+    type DeferralTranscript,
+} from './transcript';
+import {
+    SerialQueue,
+    TOOL_RUNNER_GUARD_SOURCE,
+    resumedToolsFor,
+    TurnCallCounter,
+    subagentGuardSource,
+    subagentOf,
+    toolRunnerToolsFor,
+    type LatchedDeferral,
+    type RunStop,
+    type ToolRunBinding,
+} from './tools';
 
 const RANK: Record<StepGuardObservation['verdict'], number> = { CLEAN: 0, FLAGGED: 1, QUARANTINED: 2 };
 
@@ -111,6 +208,78 @@ export const ITERATIONS_EXHAUSTED_MESSAGE =
 export const KILL_UNREADABLE_MESSAGE =
     'tool_runner_kill_switch_unreadable: the kill switch could not be read, so the run stopped rather than carry on unchecked.';
 
+/** The agent's circuit breaker read OPEN before a model call (Step 2e). */
+export const BREAKER_OPEN_MESSAGE =
+    'tool_runner_breaker_open: this agent\'s circuit breaker is latched open, so the run stopped before its next model call. An administrator must review and close it.';
+
+/** A breaker read that failed. The run stops rather than carry on unchecked, as for the kill switch. */
+export const BREAKER_UNREADABLE_MESSAGE =
+    'tool_runner_breaker_unreadable: the circuit breaker could not be read, so the run stopped rather than carry on unchecked.';
+
+/** A compaction found an activated skill whose text no longer matches its pin (Step 2g). */
+export const SKILL_PIN_MISMATCH_MESSAGE =
+    'tool_runner_skill_pin_mismatch: a skill this run activated no longer matches the version the run was pinned to, so the run stopped rather than re-teach it.';
+
+/** A deferral's transcript no longer hashes to its seal (Step 2f): nothing is repaired. */
+export const DEFERRAL_TRANSCRIPT_UNSEALED_MESSAGE =
+    'tool_runner_deferral_transcript_unsealed: the conversation this run parked on no longer matches the hash ' +
+    'written beside it, so the run stopped rather than resume from it. Nothing was repaired.';
+
+/** A DECIDED deferral that cannot be resumed from as it was written (Step 2f). */
+export const DEFERRAL_UNREADABLE_MESSAGE =
+    'tool_runner_deferral_unreadable: the deferral this run was to resume from could not be read as it was ' +
+    'written, so the run did not continue. The decision stands on its proposal.';
+
+/**
+ * The model API refused the resumed conversation (Step 2f): a thinking block
+ * bound to another conversation, organisation or model, for example. Never
+ * repaired by stripping blocks and never retried with
+ * `prefix_mismatch_behavior: 'drop_block'`: a silent degrade is what global
+ * rule 4 forbids.
+ */
+export function resumeTranscriptRefusedMessage(apiErrorType: string | null): string {
+    return (
+        'tool_runner_resume_transcript_refused: the model API refused the conversation this run resumed from ' +
+        `(${apiErrorType ?? 'no error type given'}). Nothing was stripped or retried.`
+    );
+}
+
+/** The longest provider error message the run's log line carries. */
+export const PROVIDER_ERROR_MESSAGE_MAX_CHARS = 300;
+
+/**
+ * What the model provider said when it refused a request: its HTTP status, its
+ * error type and message, and its request id, when the thrown value carries
+ * them. Read from the SDK's `APIError` (`status`, `type`, `apiMessage`,
+ * `requestID`) with the response body as the fallback. The message is the
+ * provider's own sentence about the REQUEST, truncated to
+ * `PROVIDER_ERROR_MESSAGE_MAX_CHARS`; nothing of the request body is read.
+ */
+export function providerErrorOf(err: unknown): {
+    status: number | null;
+    type: string | null;
+    message: string | null;
+    requestId: string | null;
+} {
+    if (!err || typeof err !== 'object') return { status: null, type: null, message: null, requestId: null };
+    const thrown = err as { status?: unknown; type?: unknown; apiMessage?: unknown; requestID?: unknown; error?: unknown };
+    const body = (thrown.error ?? null) as { error?: { type?: unknown; message?: unknown }; type?: unknown } | null;
+    const text = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
+    const type = text(thrown.type) ?? text(body?.error?.type) ?? (body?.type !== 'error' ? text(body?.type) : null);
+    const message = text(thrown.apiMessage) ?? text(body?.error?.message);
+    return {
+        status: typeof thrown.status === 'number' ? thrown.status : null,
+        type,
+        message:
+            message === null
+                ? null
+                : message.length > PROVIDER_ERROR_MESSAGE_MAX_CHARS
+                  ? `${message.slice(0, PROVIDER_ERROR_MESSAGE_MAX_CHARS - 1)}…`
+                  : message,
+        requestId: text(thrown.requestID),
+    };
+}
+
 /** The text a model call produced, from its text blocks only. */
 export function textOf(message: Pick<BetaMessage, 'content'>): string {
     return message.content
@@ -128,6 +297,628 @@ function tokensOf(message: Pick<BetaMessage, 'usage'>): { total: number; tokensI
     return { total: tokensIn + tokensOut, tokensIn, tokensOut };
 }
 
+/** Will the runner send another request after this reply? The SDK continues on these two. */
+function asksForAnotherCall(stopReason: string | null): boolean {
+    return stopReason === 'tool_use' || stopReason === 'pause_turn';
+}
+
+/** The run-wide state both loops share: one budget, one ledger counter, one set of stops, one token total. */
+interface LoopRuntime {
+    readonly ctx: RequestContext;
+    readonly runId: string;
+    readonly def: WorkflowDefinition;
+    readonly client: Anthropic;
+    readonly budget: RunBudget;
+    /** The parent's binding: the stops, the kill and breaker reads, the cap latch. */
+    readonly binding: ToolRunBinding;
+    noteVerdict(o: StepGuardObservation): void;
+    /** Add a call's tokens to the run's total, and return the total. */
+    addTokens(n: number): number;
+    costTokens(): number;
+    seq(): number;
+    /** Milliseconds since the last activity, and mark now. */
+    sinceActivity(): number;
+    markActivity(): void;
+    /**
+     * The run's compaction threshold (Step 2g), or null when compaction is off.
+     * The same for the parent and every sub-agent.
+     */
+    readonly compactionThreshold: number | null;
+    /** Has a summary failed in this segment? Then no loop compacts again until the next one. */
+    compactionFailed(): boolean;
+    noteCompactionFailed(): void;
+    /** Latch the skill-pin stop a compaction found, and abort the request in flight. */
+    stopAtPinMismatch(): void;
+    /** The parent's turn a deferral latched in (Step 2f): kept to park on. */
+    captureParkedTurn(turn: ParkedTurn): void;
+    /**
+     * A RESUMED segment's mark (Step 2f), taken ONCE, by the first MODEL_CALL
+     * step the segment records: it moves the deferral to RESUMED and clears
+     * its transcript in that step's own transaction. `undefined` otherwise.
+     */
+    takeResumeMark(): ((db: PrismaTx) => Promise<void>) | undefined;
+}
+
+/** One loop: the parent's (no sub-agent) or a delegated sub-agent's. */
+interface LoopSpec {
+    /** The sub-agent's name, or null for the parent. */
+    readonly subagent: string | null;
+    /** The binding its tools use: the parent's, or the child's labelled copy. */
+    readonly binding: ToolRunBinding;
+    readonly params: BetaToolRunnerParams & { stream: false };
+    readonly signal: AbortSignal;
+    /** Told the loop's turn number before its tools run. */
+    readonly onTurn: (turn: number) => void;
+    /** A child only: the names it was offered, so any other request is recorded as refused. */
+    readonly offeredNames?: ReadonlySet<string>;
+    /** A child only: the names the run knows, so a refused request records a known name and never the model's. */
+    readonly knownNames?: ReadonlySet<string>;
+    /** The loop's skills, with the pins the row recorded: what a compaction re-teaches (Step 2g). */
+    readonly skills: RunSkills;
+}
+
+/** Why a model call may not be sent, checked before EVERY model call in BOTH loops (owner decision 4). */
+async function stoppedBeforeModelCall(rt: LoopRuntime): Promise<boolean> {
+    if (rt.binding.stopped()) return true;
+    if (await rt.binding.checkKill()) return true;
+    if (await rt.binding.checkBreaker()) return true;
+    // Every model call is a step of the run, charged before it is sent. Only
+    // narrows: a run may halt at STEPS sooner than it did before (owner
+    // decision 4 of 2026-11-13, accepted).
+    const halt = rt.budget.charge('STEPS', 1);
+    if (halt) {
+        rt.binding.stopAtCap(halt);
+        return true;
+    }
+    return false;
+}
+
+/** How a compaction attempt ended. */
+type CompactionOutcome = 'COMPACTED' | 'NOT_BUILT' | 'FAILED' | 'STOPPED';
+
+/** Why a summary was discarded, as its FAILED step records it. Codes, never the model's text. */
+type SummaryFailure = 'REFUSAL' | 'MAX_TOKENS' | 'NO_TEXT' | 'GUARD' | 'ERROR' | 'RUN_STOPPED';
+
+/** One ledger row as the run-state block reads it, with its JSON parsed. Unreadable JSON reads as absent. */
+function ledgerStepOf(row: Awaited<ReturnType<typeof readCompactionRecord>>['steps'][number]): CompactionLedgerStep {
+    const parse = (json: string | null): unknown => {
+        if (json === null) return null;
+        try {
+            return JSON.parse(json);
+        } catch {
+            return null;
+        }
+    };
+    return {
+        seq: row.seq,
+        kind: row.kind,
+        toolCalled: row.toolCalled,
+        status: row.status,
+        subagent: row.subagentName,
+        guardVerdict: row.guardVerdict,
+        input: parse(row.inputJson),
+        output: parse(row.outputJson),
+    };
+}
+
+/** What the runner exposes to a compaction: its parameters, and the way to replace its history. */
+interface CompactableRunner {
+    readonly params: BetaToolRunnerParams;
+    setMessagesParams(params: BetaToolRunnerParams): void;
+}
+
+/**
+ * ONE COMPACTION (Step 2g), at loop-body step 9 of one loop. See the module
+ * header for the order, and `compaction.ts` for what the rebuilt request keeps.
+ */
+async function compactHistory(
+    rt: LoopRuntime,
+    spec: LoopSpec,
+    runner: CompactableRunner,
+    turn: {
+        readonly call: number;
+        readonly loopFromSeq: number;
+        readonly request: BetaToolRunnerParams;
+        readonly reply: BetaMessage;
+        readonly toolResults: BetaMessageParam;
+        readonly estimatedTokensBefore: number;
+    },
+): Promise<CompactionOutcome> {
+    const { ctx, runId, def, client, budget } = rt;
+    const label = spec.subagent === null ? {} : { subagent: spec.subagent };
+    const source = spec.subagent === null ? TOOL_RUNNER_GUARD_SOURCE : subagentGuardSource(spec.subagent);
+
+    // 1. The run-state block, from the run's own record, BEFORE any call: a
+    // block that cannot be built (a truncated read) sends nothing, and a skill
+    // whose text moved stops the run.
+    const record = await readCompactionRecord(ctx, runId, turn.loopFromSeq);
+    if (!record.complete) {
+        logger.warn('tool-runner: compaction skipped, the run\'s record could not be read in full', {
+            component: 'agentic',
+            runId: rt.runId,
+            subagent: spec.subagent,
+        });
+        return 'NOT_BUILT';
+    }
+    const block = buildRunStateBlock({
+        subagent: spec.subagent,
+        fromSeq: turn.loopFromSeq,
+        steps: record.steps.map(ledgerStepOf),
+        proposals: record.proposals,
+        skills: spec.skills,
+    });
+    if (!block.ok) {
+        rt.stopAtPinMismatch();
+        return 'STOPPED';
+    }
+
+    // 2. The kill switch, the breaker and one STEPS, as before every model call.
+    if (await stoppedBeforeModelCall(rt)) return 'STOPPED';
+
+    // 3. The summary call, over the history exactly as it stands.
+    const history: BetaMessageParam[] = [
+        ...turn.request.messages,
+        { role: 'assistant', content: turn.reply.content },
+        turn.toolResults,
+    ];
+    const summaryRequest = compactionParams(runner.params, history);
+    const decisionDigest = computeInputDigest(summaryRequest);
+    const compactedFromDigest = computeInputDigest(turn.request);
+    rt.markActivity();
+    let summary: BetaMessage;
+    try {
+        summary = await client.beta.messages.create(summaryRequest, { signal: spec.signal });
+    } catch (err) {
+        // A stop this run asked for aborted it: the run's own stop settles.
+        if (rt.binding.stopped()) return 'STOPPED';
+        await recordStep(ctx, runId, rt.binding.nextSeq(), 'MODEL_CALL', {
+            status: 'FAILED',
+            label: def.key,
+            input: {
+                modelCalls: 1,
+                purpose: 'compaction',
+                decisionDigest,
+                compactedFromDigest,
+                messagesSummarised: history.length,
+                estimatedTokensBefore: turn.estimatedTokensBefore,
+            },
+            output: { failed: 'ERROR' satisfies SummaryFailure },
+            ...label,
+        });
+        logger.warn('tool-runner: the compaction summary call failed; carrying on uncompacted', {
+            component: 'agentic',
+            runId: rt.runId,
+            subagent: spec.subagent,
+            error: err instanceof Error ? err.message : 'a non-Error value was thrown',
+        });
+        return 'FAILED';
+    }
+
+    const usage = tokensOf(summary);
+    const text = textOf(summary);
+    const costTokens = rt.addTokens(usage.total);
+
+    // 4. The scans: egress, and injection, because the summary is written from
+    // tool results and goes back into the model's context.
+    const egress =
+        text.length > 0 ? await guardEgress(ctx, text, { source: `${source}-compaction-output:${runId}:${turn.call}` }) : null;
+    const injected =
+        text.length > 0
+            ? await guardUntrustedInput(ctx, text, { source: `${source}-compaction-summary:${runId}:${turn.call}` })
+            : null;
+    const verdicts = [egress, injected].filter((o): o is NonNullable<typeof o> => o !== null);
+    const worstOutcome = verdicts.reduce<(typeof verdicts)[number] | null>(
+        (worst, o) => (worst === null || RANK[stepVerdictOf(o)] > RANK[stepVerdictOf(worst)] ? o : worst),
+        null,
+    );
+    const verdict = worstOutcome ? stepVerdictOf(worstOutcome) : 'CLEAN';
+
+    let failure: SummaryFailure | null =
+        summary.stop_reason === 'refusal'
+            ? 'REFUSAL'
+            : summary.stop_reason === 'max_tokens'
+              ? 'MAX_TOKENS'
+              : text.trim().length === 0
+                ? 'NO_TEXT'
+                : verdict !== 'CLEAN'
+                  ? 'GUARD'
+                  : null;
+
+    // 5. The verdict NOTED FIRST, as a model call's is: anything but CLEAN
+    // stops the run at the guard, and the summary is never used.
+    if (worstOutcome && verdict !== 'CLEAN') {
+        rt.noteVerdict({
+            toolCallId: spec.subagent === null ? `compaction:${turn.call}` : `compaction:${spec.subagent}:${turn.call}`,
+            tool: 'model-output',
+            slice: 'result',
+            verdict,
+            ruleIds: worstOutcome.ruleIds,
+        });
+    }
+
+    // 6. The kill switch, a latched stop, and the token and wall-clock caps.
+    let stopped = (await rt.binding.checkKill()) || rt.binding.stopped() !== null;
+    if (!stopped) {
+        const tokenHalt = budget.charge('TOKENS', costTokens - budget.used('TOKENS'));
+        const halt = tokenHalt ?? budget.charge('RUNTIME_MS', 0);
+        if (halt) {
+            rt.binding.stopAtCap(halt);
+            stopped = true;
+        }
+    }
+    if (stopped && failure === null) failure = 'RUN_STOPPED';
+
+    // 7. The rebuilt request, by code, applied only when the summary may be used.
+    const after: { compactedToDigest: string | null; estimatedTokensAfter: number | null } = {
+        compactedToDigest: null,
+        estimatedTokensAfter: null,
+    };
+    if (failure === null) {
+        const rebuilt = compactedMessages({
+            opening: turn.request.messages[0],
+            runState: block.text,
+            summary: text,
+            lastAssistant: turn.reply.content,
+            toolResults: turn.toolResults,
+        });
+        runner.setMessagesParams({ ...runner.params, messages: rebuilt });
+        after.compactedToDigest = computeInputDigest(runner.params);
+        after.estimatedTokensAfter = estimateTokens({
+            system: summaryRequest.system,
+            tools: summaryRequest.tools,
+            messages: rebuilt,
+        });
+    }
+
+    // 8. The MODEL_CALL step, labelled with its purpose and the digests before
+    // and after, and its own Art 12 row. Never the summary's text.
+    const sent = lastRequestShape(client);
+    await recordStep(ctx, runId, rt.binding.nextSeq(), 'MODEL_CALL', {
+        status: failure === null ? 'DONE' : 'FAILED',
+        label: def.key,
+        tokens: usage.total,
+        ...(verdicts.length > 0 ? { guardVerdict: verdict, guardRuleIds: worstOutcome?.ruleIds ?? [] } : {}),
+        input: {
+            modelCalls: 1,
+            purpose: 'compaction',
+            model: summary.model,
+            stopReason: summary.stop_reason,
+            decisionDigest,
+            compactedFromDigest,
+            summaryDigest: text.length > 0 ? `sha256:${createHash('sha256').update(text, 'utf8').digest('hex')}` : null,
+            messagesSummarised: history.length,
+            estimatedTokensBefore: turn.estimatedTokensBefore,
+            wire: sent
+                ? { method: sent.method, path: sent.path, bodyKeys: sent.bodyKeys, threadMember: sent.threadMember }
+                : null,
+        },
+        output:
+            failure === null
+                ? { compactedToDigest: after.compactedToDigest, estimatedTokensAfter: after.estimatedTokensAfter }
+                : { failed: failure },
+        ...label,
+    });
+    await recordToolRunnerDecision(
+        ctx,
+        runId,
+        def,
+        summaryRequest,
+        text.length > 0 && verdict === 'CLEAN' ? text : null,
+        { tokensIn: usage.tokensIn, tokensOut: usage.tokensOut },
+        summary.model,
+        rt.sinceActivity(),
+    );
+    await updateRun(ctx, runId, { costTokens, stepCount: rt.seq() });
+
+    if (stopped || verdict !== 'CLEAN') return 'STOPPED';
+    if (failure !== null) return 'FAILED';
+    logger.info('tool-runner: compacted the conversation', {
+        component: 'agentic',
+        runId: rt.runId,
+        subagent: spec.subagent,
+        estimatedTokensBefore: turn.estimatedTokensBefore,
+        estimatedTokensAfter: after.estimatedTokensAfter,
+        historyLength: history.length,
+        activatedSkills: block.activatedSkills,
+        refusals: block.refusals,
+        proposals: block.proposals,
+        delegations: block.delegations,
+    });
+    return 'COMPACTED';
+}
+
+/**
+ * THE ONE LOOP BODY (Step 2e). The parent and every sub-agent run this, with
+ * the sub-agent's name as a parameter. See the module header for its order.
+ */
+async function runModelLoop(
+    rt: LoopRuntime,
+    spec: LoopSpec,
+): Promise<ChildLoopResult & { namedStop: NamedStopReason | null; failureApi: { status: number | null; type: string | null } | null }> {
+    const { ctx, runId, def, client, budget } = rt;
+    const label = spec.subagent === null ? {} : { subagent: spec.subagent };
+    const outputSource = spec.subagent === null ? TOOL_RUNNER_GUARD_SOURCE : subagentGuardSource(spec.subagent);
+    let calls = 0;
+    let namedStop: NamedStopReason | null = null;
+    let lastStopReason: string | null = null;
+    let failure: string | null = null;
+    let failureApi: { status: number | null; type: string | null } | null = null;
+    let lastText = '';
+    // Where this loop's own ledger starts: its run-state block reads from here.
+    const loopFromSeq = rt.seq();
+    // The turn whose end was compacted, so the next turn does not compact again.
+    let compactedAtCall = -1;
+
+    if (await stoppedBeforeModelCall(rt)) return { calls, namedStop, lastStopReason, failure, lastText, failureApi };
+
+    rt.markActivity();
+    const runner = client.beta.messages.toolRunner(spec.params, { signal: spec.signal });
+    const maxIterations = spec.params.max_iterations ?? Number.POSITIVE_INFINITY;
+    try {
+        for await (const reply of runner) {
+            calls += 1;
+            spec.onTurn(calls);
+            const request = runner.params;
+            const usage = tokensOf(reply);
+            const text = textOf(reply);
+            lastText = text;
+            const costTokens = rt.addTokens(usage.total);
+
+            // 1. The egress scan on the call's text.
+            const outcome =
+                text.length > 0
+                    ? await guardEgress(ctx, text, { source: `${outputSource}-model-output:${runId}:${calls}` })
+                    : null;
+            const textVerdict = outcome ? stepVerdictOf(outcome) : 'CLEAN';
+
+            // 2. The MODEL_CALL step and the Art 12 row. What went over the wire
+            // for this call, by shape only (Step 2H): the run's page shows it,
+            // so `thread: false` is read on the run itself.
+            const sent = lastRequestShape(client);
+            await recordStep(ctx, runId, rt.binding.nextSeq(), 'MODEL_CALL', {
+                status: 'DONE',
+                label: def.key,
+                tokens: usage.total,
+                input: {
+                    modelCalls: 1,
+                    model: reply.model,
+                    stopReason: reply.stop_reason,
+                    decisionDigest: computeInputDigest(request),
+                    wire: sent
+                        ? { method: sent.method, path: sent.path, bodyKeys: sent.bodyKeys, threadMember: sent.threadMember }
+                        : null,
+                },
+                ...label,
+            }, undefined, rt.takeResumeMark());
+            await recordToolRunnerDecision(
+                ctx,
+                runId,
+                def,
+                request,
+                text.length > 0 && textVerdict === 'CLEAN' ? text : null,
+                { tokensIn: usage.tokensIn, tokensOut: usage.tokensOut },
+                reply.model,
+                rt.sinceActivity(),
+            );
+            await updateRun(ctx, runId, { costTokens, stepCount: rt.seq() });
+
+            // 3. The answer's verdict is NOTED FIRST (#5372), before the caps
+            // below can latch, so a QUARANTINED answer that also crossed a cap
+            // settles at the guard. The kill is still read: an operator's kill
+            // outranks the verdict at settlement, as it does on Flue.
+            if (outcome && textVerdict !== 'CLEAN') {
+                rt.noteVerdict({
+                    toolCallId: spec.subagent === null ? `model-output:${calls}` : `model-output:${spec.subagent}:${calls}`,
+                    tool: 'model-output',
+                    slice: 'result',
+                    verdict: textVerdict,
+                    ruleIds: outcome.ruleIds,
+                });
+            }
+
+            // 4-5. The kill switch and the run's status; a stop latched by now.
+            if (await rt.binding.checkKill()) break;
+            if (rt.binding.stopped()) break;
+
+            // 6. The token and wall-clock caps.
+            const tokenHalt = budget.charge('TOKENS', costTokens - budget.used('TOKENS'));
+            if (tokenHalt) {
+                rt.binding.stopAtCap(tokenHalt);
+                break;
+            }
+            const runtimeHalt = budget.charge('RUNTIME_MS', 0);
+            if (runtimeHalt) {
+                rt.binding.stopAtCap(runtimeHalt);
+                break;
+            }
+
+            // 7. The named stop reasons.
+            lastStopReason = reply.stop_reason;
+            if (isNamedStopReason(reply.stop_reason)) {
+                namedStop = reply.stop_reason;
+                break;
+            }
+
+            // 8. A child's request for a tool it was not offered: the SDK
+            // answers it `not found` and runs nothing, and the ledger says so.
+            if (spec.offeredNames) {
+                let halted = false;
+                for (const block of reply.content) {
+                    if (block.type !== 'tool_use' || spec.offeredNames.has(block.name)) continue;
+                    const stepHalt = budget.charge('STEPS', 1);
+                    if (stepHalt) {
+                        rt.binding.stopAtCap(stepHalt);
+                        halted = true;
+                        break;
+                    }
+                    spec.binding.onFailure();
+                    await recordStep(ctx, runId, rt.binding.nextSeq(), 'TOOL_CALL', {
+                        ...(spec.knownNames?.has(block.name) ? { toolCalled: block.name } : {}),
+                        status: 'FAILED',
+                        label: 'subagent-tool-not-offered',
+                        output: { refused: 'SUBAGENT_TOOL_NOT_OFFERED' },
+                        ...subagentOf(spec.binding),
+                    });
+                }
+                if (halted) break;
+            }
+
+            // 9. Before the next model call: the turn's tools, then the kill
+            // switch, the breaker and one STEPS (owner decision 4). The runner
+            // reuses the tool response it caches here, so nothing runs twice.
+            if (asksForAnotherCall(reply.stop_reason) && calls < maxIterations) {
+                const toolResults = await runner.generateToolResponse();
+                // A DEFERRAL latched in this turn (Step 2f): the turn is kept to
+                // park on, and nothing is sent after it. Only the parent's loop
+                // parks; a child's calls never defer.
+                const deferralLatched = rt.binding.stopped()?.kind === 'DEFER';
+                if (deferralLatched && spec.subagent === null && toolResults !== null) {
+                    rt.captureParkedTurn({ request, reply, toolResults });
+                }
+                // Compaction (Step 2g): only after a complete tool round, and
+                // before the next call's own kill, breaker and STEPS charge.
+                const estimatedNextRequest =
+                    usage.tokensIn + usage.tokensOut + (toolResults ? estimateTokens(toolResults.content) : 0);
+                const skip = compactionSkip({
+                    threshold: rt.compactionThreshold,
+                    estimatedNextRequest,
+                    toolRoundComplete: reply.stop_reason === 'tool_use' && toolResults !== null,
+                    stepsRemaining: budget.remaining('STEPS'),
+                    deferralLatched,
+                    stopLatched: rt.binding.stopped() !== null,
+                    compactedLastTurn: compactedAtCall === calls - 1,
+                    failedThisSegment: rt.compactionFailed(),
+                });
+                if (skip === null && toolResults !== null) {
+                    const compacted = await compactHistory(rt, spec, runner, {
+                        call: calls,
+                        loopFromSeq,
+                        request,
+                        reply,
+                        toolResults,
+                        estimatedTokensBefore: estimatedNextRequest,
+                    });
+                    if (compacted === 'STOPPED') break;
+                    if (compacted === 'COMPACTED') compactedAtCall = calls;
+                    else rt.noteCompactionFailed();
+                }
+                if (await stoppedBeforeModelCall(rt)) break;
+            }
+            rt.markActivity();
+        }
+    } catch (err) {
+        // An abort this run asked for is a stop, settled by its cause. Anything
+        // else is a failure.
+        if (rt.binding.stopped() === null) {
+            failure = err instanceof Error ? err.message : String(err);
+            const provider = providerErrorOf(err);
+            failureApi = { status: provider.status, type: provider.type };
+            // THE PROVIDER'S OWN REASON, in one line (2026-11-15). A refused
+            // request used to leave its status in the record and its reason
+            // nowhere an operator reads: Inspect run 43715891271 saw seven
+            // 400s and could not say why. The status, the error type, the
+            // provider's message (truncated) and its request id; never the
+            // request body, the prompt or a tool's content.
+            if (provider.status !== null) {
+                logger.warn('tool-runner: the model provider refused the request', {
+                    component: 'agentic',
+                    runId: rt.runId,
+                    subagent: spec.subagent,
+                    model: spec.params.model,
+                    status: provider.status,
+                    providerErrorType: provider.type,
+                    providerErrorMessage: provider.message,
+                    providerRequestId: provider.requestId,
+                });
+            }
+        }
+    }
+    return { calls, namedStop, lastStopReason, failure, lastText, failureApi };
+}
+
+/**
+ * A deferral latched, with no turn captured to park on (Step 2f): the call
+ * queued its proposal but the run could not keep the conversation, so it does
+ * not wait for nothing. The proposal stays in the queue as an ordinary one.
+ */
+export const DEFERRAL_NOT_PARKED_MESSAGE =
+    'tool_runner_deferral_not_parked: a call that waits for a person queued its proposal, but the run could not ' +
+    'keep the conversation to resume from. The proposal stays in the queue; the run does not continue.';
+
+/** The turn a deferral parks on: the request, the reply that made the call, and that turn's tool results. */
+interface ParkedTurn {
+    readonly request: BetaToolRunnerParams;
+    readonly reply: BetaMessage;
+    readonly toolResults: BetaMessageParam;
+}
+
+/**
+ * THE TRANSCRIPT A DEFERRAL PARKS ON ("3. The transcript"): the request's
+ * `system` and tool definitions as sent, every message, the reply that made the
+ * call as returned (thinking blocks and signatures included, in order), and the
+ * turn's tool results with the deferred call's slot left open. The SDK's own
+ * objects, through `JSON.stringify` and nothing else.
+ */
+export function transcriptOfTurn(turn: ParkedTurn, toolUseId: string): DeferralTranscript {
+    const results = Array.isArray(turn.toolResults.content) ? turn.toolResults.content : [];
+    return {
+        format: TRANSCRIPT_FORMAT,
+        model: turn.reply.model,
+        system: turn.request.system,
+        tools: turn.request.tools.map(toolDefinitionOf),
+        messages: [...turn.request.messages, { role: 'assistant', content: turn.reply.content }],
+        pendingResults: results.map((block) =>
+            block.type === 'tool_result' && block.tool_use_id === toolUseId
+                ? { type: 'tool_result', tool_use_id: toolUseId, content: '' }
+                : block,
+        ) as DeferralTranscript['pendingResults'],
+        toolUseId,
+    };
+}
+
+/** A DECIDED deferral, opened for the resume: its transcript, and the result its open slot takes. */
+interface OpenedResume {
+    readonly ok: true;
+    readonly deferralId: string;
+    readonly transcript: DeferralTranscript;
+    readonly result: { content: string; isError: boolean };
+    readonly elapsedMsAtPark: number;
+}
+
+/**
+ * The run's DECIDED deferral, opened, or null when it has none (the segment
+ * opens as every segment does). The seal first, then the envelope, then the
+ * proposal row: the deferred call's result is written from the queue's own
+ * record of the decision, never from anything the transcript says.
+ */
+async function openResume(
+    ctx: RequestContext,
+    runId: string,
+): Promise<OpenedResume | { ok: false; message: string } | null> {
+    const deferral = await readDecidedDeferral(ctx, runId);
+    if (deferral === null) return null;
+    if (deferral === 'UNREADABLE') return { ok: false, message: DEFERRAL_UNREADABLE_MESSAGE };
+    const opened = openTranscript(deferral.transcriptJson, deferral.transcriptHash);
+    if (!opened.ok) {
+        return {
+            ok: false,
+            message: opened.reason === 'UNSEALED' ? DEFERRAL_TRANSCRIPT_UNSEALED_MESSAGE : DEFERRAL_UNREADABLE_MESSAGE,
+        };
+    }
+    if (opened.transcript.model !== deferral.model || opened.transcript.toolUseId !== deferral.toolUseId) {
+        return { ok: false, message: DEFERRAL_UNREADABLE_MESSAGE };
+    }
+    const proposal = await readDeferredProposal(ctx, deferral.proposalId);
+    if (!proposal || proposal.status !== deferral.decision) return { ok: false, message: DEFERRAL_UNREADABLE_MESSAGE };
+    return {
+        ok: true,
+        deferralId: deferral.id,
+        transcript: opened.transcript,
+        result: decisionResult(proposal),
+        elapsedMsAtPark: deferral.elapsedMsAtPark,
+    };
+}
+
 export async function executeToolRunnerRun(
     ctx: RequestContext,
     runId: string,
@@ -135,6 +926,13 @@ export async function executeToolRunnerRun(
     fromSeq: number,
     runStartMs: number,
     client: Anthropic,
+    /**
+     * Where this run's model calls go, and the tenant's business-data transfer
+     * acknowledgement, both decided by the DRIVER before anything was read
+     * here (#5364). Required: the transfer gate below refuses on an absent
+     * acknowledgement, and a caller that forgot it should not compile.
+     */
+    route: { readonly providerId: string; readonly externalAiAcknowledgement: ExternalAiAcknowledgement },
 ): Promise<RunDriverOutcome> {
     // ── The kill switch, before anything is read or sent ────────────────────
     const kill = await resolveKillState(ctx.tenantId, ctx.agentId ?? null);
@@ -159,7 +957,7 @@ export async function executeToolRunnerRun(
         const status = await failRun(ctx, runId, declared.message);
         return { status, stepFailures: 0 };
     }
-    const message = runMessage(def, fromSeq, declared.input);
+    const message = runMessage(def, declared.input);
 
     // ── The run's skills (Step 2d) ──────────────────────────────────────────
     // Through the ONE resolver every reasoning engine uses, so the gate, the
@@ -185,12 +983,32 @@ export async function executeToolRunnerRun(
         return { status, stepFailures: 0 };
     }
 
+    // ── A SEGMENT RESUMED FROM A DEFERRAL (Step 2f, #5530) ──────────────────
+    // A run parked on a deferred call continues from the transcript it parked
+    // on, once a person decided the proposal in the queue. Asked AFTER the kill
+    // switch and the skill pins (and, in the worker, the agent's status and the
+    // profile pin), and BEFORE the invocation is re-resolved: the transcript's
+    // seal, then its envelope, then the decision as the PROPOSAL ROW records
+    // it. A transcript that fails any of them halts the run; nothing is
+    // repaired, and the conversation is never started afresh in its place.
+    const resume = await openResume(ctx, runId);
+    if (resume && !resume.ok) {
+        const status = await failRun(ctx, runId, resume.message);
+        return { status, stepFailures: 0 };
+    }
+
+    const clockStartMs = resume ? Date.now() - resume.elapsedMsAtPark : runStartMs;
     const invocation = await resolveMcpInvocation(ctx, { actionsAlready: fromSeq });
     const caps = resolveRunCaps(invocation.policyCard?.inForce.value ?? null);
     const budget = createRunBudget({
         caps,
         now: () => Date.now(),
-        startedAtMs: runStartMs,
+        // THE WALL CLOCK DOES NOT RUN WHILE THE RUN WAITS (Step 2f): a resumed
+        // segment starts at the unattended time the run had spent when it
+        // parked, so a person's deliberation is never charged to RUNTIME_MS.
+        // The worker's `runStartMs` is not used for it: it is the run's start,
+        // or the decision's clock base, and either would charge the queue.
+        startedAtMs: clockStartMs,
         spent: {
             STEPS: fromSeq,
             TOOL_CALLS: fromSeq,
@@ -206,7 +1024,16 @@ export async function executeToolRunnerRun(
         return { status, stepFailures: 0 };
     }
 
-    // ── The run's state, shared by the loop and its tools ───────────────────
+    // ── The turn caps (#4594), read ONCE for the segment ────────────────────
+    // The lower of the organization's ceiling and the workspace's narrowing.
+    // Read once so no turn changes cap mid-way: an organization lowering its
+    // ceiling reaches the next segment any run reads. A failed read is 0
+    // delegations and 1 tool call, and never throws. The same values bind the
+    // parent's loop and every sub-agent's.
+    const turnCaps = await readTurnCaps(ctx.tenantId, ctx.requestId);
+    const turnCalls = new TurnCallCounter(turnCaps.toolCallsPerTurn.value);
+
+    // ── The run's state, shared by both loops and their tools ───────────────
     const controller = new AbortController();
     // ONE object, so a check in the loop sees what a tool's closure latched:
     // locals assigned only inside closures read as never-set to the compiler.
@@ -215,19 +1042,50 @@ export async function executeToolRunnerRun(
         killVerdict: KillVerdict | null;
         killAfterCap: boolean;
         killUnreadable: boolean;
+        operatorAborted: boolean;
+        breakerOpen: boolean;
+        breakerUnreadable: boolean;
         worst: StepGuardObservation['verdict'];
         worstRuleIds: readonly string[];
-    } = { capHalt: null, killVerdict: null, killAfterCap: false, killUnreadable: false, worst: 'CLEAN', worstRuleIds: [] };
+        pinMismatch: boolean;
+        compactionFailed: boolean;
+        deferral: LatchedDeferral | null;
+        parkedTurn: ParkedTurn | null;
+    } = {
+        capHalt: null,
+        killVerdict: null,
+        killAfterCap: false,
+        killUnreadable: false,
+        operatorAborted: false,
+        breakerOpen: false,
+        breakerUnreadable: false,
+        worst: 'CLEAN',
+        worstRuleIds: [],
+        pinMismatch: false,
+        compactionFailed: false,
+        deferral: null,
+        parkedTurn: null,
+    };
     const seen = new Map<string, StepGuardObservation>();
     const origins = new Map<string, number>();
     let seq = fromSeq;
     let stepFailures = 0;
     let lastActivityAt = Date.now();
+    // The PARENT's model calls answered in this segment: the number of the turn
+    // whose tools the runner is running, since it runs a turn's tools after
+    // yielding it.
+    let parentCalls = 0;
 
     const stopped = (): RunStop | null => {
+        if (state.operatorAborted) return { kind: 'OPERATOR_ABORT' };
         if (state.killVerdict || state.killUnreadable) return { kind: 'KILL' };
+        if (state.breakerOpen || state.breakerUnreadable) return { kind: 'BREAKER' };
         if (state.capHalt) return { kind: 'CAP', halt: state.capHalt };
         if (state.worst !== 'CLEAN') return { kind: 'GUARD' };
+        if (state.pinMismatch) return { kind: 'SKILL_PIN_MISMATCH' };
+        // The deferral LAST (Step 2f): every other stop outranks it, and a run
+        // stopped by one of them settles by that reason.
+        if (state.deferral) return { kind: 'DEFER' };
         return null;
     };
 
@@ -246,10 +1104,44 @@ export async function executeToolRunnerRun(
             controller.abort();
             return true;
         }
-        if (!found) return false;
+        if (!found) {
+            // AN OPERATOR'S ABORT STOPS THE RUN WHERE A KILL DOES (#5366). The
+            // run row is the switch here: `abortWorkflowRun` wrote ABORTED, and
+            // without this read the loop called the model again and settled
+            // over it. One indexed read of two columns, beside the kill read.
+            // A read that throws is not caught: the loop's failure path stops
+            // the run.
+            if (!(await isRunAborted(ctx, runId))) return false;
+            state.operatorAborted = true;
+            controller.abort();
+            return true;
+        }
         recordAgentKillRefusal({ scope: found.scope, drill: ctx.agentId === KILL_SWITCH_DRILL_AGENT_ID });
         if (state.killVerdict === null) state.killAfterCap = state.capHalt !== null;
         state.killVerdict = found;
+        controller.abort();
+        return true;
+    };
+
+    // THE BREAKER, uncached, before every model call in both loops and at a
+    // delegation (Step 2e, owner decision 4). OPEN stops the run, as the funnel
+    // refuses every call while it is open; an unreadable latch stops it too,
+    // as an unreadable kill switch does. An agent the breaker has never
+    // observed reads `null`, which is not a refusal.
+    const checkBreaker = async (): Promise<boolean> => {
+        if (!ctx.agentId) return false;
+        try {
+            const latch = await readBreakerLatch(ctx.tenantId, ctx.agentId);
+            if (latch?.state !== 'OPEN') return false;
+            state.breakerOpen = true;
+        } catch (err) {
+            logger.warn('tool-runner: circuit-breaker read failed; stopping the run', {
+                component: 'agentic',
+                runId,
+                error: err instanceof Error ? err.message : 'a non-Error value was thrown',
+            });
+            state.breakerUnreadable = true;
+        }
         controller.abort();
         return true;
     };
@@ -270,7 +1162,9 @@ export async function executeToolRunnerRun(
         ctx,
         runId,
         budget,
+        subagent: null,
         nextSeq: () => seq++,
+        peekSeq: () => seq,
         stopped,
         stopAtCap: (halt) => {
             if (state.capHalt === null) state.capHalt = halt;
@@ -281,6 +1175,7 @@ export async function executeToolRunnerRun(
             lastActivityAt = Date.now();
             return killed;
         },
+        checkBreaker,
         takeVerdict: (id) => {
             const o = seen.get(id);
             seen.delete(id);
@@ -296,10 +1191,65 @@ export async function executeToolRunnerRun(
         onFailure: () => {
             stepFailures += 1;
         },
+        admitToolCall: () => turnCalls.admit('parent', parentCalls),
+        // The calls that wait for a person (Step 2f): the version's own list.
+        // Admission refuses a version naming any on an engine that does not
+        // park on them, so a run that reaches here may.
+        deferredTools: new Set(def.profile?.deferredToolNames ?? []),
+        latchDeferral: (d) => {
+            if (state.deferral === null) state.deferral = d;
+            controller.abort();
+        },
     };
 
-    // ONE queue for every call of the run, the engine's own included, so the
-    // ledger's order is the order the calls were made.
+    // Taken by the first MODEL_CALL step of a resumed segment, and only by it.
+    let resumeMark = resume ? markDeferralResumedInTx(ctx, resume.deferralId) : undefined;
+    const rt: LoopRuntime = {
+        ctx,
+        runId,
+        def,
+        client,
+        budget,
+        binding,
+        noteVerdict,
+        addTokens: (n) => {
+            costTokens += n;
+            return costTokens;
+        },
+        costTokens: () => costTokens,
+        seq: () => seq,
+        sinceActivity: () => Date.now() - lastActivityAt,
+        markActivity: () => {
+            lastActivityAt = Date.now();
+        },
+        // The lowest of the tier's constant, 15% of the run's TOKENS limit and
+        // the profile version's own value; null when the version turned it off.
+        compactionThreshold: compactionThresholdFor({
+            tier: def.profile?.modelTier ?? DEFAULT_TIER,
+            tokensLimit: caps.TOKENS.limit,
+            profileThreshold: def.profile?.compactionThresholdTokens ?? null,
+        }),
+        compactionFailed: () => state.compactionFailed,
+        noteCompactionFailed: () => {
+            state.compactionFailed = true;
+        },
+        stopAtPinMismatch: () => {
+            state.pinMismatch = true;
+            controller.abort();
+        },
+        captureParkedTurn: (turn) => {
+            if (state.parkedTurn === null) state.parkedTurn = turn;
+        },
+        takeResumeMark: () => {
+            const mark = resumeMark;
+            resumeMark = undefined;
+            return mark;
+        },
+    };
+
+    // ONE queue for every call of the parent, the engine's own included, so the
+    // ledger's order is the order the calls were made. A delegation runs its
+    // child inside this queue, on the child's own.
     const queue = new SerialQueue();
     const offered = toolRunnerToolsFor(invocation, binding, {
         readOnly: def.readOnly === true,
@@ -312,27 +1262,111 @@ export async function executeToolRunnerRun(
     // an empty catalogue and then settles; this engine settles first, so no
     // tenant content goes out for a run that can do nothing with the answer.
     if (offered.tools.length === 0) {
-        await updateRun(ctx, runId, {
+        const settled = await updateRun(ctx, runId, {
             status: 'EMPTY_CATALOGUE',
             completedAt: new Date(),
             stepCount: seq,
             costTokens,
-            errorMessage: EMPTY_TOOLSET_MESSAGE,
+            // WHY it is empty, from the offer's reasons and the invocation's
+            // pinned lists (#5045): "holds no grants" only when it holds none.
+            errorMessage: emptyCatalogueMessage('tool_runner', {
+                grantedTools: invocation.grantedTools,
+                permittedTools: invocation.policyCard?.inForce.value.permittedTools ?? null,
+                offeredTools: invocation.offeredTools,
+                omitted: offered.omitted,
+                ...(def.profile ? { profileTools: def.profile.toolNames } : {}),
+            }),
         });
+        // Not written over an operator's abort (#5366), and not reported as
+        // though it had been.
+        if (!settled) return { status: 'ABORTED', stepFailures: 0 };
         return { status: 'EMPTY_CATALOGUE', stepFailures: 1 };
     }
 
-    // The engine's own tool goes BESIDE the resolved set, after the empty check
+    // ── ROUTING AN ERP'S ROWS OUTSIDE THE DEPLOYMENT IS A TRANSFER (#3872) ──
+    //
+    // Asked here for the reasons Flue asks it where it does (#5364): AFTER the
+    // offer, because a tool withheld from it transfers nothing, and BEFORE the
+    // runner sends its first request, because after that the transfer the gate
+    // exists to refuse has happened. This engine always calls Anthropic, so a
+    // business-system tool in the offer with no acknowledgement on record
+    // refuses the whole run — never by dropping those tools and carrying on.
+    // A sub-agent's tools are a filter of this offer, so the gate covers them.
+    const transferRefusal = externalResidencyRefusal({
+        providerId: route.providerId,
+        offered: offered.externalConnections.map((c) => ({
+            name: c.connectionName,
+            connectionId: c.connectionId,
+            connectionName: c.connectionName,
+            reachesBusinessSystem: c.reachesBusinessSystem,
+        })),
+        acknowledgement: route.externalAiAcknowledgement,
+        enginePrefix: 'tool_runner',
+    });
+    if (transferRefusal) {
+        const status = await failRun(ctx, runId, transferRefusal.message);
+        return { status, stepFailures: 0 };
+    }
+
+    // The engine's own tools go BESIDE the resolved set, after the empty check
     // above: a run that can read its skills but reach no tenant data still has
-    // nothing to do with an answer.
+    // nothing to do with an answer. `delegate` (Step 2e) is offered to the
+    // parent only, and only when the version defines sub-agents.
     const skillTool = activateSkillTool(binding, skills, queue);
+    const subagents = def.profile?.subagents ?? [];
+    const delegation = delegateTool(
+        {
+            binding,
+            invocation,
+            def,
+            caps,
+            skills,
+            subagents,
+            turnCaps: {
+                delegationsPerTurn: turnCaps.delegationsPerTurn.value,
+                toolCallsPerTurn: turnCaps.toolCallsPerTurn.value,
+            },
+            turnCalls,
+            parentTurn: () => parentCalls,
+            review: offered.review,
+            observe: noteVerdict,
+            parentOffered: new Set(offered.tools.map((t) => t.name)),
+            parentSignal: controller.signal,
+            runLoop: (child) =>
+                runModelLoop(rt, {
+                    subagent: child.subagent,
+                    binding: child.binding,
+                    params: child.params,
+                    signal: child.signal,
+                    onTurn: child.onTurn,
+                    offeredNames: child.offeredNames,
+                    knownNames: child.knownNames,
+                    skills: child.skills,
+                }),
+        },
+        queue,
+    );
+    const runTools = [...offered.tools, ...(skillTool ? [skillTool] : []), ...(delegation ? [delegation] : [])];
     const params = lockedParams({
         def,
-        tools: skillTool ? [...offered.tools, skillTool] : offered.tools,
+        // A resumed segment sends the transcript's tool definitions, each with
+        // its runnable from THIS segment's offer, a withdrawn one refusing and a
+        // newly granted one not added (Step 2f): authority only narrows.
+        tools: resume ? resumedToolsFor(resume.transcript.tools, runTools, binding, queue) : runTools,
         message,
         caps,
         fromSeq,
         skillCatalogue: skillCatalogueText(skills.documents),
+        toolCallsPerTurn: turnCaps.toolCallsPerTurn.value,
+        ...(resume
+            ? {
+                  resume: {
+                      model: resume.transcript.model,
+                      system: resume.transcript.system,
+                      messages: resumedMessages(resume.transcript, resume.result),
+                  },
+              }
+            : {}),
     });
     logger.info('tool-runner: dispatching', {
         component: 'agentic',
@@ -342,101 +1376,30 @@ export async function executeToolRunnerRun(
         toolsOffered: offered.tools.length,
         toolsOmitted: offered.omitted.length,
         skillsMounted: skills.documents.length,
+        subagentsDefined: subagents.length,
+        toolCallsPerTurn: turnCaps.toolCallsPerTurn.value,
+        toolCallsPerTurnBasis: turnCaps.toolCallsPerTurn.basis,
+        delegationsPerTurn: turnCaps.delegationsPerTurn.value,
+        resumedFromDeferral: resume ? resume.deferralId : null,
     });
 
-    lastActivityAt = Date.now();
-    const runner = client.beta.messages.toolRunner(params, { signal: controller.signal });
-    let namedStop: NamedStopReason | null = null;
-    let lastStopReason: string | null = null;
-    let calls = 0;
-    let failure: string | null = null;
-
-    try {
-        for await (const reply of runner) {
-            calls += 1;
-            const request = runner.params;
-            const usage = tokensOf(reply);
-            const text = textOf(reply);
-            costTokens += usage.total;
-
-            const outcome =
-                text.length > 0
-                    ? await guardEgress(ctx, text, { source: `tool-runner-model-output:${runId}:${calls}` })
-                    : null;
-            const textVerdict = outcome ? stepVerdictOf(outcome) : 'CLEAN';
-
-            // What went over the wire for this call, by shape only (Step 2H):
-            // the run's page shows it, so `thread: false` is read on the run
-            // itself rather than in the worker's log.
-            const sent = lastRequestShape(client);
-            await recordStep(ctx, runId, seq++, 'MODEL_CALL', {
-                status: 'DONE',
-                label: def.key,
-                tokens: usage.total,
-                input: {
-                    modelCalls: 1,
-                    model: reply.model,
-                    stopReason: reply.stop_reason,
-                    decisionDigest: computeInputDigest(request),
-                    wire: sent
-                        ? { method: sent.method, path: sent.path, bodyKeys: sent.bodyKeys, threadMember: sent.threadMember }
-                        : null,
-                },
-            });
-            await recordToolRunnerDecision(
-                ctx,
-                runId,
-                def,
-                request,
-                text.length > 0 && textVerdict === 'CLEAN' ? text : null,
-                { tokensIn: usage.tokensIn, tokensOut: usage.tokensOut },
-                reply.model,
-                Date.now() - lastActivityAt,
-            );
-            await updateRun(ctx, runId, { costTokens, stepCount: seq });
-
-            if (await checkKill()) break;
-            if (stopped()) break;
-
-            const tokenHalt = budget.charge('TOKENS', costTokens - budget.used('TOKENS'));
-            if (tokenHalt) {
-                binding.stopAtCap(tokenHalt);
-                break;
-            }
-            const runtimeHalt = budget.charge('RUNTIME_MS', 0);
-            if (runtimeHalt) {
-                binding.stopAtCap(runtimeHalt);
-                break;
-            }
-
-            if (outcome && textVerdict !== 'CLEAN') {
-                noteVerdict({
-                    toolCallId: `model-output:${calls}`,
-                    tool: 'model-output',
-                    slice: 'result',
-                    verdict: textVerdict,
-                    ruleIds: outcome.ruleIds,
-                });
-                break;
-            }
-
-            lastStopReason = reply.stop_reason;
-            if (isNamedStopReason(reply.stop_reason)) {
-                namedStop = reply.stop_reason;
-                break;
-            }
-            lastActivityAt = Date.now();
-        }
-    } catch (err) {
-        // An abort this run asked for is a stop, settled below by its cause.
-        // Anything else is a failure.
-        if (stopped() === null) {
-            failure = err instanceof Error ? err.message : String(err);
-        }
-    }
+    const parent = await runModelLoop(rt, {
+        subagent: null,
+        binding,
+        params,
+        signal: controller.signal,
+        onTurn: (n) => {
+            parentCalls = n;
+        },
+        skills,
+    });
 
     // ── Settlement ──────────────────────────────────────────────────────────
     await updateRun(ctx, runId, { costTokens, stepCount: seq });
+
+    // The operator's ABORTED is the settlement (#5366). The tokens and steps
+    // above are accounting and land; no status, reason or audit row follows.
+    if (state.operatorAborted) return { status: 'ABORTED', stepFailures };
 
     if (state.killVerdict) {
         const beside: CapBesideKill | null = state.capHalt
@@ -456,6 +1419,10 @@ export async function executeToolRunnerRun(
         const status = await failRun(ctx, runId, KILL_UNREADABLE_MESSAGE);
         return { status, stepFailures: stepFailures + 1 };
     }
+    if (state.breakerOpen || state.breakerUnreadable) {
+        const status = await failRun(ctx, runId, state.breakerOpen ? BREAKER_OPEN_MESSAGE : BREAKER_UNREADABLE_MESSAGE);
+        return { status, stepFailures: stepFailures + 1 };
+    }
     if (state.capHalt) {
         const status = await haltRunAtCap(ctx, runId, state.capHalt, null);
         return { status, stepFailures };
@@ -464,22 +1431,69 @@ export async function executeToolRunnerRun(
         if (state.worst === 'QUARANTINED' && ctx.agentId) {
             await latchOnGuardBlock(ctx.tenantId, ctx.agentId, new Date());
         }
-        const status = await haltRunAtGuard(ctx, runId, state.worst, state.worstRuleIds);
+        const status = await haltRunAtGuard(ctx, runId, state.worst, state.worstRuleIds, 'tool_runner');
         return { status, stepFailures };
     }
-    if (failure !== null) {
-        const status = await failRun(ctx, runId, `tool_runner_run_failed: ${failure}`);
+    if (state.pinMismatch) {
+        const status = await failRun(ctx, runId, SKILL_PIN_MISMATCH_MESSAGE);
         return { status, stepFailures: stepFailures + 1 };
     }
-    if (namedStop) {
-        const status = await failRun(ctx, runId, NAMED_STOP_REASONS[namedStop]);
+    // ── THE PARK (Step 2f): nothing else latched, so the run waits ─────────
+    // One transaction: the transcript, the PENDING checkpoint and the run's
+    // conditional move to AWAITING_APPROVAL with the proposal's deadline. The
+    // wall clock's unattended time so far is kept, so the wait is never
+    // charged. An operator's ABORTED stands.
+    if (state.deferral) {
+        if (!state.parkedTurn) {
+            const status = await failRun(ctx, runId, DEFERRAL_NOT_PARKED_MESSAGE);
+            return { status, stepFailures: stepFailures + 1 };
+        }
+        const proposal = (await readCallProposals(ctx, runId, state.deferral.stepSeq)).find(
+            (p) => p.id === state.deferral?.proposalId,
+        );
+        const sealed = sealTranscript(transcriptOfTurn(state.parkedTurn, state.deferral.toolUseId));
+        const parked = await parkRun(ctx, {
+            deferralId: randomUUID(),
+            runId,
+            stepSeq: state.deferral.stepSeq,
+            checkpointSeq: binding.nextSeq(),
+            toolUseId: state.deferral.toolUseId,
+            toolCalled: state.deferral.toolCalled,
+            proposalId: state.deferral.proposalId,
+            transcriptJson: sealed.json,
+            transcriptHash: sealed.hash,
+            model: state.parkedTurn.reply.model,
+            elapsedMsAtPark: Math.max(Date.now() - clockStartMs, 0),
+            approvalExpiresAt: proposal?.expiresAt ?? null,
+            costTokens,
+        });
+        return { status: parked === 'PARKED' ? 'AWAITING_APPROVAL' : 'ABORTED', stepFailures };
+    }
+    if (parent.failure !== null) {
+        // THE API REFUSED THE RESUMED CONVERSATION (Step 2f): its first request,
+        // answered 400. Settled by name with the API's error type, never
+        // repaired by stripping thinking blocks and trying again.
+        const refusedResume = resume !== null && parent.calls === 0 && parent.failureApi?.status === 400;
+        const status = await failRun(
+            ctx,
+            runId,
+            refusedResume
+                ? resumeTranscriptRefusedMessage(parent.failureApi?.type ?? null)
+                : `tool_runner_run_failed: ${parent.failure}`,
+        );
         return { status, stepFailures: stepFailures + 1 };
     }
-    if (calls === 0 || lastStopReason === 'tool_use' || lastStopReason === 'pause_turn') {
+    if (parent.namedStop) {
+        const status = await failRun(ctx, runId, NAMED_STOP_REASONS[parent.namedStop]);
+        return { status, stepFailures: stepFailures + 1 };
+    }
+    if (parent.calls === 0 || parent.lastStopReason === 'tool_use' || parent.lastStopReason === 'pause_turn') {
         const status = await failRun(ctx, runId, ITERATIONS_EXHAUSTED_MESSAGE);
         return { status, stepFailures: stepFailures + 1 };
     }
 
-    await updateRun(ctx, runId, { status: 'COMPLETED', completedAt: new Date(), stepCount: seq, costTokens });
+    const completed = await updateRun(ctx, runId, { status: 'COMPLETED', completedAt: new Date(), stepCount: seq, costTokens });
+    // Aborted after the last check: the operator's ABORTED stands (#5366).
+    if (!completed) return { status: 'ABORTED', stepFailures };
     return { status: 'COMPLETED', stepFailures };
 }

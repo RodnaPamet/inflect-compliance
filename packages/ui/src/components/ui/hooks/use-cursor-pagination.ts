@@ -26,7 +26,7 @@
  * three Epic O-4 portfolio drill-down tables.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface UseCursorPaginationOptions<TRow> {
     /** Rows the server rendered on initial page-load. */
@@ -40,6 +40,15 @@ export interface UseCursorPaginationOptions<TRow> {
      * params (limit, view, etc.).
      */
     fetchUrl: (cursor: string) => string;
+    /**
+     * Optional. When it changes, the accumulator starts again from the
+     * CURRENT `initialRows` / `initialNextCursor`, and a page still in
+     * flight for the old key is dropped. A page whose server-rendered first
+     * page follows its URL filters passes the applied filters here, so
+     * changing a filter replaces the list rather than keeping the rows the
+     * old filters loaded. Omitted, the seed is read once, as before.
+     */
+    resetKey?: string;
 }
 
 export interface UseCursorPaginationResult<TRow> {
@@ -65,7 +74,7 @@ interface PageResponse<TRow> {
 export function useCursorPagination<TRow>(
     options: UseCursorPaginationOptions<TRow>,
 ): UseCursorPaginationResult<TRow> {
-    const { initialRows, initialNextCursor, fetchUrl } = options;
+    const { initialRows, initialNextCursor, fetchUrl, resetKey } = options;
 
     // Snapshot the initial rows once. Callers passing a fresh array
     // every render (e.g. server prop drilling) shouldn't reset the
@@ -78,25 +87,46 @@ export function useCursorPagination<TRow>(
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Re-seed when `resetKey` changes: React's "adjust state while
+    // rendering" pattern, so the new seed shows in the same render rather
+    // than one effect later. `currentKey` is what an in-flight load compares
+    // against, so a page fetched for the old key never lands on the new list.
+    const [seededKey, setSeededKey] = useState(resetKey);
+    if (resetKey !== seededKey) {
+        setSeededKey(resetKey);
+        setRows([...initialRows]);
+        setNextCursor(initialNextCursor);
+        setError(null);
+        setLoading(false);
+    }
+    const currentKey = useRef(resetKey);
+    useEffect(() => {
+        currentKey.current = resetKey;
+    }, [resetKey]);
+
     const loadMore = useCallback(async (): Promise<void> => {
         if (!nextCursor || loading) return;
+        const startedFor = currentKey.current;
+        const stale = () => currentKey.current !== startedFor;
         setLoading(true);
         setError(null);
         try {
             const res = await fetch(fetchUrl(nextCursor), {
                 credentials: "same-origin",
             });
+            if (stale()) return;
             if (!res.ok) {
                 setError(`load_failed_${res.status}`);
                 return;
             }
             const json = (await res.json()) as PageResponse<TRow>;
+            if (stale()) return;
             setRows((prev) => [...prev, ...json.rows]);
             setNextCursor(json.nextCursor);
         } catch {
-            setError("load_failed");
+            if (!stale()) setError("load_failed");
         } finally {
-            setLoading(false);
+            if (!stale()) setLoading(false);
         }
     }, [nextCursor, loading, fetchUrl]);
 

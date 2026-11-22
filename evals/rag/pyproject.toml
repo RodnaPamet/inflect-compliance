@@ -1,0 +1,16 @@
+# The Ragas harness (docs/ai-architecture/ragas.md, Phase 1). Python lives here
+# and in its CI image, never in the app image (G5). The image installs
+# requirements.lock, the whole resolved set; the two pins below are what the
+# harness imports directly, and tests/guardrails/rag-eval-workflow-pinning.test.ts
+# holds them equal to the lock and the Dockerfile.
+[project]
+name = "inflect-rag"
+version = "1.0.0"
+requires-python = ">=3.11"
+dependencies = ["ragas==0.4.3", "anthropic==0.76.0"]
+
+[project.optional-dependencies]
+test = ["pytest==9.0.3"]
+
+[tool.setuptools]
+packages = ["inflect_rag"]

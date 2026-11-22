@@ -129,11 +129,11 @@ describe('TimeSeriesDatum + typed values', () => {
     it('extends to LabeledSeries for legend / tooltip rendering', () => {
         const s: LabeledSeries<ExampleMultiValues> = {
             id: 'coverage',
-            label: 'Control coverage',
+            label: 'Coverage',
             valueAccessor: (d) => d.values.coverage,
             colorClassName: 'text-brand-emphasis',
         };
-        expect(s.label).toBe('Control coverage');
+        expect(s.label).toBe('Coverage');
     });
 });
 
@@ -214,7 +214,7 @@ describe('ProgressMetric + ProgressSegment', () => {
 describe('KpiMetric', () => {
     it('matches the top-level KpiCard shape the app already uses', () => {
         const m: KpiMetric = exampleKpiMetric;
-        expect(m.label).toBe('Control coverage');
+        expect(m.label).toBe('Coverage');
         expect(m.format).toBe('percent');
         expect(m.delta).toBe(2.4);
     });

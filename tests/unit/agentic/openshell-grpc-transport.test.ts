@@ -37,6 +37,7 @@ import {
 } from '@/lib/agentic/openshell/grpc-transport';
 import {
     DELETION_IS_SETTLED,
+    ProviderNotReadyError,
     SandboxExecIncompleteError,
     SandboxUnreachableError,
 } from '@/lib/agentic/openshell/transport';
@@ -215,6 +216,43 @@ describe('against a real gRPC server built from the vendored contract', () => {
         );
     });
 
+    it('a run longer than the unary deadline completes; the stream has no deadline (#5289)', async () => {
+        // grpc-js bounds a server stream's WHOLE call by its deadline, so the
+        // 30 s unary deadline cut every longer collection as "unreachable"
+        // after the tool had run. Here the deadline is 50 ms and the run 300 ms.
+        await withRealServer(
+            {
+                ExecSandbox: (call: any) => {
+                    call.write({ stdout: { data: Buffer.from('started') } });
+                    setTimeout(() => {
+                        call.write({ exit: { exit_code: 0 } });
+                        call.end();
+                    }, 300);
+                },
+            },
+            async (client) => {
+                const t = grpcSandboxTransport({
+                    endpoint: 'u',
+                    caCertPath: 'u',
+                    clientCertPath: 'u',
+                    clientKeyPath: 'u',
+                    workspace: 'default',
+                    policy: POLICY,
+                    deadlineMs: 50,
+                    clientForTests: client,
+                });
+                const res = await t.execSandbox({
+                    sandboxId: 'sbx-long',
+                    file: 'x',
+                    args: [],
+                    signal: new AbortController().signal,
+                });
+                expect(res.exitCode).toBe(0);
+                expect(res.stdout).toBe('started');
+            },
+        );
+    });
+
     it('sends the command as file-then-args, and attaches a provider BY NAME only', async () => {
         const execReq: any[] = [];
         const attachReq: any[] = [];
@@ -315,6 +353,209 @@ function stubStream(script: (s: { data: (c: unknown) => void; end: () => void; e
     return stream;
 }
 
+/**
+ * THE READINESS POLL — #5739.
+ *
+ * Driven through the injected client rather than the real server, because what
+ * is under test is the loop: how many times it asks, what it does with each
+ * answer, and whether it ever returns without a READY. The wire shape of the
+ * attach request is proved against the real server above.
+ */
+describe('awaitProviderReady polls until the gateway OBSERVES the credential', () => {
+    const status = (state: string, extra: Record<string, unknown> = {}) => ({
+        status: { state, ...extra },
+    });
+
+    it('returns the attach response rather than discarding it', async () => {
+        const transport = t(
+            injected({
+                AttachSandboxProvider: (_req, _o, cb) =>
+                    cb(null, { attached: true, receipt: { receipt_id: 'rcpt-7' } }),
+            }),
+        );
+        // Discarding this is what made the race invisible: with no receipt there
+        // is nothing to ask the readiness verb about.
+        await expect(
+            transport.attachProvider({
+                sandboxId: 'sbx-1',
+                providerName: 'p',
+                signal: new AbortController().signal,
+            }),
+        ).resolves.toEqual({ attached: true, receiptId: 'rcpt-7' });
+    });
+
+    it('reports an already-attached provider as attached: false, not as a failure', async () => {
+        const transport = t(
+            injected({ AttachSandboxProvider: (_req, _o, cb) => cb(null, { attached: false }) }),
+        );
+        await expect(
+            transport.attachProvider({
+                sandboxId: 'sbx-1',
+                providerName: 'p',
+                signal: new AbortController().signal,
+            }),
+        ).resolves.toEqual({ attached: false, receiptId: null });
+    });
+
+    it('keeps asking while PENDING and returns once READY', async () => {
+        const answers = [
+            status('PROVIDER_READINESS_STATE_PERSISTED'),
+            status('PROVIDER_READINESS_STATE_PENDING'),
+            status('PROVIDER_READINESS_STATE_READY', { observed: { credentials_installed: true } }),
+        ];
+        const asked: unknown[] = [];
+        const transport = t(
+            injected({
+                GetSandboxProviderStatus: (req, _o, cb) => {
+                    asked.push(req);
+                    cb(null, answers[Math.min(asked.length - 1, answers.length - 1)]);
+                },
+            }),
+        );
+        await transport.awaitProviderReady({
+            sandboxId: 'sbx-1',
+            providerName: 'p',
+            receiptId: 'rcpt-7',
+            signal: new AbortController().signal,
+        });
+        // Three readings, not one. A single read would have resolved on the
+        // PERSISTED answer, which is the intent and not the credential.
+        expect(asked).toHaveLength(3);
+        expect((asked[0] as { receipt_id?: string }).receipt_id).toBe('rcpt-7');
+    });
+
+    it('asks by provider name when the attach minted no receipt', async () => {
+        const asked: Array<Record<string, unknown>> = [];
+        const transport = t(
+            injected({
+                GetSandboxProviderStatus: (req, _o, cb) => {
+                    asked.push(req as Record<string, unknown>);
+                    cb(null, status('PROVIDER_READINESS_STATE_READY'));
+                },
+            }),
+        );
+        await transport.awaitProviderReady({
+            sandboxId: 'sbx-1',
+            providerName: 'p',
+            receiptId: null,
+            signal: new AbortController().signal,
+        });
+        // The field is OMITTED rather than sent empty: an empty receipt id is a
+        // receipt the gateway would look up and not find.
+        expect('receipt_id' in asked[0]).toBe(false);
+        expect(asked[0].provider).toBe('p');
+    });
+
+    it('refuses a WITHHELD credential without waiting out the bound', async () => {
+        const transport = t(
+            injected({
+                GetSandboxProviderStatus: (_req, _o, cb) =>
+                    cb(
+                        null,
+                        status('PROVIDER_READINESS_STATE_WITHHELD', {
+                            reason: 'PROVIDER_READINESS_REASON_CREDENTIALS_WITHHELD',
+                            observed: { credentials_installed: false },
+                        }),
+                    ),
+            }),
+        );
+        await expect(
+            transport.awaitProviderReady({
+                sandboxId: 'sbx-1',
+                providerName: 'p',
+                receiptId: 'r',
+                signal: new AbortController().signal,
+            }),
+        ).rejects.toThrow(ProviderNotReadyError);
+    });
+
+    it('refuses a state this build does not recognise', async () => {
+        const transport = t(
+            injected({
+                GetSandboxProviderStatus: (_req, _o, cb) =>
+                    cb(null, status('PROVIDER_READINESS_STATE_INVENTED_LATER')),
+            }),
+        );
+        await expect(
+            transport.awaitProviderReady({
+                sandboxId: 'sbx-1',
+                providerName: 'p',
+                receiptId: 'r',
+                signal: new AbortController().signal,
+            }),
+        ).rejects.toThrow(ProviderNotReadyError);
+    });
+
+    it('refuses an answer carrying no state at all', async () => {
+        const transport = t(
+            injected({ GetSandboxProviderStatus: (_req, _o, cb) => cb(null, {}) }),
+        );
+        // Silence is not readiness. This is the shape a gateway returns for a
+        // provider it has no observation for.
+        await expect(
+            transport.awaitProviderReady({
+                sandboxId: 'sbx-1',
+                providerName: 'p',
+                receiptId: 'r',
+                signal: new AbortController().signal,
+            }),
+        ).rejects.toThrow(ProviderNotReadyError);
+    });
+
+    it('stops when the collection is aborted mid-wait', async () => {
+        const ac = new AbortController();
+        ac.abort();
+        const transport = t(
+            injected({
+                GetSandboxProviderStatus: (_req, _o, cb) =>
+                    cb(null, status('PROVIDER_READINESS_STATE_PENDING')),
+            }),
+        );
+        await expect(
+            transport.awaitProviderReady({
+                sandboxId: 'sbx-1',
+                providerName: 'p',
+                receiptId: 'r',
+                signal: ac.signal,
+            }),
+        ).rejects.toThrow(ProviderNotReadyError);
+    });
+
+    it('never resolves on PERSISTED alone, however many times it is asked', async () => {
+        jest.useFakeTimers();
+        try {
+            let asks = 0;
+            const transport = t(
+                injected({
+                    GetSandboxProviderStatus: (_req, _o, cb) => {
+                        asks += 1;
+                        cb(null, status('PROVIDER_READINESS_STATE_PERSISTED'));
+                    },
+                }),
+            );
+            const pending = transport
+                .awaitProviderReady({
+                    sandboxId: 'sbx-1',
+                    providerName: 'p',
+                    receiptId: 'r',
+                    signal: new AbortController().signal,
+                })
+                .then(
+                    () => 'RESOLVED',
+                    (e) => (e instanceof ProviderNotReadyError ? 'REFUSED' : 'OTHER'),
+                );
+            // Run the clock past the bound. The negated claim — that it does not
+            // resolve — is only meaningful once the loop has actually had its
+            // chances, which is why the timers are advanced rather than awaited.
+            await jest.advanceTimersByTimeAsync(60_000);
+            expect(await pending).toBe('REFUSED');
+            expect(asks).toBeGreaterThan(1);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+});
+
 const withCode = (code: number, msg = 'boom'): any => Object.assign(new Error(msg), { code });
 
 function injected(over: Partial<GrpcClientLike>): GrpcClientLike {
@@ -326,6 +567,7 @@ function injected(over: Partial<GrpcClientLike>): GrpcClientLike {
         GetSandbox: unimplemented,
         DeleteSandbox: unimplemented,
         AttachSandboxProvider: unimplemented,
+        GetSandboxProviderStatus: unimplemented,
         ExecSandbox: unimplemented as never,
         ...over,
     } as GrpcClientLike;
@@ -384,6 +626,57 @@ describe('failure arms map onto this product error vocabulary', () => {
                 signal: new AbortController().signal,
             }),
         ).rejects.toThrow(/sbx-6[\s\S]*after 5 byte/);
+    });
+
+    it('a multi-byte character split across chunks survives decoding (#5304)', async () => {
+        // A gRPC chunk boundary can fall inside a UTF-8 character. Decoding
+        // each chunk on its own turned both halves into U+FFFD, so evidence
+        // naming a non-ASCII resource no longer matched the resource.
+        const text = '{"name":"Zürich-東京"}';
+        const bytes = Buffer.from(text, 'utf8');
+        const cut = bytes.indexOf(Buffer.from('東', 'utf8')) + 1;
+        const client = injected({
+            ExecSandbox: () =>
+                stubStream((s) => {
+                    s.data({ stdout: { data: bytes.subarray(0, cut) } });
+                    s.data({ stdout: { data: bytes.subarray(cut) } });
+                    s.data({ stderr: { data: Buffer.from('ü', 'utf8').subarray(0, 1) } });
+                    s.data({ stderr: { data: Buffer.from('ü', 'utf8').subarray(1) } });
+                    s.data({ exit: { exit_code: 0 } });
+                    s.end();
+                }),
+        });
+        const res = await t(client).execSandbox({
+            sandboxId: 'sbx-utf8',
+            file: 'x',
+            args: [],
+            signal: new AbortController().signal,
+        });
+        expect(res.stdout).toBe(text);
+        expect(res.stderr).toBe('ü');
+    });
+
+    it('a signal aborted before the call cancels the stream at once (#5289)', async () => {
+        // With no deadline on the stream, the signal is its only bound, and an
+        // already-aborted signal never fires 'abort'.
+        let cancelled = false;
+        const client = injected({
+            ExecSandbox: () => {
+                const stream = stubStream((s) => {
+                    if (cancelled) s.error(withCode(1, 'Cancelled on client'));
+                });
+                stream.cancel = () => {
+                    cancelled = true;
+                };
+                return stream;
+            },
+        });
+        const ac = new AbortController();
+        ac.abort();
+        await expect(
+            t(client).execSandbox({ sandboxId: 'sbx-7', file: 'x', args: [], signal: ac.signal }),
+        ).rejects.toThrow();
+        expect(cancelled).toBe(true);
     });
 
     it('UNAVAILABLE becomes SandboxUnreachableError — the ORDINARY case', async () => {

@@ -53,6 +53,7 @@ import {
     browseSharePoint,
 } from '@/app-layer/integrations/providers/sharepoint/service';
 import { Prisma } from '@prisma/client';
+import { withApprovedDrives } from '../helpers/sharepoint-approved-drives';
 
 const admin = { tenantId: 't1', userId: 'u1', permissions: { canAdmin: true } } as any;
 const reader = { tenantId: 't1', userId: 'u2', permissions: { canAdmin: false } } as any;
@@ -296,7 +297,7 @@ describe('picker field fallbacks', () => {
         const fetchImpl = jest.fn().mockResolvedValue(
             jsonRes({ value: [{ id: 'x1' }, { id: 'f1', name: 'Empty folder', folder: {} }] }),
         );
-        const res = await browseSharePoint(admin, { connectionId: 'c1', driveId: 'd1' }, { fetchImpl: fetchImpl as any });
+        const res = await browseSharePoint(admin, { connectionId: 'c1', driveId: 'd1' }, { fetchImpl: withApprovedDrives(fetchImpl) as any });
         expect(res.items[0]).toMatchObject({ id: 'x1', name: '(unnamed)', isFolder: false, hasChildren: false });
         // A folder Graph reported without childCount is expandable-unknown, and
         // the picker treats that as "no children" rather than showing a
@@ -306,7 +307,7 @@ describe('picker field fallbacks', () => {
 
     it('reports no cursor when the page is the last one', async () => {
         const fetchImpl = jest.fn().mockResolvedValue(jsonRes({ value: [] }));
-        const res = await browseSharePoint(admin, { connectionId: 'c1', driveId: 'd1' }, { fetchImpl: fetchImpl as any });
+        const res = await browseSharePoint(admin, { connectionId: 'c1', driveId: 'd1' }, { fetchImpl: withApprovedDrives(fetchImpl) as any });
         expect(res.nextPageToken).toBeUndefined();
     });
 });

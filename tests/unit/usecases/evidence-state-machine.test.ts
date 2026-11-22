@@ -13,7 +13,7 @@ jest.mock('@/app-layer/policies/common', () => ({
     assertCanAudit: jest.fn(),
 }));
 
-const repoUpdate = jest.fn();
+const repoUpdate = jest.fn(); // EvidenceRepository.transitionStatus
 const repoAddReview = jest.fn();
 const repoGetById = jest.fn();
 // SoD source (ep1 review gate) — empty map ⇒ fall back to owner.
@@ -21,7 +21,8 @@ const repoGetLatestSubmitters = jest.fn(async () => new Map());
 jest.mock('@/app-layer/repositories/EvidenceRepository', () => ({
     EvidenceRepository: {
         getById: repoGetById,
-        update: repoUpdate,
+        // #5317 — a review's status move is the conditional transition.
+        transitionStatus: repoUpdate,
         addReview: repoAddReview,
         getLatestSubmitters: repoGetLatestSubmitters,
     },
@@ -62,6 +63,7 @@ beforeEach(() => {
     policyCalls.length = 0;
     repoGetById.mockReset();
     repoUpdate.mockReset();
+    repoUpdate.mockResolvedValue(true);
     repoAddReview.mockReset();
     tenantDb.user.findUnique.mockReset();
     tenantDb.user.findFirst.mockReset();
@@ -105,41 +107,42 @@ describe('reviewEvidence — Audit S3 state machine', () => {
 
     it('accepts DRAFT → SUBMITTED', async () => {
         repoGetById.mockResolvedValueOnce({ id: 'e1', status: 'DRAFT', ownerUserId: null });
-        repoUpdate.mockResolvedValueOnce({});
+        repoUpdate.mockResolvedValueOnce(true);
         const out = await reviewEvidence(ctx, 'e1', { action: 'SUBMITTED' });
         expect(out).toEqual({ success: true, status: 'SUBMITTED' });
         expect(repoUpdate).toHaveBeenCalledWith(
             expect.anything(),
             expect.anything(),
             'e1',
-            { status: 'SUBMITTED' },
+            'DRAFT',
+            'SUBMITTED',
         );
     });
 
     it('accepts SUBMITTED → APPROVED', async () => {
         repoGetById.mockResolvedValueOnce({ id: 'e1', status: 'SUBMITTED', ownerUserId: null, title: 't' });
-        repoUpdate.mockResolvedValueOnce({});
+        repoUpdate.mockResolvedValueOnce(true);
         const out = await reviewEvidence(ctx, 'e1', { action: 'APPROVED' });
         expect(out.status).toBe('APPROVED');
     });
 
     it('accepts SUBMITTED → REJECTED', async () => {
         repoGetById.mockResolvedValueOnce({ id: 'e1', status: 'SUBMITTED', ownerUserId: null, title: 't' });
-        repoUpdate.mockResolvedValueOnce({});
+        repoUpdate.mockResolvedValueOnce(true);
         const out = await reviewEvidence(ctx, 'e1', { action: 'REJECTED', comment: 'test rejection reason' });
         expect(out.status).toBe('REJECTED');
     });
 
     it('accepts REJECTED → SUBMITTED (author revises and resubmits)', async () => {
         repoGetById.mockResolvedValueOnce({ id: 'e1', status: 'REJECTED', ownerUserId: null });
-        repoUpdate.mockResolvedValueOnce({});
+        repoUpdate.mockResolvedValueOnce(true);
         const out = await reviewEvidence(ctx, 'e1', { action: 'SUBMITTED' });
         expect(out.status).toBe('SUBMITTED');
     });
 
     it('accepts NEEDS_REVIEW → SUBMITTED (owner re-submits stale evidence)', async () => {
         repoGetById.mockResolvedValueOnce({ id: 'e1', status: 'NEEDS_REVIEW', ownerUserId: null });
-        repoUpdate.mockResolvedValueOnce({});
+        repoUpdate.mockResolvedValueOnce(true);
         const out = await reviewEvidence(ctx, 'e1', { action: 'SUBMITTED' });
         expect(out.status).toBe('SUBMITTED');
     });
@@ -164,7 +167,7 @@ describe('reviewEvidence — Audit S3 free-text fallback retired', () => {
             owner: 'Alice Legacy',
             title: 'Quarterly access report',
         });
-        repoUpdate.mockResolvedValueOnce({});
+        repoUpdate.mockResolvedValueOnce(true);
         await reviewEvidence(ctx, 'e1', { action: 'APPROVED' });
         // No findFirst — only findUnique gated on ownerUserId.
         expect(tenantDb.user.findFirst).not.toHaveBeenCalled();
@@ -182,7 +185,7 @@ describe('reviewEvidence — Audit S3 free-text fallback retired', () => {
             owner: null,
             title: 'Quarterly access report',
         });
-        repoUpdate.mockResolvedValueOnce({});
+        repoUpdate.mockResolvedValueOnce(true);
         tenantDb.tenantMembership.findFirst.mockResolvedValueOnce({ id: 'm-1' });
         await reviewEvidence(ctx, 'e1', { action: 'APPROVED' });
         expect(tenantDb.tenantMembership.findFirst).toHaveBeenCalled();

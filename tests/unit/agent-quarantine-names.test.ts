@@ -35,7 +35,7 @@ jest.mock('@/lib/audit', () =>
 );
 jest.mock('@/app-layer/ai/decision-log', () => ({
     logAiDecision: jest.fn(async () => 'decision-1'),
-    recordDecisionOutcomeForDigest: jest.fn(async () => undefined),
+    recordDecisionOutcomeForProposal: jest.fn(async () => undefined),
 }));
 
 import { readQuarantineNames } from '@/app-layer/usecases/agent-proposals';

@@ -121,6 +121,13 @@ export async function createControl(ctx, data) {
 }
 ```
 
+Every path that creates controls asks the same gate, with the number
+it would create as `assertWithinLimit`'s third argument: a framework
+install (a pack, several packs, a single template or a bulk install,
+`usecases/framework/install.ts`) and installing controls from templates
+(`usecases/control/mappings.ts`) count the controls that do not already
+exist and refuse the whole install before any row is written (#5263).
+
 The gate runs **before any write** so the DB never observes a row
 that violated the plan. Read paths and UI rendering are NOT
 considered the enforcement boundary — anything visible to the user
@@ -282,6 +289,83 @@ truth. The webhook handler is responsible for moving the row from
 `PRO` back to `FREE` when a subscription cancels. If the row is
 still `PRO`, the webhook didn't fire or didn't apply (look at
 `BillingEvent` for the trail).
+
+### Setting a plan by hand
+
+A tenant cannot set its own plan: in SaaS mode the plan decides
+entitlements, so the workspace route that once let an OWNER set it was
+removed (#5379, owner decision 2026-11-12). The platform operator sets a
+plan by hand with `POST /api/admin/tenants/:slug/plan`, gated by
+`PLATFORM_ADMIN_API_KEY`, through `setTenantPlanAsPlatform` in
+`src/app-layer/usecases/tenant-lifecycle.ts`; the change is audited in the
+tenant's own trail as its system user. A hand-made `BillingAccount` row
+carries a `manual:<tenantId>` placeholder customer, which is replaced by a
+real Stripe customer when the tenant first opens checkout or the portal,
+keeping the plan the operator set.
+
+### How the webhook applies a subscription event
+
+`handleWebhookEvent` in [`src/lib/stripe.ts`](../src/lib/stripe.ts)
+never writes the subscription a Stripe event carries. Stripe does not
+deliver events in order and re-delivers late ones, so that snapshot can
+be older than the state already stored. For `checkout.session.completed`,
+`customer.subscription.created` / `.updated` / `.deleted` and
+`invoice.payment_failed` / `.payment_succeeded`, the event only names
+the subscription. The handler re-fetches it from Stripe and writes the
+live answer. The order events arrive in therefore decides nothing, and
+an invoice event's type sets no status of its own (#5316).
+
+* An invoice names its subscription in
+  `parent.subscription_details.subscription` (current API versions, and
+  the only field the pinned SDK's types expose) or in the top-level
+  `subscription` (older API versions), as an id or an expanded object.
+  An invoice that names no subscription changes nothing.
+* `BillingAccount` stores one `stripeSubscriptionId`. Every event but
+  `checkout.session.completed` is applied only when the stored id is
+  null or equals the subscription the event names. An event about any
+  other subscription is recorded in `BillingEvent`, changes nothing, and
+  logs one line ("concerned a non-current subscription"). A completed
+  checkout is what sets a new subscription, so it is exempt.
+* The write itself is conditional on the `stripeSubscriptionId` read
+  before the Stripe round trip (an `updateMany` naming that value, null
+  included). If another event changed it in the meantime, typically a
+  checkout committing a new subscription, the write matches no row,
+  changes nothing and logs one line ("changed during the re-fetch"). The
+  event is still recorded: the account already holds newer state, and a
+  re-delivery would find it and change nothing either. A completed
+  checkout writes unconditionally, because it replaces whatever is
+  stored, including a deletion that committed during its own re-fetch.
+
+* A live status of `canceled` or `incomplete_expired`, or Stripe
+  answering `resource_missing`, is written as a deletion: `status =
+  CANCELED`, `plan = FREE`, `stripeSubscriptionId = null`. The
+  exception is an account that stores no subscription: it never
+  subscribed or already had the deletion applied, so the event changes
+  nothing (one log line, the event recorded). That keeps a late event
+  about an old subscription from resetting a plan an operator set with
+  `changeTenantPlan` to FREE. A completed checkout of an ended
+  subscription is still written as a deletion.
+* Any other live status is written as it stands: plan from the
+  subscription's `metadata.plan`, status mapped from Stripe's, period
+  end and trial end from the subscription.
+* If the re-fetch fails for any other reason (network, rate limit,
+  Stripe outage), nothing is written and the event is not recorded in
+  `BillingEvent`. `/api/stripe/webhook` answers `503`, so Stripe
+  delivers the event again, and the retry re-fetches.
+
+Signature verification and the `BillingEvent.stripeEventId` idempotency
+check run before any of this. `/api/stripe/webhook` answers:
+
+* `400` when the signature does not verify;
+* `503` when the live subscription could not be re-fetched;
+* `500` for any other processing error (a database error, say), so
+  Stripe delivers the event again rather than dropping it;
+* `200` otherwise, including events it ignores.
+
+The `BillingEvent` row is written only after the account write
+succeeds, so an event that failed is not recorded and its re-delivery is
+processed rather than skipped as a duplicate. A failure is logged with
+the event id and type and the error's class and code, never the payload.
 
 ### "We just added a new gated resource and limits aren't applying"
 

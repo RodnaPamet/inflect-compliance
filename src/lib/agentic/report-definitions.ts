@@ -176,6 +176,42 @@ export const METRIC_DEFINITIONS = {
         ],
     },
 
+    'inventory.agents_with_spending_authority': {
+        id: 'inventory.agents_with_spending_authority',
+        label: 'Agents with declared spending authority',
+        population: agentPopulation('with at least one AgentSpendingAuthority row not WITHDRAWN'),
+        moment: 'AS_OF_GENERATION',
+        includes: [
+            'envelopes awaiting review, reviewed, and those a kill asked to be ' +
+                'suspended — a suspension is a request to the token requestor, ' +
+                'not proof the token stopped',
+            'retired agents whose envelope was never withdrawn',
+        ],
+        excludes: [
+            ...AGENT_ROW_EXCLUSIONS,
+            'withdrawn envelopes',
+            'agents whose code can pay but on which nobody declared an envelope — ' +
+                'the harness raises SPENDING_AGENT_UNDECLARED for those, and a ' +
+                'register count cannot see them',
+        ],
+    },
+    'inventory.agents_with_unreviewed_spending_authority': {
+        id: 'inventory.agents_with_unreviewed_spending_authority',
+        label: 'Agents with spending authority nobody else has reviewed',
+        population: agentPopulation(
+            'with an AgentSpendingAuthority row that is DECLARED, or SUSPENDED_REQUESTED with no review',
+        ),
+        moment: 'AS_OF_GENERATION',
+        includes: [
+            'an envelope a kill moved to SUSPENDED_REQUESTED before anybody ' +
+                'reviewed it — the same rule that holds the agent back from activation',
+        ],
+        excludes: [
+            ...AGENT_ROW_EXCLUSIONS,
+            'withdrawn envelopes, and envelopes a second person reviewed',
+        ],
+    },
+
     // ── ASI01–ASI10 coverage ────────────────────────────────────────
     'asi.agents_in_scope': {
         id: 'asi.agents_in_scope',
@@ -780,7 +816,7 @@ export const METRIC_DEFINITIONS = {
         excludes: [
             'workpapers the keyed draw passed over at a rate below 100% (at the ' +
                 'pilot\u2019s 100% there are none)',
-            'workpapers written since the last monthly sweep, which are not drawn yet',
+            'workpapers written since the last daily sweep (09:40 UTC), which are not drawn yet',
         ],
     },
     'assurance.workpaper_reviews_unassigned': {

@@ -9,6 +9,8 @@
  * Feature gate: Global flag, role-based, and optional plan-based gating.
  * Audit: Every generate/apply/dismiss action is logged with full context.
  */
+import { calculateRiskScore } from '@/lib/risk-scoring';
+import { readRiskMatrixAxes, smallerAxis } from './risk-matrix-axes';
 import { runInTenantContext } from '@/lib/db-context';
 import {
     RESIDENCY_SELECT,
@@ -51,7 +53,13 @@ export async function generateRiskSuggestions(
     // 3. Rate limit check (before any DB work)
     await checkRateLimit(ctx.tenantId, ctx.userId);
 
-    return runInTenantContext(ctx, async (db) => {
+    // A provider failure is RECORDED inside the transaction and RAISED after
+    // it commits (#5211). Throwing from inside rolled back the failed session,
+    // its DISMISSED status and the AI decision-log row the EU AI Act Art 12
+    // record exists for, leaving only an audit row that named a session that
+    // did not exist.
+    let providerFailure: unknown = undefined;
+    const result = await runInTenantContext(ctx, async (db) => {
         // 4. Fetch tenant profile
         const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId } });
         if (!tenant) throw notFound('Tenant not found');
@@ -88,7 +96,10 @@ export async function generateRiskSuggestions(
             frameworks: apiInput.frameworks,
             assets,
             existingControls: controlNames,
-            maxRiskScale: tenant.maxRiskScale,
+            // The model rates both axes on one scale, so it gets the SMALLER
+            // axis of the tenant's matrix: every suggestion then fits both
+            // (#5080). `Tenant.maxRiskScale` is no longer the bound.
+            maxRiskScale: smallerAxis(await readRiskMatrixAxes(db, ctx.tenantId)),
         };
 
         // 8. *** PRIVACY: Sanitize before sending to AI ***
@@ -243,7 +254,8 @@ export async function generateRiskSuggestions(
                 sessionRef: session.id,
             });
 
-            throw err;
+            providerFailure = err ?? new Error('AI provider failed');
+            return null;
         }
 
         // AISVS C7.2.2 / C7.3.2 / C7.3.3 / C5.2.4 — output safety gate. Runs
@@ -407,6 +419,8 @@ export async function generateRiskSuggestions(
                 outputGuard.reviewRequired,
         };
     });
+    if (providerFailure !== undefined || result === null) throw providerFailure;
+    return result;
 }
 
 // ─── Get Session ───
@@ -450,8 +464,8 @@ export async function applySession(ctx: RequestContext, sessionId: string, input
             throw forbidden('Session has been dismissed');
         }
 
-        const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId } });
-        const maxScale = tenant?.maxRiskScale ?? 5;
+        // Each axis is bounded by the tenant's own matrix (#5080).
+        const axes = await readRiskMatrixAxes(db, ctx.tenantId);
 
         const acceptedIds = new Set(input.acceptedItemIds);
         const createdRisks: string[] = [];
@@ -465,10 +479,11 @@ export async function applySession(ctx: RequestContext, sessionId: string, input
         // item that is not accepted is ignored, as the item is not applied.
         const editsById = new Map((input.edits ?? []).map((e) => [e.itemId, e]));
         for (const edit of editsById.values()) {
-            for (const value of [edit.likelihood, edit.impact]) {
-                if (value !== undefined && value > maxScale) {
-                    throw badRequest(`Likelihood and impact must be between 1 and ${maxScale}`);
-                }
+            if (edit.likelihood !== undefined && edit.likelihood > axes.likelihoodLevels) {
+                throw badRequest(`Likelihood must be between 1 and ${axes.likelihoodLevels}`);
+            }
+            if (edit.impact !== undefined && edit.impact > axes.impactLevels) {
+                throw badRequest(`Impact must be between 1 and ${axes.impactLevels}`);
             }
         }
 
@@ -517,7 +532,7 @@ export async function applySession(ctx: RequestContext, sessionId: string, input
 
                 const likelihood = item.likelihoodSuggested ?? 3;
                 const impact = item.impactSuggested ?? 3;
-                const score = Math.round((likelihood / maxScale) * (impact / maxScale) * maxScale * maxScale);
+                const score = calculateRiskScore(likelihood, impact, axes.likelihoodLevels, axes.impactLevels);
 
                 // Through the repository, NOT db.risk.create — the repo mints
                 // the per-tenant RSK-N key from the atomic counter. Creating
@@ -630,6 +645,16 @@ export async function dismissSession(ctx: RequestContext, sessionId: string) {
         });
 
         if (!session) throw notFound('Session not found');
+        // A decided session stays decided (#5303), as `applySession` holds it.
+        // Dismissing an APPLIED one would relabel risks that were created as
+        // rejected, and write an audit row and an Art 14 outcome saying the
+        // human turned down suggestions they in fact accepted.
+        if (session.status === 'APPLIED') {
+            throw forbidden('Session has already been applied');
+        }
+        if (session.status === 'DISMISSED') {
+            throw forbidden('Session has already been dismissed');
+        }
 
         const updated = await db.riskSuggestionSession.update({
             where: { id: session.id },

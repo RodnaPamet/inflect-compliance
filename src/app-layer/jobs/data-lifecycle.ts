@@ -22,6 +22,7 @@ import { SOFT_DELETE_MODELS, withDeleted } from '@/lib/soft-delete';
 import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
 import { purgeEvidenceBlobs } from '../services/evidence-blob-purge';
+import { deleteKnowledgeOfPurgedRow } from '../services/knowledge-purge';
 
 /** Minimal delegate interface for dynamic model access by string key */
 interface ModelDelegate {
@@ -138,6 +139,16 @@ export interface PurgeResult {
     model: string;
     scanned: number;
     purged: number;
+    /**
+     * Rows a RESTRICT child still holds down — #5083.
+     *
+     * REQUIRED, not optional, so every producer states it: an absent count and
+     * a zero count read identically to a caller, and the whole point of this
+     * number is to be noticed. A blocked row stays soft-deleted and is retried
+     * on the next pass, so a figure that stays non-zero day after day is the
+     * signal that an edge needs deciding rather than retrying.
+     */
+    blocked: number;
     dryRun: boolean;
 }
 
@@ -160,6 +171,22 @@ export interface RetentionSweepResult {
  *   - Emits DATA_PURGED audit event per record
  *   - Tenant-scoped
  */
+/**
+ * A foreign-key violation, through either shape Prisma can report it in.
+ *
+ * `$executeRawUnsafe` does not always surface a typed `P2003`: a raw statement
+ * can arrive as the driver's own error carrying Postgres SQLSTATE `23503`. So
+ * both are recognised, and nothing else is — a predicate that matched broadly
+ * would turn this from "tolerate a known, expected refusal" into "ignore every
+ * failure the purge hits", which is a worse bug than the one being fixed.
+ */
+function isForeignKeyViolation(err: unknown): boolean {
+    if (typeof err !== 'object' || err === null) return false;
+    const e = err as { code?: unknown; meta?: { code?: unknown } };
+    if (e.code === 'P2003' || e.code === '23503') return true;
+    return e.meta?.code === '23503';
+}
+
 export async function purgeSoftDeletedOlderThan(
     options: PurgeSoftDeletedOptions = {},
 ): Promise<PurgeResult[]> {
@@ -206,6 +233,7 @@ export async function purgeSoftDeletedOlderThan(
 
             const scanned = candidates.length;
             let purged = 0;
+            let blocked = 0;
 
             if (!dryRun) {
                 // Evidence is the only model in this loop whose rows point at
@@ -229,10 +257,56 @@ export async function purgeSoftDeletedOlderThan(
                 }
 
                 for (const record of candidates) {
-                    await db.$executeRawUnsafe(
-                        `DELETE FROM "${model}" WHERE "id" = $1`,
-                        record.id,
-                    );
+                    // ── ONE BLOCKED ROW USED TO STOP THE WHOLE JOB (#5083) ──
+                    //
+                    // Several child FKs onto these models are ON DELETE
+                    // RESTRICT (ControlTestRun, ControlTestPlan,
+                    // ControlException, RiskTreatmentPlan, and the agent and
+                    // peer vendor references), and the soft-delete usecases
+                    // leave those children in place. So an ordinary deleted
+                    // control that once had a test run raised SQLSTATE 23503
+                    // here 90 days later, `runJob` rethrew, and this sweep has
+                    // NO tenant filter — so one row stopped the purge for
+                    // every tenant, and everything the executor awaits after
+                    // it (the rest of the soft-delete models, the expired
+                    // evidence purge, the identity and legacy-snapshot
+                    // retention purges, `runRetentionSweep` and the
+                    // soft-deleted TENANT purge) never ran. The row stays, so
+                    // it happened again every day, and the retention
+                    // commitments in docs/data-retention.md quietly stopped
+                    // being met. The repo's own drift residue already
+                    // described this hazard.
+                    //
+                    // The row is left soft-deleted and retried next pass: that
+                    // is the honest outcome, because what SHOULD happen to the
+                    // child is a per-edge product decision, not something to
+                    // guess at inside a sweep.
+                    try {
+                        // The row's knowledge chunks first: they name it
+                        // polymorphically, so no FK takes them, and a policy's
+                        // versions cascade away with it and could not be named
+                        // after. Harmless if the DELETE below is then refused —
+                        // a soft-deleted row is not indexable anyway
+                        // (services/knowledge-purge.ts).
+                        await deleteKnowledgeOfPurgedRow(db, model, record.tenantId, record.id);
+                        await db.$executeRawUnsafe(
+                            `DELETE FROM "${model}" WHERE "id" = $1`,
+                            record.id,
+                        );
+                    } catch (err) {
+                        if (!isForeignKeyViolation(err)) throw err;
+                        blocked++;
+                        logger.warn('data-lifecycle: row held by a RESTRICT child', {
+                            component: 'data-lifecycle',
+                            model,
+                            // No free text from the error: it can name columns
+                            // and values. The constraint is identified by the
+                            // row and model, which is what an operator needs.
+                            recordId: record.id,
+                            tenantId: record.tenantId,
+                        });
+                        continue;
+                    }
 
                     // Emit audit event
                     await db.auditLog.create({
@@ -253,12 +327,12 @@ export async function purgeSoftDeletedOlderThan(
                 }
             }
 
-            results.push({ model, scanned, purged, dryRun });
+            results.push({ model, scanned, purged, blocked, dryRun });
 
             if (scanned > 0) {
                 logger.info('purge-soft-deleted', {
                     component: 'job',
-                    model, scanned, purged, dryRun, graceDays,
+                    model, scanned, purged, blocked, dryRun, graceDays,
                 });
             }
         }
@@ -354,7 +428,11 @@ export async function purgeExpiredEvidenceOlderThan(
             component: 'job', scanned, purged, dryRun, graceDays,
         });
 
-        return { model: 'Evidence', scanned, purged, dryRun };
+        // `blocked: 0` and not omitted: the field is required so that every
+        // producer states it. This purge deletes Evidence whose retention has
+        // expired and has no RESTRICT child onto it, so the count is a real
+        // zero rather than "not measured".
+        return { model: 'Evidence', scanned, purged, blocked: 0, dryRun };
     }, { tenantId: options.tenantId });
 }
 
@@ -440,16 +518,22 @@ export async function purgeIdentityArtefactsOlderThan(
             }
         }
 
+        // `blocked: 0` throughout: these purges delete by a date predicate,
+        // not row by row through a RESTRICT edge, so nothing here can be held
+        // down. Stated rather than omitted because the field is required —
+        // an absent count and a zero read the same to a caller.
         results.push({
             model: 'IdentityWriteJournal',
             scanned: journalTotal,
             purged: dryRun ? 0 : journalTotal,
+            blocked: 0,
             dryRun,
         });
         results.push({
             model: 'IntegrationExecution',
             scanned: execTotal,
             purged: dryRun ? 0 : execTotal,
+            blocked: 0,
             dryRun,
         });
 
@@ -667,14 +751,31 @@ export async function purgeLegacyAccessSnapshotsOlderThan(
             ? []
             : await db.legacyAccessSnapshot.findMany({
                 where: { OR: tenantArms },
-                select: { id: true, tenantId: true, _count: { select: { accounts: true } } },
+                // `resolutions` is counted only to say WHICH ARM selected the
+                // row (any resolution = consumed), so each attestation can name
+                // its own retention basis (#5307).
+                select: {
+                    id: true,
+                    tenantId: true,
+                    _count: { select: { accounts: true, resolutions: true } },
+                },
             });
 
-        const byTenant = new Map<string, { ids: string[]; accounts: number }>();
+        // Per tenant AND per arm. The two arms run on different clocks, so one
+        // attestation per model for both would state one arm's window and
+        // cutoff for rows the other arm deleted (#5307).
+        type Arm = { snapshots: number; accounts: number };
+        const byTenant = new Map<string, { ids: string[]; consumed: Arm; unconsumed: Arm }>();
         for (const row of doomed) {
-            const entry = byTenant.get(row.tenantId) ?? { ids: [], accounts: 0 };
+            const entry = byTenant.get(row.tenantId) ?? {
+                ids: [],
+                consumed: { snapshots: 0, accounts: 0 },
+                unconsumed: { snapshots: 0, accounts: 0 },
+            };
             entry.ids.push(row.id);
-            entry.accounts += row._count.accounts;
+            const arm = row._count.resolutions > 0 ? entry.consumed : entry.unconsumed;
+            arm.snapshots += 1;
+            arm.accounts += row._count.accounts;
             byTenant.set(row.tenantId, entry);
         }
 
@@ -690,24 +791,42 @@ export async function purgeLegacyAccessSnapshotsOlderThan(
                 await db.legacyAccessSnapshot.deleteMany({
                     where: { tenantId, id: { in: entry.ids } },
                 });
-                await writePurgeAttestation(
-                    db, tenantId, 'LegacyAccessSnapshot', entry.ids.length,
-                    options.retentionDays
-                        ?? settingsByTenant.get(tenantId)?.legacySnapshotRetentionDays
-                        ?? DEFAULT_LEGACY_SNAPSHOT_RETENTION_DAYS,
-                    w.consumed,
-                );
-                // A SECOND attestation, for the accounts. They are a different
-                // model with a different retention argument, and the audit row for
-                // a PII destruction should not have to be inferred from a
-                // parent's.
-                await writePurgeAttestation(
-                    db, tenantId, 'LegacyAccount', entry.accounts,
-                    options.unconsumedRetentionDays
-                        ?? settingsByTenant.get(tenantId)?.legacySnapshotUnconsumedRetentionDays
-                        ?? DEFAULT_LEGACY_SNAPSHOT_UNCONSUMED_RETENTION_DAYS,
-                    w.unconsumed,
-                );
+                // One attestation per (model, arm), each stating the window and
+                // cutoff that actually selected its rows (#5307). An arm that
+                // deleted nothing writes nothing: an attestation for a
+                // destruction that did not happen is worse than none.
+                const arms = [
+                    {
+                        basis: 'CONSUMED' as const,
+                        counts: entry.consumed,
+                        days: options.retentionDays
+                            ?? settingsByTenant.get(tenantId)?.legacySnapshotRetentionDays
+                            ?? DEFAULT_LEGACY_SNAPSHOT_RETENTION_DAYS,
+                        cutoff: w.consumed,
+                    },
+                    {
+                        basis: 'UNCONSUMED' as const,
+                        counts: entry.unconsumed,
+                        days: options.unconsumedRetentionDays
+                            ?? settingsByTenant.get(tenantId)?.legacySnapshotUnconsumedRetentionDays
+                            ?? DEFAULT_LEGACY_SNAPSHOT_UNCONSUMED_RETENTION_DAYS,
+                        cutoff: w.unconsumed,
+                    },
+                ];
+                for (const arm of arms) {
+                    if (arm.counts.snapshots === 0) continue;
+                    await writePurgeAttestation(
+                        db, tenantId, 'LegacyAccessSnapshot', arm.counts.snapshots,
+                        arm.days, arm.cutoff, arm.basis,
+                    );
+                    // A SECOND attestation, for the accounts. They are a
+                    // different model, and the audit row for a PII destruction
+                    // should not have to be inferred from a parent's.
+                    await writePurgeAttestation(
+                        db, tenantId, 'LegacyAccount', arm.counts.accounts,
+                        arm.days, arm.cutoff, arm.basis,
+                    );
+                }
             }
         }
 
@@ -724,12 +843,14 @@ export async function purgeLegacyAccessSnapshotsOlderThan(
                 model: 'LegacyAccessSnapshot',
                 scanned: snapshotsTotal,
                 purged: dryRun ? 0 : snapshotsTotal,
+                blocked: 0,
                 dryRun,
             },
             {
                 model: 'LegacyAccount',
                 scanned: accountsTotal,
                 purged: dryRun ? 0 : accountsTotal,
+                blocked: 0,
                 dryRun,
             },
         ];
@@ -743,6 +864,8 @@ async function writePurgeAttestation(
     purged: number,
     retentionDays: number,
     cutoff: Date,
+    /** Which retention clock selected the rows, where a sweep runs more than one. */
+    basis?: string,
 ): Promise<void> {
     await db.auditLog.create({
         data: {
@@ -750,7 +873,12 @@ async function writePurgeAttestation(
             action: 'DATA_PURGED',
             entity: model,
             entityId: `retention:${cutoff.toISOString()}`,
-            details: JSON.stringify({ purged, retentionDays, cutoff: cutoff.toISOString() }),
+            details: JSON.stringify({
+                purged,
+                retentionDays,
+                cutoff: cutoff.toISOString(),
+                ...(basis ? { basis } : {}),
+            }),
         },
     });
 }

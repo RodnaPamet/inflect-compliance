@@ -376,6 +376,30 @@ describe('a row names who made it, and the sheet speaks in words (#4898)', () =>
         expect(rules).toHaveTextContent('inj.system_role.declared');
     });
 
+    it('a process-map proposal is named by its label, and offers no target link (#5053)', () => {
+        const agents = (
+            require('../../messages/en.json') as {
+                agents: {
+                    proposals: { kind: Record<string, string> };
+                    quarantine: { operation: Record<string, string> };
+                };
+            }
+        ).agents;
+        mockPage([makeRow({ kind: 'PROCESS_MAP' })]);
+        render(<QuarantineClient tenantSlug="acme" />);
+        const listed = EN.kindOperation
+            .replace('{kind}', agents.proposals.kind.PROCESS_MAP)
+            .replace('{operation}', agents.quarantine.operation.CREATE);
+        expect(screen.getByText(listed)).toBeInTheDocument();
+        fireEvent.click(screen.getByTestId('quarantine-row-prop-1'));
+        const sheet = screen.getByTestId('quarantine-detail');
+        expect(sheet).toHaveTextContent(listed);
+        expect(sheet).not.toHaveTextContent('PROCESS_MAP');
+        // CREATE-only, so it names no target: the sheet says it was a new record.
+        expect(within(sheet).queryByTestId('quarantine-target-link')).toBeNull();
+        expect(sheet).toHaveTextContent(EN.targetNew);
+    });
+
     it('the rationale is prose, and only the attempted content is a code block', () => {
         mockPage([makeRow()]);
         render(<QuarantineClient tenantSlug="acme" />);

@@ -28,6 +28,10 @@ import { Modal } from '@/components/ui/modal';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/hooks';
 import { auditWriteFailureMessage } from './_lib/audit-write-error';
+// The DatePicker's value is UTC midnight, so the wire date is its UTC
+// calendar day. A local-field reader moved the schedule a day earlier on
+// every save west of UTC (#5161).
+import { toYMD } from '@/components/ui/date-picker/date-utils';
 
 export interface EditableAudit {
     id: string;
@@ -62,11 +66,6 @@ export interface EditAuditModalProps {
     onSaved: () => void;
 }
 
-/** `YYYY-MM-DD` — the wire format the API's date fields accept. */
-function toYMD(d: Date): string {
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
 
 export function EditAuditModal({ open, setOpen, audit, save, onSaved }: EditAuditModalProps) {
     const tx = useTranslations('audits');

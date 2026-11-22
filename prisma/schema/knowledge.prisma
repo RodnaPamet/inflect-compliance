@@ -1,0 +1,97 @@
+// ─────────────────────────────────────────────────────────────────
+//  Layer 4 — the knowledge store (vector store Phase 1,
+//  docs/ai-architecture/weaviate.md; owner decisions D-L4-1 pgvector
+//  first, D-L4-2 vectors only).
+//
+//  Two tables, both tenant-scoped under RLS + FORCE (migration
+//  20261115190000_knowledge_vector_store):
+//
+//    KnowledgeChunk           one chunk of one source row's text — the
+//                             ONLY place chunk text lives, and it is in
+//                             the encryption manifest (Epic B)
+//    KnowledgeChunkEmbedding  one embedding model's vector of one chunk —
+//                             a key, a content hash and the vector, never
+//                             text. `embedding` is the untyped pgvector
+//                             `vector`, which Prisma cannot read or write:
+//                             src/app-layer/repositories/VectorRepository.ts
+//                             (through repositories/vector/pgvector-store.ts)
+//                             is the only module that issues SQL against
+//                             this table (ESLint local/vector-store-single-seam).
+//
+//  Each embedding model gets ONE partial HNSW expression index,
+//  `USING hnsw (("embedding"::vector(<dims>)) vector_cosine_ops) WHERE
+//  "embeddingModel" = '<model>'`, which Prisma cannot declare — it is in
+//  the migration and signed off in prisma/fresh-db-schema-drift.expected.sql
+//  (group 2). Today: intfloat/multilingual-e5-small, 384 dimensions (D-L4-3).
+//
+//  The reference to the source is POLYMORPHIC (`sourceModel`, `sourceId`),
+//  so no foreign key removes a chunk with its source: the index pipeline
+//  (Phase 2) deletes a source's chunks, and the tenant purge removes both
+//  tables with everything else tenant-scoped. An embedding is removed with
+//  its chunk by `ON DELETE CASCADE`.
+// ─────────────────────────────────────────────────────────────────
+
+/// One chunk of one source row's text, cut by a named chunker revision.
+/// `text` is encrypted at rest (src/lib/security/encrypted-fields.ts) and is
+/// the only copy of chunk text anywhere (D-L4-2). `contentHash` is the hex
+/// SHA-256 of the plaintext chunk, so a re-chunk that yields the same text is
+/// a no-op and an embedding can say which text it was computed from.
+model KnowledgeChunk {
+  id              String   @id @default(cuid())
+  tenantId        String
+  /// The Prisma model the chunk was cut from, e.g. `PolicyVersion`.
+  sourceModel     String
+  /// That row's id.
+  sourceId        String
+  /// Position within the source, from 0.
+  chunkIndex      Int
+  /// The chunk's text. ENCRYPTED (Epic B).
+  text            String
+  /// Hex SHA-256 of the plaintext `text`.
+  contentHash     String
+  /// Which chunker cut it, e.g. `paragraph@1`.
+  chunkerRevision String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant     Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  embeddings KnowledgeChunkEmbedding[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, sourceModel, sourceId, chunkIndex])
+}
+
+/// One embedding model's vector of one chunk. VECTORS ONLY (D-L4-2): the
+/// chunk reference, the model, the dimension count, the content hash the
+/// vector was computed from and the vector — no text. The vector is a
+/// plaintext derivative of encrypted text (an ANN index needs plaintext
+/// floats), classified business content, held only in Postgres and its
+/// backups.
+model KnowledgeChunkEmbedding {
+  id                String                @id @default(cuid())
+  tenantId          String
+  chunkId           String
+  /// The embedding model, exactly as configured (`AI_EMBED_LOCAL_MODEL`),
+  /// e.g. `intfloat/multilingual-e5-small`. Vectors of two models are never
+  /// compared; each model's partial HNSW index names it.
+  embeddingModel    String
+  /// `vector_dims(embedding)`, held equal by a CHECK.
+  dimensions        Int
+  /// Hex SHA-256 of the chunk text the vector was computed from.
+  contentHash       String
+  /// pgvector `vector`, untyped so one table holds every model.
+  embedding         Unsupported("vector")
+  /// The rebuild that last wrote or confirmed the row; NULL for a plain upsert.
+  rebuildGeneration String?
+  /// Drawn from the table's sequence on every write; a rebuild deletes only
+  /// rows written before it began (see pgvector-store.ts).
+  writeSeq          BigInt                @default(autoincrement())
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  chunk  KnowledgeChunk @relation(fields: [chunkId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([tenantId, chunkId, embeddingModel])
+  @@index([tenantId, embeddingModel])
+}

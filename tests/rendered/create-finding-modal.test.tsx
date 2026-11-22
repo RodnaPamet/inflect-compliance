@@ -138,6 +138,42 @@ describe('CreateFindingModal', () => {
         expect(alert).not.toHaveTextContent('[object Object]');
     });
 
+    // #5313 — a created finding refreshes every cached variant of the
+    // register, not only the unfiltered key, so a register filtered by
+    // status shows it.
+    it('refreshes a filtered register, not only the unfiltered one', async () => {
+        let filteredReads = 0;
+        global.fetch = jest.fn((url: string, init?: RequestInit) => {
+            if (init?.method === 'POST') {
+                return Promise.resolve({ ok: true, status: 201, json: () => Promise.resolve({ id: 'f-1' }) });
+            }
+            if (String(url) === '/api/t/acme/findings?status=OPEN') filteredReads += 1;
+            return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+        }) as unknown as typeof fetch;
+        const swr = require('swr') as typeof import('swr');
+        function FilteredRegister() {
+            swr.default('/api/t/acme/findings?status=OPEN', (u: string) => fetch(u).then((r) => r.json()));
+            return null;
+        }
+        const apiUrl = (p: string) => `/api/t/acme${p}`;
+        render(
+            <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false, dedupingInterval: 0 }}>
+                <FilteredRegister />
+                <CreateFindingModal open setOpen={() => {}} tenantSlug="acme" apiUrl={apiUrl} />
+            </SWRConfig>,
+        );
+        await waitFor(() => expect(filteredReads).toBe(1));
+        await waitFor(() => expect(document.getElementById('finding-title')).not.toBeNull());
+        fireEvent.change(document.getElementById('finding-title')!, { target: { value: 'A finding' } });
+        fireEvent.change(document.getElementById('finding-description')!, {
+            target: { value: 'What was observed' },
+        });
+        const submit = document.getElementById('submit-finding') as HTMLButtonElement;
+        await waitFor(() => expect(submit).not.toBeDisabled());
+        fireEvent.click(submit);
+        await waitFor(() => expect(filteredReads).toBe(2));
+    });
+
     // #4968 — the fallback is a sentence, never the HTTP status.
     it('falls back to a sentence, without the status code, when the server gives no reason', async () => {
         global.fetch = jest.fn((_url: string, init?: RequestInit) =>

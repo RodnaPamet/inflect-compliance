@@ -57,7 +57,12 @@ export const GET = withApiErrorHandling(
         // Authorize BEFORE touching storage: an unauthorized caller
         // must not be able to time a `head` probe against a key they
         // may not read.
-        if (!(await canViewAvatar(viewerUserId, userId))) {
+        if (
+            !(await canViewAvatar(viewerUserId, userId, {
+                ssoTenantId: session.user.ssoTenantId,
+                entraGateDeniedTenantIds: session.user.entraGateDeniedTenantIds,
+            }))
+        ) {
             throw notFound(AVATAR_NOT_FOUND);
         }
 

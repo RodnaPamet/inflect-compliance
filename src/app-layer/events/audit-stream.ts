@@ -301,15 +301,7 @@ export function streamAuditEvent(event: StreamedAuditEvent): void {
         buf.events.push(event);
 
         // Schedule the periodic flush on first event.
-        if (!buf.timer) {
-            buf.timer = setTimeout(
-                () => void flushTenant(event.tenantId),
-                FLUSH_INTERVAL_MS,
-            );
-            // Don't keep the Node event loop alive just for the flush —
-            // graceful shutdown should still happen on SIGTERM.
-            buf.timer.unref?.();
-        }
+        scheduleFlush(event.tenantId, buf);
 
         if (buf.events.length >= FLUSH_AT_COUNT) {
             void flushTenant(event.tenantId);
@@ -323,6 +315,25 @@ export function streamAuditEvent(event: StreamedAuditEvent): void {
 }
 
 /**
+ * Arm the periodic flush for a tenant's buffer, unless one is armed.
+ *
+ * The callback clears `buf.timer` FIRST (#5247). A timer that fired while a
+ * flush was in flight used to join that flush and leave `buf.timer` set,
+ * already spent; every later event then saw a timer and armed none, so a
+ * quiet tenant's events sat in memory until the next restart lost them.
+ */
+function scheduleFlush(tenantId: string, buf: TenantBuffer): void {
+    if (buf.timer) return;
+    buf.timer = setTimeout(() => {
+        buf.timer = null;
+        void flushTenant(tenantId);
+    }, FLUSH_INTERVAL_MS);
+    // Don't keep the Node event loop alive just for the flush —
+    // graceful shutdown should still happen on SIGTERM.
+    buf.timer.unref?.();
+}
+
+/**
  * Flush every tenant immediately. Awaits the in-flight POSTs.
  *
  * Used by:
@@ -331,7 +342,15 @@ export function streamAuditEvent(event: StreamedAuditEvent): void {
  */
 export async function flushAllAuditStreams(): Promise<void> {
     await Promise.all(
-        Array.from(buffers.keys()).map((tenantId) => flushTenant(tenantId)),
+        Array.from(buffers.keys()).map(async (tenantId) => {
+            await flushTenant(tenantId);
+            // An in-flight flush carries only the batch it snapshotted.
+            // Events buffered while it ran are sent now, not left for a
+            // timer a shutdown will not wait for (#5247).
+            if ((buffers.get(tenantId)?.events.length ?? 0) > 0) {
+                await flushTenant(tenantId);
+            }
+        }),
     );
 }
 
@@ -386,6 +405,14 @@ async function flushTenant(tenantId: string): Promise<void> {
             });
         } finally {
             buf.flushInFlight = null;
+            // Events that arrived during the flush are not in this batch.
+            // Re-arm for them, or flush now if they already fill one
+            // (#5247); otherwise nothing would ever send them.
+            if (buf.events.length >= FLUSH_AT_COUNT) {
+                void flushTenant(tenantId);
+            } else if (buf.events.length > 0) {
+                scheduleFlush(tenantId, buf);
+            }
         }
     })();
 

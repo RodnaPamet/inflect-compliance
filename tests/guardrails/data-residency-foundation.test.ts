@@ -37,7 +37,7 @@ describe('data-residency schema', () => {
     });
 
     it('Tenant carries a region column of type TenantRegion, indexed', () => {
-        expect(authSchema).toMatch(/region\s+TenantRegion\s+@default\(US_EAST_1\)/);
+        expect(authSchema).toMatch(/region\s+TenantRegion\s+@default\(EUROPE_WEST1\)/);
         expect(authSchema).toMatch(/@@index\(\[region\]\)/);
     });
 });

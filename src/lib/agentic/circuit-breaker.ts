@@ -156,7 +156,16 @@ export const GUARD_BLOCK_TRIP = 'GUARD_BLOCK';
  * computed signals plus the direct trip reasons. Readers of that column want
  * this, not `BREAKER_SIGNALS`.
  */
-export const BREAKER_TRIP_REASONS = [...BREAKER_SIGNALS, GUARD_BLOCK_TRIP] as const;
+/**
+ * The nightly behaviour fingerprint's direct trip reason (Morpheus roadmap
+ * Phase 1, D-L1-3). Like `GUARD_BLOCK_TRIP`, it is a REASON and not a signal:
+ * the judgement was made by `scoreDay` in `behaviour-fingerprint.ts`, over a
+ * day rather than an hour, and the latch is the same latch — never a second
+ * breaker. A person closes it, as every trip.
+ */
+export const BEHAVIOUR_ANOMALY_TRIP = 'BEHAVIOUR_ANOMALY';
+
+export const BREAKER_TRIP_REASONS = [...BREAKER_SIGNALS, GUARD_BLOCK_TRIP, BEHAVIOUR_ANOMALY_TRIP] as const;
 
 export type BreakerTripReason = (typeof BREAKER_TRIP_REASONS)[number];
 

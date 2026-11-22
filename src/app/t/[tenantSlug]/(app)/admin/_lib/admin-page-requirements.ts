@@ -100,6 +100,19 @@ export const ADMIN_PAGE_REQUIREMENTS = {
     '/admin/dsar-requests': { keys: ['admin.view', 'admin.compliance_dsar_view'] },
     // `listAgentCredentials` asserts `canAdmin`.
     '/admin/mcp': { keys: ['admin.view'], tier: 'canAdmin' },
+    // The legacy reconciliation queue (#5695, owner decisions 2026-11-15: the
+    // view key is enough to open it, and AUDITOR is the one role below the
+    // admin roles that holds it). Both its reads — `legacy-access/queue` and
+    // `legacy-access/queue/latest-run` — take `identity_reconciliation.view`
+    // and nothing more, and the edge admits an AUDITOR membership to a GET of
+    // exactly those two (`RECONCILIATION_VIEW_READ_PATHS`,
+    // `RECONCILIATION_VIEW_EDGE_ROLES`). The page reads nothing on the server.
+    // No `admin.view`: that is the point of the decision. Deciding is a
+    // separate key the page reads for its buttons.
+    '/admin/integrations/[connectionId]/reconciliation': {
+        keys: ['identity_reconciliation.view'],
+        roles: ['OWNER', 'ADMIN', 'AUDITOR'],
+    },
     // `GET /personnel` and `listEmployees` are `personnel.view`.
     '/admin/personnel': { keys: ['admin.view', 'personnel.view'] },
     // `getPrivacyPosture` asserts `canAdmin`.

@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { FormField } from '@/components/ui/form-field';
 import { useToast } from '@/components/ui/hooks';
-import { ChartActivity2 } from '@inflect/ui/components/ui/icons/nucleo';
+import { ChartActivity2 } from '@inflect/ui/components/ui/icons/glyphs';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Modal } from '@/components/ui/modal';
@@ -210,6 +210,13 @@ function posture(breaker: BreakerRow | null): Posture {
     return 'watching';
 }
 
+/** True while the recorded close is the breaker's latest act, not a trip. */
+function breakerCloseStands(breaker: BreakerRow | null): boolean {
+    if (!breaker || breaker.state !== 'CLOSED' || breaker.closedAt === null) return false;
+    if (breaker.trippedAt === null) return true;
+    return Date.parse(breaker.closedAt) >= Date.parse(breaker.trippedAt);
+}
+
 /**
  * Only `watching` is green.
  *
@@ -280,6 +287,9 @@ export function CircuitBreakerTab({
         baseline.windows >= baseline.requiredWindows &&
         baseline.observations >= baseline.requiredObservations;
     const state = posture(breaker);
+    // The last close describes the breaker only while no trip has come after
+    // it (#5124): the trip writers latch OPEN without clearing the close.
+    const closeStands = breakerCloseStands(breaker);
 
     const verdictLabel = useCallback(
         (code: string | null): string => {
@@ -320,6 +330,9 @@ export function CircuitBreakerTab({
                 // writes itself.
                 case 'GUARD_BLOCK':
                     return t('agentDetail.breaker.signalGuardBlock');
+                // The nightly behaviour fingerprint's latch (threshold B).
+                case 'BEHAVIOUR_ANOMALY':
+                    return t('agentDetail.breaker.signalBehaviourAnomaly');
                 default:
                     return code;
             }
@@ -472,7 +485,11 @@ export function CircuitBreakerTab({
                     badge: it predates the close and does not justify it.
                     Without this line, a breaker somebody waved through and one
                     the detector was satisfied about render identically. */}
-                {breaker?.closedAt && (
+                {/* Only while the breaker is still CLOSED on that trip (#5124).
+                    A trip after the close latches it OPEN without clearing
+                    `closedAt`, and a later STEADY verdict leaves it set too; in
+                    both the verdict below is not the one the close answered. */}
+                {breaker?.closedAt && state === 'closedAfterTrip' && (
                     <InlineNotice variant="info" data-testid="breaker-hand-closed">
                         {t('agentDetail.breaker.handClosed', {
                             at: formatDateTime(breaker.closedAt),
@@ -516,19 +533,19 @@ export function CircuitBreakerTab({
                             label={t('agentDetail.breaker.factBaselineEpoch')}
                             value={formatDateTime(breaker.baselineEpoch)}
                         />
-                        {breaker.closedAt !== null && (
+                        {closeStands && (
                             <Fact
                                 label={t('agentDetail.breaker.factClosedAt')}
                                 value={formatDateTime(breaker.closedAt)}
                             />
                         )}
-                        {breaker.closeReason !== null && (
+                        {closeStands && breaker.closeReason !== null && (
                             <Fact
                                 label={t('agentDetail.breaker.factCloseReason')}
                                 value={closeReasonLabel(breaker.closeReason, t)}
                             />
                         )}
-                        {breaker.closedByUserId !== null && (
+                        {closeStands && breaker.closedByUserId !== null && (
                             // The raw id, because that is what the record holds
                             // and a blank would read as "nobody closed it".
                             <Fact

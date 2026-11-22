@@ -106,6 +106,13 @@ async function incr(key: string, windowSeconds: number): Promise<void> {
         if (count === 1) {
             // First increment starts the rolling window.
             await redis.expire(key, windowSeconds);
+        } else if ((await redis.pttl(key)) < 0) {
+            // A key with no TTL never resets (#5305). If the EXPIRE after the
+            // first INCR failed (a transient Redis error between the two), the
+            // counter kept climbing past the limit and refused that user or
+            // tenant every AI call for ever. Re-apply the window whenever a
+            // later increment finds none, so the lock-out heals itself.
+            await redis.expire(key, windowSeconds);
         }
     } catch (err) {
         logger.error('AI rate-limit incr failed, skipping record', {
@@ -129,7 +136,8 @@ export async function checkRateLimit(tenantId: string, userId: string): Promise<
     if (tenant.count >= TENANT_DAILY_QUOTA) {
         const resetIn = Math.max(1, Math.ceil(tenant.ttlMs / 1000 / 60));
         throw rateLimited(
-            `AI assessment daily limit reached (${TENANT_DAILY_QUOTA}/day). Resets in ~${resetIn} minutes.`
+            `AI assessment daily limit reached (${TENANT_DAILY_QUOTA}/day). Resets in ~${resetIn} minutes.`,
+            { reason: 'AI_DAILY_LIMIT_REACHED', limit: TENANT_DAILY_QUOTA, resetInMinutes: resetIn },
         );
     }
 
@@ -137,7 +145,8 @@ export async function checkRateLimit(tenantId: string, userId: string): Promise<
     const user = await peek(userKey(tenantId, userId));
     if (user.count >= USER_PER_MINUTE_LIMIT) {
         throw rateLimited(
-            `Too many AI assessment requests. Please wait a moment before trying again.`
+            `Too many AI assessment requests. Please wait a moment before trying again.`,
+            { reason: 'AI_TOO_MANY_REQUESTS' },
         );
     }
 }

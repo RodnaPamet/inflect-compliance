@@ -68,12 +68,20 @@ const BASELINE: Readonly<Record<string, string>> = {
         + 'secure them. Provenance is this repository and the GHCR org it publishes to.',
     postgres:
         'Docker Official Image. The production database, pinned to the 16 line; a digest pin '
-        + 'would freeze security patches that the alpine tag delivers.',
+        + 'would freeze security patches that the alpine tag delivers. Since vector store 1.2 it is '
+        + 'referenced only as the FROM of deploy/postgres/Dockerfile, which every service runs.',
+    'ghcr.io/rodnapamet/postgres-pgvector':
+        'OUR OWN build of the production database: the postgres Docker Official Image on the 16 '
+        + 'line plus pgvector (deploy/postgres/Dockerfile), referenced by its moving `16-alpine` line '
+        + 'tag for the same reason as postgres: a digest pin would freeze security patches that the '
+        + 'alpine tag delivers. postgres-pgvector-image.yml rebuilds it weekly and whenever the '
+        + 'upstream 16-alpine digest moves (owner decision D-L4-8, 2026-11-12, keeping the '
+        + '2026-10-10 rule); every build also carries an immutable tag for rollback. '
+        + 'tests/guards/postgres-pgvector-image.test.ts holds every Postgres reference to that tag.',
     redis:
         'Docker Official Image, pinned to the 7 line. Same reasoning as postgres: a digest would '
         + 'freeze the security patches the alpine tag delivers.',
     caddy: 'Docker Official Image, pinned to the 2 line. Terminates TLS; no tenant data at rest.',
-    mariadb: 'Docker Official Image. The OrangeHRM LAB only — never production.',
     'node': 'Docker Official Image. Build and test stages only.',
     'clamav/clamav':
         'Cisco-maintained, the upstream for the scanner itself. Pinned to the 1.4 line.',
@@ -84,7 +92,6 @@ const BASELINE: Readonly<Record<string, string>> = {
     'containrrr/watchtower':
         'The deploy mechanism itself, on `:latest`. Pinning it would freeze the component '
         + 'that performs updates.',
-    'orangehrm/orangehrm': 'The vendor image for the HRIS LAB. Never production.',
     'grafana/grafana':
         'Observability stack, version-pinned. Reads metrics and traces; holds no tenant rows.',
     'grafana/tempo': 'Observability stack, version-pinned. Holds traces, never tenant rows.',
@@ -243,7 +250,7 @@ export function repositoryOf(ref: string): string {
  *
  * `CANONICAL_COMPOSE="docker-compose.prod.yml"` there, sent from `deploy/`. An
  * overlay beside it (`docker-compose.pipelock.yml`, the harness scanner, the
- * labs) is opt-in and reaches the VM only when somebody names it.
+ * legacy-MCP proving server) is opt-in and reaches the VM only when somebody names it.
  */
 const CANONICAL_COMPOSE = 'deploy/docker-compose.prod.yml';
 

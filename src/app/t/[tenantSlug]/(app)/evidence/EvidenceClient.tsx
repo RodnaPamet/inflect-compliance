@@ -28,7 +28,7 @@ import { NewEvidenceLinkModal } from './NewEvidenceLinkModal';
 import { EvidenceBulkImportModal } from './EvidenceBulkImportModal';
 import { RejectReasonModal } from './RejectReasonModal';
 import { Popover } from '@/components/ui/popover';
-import { CloudUpload, Note, Hyperlink, FileZip2 } from '@inflect/ui/components/ui/icons/nucleo';
+import { CloudUpload, Note, Hyperlink, FileZip2 } from '@inflect/ui/components/ui/icons/glyphs';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
@@ -80,7 +80,7 @@ import {
 } from '@/lib/evidence-review-currency';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
-import { Plus, Pen2, Download, BoxArchive, PaperPlane, Check, Xmark, CalendarRefresh, ShieldAlert, CircleHalfDottedClock } from '@inflect/ui/components/ui/icons/nucleo';
+import { Plus, Pen2, Download, BoxArchive, PaperPlane, Check, Xmark, CalendarRefresh, ShieldAlert, CircleHalfDottedClock } from '@inflect/ui/components/ui/icons/glyphs';
 import { isScanServable, isScanInfected } from '@/lib/evidence-scan';
 import { ownerLabel } from '@/lib/evidence-owner-label';
 import { apiErrorMessage } from '@/lib/api-error';
@@ -583,12 +583,21 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
     // query string) gets a background refetch.
     // Matches every cached evidence-list filter variant (the base URL
     // and any `?…` query-string sibling).
+    //
+    // And the RETENTION aggregate (#5165): the KPI cards and the
+    // archived-aware empty state read `/evidence/retention`, which is neither
+    // the list URL nor a `?…` sibling of it, so a create, edit, archive or
+    // delete left the tiles showing the old counts until a full reload.
     const evidenceKeyMatcher = useCallback(
         (key: unknown): key is string => {
             const prefix = apiUrl(CACHE_KEYS.evidence.list());
+            const retention = apiUrl(CACHE_KEYS.evidence.retention());
             return (
                 typeof key === 'string' &&
-                (key === prefix || key.startsWith(`${prefix}?`))
+                (key === prefix ||
+                    key.startsWith(`${prefix}?`) ||
+                    key === retention ||
+                    key.startsWith(`${retention}?`))
             );
         },
         [apiUrl],
@@ -1370,9 +1379,9 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                 // An expired row is listed under Archived with or without the
                 // flag, and unarchiving clears both, so it offers Unarchive.
                 const archived = !!ev.isArchived || !!ev.expiredAt;
-                // Archive's route requires `evidence.edit` on top of the
-                // usecase's write tier; unarchive asks the write tier alone.
-                if (archived ? !permissions.canWrite : !canEditEvidence) return null;
+                // Archive and unarchive both require `evidence.edit` on top
+                // of the usecase's write tier.
+                if (!canEditEvidence) return null;
                 return (
                     <Tooltip content={archived ? tx('list.unarchiveEvidence') : tx('list.archiveEvidence')}>
                         <button

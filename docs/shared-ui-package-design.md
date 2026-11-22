@@ -485,7 +485,7 @@ older classifications.
 
 `git ls-files` over the same four roots returns **617**. The four extra are documentation —
 `src/components/ui/filter/GUIDE.md`, `src/components/ui/table/GUIDE.md`,
-`src/components/ui/hooks/README.md`, `packages/ui/src/components/ui/icons/nucleo/README.md` (moved with its subject at step 2b) — outside the
+`src/components/ui/hooks/README.md`, `packages/ui/src/components/ui/icons/nucleo/README.md` (moved with its subject at step 2b, and deleted with it at #5772, when the Nucleo set left the repository) — outside the
 population because the walker takes `.ts`/`.tsx` only. They are part of the shared surface in every
 sense that matters to a consumer and are the easiest thing to forget; §1 puts them in the package.
 
@@ -879,7 +879,10 @@ too: restore the old roots, confirm the assertion fails, restore the new ones.
 
 **5.3 173 test files hardcode a source path under the four roots.** Measured by grepping `tests/`
 for a quoted literal beginning `src/components/{ui,layout,app-shell}` or `src/lib/hooks`: **173
-files, 183 distinct paths**, plus 8 more paths across 3 files in `scripts/codemods/`. Separately, 263
+files, 183 distinct paths**, plus 8 more paths across 3 files in `scripts/codemods/` — that
+directory was retired on 2026-11-15 (owner decision; see
+`docs/implementation-notes/2026-11-15-retire-shipped-codemods.md`), so those 8 are no longer part of
+the work. Separately, 263
 test files import via the `@/components/ui` alias, which an alias mapping can absorb — these 173
 cannot, they are `fs.readFileSync` arguments. Several
 guards already handle this gracefully — `ui-core-classification.test.ts`'s positive controls carry

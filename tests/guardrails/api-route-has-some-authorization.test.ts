@@ -3,9 +3,9 @@
  *
  * ─── WHAT THIS LAYER CLAIMS, AND WHAT IT DOES NOT ──────────────────────
  *
- * This walks ALL of `src/app/api/**\/route.ts` — 582 files, 771 exported
- * handlers at the time of writing — and asks one deliberately weak
- * question per handler:
+ * This walks ALL of `src/app/api/**\/route.ts` — every file git lists there,
+ * counted at run time rather than here, where a figure only goes stale — and
+ * asks one deliberately weak question per handler:
  *
  *     Is there ANY authorization on this path at all?
  *
@@ -372,8 +372,8 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
       mechanism: /inflect_org_invite_token/,
       note: 'WEAKLY GROUNDED: mirrors /api/invites/[token]/start-signin and verifies nothing — it writes the raw URL token to an HttpOnly cookie and redirects to /login. redeemOrgInvite in the signIn callback is the only check, and it is email-bound. Corroborates the cookie name, not a check, and only in THIS file — same inverted pin as the tenant sibling above.' },
     { handler: 'api/trust/download/[token]/route.ts#GET', klass: 'CAPABILITY_TOKEN',
-      mechanism: /consumeDownloadToken/,
-      note: 'Single-use, expiring download token minted after an approved trust-centre access request. The verifier is called IN this route: consumeDownloadToken requires the ictc_ prefix, looks the token up by hash, demands status APPROVED and an unexpired unconsumed request, then claims it with a downloadedAt-null updateMany.' },
+      mechanism: /resolveDownloadToken/,
+      note: 'Single-use, expiring download token minted after an approved trust-centre access request. The verifier is called IN this route: resolveDownloadToken requires the ictc_ prefix, looks the token up by hash, and demands status APPROVED, an ENABLED trust centre, and an unexpired unconsumed request. Verification and the single-use claim were one call (consumeDownloadToken) until #5614; the claim is now spendDownloadToken, called further down once this route\'s own AV, lifecycle and storage-provider gates have passed, so a refusal no longer costs the requester their one use. This entry names the VERIFIER half deliberately — the claim is what makes the token single-use, not what authorises the caller.' },
     { handler: 'api/vendor-assessment/[assessmentId]/route.ts#GET', klass: 'CAPABILITY_TOKEN',
       mechanism: /loadResponseByToken/,
       note: 'External vendor respondent. The token arrives ONLY as ?t=… and is never read from a header or body. loadResponseByToken opens with verifyAccessToken, which hashes it, constant-time-compares the resolved assessment id against the URL id, and denies on expired/revoked/wrong-status.' },
@@ -387,6 +387,8 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
     { handler: 'api/admin/tenants/route.ts#POST', klass: 'PROTOCOL_CREDENTIAL',
       mechanism: /verifyPlatformApiKey/ },
     { handler: 'api/admin/tenants/[slug]/transfer-ownership/route.ts#POST', klass: 'PROTOCOL_CREDENTIAL',
+      mechanism: /verifyPlatformApiKey/ },
+    { handler: 'api/admin/tenants/[slug]/plan/route.ts#POST', klass: 'PROTOCOL_CREDENTIAL',
       mechanism: /verifyPlatformApiKey/ },
     // The PLATFORM-wide agent kill switch. Not a missing gate and not a
     // deferral: `requirePermission` resolves a TENANT role, so there is no key

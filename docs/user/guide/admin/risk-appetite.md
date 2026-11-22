@@ -17,6 +17,7 @@ Click **{{ui:nav.admin}}** at the bottom of the sidebar. Under {{ui:admin.sectio
 | Open the page | Owner, Admin |
 | Save the configuration, acknowledge a breach | Owner, Admin |
 | Create a remediation task for a breach | Owner, Admin |
+| Approve the appetite | Owner |
 
 Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}**.
 
@@ -60,6 +61,14 @@ Fill in the statement and the limits, choose the percentile, and click **{{ui:ad
 
 Type numbers without commas or dots between thousands, such as `1000000`; spaces are fine (`1 000 000`). A limit that is not a number is marked **{{ui:admin.riskAppetite.invalidNumber}}**, and **{{ui:admin.riskAppetite.saveConfig}}** stays greyed out until it is fixed.
 
+### Approve the appetite
+
+Beside the configuration, Inflect shows whether the saved appetite is approved: **{{ui:admin.riskAppetite.notApproved}}**, or who approved it and when. An Owner records the board's approval by clicking **{{ui:admin.riskAppetite.approve}}**; **{{ui:admin.riskAppetite.approvedMsg}}** confirms it. The button appears only to an Owner, and only once an appetite has been saved.
+
+The approval belongs to the version on screen. If you have unsaved changes, the button is greyed out with **{{ui:admin.riskAppetite.approveSaveFirst}}**: save first. If somebody else saved the appetite after you opened the page, Inflect refuses the approval with **{{ui:admin.riskAppetite.approveChangedSinceViewed}}** and shows the saved version, so you never approve limits you have not seen.
+
+A later save that changes the statement, a limit, the percentile or a category limit clears the approval, and it must be approved again. Changing only the review dates keeps it.
+
 ### Acknowledge a breach
 
 Click **{{ui:admin.riskAppetite.acknowledge}}** on an active breach to record that you have seen it. The button gives way to **{{ui:admin.riskAppetite.acknowledged}}**. Acknowledging does not resolve the breach: only bringing the risks back within the limit does.
@@ -79,6 +88,8 @@ Click **{{ui:admin.riskAppetite.createTask}}** on an active breach. Inflect crea
 | **{{ui:admin.riskAppetite.breachesLoadFailed}}** | The breach history did not load | Reload the page |
 | **{{ui:admin.riskAppetite.invalidNumber}}** under a limit | What is typed there is not a number | Type the number without separators |
 | **{{ui:admin.riskAppetite.saveFailed}}**, or the reason the server gave | The configuration was not saved | Fix what it names and try again |
+| **{{ui:admin.riskAppetite.approveChangedSinceViewed}}** | Somebody saved the appetite after you opened the page; nothing was approved | Review the saved version the page now shows, then approve it |
+| **{{ui:admin.riskAppetite.approveFailed}}**, or the reason the server gave | The approval was not recorded | Try again |
 | The reason the server gave, or **{{ui:admin.riskAppetite.actionFailed}}** | An acknowledgement or a task was not saved | Try again |
 
 ## Related

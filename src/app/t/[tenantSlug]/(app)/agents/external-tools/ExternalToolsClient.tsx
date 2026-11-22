@@ -144,6 +144,11 @@ export function ExternalToolsClient({
     const [tools, setTools] = useState<CatalogueTool[] | null>(null);
     /** Advertised tools the server named unusably (#4238), so left out. A count, never the names. */
     const [refusedNames, setRefusedNames] = useState(0);
+    // The two facts that say whether the list below is the WHOLE catalogue.
+    // Both already arrived in the same response and were dropped (#5573).
+    const [advertised, setAdvertised] = useState<number | null>(null);
+    const [truncated, setTruncated] = useState(false);
+    const [cap, setCap] = useState<number | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
@@ -165,6 +170,9 @@ export function ExternalToolsClient({
         setError(null);
         setTools(null);
         setRefusedNames(0);
+        setAdvertised(null);
+        setTruncated(false);
+        setCap(null);
         try {
             const res = await fetch(
                 apiUrl(`/admin/agents/external-tools?connectionId=${encodeURIComponent(connectionId)}`),
@@ -180,6 +188,9 @@ export function ExternalToolsClient({
             }
             setTools(data.tools ?? []);
             setRefusedNames(typeof data.refusedNames === 'number' ? data.refusedNames : 0);
+            setAdvertised(typeof data.advertised === 'number' ? data.advertised : null);
+            setTruncated(data.truncated === true);
+            setCap(typeof data.cap === 'number' ? data.cap : null);
 
             // The pairings, in the SAME pass. A separate refresh for them would
             // let the two lists disagree on screen, and the one an operator acts
@@ -438,6 +449,38 @@ export function ExternalToolsClient({
                         <p className="text-sm text-content-muted" id="external-tools-refused-names">
                             {t('externalTools.refusedNames', { count: refusedNames, max: MCP_TOOL_NAME_MAX_LENGTH })}
                         </p>
+                    )}
+
+                    {/* How many the server offered. This is the number an
+                        administrator wants after connecting, and the setup
+                        guide used to promise it on the Test button, where the
+                        validation contract cannot carry it (#5311). It lives
+                        here instead, beside the tools themselves. */}
+                    {!loading && advertised !== null && (
+                        <p className="text-sm text-content-muted" data-testid="external-tools-advertised">
+                            {/* TWO KEYS, plain interpolation, not one ICU plural.
+                                The repo's rendered-test `next-intl` mock resolves
+                                `{param}` only, so an ICU plural renders raw and no
+                                test can reach the number — the same reason the
+                                circuit-breaker tab's baseline strings interpolate
+                                and give the singular its own key. */}
+                            {advertised === 1
+                                ? t('externalTools.advertisedCountOne')
+                                : t('externalTools.advertisedCount', { count: advertised })}
+                        </p>
+                    )}
+
+                    {/* The same rule as the refused names above, for the other
+                        way a tool goes missing. A truncated catalogue rendered
+                        as a plain list IS presenting a prefix as complete, which
+                        is what the usecase forbids in terms — and the approve
+                        path already explains it when somebody tries to approve
+                        something they could not see. The cap comes from the
+                        server so the client holds no copy of it. */}
+                    {!loading && truncated && cap !== null && (
+                        <InlineNotice variant="warning" data-testid="external-tools-truncated">
+                            {t('externalTools.catalogueTruncated', { max: cap })}
+                        </InlineNotice>
                     )}
 
                     {/* An empty catalogue and a catalogue not yet read are

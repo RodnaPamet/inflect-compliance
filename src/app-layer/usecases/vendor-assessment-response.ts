@@ -790,7 +790,19 @@ function computeProvisionalPoints(
     q: QuestionRow,
     incoming: SubmitAnswerInput,
 ): number {
-    const value = extractValue(incoming.answerJson);
+    return answerPointsFor(q, incoming.answerJson);
+}
+
+/**
+ * The points one answer earns on one question — the rule a vendor's own
+ * submission scores by, exported so an approved AI proposal is scored the same
+ * way rather than written with none (#5156).
+ */
+export function answerPointsFor(
+    q: Pick<QuestionRow, 'answerType' | 'weight' | 'optionsJson' | 'riskPointsJson'>,
+    answerJson: unknown,
+): number {
+    const value = extractValue(answerJson);
     const weight = q.weight ?? 1;
 
     // SINGLE_SELECT / MULTI_SELECT — sum points from matching options.

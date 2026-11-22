@@ -41,6 +41,7 @@ jest.mock('@/lib/audit/audit-writer', () => ({
     appendAuditEntry: jest.fn().mockResolvedValue(undefined),
 }));
 
+import { hashForLookup } from '@/lib/security/encryption';
 import {
     scimListUsers,
     scimCreateUser,
@@ -50,6 +51,7 @@ import {
 } from '@/app-layer/usecases/scim-users';
 import prisma from '@/lib/prisma';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
+import { logger } from '@/lib/observability/logger';
 
 const mockUserFindUnique = prisma.user.findUnique as jest.MockedFunction<typeof prisma.user.findUnique>;
 const mockUserUpdate = prisma.user.update as jest.MockedFunction<typeof prisma.user.update>;
@@ -98,35 +100,32 @@ describe('scimListUsers — filter parsing + count branches', () => {
         });
     });
 
-    it('userName eq filter that MATCHES: filters in-memory, total=filtered.length, no count call', async () => {
+    it('userName eq is part of the QUERY, so paging and the total apply to the match (#5208)', async () => {
         mockMembershipFindMany.mockResolvedValueOnce([
             { status: 'ACTIVE', role: 'READER', user: userRow({ email: 'match@b.com' }) },
-            { status: 'ACTIVE', role: 'READER', user: userRow({ id: 'u2', email: 'other@b.com' }) },
         ] as never);
+        mockMembershipCount.mockResolvedValueOnce(1 as never);
 
         const result = await scimListUsers(scimCtx(), 'https://x', {
             filter: 'userName eq "Match@b.com"',
-            startIndex: 2,
+            startIndex: 1,
             count: 5,
         });
 
+        // The address is matched by its lookup hash, case-folded, IN the where —
+        // not by filtering whatever page the skip/take happened to return.
+        const where = (mockMembershipFindMany.mock.calls[0][0] as { where: { user?: unknown } }).where;
+        expect(where.user).toEqual({ emailHash: hashForLookup('match@b.com') });
+        expect(mockMembershipCount).toHaveBeenCalledWith({ where });
         expect(result.total).toBe(1);
-        expect(result.resources).toHaveLength(1);
         expect(result.resources[0].userName).toBe('match@b.com');
-        // emailFilter branch active → count() is skipped
-        expect(mockMembershipCount).not.toHaveBeenCalled();
     });
 
-    it('filter present but NON-matching pattern: emailFilter stays undefined → count path', async () => {
-        mockMembershipFindMany.mockResolvedValueOnce([] as never);
-        mockMembershipCount.mockResolvedValueOnce(0 as never);
-
-        const result = await scimListUsers(scimCtx(), 'https://x', {
-            filter: 'displayName co "foo"',
-        });
-
-        expect(result.total).toBe(0);
-        expect(mockMembershipCount).toHaveBeenCalled();
+    it('an UNSUPPORTED filter is refused, never answered with every user (#5208)', async () => {
+        await expect(
+            scimListUsers(scimCtx(), 'https://x', { filter: 'displayName co "foo"' }),
+        ).rejects.toMatchObject({ status: 400, scimType: 'invalidFilter' });
+        expect(mockMembershipFindMany).not.toHaveBeenCalled();
     });
 
     it('count capped at 200 via Math.min', async () => {
@@ -579,5 +578,49 @@ describe('toScimUser — display fallbacks', () => {
         const out = toScimUser(u, { status: 'ACTIVE' }, 'https://x');
         expect(out.displayName).toBe('a@b.com');
         expect(out.active).toBe(true);
+    });
+});
+
+// ─── Operational logs carry no address or name (#5318) ───────────────
+describe('SCIM operational logs — no raw email, no name values', () => {
+    function loggedPayloads(spies: jest.SpyInstance[]): string {
+        return JSON.stringify(spies.flatMap((sp) => sp.mock.calls));
+    }
+
+    it('create (with a blocked role) logs a hash of the address, never the address', async () => {
+        const info = jest.spyOn(logger, 'info');
+        const warn = jest.spyOn(logger, 'warn');
+        mockUserFindUnique.mockResolvedValueOnce(userRow({ email: 'pat.secret@acme.test' }) as never);
+        mockMembershipFindUnique.mockResolvedValueOnce({ id: 'm1', status: 'ACTIVE', role: 'READER' } as never);
+
+        await scimCreateUser(scimCtx(), {
+            userName: 'pat.secret@acme.test', roles: [{ value: 'OWNER' }],
+        } as never, 'https://x');
+
+        const logged = loggedPayloads([info, warn]);
+        expect(logged).not.toContain('pat.secret');
+        expect(info).toHaveBeenCalledWith('SCIM create user', expect.objectContaining({
+            identifierHash: expect.stringMatching(/^[0-9a-f]{16}$/),
+        }));
+        info.mockRestore();
+        warn.mockRestore();
+    });
+
+    it('patch logs the changed attribute NAMES, never their values', async () => {
+        const info = jest.spyOn(logger, 'info');
+        mockMembershipFindFirst
+            .mockResolvedValueOnce({
+                id: 'm1', role: 'READER', status: 'ACTIVE',
+                user: { id: 'u1', email: 'a@b.com', name: 'Alice Doe' },
+            } as never)
+            .mockResolvedValueOnce({ id: 'm1', status: 'ACTIVE', role: 'READER', user: userRow() } as never);
+
+        await scimPatchUser(scimCtx(), 'u1',
+            [{ op: 'replace', path: 'displayName', value: 'Zelda Hidden' }], 'https://x');
+
+        const patched = info.mock.calls.find((c) => c[0] === 'SCIM patched user');
+        expect(patched?.[1]).toMatchObject({ changedAttributes: ['displayName'] });
+        expect(JSON.stringify(info.mock.calls)).not.toContain('Zelda');
+        info.mockRestore();
     });
 });

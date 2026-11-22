@@ -44,9 +44,10 @@ jest.mock('next-intl', () => {
     return { useTranslations: (ns: string) => make(ns), useLocale: () => 'en' };
 });
 
-// `next` is a hash so the page's navigation stays inside jsdom.
+// `next` is this page's own path plus a hash, so the page's navigation stays
+// inside jsdom (and is a path on this site, the only `next` the page follows).
 jest.mock('next/navigation', () => {
-    const searchParams = new URLSearchParams('next=%23after-mfa');
+    const searchParams = new URLSearchParams('next=%2Ft%2Facme%2Fauth%2Fmfa%23after-mfa');
     return { useSearchParams: () => searchParams };
 });
 

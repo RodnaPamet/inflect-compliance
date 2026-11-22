@@ -71,6 +71,14 @@ const SENSITIVITY_HEURISTIC =
  * is encrypted or removed.
  */
 const NOT_SENSITIVE: Readonly<Record<string, string>> = {
+    'DataSubjectRequest.rejectionReason':
+        'A closed vocabulary (DSAR_REJECTION_REASONS), pinned by dsar-rejection-reason-allowlist. ' +
+        'Removed from the manifest by owner decision (#5107): the model has no tenantId, so a tenant ' +
+        'DEK cannot be the right key for it, and the DEK rotation sweep left its ciphertexts unreadable.',
+    'DataSubjectRequest.fulfilmentNotes':
+        'Sanitised on write (dsar-register.ts). Removed from the manifest by owner decision (#5107): ' +
+        'a user-scoped row encrypted under the acting tenant DEK could not be read from another ' +
+        'tenant, and the DEK rotation sweep skipped the model, then cleared the previous DEK.',
     'HostConsumerMessage.bodyDigest':
         'A SHA-256 of the request body, and the body itself IS encrypted ' +
         '(#3861). A digest discloses nothing about its preimage, and it has to ' +
@@ -141,10 +149,13 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
         "One of two fixed codes ('PRINCIPAL_RELINKED' | 'AGENT_RELINKED'), CHECK-constrained in the migration and written only by our own harness ingest (#3671) — never user text.",
     'AgentKillSwitchDrill.boundaryRefusalReason': "One of three fixed literals ('agent_killed' | 'refused_for_another_reason' | 'not_refused') written by the drill, never by a user.",
     'AgentKillSwitchDrill.findingId': 'A cuid pointing at the Finding this drill raised. An identifier, not content.',
+    'AgentBehaviourAnomaly.findingId': 'A cuid pointing at the Finding the behaviour fingerprint raised or found open for this agent-day. An identifier, not content.',
 
     'AgentActionReceipt.toolDescriptionHash': 'A SHA-256 DIGEST of the MCP tool description in force when the mediated action happened — never the description itself, and the description is our own published tool documentation carrying no tenant data. It exists so an audit can tell WHICH definition produced an action after a poisoned one is found; encrypting it would defeat the equality comparison that is its only use.',
     'McpToolManifestPin.descriptionHash': 'A SHA-256 DIGEST of an MCP tool s description, never the description itself — the description is our own published tool documentation and carries no tenant data at all. The column exists so the boundary can detect that the text CHANGED, which is an equality comparison; encrypting it would defeat the comparison and protect a value that is already public in the tool catalogue.',
     'TenantCalendarConsent.revokedReason': 'A fixed operator-facing phrase written by our own code and capped at 200 chars ("withdrawn by administrator"), shown on the admin settings page — never a provider body and never user text. Encrypting it would hide the one field that page exists to display.',
+    'KnowledgeChunk.contentHash': 'The hex SHA-256 of the chunk text, never the text (which is encrypted beside it). It exists so a re-chunk that yields the same text is a no-op and an embedding can say which text it was computed from: equality comparisons, which encryption would defeat (vector store Phase 1.4).',
+    'KnowledgeChunkEmbedding.contentHash': 'The same hex SHA-256 of the chunk text the vector was computed from, compared with the chunk\'s to tell a stale vector from a current one; a CHECK holds it to 64 hex characters, so it cannot carry prose (vector store Phase 1.4, D-L4-2).',
     'AccessReviewAgentPack.contentHash': 'A `sha256:` DIGEST of the reviewer pack\'s sections, never the sections themselves. It exists so the closing evidence can be checked against the stored pack, which is an equality comparison; encrypting it would defeat the comparison, and the digest reveals nothing of the grants it summarises (#3674).',
     'UserCalendarEventMapping.contentHash': 'A truncated SHA-256 DIGEST of the pushed event fields, never the fields themselves — it exists so a change can be detected without reading the remote back. Encrypting a hash defeats the equality comparison that is its only use, and the plaintext it summarises is a compliance deadline title the user can already see in their own calendar.',
     'UserCalendarConnection.revokedReason': 'A fixed operator-facing phrase shown in account settings ("consent withdrawn", "refresh returned invalid_grant"), written by our own code and capped at 200 chars — never a provider response body, never user text. Encrypting it would hide the one field the settings surface exists to display.',

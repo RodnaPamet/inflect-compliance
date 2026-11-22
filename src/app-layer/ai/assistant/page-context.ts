@@ -32,7 +32,7 @@
 
 import { z } from 'zod';
 
-import { baseRouteOf } from './nav-routes';
+import { baseRouteOf, normaliseRoute } from './nav-routes';
 
 /** Filter keys are query-parameter names: identifiers, never prose. */
 const FILTER_KEY = /^[A-Za-z0-9_-]{1,40}$/;
@@ -100,7 +100,13 @@ export function describePageContext(pc: PageContext | undefined): string | null 
 
     // Say so explicitly rather than passing the detail URL through. The model
     // must not come to believe `/controls/abc123` is a nameable path.
-    if (base !== (pc.route.split('?')[0].replace(/\/$/, '') || base)) {
+    //
+    // Compared with the NORMALISED route (#5190), the same form `baseRouteOf`
+    // reads. The raw route carries the `/t/<slug>` prefix, so it never equalled
+    // the base and every page — lists included — was described to the model
+    // as one record.
+    const normalised = normaliseRoute(pc.route);
+    if (normalised !== null && normalised !== base) {
         lines.push('view: a single record under that route');
     }
     if (pc.entity !== undefined) lines.push(`entity: ${pc.entity}`);

@@ -27,19 +27,23 @@
  *     frozen owner as `decidedByUserId` for any writer.
  *   - Decisions are one-way stamps: written only where nothing is stamped yet,
  *     and a trigger refuses any change to a stamped row.
- *   - The only change a campaign makes to an agent's authority is deleting a
- *     grant an accepted narrowing names. Nothing here creates a grant, writes a
- *     card version or edits a register row — `tests/guards/agent-recertification-single-write-seam.test.ts`.
+ *   - A campaign only takes authority away, in two ways: deleting a grant an
+ *     accepted narrowing names, and withdrawing a spending envelope an accepted
+ *     withdrawal names (Agent Pay 1.4, through the envelope writer's narrowly
+ *     scoped `withdrawSpendingAuthorityForRecertificationInTx`). Nothing here
+ *     creates a grant, writes a card version, edits a register row or declares
+ *     or widens an envelope — `tests/guards/agent-recertification-single-write-seam.test.ts`.
  *   - Zero is never complete: `subjectCount > 0 && decided === subjectCount`.
  *
  * @module app-layer/usecases/access-review-agent
  */
 import { Readable } from 'node:stream';
+import type { AgentSpendingRail } from '@prisma/client';
 import { z } from 'zod';
 
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
-import { DomainError, badRequest, forbidden, internal, notFound } from '@/lib/errors/types';
+import { DomainError, ForbiddenError, NotFoundError, badRequest, forbidden, internal, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { appendAuditEntry } from '@/lib/audit';
 import { deriveSubkey } from '@/lib/security/encryption';
@@ -55,11 +59,14 @@ import {
     MAX_AGENT_SUBJECTS,
     PACK_PAGE_SIZE,
     PACK_SUBJECT_ALL_BUT_SELF,
+    PERSON_CONFIRMED_WITHDRAWAL_GROUND,
     PackPlanSchema,
     RECERT_SAMPLE_DISSENT_CODES,
     RecertificationEvidenceSchema,
+    SpendingAuthorityEvidenceSchema,
     agentCampaignEvidenceBytes,
     buildAgentCampaignEvidence,
+    fullToolNameFor,
     observationWindow,
     planAgentReviewPacks,
     sectionsOf,
@@ -84,7 +91,17 @@ import { DateField, refinePeriodOrder } from '../schemas/access-review.schemas';
 import { remediationDescription } from './access-review-connected';
 import { startWorkflowRun } from './workflow-runs';
 import { assertAgentCampaignsAvailable } from './access-review-scope-gate';
+import {
+    auditRecertificationWithdrawal,
+    withdrawSpendingAuthorityForRecertificationInTx,
+    type RecertificationWithdrawal,
+} from './agent-spending-authority';
 import { assertReviewerIsActiveMember } from './access-review-reviewer';
+import { buildTenantSystemJobContext } from '../context-system';
+import { enqueue } from '../jobs/queue';
+import { findTenantJob } from '../jobs/tenant-job-lookup';
+import { recordAgentRecertPackPreparation } from '@/lib/observability/integration-metrics';
+import { SPENDING_RAILS } from '@/lib/agentic/spending-authority';
 
 // ── Refusals ─────────────────────────────────────────────────────────────
 
@@ -103,12 +120,18 @@ export type AgentCampaignRefusal =
     | 'PREPARER_BREAKER_LATCHED'
     | 'PREPARER_LACKS_READ_GRANT'
     | 'PREPARE_REQUIRES_PERSON'
+    | 'REQUESTER_NOT_AUTHORISED'
     | 'SELF_PACK_REFUSED'
     | 'STATIC_PACK_NOT_PREPARERS_OWN'
     | 'PACK_RUN_FAILED'
     | 'PACK_PLAN_MISMATCH'
     | 'NARROWINGS_PENDING'
+    | 'WITHDRAWALS_PENDING'
     | 'SUBJECTS_PENDING'
+    | 'SUBJECT_DECIDED'
+    | 'ENVELOPE_NOT_IN_PACK'
+    | 'ENVELOPE_ALREADY_WITHDRAWN'
+    | 'WITHDRAWAL_ALREADY_PROPOSED'
     | 'ALREADY_DECIDED';
 
 /** Thrown with the code in the message so a caller and a test can both read it. */
@@ -376,6 +399,8 @@ export interface PreparePacksResult {
     readonly accessReviewId: string;
     readonly packs: number;
     readonly narrowings: number;
+    /** Spending-authority withdrawals proposed (Agent Pay 1.4). */
+    readonly spendingWithdrawals: number;
     readonly runIds: readonly string[];
 }
 
@@ -493,35 +518,32 @@ async function runPack(
     return { evidence, plan: checkedPlan(evidence, recorded), runId: run.runId, agentId };
 }
 
+/** What a preparation reads first, and asks every refusal over. */
+interface PreparationHead {
+    readonly review: {
+        readonly id: string;
+        readonly createdAt: Date;
+        readonly preparerAgentId: string;
+        readonly crossPreparerAgentId: string | null;
+    };
+    readonly subjects: ReadonlyArray<{ id: string; subjectAgentId: string | null; subjectOwnerUserId: string | null }>;
+}
+
 /**
- * Prepare every subject's reviewer pack, through the pack workflow, run by the
- * campaign's registered agents.
- *
- * The PREPARER runs one static workflow per page of `PACK_PAGE_SIZE` subjects
- * over every subject but its own. The preparer's own pack is prepared by the
- * CROSS-PREPARER's run when the campaign names one, and otherwise by a run
- * this person starts with no agent bound (`PERSON_STATIC_SELF_PACK`), which
- * may prepare that one pack and no other. Each run's READ step is the evidence
- * read and its SYNTHESIS step the plan. The packs and narrowings are written
- * only after every run succeeded, in one transaction, so a campaign has all of
- * its packs or none — and every pack records how it was prepared, and by
- * which agent.
- *
- * Started by a person (OWNER/ADMIN), never by a credential: the person only
- * starts the agents' runs, and a key's own agent binding would otherwise decide
- * whose run it is.
+ * Every refusal a preparation asks before a run exists, in one place, so the
+ * request that hands a campaign to the job and the job that prepares it ask
+ * the same ones: a person (never a credential or an agent) holding the admin
+ * tier, an OPEN AGENT campaign with a preparer, no packs yet, a population,
+ * and preparers that still qualify.
  */
-export async function prepareAgentReviewPacks(
-    ctx: RequestContext,
-    accessReviewId: string,
-): Promise<PreparePacksResult> {
+async function readPreparationHead(ctx: RequestContext, accessReviewId: string): Promise<PreparationHead> {
     assertCanAdmin(ctx);
     assertAgentCampaignsAvailable('prepare');
     if (ctx.apiKeyId || ctx.agentId) {
         refuse('PREPARE_REQUIRES_PERSON', 'packs are prepared by the campaign’s agents, started by a signed-in person');
     }
 
-    const head = await runInTenantContext(ctx, async (db) => {
+    return runInTenantContext(ctx, async (db) => {
         const review = await db.accessReview.findFirst({
             where: { id: accessReviewId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true, scope: true, status: true, createdAt: true, preparerAgentId: true, crossPreparerAgentId: true },
@@ -547,10 +569,74 @@ export async function prepareAgentReviewPacks(
             await assertPreparerEligible(db, ctx, review.crossPreparerAgentId, 'cross-preparer');
         }
         return {
-            review: { ...review, preparerAgentId: review.preparerAgentId, crossPreparerAgentId: review.crossPreparerAgentId },
+            review: {
+                id: review.id,
+                createdAt: review.createdAt,
+                preparerAgentId: review.preparerAgentId,
+                crossPreparerAgentId: review.crossPreparerAgentId,
+            },
             subjects,
         };
     });
+}
+
+/**
+ * How many pack runs a campaign takes: one per page of `PACK_PAGE_SIZE` of the
+ * preparer's subjects, and one for the preparer's own pack.
+ */
+function packRunCount(head: PreparationHead): number {
+    const own = head.subjects.filter((x) => x.subjectAgentId === head.review.preparerAgentId).length;
+    return Math.ceil((head.subjects.length - own) / PACK_PAGE_SIZE) + (own > 0 ? 1 : 0);
+}
+
+/** Progress of one preparation: subjects whose run has finished, of all of them. */
+export interface PackPreparationProgress {
+    readonly done: number;
+    readonly total: number;
+}
+
+/**
+ * Prepare every subject's reviewer pack, through the pack workflow, run by the
+ * campaign's registered agents.
+ *
+ * The PREPARER runs one static workflow per page of `PACK_PAGE_SIZE` subjects
+ * over every subject but its own. The preparer's own pack is prepared by the
+ * CROSS-PREPARER's run when the campaign names one, and otherwise by a run
+ * this person starts with no agent bound (`PERSON_STATIC_SELF_PACK`), which
+ * may prepare that one pack and no other. Each run's READ step is the evidence
+ * read and its SYNTHESIS step the plan. The packs and narrowings are written
+ * only after every run succeeded, in one transaction, so a campaign has all of
+ * its packs or none — and every pack records how it was prepared, and by
+ * which agent.
+ *
+ * Started by a person (OWNER/ADMIN), never by a credential: the person only
+ * starts the agents' runs, and a key's own agent binding would otherwise decide
+ * whose run it is. The route reaches it through `requestAgentReviewPacks`,
+ * inline for a small campaign and through the `agent-recert-packs-prepare` job
+ * for a large one; `onProgress` hears the subjects covered after each run.
+ */
+export async function prepareAgentReviewPacks(
+    ctx: RequestContext,
+    accessReviewId: string,
+    opts: { readonly onProgress?: (progress: PackPreparationProgress) => Promise<void> | void } = {},
+): Promise<PreparePacksResult> {
+    const head = await readPreparationHead(ctx, accessReviewId);
+    const total = head.subjects.length;
+    let done = 0;
+    const report = async () => {
+        // Progress is a courtesy to the page: a transport that cannot take it
+        // must not stop a preparation that is otherwise going well.
+        try {
+            await opts.onProgress?.({ done, total });
+        } catch (err) {
+            logger.warn('agent pack preparation: progress not reported', {
+                component: 'access-review-agent',
+                accessReviewId,
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    };
+    await report();
 
     const { preparerAgentId, crossPreparerAgentId } = head.review;
     const preparerSubjects = head.subjects.filter((x) => x.subjectAgentId !== preparerAgentId);
@@ -559,7 +645,10 @@ export async function prepareAgentReviewPacks(
     const prepared: PreparedRun[] = [];
     const pages = Math.ceil(preparerSubjects.length / PACK_PAGE_SIZE);
     for (let page = 0; page < pages; page++) { // guardrail-allow: n+1 — one workflow run and one bounded step read per page of PACK_PAGE_SIZE agents
-        prepared.push(await runPack(ctx, preparerAgentId, accessReviewId, page, PACK_SUBJECT_ALL_BUT_SELF));
+        const run = await runPack(ctx, preparerAgentId, accessReviewId, page, PACK_SUBJECT_ALL_BUT_SELF);
+        prepared.push(run);
+        done += run.evidence.subjects.length;
+        await report();
     }
     if (preparersOwn.length > 0) {
         if (crossPreparerAgentId) {
@@ -571,6 +660,8 @@ export async function prepareAgentReviewPacks(
             assertStaticRunIsPreparersOwn(own.evidence, preparerAgentId);
             prepared.push(own);
         }
+        done += prepared[prepared.length - 1].evidence.subjects.length;
+        await report();
     }
     const runIds = prepared.map((r) => r.runId);
 
@@ -620,6 +711,19 @@ export async function prepareAgentReviewPacks(
         });
         const packByDecision = new Map(packs.map((p) => [p.decisionId, p]));
 
+        // A pack carries a granted tool's name cut at TOOL_NAME_IN_PACK; the
+        // narrowing a reviewer accepts, and the revocation it records, name the
+        // tool whole, read from the grant by the id the pack names.
+        const narrowedGrantIds = [...new Set(prepared.flatMap(({ plan }) =>
+            plan.packs.flatMap((p) => p.narrowings.map((n) => n.grantId))))];
+        const storedNames = narrowedGrantIds.length
+            ? new Map((await db.registeredAgentTool.findMany({
+                where: { tenantId: ctx.tenantId, id: { in: narrowedGrantIds } },
+                select: { id: true, toolName: true },
+                take: narrowedGrantIds.length,
+            })).map((g) => [g.id, g.toolName]))
+            : new Map<string, string>();
+
         const narrowingRows = prepared.flatMap(({ plan }) =>
             plan.packs.flatMap((p) => p.narrowings.map((n) => ({
                 tenantId: ctx.tenantId,
@@ -628,7 +732,7 @@ export async function prepareAgentReviewPacks(
                 packId: packByDecision.get(p.decisionId)!.id,
                 agentId: p.agentId,
                 grantId: n.grantId,
-                toolName: n.toolName,
+                toolName: fullToolNameFor(n.toolName, storedNames.get(n.grantId)),
                 grantedByUserId: n.grantedByUserId,
                 grantedAt: new Date(n.grantedAt),
                 basis: n.basis,
@@ -642,6 +746,44 @@ export async function prepareAgentReviewPacks(
             ? await db.accessReviewAgentNarrowing.createMany({ data: narrowingRows })
             : { count: 0 };
 
+        // Agent Pay 1.4 — the spending withdrawals each plan proposes. The
+        // plan names the envelope by rail and declaration; the status and lapse
+        // the pack read come from the same run's evidence, which `checkedPlan`
+        // already held the plan to.
+        const envelopeOf = new Map<string, { status: string; expiresAt: string }>();
+        for (const { evidence } of prepared) {
+            for (const x of evidence.subjects) {
+                for (const e of x.spendingAuthority ?? []) {
+                    envelopeOf.set(`${x.decisionId}|${e.rail}|${e.declaredAt}`, { status: e.status, expiresAt: e.expiresAt });
+                }
+            }
+        }
+        const withdrawalRows = prepared.flatMap(({ plan }) =>
+            plan.packs.flatMap((p) => (p.spendingWithdrawals ?? []).map((w) => {
+                const env = envelopeOf.get(`${p.decisionId}|${w.rail}|${w.declaredAt}`);
+                if (!env) throw internal('a planned withdrawal names an envelope its evidence does not hold');
+                return {
+                    tenantId: ctx.tenantId,
+                    accessReviewId,
+                    decisionId: p.decisionId,
+                    packId: packByDecision.get(p.decisionId)!.id,
+                    agentId: p.agentId,
+                    rail: w.rail as AgentSpendingRail,
+                    declaredAt: new Date(w.declaredAt),
+                    statusAtPack: env.status,
+                    expiresAt: new Date(env.expiresAt),
+                    grounds: [...w.grounds],
+                    subjectOwnerUserId: ownerByDecision.get(p.decisionId) ?? '',
+                };
+            })),
+        );
+        if (withdrawalRows.some((w) => w.subjectOwnerUserId === '')) {
+            throw internal('an agent subject has no frozen owner');
+        }
+        const withdrawn = withdrawalRows.length
+            ? await db.accessReviewAgentSpendingWithdrawal.createMany({ data: withdrawalRows })
+            : { count: 0 };
+
         await logEvent(db, ctx, {
             action: 'ACCESS_REVIEW_AGENT_PACKS_PREPARED',
             entityType: 'AccessReview',
@@ -650,10 +792,12 @@ export async function prepareAgentReviewPacks(
                 category: 'entity_lifecycle',
                 entityName: 'AccessReviewAgentPack',
                 operation: 'create',
-                summary: `Prepared ${packs.length} reviewer pack(s) and ${narrowed.count} narrowing(s) in ${runIds.length} agent run(s)`,
+                summary: `Prepared ${packs.length} reviewer pack(s), ${narrowed.count} narrowing(s) and `
+                    + `${withdrawn.count} spending withdrawal(s) in ${runIds.length} agent run(s)`,
                 after: {
                     packs: packs.length,
                     narrowings: narrowed.count,
+                    spendingWithdrawals: withdrawn.count,
                     runIds,
                     preparerAgentId,
                     crossPreparerAgentId,
@@ -663,8 +807,244 @@ export async function prepareAgentReviewPacks(
             },
         });
 
-        return { accessReviewId, packs: packs.length, narrowings: narrowed.count, runIds };
+        return { accessReviewId, packs: packs.length, narrowings: narrowed.count, spendingWithdrawals: withdrawn.count, runIds };
     });
+}
+
+// ── Preparing a large campaign off the request ───────────────────────────
+
+/**
+ * The most pack runs a request prepares itself (#5317). A run takes about a
+ * quarter of a second, and every run of a preparation happens before its one
+ * write, so a campaign of 500 agents would hold its request for minutes. Above
+ * this the request hands the campaign to the `agent-recert-packs-prepare` job
+ * and answers 202, and the page shows the job's progress.
+ */
+export const SYNC_PACK_RUN_LIMIT = 5;
+
+/** The job that prepares a campaign too large for its request. */
+export const AGENT_RECERT_PACKS_JOB = 'agent-recert-packs-prepare' as const;
+
+/**
+ * The job's id, fixed per campaign: a second press while the first is queued
+ * or running finds it rather than starting a second preparation, and the page
+ * finds it without being told an id. Colon-free (#3554).
+ */
+export function agentPackPreparationJobId(accessReviewId: string): string {
+    return `agent-recert-packs-${accessReviewId}`;
+}
+
+/** BullMQ states in which a preparation is still to happen. */
+const LIVE_JOB_STATES: ReadonlySet<string> = new Set(['waiting', 'delayed', 'prioritized', 'waiting-children', 'active']);
+
+export type RequestPacksResult =
+    | ({ readonly mode: 'PREPARED' } & PreparePacksResult)
+    | {
+        readonly mode: 'QUEUED';
+        readonly accessReviewId: string;
+        readonly jobId: string;
+        /** Pack runs the job will start. */
+        readonly runs: number;
+        /** True when a preparation was already queued or running, and this press joined it. */
+        readonly alreadyQueued: boolean;
+    };
+
+/**
+ * The prepare button: prepare a small campaign now, hand a large one to the
+ * job. Every refusal a preparation asks is asked HERE first, so a request the
+ * job would refuse is refused to the person who made it, with its reason —
+ * and the job asks every one of them again when it runs, as its requester.
+ */
+export async function requestAgentReviewPacks(ctx: RequestContext, accessReviewId: string): Promise<RequestPacksResult> {
+    const head = await readPreparationHead(ctx, accessReviewId);
+    const runs = packRunCount(head);
+    if (runs <= SYNC_PACK_RUN_LIMIT) {
+        const prepared = await prepareAgentReviewPacks(ctx, accessReviewId);
+        recordAgentRecertPackPreparation({ outcome: 'prepared', path: 'request' });
+        return { mode: 'PREPARED', ...prepared };
+    }
+
+    const jobId = agentPackPreparationJobId(accessReviewId);
+    const existing = await findTenantJob(jobId, ctx.tenantId, AGENT_RECERT_PACKS_JOB);
+    if (existing) {
+        if (LIVE_JOB_STATES.has(await existing.getState())) {
+            return { mode: 'QUEUED', accessReviewId, jobId, runs, alreadyQueued: true };
+        }
+        // A finished job keeps its id until BullMQ trims it. A failed one is
+        // what the page shows until somebody presses again — this press — and
+        // a completed one left no packs (the head refused if it had), so
+        // neither is a preparation to wait for.
+        await existing.remove();
+    }
+    await enqueue(AGENT_RECERT_PACKS_JOB, {
+        tenantId: ctx.tenantId,
+        accessReviewId,
+        requestedByUserId: ctx.userId,
+        requestId: ctx.requestId,
+    }, { jobId });
+    recordAgentRecertPackPreparation({ outcome: 'queued', path: 'request' });
+
+    await runInTenantContext(ctx, (db) => logEvent(db, ctx, {
+        action: 'ACCESS_REVIEW_AGENT_PACKS_QUEUED',
+        entityType: 'AccessReview',
+        entityId: accessReviewId,
+        detailsJson: {
+            category: 'custom',
+            event: 'access_review_agent_packs_queued',
+            summary: `Reviewer pack preparation of ${head.subjects.length} subject(s) in ${runs} run(s) handed to the background job`,
+            jobId,
+            subjects: head.subjects.length,
+            runs,
+            requestedByUserId: ctx.userId,
+        },
+    }));
+
+    return { mode: 'QUEUED', accessReviewId, jobId, runs, alreadyQueued: false };
+}
+
+/** Where a campaign's background preparation stands, for its page. */
+export type PackPreparationStatus =
+    | { readonly state: 'QUEUED' | 'RUNNING'; readonly done: number; readonly total: number | null }
+    | { readonly state: 'FAILED'; readonly reason: string | null }
+    | { readonly state: 'UNKNOWN' };
+
+/** A refusal sentence this module wrote (`CODE: detail`), never an arbitrary error's text. */
+const REFUSAL_SENTENCE = /^[A-Z][A-Z_]+: /;
+
+function progressOf(raw: unknown): { done: number; total: number | null } {
+    const p = raw as { done?: unknown; total?: unknown } | null;
+    return {
+        done: typeof p?.done === 'number' && Number.isFinite(p.done) ? p.done : 0,
+        total: typeof p?.total === 'number' && Number.isFinite(p.total) ? p.total : null,
+    };
+}
+
+/**
+ * The campaign's background preparation, or null when there is none to show:
+ * none was asked for, or it finished and the packs are there to read.
+ *
+ * Read by the packs route AFTER `getAgentReviewPacks`, whose gate is the one
+ * this answers under. A queue that cannot be read is `UNKNOWN`, never null —
+ * null would offer the Prepare button over a preparation that may be running.
+ * A failure's reason is shown only when it is one of this module's refusal
+ * sentences; anything else is the page's generic sentence.
+ */
+export async function readAgentPackPreparation(ctx: RequestContext, accessReviewId: string): Promise<PackPreparationStatus | null> {
+    assertCanRead(ctx);
+    try {
+        const job = await findTenantJob(agentPackPreparationJobId(accessReviewId), ctx.tenantId, AGENT_RECERT_PACKS_JOB);
+        if (!job) return null;
+        const state = await job.getState();
+        if (state === 'completed') return null;
+        if (state === 'failed') {
+            const reason = job.failedReason ?? '';
+            return { state: 'FAILED', reason: REFUSAL_SENTENCE.test(reason) ? reason : null };
+        }
+        if (state === 'active') return { state: 'RUNNING', ...progressOf(job.progress) };
+        if (LIVE_JOB_STATES.has(state)) return { state: 'QUEUED', ...progressOf(job.progress) };
+        return { state: 'UNKNOWN' };
+    } catch (err) {
+        logger.warn('agent pack preparation: queue unreadable', {
+            component: 'access-review-agent',
+            accessReviewId,
+            error: err instanceof Error ? err.message : String(err),
+        });
+        return { state: 'UNKNOWN' };
+    }
+}
+
+/**
+ * The refusal code of a preparation that did not happen, or null for a fault.
+ * A named refusal is its `CODE:`; the two refusals `readPreparationHead` makes
+ * through the shared policy and lookup helpers, which carry no code of their
+ * own, are named here.
+ */
+function preparationRefusalCode(err: unknown): string | null {
+    if (!(err instanceof Error)) return null;
+    const named = /^([A-Z][A-Z_]+): /.exec(err.message);
+    if (named) return named[1];
+    if (err instanceof NotFoundError) return 'CAMPAIGN_NOT_FOUND';
+    if (err instanceof ForbiddenError) return 'REQUESTER_NOT_ADMIN';
+    return null;
+}
+
+/**
+ * The job's half: prepare `accessReviewId` as the person who asked, re-read
+ * now. Never a fabricated context: a requester who is no longer an ACTIVE
+ * member, or no longer holds the key the prepare route takes
+ * (`access_reviews.create`), is refused `REQUESTER_NOT_AUTHORISED` and nothing
+ * is prepared; everything else — the admin tier, a person not a credential,
+ * the campaign's state, both preparers' eligibility, the self-pack rules — is
+ * asked again by `prepareAgentReviewPacks` itself.
+ *
+ * A refusal still fails the job with its sentence, and also writes ONE
+ * `ACCESS_REVIEW_AGENT_PACKS_REFUSED` audit row naming the campaign and the
+ * refusal code, and no free text. The row is the requester's, through their
+ * re-read context, when that resolved; when it did not (they are no longer an
+ * active member) it is the tenant's system job's
+ * (`buildTenantSystemJobContext`), never a borrowed member's. A fault that is
+ * not a refusal writes no row; the job fails and the metric counts `error`.
+ */
+export async function prepareAgentReviewPacksForRequester(
+    input: {
+        readonly tenantId: string;
+        readonly ctx: RequestContext | null;
+        readonly accessReviewId: string;
+        readonly requestedByUserId: string;
+        readonly requestId?: string;
+    },
+    opts: { readonly onProgress?: (progress: PackPreparationProgress) => Promise<void> | void } = {},
+): Promise<PreparePacksResult> {
+    const { ctx, accessReviewId } = input;
+    try {
+        if (!ctx) {
+            refuse('REQUESTER_NOT_AUTHORISED', 'the person who asked for these packs is no longer an active member of this workspace');
+        }
+        if (ctx.appPermissions?.access_reviews?.create !== true) {
+            refuse('REQUESTER_NOT_AUTHORISED', 'the person who asked for these packs no longer holds access_reviews.create');
+        }
+        const prepared = await prepareAgentReviewPacks(ctx, accessReviewId, opts);
+        recordAgentRecertPackPreparation({ outcome: 'prepared', path: 'job' });
+        return prepared;
+    } catch (err) {
+        const code = preparationRefusalCode(err);
+        recordAgentRecertPackPreparation({ outcome: code ? 'refused' : 'error', path: 'job' });
+        if (code) await recordPreparationRefused(input, code);
+        throw err;
+    }
+}
+
+/** The refusal's audit row. Never masks the refusal it records. */
+async function recordPreparationRefused(
+    input: { readonly tenantId: string; readonly ctx: RequestContext | null; readonly accessReviewId: string; readonly requestedByUserId: string; readonly requestId?: string },
+    code: string,
+): Promise<void> {
+    try {
+        const auditCtx = input.ctx ?? await buildTenantSystemJobContext({
+            tenantId: input.tenantId,
+            job: AGENT_RECERT_PACKS_JOB,
+            requestId: input.requestId,
+        });
+        await runInTenantContext(auditCtx, (db) => logEvent(db, auditCtx, {
+            action: 'ACCESS_REVIEW_AGENT_PACKS_REFUSED',
+            entityType: 'AccessReview',
+            entityId: input.accessReviewId,
+            detailsJson: {
+                category: 'custom',
+                event: 'access_review_agent_packs_refused',
+                reason: code,
+                requestedByUserId: input.requestedByUserId,
+                attributedTo: input.ctx ? 'REQUESTER' : 'TENANT_SYSTEM_JOB',
+            },
+        }));
+    } catch (err) {
+        logger.warn('agent pack preparation: refusal not audited', {
+            component: 'access-review-agent',
+            accessReviewId: input.accessReviewId,
+            reason: code,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
 }
 
 /**
@@ -706,6 +1086,12 @@ export async function getAgentReviewPacks(ctx: RequestContext, accessReviewId: s
             orderBy: [{ decisionId: 'asc' }, { toolName: 'asc' }],
             take: MAX_AGENT_SUBJECTS * 50,
         });
+        const spendingWithdrawals = await db.accessReviewAgentSpendingWithdrawal.findMany({
+            where: { tenantId: ctx.tenantId, accessReviewId },
+            select: SPENDING_WITHDRAWAL_SELECT,
+            orderBy: [{ decisionId: 'asc' }, { rail: 'asc' }],
+            take: MAX_AGENT_SUBJECTS * SPENDING_RAILS.length,
+        });
         const samples = await db.accessReviewDecisionSampleAudit.findMany({
             where: { tenantId: ctx.tenantId, accessReviewId },
             select: {
@@ -735,7 +1121,7 @@ export async function getAgentReviewPacks(ctx: RequestContext, accessReviewId: s
                 matches: storedSha256 === recomputedSha256,
             };
         }
-        return { accessReviewId, packs, narrowings, samples, evidence };
+        return { accessReviewId, packs, narrowings, spendingWithdrawals, samples, evidence };
     });
 }
 
@@ -769,8 +1155,8 @@ export const SubmitAgentDecisionSchema = z.object({
  *
  * Refused, in order: not found; not an AGENT campaign; closed; not the
  * assigned reviewer or an admin; the agent's OWNER (frozen or current — 403 and
- * AUTHZ_DENIED); the pack not prepared; a narrowing still pending; already
- * decided. The reviewer decides the narrowings first and certifies what
+ * AUTHZ_DENIED); the pack not prepared; a narrowing still pending; a spending
+ * withdrawal still pending; already decided. The reviewer decides the narrowings first and certifies what
  * remains, so a subject verdict is never recorded beside an open question
  * about the same agent's grants.
  */
@@ -806,6 +1192,12 @@ export async function submitAgentDecision(
             where: { tenantId: ctx.tenantId, decisionId, outcome: 'PENDING' },
         });
         if (pending > 0) refuse('NARROWINGS_PENDING', `${pending} narrowing(s) of this agent are still undecided`);
+        const pendingWithdrawals = await db.accessReviewAgentSpendingWithdrawal.count({
+            where: { tenantId: ctx.tenantId, decisionId, outcome: 'PENDING' },
+        });
+        if (pendingWithdrawals > 0) {
+            refuse('WITHDRAWALS_PENDING', `${pendingWithdrawals} spending withdrawal(s) of this agent are still undecided`);
+        }
 
         const res = await db.accessReviewConnectedDecision.updateMany({
             where: { id: decisionId, tenantId: ctx.tenantId, decision: null },
@@ -951,6 +1343,247 @@ export async function decideAgentNarrowing(
     });
 }
 
+// ── Spending-authority withdrawals (Agent Pay 1.4) ───────────────────────
+
+/** What a reader of a campaign's withdrawals is given. No token reference: the row holds none. */
+const SPENDING_WITHDRAWAL_SELECT = {
+    id: true, decisionId: true, packId: true, rail: true, declaredAt: true, statusAtPack: true,
+    expiresAt: true, grounds: true, proposedByUserId: true, outcome: true, decidedAt: true, decidedByUserId: true,
+    executedAt: true, executionResult: true, ownerTaskId: true,
+} as const;
+
+export const DecideSpendingWithdrawalSchema = z.object({ outcome: z.enum(['ACCEPT', 'REJECT']) });
+
+/**
+ * Accept or reject one proposed withdrawal of an agent's spending envelope
+ * (Agent Pay 1.4, owner decisions of 2026-11-20).
+ *
+ * The narrowing's rules, in its order: not found; not an AGENT campaign;
+ * closed; not the assigned reviewer or an admin; the agent's OWNER, frozen or
+ * current (403 and AUTHZ_DENIED); already decided (the conditional claim).
+ *
+ * Accepting WITHDRAWS the declaration the pack described, in the same
+ * transaction, through the envelope writer's one internal path — and opens a
+ * task for the agent's owner to revoke the token at its requestor (decision
+ * 3). It is accepted under `access_reviews.decide`, not the register's
+ * `admin.agent_registry`, for the reason a narrowing is: it only takes
+ * authority away. Rejecting changes nothing on the register.
+ */
+export async function decideAgentSpendingWithdrawal(
+    ctx: RequestContext,
+    accessReviewId: string,
+    withdrawalId: string,
+    input: unknown,
+    now: Date = new Date(),
+) {
+    assertCanRead(ctx);
+    assertAgentCampaignsAvailable('decide');
+    const parsed = DecideSpendingWithdrawalSchema.parse(input);
+    return runInTenantContext(ctx, async (db) => {
+        const w = await db.accessReviewAgentSpendingWithdrawal.findFirst({
+            where: { id: withdrawalId, tenantId: ctx.tenantId, accessReviewId },
+            select: {
+                id: true, outcome: true, agentId: true, rail: true, declaredAt: true, grounds: true,
+                decisionId: true, subjectOwnerUserId: true,
+                accessReview: { select: { id: true, name: true, scope: true, reviewerUserId: true, status: true, deletedAt: true } },
+            },
+        });
+        if (!w || w.accessReview.deletedAt !== null) throw notFound('Withdrawal not found.');
+        if (w.accessReview.scope !== 'AGENT') refuse('NOT_AN_AGENT_CAMPAIGN', 'this withdrawal is not in an agent campaign');
+        if (w.accessReview.status === 'CLOSED') refuse('CAMPAIGN_CLOSED', 'this campaign is closed; withdrawals are immutable');
+        if (w.accessReview.reviewerUserId !== ctx.userId && !ctx.permissions?.canAdmin) {
+            throw forbidden('Only the assigned reviewer (or a tenant admin) may decide a spending withdrawal.');
+        }
+        if (await ownsAgent(db, ctx, w.subjectOwnerUserId, w.agentId)) {
+            await refuseOwner(ctx, 'AccessReviewAgentSpendingWithdrawal', withdrawalId, 'agent_owner_cannot_decide');
+        }
+
+        const outcome = parsed.outcome === 'ACCEPT' ? 'ACCEPTED' : 'REJECTED';
+        const claim = await db.accessReviewAgentSpendingWithdrawal.updateMany({
+            where: { id: withdrawalId, tenantId: ctx.tenantId, outcome: 'PENDING' },
+            data: { outcome, decidedAt: now, decidedByUserId: ctx.userId },
+        });
+        if (claim.count === 0) refuse('ALREADY_DECIDED', 'this withdrawal has already been decided');
+
+        let carried: RecertificationWithdrawal | null = null;
+        if (outcome === 'ACCEPTED') {
+            carried = await withdrawSpendingAuthorityForRecertificationInTx(db, ctx, {
+                agentId: w.agentId,
+                rail: w.rail,
+                declaredAt: w.declaredAt,
+                accessReviewId: w.accessReview.id,
+                accessReviewName: w.accessReview.name,
+            }, now);
+            await db.accessReviewAgentSpendingWithdrawal.updateMany({
+                where: { id: withdrawalId, tenantId: ctx.tenantId, executedAt: null },
+                data: { executedAt: now, executionResult: carried.executionResult, ownerTaskId: carried.ownerTaskId },
+            });
+        }
+
+        if (w.accessReview.status === 'OPEN') {
+            await AccessReviewRepository.setReviewStatus(db, ctx, w.accessReview.id, 'IN_REVIEW');
+        }
+
+        // Audit last: `logEvent` writes on its own connection.
+        if (carried) {
+            await auditRecertificationWithdrawal(db, ctx, carried, { accessReviewId: w.accessReview.id, withdrawalId });
+        }
+        await logEvent(db, ctx, {
+            action: 'ACCESS_REVIEW_AGENT_SPENDING_WITHDRAWAL_DECIDED',
+            entityType: 'AccessReviewAgentSpendingWithdrawal',
+            entityId: withdrawalId,
+            detailsJson: {
+                category: 'access',
+                entityName: 'AccessReviewAgentSpendingWithdrawal',
+                operation: 'decide',
+                summary: `Withdrawal of the ${w.rail} spending authority ${outcome}`,
+                after: {
+                    accessReviewId: w.accessReview.id,
+                    decisionId: w.decisionId,
+                    rail: w.rail,
+                    grounds: w.grounds,
+                    outcome,
+                    executionResult: carried?.executionResult ?? null,
+                    ownerTaskId: carried?.ownerTaskId ?? null,
+                },
+            },
+        });
+        return {
+            withdrawalId,
+            outcome,
+            executionResult: carried?.executionResult ?? null,
+            ownerTaskId: carried?.ownerTaskId ?? null,
+        };
+    });
+}
+
+export const ConfirmNoPaymentAbilitySchema = z.object({
+    decisionId: z.string().min(1),
+    rail: z.enum(SPENDING_RAILS),
+}).strict();
+
+/** The pack's stored spending section; absent on a pack prepared before it. */
+const PackSpendingSectionSchema = z.object({
+    spendingAuthority: z.array(SpendingAuthorityEvidenceSchema).optional(),
+});
+
+/**
+ * The campaign's reviewer confirms that an agent can no longer pay on one rail
+ * (Agent Pay 1.4, ground (d); owner decision of 2026-11-20). A scan cannot say
+ * that — the scanner's code source reports no capability where it cannot see —
+ * so a PERSON does, and the statement opens a PENDING withdrawal carrying the
+ * ground `NO_PAYMENT_ABILITY_CONFIRMED` and their user id. It is decided like
+ * any other withdrawal (`decideAgentSpendingWithdrawal`); confirming withdraws
+ * nothing by itself.
+ *
+ * Refused, in order: not found; not an AGENT campaign; closed; not the
+ * assigned reviewer or an admin; the agent's OWNER, frozen or current (403 and
+ * AUTHZ_DENIED); the pack not prepared; the subject already decided; the
+ * envelope not in the pack; withdrawn when the pack read it; a withdrawal of
+ * that envelope already proposed (one per pack and rail, by the unique key).
+ * The envelope is named as the PACK described it, so accepting withdraws that
+ * declaration and never one made since.
+ */
+export async function confirmAgentHasNoPaymentAbility(
+    ctx: RequestContext,
+    accessReviewId: string,
+    input: unknown,
+) {
+    assertCanRead(ctx);
+    assertAgentCampaignsAvailable('decide');
+    const parsed = ConfirmNoPaymentAbilitySchema.parse(input);
+    return runInTenantContext(ctx, async (db) => {
+        const row = await db.accessReviewConnectedDecision.findFirst({
+            where: { id: parsed.decisionId, tenantId: ctx.tenantId, accessReviewId },
+            select: {
+                id: true, decision: true, subjectAgentId: true, subjectOwnerUserId: true,
+                accessReview: { select: { id: true, scope: true, reviewerUserId: true, status: true, deletedAt: true } },
+                agentPack: { select: { id: true, sectionsJson: true } },
+            },
+        });
+        if (!row || row.accessReview.deletedAt !== null) throw notFound('Decision not found.');
+        if (row.accessReview.scope !== 'AGENT') refuse('NOT_AN_AGENT_CAMPAIGN', 'this decision is not an agent subject');
+        if (row.accessReview.status === 'CLOSED') refuse('CAMPAIGN_CLOSED', 'this campaign is closed; withdrawals are immutable');
+        if (row.accessReview.reviewerUserId !== ctx.userId && !ctx.permissions?.canAdmin) {
+            throw forbidden('Only the assigned reviewer (or a tenant admin) may confirm an agent cannot pay.');
+        }
+        if (await ownsAgent(db, ctx, row.subjectOwnerUserId, row.subjectAgentId)) {
+            await refuseOwner(ctx, 'AccessReviewConnectedDecision', row.id, 'agent_owner_cannot_confirm_no_payment_ability');
+        }
+        if (!row.agentPack || !row.subjectAgentId) refuse('PACKS_NOT_PREPARED', 'prepare the reviewer packs first');
+        if (row.decision !== null) refuse('SUBJECT_DECIDED', 'this agent has already been decided');
+        if (!row.subjectOwnerUserId) throw internal('an agent subject has no frozen owner');
+
+        const section = PackSpendingSectionSchema.safeParse(row.agentPack.sectionsJson);
+        const envelope = section.success
+            ? section.data.spendingAuthority?.find((e) => e.rail === parsed.rail)
+            : undefined;
+        if (!envelope) refuse('ENVELOPE_NOT_IN_PACK', `the pack describes no ${parsed.rail} spending authority`);
+        if (envelope.status === 'WITHDRAWN') {
+            refuse('ENVELOPE_ALREADY_WITHDRAWN', `the ${parsed.rail} spending authority was already withdrawn`);
+        }
+
+        const existing = await db.accessReviewAgentSpendingWithdrawal.findFirst({
+            where: { tenantId: ctx.tenantId, packId: row.agentPack.id, rail: parsed.rail },
+            select: { id: true },
+        });
+        if (existing) {
+            refuse('WITHDRAWAL_ALREADY_PROPOSED', 'a withdrawal of this spending authority is already proposed; decide that one');
+        }
+
+        let created: { id: string };
+        try {
+            created = await db.accessReviewAgentSpendingWithdrawal.create({
+                data: {
+                    tenantId: ctx.tenantId,
+                    accessReviewId: row.accessReview.id,
+                    decisionId: row.id,
+                    packId: row.agentPack.id,
+                    agentId: row.subjectAgentId,
+                    rail: parsed.rail,
+                    declaredAt: new Date(envelope.declaredAt),
+                    statusAtPack: envelope.status,
+                    expiresAt: new Date(envelope.expiresAt),
+                    grounds: [PERSON_CONFIRMED_WITHDRAWAL_GROUND],
+                    proposedByUserId: ctx.userId,
+                    subjectOwnerUserId: row.subjectOwnerUserId,
+                },
+                select: { id: true },
+            });
+        } catch (err) {
+            // Two confirmations at once: the unique (packId, rail) keeps one.
+            if ((err as { code?: string } | null)?.code === 'P2002') {
+                refuse('WITHDRAWAL_ALREADY_PROPOSED', 'a withdrawal of this spending authority is already proposed; decide that one');
+            }
+            throw err;
+        }
+
+        if (row.accessReview.status === 'OPEN') {
+            await AccessReviewRepository.setReviewStatus(db, ctx, row.accessReview.id, 'IN_REVIEW');
+        }
+
+        // Audit last: `logEvent` writes on its own connection.
+        await logEvent(db, ctx, {
+            action: 'ACCESS_REVIEW_AGENT_SPENDING_WITHDRAWAL_PROPOSED',
+            entityType: 'AccessReviewAgentSpendingWithdrawal',
+            entityId: created.id,
+            detailsJson: {
+                category: 'access',
+                entityName: 'AccessReviewAgentSpendingWithdrawal',
+                operation: 'create',
+                summary: `The reviewer confirmed the agent cannot pay on ${parsed.rail}; withdrawal proposed`,
+                after: {
+                    accessReviewId: row.accessReview.id,
+                    decisionId: row.id,
+                    rail: parsed.rail,
+                    grounds: [PERSON_CONFIRMED_WITHDRAWAL_GROUND],
+                },
+            },
+        });
+        return { withdrawalId: created.id, grounds: [PERSON_CONFIRMED_WITHDRAWAL_GROUND] };
+    });
+}
+
 // ── Close ────────────────────────────────────────────────────────────────
 
 /**
@@ -1066,6 +1699,15 @@ async function evidenceRowsOf(
         },
         take: MAX_AGENT_SUBJECTS * 50,
     });
+    const spendingWithdrawals = await db.accessReviewAgentSpendingWithdrawal.findMany({
+        where: { tenantId: ctx.tenantId, accessReviewId },
+        select: {
+            id: true, decisionId: true, rail: true, declaredAt: true, statusAtPack: true, expiresAt: true,
+            grounds: true, outcome: true, decidedAt: true, decidedByUserId: true, executedAt: true,
+            executionResult: true, ownerTaskId: true,
+        },
+        take: MAX_AGENT_SUBJECTS * SPENDING_RAILS.length,
+    });
     const samples = await db.accessReviewDecisionSampleAudit.findMany({
         where: { tenantId: ctx.tenantId, accessReviewId },
         select: { decisionId: true, samplingEpoch: true },
@@ -1088,6 +1730,7 @@ async function evidenceRowsOf(
             })),
             packs,
             narrowings,
+            spendingWithdrawals,
             samples,
             obligations: AGENT_RECERT_EVIDENCE_OBLIGATIONS.map((o) => ({
                 familyUrn: o.familyUrn,
@@ -1184,6 +1827,10 @@ export async function closeAgentAccessReview(
             where: { tenantId: ctx.tenantId, accessReviewId, outcome: 'PENDING' },
         });
         if (pendingNarrowings > 0) refuse('NARROWINGS_PENDING', `${pendingNarrowings} narrowing(s) are undecided`);
+        const pendingWithdrawals = await db.accessReviewAgentSpendingWithdrawal.count({
+            where: { tenantId: ctx.tenantId, accessReviewId, outcome: 'PENDING' },
+        });
+        if (pendingWithdrawals > 0) refuse('WITHDRAWALS_PENDING', `${pendingWithdrawals} spending withdrawal(s) are undecided`);
 
         // The claim, before any side effect: two concurrent closes both pass
         // the reads above, and only one matches a not-CLOSED row.

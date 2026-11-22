@@ -115,11 +115,30 @@ const CATALOGUE = {
     ],
 };
 
-function mockFetch() {
+interface CatalogueOpts {
+    advertised?: number;
+    truncated?: boolean;
+    cap?: number;
+}
+
+function mockFetch(opts: CatalogueOpts = {}) {
     global.fetch = jest.fn(async (url: string) => {
         const u = String(url);
         if (u.includes('/admin/agents/external-tools')) {
-            return { ok: true, json: async () => ({ ...CATALOGUE, refusedNames: 0 }) };
+            return {
+                ok: true,
+                json: async () => ({
+                    ...CATALOGUE,
+                    refusedNames: 0,
+                    // Defaults mirror a complete read of this fixture: three
+                    // tools advertised, nothing cut. A test that wants the
+                    // truncated case has to say so, so the ordinary case cannot
+                    // drift into claiming one.
+                    advertised: opts.advertised ?? CATALOGUE.tools.length,
+                    truncated: opts.truncated ?? false,
+                    cap: opts.cap ?? 250,
+                }),
+            };
         }
         if (u.includes('/admin/external-prior-state-read')) {
             return { ok: true, json: async () => ({ pairings: [] }) };
@@ -200,5 +219,73 @@ describe('the connection’s last test', () => {
     it('says nothing when it passed', async () => {
         await renderPage({ lastTestStatus: 'ok' });
         expect(screen.queryByTestId('external-tools-last-test-failed')).toBeNull();
+    });
+});
+
+// ── what the page says about the WHOLE catalogue (#5573, #5311) ─────────
+
+describe('the page says whether the list is the whole catalogue', () => {
+    it('states how many tools the server advertises', async () => {
+        // The number the setup guide used to promise on the Test button, where
+        // `ConnectionValidationResult` cannot carry it. It belongs here, beside
+        // the tools.
+        await renderPage();
+        expect(screen.getByTestId('external-tools-advertised')).toHaveTextContent(
+            'This server advertises 3 tools.',
+        );
+    });
+
+    it('phrases a single tool without saying "1 tools"', async () => {
+        // Its own key, because the rendered-test mock cannot format an ICU
+        // plural — so a message that pluralised would render raw here and this
+        // assertion could not see the wording at all.
+        mockFetch({ advertised: 1 });
+        await renderPage();
+        expect(screen.getByTestId('external-tools-advertised')).toHaveTextContent(
+            'This server advertises one tool.',
+        );
+    });
+
+    it('warns when the read was truncated, and names the cap the SERVER sent', async () => {
+        mockFetch({ advertised: 400, truncated: true, cap: 250 });
+        await renderPage();
+        const notice = screen.getByTestId('external-tools-truncated');
+        expect(notice).toHaveTextContent('Only part of this server');
+        // The cap is rendered from the response, not from a constant the client
+        // keeps — a second copy would go stale the day the usecase's moves.
+        expect(notice).toHaveTextContent('250');
+        // BOTH causes are named. `truncated` also means the server paginated
+        // past our cursor bound, where the tool may be well inside the cap, so
+        // naming only the cap sends somebody looking for a limit they did not
+        // hit.
+        expect(notice).toHaveTextContent('cursor bound');
+    });
+
+    it('renders NO truncation warning on a complete read', async () => {
+        // The control. Two disclosures in front of a list are one `!` away from
+        // firing on every server, and a notice that always shows stops being
+        // read at all — which is the same failure as not showing it.
+        await renderPage();
+        expect(screen.queryByTestId('external-tools-truncated')).toBeNull();
+    });
+
+    it('says nothing about a count the server did not send', async () => {
+        // An older deployment, or a response shape that lost the field: absent
+        // is not zero. "This server advertises 0 tools." beside three listed
+        // tools would be worse than silence.
+        mockFetch({ advertised: undefined });
+        (global.fetch as jest.Mock).mockImplementation(async (url: string) => {
+            const u = String(url);
+            if (u.includes('/admin/agents/external-tools')) {
+                return { ok: true, json: async () => ({ ...CATALOGUE, refusedNames: 0 }) };
+            }
+            if (u.includes('/admin/external-prior-state-read')) {
+                return { ok: true, json: async () => ({ pairings: [] }) };
+            }
+            return { ok: true, json: async () => ({}) };
+        });
+        await renderPage();
+        expect(screen.queryByTestId('external-tools-advertised')).toBeNull();
+        expect(screen.queryByTestId('external-tools-truncated')).toBeNull();
     });
 });

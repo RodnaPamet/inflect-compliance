@@ -9,7 +9,9 @@
  *
  * @module usecases/integrations
  */
-import { Prisma, EvidenceType } from '@prisma/client';
+import { MAPPING_CONFIG_KEY } from '@/lib/legacy-access/canonical';
+import { CONVENTION_CONFIG_KEY } from './legacy-username-convention';
+import { Prisma, EvidenceType, type IntegrationExecutionStatus } from '@prisma/client';
 import type { RequestContext } from '../types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { selfAccountIdsFromConnection } from '../integrations/identity-writer-factory';
@@ -30,6 +32,10 @@ import { encryptField, decryptField } from '@/lib/security/encryption';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest, forbidden, conflict } from '@/lib/errors/types';
 import {
+    CONNECTION_NAME_INVALID_CHARACTERS,
+    connectionNameHasInvalidCharacters,
+} from '@/lib/text/connection-name';
+import {
     validateProviderConfig,
     validateProviderSecrets,
     redirectsStoredCredential,
@@ -46,6 +52,14 @@ import { CONNECTION_STALE_AFTER_SECONDS } from '@/lib/observability/connection-f
 import { runIdentitySync } from './identity-sync';
 import { runHrisSyncJob } from '@/app-layer/jobs/hris-sync';
 import { IDENTITY_ROSTER_PAGE_SIZE, IDENTITY_ROSTER_SEARCH_MAX_LENGTH } from '@/lib/identity-roster';
+import {
+    POSTURE_CONNECTION_PROVIDERS,
+} from '@/app-layer/integrations/cloud-posture/provider-name';
+import {
+    providerStalenessVerdict,
+    type StoredCredential,
+} from '@/app-layer/integrations/cloud-posture/provider-staleness';
+import { reportPostureProviderStaleness } from './posture-provider-staleness';
 
 /** Providers whose connection-level sync runs a directory/account sync. */
 const IDENTITY_SYNC_PROVIDERS = new Set(['okta', 'google-workspace', 'entra-id', 'active-directory']);
@@ -291,18 +305,70 @@ async function assertSoleEnabledHrisConnection(
  * Create or update an integration connection.
  * Secrets are encrypted before storage.
  */
+/**
+ * CONFIG KEYS ANOTHER USECASE OWNS (#5067).
+ *
+ * `legacyAccessMapping` is written only by the mapping save (with its version
+ * history) and `legacyUsernameConvention` only by the convention adoption; both
+ * update the column directly. The connection form round-trips `configJson` as
+ * strings, so an Edit sent both back as "[object Object]", the wholesale
+ * replace below stored that, and the next pull refused MAPPING_MISSING. So
+ * this path never writes them: a request's values are dropped, and an update
+ * keeps the stored ones.
+ */
+const USECASE_WRITTEN_CONFIG_KEYS: readonly string[] = [MAPPING_CONFIG_KEY, CONVENTION_CONFIG_KEY];
+
+function withoutUsecaseWrittenKeys<T>(config: T): T {
+    if (!config || typeof config !== 'object' || Array.isArray(config)) return config;
+    const out = { ...(config as Record<string, unknown>) };
+    for (const key of USECASE_WRITTEN_CONFIG_KEYS) delete out[key];
+    return out as T;
+}
+
+function carryUsecaseWrittenKeys(stored: unknown, next: unknown): unknown {
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return next;
+    const kept: Record<string, unknown> = {};
+    for (const key of USECASE_WRITTEN_CONFIG_KEYS) {
+        if (key in (stored as Record<string, unknown>)) kept[key] = (stored as Record<string, unknown>)[key];
+    }
+    if (Object.keys(kept).length === 0) return next;
+    return { ...((next as Record<string, unknown> | null) ?? {}), ...kept };
+}
+
 export async function upsertIntegrationConnection(
     ctx: RequestContext,
     input: {
         id?: string;
         provider: string;
-        name: string;
+        /**
+         * Required on a create. Optional on an update (#5317): a stored label
+         * is left alone, so an update that does not send it keeps it whatever
+         * it holds.
+         */
+        name?: string;
         configJson?: Record<string, unknown>;
         secrets?: Record<string, unknown>;
         isEnabled?: boolean;
     }
 ) {
     if (!ctx.permissions?.canAdmin) throw forbidden('Admin only');
+
+    // A name that IS sent is judged here as well as in the route's schema,
+    // because this usecase has callers that never pass through that schema
+    // (the A2A peer flow builds its connection's name). Owner decision
+    // 2026-11-15 on #5317: control characters and lone surrogates are refused
+    // with a 400; a stored label is never rewritten.
+    if (input.name !== undefined) {
+        if (input.name === '') throw badRequest('name is required');
+        if (connectionNameHasInvalidCharacters(input.name)) {
+            throw badRequest(
+                'A connection name may not contain control characters or broken (unpaired) characters.',
+                { reason: CONNECTION_NAME_INVALID_CHARACTERS },
+            );
+        }
+    } else if (!input.id) {
+        throw badRequest('name is required');
+    }
 
     // Validate provider is registered
     const providerImpl = registry.getProvider(input.provider);
@@ -316,11 +382,19 @@ export async function upsertIntegrationConnection(
     // `mergeConnection` returns `{ ...config, ...secrets }`, so the unchecked
     // bag was a way around the checked one (#2843 finding 16).
     let secretEncrypted: string | undefined;
+    /*
+        Kept for the staleness comparison below (#5476), and the canonical form
+        is the point. Comparing CIPHERTEXTS would report every save as a
+        rotation, because `encryptField` uses a fresh IV and the same plaintext
+        encrypts differently every time.
+    */
+    let suppliedSecretCanonical: string | undefined;
     if (input.secrets && Object.keys(input.secrets).length > 0) {
         const validatedSecrets = validateProviderSecrets(input.provider, input.secrets, {
             configFields: providerImpl.configSchema.configFields ?? [],
             secretFields: providerImpl.configSchema.secretFields ?? [],
         });
+        suppliedSecretCanonical = canonicalSecret(validatedSecrets);
         secretEncrypted = encryptField(JSON.stringify(validatedSecrets));
     }
 
@@ -329,7 +403,7 @@ export async function upsertIntegrationConnection(
     // client credentials (Workday), four credentialed calls (Okta) and an LDAPS
     // bind target (Active Directory). Each was fixed at its call site; this is
     // the boundary that stops the next one being stored at all.
-    const validatedConfig = validateProviderConfig(input.provider, input.configJson);
+    const validatedConfig = withoutUsecaseWrittenKeys(validateProviderConfig(input.provider, input.configJson));
 
     // ONE expression for the resulting enabled state, read by the HRIS guard AND
     // by both writes below — so the state the guard measures cannot drift from
@@ -347,6 +421,19 @@ export async function upsertIntegrationConnection(
                 where: { id: input.id, tenantId: ctx.tenantId },
             });
             if (!existing) throw notFound('Connection not found');
+
+            // The secrets and config above were validated against
+            // `input.provider`, and the write below never changes the row's
+            // provider. A caller naming another registered provider would store
+            // values shaped for THAT provider on this connection (#5143), so a
+            // mismatch is refused before anything is written — the same refusal
+            // the Test path gives.
+            if (existing.provider !== input.provider) {
+                throw badRequest(
+                    `This connection is a ${existing.provider} connection, not ${input.provider}. ` +
+                        'A connection keeps the provider it was created with.',
+                );
+            }
 
             // `existing.provider`, NOT `input.provider`. The update below writes
             // name / configJson / secrets / isEnabled and never `provider`, so
@@ -396,11 +483,56 @@ export async function upsertIntegrationConnection(
             const updated = await db.integrationConnection.update({
                 where: { id: input.id },
                 data: {
-                    name: input.name,
-                    configJson: input.configJson != null ? (validatedConfig as Prisma.InputJsonValue) : undefined,
+                    // Absent means "keep the stored name" (#5317).
+                    ...(input.name !== undefined ? { name: input.name } : {}),
+                    configJson:
+                        input.configJson != null
+                            ? (carryUsecaseWrittenKeys(existing.configJson, validatedConfig) as Prisma.InputJsonValue)
+                            : undefined,
                     ...(secretEncrypted ? { secretEncrypted } : {}),
                     isEnabled: willBeEnabled,
                 },
+            });
+
+            /*
+                THE GATEWAY'S COPY IS NOW BEHIND — #5476, criterion 4.
+
+                A posture connection's gateway credential provider is written by
+                an operator and attached by name; rotating the credential here
+                leaves the gateway holding the previous one, so every later scan
+                benchmarks an account this tenant no longer has on record.
+
+                Reported AFTER the update, inside the same transaction: a refused
+                save reports nothing, and a reported rotation is one that
+                committed. The previous credential is decrypted only to tell a
+                real change from a re-save of the same value — an unreadable one
+                is reported rather than assumed current.
+            */
+            const previousCredential = ((): StoredCredential => {
+                if (!existing.secretEncrypted) return { kind: 'none' };
+                try {
+                    return {
+                        kind: 'readable',
+                        canonical: canonicalSecret(
+                            decryptConnectionSecrets(existing.secretEncrypted),
+                        ),
+                    };
+                } catch {
+                    return { kind: 'unreadable' };
+                }
+            })();
+            const stalenessVerdict = providerStalenessVerdict({
+                isPostureConnection: (POSTURE_CONNECTION_PROVIDERS as readonly string[]).includes(
+                    existing.provider,
+                ),
+                suppliedCanonical: suppliedSecretCanonical,
+                previous: previousCredential,
+            });
+            await reportPostureProviderStaleness(db, ctx, {
+                verdict: stalenessVerdict,
+                connectionId: updated.id,
+                provider: existing.provider,
+                ownerUserId: existing.ownerUserId ?? null,
             });
 
             await logEvent(db, ctx, {
@@ -415,7 +547,7 @@ export async function upsertIntegrationConnection(
                     // Names the weakening flags explicitly so the trail can
                     // answer "when did certificate verification stop?".
                     securityFlagsEnabled: enabledSecurityFlags(input.configJson),
-                    summary: `Updated integration: ${input.name}`,
+                    summary: `Updated integration: ${updated.name}`,
                 },
             });
 
@@ -432,7 +564,8 @@ export async function upsertIntegrationConnection(
             data: {
                 tenantId: ctx.tenantId,
                 provider: input.provider,
-                name: input.name,
+                // Checked present at the top: a create without a name is refused.
+                name: input.name as string,
                 configJson: validatedConfig as Prisma.InputJsonValue,
                 secretEncrypted,
                 isEnabled: willBeEnabled,
@@ -599,9 +732,29 @@ export async function testConnectionCredentials(
         }
     }
 
+    // A token exchange the Test makes may ROTATE the stored refresh token
+    // (Workday, OrangeHRM). The rotated pair is written back onto the saved
+    // connection, or the Test leaves it holding a dead one (#5194, #5195).
+    // Only for the stored credential: a credential typed into the form is not
+    // saved by testing it.
+    const connectionId = input.connectionId;
+    const testsStoredSecrets = connectionId !== undefined && Object.keys(input.secrets ?? {}).length === 0;
+    const persistSecret = testsStoredSecrets
+        ? async (patch: Record<string, unknown>) => {
+              Object.assign(storedSecrets, patch);
+              await runInTenantContext(ctx, (db) =>
+                  db.integrationConnection.update({
+                      where: { id: connectionId },
+                      data: { secretEncrypted: encryptField(JSON.stringify(storedSecrets)) },
+                  }),
+              );
+          }
+        : undefined;
+
     const result = await providerImpl.validateConnection(
         { ...storedConfig, ...(input.configJson ?? {}) },
         { ...storedSecrets, ...(input.secrets ?? {}) },
+        { persistSecret },
     );
 
     if (input.connectionId) {
@@ -614,6 +767,22 @@ export async function testConnectionCredentials(
  * Decrypt the secrets for a connection. Used internally by execution logic.
  * @internal
  */
+/**
+ * A credential bag as ONE comparable string — #5476.
+ *
+ * Key order is normalised because two saves of the same credential can serialise
+ * their keys differently and would otherwise read as a rotation. Values are
+ * compared, never logged, and this string never leaves the function that
+ * compares it.
+ */
+function canonicalSecret(secrets: Record<string, unknown>): string {
+    return JSON.stringify(
+        Object.keys(secrets)
+            .sort()
+            .map((k) => [k, secrets[k]]),
+    );
+}
+
 function decryptConnectionSecrets(secretEncrypted: string | null): Record<string, unknown> {
     if (!secretEncrypted) return {};
     try {
@@ -1128,6 +1297,52 @@ export async function listExecutionsForConnection(
             },
             orderBy: { executedAt: 'desc' },
             take: options.limit ?? 50,
+        })
+    );
+}
+
+/**
+ * The NEWEST execution of one kind on one connection, read on its own (#5313,
+ * item 10).
+ *
+ * The reconciliation queue and the legacy runs card used to find "the latest
+ * match run" by filtering the 50 newest rows `listExecutionsForConnection`
+ * returns. A connection whose last match run had been followed by 50 pulls,
+ * syncs or other runs therefore read as never matched, and its queue as
+ * having nothing to review. Ask for the kind, and the answer does not depend
+ * on how busy the connection has been since.
+ *
+ * One bounded row: `findFirst`, newest `executedAt` first, `id` breaking a tie
+ * so the same rows always give the same answer. `status` narrows to one
+ * outcome when the caller needs it (the queue reads PASSED runs only). `null`
+ * means no such run exists on this connection in this tenant.
+ */
+export async function getLatestExecutionForConnection(
+    ctx: RequestContext,
+    connectionId: string,
+    automationKey: string,
+    options: { status?: IntegrationExecutionStatus } = {}
+) {
+    return runInTenantContext(ctx, (db) =>
+        db.integrationExecution.findFirst({
+            where: {
+                tenantId: ctx.tenantId,
+                connectionId,
+                automationKey,
+                ...(options.status ? { status: options.status } : {}),
+            },
+            select: {
+                id: true,
+                provider: true,
+                automationKey: true,
+                controlId: true,
+                status: true,
+                errorMessage: true,
+                triggeredBy: true,
+                executedAt: true,
+                completedAt: true,
+            },
+            orderBy: [{ executedAt: 'desc' }, { id: 'desc' }],
         })
     );
 }

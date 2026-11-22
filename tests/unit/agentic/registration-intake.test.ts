@@ -7,6 +7,8 @@ import { createHmac } from 'node:crypto';
 
 import {
     discoveredIdOfShadowFinding,
+    registrableFindingOf,
+    unregisteredIdentityRefOf,
     HARNESS_FINDING_SOURCE_KIND,
     shadowRefOf,
 } from '@/lib/agentic/harness-findings';
@@ -174,6 +176,37 @@ describe('a SHADOW_AGENT finding names its discovered agent', () => {
         expect(discoveredIdOfShadowFinding({ sourceKind: HARNESS_FINDING_SOURCE_KIND, sourceRef: 'SHADOW_AGENT:' })).toBeNull();
         expect(discoveredIdOfShadowFinding({ sourceKind: 'MANUAL', sourceRef: shadowRefOf('entra:sp:x') })).toBeNull();
         expect(discoveredIdOfShadowFinding({ sourceKind: null, sourceRef: null })).toBeNull();
+    });
+});
+
+describe('the intake registers from either finding a scan raises for a principal with no register row', () => {
+    it('an UNREGISTERED_IDENTITY finding is registrable, exactly as a SHADOW_AGENT finding is, and each names its principal', () => {
+        const id = 'gcp:sa:104238856123456789012';
+        expect(registrableFindingOf({ sourceKind: HARNESS_FINDING_SOURCE_KIND, sourceRef: unregisteredIdentityRefOf(id) })).toEqual({
+            code: 'UNREGISTERED_IDENTITY',
+            discoveredId: id,
+        });
+        expect(registrableFindingOf({ sourceKind: HARNESS_FINDING_SOURCE_KIND, sourceRef: shadowRefOf(id) })).toEqual({
+            code: 'SHADOW_AGENT',
+            discoveredId: id,
+        });
+    });
+
+    it('a finding of any other kind is still refused', () => {
+        for (const sourceRef of [
+            'UNPINNED_WRITE_TOOL:entra:sp:x',
+            'HARNESS_SHORTFALL:entra:sp:x',
+            'LEVEL_DROP:entra:sp:x:scan-1',
+            'ORPHAN_CREDENTIAL:agt_scanner:vault:kv://x',
+            'EMPTY_SCAN:agt_scanner',
+            'UNREGISTERED_IDENTITY:',
+            'SHADOW_AGENT:',
+        ]) {
+            expect(registrableFindingOf({ sourceKind: HARNESS_FINDING_SOURCE_KIND, sourceRef })).toBeNull();
+        }
+        // The right ref under another source kind is somebody else's finding.
+        expect(registrableFindingOf({ sourceKind: 'MANUAL', sourceRef: unregisteredIdentityRefOf('entra:sp:x') })).toBeNull();
+        expect(registrableFindingOf({ sourceKind: null, sourceRef: null })).toBeNull();
     });
 });
 

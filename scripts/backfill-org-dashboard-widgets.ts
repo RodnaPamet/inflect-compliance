@@ -36,6 +36,7 @@
 process.env.SKIP_ENV_VALIDATION = '1';
 
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 
 import { seedDefaultOrgDashboard } from '../src/app-layer/usecases/org-dashboard-presets';
 
@@ -54,7 +55,7 @@ async function main(): Promise<void> {
         console.log('  No writes performed. Rerun with --execute to persist.\n');
     }
 
-    const prisma = new PrismaClient();
+    const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }) });
     let seeded = 0;
     let skipped = 0;
     let totalCreated = 0;

@@ -12,6 +12,13 @@
  *   • `agent-profile:<profileId>@v<n>` is read INSIDE THE CALLER'S TENANT (the
  *     tenant filter and RLS both), and only an APPROVED version that is the
  *     profile's version in force resolves.
+ *   • A profile key resolves only for a caller that names the TRIGGER starting
+ *     it (#5367), and only when the version allows that trigger: `ASK` from
+ *     `startInteractiveRun`, `AUTOMATION` from the `agent-invoke` dispatcher,
+ *     `TEST_RUN` from the Test-run usecase. A start that names none — the
+ *     generic `POST /agent-runs`, a person or a key alike — is refused
+ *     `PROFILE_TRIGGER_REQUIRED`: it is none of the triggers a version can
+ *     allow, so `allowedTriggers` could not decide it.
  *   • `agent-profile:<profileId>@v<n>:test-run` is a TEST RUN, admitted only
  *     when the caller says so (`trigger: 'TEST_RUN'`, which only the Test-run
  *     usecase passes). It may name the SUBMITTED version too, so a reviewer can
@@ -22,9 +29,38 @@
  * Anything else is refused with a named reason, so a key naming another
  * tenant's profile is indistinguishable from one naming no profile at all.
  *
+ * ONE registered workflow is held to its start paths the same way: the ad-hoc
+ * question resolves for the `ASK` trigger, which only `startInteractiveRun`
+ * (the questions route, through `askAdHocQuestion`) names, and for the two
+ * other paths that already started it, and is refused
+ * `AD_HOC_QUESTION_USE_QUESTIONS_ROUTE` from the generic start route and any
+ * path added later (#5304, owner decision 2026-11-14). The questions route is
+ * where the question is sanitised and the asker rate-limited; the generic
+ * start route does neither.
+ *
  * A resolved profile asks for the Tool Runner engine, the one engine that runs
  * a profile (`runsProfiles`). Admission refuses it on any other engine before
  * the run row exists.
+ *
+ * A version carrying a FLOW (Phase 1 of `docs/ai-architecture/langflow.md`) is
+ * compiled with it: the content hash recomputed covers the flow, a stored flow
+ * this build cannot read or whose tools disagree with `toolNames` resolves to
+ * nothing, and a flow with no propose node makes the definition read-only. It
+ * RESOLVES but does not RUN: admission refuses it on every engine
+ * (`PROFILE_FLOW_NOT_RUNNABLE`, `runsFlows`) until Phase 5 gives an engine a
+ * way to perform every step a flow can draw, a `subagent` step included.
+ *
+ * A version carrying SUB-AGENTS (Step 2e) is compiled with them, read back
+ * strictly, and its content hash covers them. Admission and resume refuse it
+ * on an engine whose `runsSubagents` entry is false
+ * (`PROFILE_SUBAGENTS_NOT_RUNNABLE`): never run as though it had none. The
+ * preview asks admission, so it shows no run message for a version every
+ * engine refuses.
+ *
+ * A version naming DEFERRED TOOLS (Step 2f) is compiled with them, read back
+ * strictly, and refused the same way on an engine whose `runsDeferrals` entry
+ * is false (`PROFILE_DEFERRALS_NOT_RUNNABLE`): never run as though its calls
+ * did not wait for a person.
  *
  * THE WORKER does not resolve by approval: it executes what admission PINNED.
  * `resolvePinnedRunDefinition` rebuilds the definition from the run's own
@@ -36,20 +72,30 @@ import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { AppError, ValidationError, badRequest } from '@/lib/errors/types';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
+import { adHocQuestionWorkflow } from '@/lib/agentic/workflows/ad-hoc-question';
 import type { ProfileRunSpec, WorkflowDefinition } from '@/lib/agentic/workflow-types';
-import { isReasoningEngine, type AgentDriver } from '@/lib/agentic/agent-driver';
+import { AGENT_DRIVERS, isReasoningEngine, type AgentDriver } from '@/lib/agentic/agent-driver';
 import {
     isProfileRunKey,
     parseProfileRunKey,
+    profileRunKey,
     PROFILE_EFFORTS,
     PROFILE_MODEL_TIERS,
     PROFILE_OUTPUT_KINDS,
     PROFILE_TRIGGERS,
+    parseStoredDeferredToolNames,
+    parseStoredProfileSubagents,
+    runsDeferrals,
+    runsFlows,
     runsProfiles,
+    runsSubagents,
     type ProfileSkillRef,
+    type ProfileSubagent,
     type ProfileTrigger,
 } from '@/lib/agentic/agent-profile';
-import { agentProfilesOn, profileInstructionsHash } from './agent-profiles';
+import { compileFlow, flowToolsAgree, parseStoredAgentFlow, type CompiledFlow } from '@/lib/agentic/agent-flow';
+import { runMessage } from '@/lib/agentic/flue/run-message';
+import { agentProfilesOn, assertMayManageProfiles, profileContentHash } from './agent-profiles';
 
 export type ProfileRunRefusal =
     | 'PROFILES_DISABLED'
@@ -60,8 +106,13 @@ export type ProfileRunRefusal =
     | 'PROFILE_HASH_MISMATCH'
     | 'PROFILE_NEEDS_REASONING_ENGINE'
     | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES'
+    | 'PROFILE_FLOW_NOT_RUNNABLE'
+    | 'PROFILE_SUBAGENTS_NOT_RUNNABLE'
+    | 'PROFILE_DEFERRALS_NOT_RUNNABLE'
     | 'PROFILE_TEST_RUN_KEY'
-    | 'PROFILE_TRIGGER_NOT_ALLOWED';
+    | 'PROFILE_TRIGGER_REQUIRED'
+    | 'PROFILE_TRIGGER_NOT_ALLOWED'
+    | 'AD_HOC_QUESTION_USE_QUESTIONS_ROUTE';
 
 function refuse(reason: ProfileRunRefusal, message: string): AppError {
     if (reason === 'PROFILE_AGENT_MISMATCH') {
@@ -107,10 +158,14 @@ const VERSION_SELECT = {
     instructions: true,
     instructionsHash: true,
     toolNames: true,
+    flowJson: true,
+    subagentsJson: true,
     skillRefs: true,
     modelTier: true,
     effort: true,
     maxTurns: true,
+    compactionThresholdTokens: true,
+    deferredToolNames: true,
     outputKind: true,
     allowedTriggers: true,
     profile: { select: { id: true, agentId: true, currentApprovedVersion: true } },
@@ -123,10 +178,14 @@ interface VersionRow {
     instructions: string;
     instructionsHash: string;
     toolNames: string[];
+    flowJson: string | null;
+    subagentsJson: string | null;
     skillRefs: unknown;
     modelTier: string;
     effort: string;
     maxTurns: number;
+    compactionThresholdTokens: number | null;
+    deferredToolNames: string[];
     outputKind: string;
     allowedTriggers: string[];
     profile: { id: string; agentId: string; currentApprovedVersion: number | null };
@@ -149,6 +208,38 @@ function compileProfileDefinition(
     const triggers = row.allowedTriggers.map((t) => oneOf(t, PROFILE_TRIGGERS));
     const skillRefs = readSkillRefs(row.skillRefs);
     if (!modelTier || !effort || !outputKind || triggers.some((t) => t === null) || !skillRefs) return null;
+    // A stored flow is read back strictly: one this build cannot read, or whose
+    // tools are not the version's tools, runs nothing rather than running as a
+    // version with no flow.
+    let flow: CompiledFlow | undefined;
+    if (row.flowJson !== null) {
+        const parsed = parseStoredAgentFlow(row.flowJson);
+        if (!parsed || !flowToolsAgree(parsed, row.toolNames)) return null;
+        flow = compileFlow(parsed);
+    }
+    // The sub-agents, read back as strictly (Step 2e): a list this build
+    // cannot parse, one stored beside a flow, or one whose sets are no longer
+    // subsets of the version's own, compiles to nothing. A version with
+    // sub-agents is never run as though it had none.
+    let subagents: readonly ProfileSubagent[] | undefined;
+    if (row.subagentsJson !== null) {
+        if (row.flowJson !== null) return null;
+        const parsed = parseStoredProfileSubagents(row.subagentsJson, {
+            toolNames: row.toolNames,
+            skillRefs,
+            maxTurns: row.maxTurns,
+        });
+        if (!parsed) return null;
+        subagents = parsed;
+    }
+    // The deferred tools (Step 2f), read back as strictly: a list this build
+    // would not have written (unsorted, a tool the version lacks, a read tool,
+    // one a sub-agent names) compiles to nothing, never to different waits.
+    const deferredToolNames = parseStoredDeferredToolNames(row.deferredToolNames, {
+        toolNames: row.toolNames,
+        ...(subagents ? { subagents } : {}),
+    });
+    if (!deferredToolNames) return null;
 
     const profile: ProfileRunSpec = {
         profileId: row.profile.id,
@@ -164,6 +255,15 @@ function compileProfileDefinition(
         maxTurns: row.maxTurns,
         outputKind,
         allowedTriggers: triggers.filter((t): t is NonNullable<typeof t> => t !== null),
+        ...(flow ? { flow } : {}),
+        ...(subagents ? { subagents } : {}),
+        // The version's compaction threshold (Step 2g): absent takes the
+        // engine's, 0 turns it off. The engine takes the lowest, so a value
+        // here can only lower the engine's threshold.
+        ...(row.compactionThresholdTokens !== null ? { compactionThresholdTokens: row.compactionThresholdTokens } : {}),
+        // The calls that wait for a person (Step 2f): absent for a version that
+        // defers nothing, so such a version compiles exactly as it did before.
+        ...(deferredToolNames.length > 0 ? { deferredToolNames } : {}),
     };
 
     return {
@@ -178,7 +278,9 @@ function compileProfileDefinition(
         driver: 'tool-runner',
         // A Test run is read-only whatever the profile would do in force: it
         // is how a person tries a version, and a try must not queue proposals.
-        ...(opts.testRun || outputKind === 'ANSWER_ONLY' ? { readOnly: true as const } : {}),
+        // So is a flow with no propose node: what the person drew proposes
+        // nothing, so the run is offered the read surface only.
+        ...(opts.testRun || outputKind === 'ANSWER_ONLY' || flow?.readOnly ? { readOnly: true as const } : {}),
         steps: [
             {
                 kind: 'SYNTHESIS',
@@ -204,6 +306,31 @@ export async function resolveRunDefinition(
     if (!isProfileRunKey(workflowKey)) {
         const def = getWorkflowDefinition(workflowKey);
         if (!def) throw badRequest(`Unknown workflow: ${workflowKey}`);
+        // THE GENERIC START ROUTE STARTS NO AD-HOC QUESTION (#5304, owner
+        // decision 2026-11-14). The questions route sanitises the question and
+        // rate-limits the asker; `POST /agent-runs` does neither, so a question
+        // started there skipped both. Held the way a profile's Test-run key is,
+        // by the start path rather than its URL: the generic route names no
+        // trigger and is no A2A delivery, and that is the start refused.
+        //
+        // Written as an ALLOWLIST of the paths that may start it, so a path
+        // added later is refused until somebody decides otherwise:
+        //   · ASK — `startInteractiveRun`, the questions route's own door;
+        //   · AUTOMATION — an `INVOKE_AGENT` rule, which already started it
+        //     and was not the subject of the decision;
+        //   · an A2A delivery (`ctx.a2aInbound`), whose task is fenced, scanned
+        //     and capped by the A2A door, and which the host-consumer pilot
+        //     runbook allowlists this key for.
+        // Before anything else is read: the refusal is about the request.
+        const adHocQuestionStartAllowed =
+            opts.trigger === 'ASK' || opts.trigger === 'AUTOMATION' || ctx.a2aInbound !== undefined;
+        if (def.key === adHocQuestionWorkflow.key && !adHocQuestionStartAllowed) {
+            throw refuse(
+                'AD_HOC_QUESTION_USE_QUESTIONS_ROUTE',
+                'An ad-hoc question is asked on the Ask page, through POST /agents/questions, which ' +
+                    'sanitises it and rate-limits the asker. This start is not that route.',
+            );
+        }
         return { def };
     }
 
@@ -221,6 +348,19 @@ export async function resolveRunDefinition(
         throw refuse(
             'PROFILE_TEST_RUN_KEY',
             'A Test run of an agent profile starts from the agent\'s Behaviour tab, and only a Test run uses its key.',
+        );
+    }
+    // A PROFILE KEY NAMES ITS TRIGGER (#5367). `allowedTriggers` is the
+    // version's own statement of what may start it, and it can only be held
+    // where the start says which trigger it is. A start that names none was
+    // admitted unchecked, so a version allowing only TEST_RUN ran from an
+    // automation rule or the generic start route. Before the version read:
+    // the refusal is about the request, and costs nothing.
+    if (!opts.trigger) {
+        throw refuse(
+            'PROFILE_TRIGGER_REQUIRED',
+            'An agent profile runs from the Ask page, an automation rule or the Behaviour tab\'s Test run, as ' +
+                'its version allows. This start is none of them.',
         );
     }
 
@@ -243,13 +383,13 @@ export async function resolveRunDefinition(
     if (ctx.agentId && ctx.agentId !== row.profile.agentId) {
         throw refuse('PROFILE_AGENT_MISMATCH', "A profile runs as its own agent, and this caller speaks for another.");
     }
-    if (profileInstructionsHash(row.instructions) !== row.instructionsHash) {
+    if (profileContentHash(row.instructions, row.flowJson, row.subagentsJson) !== row.instructionsHash) {
         throw refuse(
             'PROFILE_HASH_MISMATCH',
-            'The stored instructions no longer match the hash their approval pinned. The version cannot run.',
+            'The stored instructions or flow no longer match the hash their approval pinned. The version cannot run.',
         );
     }
-    if (opts.trigger && !row.allowedTriggers.includes(opts.trigger)) {
+    if (!row.allowedTriggers.includes(opts.trigger)) {
         throw refuse(
             'PROFILE_TRIGGER_NOT_ALLOWED',
             `This version does not allow the ${opts.trigger} trigger. Edit the profile to allow it.`,
@@ -287,16 +427,30 @@ export async function resolvePinnedRunDefinition(
         }),
     );
     if (!row || row.profile.id !== parsed.profileId || row.version !== parsed.version) return undefined;
-    if (profileInstructionsHash(row.instructions) !== run.profileInstructionsHash) return undefined;
-    return compileProfileDefinition(run.workflowKey, row, { testRun: parsed.testRun }) ?? undefined;
+    if (profileContentHash(row.instructions, row.flowJson, row.subagentsJson) !== run.profileInstructionsHash) return undefined;
+    const def = compileProfileDefinition(run.workflowKey, row, { testRun: parsed.testRun });
+    // Admission refuses a flow version on every engine; a run carrying one was
+    // not admitted by this build, so it continues as nothing.
+    if (!def || (def.profile?.flow && !runsFlows(def.driver ?? 'static'))) return undefined;
+    // Nor a version with sub-agents on an engine that does not run them: a run
+    // admitted by a build that did, resumed by one that does not, continues as
+    // nothing rather than half-delegated.
+    if (def.profile?.subagents && !runsSubagents(def.driver ?? 'static')) return undefined;
+    // Nor a version with deferred tools on an engine that does not park on
+    // them (Step 2f): a run admitted by a build that did continues as nothing
+    // rather than as though its calls did not wait.
+    if (def.profile?.deferredToolNames && !runsDeferrals(def.driver ?? 'static')) return undefined;
+    return def;
 }
 
 /**
- * Admission's check that the chosen engine can run a profile. Called after the
- * engine is chosen and before the run row exists, so a refusal leaves nothing
- * behind.
+ * Admission's check that the chosen engine can run THIS profile version. Called
+ * after the engine is chosen and before the run row exists, so a refusal leaves
+ * nothing behind. It takes the profile, not only the engine, so a caller cannot
+ * ask whether an engine runs profiles and forget to ask whether it runs the
+ * version's flow.
  */
-export function assertEngineRunsProfiles(driver: AgentDriver): void {
+export function assertEngineRunsProfiles(driver: AgentDriver, profile: ProfileRunSpec): void {
     if (!isReasoningEngine(driver)) {
         throw refuse(
             'PROFILE_NEEDS_REASONING_ENGINE',
@@ -310,4 +464,129 @@ export function assertEngineRunsProfiles(driver: AgentDriver): void {
                 'instructions is available.',
         );
     }
+    // A drawn flow runs only on an engine that performs every step it can
+    // draw. None does before Phase 5: a `subagent` step would be a line the
+    // model cannot act on, recorded as drawn and never performed.
+    if (profile.flow && !runsFlows(driver)) {
+        throw refuse(
+            'PROFILE_FLOW_NOT_RUNNABLE',
+            'This version carries a drawn flow, and no engine performs a drawn flow yet. Write a version ' +
+                'without a flow to run this profile.',
+        );
+    }
+    // A version with sub-agents runs only on an engine that runs them (Step 2e):
+    // never as though it had none.
+    if (profile.subagents && profile.subagents.length > 0 && !runsSubagents(driver)) {
+        throw refuse(
+            'PROFILE_SUBAGENTS_NOT_RUNNABLE',
+            `This version defines sub-agents, and the ${driver} engine does not run them. It is refused rather ` +
+                'than run without its sub-agents.',
+        );
+    }
+    // A version naming deferred tools runs only on an engine that parks on
+    // them (Step 2f): never as though its calls did not wait for a person.
+    if (profile.deferredToolNames && profile.deferredToolNames.length > 0 && !runsDeferrals(driver)) {
+        throw refuse(
+            'PROFILE_DEFERRALS_NOT_RUNNABLE',
+            `This version waits for a person on ${profile.deferredToolNames.join(', ')}, and the ${driver} engine ` +
+                'does not park a run on a deferred call. It is refused rather than run without the wait.',
+        );
+    }
+}
+
+// ─── The preview (Phase 4 of `docs/ai-architecture/langflow.md`) ────
+
+/** What an engine would be handed for one stored version, as the approver reads it. */
+export type ProfileRunPreview =
+    | {
+          readonly state: 'SHOWN';
+          readonly version: number;
+          /** The run this version can have: itself in force, a Test run under review, or none. */
+          readonly runAs: 'RUN' | 'TEST_RUN' | null;
+          /**
+           * Set when admission would refuse this version on EVERY engine, so no
+           * run — whatever `runAs` says it would be — receives the message.
+           * `PROFILE_FLOW_NOT_RUNNABLE` for any flow version until Phase 5.
+           */
+          readonly runRefused: ProfileRunRefusedOnEveryEngine | null;
+          /** The run message, from `runMessage`, the function the engines call. */
+          readonly message: string;
+          /** The run is offered the read surface only. */
+          readonly readOnly: boolean;
+      }
+    /** No such version on this agent's profile. */
+    | { readonly state: 'NOT_FOUND' }
+    /** The stored content no longer verifies, or carries a setting this build cannot read: no run has a message. */
+    | { readonly state: 'UNRUNNABLE' };
+
+/**
+ * THE EXACT RUN MESSAGE a stored version would give an engine (Phase 4.1).
+ *
+ * Built by the run path's own two functions and nothing else:
+ * `compileProfileDefinition`, which the resolver and the worker call, and
+ * `runMessage`, which the Tool Runner and Flue call, at the first step with no
+ * declared input (a profile declares none). So the panel cannot show a message
+ * the engine would not send. The content hash is recomputed first, as the
+ * resolver does: a version whose content no longer verifies has no message.
+ *
+ * Read under the profile surface's own gate (`admin.agent_registry`, 404 when
+ * profiles are off). Writes nothing.
+ */
+export async function previewProfileRunMessage(
+    ctx: RequestContext,
+    agentId: string,
+    version: number,
+): Promise<ProfileRunPreview> {
+    await assertMayManageProfiles(ctx);
+    const row = await runInTenantContext(ctx, (db) =>
+        db.agentProfileVersion.findFirst({
+            where: { tenantId: ctx.tenantId, version, profile: { agentId } },
+            select: VERSION_SELECT,
+        }),
+    );
+    if (!row || row.profile.agentId !== agentId) return { state: 'NOT_FOUND' };
+    if (profileContentHash(row.instructions, row.flowJson, row.subagentsJson) !== row.instructionsHash) return { state: 'UNRUNNABLE' };
+    const inForce = row.status === 'APPROVED' && row.profile.currentApprovedVersion === row.version;
+    const runAs = inForce ? 'RUN' : row.status === 'SUBMITTED' ? 'TEST_RUN' : null;
+    const testRun = runAs === 'TEST_RUN';
+    const def = compileProfileDefinition(profileRunKey(row.profile.id, row.version, { testRun }), row, { testRun });
+    if (!def || !def.profile) return { state: 'UNRUNNABLE' };
+    return {
+        state: 'SHOWN',
+        version: row.version,
+        runAs,
+        runRefused: refusedOnEveryEngine(def.profile),
+        message: runMessage(def),
+        readOnly: def.readOnly === true,
+    };
+}
+
+/** What the preview names when admission would refuse a version on every engine. */
+export type ProfileRunRefusedOnEveryEngine = 'PROFILE_FLOW_NOT_RUNNABLE' | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES';
+
+/**
+ * Would admission refuse this version on every engine there is? Asked through
+ * `assertEngineRunsProfiles` itself, once per driver, so the panel cannot say
+ * "a run receives this message" for a version admission refuses — which,
+ * before Phase 5, is every version carrying a flow.
+ *
+ * Sub-agents and deferred tools are not named here (#5764): the Tool Runner
+ * runs both, so neither refuses a version on every engine. Should a brake on
+ * `RUNS_SUBAGENTS` or `RUNS_DEFERRALS` be pulled, admission still refuses such
+ * a version by name, and this answers the general
+ * `PROFILE_ENGINE_CANNOT_RUN_PROFILES`, which is then true.
+ */
+export function refusedOnEveryEngine(profile: ProfileRunSpec): ProfileRunRefusedOnEveryEngine | null {
+    const someEngineRuns = AGENT_DRIVERS.some((driver) => {
+        try {
+            assertEngineRunsProfiles(driver, profile);
+            return true;
+        } catch (err) {
+            if (err instanceof AppError) return false;
+            throw err;
+        }
+    });
+    if (someEngineRuns) return null;
+    if (profile.flow) return 'PROFILE_FLOW_NOT_RUNNABLE';
+    return 'PROFILE_ENGINE_CANNOT_RUN_PROFILES';
 }

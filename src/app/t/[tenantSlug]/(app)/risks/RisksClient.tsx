@@ -54,7 +54,7 @@ import { ListPageShell } from '@/components/layout/ListPageShell';
 import { useThresholdLoadMore, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { AsidePanel } from '@/components/ui/aside-panel';
 import { AiAssistRail } from '@/components/ui/ai-assist-rail';
-import { Sparkle3 } from '@inflect/ui/components/ui/icons/nucleo/sparkle3';
+import { Sparkle3 } from '@inflect/ui/components/ui/icons/glyphs/sparkle3';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
 import {
     buildRiskFilters,
@@ -72,7 +72,7 @@ import { Heading } from '@/components/ui/typography';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
-import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/glyphs';
 import { RiskScoreExplainer } from '@/components/risks/RiskScoreExplainer';
 import { resolveALE } from '@/lib/fair-math';
 import { RiskAleChip } from './_shared/RiskAleChip';
@@ -194,6 +194,8 @@ interface RisksClientProps {
     bulkPermissions: RiskBulkPermissions;
     /** Whether to offer Create and Import; see `riskCanCreate`. */
     canCreate: boolean;
+    /** Whether the create dialog offers control links (`controls.edit`). */
+    canLinkControls: boolean;
     translations: {
         title: string;
         listDescription: string;
@@ -283,6 +285,7 @@ function RisksPageInner({
     tenantSlug,
     bulkPermissions,
     canCreate,
+    canLinkControls,
     translations: t,
 }: RisksClientProps) {
     const tx = useTranslations('risks');
@@ -1441,6 +1444,7 @@ function RisksPageInner({
                     </div>
                 ) : view === 'heatmap' ? (
                     <RiskMatrix
+                        formatMoney={money}
                         config={matrixConfig}
                         cells={matrixCells}
                         movements={matrixMovements}
@@ -1539,6 +1543,7 @@ function RisksPageInner({
                     setOpen={setIsCreateOpen}
                     tenantSlug={tenantSlug}
                     apiUrl={apiUrl}
+                    canLinkControls={canLinkControls}
                 />
             )}
         </ListPageShell>

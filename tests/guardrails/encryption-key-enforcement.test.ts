@@ -30,7 +30,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { codeOf } from '../helpers/source-blocks';
+import { allCallExpressionsOf, codeOf } from '../helpers/source-blocks';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
@@ -53,7 +53,14 @@ describe('GAP-03 ratchet — schema layer', () => {
         // re-introduce the vulnerable optional() shape that GAP-03
         // closed.
         expect(src).toMatch(/DATA_ENCRYPTION_KEY/);
-        expect(src).toMatch(/\.superRefine\(/);
+        // Bound to the DATA_ENCRYPTION_KEY refinement by its own refusal:
+        // a bare `.superRefine(` is satisfied by every refined env var in
+        // the file, so it would survive this refinement being dropped.
+        expect(
+            allCallExpressionsOf(readRepoFileRaw('src/env.ts'), 'superRefine').filter((call) =>
+                call.includes("'DATA_ENCRYPTION_KEY is REQUIRED in production. '"),
+            ),
+        ).toHaveLength(1);
         // Use [\s\S]* instead of `.*` + `s` flag for ES2017 target.
         expect(src).toMatch(/NODE_ENV[\s\S]*production|production[\s\S]*NODE_ENV/);
     });

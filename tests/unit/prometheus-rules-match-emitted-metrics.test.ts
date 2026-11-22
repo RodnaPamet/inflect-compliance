@@ -75,6 +75,7 @@ import * as ts from 'typescript';
 import * as yaml from 'js-yaml';
 
 import { REPO_ROOT, repoRelativeFiles } from '../helpers/repo-files';
+import { GRAFANA_ALERT_RULES_PATH, readGrafanaAlertRules } from '../helpers/grafana-alert-rules';
 
 const OBS = 'infra/observability';
 const COMPOSE = `${OBS}/docker-compose.observability.yml`;
@@ -816,6 +817,18 @@ const dashboardFiles = files.filter((f) => f.startsWith(DASHBOARDS_PREFIX) && f.
 
 function ruleSites(): QuerySite[] {
     const sites: QuerySite[] = [];
+    // The alert rules are Grafana-managed since #5238; each one's PromQL is its
+    // Prometheus query, read back by the helper.
+    for (const rule of readGrafanaAlertRules(REPO_ROOT)) {
+        const text = Object.values(rule.annotations).join('\n');
+        const templateLabels = [...text.matchAll(/\$labels\.([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1]);
+        sites.push({
+            where: `${GRAFANA_ALERT_RULES_PATH} › ${rule.group} › ${rule.alert}`,
+            expr: rule.expr,
+            templateLabels,
+            runbookUrl: rule.annotations.runbook_url,
+        });
+    }
     for (const rel of ruleFiles) {
         const doc = yaml.load(read(rel)) as RuleYaml;
         for (const group of doc.groups) {
@@ -1046,6 +1059,7 @@ describe('every query selects what the stack exports', () => {
         expect(ruleFiles.length).toBeGreaterThan(0);
         expect(dashboardFiles.length).toBeGreaterThan(0);
         expect(rules.filter((r) => r.record).length).toBeGreaterThan(0);
+        expect(rules.filter((r) => !r.record).length).toBeGreaterThan(20);
         expect(panels.length).toBeGreaterThan(0);
     });
 

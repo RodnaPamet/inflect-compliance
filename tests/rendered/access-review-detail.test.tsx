@@ -10,7 +10,8 @@
  *      evidence button.
  */
 import * as React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import useSWR from 'swr';
 import { SWRConfig } from 'swr';
 
 jest.mock('next/navigation', () => ({
@@ -107,7 +108,7 @@ function makeReview(overrides: Record<string, unknown> = {}) {
         // campaign has an empty connected list, and vice versa.
         connectedDecisions: [],
         snapshotTruncated: false,
-        lastActivityByUser: { usr_alice: new Date('2026-04-30').toISOString() },
+        lastSignInByUser: { usr_alice: new Date('2026-04-30').toISOString() },
         ...overrides,
     };
 }
@@ -660,5 +661,68 @@ describe('#3325 — a LEGACY_APP campaign says when its coverage is unverified',
             ),
         );
         expect(screen.queryByTestId('access-review-coverage-unverified')).not.toBeInTheDocument();
+    });
+});
+
+// #5313 — each affordance follows the key its route takes, and a change
+// revalidates the register's list under the key the register reads it by.
+describe('AccessReviewDetailClient — route keys and the list cache (#5313)', () => {
+    it('offers Close only with access_reviews.close, which the close route takes', () => {
+        render(
+            withClient(
+                <AccessReviewDetailClient
+                    tenantSlug="acme"
+                    initialReview={makeReview()}
+                    currentUserId="usr_admin"
+                    isAdmin
+                    canCloseCampaign={false}
+                />,
+            ),
+        );
+        expect(screen.queryByTestId('access-review-close-button')).toBeNull();
+    });
+
+    it('offers no verdict without access_reviews.decide, which the decision routes take', () => {
+        render(
+            withClient(
+                <AccessReviewDetailClient
+                    tenantSlug="acme"
+                    initialReview={makeReview()}
+                    currentUserId="usr_reviewer"
+                    isAdmin={false}
+                    holdsDecide={false}
+                />,
+            ),
+        );
+        expect(screen.queryByTestId('decision-select-dec_1')).toBeNull();
+    });
+
+    it('a recorded verdict revalidates the register list the register actually reads', async () => {
+        const listFetches = jest.fn(async () => ({ rows: [] }));
+        function Register() {
+            // The register reads through useTenantSWR, which keys on the
+            // resolved URL.
+            useSWR('/api/t/acme/access-reviews', listFetches);
+            return null;
+        }
+        (global as unknown as { fetch: jest.Mock }).fetch = jest.fn(async () => ({
+            ok: true,
+            json: async () => makeReview(),
+        }));
+        render(
+            <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false, dedupingInterval: 0 }}>
+                <Register />
+                <AccessReviewDetailClient
+                    tenantSlug="acme"
+                    initialReview={makeReview()}
+                    currentUserId="usr_reviewer"
+                    isAdmin={false}
+                />
+            </SWRConfig>,
+        );
+        await waitFor(() => expect(listFetches).toHaveBeenCalledTimes(1));
+        fireEvent.change(screen.getByTestId('decision-select-dec_1'), { target: { value: 'CONFIRM' } });
+        fireEvent.click(screen.getByTestId('decision-modal-submit'));
+        await waitFor(() => expect(listFetches).toHaveBeenCalledTimes(2));
     });
 });

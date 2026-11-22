@@ -160,6 +160,7 @@ export function RiskAssessmentPanel({
     risk,
     matrixConfig,
     canWrite,
+    canEditRisk,
     canAdmin,
     ownerChoices,
     onRiskUpdated,
@@ -173,7 +174,15 @@ export function RiskAssessmentPanel({
     /** The tenant's risk-matrix config, resolved once by the parent —
      *  passed down so the panel does not independently re-fetch it. */
     matrixConfig: RiskMatrixConfigShape;
+    /** The coarse write tier: what accepting the residual suggestion and the
+     *  treatment-plan card ask (both usecases assert `assertCanWrite`). */
     canWrite: boolean;
+    /** `canWrite` AND `risks.edit`: what `PUT /risks/:id` and
+     *  `PATCH /risks/:id/status` take. Every step that saves through them —
+     *  inherent, manual residual, treatment decision, review date, applying
+     *  the recommended status — follows this, so a custom role without
+     *  `risks.edit` is not offered a save the server refuses. */
+    canEditRisk: boolean;
     canAdmin: boolean;
     /** Tenant roster for the treatment-plan owner picker (Step 4). */
     ownerChoices: readonly OwnerChoice[];
@@ -339,10 +348,9 @@ export function RiskAssessmentPanel({
         return <SkeletonCard lines={4} />;
     }
 
-    const maxScale = Math.max(config.likelihoodLevels, config.impactLevels);
-    const draftInherentScore = calculateRiskScore(likelihood, impact, maxScale);
+    const draftInherentScore = calculateRiskScore(likelihood, impact, config.likelihoodLevels, config.impactLevels);
     const inherentDirty = likelihood !== risk.likelihood || impact !== risk.impact;
-    const draftResidualScore = calculateRiskScore(residualLikelihood, residualImpact, maxScale);
+    const draftResidualScore = calculateRiskScore(residualLikelihood, residualImpact, config.likelihoodLevels, config.impactLevels);
 
     const saveInherent = async () => {
         clearStepError('inherent');
@@ -501,7 +509,7 @@ export function RiskAssessmentPanel({
                             onChange={setLikelihood}
                             min={1}
                             max={config.likelihoodLevels}
-                            disabled={!canWrite}
+                            disabled={!canEditRisk}
                             ariaLabel={t('assessment.likelihoodLevel')}
                             formatValue={(v) => levelLabel(config, 'likelihood', v)}
                         />
@@ -514,7 +522,7 @@ export function RiskAssessmentPanel({
                             onChange={setImpact}
                             min={1}
                             max={config.impactLevels}
-                            disabled={!canWrite}
+                            disabled={!canEditRisk}
                             ariaLabel={t('assessment.impactLevel')}
                             formatValue={(v) => levelLabel(config, 'impact', v)}
                         />
@@ -530,7 +538,7 @@ export function RiskAssessmentPanel({
                         dismissLabel={t('assessment.dismiss')}
                     />
                 ) : null}
-                {canWrite && inherentDirty && (
+                {canEditRisk && inherentDirty && (
                     <div className="flex justify-end">
                         <Button
                             variant="secondary"
@@ -654,12 +662,12 @@ export function RiskAssessmentPanel({
                         dismissLabel={t('assessment.dismiss')}
                     />
                 ) : null}
-                {canWrite && !overriding && (
+                {canEditRisk && !overriding && (
                     <Button variant="secondary" id="override-residual-btn" onClick={() => setOverriding(true)}>
                         {t('assessment.assessResidualManually')}
                     </Button>
                 )}
-                {canWrite && overriding && (
+                {canEditRisk && overriding && (
                     <div className="space-y-default border-t border-border-subtle pt-4">
                         {residualBaselineDirty && (
                             <div
@@ -767,7 +775,7 @@ export function RiskAssessmentPanel({
                             selected={treatmentOptions.find((o) => o.value === risk.treatment) ?? null}
                             setSelected={(opt) => { if (opt) void saveTreatment(opt.value); }}
                             placeholder={t('assessment.treatDecisionLabel')}
-                            disabled={!canWrite || savingTreatment}
+                            disabled={!canEditRisk || savingTreatment}
                         />
                     </FormField>
                     {stepErrors.treatment ? (
@@ -784,8 +792,8 @@ export function RiskAssessmentPanel({
                         hint={t('assessment.reviewCadenceHelp')}
                     >
                         <div className="flex items-center gap-tight">
-                            <DatePicker value={reviewDate} onChange={setReviewDate} disabled={!canWrite} />
-                            {canWrite && (
+                            <DatePicker value={reviewDate} onChange={setReviewDate} disabled={!canEditRisk} />
+                            {canEditRisk && (
                                 <Button
                                     variant="secondary"
                                     id="save-review-date-btn"
@@ -822,7 +830,7 @@ export function RiskAssessmentPanel({
                             <p className="text-content-muted">
                                 {t(recommendedStatus.messageKey as Parameters<typeof t>[0])}
                             </p>
-                            {canWrite && recommendedStatus.status && (
+                            {canEditRisk && recommendedStatus.status && (
                                 <Button
                                     variant="secondary"
                                     id="apply-status-btn"

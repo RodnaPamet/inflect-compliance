@@ -1,0 +1,22 @@
+{
+    "about": "The Ragas nightly's plan against its share of the shared nightly cap (D-EV-2, D-EV-11 as amended by the owner on 2026-11-17: the ragas share is USD 4.00 of USD 6.50, evals/cost-meter/shares.json). The share and the prices are read from the cost meter, never restated here. The judge's calls are priced at the judge's model, the product's answer turns at the assistant's own model; the metering proxy (evals/cost-meter/anthropic-proxy.mjs) enforces the share per call, each at its own model's price. This file is the PLAN a guard checks fits the share, and the first keyed night replaces the estimate with a measurement.",
+    "judge": {
+        "model": "claude-haiku-4-5",
+        "maxTokensPerCall": 1024,
+        "answerRelevancyStrictness": 3
+    },
+    "plannedCase": {
+        "basis": "Measured 2026-11-16 from the prompts Ragas 0.4.3 builds for one case at k = 10 contexts of about 1,000 characters (17 judge calls: faithfulness 2, answer_relevancy 3, context_precision 10, context_recall 1, abstention 1; 100,701 characters of prompt and tool schema), at 4 characters a token, and 120 output tokens a call. The judge's plan for one case; the product's answer to it is plannedAnswer, below.",
+        "judgeCalls": 17,
+        "inputTokens": 25200,
+        "outputTokens": 2040
+    },
+    "sentinelCases": 2,
+    "plannedAnswer": {
+        "model": "claude-sonnet-5-5",
+        "basis": "Measured 2026-11-17 by running the answer stage (scripts/rag-eval/answer.ts) in process over the seed set's 52 cases, the injection cases in the injection tenant and the rest in the answer tenant (owner decision 2026-11-17), with the assistant's real system prompt, its tool catalogue for each tenant's OWNER (search_knowledge mounted) and real search_knowledge results at the tool's default limit of 5 passages (the stub embedder in place of TEI; a fake model searched once and answered in about 700 characters): 1,873,886 bytes of request body over 52 cases in 99 model turns (the 5 injection cases stopped after the first turn, when the content guard withheld the injected chunk, as the product does; no other case did), 36,036 bytes a case, at 4 characters a token as plannedCase counts, and 350 output tokens a case. At a limit of 10 passages the bodies were 2,189,598 bytes (42,108 a case). Priced at the assistant's own model (owner decision 2026-11-17: the product's answers are written by the production model; `model` must equal AGENT_FLUE_MODEL's default, src/lib/ai/model-defaults.ts). Every answer turn goes through the same metering proxy as the judge, reserved at its body's bytes plus the assistant's 8,192 output tokens at its model's price and settled to the reported usage.",
+        "modelTurns": 2,
+        "inputTokens": 9010,
+        "outputTokens": 350
+    }
+}

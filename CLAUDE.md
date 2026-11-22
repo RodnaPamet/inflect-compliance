@@ -57,11 +57,11 @@ npm run typecheck         # tsc --noEmit
 npm run lint              # eslint . (flat config, eslint.config.mjs)
 
 # Database
-# The Prisma schema lives in a folder of 26 files, not a single file —
+# The Prisma schema lives in a folder of `.prisma` files, not a single file —
 # base/enums/auth/vendor/audit-trail/audit-workflow/automation/processes plus
 # the compliance-domain split (controls, evidence, risk, frameworks, policy,
 # tasks, assets, personnel, findings, incidents, questionnaire, nis2,
-# ai-governance, trust-center, agentic, analytics). See the Layer Structure
+# ai-governance, trust-center, agentic, analytics, legacy-access, knowledge). See the Layer Structure
 # section below and prisma/schema/README.md — `compliance.prisma` is an empty
 # stub and `audit.prisma` no longer exists.
 # Prisma reads every `.prisma` file in the folder and concatenates them at
@@ -74,7 +74,7 @@ npm run db:reset          # Drop, recreate, and reseed the DB
 
 # Tests
 npm test                  # Jest (parallel)
-npm run test:ci           # Jest (sequential, no coverage — used by scripts/ci-local.mjs; GitHub CI runs sharded `npx jest --shard=K/4`)
+npm run test:ci           # Jest (sequential, no coverage — used by scripts/ci-local.mjs; GitHub CI runs the `Test` matrix sharded `--shard=K/N`, N in ci.yml)
 npm run test:coverage     # Jest with coverage report
 npm run test:e2e          # Playwright browser tests
 
@@ -102,6 +102,28 @@ fixed read-only list, the owner approves the run in the
 logs are public, so the checks print names, states and counts
 only. A check that is missing is a PR to `deploy/vm-check/remote.sh`,
 never a free-text input — the identity it holds is root on the VM.
+
+**Changing the VM has two ways in** (owner decision 2026-11-12).
+Option 1: the owner signs the session in to `gcloud` (below), for that
+container's life. Option 2, the durable one: the **`VM apply`**
+workflow (`.github/workflows/vm-apply.yml`), the write-side sibling
+of `VM check` — dispatch it from `main` with one action from its fixed
+list (`deploy/vm-apply/vm.sh`: `apply.sh`'s preflight / apply, the
+Caddy-only and host-config-only modes, the OrangeHRM lab's vhost and
+container retirement, the proving server's recreation, a rollback to
+the newest compose backup that differs from the live file), the owner
+approves the run in `production`, and the job uses the same identity.
+The in-file `main`-only `if` and the action list bind only an
+unmodified branch: a dispatch runs the files of the ref it names, so
+the boundary is the `production` environment (deployment branches:
+protected only, i.e. `main`; the owner, its sole reviewer, reads the
+run's branch before approving) —
+see `docs/deployment.md`, "Named changes without a key". Every write runs its
+preflight first in the same run. Its logs are public too, so
+`apply.sh` runs with `APPLY_PUBLIC_LOG=1`, which reduces everything a
+tool on the VM prints to shape. A missing action is a PR to
+`deploy/vm-apply/vm.sh`, never an input; the lab teardown is
+`compose rm --stop`, never `down`.
 
 When the owner signs a session in to `gcloud` with their own Google
 account, direct access works too, for that container's lifetime.
@@ -144,7 +166,8 @@ when the session is signed in, rather than asking the operator.
 
 ### Framework baseline
 
-**Next.js 16.3.8** (App Router) + **React 19.2** + **TypeScript 5.9** (declared `^5.5.0`).
+**Next.js 16** (App Router) + **React 19** + **TypeScript 5** (declared `^5.5.0`) — read
+the exact versions off `package.json`.
 The React 18 → 19 bump (#67) is complete: React 19 removed
 `propTypes`, function-component `defaultProps`, string refs and
 legacy context — the codebase carries none of those.
@@ -168,8 +191,8 @@ minutes for a missing or unfinished check (`scripts/sast-alert-gate.mjs`),
 and the same ratchet pins it.
 
 Async-request-API: this migration is COMPLETE. Every dynamic route
-handler types `params` as `Promise<…>` and awaits it itself (354 of
-them; zero type it synchronously), and the transparent-await shim that
+handler types `params` as `Promise<…>` and awaits it itself (none
+types it synchronously), and the transparent-await shim that
 `src/lib/errors/api.ts::withApiErrorHandling` once carried was removed
 in Roadmap-6 P3 — the wrapper now forwards `ctx` through untouched.
 Unit tests that pass a plain sync `params` object still work, because a
@@ -217,6 +240,8 @@ prisma/schema/         → Multi-file Prisma schema (GAP-09):
                             trust-center.prisma — Public trust-center projection + gated docs
                             agentic.prisma      — Agent-proposal queue + workflow engine
                             analytics.prisma    — Denormalised dashboard snapshots
+                            legacy-access.prisma— Legacy-app snapshots/accounts, identity aliases, resolutions + match verdicts
+                            knowledge.prisma    — Knowledge-store chunks (encrypted text) + pgvector embeddings
                             compliance.prisma   — now an empty stub (do NOT add models here)
                             schema.prisma       — transitional sediment file (currently empty)
                           See prisma/schema/README.md and
@@ -362,9 +387,35 @@ The runtime + structural enforcement is unit-tested in
 `tests/unit/env.test.ts`, and the wiring across all five surfaces
 is locked by `tests/guardrails/encryption-key-enforcement.test.ts`.
 
-Master-KEK rotation: set `DATA_ENCRYPTION_KEY_PREVIOUS` alongside
-the new primary. `decryptField` falls back transparently. Admins
-trigger the v1→v2 re-encryption sweep via
+Master-KEK rotation: **set BOTH `LOOKUP_HASH_KEY` (#5071) and
+`DERIVED_SUBKEY_KEY` (#5500) to the CURRENT (outgoing)
+`DATA_ENCRYPTION_KEY` value and deploy that FIRST**, then set
+`DATA_ENCRYPTION_KEY_PREVIOUS` alongside
+the new primary, under which `decryptField` falls back
+transparently. The deterministic lookup hashes (`hashForLookup` —
+`User.emailHash` and friends) get no such fallback: they are an
+INDEX, not a ciphertext, so the stored hash IS the lookup key and a
+miss reads as "no such row". While they derived from the KEK, a
+rotation broke every email-based sign-in, SSO/OAuth account match
+and invite redemption from the first request. Unset,
+`LOOKUP_HASH_KEY` reproduces the old derivation exactly, so no
+stored hash moves and no backfill is needed; a production boot with
+`DATA_ENCRYPTION_KEY_PREVIOUS` set and it unset REFUSES to start.
+
+`DERIVED_SUBKEY_KEY` is its SIBLING and the same story for every
+HKDF subkey (#5500): the four audit sampling seeds — the workpaper
+draw is specified as re-derived identically by every sweep, which is
+why the daily sweep is idempotent — the assistant answer seal, and
+the MCP exchanged-token signing key, whose `kid` names the API key
+rather than a signing-key version. None has a previous-key fallback,
+so a rotation re-decided every sampled population and invalidated
+every stored seal and outstanding token, silently. Unset it
+reproduces the old derivation exactly; a production boot mid-rotation
+with it unset REFUSES to start, naming it. It is deliberately NOT the
+same variable as `LOOKUP_HASH_KEY`: an index can never rotate, a
+signing key should be able to, and one secret for both would mean
+neither could move without the other.
+Admins trigger the v1→v2 re-encryption sweep via
 `POST /api/t/{slug}/admin/key-rotation`, which enqueues the
 background job in `src/app-layer/jobs/key-rotation.ts`. The job
 re-encrypts every `v1:` ciphertext under the new primary KEK and
@@ -421,9 +472,10 @@ HIGH+, highest observed risk Medium. Removing `continue-on-error`
 matters beyond findings: `action-baseline` calls `core.setFailed` on
 zap-baseline.py exit 3 ("could not scan the target") REGARDLESS of
 `fail_action`, so it was also masking a scan that never ran as a green
-nightly. The weekly ACTIVE scan stays non-blocking on a real dated
-deferral (it mutates requests and has a younger baseline), but its
-HIGH+ gate runs today.
+nightly. The weekly ACTIVE scan is blocking too, since 2026-10-12: its
+dated deferral expired, the guard failed the next day as designed, and
+it was flipped the same way (a red Sunday run expects triage, not
+dismissal). Its HIGH+ gate was never deferred.
 
 The guard no longer accepts a non-blocking scan silently: a deferral
 must carry `DAST-NON-BLOCKING-UNTIL: <YYYY-MM-DD>`, which
@@ -464,8 +516,8 @@ weaker mechanism on that population was measured, once, at a net
 strictness regression across 25 routes.
 
 `tests/guardrails/api-route-has-some-authorization.test.ts` is
-LAYER 2 (#2099) — additive, over ALL 582 `src/app/api/**/route.ts`
-files. It asks only *"is there any authorization on this path at
+LAYER 2 (#2099) — additive, over EVERY `src/app/api/**/route.ts`
+file. It asks only *"is there any authorization on this path at
 all?"*, satisfied by a route-level gate, an `assertCan*` reached
 through the call graph (`tests/helpers/route-authorization-graph.ts`,
 3 module hops), or a declared exempt class whose credential check
@@ -658,20 +710,25 @@ pluralisation). Every caller uses `buildOutboundHeaders(...)` and
 inline, never hand-roll dedupe keys.
 
 **E.3 — Graceful shutdown.** On a rolling deploy the process receives
-SIGTERM. Without a drain handler, three observability surfaces lose
-data: per-tenant audit-stream buffers (irreversible — events never
-reach the SIEM), OTel span batches still in the `BatchSpanProcessor`,
-and Sentry errors still in the transport queue.
-`installShutdownHandlers()` in `src/lib/observability/shutdown.ts`
-drains all three in the order most-to-least critical for audit
-correctness: audit buffers first, then OTel, then Sentry. Each stage
-is `Promise.race`'d against its per-stage budget from
+SIGTERM. Without a drain handler it loses work: per-tenant audit-stream
+buffers (irreversible — events never reach the SIEM), the agentic runs
+it is executing (abandoned RUNNING, later reaped to FAILED), OTel span
+batches still in the `BatchSpanProcessor`, and Sentry errors still in
+the transport queue. `installShutdownHandlers()` in
+`src/lib/observability/shutdown.ts` handles them in the order
+most-to-least costly to lose: audit buffers first, then
+`pauseInFlightRuns` (leaves this process's runs resumable), then OTel,
+then Sentry. Between the run pause and OTel it also closes open
+run-replay streams and cuts open assistant streams with a reason; both
+are synchronous and never throw, so they carry no budget. Each budgeted
+stage is bounded by its per-stage budget from
 `src/lib/observability/shutdown-budget.ts` so a slow exporter never
-blocks past the container's grace period (k8s default 30 s). The
-three stage budgets (3 s + 2 s + 2 s = 7 s) fit under the 20 s
-ceiling — leaving 10+ s for Next.js's own HTTP-drain handler
-running in parallel. The handler never calls `process.exit` —
-`next start` owns the process lifecycle. Registration happens in
+blocks past the container's grace period (k8s default 30 s). The four
+budgets sum to `SHUTDOWN_STAGES_TOTAL_MS`, which must stay under
+`SHUTDOWN_TOTAL_CEILING_MS` (20 s), leaving the rest of the grace
+period for Next.js's own HTTP-drain handler running in parallel. Every
+stage is guarded so a throw in one never skips the later ones. The
+handler never calls `process.exit` — `next start` owns the process lifecycle. Registration happens in
 `src/instrumentation.ts::register()`, after all `init*` calls, and
 is idempotent under HMR via a module-level flag. SIGINT gets the
 same treatment. A second SIGTERM falls through to Node's default
@@ -774,12 +831,14 @@ explicitly. That is a value guarantee, not a type-level one (the declared
 field type is `boolean`), so the custom-role path — which CAN express those
 flags — is re-checked at runtime by `permissionsExceeding`.
 
-`AI_ADMIN` (#3699) runs the agent register and can own and receive agents: the
-seven agent keys (`AGENT_ADMIN_KEYS` — register, tool exposure, policy card,
-kill switch, external tools, harness ingest, agent ownership) on top of
-READER's set, and NONE of the tenant-wide admin keys (no `view`, `manage`,
-members, SSO, SCIM, lifecycle, owner management or DSAR). It sits on READER's
-rung of the coarse ladder (`ROLE_ORDER`), so `canWrite`/`canAdmin` are false
+`AI_ADMIN` (#3699) runs the agent register and can own and receive agents: every
+agent key in `AGENT_ADMIN_KEYS` (`src/lib/permissions.ts` — register, register
+view, tool exposure, policy card, kill switch, external tools, harness ingest,
+third-party application scan ingest (`integrations_ingest`), agent ownership,
+skill review, skill authoring) on top of READER's set, and
+NONE of the tenant-wide admin keys (no `view`, `manage`, members, SSO, SCIM,
+lifecycle, owner management or DSAR). It sits on READER's rung of the coarse
+ladder (`ROLE_ORDER`), so `canWrite`/`canAdmin` are false
 and no usecase gated on the coarse tier alone admits it; the agent usecases'
 floor is `assertAgentGovernanceWrite` / `…Admin`
 (`src/app-layer/policies/agent-governance.policies.ts`) — the coarse tier OR
@@ -802,7 +861,7 @@ token is burnt on email mismatch.
 (b) `createTenantWithOwner` in `src/app-layer/usecases/tenant-lifecycle.ts` —
 platform-admin tenant bootstrap, gated by `PLATFORM_ADMIN_API_KEY`
 (constant-time compared via `verifyPlatformApiKey`).
-(c) `/api/auth/register` — credentials self-service signup. It is NOT `AUTH_TEST_MODE`-gated: the route carries no such gate and the Credentials provider is always registered (`src/auth.ts:342-349`), so a self-registered production account is usable. Its only throttle is `TENANT_CREATE_LIMIT` (5/hour). Whether public signup should be open is an open product decision — see the note at the top of `src/app/api/auth/register/route.ts`.
+(c) `/api/auth/register` — credentials self-service signup. It is NOT `AUTH_TEST_MODE`-gated: the route carries no such gate and the Credentials provider (`id: 'credentials'` in `src/auth.ts`) is always registered, so a self-registered production account is usable. Its only throttle is `TENANT_CREATE_LIMIT` (5/hour). Whether public signup should be open is an open product decision — see the note at the top of `src/app/api/auth/register/route.ts`.
 Plus the legitimate SSO + SCIM provisioning paths, the two Epic O-2 org
 paths (`org-provisioning.ts` fans ADMIN rows into every tenant under an
 org for an existing ORG_ADMIN; `org-tenants.ts::createTenantUnderOrg`
@@ -861,6 +920,16 @@ leave a tenant with zero ACTIVE OWNERs, catching bypass attempts
 (raw `deleteMany`, code paths that forget the check). The two-step
 `transferTenantOwnership` flow uses this: promote the new OWNER
 first (count=2), then demote the old (count=1, trigger satisfied).
+**Both layers serialise per tenant before they count** (#5388): the
+trigger takes `pg_advisory_xact_lock(hashtext('tenant-owner:' || tenantId))`
+before its count, and the member usecases, the transfer and the
+access-review close take the same key FIRST in their transaction
+(`lockTenantOwners`, `usecases/tenant-owner-lock.ts`), before reading the
+membership or writing any row. Under READ COMMITTED two OWNERs demoting
+each other at once each counted the other as still an owner and both
+committed; now the loser waits and gets the usecase's own last-OWNER 403.
+Keep the trigger function VOLATILE: its count reads a fresh snapshot only
+because it runs after the lock.
 
 **Invitation flow.** Admin POSTs to `/api/t/:slug/admin/invites` →
 `createInviteToken` creates a 256-bit base64url token with 7-day
@@ -879,7 +948,7 @@ new tenant-membership creation path).
 ### RBAC & Permissions
 
 - `src/lib/permissions.ts` — `PermissionSet` (granular UI flags) resolved from the user's role
-- Built-in roles: `OWNER`, `ADMIN`, `EDITOR`, `READER`, `AUDITOR` (Prisma enum `Role`)
+- Built-in roles: `OWNER`, `ADMIN`, `EDITOR`, `READER`, `AUDITOR`, `AI_ADMIN` (Prisma enum `Role`; see the Epic 1 "Role model" paragraph for `AI_ADMIN`)
 - Custom roles: `TenantCustomRole` model with `permissionsJson` overrides, referenced via `TenantMembership.customRoleId`
 - **Organization roles are `OrgRole`: `ORG_OWNER`, `ORG_ADMIN`, `ORG_READER`**
   (`OrgPermissionSet` from `getOrgPermissions`). `ORG_OWNER` (#4576) lands in two
@@ -899,6 +968,14 @@ new tenant-membership creation path).
   writer of the value) and `canManageTenants`. A new organization is owned by
   its creator. No org delete or rename exists; when one is built it is
   owner-only. Test teardowns delete the ORGANIZATION, not its memberships.
+  **Both layers serialise per organization before they count** (#5373): the
+  trigger and the usecase's in-transaction re-checks take
+  `pg_advisory_xact_lock(hashtext('org-owner:' || organizationId))` first,
+  because under READ COMMITTED two owners demoting each other at once each
+  counted the other as still an owner and both committed. A removal's tenant
+  fan-in and its membership delete share that one transaction, so a refused
+  removal takes no tenant access with it. Keep the trigger function VOLATILE:
+  its count reads a fresh snapshot only because it runs after the lock.
 - `appPermissions` on `RequestContext` is already custom-role–aware
 - **An OWNER or AI_ADMIN membership never carries a custom role** (#3720, #3699).
   A custom role REPLACES the membership's permissions, so on an OWNER it was a
@@ -919,20 +996,21 @@ new tenant-membership creation path).
   role's base. Same NOT VALID shape; `deleteCustomRole` moves a legacy row's
   base to READER in the soft-delete write, or the deletion would fail it.
 - **Only an ADMIN membership carries a custom role built on ADMIN, or one
-  granting one of ten admin keys** (owner decisions, 2026-10-30). The edge
+  granting one of eleven admin keys** (owner decisions, 2026-10-30). The edge
   admits `/api/t/:slug/admin/**` by the membership's BUILT-IN role, and an
-  ADMIN base sets the coarse tier (`effectiveRole`) everywhere else. The ten are
+  ADMIN base sets the coarse tier (`effectiveRole`) everywhere else. The eleven are
   `ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS` in `src/lib/roles.ts`, in two parts.
   `ADMIN_API_ONLY_KEYS` (`sso` and the tool-exposure, policy-card, ownership and
   two skill keys) are consumed only behind the admin API, so on an EDITOR,
   READER or AUDITOR membership they granted nothing but buttons the edge
   refused. `SIDE_DOOR_ADMIN_KEYS` (`scim`, `compliance_dsar_manage`,
-  `agent_harness_ingest`, `agent_external_tools`) are NOT dead elsewhere: an
+  `agent_harness_ingest`, `agent_external_tools`, and `integrations_ingest`,
+  the third-party application scan's twin of the harness key) are NOT dead elsewhere: an
   agent-bound API key acting for the membership reaches their admin routes past
   the edge, and a run the membership starts or a key at `/api/mcp` reaches
   `get_harness_register` and every external tool call. They are refused BY
   DECISION, because that path is a side door around the edge's role gate — so
-  for these four the rule DOES take something away. The other nine admin keys
+  for these five the rule DOES take something away. The other nine admin keys
   are left alone. ONE predicate, `customRoleCarriageRefusal(after, before)`,
   refuses only what a change ADDS (a save that narrows, a clear, a move among
   EDITOR/READER/AUDITOR all pass) with a 409 and
@@ -947,7 +1025,9 @@ new tenant-membership creation path).
   `permissionsJson` over a base role's defaults. The stored roles were settled
   once by migration `20261030170000_admin_membership_only_keys_off_for_non_admin_custom_roles`:
   a role carried ONLY by non-ADMIN memberships (any status) has the ten stated
-  `false`, base unchanged; a role with any ADMIN carrier, a role nobody carries
+  `false`, base unchanged (`integrations_ingest`, added later, by
+  `20261114120100_integrations_ingest_off_for_non_admin_custom_roles`, the same
+  scope: on an ADMIN base the new key would otherwise read ADMIN's `true`); a role with any ADMIN carrier, a role nobody carries
   and a legacy OWNER- or AI_ADMIN-based row (the NOT VALID #3734 CHECK refuses
   its update) were left alone. It is orthogonal to the Admin-base rule (#4536,
   #4595: `ADMIN_BASE_ONLY_PERMISSIONS` in `src/lib/custom-role-admin-base-rule.ts`),
@@ -957,7 +1037,7 @@ new tenant-membership creation path).
   `PERMISSION_NEEDS_ADMIN_BASE`) is asked first: it reads only the request.
   `tests/guardrails/admin-membership-only-keys-are-dead-elsewhere.test.ts`
   fails when one of the six gains a consumer outside the admin API, and when
-  one of the four stops having one.
+  one of the five stops having one.
 - **An admin page offers a write only where the server takes it** (#4467,
   #4466, generalised from #4471's agent register). Three gates, each asked as
   the server asks it: the edge (#4587's `membershipOpensAdminConsole` over
@@ -1003,7 +1083,32 @@ until its own challenge is passed (`pendingMfaWorkspaceSlug` in `src/lib/auth/gu
 The challenge verifies the code against the workspace in its URL, so a pending primary is
 sent to the primary's own challenge page. Sign-in used to ask only the primary, so a
 workspace that required MFA but was joined later let its members in on a password alone.
-Do not narrow it back to the primary.
+Do not narrow it back to the primary. The membership claim is capped, so a workspace past the
+cap is never asked at sign-in and the edge cannot hold it: `getTenantCtx` asks it instead
+(`workspaceStillAsksThisSession`), refusing an API request and sending a page to that
+workspace's challenge until this session passes it. A workspace in the claim costs no query.
+
+**A challenge pass belongs to the session that answered it** (`verifyMfaChallenge`). The pass
+is recorded on that session's own `UserSession.mfaPassedTenantIds`, and the jwt callback clears
+`mfaPending` or a pending workspace only when the token's `userSessionId` row lists it
+(`workspacesPassedBySession`). It used to compare `UserMfaEnrollment.lastChallengeAt` with the
+token's `iat`, so the real person passing the challenge also cleared an older password-only
+session. A code is accepted once: `lastAcceptedTotpStep` records the step of the last accepted
+code (enrolment included), and the claim is a conditional `updateMany` on a LATER step. Do not go
+back to a time comparison, and do not accept a pass for a request that names no live session.
+
+**An OAuth email counts only when its provider vouches for it** (`src/lib/auth/oauth-email-trust.ts`,
+owner decisions 2026-11-12). The `signIn` callback links a Google or Microsoft sign-in to an
+existing account, and redeems pending invites by address, only on Google's `email_verified ===
+true` or Microsoft's `xms_edov` claim (an optional claim the app registration must emit; on the
+multi-tenant endpoint any directory's admin can set the plain `email`). Otherwise an existing
+account is not linked (`OAuthAccountNotLinked`) and only the emailed invite link redeems. A
+vouched sign-in CLAIMS an account whose `emailVerified` is NULL and that carries a competing
+credential (a password or another provider link): the password and the other links are removed,
+every session is revoked and reset links are spent, audited `AUTH_UNVERIFIED_ACCOUNT_CLAIMED`. An
+account with no competing credential is only stamped verified. MFA enrolments are kept. Do not
+widen the trusted providers or drop the claim: an unverified registration is somebody else's
+address until proved.
 
 **SSO sign-in goes through NextAuth, and its session reaches one workspace.**
 The SAML and OIDC callbacks do not mint a session. They verify the identity
@@ -1088,7 +1193,7 @@ Job definitions are in `src/app-layer/jobs/`. The executor registry is `src/app-
 
 ### Data Retention
 
-**See `docs/data-retention.md`** — the policy document that categorizes all 203
+**See `docs/data-retention.md`** — the policy document that categorizes the
 Prisma models into 7 retention categories (Business record / Regulatory artefact /
 Operational / Security ephemeral / PII subject / Financial / Configuration),
 declares the *current* retention behaviour per entity, and surfaces the open
@@ -1214,7 +1319,7 @@ off BY DEFAULT — which is a different kind of nothing.
 
 ```
 03:00 UTC  identity-sync-dispatch    per enabled okta / google-workspace / entra-id / active-directory connection
-04:00 UTC  hris-sync-dispatch        per enabled bamboohr / workday connection  (roster → Employee)
+04:00 UTC  hris-sync-dispatch        per enabled HRIS_PROVIDERS connection (bamboohr / workday / orangehrm; roster → Employee)
 04:30 UTC  identity-joiner-dispatch  per (tenant, provider) over WRITABLE_IDENTITY_PROVIDERS  (#2687)
 05:00 UTC  identity-leaver-dispatch  per (tenant, provider) over WRITABLE_IDENTITY_PROVIDERS
 ```
@@ -1370,14 +1475,40 @@ are invisible on both surfaces at once. "Did a pass run?" is answered by
 journal. Reading the second for the first is how an empty page gets mistaken for
 a quiet night.
 
-The journal has a read surface as of #2490: `admin/identity-write-journal`, an
-index plus a per-row detail route that resolves the `journal reference <id>`
-that the DISABLED notification quotes. Both are gated `admin.tenant_lifecycle` —
+The journal has a surface of FOUR routes under `admin/identity-write-journal`:
+the index, the per-row detail route that resolves the `journal reference <id>`
+the DISABLED notification quotes, `unsettled/` for the operator sweep, and
+`restorable/[accountId]`, which answers what a disable replaced on one account
+(GET) **and puts it back (POST)**. Every one is gated `admin.tenant_lifecycle` —
 OWNER-only; ADMIN deliberately does not hold it, because a row names a change
-made to one of a customer's people's accounts. Both are read-only, and that is a
-decision rather than an unfinished half: `DirectoryWriter` declares no `enable()`
-verb, so re-applying a captured prior state is an act somebody performs in the
-customer's own directory, holding the state this surface hands them.
+made to one of a customer's people's accounts.
+
+**The `admin/identity-write-journal` surface is not read-only, and this
+paragraph said it was until #5570.** It
+read: *"Both are read-only … `DirectoryWriter` declares no `enable()` verb, so
+re-applying a captured prior state is an act somebody performs in the customer's
+own directory."* The verb claim is still literally true — there is no
+`enable()` — but the conclusion drawn from it is not: `DirectoryWriter` declares
+an optional `restore?()`, both live writers implement it, and
+`usecases/identity-restore-account.ts` is reached by that POST. The product
+re-applies the captured state itself.
+
+**A RESTORE IS NOT AN ENABLE, and that distinction is the whole design.** An
+enable can be pointed at any account; a restore can only undo something this
+product did and can still prove it did. It writes one specific captured value
+and refuses unless the account is still exactly as the product left it — a
+compare-and-swap on Active Directory, a checked read on Entra, where Graph
+offers no equivalent and the writer says so. Entra's arm also refuses an account
+that is now directory-synced, or whose on-prem state the fresh read did not
+observe (#5569), because a restore through Graph would otherwise be reverted at
+the next Azure AD Connect cycle with the journal recording RESTORED.
+
+The write shares the reads' OWNER-only key BY DECISION rather than getting a
+weaker one of its own: reading what was replaced and putting it back are the
+same authority over the same fact. That is also what makes the notification's
+instruction honourable — *"quote that reference to your platform administrator,
+who can read the captured state and re-apply it"* — where before the restorable
+route only the first half was true.
 
 **Refusal order matters when reading an outcome.** `ALREADY_DISABLED` is checked
 before the write-target rail, so an account that last synced as suspended returns
@@ -1404,7 +1535,17 @@ from here* rather than merely unanswered. OrangeHRM is self-hostable and writabl
 is what #2548 built it for and what #2587 demonstrated: running the finished connector
 against a live 5.9 disproved its field mapping in five places that fifty green tests had
 not noticed. So when new HRIS behaviour must be shown to WORK rather than to typecheck,
-point it at the OrangeHRM instance and record what came back. This is a rule about
+point it at a live OrangeHRM instance and record what came back. **The production VM is
+no longer where that instance lives:** the OrangeHRM lab (`orangehrm`, `orangehrm-db`,
+`orangehrm-mcp` and its two Caddy vhosts) was retired by owner decision on 2026-11-12
+(capacity budget C1, `docs/implementation-notes/2026-11-12-capacity-c1.md`) and removed
+from the repo-canonical deploy set. It leaves the running VM when the operator runs that
+note's runbook steps 1–2; until then its containers and vhosts keep serving, and the
+`VM check` workflow's `containers` check shows which is the case. Do not prove against it
+in that window: proving against OrangeHRM now needs a non-production instance — an open
+item, not a reason to keep the lab on the production VM. The rule stands; its evidence
+source is what is missing. `ORANGEHRM_HOSTS` still admits the retired lab's exact
+hostname until that instance is chosen. This is a rule about
 evidence, not about tests: BambooHR keeps every test it has, and the structural guards
 that enumerate providers must keep naming `bamboohr`. See the "New HRIS work is proven
 against OrangeHRM" section of `docs/jml-hris-write-back-design.md` for what this does and
@@ -1416,8 +1557,11 @@ vendor's API is not evidence about this one.
 `resolveDirectoryWriter`'s construction block — the last arm there falls through
 to `createActiveDirectoryWriter`, so a provider added without a branch silently
 gets an AD writer; a new directory provider that only reads goes in
-`IDENTITY_PROVIDERS` in `jobs/identity-sync.ts` (and the two other copies of that
-list — they are not shared). Follow
+`IDENTITY_PROVIDERS` in `jobs/identity-sync.ts` — and in every other copy of
+that list, because none of them is shared: the identity-sync usecase, the
+integrations usecase (`IDENTITY_SYNC_PROVIDERS`), the connected access review,
+the audit procedures and the admin pages' provider filters each spell the four
+providers out. A grep for `'okta', 'google-workspace'` finds them all. Follow
 [docs/new-subsystem-checklist.md](docs/new-subsystem-checklist.md) as usual.
 
 When the chain produces nothing, the causes are numerous and all present
@@ -1764,6 +1908,21 @@ Six use cases that extend IAM controls to autonomous agents, in five phases.
 step issues under #3654 are the work, one pull request each. Rules that bind
 every step are listed at the end of that document.
 
+**The contract's code is the scanent package's** (scanent #26). The report
+contract, the ladder, the findings planner and their helpers are
+`@rodnapamet/scanent-contract`, the standalone scanent product's package,
+installed from its GitHub release file at one exact version (`package.json`;
+Dependabot does not move it, so a version is taken by hand, on purpose).
+`src/lib/agentic/harness-{contract,contract-rules,findings,ladder}.ts`,
+`src/lib/canonical-json.ts`, `src/lib/security/cidr.ts`,
+`src/lib/mcp/receipt-verification.ts` and `src/lib/audit-redact.ts` are
+one-line re-exports of it, so importers keep their paths; a change to the
+contract is a scanent release and a version bump here, never an edit to those
+files, and `tests/guardrails/harness-scanner-contract-import-closure.test.ts`
+refuses code beside the re-export. The client import-graph guards walk into
+the package's compiled modules, so a client reaching one that requires
+`crypto` still fails. The rules below hold in the package.
+
 **The harness ladder** (`src/lib/agentic/harness-ladder.ts`, H0–H5) has three
 properties that are each one careless edit from being undone:
 
@@ -1781,8 +1940,8 @@ properties that are each one careless edit from being undone:
 `docs/agent-harness-contract.md`, `src/lib/agentic/harness-contract.ts`) is
 verified in one order: size, JSON, signature by a TRUSTED key, then the strict
 schema OF THE ID THE REPORT NAMES. `/3` (#3785) is `/2` plus the `gcp-sa`
-source kind and nothing else, so a `/2` report naming `gcp-sa` is refused; the
-reference scanner speaks `/3`. `/1` was retired with the scanner container
+source kind and nothing else, so a `/2` report naming `gcp-sa` is refused.
+`/1` was retired with the scanner container
 (#3686), and a report naming it is a `SCHEMA` refusal that writes nothing. A
 new id is a new strict schema beside the others, never a lenient one that reads
 either — and a new kind also widens the estate CHECK, and must be classified in
@@ -1801,7 +1960,7 @@ fails the strict re-read is UNREADABLE. Write NULL as `Prisma.DbNull`, never as
 **The harness ingest** (`usecases/agent-harness-scans.ts`, since #3665) is the
 only writer of `AgentHarnessScan`, `DiscoveredAgent` and `AgentHarnessScanItem`;
 the key, acceptance and estate usecases are the only writers of theirs, and
-`tests/guards/agent-harness-single-write-seam.test.ts` holds all seven. Four
+`tests/guards/agent-harness-single-write-seam.test.ts` holds all seven. Five
 rules in it are easy to undo:
 
 - **Whose reports count is the register's decision, never the scanner's.**
@@ -1845,6 +2004,64 @@ rules in it are easy to undo:
 - **The scanner's findings are written through `FindingRepository`, not
   `createFinding`**, because the principal is a key that holds the ingest
   permission and nothing else. Every write is still sanitised and audited.
+- **An unlinked principal with no sign of a model is an unregistered identity,
+  not a shadow agent** (owner decisions, 2026-11-13). The signs are the five in
+  `MODEL_SIGNS` (found via `code`, `runtime` or `mcp`; lists a tool; lists a
+  model endpoint), the planner's `modelSignsOf` decides, and the standalone
+  scanner applies the same rule under the same names. Such a principal gets ONE
+  finding, `UNREGISTERED_IDENTITY` (MEDIUM), in place of `SHADOW_AGENT`, and no
+  `HARNESS_SHORTFALL`: it is held to no bar. It keeps its row, level and
+  verdicts, is registrable through the intake exactly as a shadow agent is
+  (`registrableFindingOf`), and has a section of its own on the harness tab.
+  Two points are easy to undo. **The name of a credential is not a sign**: do
+  not add a sixth. **A missing sign on an incomplete scan closes nothing**: a
+  sign counts on any scan, its absence only on a complete one, and on an
+  incomplete scan a principal on record as an agent
+  (`PriorHarnessState.onRecordAsAgent`, an open `SHADOW_AGENT` or
+  `HARNESS_SHORTFALL` finding) is still treated as one. The class ON RECORD is
+  the open finding, never the stored scan rows, which every scan overwrites;
+  every reader (the matrix, the shortfall acceptance and its expiry sweep, the
+  evidence tally) asks `unregisteredIdentitiesOnRecord` and no page re-derives
+  it.
+
+**The third-party application ingest** (`usecases/third-party-app-scans.ts`)
+is the harness ingest's twin for the scanner's second signed report,
+`scanent-integrations/1`: the applications a directory (Entra, Okta, GitHub) has
+granted access to. It is the only writer of `ThirdPartyAppScan`,
+`DiscoveredThirdPartyApp` and `ThirdPartyAppScanItem` (the single-write-seam
+guard above holds them), and its results are the Integrations tab on
+`/agents/reports` (`getThirdPartyAppInventory`, the inventory read). Rules that
+are easy to undo:
+
+- **Its own key, `admin.integrations_ingest`** (scope `admin:integrations_ingest`;
+  owner decision), held and classified exactly as `agent_harness_ingest` is,
+  side-door list included. A key minted for one report does not post the other.
+  The SAME registered scanner keys verify both reports, and each verifier refuses
+  the other's contract.
+- **The contract and the planner are the package's** —
+  `verifyAndParseIntegrationsReport` and `planIntegrationsScan` from
+  `@rodnapamet/scanent-contract/integrations-*`, imported directly (no
+  re-export: nothing had a path to keep). They require `crypto`, so only server
+  modules import them; the tab gets plain data
+  (`src/lib/agentic/third-party-app-read-model.ts`, types only).
+- **A scan closes a finding only on positive evidence**: the application is in
+  the scan, its source was read COMPLETE, and the plan neither raised the
+  finding nor recorded it NOT CONCLUDED for that application or its source. An
+  application ABSENT from a complete scan closes nothing (the planner's and the
+  harness's rule). An empty-inventory finding is about a source kind, which
+  every directory of that kind shares, so its reference is the planner's with
+  `@<scannerAgentId>` appended: only the same scanner closes it.
+- **Not known is not none.** Okta and GitHub expose no owner, publisher or
+  sign-in; those are stored NULL and read "not exposed" (`NOT_EXPOSED_BY_PRODUCT`),
+  never "no owner".
+- **Links, not writes.** Each row links out ("What is this?", "Manage /
+  deactivate") to the vendor's own console, built on the server by the pure
+  `thirdPartyAppLinks` (`src/lib/agentic/third-party-app-links.ts`) from the
+  application id and the publisher ids the ingest stores
+  (`publisherAppId`, `publisherAppSlug`); every part is validated first, any
+  mismatch is no link, and the only hosts produced are `github.com`,
+  `entra.microsoft.com` and an Okta org's `-admin` host. Deactivation happens
+  there and the next scan shows it: do not add a write path or a permission.
 
 **The stale-estate alert** (`usecases/agent-harness-estate-staleness.ts`, a
 daily job since #3741) judges each estate with `computeEstateHealth` and nothing
@@ -1871,8 +2088,15 @@ through their own routes. Rules that are easy to undo:
 - **Rows are the worst of a WHOLE latest scan, or none** (`rowsUnread`): the
   latest scans' items are read on their own, never in one bounded read with the
   previous scans', which only drift needs.
-- **A cell is the ladder's `criterionState` over `collapseVerdicts`**; do not
-  re-implement it in a component. A pointer is a link only when it is an
+- **A cell is the shared model's state** (owner decision 2026-11-13: one shared
+  table model). Each row is `buildHarnessMatrix`'s from
+  `@rodnapamet/scanent-contract/harness-matrix-model`, the module scanent's
+  results are built from, and rows are ordered by `compareHarnessMatrixRows`
+  (not judged, then below the bar, then at it; lowest level first; then id).
+  The usecase passes the stored verdicts and sources (`null` when they do not
+  re-read: NOT JUDGED, no level), the class on record, and no readers; Inflect's
+  own columns are joined by `discoveredId`. Do not re-derive a cell, a level or
+  a bar standing in a component. A pointer is a link only when it is an
   absolute http(s) URL — a scanner-chosen `/path` must not become an in-app link.
 - **The accept button and `acceptHarnessShortfall` share
   `shortfallAcceptanceRefusal`** (`src/lib/agentic/harness-acceptance-rules.ts`).
@@ -1897,64 +2121,33 @@ through their own routes. Rules that are easy to undo:
   pointer, credential reference, tool server or agent name (DPIA condition 8),
   and the level never decides the status: the ladder is report-only.
 
-**The reference scanner** (`packages/agent-harness-scanner`, #3678) runs in a
-client's estate and posts what the ingest above verifies. Okta, Azure Key Vault,
-LangSmith (the `runtime` source, #3738) and the `code` source (LangChain and
-LangGraph, #3737; the Claude Agent SDK, #4156) today; Entra, MCP, the register
-and the container are #3686.
+**The scanner is scanent's, not this repository's** (scanent #26). The scanner
+that runs in a client's estate and posts what the ingest above verifies is the
+standalone scanent product (github.com/RodnaPamet/scanent), shipped as its image
+`ghcr.io/rodnapamet/scanent`. Its sources and its rules (the read-only wire, the
+declared request surface, never requesting a secret's value, no register link
+from an estate's own labels, the `code` source that reads code and never runs
+it, the scanner's own Okta token) live and are tested in scanent's repository.
+The in-repo copy, `packages/agent-harness-scanner` (#3678, #3686), was removed
+on 2026-11-15. What stays here is the ingest side, and two facts about
+Inflect's own scanner on the production VM (`deploy/harness-scanner/`, the
+`Scanner VM` workflow):
 
-- **Read-only is the wire's shape.** A source holds `ReadOnlyHttp`, whose only
-  verb is GET — do not give `getJson` a method parameter. The OAuth token
-  exchange is the one POST, behind its own interface. Every request is declared
-  in `scanner-surface.ts`, whose hash is the report's manifest hash, and the
-  tests hold each fake's request log to it: a new endpoint goes there first.
 - **The register read is on an exchanged token, and its H2/H3 verdicts are the
-  register's facts** (#5004). The wire trades the ingest key at the tenant's
-  `/api/mcp/token` for a token naming `get_harness_register` alone and refuses
-  any answer that is not an `ifxt_` token. `get_harness_register` decides
-  every fact (per-key `mcpCapable` / `requiresTokenExchange`, and an
-  `enforcement` block built with the funnel's own ceiling and pin checks); the
-  source only maps them. The four no-write H3 criteria are met on the WHOLE
-  read-only bound only and are otherwise unanswered, never "no";
-  `H3.payloads_guarded` is "met" on the scanner's own agent only. Extend that one
-  tool rather than add a second: DPIA condition 2 allows one.
-- **Inflect's own scanner runs behind its own egress proxy** (#5004 part C).
-  `src/egress-proxy.ts` (CONNECT-only, exact hosts on 443, empty refuses all)
-  runs from the scanner's pinned image; the scanner's only network is internal.
-  Each scan proves it (`egress-proof.ts`: proxy admits Inflect, refuses the
-  canary, a direct dial fails) as its own `H3.egress_enforced`. A source added
-  to the pilot needs its host on `EGRESS_ALLOW`, which a test holds equal to the
-  configuration's hosts.
-- **A secret's value is never requested.** Okta's `/apps/{id}/credentials/secrets`
-  and Key Vault's `/secrets/{name}` return values; credentials are reported by
-  reference.
-- **It imports the contract, never a copy.** It checks its report with the
-  ingest's schema and `firstSecretShapedMember` before it signs, through
-  `harnessSignedMessage`. `eslint.config.mjs` allows `harness-contract`,
-  `harness-findings`, `harness-ladder` and `canonical-json` from `@/` and refuses
-  every other `@/`, `@prisma/*`, `next` and `@inflect/ui` import.
-- **No register link from the estate's own labels.** `registeredAgentId` is
-  `null` from these sources: an Okta profile or a vault tag is written by the
-  estate's administrator, who could use it to hide a shadow agent.
-- **An unreadable source is in the report**, `INCOMPLETE` with its reason —
-  including one whose credential is missing (`AUTH_FAILED`).
-- **Every Okta API token is a principal except the scanner's own**, which is
-  identified by id from `GET /api/v1/api-tokens/current` — never by its name,
-  which any administrator can give any token. A scanner that cannot identify
-  its token stops the read before the list, with the request's reason.
-- **The labels are documented defaults** (`profile.owner`, the tags
-  `inflect-principal` and `owner`), overridable per estate in the configuration;
-  `docs/agent-harness-scanner-onboarding.md` is where a client is told them.
-- **The `code` source reads code and never runs it.** Static parsing only
-  (`sources/code/`): a scanned repository must not be able to run anything
-  beside the signing key. `eslint.config.mjs` refuses `child_process`, `vm`, a
-  module loader, `require()`, `import()` and `eval` there, and the side-effect
-  test proves it. An agent counts only when its names resolve through the
-  file's imports to a `langchain`/`langgraph` or Claude Agent SDK module, and
-  anything that does not resolve is `UNPARSEABLE` — never dropped, and never
-  guessed into a value. A file that names none of those modules is not parsed
-  (`FRAMEWORK_MARKERS` in `sources/code/files.ts`): a framework recognised
-  without its marker there finds nothing, silently.
+  register's facts** (#5004). The scanner trades the ingest key at the tenant's
+  `/api/mcp/token` for a token naming `get_harness_register` alone.
+  `get_harness_register` decides every fact (per-key `mcpCapable` /
+  `requiresTokenExchange`, and an `enforcement` block built with the funnel's
+  own ceiling and pin checks); the scanner only maps them. Extend that one tool
+  rather than add a second: DPIA condition 2 allows one.
+- **Inflect's own scanner runs behind its own egress proxy** (#5004 part C). On
+  the VM it is scanent's image, pinned by index digest in
+  `deploy/docker-compose.harness-scanner.yml`, and the proxy is the one the
+  image ships (`/app/packages/scanner/dist/egress-proxy.js`); the scanner's only
+  network is internal. A source added to the pilot needs its host on
+  `EGRESS_ALLOW`, which a test holds equal to the configuration's hosts and
+  `remote.sh configure` checks against the pinned image's own
+  `hosts --format egress-allow`.
 
 **Client estates** (`usecases/agent-harness-estates.ts`, the only writer of
 `AgentHarnessEstate` and `AgentHarnessEstateSource`; health in the pure
@@ -2000,7 +2193,8 @@ that:
   classify request schemas are `.strict()`, so a `riskTier` in a body is a 400.
 
 **The registration intake** (`usecases/agent-registration-intake.ts`, since
-#3669) turns a `SHADOW_AGENT` finding into a `DRAFT` register row through a
+#3669) turns a `SHADOW_AGENT` finding (or an `UNREGISTERED_IDENTITY` one,
+which registers the same way) into a `DRAFT` register row through a
 provisional entry, in one transaction, at `POST …/admin/agents/intake`. These
 rules are each one careless edit from being undone:
 
@@ -2134,6 +2328,21 @@ wrote nothing. Rules that are easy to undo:
   against A.5.18, CC6.3 (present in both SOC 2 representations since #3369
   completed CC6; a test asserts that presence, having asserted its absence
   before) and ASI03.
+- **A pack may propose WITHDRAWING a spending envelope, and nothing else**
+  (Agent Pay 1.4, owner decisions 2026-11-20). Never a lower limit. The
+  proposal is `AccessReviewAgentSpendingWithdrawal`, a sibling of the grant
+  narrowing with its own one-way triggers, not a column or a kind on it; it
+  records every ground that holds. The planned grounds are re-derived from the
+  pack's stored evidence (`spendingWithdrawalsFor`); "it can no longer pay" is
+  NEVER derived from a scan, whose missing capability is absence: the
+  campaign's reviewer states it (`NO_PAYMENT_ABILITY_CONFIRMED`, alone, with
+  `proposedByUserId`, CHECK-held, and refused in a plan). Accepting under
+  `access_reviews.decide` withdraws the declaration the pack described through
+  `withdrawSpendingAuthorityForRecertificationInTx`, never the public writer
+  and its `admin.agent_registry`, and opens the owner's token task; a
+  re-declaration since is left alone. A pending withdrawal holds the subject's
+  verdict and the close (`WITHDRAWALS_PENDING`), and the agent's owner decides
+  and confirms none of them.
 - **The sample uses the existing keyed sampler** (`selectSample`,
   `sampleSizeFor`), seeded per tenant through `deriveSubkey` and epoch-bound to
   the campaign, at close. The second human may read the pack and is neither the
@@ -2240,6 +2449,36 @@ carries tasks both ways with one pinned peer. Ten rules in it are easy to undo:
   which retains both, cannot cascade into them. Single writers:
   `a2a-messages.ts`, `a2a-peer-kill.ts`, `a2a-peer-credentials.ts`,
   `a2a-signing-key.ts`.
+
+**A process-map proposal** (`propose_process_map`, #5053, two deploys) asks
+for one new map; approval creates it DRAFT, in Document mode, in one
+transaction (`createProcessMapWithGraph`), in the approver's name. Rules that
+are each one careless edit from being undone:
+
+- **One reader and one layout for review and approval.** `readProposedProcessMap`
+  is the only reader of a stored payload and `proposed-map-layout.ts` the only
+  placer, so a map the review surfaces cannot render cannot be approved, and
+  the boxes shown are the boxes created. The layout copies the canvas's
+  constants and is pinned to them by a test reading both files; leave
+  `canvas-auto-layout.ts` a client module.
+- **The agent names no key and no position**: steps are re-minted `n1..nN`,
+  arrows are `e<i+1>` by position, and positions, parents, `dataJson`, edge
+  controls and kinds, mode, status and freeform are refused. Approve-with-edits
+  is refused for the kind (`PROCESS_MAP_PROPOSAL_NOT_EDITABLE`).
+- **The approver also needs `processes.edit`**, asserted after the API-key
+  refusal and before the signature and the claim. Both review surfaces offer
+  Approve only on the server's `viewerMayApprove` (`viewerMayApproveProposal`,
+  the table the usecase asserts); never compute it in a page.
+- **The list is the record; the canvas is a picture.** `ProcessMapProposalPreview`
+  renders every step and arrow as plain text. The read-only canvas under it
+  lives in `components/processes/` (the editor's module boundary) and is
+  loaded with `next/dynamic`, `ssr: false`, behind an error boundary; never
+  import it statically, and never let its failure hide the list. It mounts
+  `TldrawProcessCanvas` with `embedded`, which must not auto-focus: a focused
+  second editor takes the page's keyboard.
+- **The brake `PROCESS_MAP_PROPOSALS_IMPLEMENTED` also withdraws the tool**
+  (`loadableProposeTools`), so setting it back to false stops new rows and
+  approvals while the readers keep reading.
 
 **The inventory view key** (`admin.agent_registry_view`, #3710) is read-only:
 the register list and row, scans and the matrix, `get_discovered_agent`, the
@@ -2506,8 +2745,16 @@ its own calls from everything its agent is granted, propose tools included.
 sets it — `audit-narrative`, `discovered-agent-review`, `posture-review` and
 `access-posture` (#3775, owner decision) — and
 `tests/unit/agentic/flue-read-only-workflows.test.ts` fails, over the
-registry, for one that does not. External read tools stay on the read surface,
-so `access-posture` still reaches the directory.
+registry, for one that does not. External tools ride the READ surface, so
+`readOnly` also withholds every EXTERNAL write — a write-classified external
+tool and every A2A send (`externalConnection.declaresWrite`), also
+`READ_ONLY_WORKFLOW` (#5365) — from every engine, Test runs and Ask runs
+included; withholding only the propose list let a read-only run open a
+proposal, or at AUTOMATIC a journal row sent with no approval. External READ
+tools stay offered, so `access-posture` still reaches the directory. The
+backstop is `RequestContext.readOnlyRun`, set by `offerToolSet` on every
+closure it hands a read-only run: `dispatchWrite` and `dispatchA2aSend` refuse
+it at every rung, before the prior-state read and before any row.
 
 **The audit narrative (#3749)** is model prose about a regulatory record, so it
 is stored only through `usecases/audit-workpaper-narrative.ts`, after
@@ -2882,8 +3129,9 @@ tenant-wide admin key (see the Epic 1 "Role model" paragraph for its
 
 - **The edge admits it to `AI_ADMIN_ADMIN_PATH_PREFIXES` and nowhere else
   under `/admin`** (`src/lib/auth/guard.ts`): `/api/t/:slug/admin/agents`,
-  `/api/t/:slug/admin/mcp/quarantine` (the one agent-key API outside it) and
-  the three agent redirect pages still under `/t/:slug/admin`. Matching is on
+  plus two agent-key APIs outside it — `/api/t/:slug/admin/a2a` (A2A host
+  consumers, #3861) and `/api/t/:slug/admin/mcp/quarantine` — and the three
+  agent redirect pages still under `/t/:slug/admin`. Matching is on
   segment boundaries, never a bare `startsWith`, and a non-canonical path (a
   `%`, a backslash, an empty or dot segment) is refused rather than reasoned
   about. `tests/unit/ai-admin-edge-allowlist.test.ts` pins the list by exact
@@ -2955,7 +3203,11 @@ the guarded call live there, and `eslint.config.mjs` refuses any import of
 tool shape (a `ToolBuilder`) and its guard source prefix; `runGuardedTool` takes
 the prefix with no default, so a new engine names its own audit rows. Flue's
 prefix is `'flue'`, which keeps every guard source byte-identical to what it was
-before the move.
+before the move. The guarded call scans a READ result for injection and every
+result for secrets, but a PROPOSE result only for secrets (#5548): that text is
+Inflect's own (`PROPOSE_RESULT_FIELDS`, pinned by test), and its `"quarantined"`
+key matched the injection rules, so every engine propose call was held for review.
+Never add a field to it that can carry tenant- or model-authored text.
 
 **Every model call is preceded by the kill switch and the caps** (#4196). A kill
 engaged mid-run used to refuse only the tool calls: the model was called again
@@ -2964,6 +3216,25 @@ awaits the run binding's `beforeModelCall` once per model operation, keyed on
 the operation object, because the runtime intercepts every streamed chunk of
 one call with the same object. Do not move the check to the tool boundary or
 the agent render: the tool boundary is too late, and the render cannot await.
+On the Tool Runner the check runs after every model call and after every tool
+call (`execute.ts`, `tools.ts`), so a kill engaged DURING a model call lets that
+call finish and settles the run ABORTED at the check that follows it, with
+nothing sent after it. Observed in production on 2026-11-11: the stop landed
+during a run's last model call, every step reads Done, and the run is Aborted.
+That shape is the check working, not a missed kill.
+
+**An operator's Abort stops every engine, and stays the run's status** (#5366).
+Every engine reads the run row where it reads the kill switch (`isRunAborted`
+in `run-settlement.ts`: after each model and tool call on the Tool Runner,
+before each model call on Flue, between steps on the static driver) and stops
+without settling. `updateRun` never lands a write carrying `status` on an
+ABORTED row, so a late COMPLETED or FAILED is a no-op and the settle helpers
+write no audit row for it. `executeFrom` reports the operator's ABORTED
+whatever the engine returned and REJECTS the decision rows written after the
+abort, telling it from an engine's own ABORTED (a kill, a guard block) by
+`OPERATOR_ABORT_MESSAGE`, which only `abortWorkflowRun` writes. EMPTY_CATALOGUE
+is terminal: the abort refuses it (`isLiveRunStatus`), and its decision rows
+and metric settle as a FAILED run's.
 
 **"Is this a reasoning engine" is `isReasoningEngine(driver)`**
 (`src/lib/agentic/agent-driver.ts`), never a comparison with `'flue'`. It is
@@ -2977,6 +3248,37 @@ a run RECORDS — `WorkflowRun.driver` and the run metrics' `driver` label — i
 `recordedModeOf(driver)`, a `Record<AgentDriver, AgentDriverMode>`, never a
 `'flue' ? 'FLUE' : 'STATIC'` ternary: with a third engine that ternary records
 every run it walks as STATIC (#4270).
+
+**Every hosted engine asks the external-AI transfer gate before its first model
+call** (#5364). `externalResidencyRefusal` (`src/lib/agentic/external-residency-gate.ts`)
+judges the OFFERED set against the tenant's business-data acknowledgement
+(#3872). A refusal fails the whole run with
+`<engine>_external_ai_business_data_unacknowledged`. The Tool Runner did not ask
+until #5364, so it sent an ERP's rows to Anthropic unacknowledged. The
+in-product assistant asks it too (owner decision 2026-11-16): an API key bound
+to an agent is offered that agent's external tools at `/assistant/*`, so the
+turn is judged between the offer and the loop, and a refusal is a 403 (`/ask`)
+or a `refusal` event (stream) with reason
+`EXTERNAL_AI_BUSINESS_DATA_UNACKNOWLEDGED`. Two rules that are easy to undo:
+
+  - **Inside is NAMED; every other route is outside.** The gate lets only
+    `FLUE_PROVIDER_IDS.local` through without an acknowledgement. It used to
+    let through anything that was not Flue's `inflect-external`, so the Tool
+    Runner's route passed whatever id it was given. The Tool Runner's own id is
+    `TOOL_RUNNER_PROVIDER_ID` (`tool-runner/client.ts`), returned by
+    `clientForRun`.
+  - **The driver reads the acknowledgement with the residency, in one read, and
+    hands it down** (`posturesFor` in both drivers). The engine never re-reads
+    it. The conformance suite holds every engine to it
+    (`business-data-transfer-*` in `tests/helpers/driver-conformance.ts`), so a
+    new engine fails its suite until it asks.
+
+**A reasoning run's specification is the definition's WHOLE step list**
+(#5372). `runMessage` takes no `fromSeq`: on a reasoning engine that number is
+a LEDGER position (committed model and tool calls), not a declared step, so
+slicing by it gave a resumed run a partial or empty specification. Do not add a
+resume offset back: nothing records which declared steps a reasoning run has
+covered.
 
 **The scanner finds Agent SDK agents customers run, and code only ever counts
 against them** (Step 3b, #4156). The `code` source recognises `query` /
@@ -3036,10 +3338,14 @@ edit from being undone:
     the profiles naming it; admission asks a third time. Do not price or gate
     from `repositorySkillNames()`: it keeps refused names on purpose, because
     a tenant skill may take none of them.
-    only the APPROVED version in force; a malformed key is refused, never read
-    as a registered workflow key.
-  - **Only the Tool Runner runs a profile** (Step 2c, #4150). `runsProfiles` is
-    a `Record<AgentDriver, boolean>`, true for `tool-runner` alone; a profile's
+  - **`agent-profile:<id>@v<n>` resolves only inside the caller's tenant**
+    (`resolveRunDefinition` in `usecases/agent-profile-runs.ts`), and only to
+    the APPROVED version in force (a Test run's key may also name the
+    SUBMITTED version, below); a malformed key is refused
+    (`PROFILE_KEY_INVALID`), never read as a registered workflow key.
+  - **Only the Tool Runner runs a profile** (Step 2c, #4150). `runsProfiles(driver)`
+    reads a private `Record<AgentDriver, boolean>` (`RUNS_PROFILES` in
+    `src/lib/agentic/agent-profile.ts`), true for `tool-runner` alone; a profile's
     definition asks for that engine, and admission refuses it before the run row
     exists: `PROFILE_NEEDS_REASONING_ENGINE` where the tenant's engine is static
     (or Flue, which a profile does not ask for), `PROFILE_ENGINE_CANNOT_RUN_PROFILES`
@@ -3056,6 +3362,18 @@ edit from being undone:
     context (`TESTER_NOT_A_PERSON` otherwise), and its definition is read-only
     whatever the output kind. The key is what tells the worker it is a Test run,
     so do not drop the suffix from the stored `workflowKey`.
+  - **A profile key names its trigger, and the version decides** (#5367).
+    `resolveRunDefinition` refuses a profile key whose start names no trigger
+    (`PROFILE_TRIGGER_REQUIRED`, before the version is read) and one whose
+    trigger the version's `allowedTriggers` does not hold
+    (`PROFILE_TRIGGER_NOT_ALLOWED`). Each start path passes its own:
+    `startInteractiveRun` `ASK`, the `agent-invoke` dispatcher `AUTOMATION`,
+    `startAgentProfileTestRun` `TEST_RUN`. The generic `POST /agent-runs`, a
+    person or a key, is none of them and passes none, so it starts no profile.
+    The check used to run only when a trigger was named, and only the Test run
+    named one, so a version allowing only `TEST_RUN` ran from an automation
+    rule and from the generic route. A new start path names its trigger; do not
+    default one.
   - **The worker executes what admission PINNED.** `executeQueuedWorkflowRun`
     and resume rebuild a profile run's definition from the run's own
     `profileVersionId` while its instructions hash to `profileInstructionsHash`
@@ -3071,7 +3389,10 @@ edit from being undone:
     opens the same surface to the tenants it names and to no other; the route
     gate reads the URL's slug, the usecases `ctx.tenantSlug`, and a context
     with no slug is never named. Every check goes through
-    `agentProfilesEnabledFor`; do not read either variable anywhere else.
+    `agentProfilesDecisionFor` (or its boolean, `agentProfilesOnFor`) in
+    `src/lib/agentic/agent-switches-policy.ts`, which also reads the
+    organization's choice when the deployment switch is unset; do not decide
+    from either variable anywhere else.
   - **Instructions never grant.** A version's text is scanned at save and at
     approval, and a tool it names that the version does not declare is refused
     (`skill.undeclared_tool`). What a run may call is the version's tools
@@ -3122,6 +3443,14 @@ one careless edit from being undone:
     sub-processor step's diff, not an engine's.
   - **SDK 1.x speaks API version `2026-10-21`**, which refuses `temperature`,
     `top_p` and `top_k`. A unit test pins the version; read it on any bump.
+  - **A model is sent only the parameters its row accepts** (owner decision
+    2026-11-15). `tool-runner/model-capabilities.ts` is a closed `Record` over
+    model families saying whether each takes adaptive thinking, `effort` and
+    `fallbacks`; `lockedParams` reads the row of the model it chose (a resume's
+    STORED model) and sends those three members only where the row says so.
+    An unknown model gets none of them, the set every current model accepts:
+    never "assume the newest". A refused request logs one line with the
+    provider's status, error type and message (truncated), never the body.
 
 **The Tool Runner driver runs agent profiles** (`src/lib/agentic/tool-runner/`,
 built in Step 2b, #4149, and turned on in Step 2c, #4150).
@@ -3179,9 +3508,51 @@ from being undone:
     per-run budget is a budget on what is sent. A change to the line format is
     a change to both.
   - **It is reported as engine-supplied** (`tool-runner/supplied-tools.ts`).
-    `engineSuppliedTools()` in `agent-tool-exposure.ts` merges both engines'
-    lists by name for the Tools tab. A tool the engine adds and the list omits
-    fails `tests/unit/agentic/tool-runner-skills.test.ts`.
+    `engineSuppliedTools()` in `src/app-layer/usecases/agent-tool-exposure.ts`
+    merges both engines' lists by name for the Tools tab. A tool the engine
+    adds and the list omits fails `tests/unit/agentic/tool-runner-skills.test.ts`.
+
+**A profile version may define inline sub-agents, and the Tool Runner runs them
+through Inflect's own `delegate`** (Step 2e, #4594; design "Delegation" in
+`docs/claude-tool-runner-design.md`, owner decisions of 2026-11-13). Rules that
+are each one careless edit from being undone:
+
+  - **Subset only, refused by name.** A sub-agent is a name, instructions, tools,
+    skills and `maxTurns`, with NO description (decision 2). Its tools and skills
+    are subsets of the version's and its turns at most the version's; at most
+    `PROFILE_MAX_SUBAGENTS` (4); a version carries a flow or sub-agents, never
+    both (`SUBAGENTS_WITH_FLOW`). Every rule is a `SUBAGENT_*` 400 at save and
+    again at approval, never a silent drop. Each sub-agent's text is scanned with
+    `declaredTools` set to ITS tools.
+  - **The hash is versioned, never re-based.** `subagentsJson` (encrypted,
+    canonical, `NULL` never `[]`, frozen by the lifecycle trigger) enters
+    `profileContentHash` only under domain `inflect-agent-profile-content/2`, over
+    the STORED string. A version with none takes its old form byte for byte, so
+    no existing hash or run pin moves. Do not fold the sub-agents into the
+    domain-1 form.
+  - **Depth 1 by construction.** `delegate` is offered to the PARENT only, beside
+    its resolved set. A child's tools are `offerToolSet` over the parent's
+    invocation with the sub-agent's names, the parent's `readOnly` and THE
+    PARENT'S LATCH, then intersected by name with the parent's offered set, which
+    never holds an engine-supplied tool. A child request naming `delegate` (or
+    any tool outside its set) is a FAILED step, `SUBAGENT_TOOL_NOT_OFFERED`.
+  - **One loop body.** `runModelLoop` in `tool-runner/execute.ts` is the parent's
+    loop and every child's, with the sub-agent's name as a parameter. Before EVERY
+    model call in both loops it reads the kill switch and the breaker and charges
+    one `STEPS` (decision 4), placed after the turn's tools via
+    `runner.generateToolResponse()`, which the SDK caches. Do not give a child a
+    copy of the loop.
+  - **A sub-agent is not a principal.** Every child call is `runGuardedTool` on
+    the parent's invocation under the guard source
+    `tool-runner-subagent.<name>`; it shares the parent's budget, ledger counter,
+    stops, client and both turn caps (`delegate` counts against both). Every
+    child step carries `WorkflowStep.subagentName`, and the `delegate` marker
+    (Flue's marker shape, never the task or the answer) closes the span.
+  - **`RUNS_SUBAGENTS` is the brake.** A `Record<AgentDriver, boolean>` in
+    `agent-profile.ts`; admission refuses a version with sub-agents on an engine
+    whose entry is false (`PROFILE_SUBAGENTS_NOT_RUNNABLE`), and so do resume and
+    the preview. Only the Tool Runner's is true, flipped in a commit of its own
+    so reverting it is the rollback; Flue's and the static engine's stay false.
 
 **The engine choice has one control: the "Agent engines" section on Admin → AI
 features** (Step 0c, #4181; two owner decisions of 2026-10-25 on #4139).
@@ -3212,7 +3583,8 @@ directly: that reports an organization's choice as off. The Tool Runner's
 
 **A new engine passes the driver conformance suite before it is switched on**
 (Step 0b, `tests/helpers/driver-conformance.ts`). Two engine-agnostic tables
-hold eleven run scenarios and one admission scenario. An engine supplies an
+hold the run scenarios (`CONFORMANCE_SCENARIOS`) and the admission scenario
+(`ADMISSION_SCENARIOS`). An engine supplies an
 adapter, which scripts the model's turns and reads back an observation. The
 scenarios assert only on that observation. The helper reads `adapter.engine`
 for two describe titles and nothing else, and
@@ -3267,6 +3639,69 @@ the pure `src/lib/agentic/connect-wizard.ts` are easy to undo:
   carries the key. It lives only in the sheet's state and goes when the sheet
   unmounts.
 
+**Compaction is Inflect's, and what a run must keep is never summarised**
+(Step 2g, #5531, `src/lib/agentic/tool-runner/compaction.ts`). A long run's
+earlier turns are summarised by Inflect's own model call in `runModelLoop`,
+shaped by `compactionParams()` (the run's own system and tools, `tool_choice:
+none`), never by the SDK's `compactBeforeNextTurn()` or the
+`compact-2026-09-04` beta: its opaque server summary would decide what survives,
+and nothing new is asked of the sub-processor. The request after it is rebuilt
+BY CODE: the opening message verbatim, a run-state block built from the run's
+own ledger (activated skills' pinned text re-hashed, refusals by code, proposals,
+delegations, the guard tally), the summary fenced as model-written data, and the
+last turn verbatim with only its thinking blocks dropped. So the instructions,
+the opening message, the skills, the refusals, the proposals and the pending
+results never pass through the summary; do not "simplify" any of them into it.
+The summary call is a model call like every other (kill switch, breaker and one
+`STEPS` before it; `TOKENS` after; egress and injection scans; a `MODEL_CALL`
+step with `purpose: 'compaction'` and its own Art 12 row), and the ledger keeps
+every original step. A profile version's `compactionThresholdTokens` only
+LOWERS the engine's threshold or turns it off (`0`); a value above the tier is
+refused at save and at approval, and the run takes the lowest anyway.
+
+**A deferred tool call is a proposal the run waits on** (Step 2f, #5530;
+`docs/claude-tool-runner-design.md`, "Deferral to a person"). A call to a propose
+tool the profile version names in `deferredToolNames` PARKS the run at
+`AWAITING_APPROVAL` on a `WorkflowRunDeferral` row; the row, not the status, is
+what tells a deferral apart from a guard flag or a checkpoint. Rules that are
+each one careless edit from being undone:
+
+- **The decision is the proposal queue's, unchanged.** Approve, approve with
+  edits, reject and bulk reject call `settleDeferralForProposal` after they
+  commit, and it is the only thing that continues a parked run: a conditional
+  claim on the deferral, then on the run (#5119's), so two decisions resume it
+  once. `resumeWorkflowRun` refuses a run with a WAITING deferral
+  (`RUN_WAITS_ON_A_PROPOSAL`). No new approval path, no new permission key.
+- **The transcript is Inflect's, encrypted, and cleared.** `transcriptJson` is in
+  the Epic B manifest, byte-faithful (never sanitised or re-serialised: a
+  thinking block's signature binds it), and set to NULL when the row moves to
+  RESUMED or SETTLED, with `transcriptHash` kept. The resume moves the row to
+  RESUMED in the transaction that records the segment's first step
+  (`recordStep`'s `alsoInTx`), so a retry never resends a conversation whose
+  continuation is in the ledger. Nothing is stored at Anthropic.
+- **The resume re-checks, and authority only narrows.** The seal, then the
+  envelope, then the decision from the PROPOSAL ROW; the offer is re-resolved,
+  the stored tool definitions keep their bytes and take their runnables from the
+  new offer by name (`resumedToolsFor`): a withdrawn tool refuses
+  (`TOOL_WITHDRAWN_DURING_WAIT`), a newly granted one is not added. The wall
+  clock starts at `elapsedMsAtPark`, never at the run's start.
+- **Nobody deciding is a FAILED run, never a resumed one.** An expiry settles it
+  `tool_runner_deferral_expired`, a retirement `tool_runner_deferral_agent_retired`
+  (in the cascade), an abort settles the deferral `NOT_RESUMED`, and any
+  settlement that is not a park settles an open row (`settleDeferralsAfterRun`).
+- **Readers before the writer.** `RUNS_DEFERRALS` is a `Record<AgentDriver,
+  boolean>`; admission refuses a version naming deferred tools on an engine whose
+  entry is false (`PROFILE_DEFERRALS_NOT_RUNNABLE`), and the worker treats such a
+  pinned version as unavailable. The parking path and the flag flip shipped in a
+  later deploy than every reader; the flip is its own commit, so reverting it
+  refuses such versions by name rather than running them without the wait.
+- **The park is a stop, and the lowest.** A deferred call that queued its ONE
+  proposal (`DEFERRED_CALL_ONE_ITEM` refuses more, before the funnel) latches
+  `DEFER` after its step is in the ledger, so no request leaves after it, and
+  every other stop outranks it at settlement. A quarantined item waits for
+  nothing. Only the parent parks: a child's binding defers nothing, and
+  compaction never summarises the turn a run parks on (`DEFERRAL_LATCHED`).
+
 ## Testing Conventions
 
 - **Unit tests**: Mock dependencies with `jest.mock()` declared **before** imports. Use the `makeRequestContext(role, overrides)` helper from `tests/helpers/make-context.ts` to construct test contexts.
@@ -3319,9 +3754,8 @@ the pure `src/lib/agentic/connect-wizard.ts` are easy to undo:
       `data-testid` only where neither exists.** In hand-written
       markup, do not sprinkle `data-testid` on an element merely to
       select it — give it a real `id`, or select it by role/label.
-      Measured practice in `tests/e2e` spec files: `#id` locators 304
-      calls, `[data-testid=…]` 101, `getByRole` 85;
-      `getByTestId` is used **zero** times.
+      In `tests/e2e` spec files `#id` and role locators are the norm;
+      `[data-testid=…]` and `getByTestId` are the exception.
     - **`<DataTable>` is the documented exception, because there its
       `data-testid` prop IS the `id` setter.** `DataTableProps` has no
       `id` prop and does not extend `HTMLAttributes`; every render
@@ -3329,17 +3763,16 @@ the pure `src/lib/agentic/connect-wizard.ts` are easy to undo:
       So passing `data-testid="risks-table"` is *how* you create the
       "existing HTML `id`" (`#risks-table`) the rule above tells specs
       to select on — it is not an extra attribute bolted on for tests.
-      Omitting it leaves the table addressable by neither. Ten `#id`
-      selectors across 34 E2E locator calls (`#controls-table`,
+      Omitting it leaves the table addressable by neither. Every
+      `#…-table` selector in the E2E suite (`#controls-table`,
       `#members-table`, `#evidence-table`, `#soa-table`, the
-      `#linked-*-table`s and the `#org-*-table`s) exist
+      `#linked-*-table`s and the `#org-*-table`s among them) exists
       only because that prop was passed. Every list page must pass it,
       on the `<DataTable>` itself or in the `table={{ … }}` config of
       `EntityListPage`; `tests/unit/data-table.test.ts` enforces it and
       `src/components/ui/table/GUIDE.md` shows the canonical call.
-    - **Rendered (RTL) tests are testid-first** — `tests/rendered`
-      calls `getByTestId` 806 times across 124 files (1,087 `*ByTestId`
-      queries across 130 files). A `data-testid`
+    - **Rendered (RTL) tests are testid-first** — `*ByTestId` is the
+      most common query in `tests/rendered`. A `data-testid`
       added because a rendered test needs a stable handle is correct
       and is not covered by the preference above.
     - Scope `#id` / role locators to `getByRole('main')` where a
@@ -3372,8 +3805,8 @@ the pure `src/lib/agentic/connect-wizard.ts` are easy to undo:
 
   It now merges **nine** artifacts, and which nine is load-bearing.
   Coverage is collected by the jobs that already run the suite: the seven
-  `Test` shards (`JEST_SKIP_RATCHETS=1`, 1392 files), `Ratchets`
-  (guards + guardrails + contracts, 661 files) and `Flue`
+  `Test` shards (`JEST_SKIP_RATCHETS=1`), `Ratchets`
+  (guards + guardrails + contracts) and `Flue`
   (`coverage-shard-flue`). Those sets are
   disjoint and exhaustive — together they are the whole suite, which is
   what makes the merged numbers comparable to the old single-matrix ones.
@@ -3653,13 +4086,13 @@ stands for that PR only — not as a precedent.
 
 - **Zod schemas** for all API input validation live in `src/app-layer/schemas/`
   and `src/lib/schemas/`. Both are backend-first but neither directory is
-  client-free — 13 `'use client'` files import values from
+  client-free — `'use client'` files import values from
   `@/app-layer/schemas/*` (`CALENDAR_EVENT_CATEGORIES` in `CalendarClient.tsx`,
   `ENTRA_MAPPABLE_ROLES` in `GroupMappingsSection.tsx`), and the five
   `src/lib/schemas/*-form.ts` files exist precisely to be imported by the
   `_form/useNew*Form.ts` client hooks. What IS backend-only is
   `src/lib/schemas/index.ts`: it is
-  ~1,270 lines of pure API request bodies with ZERO client importers, so the
+  pure API request bodies with ZERO client importers, so the
   long-standing "(shared)" label here was wrong. The split is benign — nothing
   is duplicated across the two — so this is a doc correction, not a refactor
   brief. See `docs/calendar-surface-do-not-touch.md` §5.
@@ -4125,7 +4558,7 @@ Register shortcuts via `useKeyboardShortcut` — never
 ### Epic 58 — Date Pickers
 
 Use `<DatePicker>` for single dates and `<DateRangePicker>` for
-ranges. Use `formatDate` / `formatDateTime` from `@/lib/format-date`
+ranges. Use `formatDate` / `formatDateTime` from `@inflect/ui/lib/format-date`
 for display. Never use `<input type="date">` or raw
 `toLocaleDateString`. See `docs/date-picker.md`.
 
@@ -4173,8 +4606,8 @@ happens. The pending state lives at module scope (NOT in component
 state) so commits survive client-side navigation, mirroring Gmail's
 "undo send" UX.
 
-The wired sites today number 14 — the authority is `SITE_CONTRACTS`
-itself, not this list. They include cross-entity unlink in
+The wired sites are listed in `SITE_CONTRACTS`, which is the
+authority, not this paragraph. They include cross-entity unlink in
 `TraceabilityPanel`, control-evidence and control-requirement unlink on
 the control detail page, task link removal, vendor document removal,
 auditor pack-grant revoke, and BIA dependency removal. The structural

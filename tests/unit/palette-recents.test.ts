@@ -17,7 +17,7 @@ import {
     serializeRecents,
     type RecentItem,
 } from '@/lib/palette/recents';
-import type { SearchHit } from '@/lib/search/types';
+import { SEARCH_TYPE_DEFAULTS, type SearchHit, type SearchHitType } from '@/lib/search/types';
 
 function makeItem(
     id: string,
@@ -155,6 +155,18 @@ describe('loadRecents — defensive load', () => {
             ],
         });
         expect(out.map((r) => r.id)).toEqual(['good']);
+    });
+
+    it('keeps a recent of EVERY searchable kind, not five of them (#5316)', () => {
+        const kinds = Object.keys(SEARCH_TYPE_DEFAULTS) as SearchHitType[];
+        expect(kinds).toEqual(expect.arrayContaining(['asset', 'task', 'test']));
+        for (const type of kinds) {
+            const one = loadRecents({
+                version: 1,
+                items: [makeItem('x', type, { iconKey: SEARCH_TYPE_DEFAULTS[type].iconKey })],
+            });
+            expect(one.map((r) => r.type)).toEqual([type]);
+        }
     });
 
     it('rejects non-tenant-scoped href shapes (must start with /)', () => {

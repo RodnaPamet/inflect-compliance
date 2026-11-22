@@ -278,7 +278,22 @@ const BUDGETS_KB: Record<string, number> = {
     // sign a task off, and staged links show labels instead of raw codes.
     // Raised 654 → 659 by the production group bump (#4342): 653.8 → 654.9
     // KB, from react-window 2.5 and motion 13.5. See the `dashboard` note.
-    'risks': 659,
+    // Raised 659 → 664 by the AI-roadmap integration (#5323, owner decision
+    // 2026-11-12). CI's webpack build, main (3a4bf5818) against #5323
+    // (03d73b73a): risks/[riskId]/page 655.0 → 659.6 KB. Every route grew
+    // 0.6-0.9 KB and this one 3.7 KB more. NOT ATTRIBUTED: the owner chose
+    // to raise without the attribution builds, so what grew is unmeasured.
+    // The source graph of this page reaches only one changed module (a line
+    // in `lib/nav/canonical-parents.ts`), which points at a webpack chunk
+    // regroup (the #4200 shape) rather than new route code, but that is an
+    // inference, not a measurement. 664 is measured + ~4, the convention.
+    // Raised 664 → 668 by the Agent Pay register surfaces (#5782, owner
+    // decision 2026-11-20). The merge-queue build of #5782 on main 13f45e7e0
+    // (#5780, the lucide icon set, already merged) measured risks/[riskId]/page
+    // at 664.2 KB. NOT ATTRIBUTED, by the owner's choice: this page's source
+    // graph reaches none of #5782's changed modules, which again points at a
+    // webpack chunk regroup rather than new route code. 668 is measured + ~4.
+    'risks': 668,
     // Raised 645 → 650 in the i18n-kept-primitives PR (#3004): that route had
     // grown to 643.8 KB on main (ff71f42ed), and localising the shared
     // primitives (useTranslations + key lookups in ~20 components, all on this
@@ -342,7 +357,14 @@ const BUDGETS_KB: Record<string, number> = {
     // react-hook-form. Measured and attributed in the `dashboard` note.
     'controls': 675,
     // Catch-all for any other tenant page.
-    'tenant-default': 682,
+    //
+    // Raised 682 → 688 by the AI-roadmap integration (#5323, owner decision
+    // 2026-11-12). CI's webpack build, main (3a4bf5818) against #5323
+    // (03d73b73a): policies/[policyId]/page 680.2 → 683.4 KB, +3.2, against
+    // the 0.6-0.9 KB every route grew. NOT ATTRIBUTED, by the owner's choice;
+    // see the `risks` note for the same build and the same inference. 688 is
+    // measured + ~4, the convention.
+    'tenant-default': 688,
     // Auth / public / org pages.
     //
     // RAISED 575 -> 580 on 2026-10-23, and this entry is the cautionary one.

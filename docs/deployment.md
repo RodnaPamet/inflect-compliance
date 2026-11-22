@@ -63,6 +63,9 @@ curl http://localhost:3000/api/health | jq .
 | `NOTIFICATIONS_TZ` | Optional (default `Europe/London`) | IANA timezone (DST-aware) for the daily task-due deadline notification cron. Sets **both** the 08:00 firing time **and** the "due today / tomorrow / in a week" calendar-day classification — one zone, so a task due near local midnight is bucketed by the local calendar day rather than the UTC one. Must be a valid IANA zone name (`src/env.ts` rejects an invalid zone at startup). |
 | `ANTHROPIC_WORKSPACE_ID` | Optional | Only for an **organisation-level** `ANTHROPIC_API_KEY` — a key created inside a workspace needs nothing here. Anthropic refuses an organisation-level key's requests with HTTP 400 unless each names its workspace, so when this is set (a `wrkspc_…` identifier, not a secret) every request to the Anthropic API — the posture summary, AI risk suggestions and the Flue runtime's external provider — carries `anthropic-workspace-id: <id>`; unset, none does. It reaches the `app` and `worker` containers the way `ANTHROPIC_API_KEY` does: through the service's `env_file:` (`/opt/inflect/.env.prod` on the production VM). No Compose file lists either key under `environment:`, and none should — a service-level `environment:` entry overrides the env file, so an empty interpolation there would blank the value the container was given. |
 | `AGENT_FLUE_MODEL` | Optional (default `claude-sonnet-5-5`) | The model the Flue agent runtime's external provider names, and the default model `npm run skills:evaluate` records skill evaluations against. Its own variable on purpose: the compliance-posture summary and the AI risk suggestions keep `ANTHROPIC_MODEL` (default `claude-haiku-4-5`), and setting one never moves the other. The credential and workspace are still the shared `ANTHROPIC_API_KEY` and `ANTHROPIC_WORKSPACE_ID`. A `LOCAL_ONLY` tenant's run never reads it; its model is `AI_LOCAL_MODEL`. It reaches the `app` and `worker` containers through the service's `env_file:`, like `ANTHROPIC_API_KEY`. |
+| `AGENT_FLUE_WORKER_MODEL` | Optional (unset) | The WORKER role's model (D-L3-1): the model a Flue run's subagents run on, on the same external provider, key and workspace as `AGENT_FLUE_MODEL`. Registered beside it at boot, never instead of it. Unset, blank or equal to `AGENT_FLUE_MODEL`, subagents run on the run's own model, which is the behaviour before the variable existed; each run's opening audit entry records both models and whether the worker's was configured or a fallback. A `LOCAL_ONLY` tenant's run never reads it; both its roles use `AI_LOCAL_MODEL` or are refused. |
+| `AUTOMATION_WEB_EVENTS_ENABLED` | Optional (unset = off) | Whether automation events emitted in the **web** process (a task, risk or control created through the UI or the API) reach the job queue and fire automation rules. Off by default; see "Automation rules from web events" below before turning it on. `1` or `true` turns it on; any other value is off. **On in production** since 2026-11-14 (owner decision): `deploy/docker-compose.prod.yml` sets it to `"1"` in the `app` service's `environment:`, which overrides any value in `.env.prod`. |
+| `EVALS_CARD_HIDDEN_ORG_SLUGS` | Optional (unset) | The opt-out list for the read-only **Evaluations** card on `/org/<slug>/settings`. Every organization's admins (owner or admin) see the card by default, a newly created organization included; comma-separated organization slugs listed here do not. Unset or empty hides it nowhere. The card describes the garak and Inspect CI nightlies (`garak.yml`, `agent-evals.yml`) and where their repository variables `GARAK_ENABLED` / `AGENT_EVALS_ENABLED` are set; it is static content, reads no live state and calls nothing, so this opt-out list is all there is to configure. Not a sub-processor. |
 
 ## Docker Compose (Self-hosted / VPS)
 
@@ -177,6 +180,58 @@ How it is wired:
 > swaps the *image* only; it never applies Compose structure changes. Structure
 > reaches the VM through `deploy/apply.sh` — see the next section.
 
+### Automation rules from web events (`AUTOMATION_WEB_EVENTS_ENABLED`)
+
+An automation rule fires when an event it is triggered by is emitted and
+dispatched to the queue. Events come from two processes. The **worker** emits
+them from jobs and scheduled sweeps, and those have always fired. The **web**
+process emits them from requests: a task, risk or control created through the
+UI or the API. Until #5541, **no web event ever reached the queue.** Next.js
+loaded the code that connects the automation bus to BullMQ and the route
+handlers as separate module instances, so every route emitted into a bus that
+discarded the event. No rule ever fired from a web event, in production
+included.
+
+#5541 fixed the bus and put the fix behind `AUTOMATION_WEB_EVENTS_ENABLED`, off
+by default (owner decision, 2026-11-13). **It is on in production** (owner
+decision, 2026-11-14), set in the repo-canonical compose file, as below.
+
+- **Off** (unset, or any value but `1` / `true`): web events are not
+  dispatched, as before. The app logs `automation-bus.web_events_held` once per
+  process, at INFO, when it first holds one back.
+- **On** (`1` or `true`): web events are dispatched. **Every ENABLED rule wakes
+  for new web events at once**: its notifications, webhooks, task creations and
+  agent invocations start acting. Nothing is replayed: an event emitted while
+  the switch was off is gone, and only events emitted after the app restarts
+  with the switch on are dispatched.
+- **The worker never reads it.** Worker-emitted events fire whatever it says.
+
+It was off because turning it on changes what every tenant's enabled rules do,
+and nobody had seen those rules act on web events before. In production it is
+set in `deploy/docker-compose.prod.yml`, on the `app` service's `environment:`
+(`AUTOMATION_WEB_EVENTS_ENABLED: "1"`), not in `/opt/inflect/.env.prod`: it is
+a non-secret switch, so it belongs in the repo-canonical file, and an
+`environment:` entry overrides whatever `env_file:` carries, so a line in
+`.env.prod` no longer decides it. It is set on `app` only; the worker never
+reads it. It was turned on after these steps, which are also the steps for any
+other deployment:
+
+1. Run the `VM check` workflow with the `automation-rules` check. It counts the
+   ENABLED rules, per trigger event and per action type, and the tenants that
+   hold one. On 2026-11-14 (run 43596452819) it found 0 enabled rules across 0
+   tenants, so turning the switch on woke nothing; rules tenants create from
+   then on fire from web events.
+2. Decide, from those counts, whether the rules that would wake should.
+3. Set the switch in the `app` service's `environment:` in the compose file,
+   through a pull request (for production, `deploy/docker-compose.prod.yml`).
+4. Apply (`VM apply`, action `preflight`, then `apply`), which recreates the
+   app with the new environment. Look for `automation-bus.dispatcher_installed`
+   with `webEventsEnabled: true` in the app's log.
+
+To turn it off again, remove the line from the compose file in a pull request,
+merge, and apply (`preflight`, then `apply`); the next web event is held again. The switch takes effect at the
+next event; executions that have already been queued run to completion.
+
 ---
 
 ## The production VM's Compose file is repo-canonical
@@ -197,7 +252,7 @@ a file that had never run.
 
 | | |
 | --- | --- |
-| `deploy/apply.sh` | Pushes the canonical set to the VM. Preflights first and stops; `CONFIRM=1` applies. `DRY_RUN=1` validates the repo file locally and contacts no VM at all (usable in CI). `HOST_CONFIG_ONLY=1 CONFIRM=1` pushes only the host config set and reloads its service — it recreates no container, so it needs no service window. |
+| `deploy/apply.sh` | Pushes the canonical set to the VM. Preflights first and stops; `CONFIRM=1` applies. `DRY_RUN=1` validates the repo file locally and contacts no VM at all (usable in CI). `HOST_CONFIG_ONLY=1 CONFIRM=1` pushes only the host config set and reloads its service — it recreates no container, so it needs no service window. `ROLLBACK=1` names the newest compose backup whose content differs from the live file (an apply that changes nothing still backs it up) and validates it; with `CONFIRM=1` it restores it, runs `up -d` and health-verifies. `APPLY_PUBLIC_LOG=1` is for a run whose output is a public log (the `VM apply` workflow): what a tool on the VM prints is reduced to shape. |
 | `deploy/check-drift.sh` | Compares repo against VM by sha256. Exit 0 in sync, 1 drift in a file `apply.sh` can push, 2 the VM was unreachable (UNKNOWN — never read as "no drift"), 3 only an `UNRECONCILED` file differs — today just the Caddyfile. |
 
 Run `check-drift.sh` on a weekly cadence so a hand-edit on the VM surfaces in
@@ -242,7 +297,19 @@ compose project is pushed from a second array, `HOST_CONFIG_SET`:
 
 ```
 deploy/ops-agent-config.yaml    → /etc/google-cloud-ops-agent/config.yaml
+deploy/capacity/recorder/inflect-capacity-record.sh
+                                → /usr/local/lib/inflect-capacity/inflect-capacity-record.sh
+deploy/capacity/recorder/inflect-capacity-record.service
+                                → /etc/systemd/system/inflect-capacity-record.service
+deploy/capacity/recorder/inflect-capacity-record.timer
+                                → /etc/systemd/system/inflect-capacity-record.timer
 ```
+
+The set has two owners, decided by each file's remote path
+(`host_config_owner` in `apply.sh`): the ops agent, and the capacity recorder
+(see "The capacity recorder" below). A path with no owner is refused in
+preflight. Each owner brings its own validation and activation, and every
+owner is activated on every host-config apply, whichever file changed.
 
 That file is what ships the app container's logs to Cloud Logging. Until it
 was versioned it lived **only on the VM** — the last piece of production config
@@ -257,8 +324,8 @@ array rather than a fourth row of the first:
 | | compose set | host config set |
 | --- | --- | --- |
 | remote path | basename under `/opt/inflect` | absolute, outside it |
-| activation | `docker compose up -d` | `systemctl restart <unit>` |
-| validation | `docker compose config -q` | the service's own engine parses it |
+| activation | `docker compose up -d` | `systemctl restart <unit>` (ops agent); `daemon-reload`, `enable --now` the timer and one pass (recorder) |
+| validation | `docker compose config -q` | the service's own engine parses it (ops agent); `bash -n`, `systemd-analyze verify` and one trial pass into a throwaway directory (recorder) |
 | service window | yes — a 502 on `app` | **none**; no container is touched |
 
 The last row is why `HOST_CONFIG_ONLY=1 CONFIRM=1 deploy/apply.sh` exists. Were
@@ -276,6 +343,61 @@ compiles logging into `otel.yaml`, not into fluent-bit). And
 `apply.sh` pushes is something `check-drift.sh` watches, in both directions: a
 file pushed but unwatched drifts silently, and a file watched but unpushed is a
 standing warning nobody can action.
+
+### The capacity recorder
+
+Capacity budget step C1b sized `app` and `worker` from their memory peaks
+across the 02:00–05:30 UTC nightly chain and the 00:15–01:45 UTC parser window
+(`VM capacity` history run 43566712099, 2026-11-14), and tightening the worker
+further waits for history that holds a Sunday and a month start. A `VM
+capacity` snapshot cannot give those peaks: Watchtower recreates both containers on
+every merge to main, which resets their cgroup `memory.peak`, and a snapshot
+runs only when the owner approves it, which is never at night. So a timer on
+the VM records them (owner decision 2026-11-13).
+
+`inflect-capacity-record.timer` starts `inflect-capacity-record.service` every
+10 minutes on the clock. Each pass appends one tab-separated row per running
+container to `/var/lib/inflect-capacity/capacity-<UTC day>.tsv`: the time,
+the container's name and `StartedAt` (so a restart is visible), and the cgroup
+v2 files the snapshot reads — `memory.current`, `memory.peak`, `anon` and
+`file` from `memory.stat`, and `usage_usec` from `cpu.stat`. Names and
+numbers only: two docker calls per pass, `docker ps` and one `docker inspect`,
+each naming the fields it prints; nothing from a container's environment or
+command line, and nothing that touches a container. Docker down means a pass
+records nothing and exits 0.
+
+It cannot fill the disk. It keeps today and the eight days before it, by the
+date in the file name, and refuses to write when the day's file is 4 MiB, when
+the directory is 40 MiB, or when the filesystem has under 1 GiB free. A day is
+about 0.3 MB at today's container count. The unit runs at `Nice=10`, idle I/O,
+`CPUQuota=20%`, `MemoryMax=64M` and a 60-second timeout, with
+`NoNewPrivileges`, `ProtectSystem=full`, `ProtectHome` and a private `/tmp`;
+its only write is its systemd state directory (root, 0700).
+
+**Installing it** is the host config path: the `VM apply` action
+`host-config-preflight`, then `host-config-apply`. The preflight validates the
+three files and runs the staged script once against the VM's real cgroups,
+into a throwaway directory, and refuses if that pass writes no row — the cgroup
+layout is a fact about the host, and a recorder that cannot find it would
+write nothing every ten minutes without saying so. The apply pushes the files,
+enables the timer, runs one pass and checks for a row. `check-drift.sh` watches
+the three files.
+
+**Reading it** is `VM capacity` with `mode: history` and `hours` (1–192,
+default 24), which runs `deploy/capacity/history.sh` on the VM. It prints the
+window's coverage (first and last row, passes recorded against passes that
+fit, and every run of missed passes, so a gap reads as a gap and never as a
+quiet night), then per container the peak `memory.current`, the highest
+`memory.peak`, peak anonymous memory, restarts seen and average and peak
+10-minute CPU in cores, then the same memory figures for each day's parser and
+nightly windows with whether `memory.peak` rose inside the window. It reads the
+day files only and calls no docker.
+
+**Removing it** is the `VM apply` action `retire-capacity-recorder`: it stops
+and disables the timer, removes the unit files, the script and the recorded
+rows, and reloads systemd. Then revert its three `HOST_CONFIG_SET` and
+`APPLIABLE` entries, or the next host-config apply reinstalls it and
+`check-drift.sh` reports the files as absent.
 
 ### Interpolation scope is not `env_file`, and the difference bites
 
@@ -352,12 +474,254 @@ sources, so the service passed every check short of actually starting it.
 Enabling pipelock means satisfying the preconditions listed in that file's
 header and adding a second `-f` flag.
 
+**Pipelock reads `/opt/inflect/.env.pipelock`, never `.env.prod`** (#5308,
+owner decision 2026-11-14). `env_file:` hands a container every variable in the
+file, and `.env.prod` holds `DATA_ENCRYPTION_KEY`, the database and Redis
+credentials and `AUTH_SECRET`; loading it would put the whole key hierarchy
+into a third-party image's environment. The operator step before enabling:
+
+1. Create the file root-owned, mode 0600:
+   `sudo install -m 0600 -o root -g root /dev/null /opt/inflect/.env.pipelock`.
+2. Fill it from `deploy/.env.pipelock.example`: the upstream MCP target and the
+   API key pipelock posts receipts with, and nothing else. Several variable
+   names in that template are marked `UNCONFIRMED__`: nothing in this
+   repository says what the pinned release calls them, so confirm each against
+   that release's documentation before enabling. Never start the file as a copy
+   of `.env.prod`.
+3. The receipt route, `POST /api/t/<slug>/agent-receipts`, maps to no API-key
+   scope, so only a key with full access (`*`) reaches it today. Mapping it to a
+   scope is an open question; settle it before minting a `*` key for a
+   third-party daemon.
+
+`deploy/apply.sh` refuses to act on the overlay (exit 2) while the file is
+absent from the VM. It reads presence only, never the file. The overlay is in
+play only when `apply.sh` is pointed at it (`COMPOSE_BASENAME=docker-compose.pipelock.yml`
+with `I_KNOW_THIS_IS_NOT_THE_CANONICAL_COMPOSE=1`); the canonical set never
+includes it. `deploy/check-drift.sh` reports `.env.pipelock` as a credential
+whenever it is readable beyond root, by its name and whatever it holds, as it
+does `.env`, `.env.prod` and `.env.scanner`; the template is public.
+`tests/guards/deploy-compose-canonical.test.ts` fails if the overlay names
+`.env.prod` or a `DATA_ENCRYPTION_KEY` variable again.
+
+### The other overlays, and what is not an overlay any more
+
+Two more opt-in overlays add services to the same Compose project on the VM.
+Neither is in the canonical set: `apply.sh` does not push them and
+`check-drift.sh` does not check them.
+
+| overlay | services | how it reaches the VM |
+| --- | --- | --- |
+| `deploy/docker-compose.harness-scanner.yml` | `harness-scanner`, `harness-egress` | the `Scanner VM` workflow's `configure` action copies it; `start` runs it |
+| `deploy/docker-compose.legacy-mcp-proving.yml` | `legacy-mcp-proving` | the `VM apply` workflow's `recreate-legacy-mcp-proving` action validates, installs and recreates it (or by hand: copy it, then `up -d legacy-mcp-proving` with both `-f` files) |
+
+The OrangeHRM lab overlay (`docker-compose.orangehrm-lab.yml`: `orangehrm`,
+`orangehrm-db`, `orangehrm-mcp`) was **retired by owner decision on
+2026-11-12** and removed from the repo-canonical set, with its two Caddy vhosts.
+Removing it from the running VM is the operator runbook's steps 1–2; until they
+run, the three containers and both vhosts keep serving there (the `VM check`
+workflow's `containers` check shows which). The repository no longer carries
+the overlay; the adapter's source stays in
+`deploy/orangehrm-mcp/` for a non-production instance. The operator runbook,
+including how to bring it back, is in
+[`implementation-notes/2026-11-12-capacity-c1.md`](implementation-notes/2026-11-12-capacity-c1.md).
+
+A Caddyfile push that stops serving a hostname is refused unless the hostname
+is named in `CADDY_RETIRE_HOSTS` (space-separated, exact names). A lost
+hostname the list does not name is still refused.
+
+### Every service declares a memory limit and a CPU cap
+
+Every service in the canonical file and in the two overlays above declares
+`mem_limit` and `cpus` — the service-level keys plain `docker compose` honours,
+not `deploy.resources`, which is for swarm. The memory limits together stay at
+or under 14.5 GB (host memory minus 1.5 GB), and the batch-shaped services
+(`clamav`, `worker`, `harness-scanner`) are capped at one CPU with half the CPU
+weight, so the request path keeps a core. `tests/guards/deploy-compose-canonical.test.ts`
+holds all of it. The figures, their basis and the risk of an out-of-memory kill
+are in [`implementation-notes/2026-11-12-capacity-c1.md`](implementation-notes/2026-11-12-capacity-c1.md);
+the `app`, `worker` and scanner limits were re-sized from 24 hours of the
+capacity recorder's history, the nightly jobs included, in
+[`implementation-notes/2026-11-14-capacity-c1b.md`](implementation-notes/2026-11-14-capacity-c1b.md). The `VM capacity` workflow (below) prints each container's
+configured limit, its peak memory and its out-of-memory kills.
+
+`app` and `worker` also state their V8 heap ceiling
+(`NODE_OPTIONS: "--max-old-space-size=768"` under a 1024m limit), because a memory limit moves
+Node's default heap ceiling to about half the limit. A heap overrun is then a
+restart with exit code 134 and `Reached heap limit` in the log, which no
+out-of-memory counter records. The guard holds the heap between half and three
+quarters of `mem_limit`, so the two move together.
+
+A limit change is a structural change: it reaches the VM through
+`CONFIRM=1 deploy/apply.sh` for the canonical file, and through each overlay's
+own path for the overlays. A container keeps the limits it was created with
+until it is recreated.
+
+### `tei-embed`: the in-deployment embedding service
+
+`tei-embed` is Hugging Face Text Embeddings Inference on CPU, serving
+`intfloat/multilingual-e5-small` (384 dimensions), the embedder D-L4-3 chose,
+as the backend of the embedding seam in `src/lib/ai/embeddings/` (Retriever
+Phase 1.1). The production VM runs **a patched copy of the upstream image,
+never the upstream image itself** (owner decision, 2026-11-15; D-L4-11 in
+`docs/ai-architecture-roadmap.md`).
+
+**The image.** `deploy/tei-embed/Dockerfile` is the upstream CPU release by tag
+and digest (`text-embeddings-inference:cpu-1.9.4@sha256:2538ea1c…c78d`, the one
+the D-L4-3 benchmark ran) plus `apt-get update && apt-get -y upgrade` and a
+cleaned apt cache, and nothing else: no entrypoint, environment or file of
+ours. Two workflows build it, with the same smoke test
+(`deploy/tei-embed/smoke.sh`: the production limits and hardening, the pinned
+model fetched, one embed answered with 384 dimensions) and the same blocking
+Trivy gate (CRITICAL,HIGH, fixed only, `.trivyignore`):
+
+| | `ci.yml` → `TEI image` | `tei-embed-image.yml` → `TEI image` |
+| --- | --- | --- |
+| Runs | on every pull request and push that touches `deploy/tei-embed/`, the publish workflow, `.trivyignore` or `ci.yml` | every Monday at 07:23 UTC, and on dispatch, from `main` only |
+| Publishes | nothing | `ghcr.io/rodnapamet/tei-embed:<upstream>-<date>-<commit>`, after the gate, and prints the digest to pin |
+| Also reports | — | a newer upstream `cpu-x.y.z` release, if any, read from every page of GHCR's tag list and compared by version (`deploy/tei-embed/newer-upstream.sh`); the pinned image's findings under the same gate |
+
+Dependabot proposes a new upstream release as a change to the `FROM` line, on
+Mondays.
+
+**The service and its pin.** The service is in the canonical Compose file,
+pinned to a digest the publish workflow printed, as the scanner overlay pins
+its image (Retriever 1.1b: run 43715894440 of 2026-11-15, tag
+`cpu-1.9.4-20261115-046ef5cc8`, after its smoke test and Trivy gate passed).
+The pin moves by pull request, never by a tag. Its definition:
+
+| | |
+| --- | --- |
+| Image | `ghcr.io/rodnapamet/tei-embed@sha256:90f7be794f9451e84381b385ad1d4c16883035686dfa658b1d1ccb3c7ed53b55` |
+| Model | `--model-id intfloat/multilingual-e5-small --revision 614241f622f53c4eeff9890bdc4f31cfecc418b3` |
+| Weights | fetched from the Hugging Face Hub on the first start into the `tei-embed-data` volume (465 MiB: `onnx/model.onnx`, the tokenizer and configs), read from the volume on every later start, with no network needed |
+| Network | the project's default network, `http://tei-embed:8080`; no published port, no Caddy site |
+| Limits | `mem_limit: 2560m`, `cpus: 1.0`, `cpu_shares: 512` (batch-shaped) |
+| Hardening | read-only root, `/tmp` on tmpfs, every capability dropped, `no-new-privileges`, `pids_limit: 256` |
+| Secrets | none: no `env_file`, no `environment`, nothing interpolated |
+| Updates | not Watchtower's |
+
+`tests/guards/tei-embed-image.test.ts` refuses the upstream image in any
+deploy Compose file and a `tei-embed` service that runs anything but
+`ghcr.io/rodnapamet/tei-embed` by digest.
+
+**Reaching the VM** is like any structural change, in this order:
+
+1. `VM apply` → `preflight`, approved by the owner in `production`: the staged
+   file's diff and `up -d --dry-run`, which should create `tei-embed` and its
+   `tei-embed-data` volume and leave every other container as it is.
+2. `VM apply` → `apply` (or `CONFIRM=1 deploy/apply.sh` from a signed-in
+   session): preflight again, the backup, `up -d`, the health checks.
+3. `VM check` → `containers`: `tei-embed` running and healthy, with its
+   2,560 MiB limit.
+4. After a day, `VM capacity` → history: the recorder's peak for `tei-embed`
+   on the VM, which is what the limit is re-sized from.
+
+The image is a public package (`ghcr.io/rodnapamet/tei-embed`; an anonymous
+pull of the digest answers 200), so the VM needs no registry login for it.
+The first start needs outbound HTTPS to `huggingface.co` and its download host
+for about 465 MiB of weights; until it has them the healthcheck's 300 s start
+period covers the fetch.
+
+**Running it does not switch anything on.** The app dials it only while
+`.env.prod` sets all of:
+
+```
+AI_EMBED_LOCAL_BASE_URL=http://tei-embed:8080
+AI_EMBED_LOCAL_MODEL=intfloat/multilingual-e5-small
+AI_EMBED_LOCAL_DIMENSIONS=384
+AI_EMBED_LOCAL_QUERY_PREFIX="query: "
+AI_EMBED_LOCAL_PASSAGE_PREFIX="passage: "
+```
+
+With them unset, the seam's factory refuses by name and nothing calls the
+service. `AI_EMBED_LOCAL_MODEL` must equal `--model-id` exactly: the client
+refuses an answer whose `model` field names another model. The base URL is
+operator configuration, never tenant-writable, and the client dials only
+addresses inside the deployment (`src/lib/ai/in-deployment-service.ts`).
+
+**Removing it** is not a revert alone: `up -d` does not remove a service that
+has left the file. Dispatch `VM apply` → `retire-tei-embed`, then revert: the
+action stops and removes the one `tei-embed` container (`docker compose rm
+--stop --force tei-embed`, or, if the live file no longer defines the service,
+`docker rm --force` of the container carrying the project's and the service's
+compose labels), keeps the `inflect_tei-embed-data` volume (the weights), and
+fails unless no `tei-embed` container is left; with none present it changes
+nothing. Then merge the revert and run `VM apply` → `apply`. Never `up -d
+--remove-orphans`: the scanner and proving-server overlays run in the same
+Compose project, so with only the canonical file named it removes their
+containers too. `sudo docker volume rm inflect_tei-embed-data`, from a
+signed-in session, removes the weights as well.
+
+The measurements behind the limit and the record of the pins are in
+[`implementation-notes/2026-11-15-retriever-tei-embed.md`](implementation-notes/2026-11-15-retriever-tei-embed.md).
+
+### `postgres`: the image carries pgvector
+
+The `postgres` service runs `ghcr.io/rodnapamet/postgres-pgvector:16-alpine`:
+the official `postgres:16-alpine` plus the pgvector extension, compiled at a
+pinned tag and commit (`deploy/postgres/Dockerfile`; vector store Phase 1.1–1.2,
+owner decisions D-L4-1 and D-L4-8). Every Postgres in the repository runs the
+same image: the root Compose files and every workflow's service container too
+(`tests/guards/postgres-pgvector-image.test.ts`).
+
+**Same data directory.** The base is the same Alpine image, so the same musl C
+library and the same collation: the existing `pgdata` volume mounts unchanged,
+no `REINDEX` and no dump and restore. The Debian `pgvector/pgvector` image is
+the fallback only with a planned reindex window, because glibc orders text
+differently.
+
+**Patches.** The image is referenced by its moving line tag, as
+`postgres:16-alpine` was (the owner's 2026-10-10 rule, kept by D-L4-8).
+`.github/workflows/postgres-pgvector-image.yml` republishes it from `main`
+every Wednesday, on any day the upstream `16-alpine` digest moves, and on
+dispatch, after the same smoke test and Trivy gate as ci.yml's `Postgres
+image` job. Each build also gets an immutable tag,
+`16-alpine-pgvector<version>-<yyyymmdd>-<commit>`, which the run summary
+prints. Watchtower does not manage `postgres`, so a new build reaches the VM
+only on the next `VM apply` → `apply` (or `CONFIRM=1 deploy/apply.sh`).
+
+**Reaching the VM.** The first apply after the image change **recreates the
+`postgres` container**: a few seconds of database downtime while the new
+container starts on the same volume, with PgBouncer, `app` and `worker`
+reconnecting. Order:
+
+1. `VM apply` → `preflight`: the diff shows only the `postgres` image line
+   (and its comment), and `up -d --dry-run` recreates `postgres` alone.
+2. `VM apply` → `apply`: the backup, `up -d`, the health checks.
+3. `VM check` → `containers`: `postgres` running and healthy.
+
+The extension is created by the migration that first needs it,
+`20261115190000_knowledge_vector_store`, not by the image. pgvector is not a
+`trusted` extension, so that migration needs `prisma migrate deploy` (the
+`app` entrypoint, over `DIRECT_DATABASE_URL`, else `DATABASE_URL`) to connect
+as a superuser. The only login role this file configures is `postgres`, the
+image's superuser; if the VM's `.env.prod` names another role, run
+`CREATE EXTENSION IF NOT EXISTS vector;` once as `postgres` before the apply
+that carries the migration, and its own statement is then a no-op. Check
+which role the URL names before that apply; the repository cannot see it.
+
+**Rolling back.** Point the line tag at the previous build
+(`docker buildx imagetools create -t ghcr.io/rodnapamet/postgres-pgvector:16-alpine
+ghcr.io/rodnapamet/postgres-pgvector:<previous build tag>`) and apply, or
+revert the reference to `postgres:16-alpine` and apply. Either keeps the
+volume. Once a migration has run `CREATE EXTENSION vector`, the official image
+can still start on the volume, but any query touching a `vector` column fails
+until an image with the extension returns.
+
 ### `deploy/.env.prod.example` describes a different deployment
 
 That template describes the Epic OI-1 AWS model — Secrets Manager, RDS,
 ElastiCache, resolved by `scripts/bootstrap-env-from-secrets.sh`. The GCP VM
 does not use any of it; its secrets live in the two plaintext host files above.
 Read the template as documentation of the AWS path, not of this host.
+
+The VM nevertheless keeps a copy of it at `/opt/inflect/.env.prod.example`.
+`check-drift.sh` treats that copy as public only while it is byte-identical to
+the repository's, because it carries credential-shaped placeholders. So a change
+to the template (its `RATE_LIMIT_MODE` became `memory` in #5308, `redis` being
+a value the env schema refuses) makes the VM copy read as an exposed credential
+until it is replaced. The `VM apply` action `refresh-env-prod-example` replaces
+it with the repository's copy, keeping the previous one root-only.
 
 ---
 
@@ -605,8 +969,8 @@ runs in the `production` GitHub environment, whose reviewer approves every run.
 | Workflow | What it does |
 | --- | --- |
 | `Scanner VM` (`scanner-vm.yml`) | Configures, checks and starts the harness scanner (`deploy/harness-scanner/README.md`). |
-| `VM capacity` (`vm-capacity.yml`) | Prints memory, CPU and disk per container (`deploy/capacity/`). |
-| `VM check` (`vm-check.yml`) | Runs one check from a fixed read-only list (`deploy/vm-check/remote.sh`): `containers`, `library-sync`, `log-errors`, `access-review-dates`, `bcrypt`. |
+| `VM capacity` (`vm-capacity.yml`) | `mode: snapshot` prints memory, CPU and disk per container now; `mode: history` prints what the capacity recorder wrote over the last `hours` (`deploy/capacity/`). |
+| `VM check` (`vm-check.yml`) | Runs one check from a fixed read-only list (`deploy/vm-check/remote.sh`): `containers`, `library-sync`, `log-errors`, `access-review-dates`, `bcrypt`, `automation-rules`, `tei-embed-timing`, `migrate-role`. |
 
 `VM check` is how a Claude Code session looks at production without holding a
 credential: the session dispatches it, the reviewer approves, and the session
@@ -615,6 +979,156 @@ a choice rather than a command, and a new check is a pull request. The
 repository is public, and so are the runs' logs: every check prints names,
 states, versions and counts, never a log line, a database row or a credential.
 `tests/guards/vm-check-workflow.test.ts` holds these properties.
+
+`tei-embed-timing` is the one check that sends a load, and it is how Retriever
+Phase 0.5 measures the embedder on this VM. It `docker exec`s the image's own
+curl inside the running `tei-embed` container against its loopback port, so it
+starts, joins and publishes nothing, and it refuses to send anything unless the
+container's healthcheck reads `healthy`. The text is generated by the script
+from a fixed word list, never read from the stack: 20 calls of one 20-token
+query (`query: ` prefix), then three runs each of 8, 16, 32 and 64 passages of
+512 tokens (`passage: ` prefix; the passages are longer and `--auto-truncate`
+cuts them), one request at a time, each cut at 60 s. It prints the query's
+min/p50/p95/max, each batch size's min/median/p95/max, a line per batch size
+saying whether its slowest run is within the seam's 15 s deadline
+(`TEI_DEADLINE_MS`), and the container's cgroup before and after: `memory.current`,
+`memory.peak` (since the container started, so a rise means the load set it),
+anon and file memory, OOM kills, and the CPU used and throttled during the load.
+No response body is printed; `/tokenize`'s answer is only counted. The load is
+bounded: a batch size that fails or times out stops the larger ones, no request
+starts after 480 s, and a run normally takes a few minutes. The container is
+capped at one core at half CPU weight (`cpus: 1.0`, `cpu_shares: 512`), so while
+the batches run they compete with the app and worker for that core: run it at a
+quiet hour, and not twice in a row.
+
+`migrate-role` says which database role `prisma migrate deploy` runs as, and
+whether that role is a superuser, which a migration running `CREATE EXTENSION`
+needs. It reads the URL from the running `app` container exactly as
+`prisma.config.ts` resolves it (`DIRECT_DATABASE_URL` when set, `DATABASE_URL`
+otherwise) into a shell variable, and cuts it apart in the shell. The URL and its
+password are never printed and never passed to any command: the check prints
+which variable supplied it, the role and the database name (each only when it is
+a plain lower-case identifier, `unprintable` otherwise) and the host as a class
+(`the postgres service`, `pgbouncer` or `other`). It then asks Postgres, as the
+image's own `postgres` superuser inside the `postgres` container, in a read-only
+transaction, with the role passed as a psql variable rather than written into the
+SQL: whether the role is a superuser and can create roles, whether the `vector`
+extension is available, and whether it is installed in the app's database. The
+last line is the verdict, `migrations run as <role>, superuser: yes/no; vector
+available: yes/no; installed: yes/no`. When the role is not a superuser and the
+extension is not installed, a migration's `CREATE EXTENSION vector` fails under
+it, so the extension is created first, once, as `postgres` in that database
+(`CREATE EXTENSION IF NOT EXISTS vector;`), before the image carrying the
+migration is released; the migration's own `IF NOT EXISTS` then has nothing to do.
+That step is a write, so it is not part of this check.
+
+### Named changes without a key
+
+`VM apply` (`vm-apply.yml`) is the write-side sibling of `VM check`, under the
+same identity and the same reviewer (owner decision 2026-11-12). A Claude Code
+session that is not signed in to `gcloud` changes production this way:
+it dispatches the workflow from `main` with one action, the reviewer approves,
+and the session reads the output. The workflow's job-level `if` skips an
+unmodified dispatch from any other ref before it asks for approval, because
+what it pushes is the checkout and the VM's structure is what merged.
+
+**That `if` is not the security boundary, and neither is the action list.** A
+`workflow_dispatch` runs the workflow file and every script it calls from the
+ref the dispatcher picks. A branch that deletes the `if`, or rewrites an action
+in `deploy/vm-apply/vm.sh`, runs as written, under an identity that is root on
+production. The Workload Identity provider admits a token on
+`assertion.repository` and `assertion.environment == 'production'` only
+(`deploy/harness-scanner/README.md`), not on the ref. So what keeps a branch
+off the VM is the `production` environment's protection, and it must be set
+this way:
+
+- **Deployment branches: `main` only** (Settings → Environments → production →
+  Deployment branches and tags → Selected branches and tags → `main`). A job
+  from any other ref then fails before it asks for approval, whatever its file
+  says. This is the setting the `if` relies on.
+- **Required reviewers.** "Prevent self-review" is **off**, deliberately: a
+  session dispatches under the owner's own GitHub account, and the owner is the
+  only reviewer, so with it on no run could ever be approved. The approval is
+  therefore the owner reading the run, not a second person; a second operator
+  would turn it on.
+- **The reviewer reads the branch on the pending deployment before approving**,
+  and refuses any run not from `main`.
+
+The same holds for `VM check`, `VM capacity` and `Scanner VM`, which take the
+same environment and identity.
+
+**As confirmed by the owner on 2026-11-12** (a screenshot of the settings page;
+a session cannot read them, because the API path is refused through its proxy),
+`production` has **Deployment branches and tags: Protected branches only**, which
+applies to one branch, `main`. Two things follow from that setting rather than
+from a literal `main`:
+
+- "Prevent self-review" is off (confirmed the same day), for the reason in the
+  list above.
+- A branch that later gets a branch protection rule becomes deployable to
+  `production` too. Keep `main` the only protected branch, or switch the setting
+  to *Selected branches and tags* with `main`.
+- **Allow administrators to bypass configured protection rules** is on, so an
+  administrator can bypass the environment's protection rules. That is the
+  owner's own lever, not a path for anyone else.
+
+A second layer is also open: adding
+`&& assertion.ref == 'refs/heads/main'` to the provider's attribute condition
+would refuse the identity to a branch run even after an approval, and would
+limit all four workflows to `main`. It changes a live GCP setting and is the
+owner's to make.
+
+| Action | What it runs |
+| --- | --- |
+| `preflight` | `deploy/apply.sh` (preflight only) |
+| `apply` | the preflight, then `CONFIRM=1 deploy/apply.sh` |
+| `caddy-preflight` / `caddy-apply` | the same with `CADDY_ONLY=1` |
+| `retire-lab-vhosts-preflight` / `retire-lab-vhosts` | the same with `CADDY_RETIRE_HOSTS` set to the OrangeHRM lab's two hostnames, written in `deploy/vm-apply/vm.sh` |
+| `host-config-preflight` / `host-config-apply` | the same with `HOST_CONFIG_ONLY=1` |
+| `rollback-preflight` / `rollback` | the same with `ROLLBACK=1`: the newest compose backup that differs from the live file, back into service |
+| `retire-lab-containers` | `deploy/vm-apply/remote.sh`: `docker compose rm --stop --force` of the lab's three services, volumes kept, never `down` |
+| `recreate-legacy-mcp-proving` | `deploy/vm-apply/remote.sh`: checks the bundle and the token are present, validates the repo overlay, keeps the previous one, installs it and recreates that one service |
+| `retire-capacity-recorder` | `deploy/vm-apply/remote.sh`: stops and disables the capacity recorder's timer and removes its units, script and rows (installed by `host-config-apply`) |
+| `refresh-env-prod-example` | `deploy/vm-apply/remote.sh`: replaces `/opt/inflect/.env.prod.example`, the VM's copy of the public template, with the repository's, keeping the previous copy root-only; it writes no other file, and prints hashes, never content |
+| `retire-tei-embed` | `deploy/vm-apply/remote.sh`: `docker compose rm --stop --force tei-embed`, or, when the live compose file no longer defines it, `docker rm --force` of the container carrying the `inflect` project's and the `tei-embed` service's compose labels; the `inflect_tei-embed-data` volume kept, never `down` or `--remove-orphans`; a no-op when no such container exists, and fails if one is left |
+
+Every action that writes runs its preflight first in the same run and writes
+only if it passed. The input is a choice, never a command, a path, a host or a
+compose argument, so a new action is a pull request. The logs are public:
+`apply.sh` runs with `APPLY_PUBLIC_LOG=1`, which lets through only the
+resource lines `docker compose` prints, the name of a missing variable, and
+error lines from caddy and the ops agent (whose only input is a repository
+file), and counts the rest as withheld; the remote script prints names,
+states, counts and limits. `tests/guards/vm-apply-workflow.test.ts` holds these
+properties, and runs the filters on a stream carrying secret-shaped lines.
+
+A compose error line is not simply withheld: both filters (`shape_compose` in
+`apply.sh`, `shape` in `remote.sh`, with identical `error_class` and
+`error_subject` functions) print it as a fixed class and the container,
+service or image it names, and never its text, for example
+`Container inflect-postgres-1  error class: no such image`. The classes are
+`dependency failed to start`, `container is unhealthy`, `one-shot service
+failed`, `no such image`, `manifest unknown`, `pull access denied`, `port is
+already allocated`, `no such service`, `invalid env file` and `invalid config`;
+any other line carrying an error word is `unclassified`, and a line with none
+is counted as withheld. A name is taken only from a resource token (`Container`,
+`Network`, `Volume`, `Image`) or a fixed message position, in a narrow character
+set. A new class is a pull request to both functions; the test holds them
+equal and runs each class on a line compose printed.
+
+**`no such image` under `up -d --dry-run` belongs to the simulation.** The dry
+run resolves each image at its registry, so `Image <ref> Pulled` means the
+registry answered for that tag, but it downloads nothing, and the simulated
+create then inspects the image on the host. A service whose image is new to
+the VM therefore reads `Container <name> Error`, class `no such image`, and the
+simulation stops there, so the services that wait on it are not simulated. This is what
+`VM apply` run 43761627105 printed for postgres on 2026-11-15, after #5719
+moved it to `ghcr.io/rodnapamet/postgres-pgvector:16-alpine`, and it reproduces
+with compose v5.6.1 against a local daemon. `apply.sh` prints a note when it
+sees it. A real `up -d` pulls first. An image the registry does not have fails
+at its `Image` line instead, as `manifest unknown` or `pull access denied`. A
+recreated service with a healthcheck that dependents wait on is not an
+artefact: the dry run reports it `Healthy` and leaves running dependents alone.
 
 ## Observability provisioning
 

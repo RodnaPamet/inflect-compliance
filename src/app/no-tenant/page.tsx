@@ -29,6 +29,7 @@ import { Heading } from '@/components/ui/typography';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { readSignInDestinations } from '@/lib/auth/sign-in-destinations';
+import { RefreshAccessButton } from './RefreshAccessButton';
 
 export default async function NoTenantPage() {
     const session = await auth();
@@ -46,6 +47,21 @@ export default async function NoTenantPage() {
               session.user.entraGateDeniedTenantIds,
           )
         : { workspaces: [], organizations: [], deactivatedWorkspaces: [], entraRefusedWorkspaces: [] };
+    // ── IS THE COOKIE BEHIND THE DATABASE? (#5246) ──────────────────────
+    //
+    // `workspaces` above comes from the DATABASE; `session.user.memberships`
+    // comes from the token, which is to say from the cookie the edge gate read
+    // to send this person here. A workspace present in the first and absent
+    // from the second is a membership granted after this session opened — and
+    // the edge will keep refusing its slug, because in the App Router nothing
+    // rewrites the cookie (see the `jwt` callback in src/auth.ts).
+    //
+    // Offered only when a refresh would actually DO something. A button that
+    // says "check again" and then changes nothing is worse than no button: it
+    // teaches the person that the product is broken rather than stale.
+    const cookieSlugs = new Set((session.user.memberships ?? []).map((m) => m.slug));
+    const staleWorkspaces = workspaces.filter((w) => !cookieSlugs.has(w.slug));
+
     // A person with workspaces reached one that is not theirs: "No access
     // yet" would read as if they could reach nothing (#4923).
     const title = workspaces.length > 0 ? t('titleOtherWorkspace') : t('title');
@@ -101,6 +117,12 @@ export default async function NoTenantPage() {
                             </a>
                         ))}
                     </nav>
+                )}
+                {staleWorkspaces.length > 0 && (
+                    <div className="mb-6 flex flex-col gap-compact text-left">
+                        <p className="text-content-muted">{t('refreshStale')}</p>
+                        <RefreshAccessButton />
+                    </div>
                 )}
                 <form
                     action={async () => {

@@ -12,11 +12,19 @@ import {
 } from './vendor-link-targets';
 import { logEvent } from '../events/audit';
 import { runInTenantContext, runInTenantReadContext, type PrismaTx } from '@/lib/db-context';
-import { notFound, badRequest, ConflictError } from '@/lib/errors/types';
+import { notFound, badRequest, conflict, ConflictError } from '@/lib/errors/types';
+import {
+    findBlockedParents,
+    bulkSoftDeleteBlockedMessage,
+} from '@/lib/soft-delete-blockers';
 import { sanitizePlainText, sanitizeUrlText } from '@/lib/security/sanitize';
 import { CreateVendorSchema } from '@/lib/schemas';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
-import { VENDOR_ACTIVATION_NEEDS_REVIEW, VENDOR_NAME_TAKEN } from '@/lib/vendor-refusal-reasons';
+import {
+    VENDOR_ACTIVATION_NEEDS_REVIEW,
+    VENDOR_NAME_TAKEN,
+    VENDOR_REASSESSMENT_IN_PROGRESS,
+} from '@/lib/vendor-refusal-reasons';
 
 // Epic D.2 — preserve the three-state contract on update paths.
 function sanitizeOptional(v: string | null | undefined): string | null | undefined {
@@ -207,11 +215,16 @@ export async function updateVendor(ctx: RequestContext, vendorId: string, patch:
             // (assertVendorActivationAllowed).
             const current = await db.vendor.findFirst({
                 where: { id: vendorId, tenantId: ctx.tenantId },
-                include: { assessments: { orderBy: { createdAt: 'desc' }, take: 1 } },
+                include: ACTIVATION_GATE_INCLUDE,
             });
             if (!current) throw notFound('Vendor not found');
             previousStatus = current.status;
-            assertVendorActivationAllowed(patch.status as string, current.status, current.assessments[0]);
+            assertVendorActivationAllowed(
+                patch.status as string,
+                current.status,
+                current.assessments[0],
+                current._count?.assessments ?? 0,
+            );
         }
         const vendor = await VendorRepository.update(db, ctx, vendorId, sanitisedPatch);
         if (!vendor) throw notFound('Vendor not found');
@@ -723,6 +736,47 @@ function isActivationEligible(
 const ACTIVATION_GATE_MESSAGE =
     'Cannot activate vendor without a completed assessment review. Send an assessment and complete its review (REVIEWED/CLOSED) first.';
 
+const REASSESSMENT_IN_PROGRESS_MESSAGE =
+    'Cannot activate vendor while a reassessment is in progress: its latest assessment has not been reviewed yet. ' +
+    'Complete that review (REVIEWED/CLOSED) with a risk rating, then activate the vendor.';
+
+/**
+ * What every gate read loads: the LATEST assessment of any status, and a count
+ * of the completed reviews with a rating. The gate decides on the latest alone
+ * (owner decision 2026-11-14, #5318: an open reassessment still blocks); the
+ * count only chooses which refusal explains it.
+ */
+const ACTIVATION_GATE_INCLUDE = {
+    assessments: { orderBy: { createdAt: 'desc' as const }, take: 1 },
+    _count: {
+        select: {
+            assessments: {
+                where: {
+                    status: { in: COMPLETED_ASSESSMENT_STATUS_LIST },
+                    riskRating: { not: null },
+                },
+            },
+        },
+    },
+};
+
+/**
+ * Why a vendor may not be activated now, or `null` when it may. Strict on the
+ * LATEST assessment: a vendor whose earlier review completed but whose newest
+ * assessment is still open is refused, with `VENDOR_REASSESSMENT_IN_PROGRESS`
+ * rather than the reason that tells the admin to send an assessment.
+ */
+function activationRefusal(
+    latest: { status: string; riskRating: string | null } | undefined | null,
+    completedRatedCount: number,
+): typeof VENDOR_ACTIVATION_NEEDS_REVIEW | typeof VENDOR_REASSESSMENT_IN_PROGRESS | null {
+    if (isActivationEligible(latest)) return null;
+    if (latest && !COMPLETED_ASSESSMENT_STATUSES.has(latest.status) && completedRatedCount > 0) {
+        return VENDOR_REASSESSMENT_IN_PROGRESS;
+    }
+    return VENDOR_ACTIVATION_NEEDS_REVIEW;
+}
+
 /**
  * PR-T — the ONE activation-gate implementation. Throws when a vendor would be
  * flipped to ACTIVE without a completed assessment review. Every throwing gate
@@ -732,15 +786,23 @@ const ACTIVATION_GATE_MESSAGE =
  * reports blocked vendors instead of throwing. The dead standalone
  * `updateVendorStatusWithGate` (which duplicated this check) was removed.
  *
- * The refusal carries `details.reason: VENDOR_ACTIVATION_NEEDS_REVIEW`.
+ * The refusal carries `details.reason`: `VENDOR_REASSESSMENT_IN_PROGRESS` when
+ * the vendor's earlier review completed and its latest assessment is still
+ * open, `VENDOR_ACTIVATION_NEEDS_REVIEW` otherwise.
  */
 function assertVendorActivationAllowed(
     newStatus: string,
     currentStatus: string | null,
     latest: { status: string; riskRating: string | null } | undefined | null,
+    completedRatedCount = 0,
 ): void {
-    if (newStatus === 'ACTIVE' && currentStatus !== 'ACTIVE' && !isActivationEligible(latest)) {
-        throw badRequest(ACTIVATION_GATE_MESSAGE, { reason: VENDOR_ACTIVATION_NEEDS_REVIEW });
+    if (newStatus !== 'ACTIVE' || currentStatus === 'ACTIVE') return;
+    const reason = activationRefusal(latest, completedRatedCount);
+    if (reason === VENDOR_REASSESSMENT_IN_PROGRESS) {
+        throw badRequest(REASSESSMENT_IN_PROGRESS_MESSAGE, { reason });
+    }
+    if (reason === VENDOR_ACTIVATION_NEEDS_REVIEW) {
+        throw badRequest(ACTIVATION_GATE_MESSAGE, { reason });
     }
 }
 
@@ -755,20 +817,27 @@ export async function bulkSetVendorStatus(
     const outcome = await runInTenantContext(ctx, async (db) => {
         const rows = await db.vendor.findMany({
             where: { id: { in: vendorIds }, tenantId: ctx.tenantId },
-            include: { assessments: { orderBy: { createdAt: 'desc' }, take: 1 } },
+            include: ACTIVATION_GATE_INCLUDE,
         });
-        if (rows.length === 0) return { updated: 0, blocked: [] as { id: string; name: string }[] };
+        type Blocked = {
+            id: string;
+            name: string;
+            reason: typeof VENDOR_ACTIVATION_NEEDS_REVIEW | typeof VENDOR_REASSESSMENT_IN_PROGRESS;
+        };
+        if (rows.length === 0) return { updated: 0, blocked: [] as Blocked[] };
 
         // Activation gate applies to bulk too — only vendors with a completed
         // assessment review may be bulk-activated. Vendors that fail the gate
         // are skipped and reported (not silently ignored, not a hard failure
         // for the whole batch). Other status transitions are ungated.
-        const blocked: { id: string; name: string }[] = [];
+        const blocked: Blocked[] = [];
         const eligible = status !== 'ACTIVE'
             ? rows
             : rows.filter((r) => {
-                if (r.status === 'ACTIVE' || isActivationEligible(r.assessments[0])) return true;
-                blocked.push({ id: r.id, name: r.name });
+                if (r.status === 'ACTIVE') return true;
+                const reason = activationRefusal(r.assessments[0], r._count?.assessments ?? 0);
+                if (reason === null) return true;
+                blocked.push({ id: r.id, name: r.name, reason });
                 return false;
             });
 
@@ -810,6 +879,13 @@ export async function bulkDeleteVendor(ctx: RequestContext, vendorIds: string[])
     return runInTenantContext(ctx, async (db) => {
         const rows = await VendorRepository.listByIds(db, ctx, vendorIds);
         if (rows.length === 0) return { deleted: 0 };
+        // #5083: a registered agent or an A2A peer pointing at a vendor holds
+        // it down at the 90-day purge, and those are AUTHORITY references —
+        // never cascaded. One query per blocking edge, not per vendor.
+        const blocked = await findBlockedParents(db, 'Vendor', rows.map((r) => r.id));
+        if (blocked.size > 0) {
+            throw conflict(bulkSoftDeleteBlockedMessage('vendors', blocked));
+        }
         await db.vendor.deleteMany({ where: { id: { in: rows.map((r) => r.id) }, tenantId: ctx.tenantId } });
         for (const r of rows) {
             await logEvent(db, ctx, {

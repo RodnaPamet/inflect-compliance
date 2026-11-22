@@ -23,6 +23,7 @@ jest.mock('@/app-layer/integrations/providers/sharepoint/token', () => ({
 }));
 
 import { browseSharePoint, getSharePointSitesAndDrives } from '@/app-layer/integrations/providers/sharepoint/service';
+import { withApprovedDrives } from '../helpers/sharepoint-approved-drives';
 
 const ctx = { tenantId: 't1', userId: 'u1', permissions: { canAdmin: false } } as any;
 const SECRET = JSON.stringify({ accessToken: 'AT', refreshToken: 'RT', expiresAt: 9_999_999_999 });
@@ -47,7 +48,7 @@ describe('browseSharePoint', () => {
                 '@odata.nextLink': 'https://graph/next',
             }),
         );
-        const res = await browseSharePoint(ctx, { connectionId: 'c1', driveId: 'd1' }, { fetchImpl: fetchImpl as any });
+        const res = await browseSharePoint(ctx, { connectionId: 'c1', driveId: 'd1' }, { fetchImpl: withApprovedDrives(fetchImpl) as any });
         expect(res.items).toEqual([
             { id: 'fold1', name: 'Policies', isFolder: true, hasChildren: true, webUrl: undefined, size: undefined, mimeType: undefined, lastModified: undefined },
             { id: 'file1', name: 'soc2.pdf', isFolder: false, hasChildren: false, webUrl: 'https://sp/soc2', size: 100, mimeType: 'application/pdf', lastModified: undefined },
@@ -58,9 +59,9 @@ describe('browseSharePoint', () => {
     });
 
     it('passes itemId through to a folder children call', async () => {
-        mockDb.integrationConnection.findFirst.mockResolvedValue({ id: 'c1', secretEncrypted: SECRET, configJson: {} });
+        mockDb.integrationConnection.findFirst.mockResolvedValue({ id: 'c1', secretEncrypted: SECRET, configJson: { allowedSiteIds: ['s1'] } });
         const fetchImpl = jest.fn().mockResolvedValue(jsonRes({ value: [] }));
-        await browseSharePoint(ctx, { connectionId: 'c1', driveId: 'd1', itemId: 'fold1' }, { fetchImpl: fetchImpl as any });
+        await browseSharePoint(ctx, { connectionId: 'c1', driveId: 'd1', itemId: 'fold1' }, { fetchImpl: withApprovedDrives(fetchImpl) as any });
         expect(fetchImpl.mock.calls[0][0]).toContain('/drives/d1/items/fold1/children');
     });
 

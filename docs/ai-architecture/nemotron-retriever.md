@@ -20,7 +20,7 @@ inflect · ai architecture · nemotron retriever · roadmap v1 · 2026-10-29
 | Wave | 1 for the CPU embedding and rerank arms (Phases 0–2, zero-GPU). The GPU arm (Phase 3) is optional Layer 5 work, after every other roadmap is complete |
 | Depends on | nothing for Phases 0–2; Layer 5 ([`modal-inference.md`](./modal-inference.md)), optional and last, for Phase 3 |
 | Unblocks | [`weaviate.md`](./weaviate.md) Phase 2 (nothing to index without a vector), [`ragas.md`](./ragas.md) |
-| Owner decisions | **D-L4-3** (de-NIM: open weights on TEI/vLLM, never the NIM container), **D-L5-1** (decided 2026-10-31: no self-hosting now; Layer 5 optional and last) |
+| Owner decisions | **D-L4-3** (**decided 2026-11-11, amended and decided 2026-11-13**, owner: the pipeline is `intfloat/multilingual-e5-small` + `BAAI/bge-reranker-base`, chosen by the benchmark of 2026-11-13; the rule: Layer 4 compares small open models only, English and multilingual, on CPU, and keeps the smallest unless recall@10 drops by more than the margin overall or on the Bulgarian slice; Nemotron is not a Layer 4 candidate and stays only in Phase 3, optional Layer 5; open weights on an open engine, never the NIM container), **D-L4-1** (**decided 2026-11-11**, owner: pgvector first, in the existing Postgres under RLS), **D-L5-1** (decided 2026-10-31: no self-hosting now; Layer 5 optional and last), **D-L4-10** (decided 2026-11-12: the margin is 0.05 absolute recall@10; the latency budgets are open), **D-L4-11** (decided 2026-11-15, following the owner's decision of that day: the VM runs a patched TEI image built in the repository, rebuilt weekly and on each upstream release, pinned by digest) |
 | Complete at | Phase 2: embeddings and rerank on CPU, in the deployment. Phase 3 is optional Layer 5 work |
 
 ## At a glance
@@ -29,11 +29,11 @@ Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns 
 
 ```mermaid
 flowchart LR
-  P0{{"Phase 0 · verify<br/>weights, licence, engine<br/>CPU latency, seed recall<br/>D-L4-3 de-NIM"}}:::gate
+  P0{{"Phase 0 · verify<br/>weights, licence, engine<br/>seed recall, then CPU latency<br/>D-L4-3 small models, EN and BG"}}:::gate
   P1["Phase 1 · embedding seam, CPU<br/>tei-embed service<br/>EmbeddingProvider by residency<br/>builds nothing external"]:::todo
   P2["Phase 2 · reranker<br/>RerankProvider on TEI<br/>hydrate under RLS, then rerank<br/>new revision key"]:::todo
   P3["Phase 3 · GPU arm<br/>on the Layer 5 VM<br/>CPU and GPU parity"]:::optional
-  SEED["Seed set, 200 pairs<br/>recall at 10"]:::eval
+  SEED["Seed set, 250 cases<br/>200 EN, 50 BG, recall at 10"]:::eval
   MOD["Layer 5<br/>optional, after completion"]:::optional
   WV["weaviate P2<br/>index pipeline"]:::ext
   P0 --> P1 --> P2
@@ -53,8 +53,54 @@ flowchart LR
 
 ## Current state (true today)
 
-- **No embedding model, no embedding provider, no vector.** See
-  [`weaviate.md`](./weaviate.md) § Current state.
+- **The embedding and rerank seam exists, and since 2026-11-15 the embedding
+  service's image is built and published (1.1a), the service is in the
+  canonical Compose file, pinned to that image's digest (1.1b), and it runs on
+  the VM (1.1c: applied by the owner's `VM apply`, healthy in `VM check`
+  `containers`); no vector exists.** The image is `deploy/tei-embed/Dockerfile`, upstream TEI
+  `cpu-1.9.4` by tag and digest with its Debian packages upgraded, Trivy-gated
+  and published to `ghcr.io/rodnapamet/tei-embed` (D-L4-11, owner,
+  2026-11-15). The `tei-embed` service (`intfloat/multilingual-e5-small` at Hub
+  commit `614241f6`, 2,560 MiB, 1.0 CPU at half weight, no published port)
+  is in `deploy/docker-compose.prod.yml` as
+  `ghcr.io/rodnapamet/tei-embed@sha256:90f7be79…3b55`, the digest the first
+  publish printed (run 43715894440, 2026-11-15, smoke and Trivy gate passed;
+  1.1b); the owner's `VM apply` put it on the VM on 2026-11-15 (1.1c), and the
+  app does not call it until the operator sets `AI_EMBED_LOCAL_*` in
+  `.env.prod`. Timed on the VM the same day (0.5a, `VM check`
+  `tei-embed-timing`, run 43757070861): a 20-token query p95 37.5 ms, and about
+  0.7 s per 512-token passage whatever the batch size, so 8 passages take
+  5.2–6.0 s and 32 take 21–22 s against the seam's 15 s deadline. The owner
+  decided on 2026-11-15 that the indexing pipeline embeds 8 passages per call
+  and keeps the deadline ([`weaviate.md`](./weaviate.md) Phase 2,
+  `INDEX_EMBED_BATCH`), and that the 2,560 MiB limit stays until a full day of
+  the capacity recorder's figures is read on 2026-11-16 at 17:30 UTC. The record is
+  [`2026-11-15-retriever-tei-embed.md`](../implementation-notes/2026-11-15-retriever-tei-embed.md). `src/lib/ai/embeddings/` holds the
+  `EmbeddingProvider` / `RerankProvider` contracts, the residency routing
+  (`select.ts`, `inflect-local/<model>` only), a TEI client for
+  `/v1/embeddings` and `/rerank` that refuses an answer from any model but the
+  configured one (the embeddings response's `model`, the reranker's `/info`),
+  one transport that dials only addresses inside the deployment's perimeter
+  (`http.ts` over the shared in-deployment dial, `src/lib/ai/in-deployment-service.ts`,
+  which the Docling parser and the NeMo guard provider use too: every resolved
+  address, pinned, no redirects,
+  deadline over the whole call, byte-capped body), a
+  deterministic stub the factory never chooses, the retriever revision key
+  and the `embeddings.requests` metric. With `AI_EMBED_LOCAL_*` /
+  `AI_RERANK_LOCAL_*` unset — every deployment today — the factory refuses
+  by name and constructs nothing. Nothing calls it yet; see
+  [`weaviate.md`](./weaviate.md) § Current state for the store.
+- **The models are chosen (D-L4-3, owner, 2026-11-13): `intfloat/multilingual-e5-small`
+  embeds and `BAAI/bge-reranker-base` reranks.** The retriever benchmark
+  (`.github/workflows/retriever-benchmark.yml`, run 43413063708 on `main`
+  `32d3038`) scored nine pipelines on the seed set
+  (`sha256:297f425a247bb6f6800528187765f404fee8e9f879c41f2727897fe11573e92f`,
+  250 cases, 50 of them Bulgarian, BG → EN); its summary job recomputed every
+  figure from each record's raw answers. The configuration that points the
+  seam at the embedder (`AI_EMBED_LOCAL_*`) is the operator's, in `.env.prod`,
+  and is unset as shipped; `AI_RERANK_LOCAL_*` waits for `tei-rerank`
+  (Phase 2). The 50 Bulgarian translations are
+  accepted unreviewed (owner, 2026-11-13).
 - **The model-provider seam already routes by residency, and that is the seam
   an embedding provider must copy.** `src/lib/agentic/flue/model-selection.ts`
   owns the decision: provider ids name a residency (`inflect-external`,
@@ -76,13 +122,36 @@ flowchart LR
 
 ## Fit, and what is deliberately not adopted
 
-**Adopted.** The open-weight Nemotron retriever models — at the time of writing
-the *Llama-Nemotron Embed 1B v2* and *Llama-Nemotron Rerank 1B v2* family, or
-their current successors — served by an open engine: Hugging Face **Text
-Embeddings Inference** (TEI, Apache-2.0) on CPU in the deployment, for the
-pilot and for production; a GPU arm is optional Layer 5 work. A single `EmbeddingProvider` seam in
-`src/lib/ai/embeddings/` that is residency-routed exactly like
-`model-selection.ts`.
+**Adopted (D-L4-3, decided 2026-11-11, amended 2026-11-13).** Open-weight
+retriever models served by an open engine on CPU in the deployment — Hugging
+Face **Text Embeddings Inference** (TEI, Apache-2.0) — and a GPU arm only as
+optional Layer 5 work. Which models is a measurement, not a preference: small
+open models (BGE / E5 class, MIT or Apache-2.0), English-only and multilingual,
+are benchmarked against each other, and **the smallest is kept unless its
+recall@10 is lower by more than the margin (0.05, D-L4-10), overall or on the
+Bulgarian slice**. The candidates are `bge-small-en-v1.5`, `e5-small-v2` and
+`multilingual-e5-small` for embedding, and `bge-reranker-base` and
+`bge-reranker-v2-m3` for reranking (`scripts/retriever-benchmark/candidates.ts`).
+**The rule chose `multilingual-e5-small` + `bge-reranker-base` (2026-11-13)**;
+the figures are under Phase 0, 0.3.
+
+The amendment (owner, 2026-11-13) took the Nemotron 1B models out of Layer 4.
+They run on no CPU engine the deployment has, a 1B model costs about ten times
+a small one's memory and CPU on the VM, and the per-tenant corpora are small
+and reranked, which is where a small model is usually enough. Nemotron stays
+only in Phase 3, the optional Layer 5 GPU arm. The same amendment found that
+both small candidates the benchmark carried were English-only, while D-L4-3
+asked for a multilingual one and the product serves Bulgarian; the candidate
+list and the seed set were corrected in the same pull request. Vectors go to **pgvector** in the existing Postgres, under RLS
+(D-L4-1). A single `EmbeddingProvider` seam in `src/lib/ai/embeddings/` that is
+residency-routed exactly like `model-selection.ts`.
+
+Phase 0's desk research
+([`2026-11-11-retriever-phase0-facts.md`](../implementation-notes/2026-11-11-retriever-phase0-facts.md))
+found that TEI's native CPU backend refuses Llama- and Mistral-family models at
+start-up, so no current Nemotron retriever model runs on TEI's CPU build without
+an ONNX export (untested); the small candidates run on it natively. That finding
+is one of the reasons for the 2026-11-13 amendment.
 
 **Not adopted, with the reason.**
 
@@ -93,64 +162,206 @@ pilot and for production; a GPU arm is optional Layer 5 work. A single `Embeddin
   content, so each is a 30-day notice before the first vector; a 1B embedding
   model runs on the VM's CPU today with no notice at all. The pilot is
   sovereign because it is cheaper to be.
-- *Dense-only.* Hybrid search (BM25 + vector) is Weaviate's; the reranker is
-  the second stage over hybrid hits. A dense-only pipeline would re-derive what
-  the store already does.
+- *Dense-only.* Hybrid search (full-text + vector) is the store's — Postgres
+  full-text beside pgvector under D-L4-1, Weaviate's BM25 only if the store
+  moves; the reranker is the second stage over hybrid hits. A dense-only
+  pipeline would re-derive what the store already does.
 
 ## Roadmap (future direction)
 
 ### Phase 0 — Verify the models, the licence and the engine
 
 **Goal.** Facts, not assumptions: which weights, under which licence, on which
-engine, at what latency on this VM's CPU.
+engine, how well they retrieve against a small open model (D-L4-3), and at what
+latency on this VM's CPU.
 
-**Sub-phases.**
-- [ ] 0.1 Identify the current open-weight Nemotron embed + rerank models and
-      their licence text (NVIDIA Open Model License); record that the terms
-      permit multi-tenant SaaS use — if they do not, this roadmap stops here.
-- [ ] 0.2 Confirm TEI serves both (embedding; reranker via the `/rerank`
-      route) on CPU; record dimensions, max sequence length, pooling.
-- [ ] 0.3 Benchmark on the VM's CPU: p50/p95 for a 512-token passage and a
-      20-token query, batch 32 — this decides whether Phase 1 ships or Phase 3
-      comes first.
-- [ ] 0.4 Retrieval quality on a 200-pair seed set (questions from the
-      questionnaire answer library → the policy/evidence chunk that answers
-      them): recall@10 for the embed model alone, then with the reranker.
-- [ ] 0.5 Dependency governance: TEI is a runtime image (digest), the model
+**Sub-phases.** The desk research is recorded in
+[`2026-11-11-retriever-phase0-facts.md`](../implementation-notes/2026-11-11-retriever-phase0-facts.md);
+the measurements are still to run.
+- [x] 0.1 Identify the current open-weight Nemotron embed + rerank models and
+      their licence; record whether the terms permit multi-tenant SaaS use.
+      Done 2026-11-11: Nemotron 3 Embed 1B (OpenMDW-1.1, quoted: SaaS use
+      permitted) and Llama Nemotron Rerank 1B v2, the only current 1B Nemotron
+      reranker. The Llama-based models carry the Llama 3.2 terms, including a
+      "Built with Llama" display obligation.
+- [x] 0.1b Read the licence files in the kept models' repositories before any
+      weights enter `deploy/` (G5). Since the 2026-11-13 amendment these are the
+      small candidates' (MIT or Apache-2.0 on their model cards); the Nemotron
+      licences matter only if Phase 3 is taken up.
+      Done 2026-11-15 for the two kept models: **neither Hub repository carries
+      a licence file** (`LICENSE`, `LICENSE.txt` and `LICENSE.md` are 404 at
+      each pinned commit); each model card's front matter declares
+      `license: mit`, and the MIT text is the publishers' code repositories'
+      `LICENSE` (unilm and FlagEmbedding, read 2026-11-11, S8 and S9). The
+      card hashes are in the 1.1 note.
+- [x] 0.2 Which engine serves which model on CPU. Done 2026-11-11 from TEI's
+      source: TEI's native CPU backend refuses Llama- and Mistral-family models,
+      so no current Nemotron retriever model runs on TEI's CPU build without an
+      ONNX export (untested); the small multilingual candidates (E5, Arctic
+      Embed v2 / GTE, BGE-M3, BGE and GTE rerankers) run on it natively, fp32.
+- [x] 0.3 Quality (Q1, engine-independent, in CI): recall@10 for each
+      embedder alone, then each reranker on a fixed top-50 pool, against the
+      seed set, overall and on its Bulgarian slice
+      (`.github/workflows/retriever-benchmark.yml`, dispatch-only). The rule is
+      D-L4-3's as amended: the smallest pipeline within 0.05 recall@10 of the
+      best (D-L4-10), overall AND on the Bulgarian slice, so an English-only
+      model that falls behind on Bulgarian questions is not kept. On 50
+      Bulgarian cases that margin is about one standard error; growing the
+      slice is open under D-L4-10.
+      **Done 2026-11-13** (run 43413063708 on `main` `32d3038`, seed set
+      `sha256:297f425a…3e92f`, figures recomputed from each record's raw
+      answers by the workflow's summary job). Recall@10 / recall@10 (bg) /
+      MRR@10 / embed p50 / embed p95 ms:
+
+      | Pipeline | R@10 | R@10 (bg) | MRR@10 | p50 | p95 |
+      | --- | --- | --- | --- | --- | --- |
+      | `bge-small-en-v1.5` + `bge-reranker-base` | 0.801 | 0.080 | 0.739 | 20.4 | 34.7 |
+      | `bge-small-en-v1.5` + `bge-reranker-v2-m3` | 0.808 | 0.080 | 0.787 | 20.4 | 34.7 |
+      | `bge-small-en-v1.5` alone | 0.781 | 0.060 | 0.686 | 20.4 | 34.7 |
+      | `e5-small-v2` + `bge-reranker-base` | 0.797 | 0.060 | 0.742 | 7.6 | 17.1 |
+      | `e5-small-v2` + `bge-reranker-v2-m3` | 0.804 | 0.060 | 0.783 | 7.6 | 17.1 |
+      | `e5-small-v2` alone | 0.762 | 0.000 | 0.680 | 7.6 | 17.1 |
+      | `multilingual-e5-small` + `bge-reranker-base` | 0.946 | 0.840 | 0.863 | 9.6 | 13.5 |
+      | `multilingual-e5-small` + `bge-reranker-v2-m3` | 0.960 | 0.880 | 0.936 | 9.6 | 13.5 |
+      | `multilingual-e5-small` alone | 0.899 | 0.733 | 0.774 | 9.6 | 13.5 |
+
+      The summary's per-reranker-group rule chose `multilingual-e5-small` in
+      every group. Across all nine pipelines, D-L4-3's rule gives: the best is
+      `multilingual-e5-small` + `bge-reranker-v2-m3` (0.960 / 0.880);
+      `multilingual-e5-small` + `bge-reranker-base` is within the margin
+      (0.014 behind overall, 0.040 on the Bulgarian slice) and smaller;
+      `multilingual-e5-small` alone is outside it (0.061 behind overall). The
+      English-only embedders reach 0.080 at most on the Bulgarian slice.
+      **Decided (owner, 2026-11-13): `multilingual-e5-small` +
+      `bge-reranker-base`**, accepting the lower first-place ranking (MRR@10
+      0.863 against 0.936) as the price of not resizing the VM.
+      `bge-reranker-v2-m3` is the better-ranking alternative if the VM is ever
+      resized for another reason; that is not a commitment. The latencies are
+      the CI runner's, not the VM's. Reranker latency was in the summary's
+      columns but was not captured with these figures, and the benchmark
+      measured no per-pipeline memory: the capacity lines stay estimates from
+      the weights until 0.5.
+- [x] 0.4 The seed set, `tests/fixtures/rag/retriever-seed-set.json` with a
+      content hash: 200 English questions over 372 chunks of the seed's policy
+      text, and since 2026-11-13 a 50-case Bulgarian slice. Each Bulgarian case
+      translates one English case and keeps its labels, so the slice measures
+      Bulgarian questions over English text (BG → EN). The planned BG → BG
+      cases are not possible while the seed carries no Bulgarian policy text.
+      The translations are the assistant's; the owner accepted them
+      unreviewed on 2026-11-13, and the fixture is unchanged (editing it
+      changes its content hash).
+- [ ] 0.5 CPU latency and memory (Q2) on the production VM for the chosen
+      pipeline (`multilingual-e5-small` + `bge-reranker-base`), through a dispatch-only
+      workflow modelled on `VM capacity`: a temporary TEI container at 1.0 CPU,
+      p50/p95 for a 20-token query, 32 × 512-token passages and a 1 × 50
+      rerank, plus `memory.peak` and the host CPU's flags. Proposed budgets
+      (not agreed): query p95 ≤ 250 ms, rerank p95 ≤ 2 s.
+      **The embedder half runs on the live service, not a temporary
+      container**, which runs on the VM since 2026-11-15: dispatch
+      `VM check` with the check `tei-embed-timing` (owner approves the run in
+      `production`). It `docker exec`s the image's curl inside the running
+      container against its own port and sends only text the script generates:
+      20 calls of a 20-token query (p50/p95), then three runs each of 8, 16, 32
+      and 64 passages of 512 tokens, one request at a time, each cut at 60 s,
+      with a line per batch size saying whether its slowest run is within the
+      seam's 15 s (`TEI_DEADLINE_MS`), the cgroup's `memory.current` and
+      `memory.peak` before and after, CPU throttling during the load, and the
+      host CPU's model and AVX2/AVX-512F flags. Those lines are what the
+      indexing caller's batch size or the deadline is decided against (1.1's
+      note below). The batches share the container's one core at half CPU
+      weight with the request path while they run, so the repetitions are kept
+      small and a run takes minutes. The rerank figure waits for the
+      reranker's service (Phase 2).
+      - [x] 0.5a The embedder, on the live service. Done 2026-11-15: `VM check`
+        `tei-embed-timing`, run 43757070861, 23:33–23:38 UTC. The host is an
+        Intel Xeon at 2.20 GHz with 2 vCPUs, AVX2 and no AVX-512F; `tei-embed`
+        is capped at 1.0 CPU and 2,560 MiB. The synthetic passage is 714
+        tokens, so the model reads 512.
+
+        | Load | Runs | min | p50 / median | p95 | max | Within 15 s |
+        | --- | --- | --- | --- | --- | --- | --- |
+        | Query, 20 tokens | 20 calls | 26.8 ms | 29.2 ms | 37.5 ms | 37.8 ms | yes |
+        | 8 × 512 tokens | 3 | 5.20 s | 5.71 s | | 6.03 s | yes |
+        | 16 × 512 tokens | 3 | 10.76 s | 11.40 s | | 11.79 s | yes |
+        | 32 × 512 tokens | 3 | 21.30 s | 22.48 s | | 58.08 s | no |
+        | 64 × 512 tokens | 3 | 41.81 s | 42.91 s | | 44.17 s | no |
+
+        A passage costs about 0.7 s whatever the batch size (0.67–0.71 s at the
+        medians), so the batch size buys no throughput and only moves the call
+        towards the deadline. The 58 s run at 32 overlapped a concurrent
+        `VM apply` preflight (run 43761627105, 23:33:57–23:37:07 UTC) on the
+        same VM; the other two runs at 32 are 21–22 s, already over. The query
+        p95 is inside the proposed (not agreed) 250 ms budget. The CI runners'
+        figures for 64 passages were 10.3–23.7 s, so this VM's CPU is about two
+        to four times slower for this load.
+        Memory: `memory.current` 880 → 1,269 MiB (anonymous 858 → 1,240, page
+        cache 7 → 13), `memory.peak` 1,601 MiB before and after, so the peak
+        was set earlier, not by this load; no OOM kill. CPU: 256.9 core-seconds
+        in 293 s of wall time, 473 of 2,928 periods throttled, 3.0 s
+        throttled.
+        Decided from these (owner, 2026-11-15): the indexing pipeline embeds
+        **8 passages per call and keeps the 15 s deadline**
+        (`INDEX_EMBED_BATCH` in `src/lib/ai/embeddings/types.ts`; the row in
+        [`weaviate.md`](./weaviate.md) Phase 2), and `tei-embed`'s
+        `mem_limit` **stays 2,560 MiB until a full day of the capacity
+        recorder's figures is read on 2026-11-16 at 17:30 UTC**, with 2,048 the
+        likely target.
+      - [ ] 0.5b The reranker (`bge-reranker-base`, a 1 × 50 rerank), when its
+        service exists (Phase 2).
+- [x] 0.6 Dependency governance: TEI is a runtime image (digest), the model
       weights are a volume (`deploy/` volume + a checksum of the snapshot
       recorded in the note); no Python enters the app image.
+      Done 2026-11-15 with 1.1a: the image built from the upstream tag and
+      digest and published by digest (D-L4-11), the weights for the
+      `tei-embed-data` volume fetched at a pinned Hub commit, and the SHA-256
+      of every file TEI fetches recorded in the 1.1 note. TEI's CPU build
+      serves through ONNX Runtime, so the weights it reads are
+      `onnx/model.onnx`, not `model.safetensors`.
+- [x] 0.7 The vector's shape suits pgvector (D-L4-1): `vector` indexes up to
+      2,000 dimensions and `halfvec` up to 4,000, so a 2048-dimension winner
+      needs `halfvec`; every small candidate (384–1024) fits `vector`. The
+      chosen `multilingual-e5-small` emits 384 dimensions, so it is `vector`.
 
 **Prompt.**
 ```text
-Context (main 3.338.0): no embedding model exists. Model routing is residency-based in
+Context: no embedding model exists. Model routing is residency-based in
 src/lib/agentic/flue/model-selection.ts (inflect-external / inflect-local; LOCAL_ONLY
-tenants never reach an external route). The local route is AI_LOCAL_BASE_URL (OpenAI-
-compatible). Runtime images are digest-pinned (docs/dependency-governance.md). The target
-names the Nemotron Retriever; the blueprint says de-NIM (open weights on open engines).
+tenants never reach an external route). Runtime images are digest-pinned
+(docs/dependency-governance.md). D-L4-3 (decided 2026-11-11, amended 2026-11-13):
+compare small open models, English and multilingual, on CPU, and keep the smallest
+unless recall@10 drops by more than 0.05 (D-L4-10) overall or on the Bulgarian slice;
+Nemotron is optional Layer 5 only. D-L4-1: pgvector first.
+docs/implementation-notes/2026-11-11-retriever-phase0-facts.md holds the models,
+licences, engine facts and the protocol.
 
-Task: a verification note, docs/implementation-notes/2026-MM-DD-nemotron-retriever-
-verification.md. (1) Name the current open-weight Nemotron embed and rerank models and
-quote the licence terms on multi-tenant commercial use. (2) Stand up TEI (CPU) locally
-with both, record dimensions/max length/pooling and the exact image digest. (3) Benchmark
-p50/p95 on a 512-token passage and a 20-token query at batch 32 on hardware comparable
-to the production VM. (4) Build a 200-pair seed set from the questionnaire answer library
-(question → the policy/evidence chunk that answers it) and report recall@10 with and
-without the reranker. Commit the set under tests/fixtures/rag/ (seed data only, no
-customer content).
+Task: (1) Author the 200-pair seed set described in that note and commit it under
+tests/fixtures/rag/ with a SHA-256 of its canonical JSON. (2) Run Q1 in a pinned CI image
+(reference implementations, each model's documented query/passage treatment):
+recall@10 and nDCG@10 per embedder, then per reranker on the winner's fixed top-50,
+with a paired bootstrap 95% interval. (3) Run Q2 on the production VM through a
+dispatch-only workflow modelled on vm-capacity.yml, for the candidates Q1 keeps.
+(4) Record every number, digest and weights checksum in a new implementation note.
 
-Constraints: no production change, no dependency added. If the licence forbids SaaS use,
-say so first and stop. Pin every version and digest you touched.
+Constraints: no production change beyond the temporary benchmark container, no
+dependency added to the app. Apply the note's decision rule as written: the larger
+model wins only when its paired interval's lower bound clears the margin; grow the set
+at most once, to 400 pairs, and treat that verdict as final; record the smallest drop
+each slice could have shown. Read each kept model's licence file in its repository before recording it.
 
-Done when: the note answers the five sub-phases with numbers and the seed set is in
-the repo with a content hash.
+Done when: the record answers 0.3-0.5 with numbers and the seed set is in the repo with
+a content hash.
 ```
 
 **Hardening.** G5 (digests and licence recorded before adoption), G11 (the
 seed set is authored now, tied by content hash, so Phase 1 ships with its
 evaluation set rather than promising one).
 
-**Done when.** The note is on `main` with numbers, and the owner has initialled
-D-L4-3.
+**Done when.** The measurements are on `main` with numbers and the D-L4-3 rule
+has picked the embedder and the reranker. D-L4-3 was initialled on 2026-11-11
+and amended on 2026-11-13; the margin was agreed under D-L4-10 on 2026-11-12.
+The pick is made (2026-11-13, 0.3), the licence read (0.1b) and the
+dependency record (0.6) are done, and the embedder's VM figures are in
+(2026-11-15, 0.5a); the reranker's (0.5b) remain, with its service.
 
 ### Phase 1 — The embedding seam, CPU-local
 
@@ -158,39 +369,110 @@ D-L4-3.
 backend inside the perimeter and a stub for tests; no sub-processor touched.
 
 **Sub-phases.**
-- [ ] 1.1 `deploy/docker-compose.prod.yml`: `tei-embed` service (TEI CPU image,
+- [x] 1.1 `deploy/docker-compose.prod.yml`: `tei-embed` service (TEI CPU image,
       digest-pinned, model volume, no published port, `app`/`worker` network
-      only). Applied with `deploy/apply.sh`.
-- [ ] 1.2 `src/env.ts`: `AI_EMBED_LOCAL_BASE_URL`, `AI_EMBED_LOCAL_MODEL`
-      (optional; absent = no local embedding provider constructed).
-- [ ] 1.3 `src/lib/ai/embeddings/`: `types.ts` (`EmbeddingProvider.embed(texts,
+      only). Applied with `deploy/apply.sh`. Held by the capacity budget's C1
+      (G5).
+      **In two steps** (owner decision, 2026-11-15, option B on #5687: the VM
+      never runs the unpatched upstream image).
+      - [x] 1.1a The image: `deploy/tei-embed/Dockerfile` (the upstream CPU
+        release by tag and digest plus `apt-get upgrade`), built, smoke-tested
+        and Trivy-gated at CRITICAL,HIGH (fixed only) by ci.yml's `TEI image`,
+        published by `tei-embed-image.yml` weekly and on dispatch from `main`
+        (D-L4-11). Done 2026-11-15.
+      - [x] 1.1b The service in `deploy/docker-compose.prod.yml`, pinned to a
+        digest that workflow published, the way the scanner overlay pins its
+        image (#3793, #5493): `ghcr.io/rodnapamet/tei-embed@sha256:90f7be794f9451e84381b385ad1d4c16883035686dfa658b1d1ccb3c7ed53b55`,
+        tag `cpu-1.9.4-20261115-046ef5cc8`, from run 43715894440 (smoke:
+        healthy, 2 vectors of 384 dimensions, not OOM-killed; Trivy gate
+        passed). Done 2026-11-15. The same change fixed the weekly run's
+        newer-upstream report, which read one 1,000-tag page of GHCR's list
+        and called `cpu-1.2.1` newer than `cpu-1.9.4`
+        (`deploy/tei-embed/newer-upstream.sh`).
+      - [x] 1.1c The owner's `VM apply` run (preflight, then apply), `VM check`
+        `containers` showing `tei-embed` healthy, and the capacity recorder's
+        first day of its peak on the VM. Done 2026-11-15: applied by the
+        owner's `VM apply`, healthy in `VM check` `containers`, and timed on
+        the VM by `tei-embed-timing` (run 43757070861; 0.5a holds the
+        figures). The recorder's first full day is read on 2026-11-16 at
+        17:30 UTC, for the `mem_limit` decision (2,560 MiB until then, 2,048
+        the likely target; owner, 2026-11-15).
+
+      The service as specified for 1.1b, measured 2026-11-15. One deviation
+      from the line above: it sits on the project's default network, beside
+      `postgres`, `redis` and `clamav`, not on a network of its own with
+      `app` and `worker`. A second network on `app` and `worker` changes the
+      two containers Watchtower recreates, on the request path, for a service
+      that is off; and it needs egress for the first start's weight fetch, so
+      an `internal` network would not serve.
+      Measured on CI runners with the service's exact flags at 1.0 CPU (the
+      VM's figures are 0.5's and the capacity recorder's): `memory.peak`
+      1,600–1,664 MiB after 64 × 512-token batches, so the limit is 2,560 MiB
+      (the 1 GB estimate was OOM-killed while loading; TEI's CPU build serves
+      through ONNX Runtime, about 2.5 times the weights in anonymous memory);
+      healthy 9–12 s after start, the weight fetch included; a one-query
+      embed 8–12 ms at p50. **A 64-passage batch of 512-token passages took
+      10.3–23.7 s, and the seam's deadline is 15 s (`TEI_DEADLINE_MS`)**. On
+      the VM it took 41.8–44.2 s (0.5a), and 8 passages took 5.2–6.0 s, so the
+      owner decided on 2026-11-15 that the indexing caller
+      ([`weaviate.md`](./weaviate.md) Phase 2) embeds 8 passages per call
+      (`INDEX_EMBED_BATCH`) and the deadline stays 15 s. The
+      upstream image's Trivy result at the repository's gate settings
+      (CRITICAL,HIGH, fixed only) is 4 CRITICAL and 13 HIGH, all Debian
+      packages of the base layer (perl-base, apt, pcre2, openssl, brotli) and
+      none in TEI itself, which is why 1.1a exists. The client already admits the Compose-network address
+      (`http://tei-embed:8080`): `inflect-local` dials only addresses INSIDE
+      the perimeter (RFC 1918, loopback, IPv6 ULA, every resolved address,
+      pinned), and refuses a public one by name
+      (`EMBED_ENDPOINT_OUTSIDE_PERIMETER`, `ENDPOINT_OUTSIDE_PERIMETER`).
+      `safeFetch` is the wrong test here: it admits only public addresses,
+      which are exactly the ones that make the residency claim false. The rule
+      is the one every in-deployment service is held to (G6 as amended by the
+      owner on 2026-11-12, `src/lib/ai/in-deployment-service.ts`, shared with
+      the Docling parser and the NeMo guard provider): one operator variable
+      read by one module, every resolved address inside, pinned, no redirect,
+      deadline, a byte cap that aborts (`tests/guards/ssrf-egress-coverage.test.ts`,
+      "THE IN-DEPLOYMENT SERVICES").
+      `AI_EMBED_LOCAL_MODEL` must equal the container's `--model-id`.
+- [x] 1.2 `src/env.ts`: `AI_EMBED_LOCAL_BASE_URL`, `AI_EMBED_LOCAL_MODEL`
+      (optional; absent = no local embedding provider constructed), plus
+      `AI_EMBED_LOCAL_DIMENSIONS` (required with them) and
+      `AI_EMBED_LOCAL_QUERY_PREFIX` / `_PASSAGE_PREFIX` (absent = no prefix).
+      The model is configuration; D-L4-3 chose `intfloat/multilingual-e5-small`
+      (2026-11-13), set here when 1.1 deploys it.
+- [x] 1.3 `src/lib/ai/embeddings/`: `types.ts` (`EmbeddingProvider.embed(texts,
       { inputType: 'query' | 'passage' })` returning vectors + `model` +
       `dimensions`), `select.ts` (residency routing copied from
       `model-selection.ts`: `inflect-local/<model>` only for now; a
       `LOCAL_ONLY` tenant with no local embed route is **refused**, never
-      routed elsewhere), `tei-provider.ts` (OpenAI-compatible `/v1/embeddings`
-      through `safeFetch`), `stub-provider.ts` (deterministic hashed vectors
-      for tests).
-- [ ] 1.4 The factory returns before constructing anything external
+      routed elsewhere), `tei-provider.ts` (OpenAI-compatible `/v1/embeddings`;
+      the served model must be the configured one), `stub-provider.ts`
+      (deterministic hashed vectors for tests). The transport is `http.ts`,
+      the directory's JSON adapter over the shared in-deployment dial
+      (`src/lib/ai/in-deployment-service.ts`), not `safeFetch`; no file in
+      the directory makes a fetch call of its own.
+- [x] 1.4 The factory returns before constructing anything external
       (residency is structural — the `identity-match/index.ts` pattern); the
       residency guard's constructor pin gains the new set.
-- [ ] 1.5 Outcome metric `embeddings.requests{provider,outcome}` and a duration
-      histogram.
+- [x] 1.5 Outcome metric `embeddings.requests{provider,outcome}` and a duration
+      histogram (`embeddings.request.duration`), both also labelled
+      `operation` (`embed` / `rerank`).
 
 **Prompt.**
 ```text
 Context (main 3.338.0): routing is residency-based (flue/model-selection.ts); the
 identity-match provider factory returns BEFORE constructing an external provider and
-tests/guards/ai-residency-enforcement.test.ts pins the constructor set; outbound calls go
-through safeFetch and new hosts join tests/guards/ssrf-egress-coverage.test.ts's
-population; the Compose file is repo-canonical and images are digest-pinned. Phase 0
+tests/guards/ai-residency-enforcement.test.ts pins the constructor set; outbound calls to
+hosts outside the deployment go through safeFetch, calls to a service run inside it go
+through src/lib/ai/in-deployment-service.ts (G6 as amended 2026-11-12), and new hosts join
+tests/guards/ssrf-egress-coverage.test.ts's population; the Compose file is repo-canonical and images are digest-pinned. Phase 0
 recorded the model, digest and benchmark.
 
 Task: add the embedding seam. (1) A `tei-embed` service (TEI CPU, digest-pinned, model
 volume, no published port). (2) AI_EMBED_LOCAL_BASE_URL / AI_EMBED_LOCAL_MODEL in
 src/env.ts, optional. (3) src/lib/ai/embeddings/: types.ts, select.ts (residency routing
 — inflect-local only; a LOCAL_ONLY tenant with no local route is refused with a named
-reason), tei-provider.ts (POST /v1/embeddings via safeFetch, inputType mapped to the
+reason), tei-provider.ts (POST /v1/embeddings via the in-deployment dial, inputType mapped to the
 model's query/passage prefixes, batch ≤ 64, abort on timeout, degrade rather than throw),
 stub-provider.ts (deterministic). (4) Factory that returns before constructing anything
 external; extend the residency guard's pinned constructor set in the same diff. (5)
@@ -207,8 +489,9 @@ egress guard sees the new sink, and the two-tenant job test in weaviate.md Phase
 against the real provider in the integration project.
 ```
 
-**Hardening.** G1 (residency first, structural), G6 (`safeFetch`, egress
-population), G5 (image + volume, no Python in the app image), G9 (absent
+**Hardening.** G1 (residency first, structural), G6 (hosts are config, reads
+bounded, the SSRF guard's population; the address test is the in-deployment
+rule's, not `safeFetch`'s — see 1.1), G5 (image + volume, no Python in the app image), G9 (absent
 config = no provider), checklist §3/§4 (runtime wiring, outcome metric). The
 `inputType` mapping is not cosmetic: asymmetric retrieval models score query
 and passage differently, and mixing them silently degrades recall.
@@ -223,12 +506,22 @@ recall@10 on the Phase 0 seed set matches Phase 0's number within noise.
 the mount gate can see.
 
 **Sub-phases.**
-- [ ] 2.1 `RerankProvider.rerank(query, passages, { topN })` beside the embedding
+- [x] 2.1 `RerankProvider.rerank(query, passages, { topN })` beside the embedding
       seam, same residency routing, TEI `/rerank` backend on the same service
-      (second model on the same container or a sibling `tei-rerank`).
+      (second model on the same container or a sibling `tei-rerank`). The
+      route is `AI_RERANK_LOCAL_BASE_URL` / `AI_RERANK_LOCAL_MODEL`; the
+      service itself waits with 1.1. Each call reads `/info` first and sends
+      no passage to a reranker whose `model_id` is not the configured one.
+      `rerankOrKeepHybridOrder` bounds the pool
+      to 50 and returns the hybrid order, with the reason, on any failure.
 - [ ] 2.2 `VectorRepository.search` gains `rerank: true` → hybrid top-50 then
       rerank to k; the revision key for the mount gate includes the rerank
-      model id.
+      model id. The key exists (`revision.ts`: the RAG record's own
+      `{ embeddingModel, dimensions, rerankModel, chunker, k, indexParams }`
+      since 2026-11-16, with no `alpha` because the store is dense-only;
+      models never provider ids, so the CPU and GPU arms share one revision);
+      the search and its mount gate are built ([`weaviate.md`](./weaviate.md)
+      Phase 3.1–3.5) and carry `rerankModel: null` until this step.
 - [ ] 2.3 Text hydration happens **before** rerank (the cross-encoder needs the
       passage) and **under RLS** — never from the vector store.
 - [ ] 2.4 Seed-set eval re-run; the record is refreshed or the gate refuses.
@@ -238,7 +531,7 @@ the mount gate can see.
 Context (main 3.338.0): the embedding seam (Phase 1) and VectorRepository.search (weaviate
 Phase 3) exist; the search_knowledge mount gate consumes a RAG evaluation record keyed by
 (embeddingModel, chunker, k, alpha). Chunk text is hydrated from Postgres under RLS, never
-from Weaviate (vectors-only rule D-L4-2).
+from any store outside Postgres (vectors-only rule D-L4-2, adopted 2026-11-11).
 
 Task: add reranking. (1) RerankProvider in src/lib/ai/embeddings/ (TEI /rerank backend,
 same residency routing and factory rules as the embedding provider, stub for tests). (2)
@@ -279,6 +572,11 @@ deployment that takes Layer 5 up after every other roadmap is complete.
 - [ ] 3.4 Same model, same dimensions, same revision key: a vector produced on
       CPU and on GPU must be interchangeable, proven by a test that embeds the
       seed set on both and compares cosine ≥ 0.999.
+- [ ] 3.5 Only here, a Nemotron retriever (the 1B embed and rerank models,
+      Llama-based, which TEI serves on GPU) may be measured against the Layer 4
+      winner on the same seed set, by the same rule (D-L4-3 as amended
+      2026-11-13). A different model is a new revision key and a re-embedding,
+      never a silent swap.
 
 **Prompt.**
 ```text
@@ -313,7 +611,7 @@ without it is byte-identical to Phase 2.
 
 | What | How | Record |
 | --- | --- | --- |
-| Retrieval quality | recall@10 on the 200-pair seed set, with and without rerank (Phase 0, re-run per revision) | evaluation record (G11) consumed by the `search_knowledge` mount gate |
+| Retrieval quality | recall@10 on the seed set (200 English cases, 50 Bulgarian), with and without rerank (Phase 0, re-run per revision) | evaluation record (G11) consumed by the `search_knowledge` mount gate |
 | Cross-arm parity | CPU vs GPU cosine ≥ 0.999 on the seed set (Phase 3, optional) | CI, when the GPU arm is configured |
 | Latency | p50/p95 per provider | `embeddings.requests` histogram |
 | Residency | "LOCAL_ONLY never reaches an external provider" | unit + guard, every phase |

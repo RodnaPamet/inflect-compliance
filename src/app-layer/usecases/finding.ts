@@ -1,13 +1,20 @@
 import { RequestContext } from '../types';
 import { FindingRepository } from '../repositories/FindingRepository';
-import { assertCanRead, assertCanWrite } from '../policies/common';
+import { assertCanRead } from '../policies/common';
+import { assertCanCreateFinding, assertCanUpdateFinding } from '../policies/finding.policies';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound, badRequest, ConflictError } from '@/lib/errors/types';
+import {
+    isAuditReadOnly,
+    AUDIT_CANCELLED_READ_ONLY,
+    AUDIT_COMPLETED_READ_ONLY,
+    type AuditReadOnlyReason,
+} from '@/lib/audit-lifecycle';
 import { runInTenantContext, PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import type { FindingSeverity, FindingType, FindingStatus } from '@prisma/client';
 import { z } from 'zod';
-import { CreateFindingSchema, UpdateFindingSchema } from '@/lib/schemas';
+import { UpdateFindingSchema, type CreateFindingInput } from '@/lib/schemas';
 
 /**
  * Validate that every referenced entity (assignee, control, compensating
@@ -101,8 +108,8 @@ export async function getFinding(ctx: RequestContext, id: string) {
     });
 }
 
-export async function createFinding(ctx: RequestContext, data: z.infer<typeof CreateFindingSchema>) {
-    assertCanWrite(ctx);
+export async function createFinding(ctx: RequestContext, data: CreateFindingInput) {
+    assertCanCreateFinding(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const riskIds = await validateFindingRefs(db, ctx, {
@@ -165,8 +172,48 @@ export async function createFinding(ctx: RequestContext, data: z.infer<typeof Cr
     });
 }
 
+const CLOSED_AUDIT_FINDING_MESSAGE: Record<AuditReadOnlyReason, string> = {
+    AUDIT_COMPLETED_READ_ONLY:
+        'This audit is completed, so a finding cannot be added to it. Move it back to In Progress first.',
+    AUDIT_CANCELLED_READ_ONLY: 'This audit is cancelled, so a finding cannot be added to it.',
+};
+
+/**
+ * `POST /findings`: a person raising a finding directly. Refuses one that names
+ * a COMPLETED or CANCELLED audit (#5313 item 29, owner decision 2026-11-15),
+ * with a 409 carrying the audit's read-only reason, the rule the audits page
+ * already holds (`isAuditReadOnly`).
+ *
+ * The rule is HERE, not in `createFinding`, on purpose. Other paths raise
+ * findings against an audit and must keep working: a shared audit pack's
+ * reviewer comment materialised into a finding (`audit-readiness/sharing.ts`),
+ * and the checklist-FAIL cascade, which calls `createFinding` from inside
+ * `updateAudit`.
+ *
+ * A plain read, not `AuditRepository.lockStatus`: nothing here writes the
+ * audit, and a lock taken in its own transaction would be released before the
+ * finding is written anyway. A concurrent close can still land between the
+ * read and the insert; the window is the same one the page has.
+ */
+export async function createFindingFromRequest(ctx: RequestContext, data: CreateFindingInput) {
+    assertCanCreateFinding(ctx);
+    const auditId = data.auditId || null;
+    if (auditId) {
+        const audit = await runInTenantContext(ctx, (db) =>
+            db.audit.findFirst({ where: { id: auditId, tenantId: ctx.tenantId }, select: { status: true } }),
+        );
+        if (audit && isAuditReadOnly(audit.status)) {
+            const reason: AuditReadOnlyReason = audit.status === 'CANCELLED'
+                ? AUDIT_CANCELLED_READ_ONLY
+                : AUDIT_COMPLETED_READ_ONLY;
+            throw new ConflictError(CLOSED_AUDIT_FINDING_MESSAGE[reason], { reason });
+        }
+    }
+    return createFinding(ctx, data);
+}
+
 export async function updateFinding(ctx: RequestContext, id: string, data: z.infer<typeof UpdateFindingSchema>) {
-    assertCanWrite(ctx);
+    assertCanUpdateFinding(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const oldFinding = await FindingRepository.getById(db, ctx, id);

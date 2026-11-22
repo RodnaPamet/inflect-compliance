@@ -21,7 +21,8 @@ describe('Automation Epic 7 — multi-step chained rules', () => {
     it('the chain-dispatch job exists + is registered', () => {
         expect(exists('src/app-layer/jobs/rule-chain-dispatch.ts')).toBe(true);
         const job = read('src/app-layer/jobs/rule-chain-dispatch.ts');
-        expect(job).toMatch(/parentExecutionId/);
+        // The chained execution carries the step it came from as its parent.
+        expect(job).toMatch(/triggeredBy: 'chain',\s*parentExecutionId,/);
         expect(job).toMatch(/MAX_CHAIN_DEPTH/);
         expect(read('src/app-layer/jobs/executor-registry.ts')).toMatch(
             /register\('rule-chain-dispatch'/,

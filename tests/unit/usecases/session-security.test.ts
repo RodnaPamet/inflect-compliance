@@ -347,3 +347,15 @@ describe('getUserSessionVersion', () => {
         expect(v).toBe(0);
     });
 });
+
+describe('signing out your other sessions takes you, signed in', () => {
+    it.each([
+        ['an API key', { apiKeyId: 'key-1' }],
+        ['an agent', { agentId: 'agent-1' }],
+    ])('refuses %s', async (_l, extra) => {
+        await expect(
+            revokeOtherSessions(makeRequestContext('ADMIN', extra), null),
+        ).rejects.toMatchObject({ status: 403, details: { reason: 'NOT_A_PERSON' } });
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+});

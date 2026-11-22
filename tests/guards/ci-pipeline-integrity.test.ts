@@ -461,8 +461,10 @@ describe('the notice comments only when the failing set changes (#3540)', () => 
         conclusion?: string;
         jobs?: readonly Job[];
         issueBody?: string | null;
+        /** Other runs of the workflow on main, as `listWorkflowRuns` returns them (#5085). */
+        otherRuns?: ReadonlyArray<{ id: number; run_number: number; status: string; conclusion: string | null; head_sha: string }>;
     }): Promise<readonly Call[]> {
-        const { conclusion = 'failure', jobs = [], issueBody = null } = opts;
+        const { conclusion = 'failure', jobs = [], issueBody = null, otherRuns = [] } = opts;
         const calls: Call[] = [];
         // `null` means no open notice exists; a string means one does, with that
         // body — which is the only place the script's between-run state lives.
@@ -489,6 +491,7 @@ describe('the notice comments only when the failing set changes (#3540)', () => 
                 },
                 actions: {
                     listJobsForWorkflowRun: async () => ({ data: jobs }),
+                    listWorkflowRuns: async () => ({ data: { workflow_runs: otherRuns } }),
                 },
             },
         };
@@ -497,18 +500,52 @@ describe('the notice comments only when the failing set changes (#3540)', () => 
             payload: {
                 workflow_run: {
                     id: 42,
+                    run_number: 100,
+                    workflow_id: 9,
+                    event: 'push',
                     html_url: 'https://example.invalid/42',
                     head_sha: SHA,
                     conclusion,
                 },
             },
         };
-        await compiled(github, context, {});
+        await compiled(github, context, { info: () => undefined });
         return calls;
     }
 
     const kinds = (calls: readonly Call[]) => calls.map((c) => c.kind);
     const commentsIn = (calls: readonly Call[]) => calls.filter((c) => c.kind === 'comment');
+
+    describe('a run for an older commit that finishes last is ignored (#5085)', () => {
+        const newer = (conclusion: string, status = 'completed') => ({
+            id: 43, run_number: 101, status, conclusion, head_sha: 'feedface0000',
+        });
+
+        it('a late green does not close the notice a newer red run opened', async () => {
+            const calls = await runNotice({
+                conclusion: 'success',
+                issueBody: markerFor({ jobs: 'E2E', runs: 1, since: 'feedface' }),
+                otherRuns: [newer('failure')],
+            });
+            expect(calls).toEqual([]);
+        });
+
+        it('a late red does not reopen a notice a newer green run closed', async () => {
+            const calls = await runNotice({ jobs: [job('E2E')], otherRuns: [newer('success')] });
+            expect(calls).toEqual([]);
+        });
+
+        it('a newer run still in progress, cancelled, or OLDER does not silence it', async () => {
+            for (const other of [
+                newer('', 'in_progress'),
+                newer('cancelled'),
+                { id: 41, run_number: 99, status: 'completed', conclusion: 'success', head_sha: 'aaaa' },
+            ]) {
+                const calls = await runNotice({ jobs: [job('E2E')], otherRuns: [other] });
+                expect(kinds(calls)).toEqual(['create']);
+            }
+        });
+    });
 
     it('says nothing new when the SAME jobs fail again — the #3540 regression', () => {
         // The assertion the issue exists for. One comment per red run is what

@@ -24,6 +24,9 @@ import { Heading } from '@/components/ui/typography';
 import { Button } from '@/components/ui/button';
 import { Combobox } from '@/components/ui/combobox';
 import { useToastWithUndo } from '@/components/ui/hooks';
+import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
+import { apiErrorMessage } from '@/lib/api-error';
+import { unwrapCappedList, type CappedList } from '@/lib/list-backfill-cap';
 import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
 
 interface ControlOption { id: string; code: string | null; name: string; status: string | null; }
@@ -100,6 +103,11 @@ export default function PolicyTraceabilityPanel({
     /** Enables the link/unlink affordances when provided with canWrite. */
     policyId?: string;
     apiUrl?: (path: string) => string;
+    /**
+     * May this viewer link and unlink controls? The control-links routes
+     * take `controls.edit` (#5227), so pass the coarse tier AND that key,
+     * never the tier alone.
+     */
     canWrite?: boolean;
 }) {
     const [data, setData] = useState<PolicyTraceData | null>(null);
@@ -109,6 +117,7 @@ export default function PolicyTraceabilityPanel({
     const t = useTranslations('panels');
     const tr = useTranslations();
     const triggerUndoToast = useToastWithUndo();
+    const toast = useToast();
     // Link/unlink is available only when the page passes policyId + apiUrl + canWrite.
     const editable = canWrite && !!policyId && !!apiUrl;
     const controlLinksUrl = apiUrl && policyId ? apiUrl(`/policies/${policyId}/control-links`) : '';
@@ -156,11 +165,13 @@ export default function PolicyTraceabilityPanel({
     // Available controls for the link picker (only when editable).
     useEffect(() => {
         if (!editable || !apiUrl) return;
-        fetch(apiUrl('/controls?limit=100'))
+        // The full list, not `?limit=100`: a paged read offered only the
+        // first 100 controls and never the rest (#5226). GET /controls
+        // without paging returns the capped `{ rows, truncated }` list.
+        fetch(apiUrl('/controls'))
             .then((r) => (r.ok ? r.json() : []))
-            .then((d) => {
-                const list = Array.isArray(d) ? d : (d?.controls ?? d?.items ?? []);
-                setAvailableControls(list as ControlOption[]);
+            .then((d: CappedList<ControlOption> | ControlOption[]) => {
+                setAvailableControls(unwrapCappedList(d));
             })
             .catch(() => setAvailableControls([]));
     }, [editable, apiUrl]);
@@ -179,7 +190,14 @@ export default function PolicyTraceabilityPanel({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ controlIds: [controlId] }),
             });
-            if (res.ok) await load();
+            if (res.ok) {
+                await load();
+            } else {
+                // Say why, rather than nothing at all (#5227).
+                toast.error(apiErrorMessage(await res.json().catch(() => null), t('policyTrace.linkFailed')));
+            }
+        } catch {
+            toast.error(t('policyTrace.linkFailed'));
         } finally {
             setLinking(false);
         }

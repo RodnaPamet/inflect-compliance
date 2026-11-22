@@ -1482,3 +1482,50 @@ describe('the bind identities the orchestrator must refuse to disable', () => {
         expect(makeWriter(fake, bare).selfAccountIds).toEqual([]);
     });
 });
+
+describe('restore addresses the account where it is now (#5098)', () => {
+    const MOVED_DN = 'CN=Jo Bloggs,OU=Leavers,DC=corp,DC=example,DC=com';
+
+    /** The capture, taken while the account was enabled under OU=Staff. */
+    async function capture() {
+        return makeWriter(fakeAd()).readState(GUID);
+    }
+
+    it('modifies the DN the GUID resolves to today, not the DN in the capture', async () => {
+        // A leaver is commonly moved to a Leavers OU after the disable. The
+        // restore used to send its modify to the capture's DN, which no longer
+        // exists, so a moved account could never be put back.
+        const captured = await capture();
+        const fake = fakeAd({
+            entries: [userEntry({ distinguishedName: MOVED_DN, userAccountControl: String(ENABLED_UAC | ACCOUNTDISABLE) })],
+        });
+
+        await makeWriter(fake).restore!(GUID, captured);
+
+        expect(fake.modifies).toHaveLength(1);
+        expect(fake.modifies[0].dn).toBe(MOVED_DN);
+        // Still the compare-and-swap, on the value this product wrote.
+        expect(fake.modifies[0].changes).toEqual([
+            { operation: 'delete', type: 'userAccountControl', values: [String(ENABLED_UAC | ACCOUNTDISABLE)] },
+            { operation: 'add', type: 'userAccountControl', values: [String(ENABLED_UAC)] },
+        ]);
+    });
+
+    it('refuses, sending nothing, when the current DN is outside the configured base', async () => {
+        const captured = await capture();
+        const fake = fakeAd({
+            entries: [
+                userEntry({
+                    distinguishedName: 'CN=Jo Bloggs,OU=Staff,DC=other,DC=example',
+                    userAccountControl: String(ENABLED_UAC | ACCOUNTDISABLE),
+                }),
+            ],
+        });
+
+        const err = await makeWriter(fake).restore!(GUID, captured).catch((e: unknown) => e);
+
+        expect(err).toBeInstanceOf(DirectoryWriteError);
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+        expect(fake.modifies).toEqual([]);
+    });
+});

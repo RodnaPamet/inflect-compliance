@@ -48,6 +48,12 @@ interface CoverageData {
     uncoveredCriticalAssetsTotal: number;
     totalCriticalAssets: number;
     hotControls: Array<{ id: string; code?: string; name: string; riskCount: number }>;
+    /**
+     * Kinds whose NAME LIST was left out because the viewer may not view them
+     * (#5442). The counts above are unaffected; an empty list here is not
+     * "nothing uncovered", and the empty state must not say it is.
+     */
+    withheld: { risks: boolean; assets: boolean; controls: boolean };
 }
 
 interface CoverageClientProps {
@@ -286,11 +292,15 @@ export function CoverageClient({ data, tenantSlug }: CoverageClientProps) {
                         getRowId={getUncoveredAssetRowId}
                         onRowClick={handleUncoveredAssetRowClick}
                         // #4739 — "all covered" was said over no critical asset.
-                        emptyState={data.totalCriticalAssets === 0 ? t('emptyAssetsNone') : t('emptyAssets')}
+                        emptyState={
+                            data.withheld.assets && data.uncoveredCriticalAssetsTotal > 0
+                                ? t('emptyAssetsWithheld')
+                                : data.totalCriticalAssets === 0 ? t('emptyAssetsNone') : t('emptyAssets')
+                        }
                         resourceName={(p) => (p ? t('assetWordOther') : t('assetWordOne'))}
                         data-testid="uncovered-assets-table"
                     />
-                    {data.uncoveredCriticalAssetsTotal > data.uncoveredCriticalAssets.length && (
+                    {!data.withheld.assets && data.uncoveredCriticalAssetsTotal > data.uncoveredCriticalAssets.length && (
                         <p className="mt-2 text-xs text-content-muted" id="uncovered-assets-more">
                             {t('showingOf', { shown: data.uncoveredCriticalAssets.length, total: data.uncoveredCriticalAssetsTotal })}{' '}
                             <Link href={tenantHref('/assets')} className={textLinkVariants({ tone: 'underline' })}>{t('viewAllAssets')}</Link>
@@ -317,11 +327,15 @@ export function CoverageClient({ data, tenantSlug }: CoverageClientProps) {
                         getRowId={getUnmappedRiskRowId}
                         onRowClick={handleUnmappedRiskRowClick}
                         // #4739 — "all mitigated" was said over an empty register.
-                        emptyState={data.totalRisks === 0 ? t('emptyRisksNone') : t('emptyRisks')}
+                        emptyState={
+                            data.withheld.risks && data.unmappedRisksTotal > 0
+                                ? t('emptyRisksWithheld')
+                                : data.totalRisks === 0 ? t('emptyRisksNone') : t('emptyRisks')
+                        }
                         resourceName={(p) => (p ? t('riskWordOther') : t('riskWordOne'))}
                         data-testid="unmapped-risks-table"
                     />
-                    {data.unmappedRisksTotal > data.unmappedRisks.length && (
+                    {!data.withheld.risks && data.unmappedRisksTotal > data.unmappedRisks.length && (
                         <p className="mt-2 text-xs text-content-muted" id="unmapped-risks-more">
                             {t('showingOf', { shown: data.unmappedRisks.length, total: data.unmappedRisksTotal })}{' '}
                             <Link href={tenantHref('/risks')} className={textLinkVariants({ tone: 'underline' })}>{t('viewAllRisks')}</Link>

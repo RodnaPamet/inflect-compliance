@@ -14,11 +14,16 @@ which is delivered in parts:
 |---|---|
 | The ingest: the route `/api/t/:slug/admin/agents/harness-scans`, the derived levels and findings, and the five tables `AgentHarnessScannerKey`, `AgentHarnessScan`, `DiscoveredAgent`, `AgentHarnessScanItem` and `AgentHarnessAcceptance` | #3688, merged on 2026-10-17 |
 | Conditions 7 and 10 on the ingest, and the no-cascade rule under [Retention](#retention) | #3692, merged on 2026-10-17 |
-| The scanner package and container | #3686: the Entra, MCP and register sources in #3767, #3768 and #3769, and the container in the pull request that closes it |
+| The scanner package and container | #3686: the Entra, MCP and register sources in #3767, #3768 and #3769, and the container in the pull request that closes it. Moved out of this repository by scanent #26: the scanner is the standalone scanent product, and the in-repo `packages/agent-harness-scanner` was removed on 2026-11-15 |
 | The harness matrix, and the evidence emitted from a scan | #3687 |
 
-Where a safeguard is enforced by code on `main`, the code is named. Where it is
-a requirement on a part that is not on `main`, it is listed under
+Where a safeguard is enforced by code on `main`, the code is named. A safeguard
+the SCANNER enforces was named by its file under `packages/agent-harness-scanner/`
+until scanent #26; that code, and the tests that proved it, are now scanent's
+([RodnaPamet/scanent](https://github.com/RodnaPamet/scanent)), which carries
+every source and rule the in-repo package did, and the evidence for those
+safeguards is read there. Where a safeguard is a requirement on a part that is
+not on `main`, it is listed under
 [Conditions on step 1a](#conditions-on-step-1a) with the issue or pull request
 that owns it, and the assessment holds only while every condition does.
 
@@ -64,6 +69,7 @@ pointers. Exactly one member is personal data by design:
 | `unboundCredentials[]` (`/2` only) | `ref`, a `scheme://locator` reference to a credential no discovered agent holds, and the source kind that saw it | No by design; the same caveat as an agent's credential locator |
 | `agents[].tools[].calls`, `windowDays` (`/2` only, optional) | How many times the agent called the tool, and over how many days | No: a count of an agent's calls, carrying nothing of what it sent or received |
 | `agents[].models[]` (`/2` only, optional) | `endpoint`, a `scheme://locator` or a host, and the model's id | No by design; the same caveat as a locator. Verified with the report and kept on the agent's scan item since #3759 |
+| `agents[].paymentCapabilities[]` (`/4` only, optional; Agent Pay Phase 2) | `protocol` (`x402`), `library` (a closed list of payment client packages) and `at`, the `code://` locator where the agent's code calls that client; only on an agent discovered via `code` | No by design; the same caveat as a locator: a `code://` locator is built from the client's repository and file paths, and carries a person's name only if those do. No amount, wallet, key or token: the contract has no field for one, and a secret-shaped `at` is refused. Verified with the report and not stored as a column; a finding derived from it names the library and locator |
 | `agents[].verdicts[].evidence`, `findings[].evidence` | A pointer of at most 512 characters | No by design; the same caveat as a locator |
 | `scan.scanner` | The scanner's own register id, version and manifest hash | No |
 | `signature` | Algorithm, public key, signature | No |
@@ -437,11 +443,12 @@ each member out of the result. No owner is reported.
 
 The container (#3686) is how an estate runs the scanner, and it changes
 nothing above: it adds no source, no data category, no recipient and no stored
-column. A client builds it from this repository. The one published copy is
-Inflect's own, for its estate's scanner on the production VM, and it goes to the
-repository's private GHCR package (owner decision, 2026-10-20). Publishing
-changes no data flow: the image holds no credential, no configuration and no
-estate data. On the VM it runs from an opt-in Compose overlay,
+column. A client builds it from this repository. Inflect's own estate's scanner
+on the production VM runs scanent's public image instead (scanent #26), the
+standalone scanner product Inflect Ltd. publishes, signed by its release
+workflow; it reads the same four sources and posts the same contract, so this
+changes no data flow either. Neither image holds a credential, a configuration
+or estate data. On the VM it runs from an opt-in Compose overlay,
 `deploy/docker-compose.harness-scanner.yml`, pinned by digest. Its credentials
 sit in their own root-only environment file, `.env.scanner`, not in the
 application's `.env.prod`. So the scanner receives none of the application's
@@ -661,8 +668,8 @@ including its 30-day notice window, before that data moves.
 | R14 | An owner reference is kept in an append-only record. | `AiDecisionLog.outputSummary` is bounded and sanitised and named DSAR-relevant. Residual: no erasure path for one person, as for the other append-only records. Accepted pending the retention answer `docs/data-retention.md` records as open. | Condition 14 |
 | R10 | A shortfall finding names the owner of an agent below the bar, and colleagues read it. | Findings carry identifiers only and stay in the controller's own tenant, read by its own staff. Residual: accepted. | Step `1a` findings |
 | R11 | An acceptance's justification names or describes a person, and is read beyond its purpose. | Encrypted at rest, sanitised at the write seam, and kept in the controller's own tenant. Residual: free text can still mention a person. Accepted, as it is for `ControlException`. | Condition 11 |
-| R15 | The LangSmith source receives run metadata, project text or a deployment's secret values inside a listing it calls, and passes them on. | It requests aggregates and never a run. The secrets-bearing deployments listing is requested only when an estate opts in (`readDeployments`, off by default), and the default is tested by request log. Of each listing it reads ids, a deployment's tracing project, and a project's tool-call count and tool-name facets; every other member is dropped with the page, and markers in each of them are absent from the signed report and the log (`tests/unit/agent-harness-scanner/langsmith-source.test.ts`). A tool name that is not an identifier is reported as a digest. Residual: for an estate that opts in, each page of the deployments listing — every deployment's secret names and values and its source configuration — is held in the scanner process's memory, in the client's estate, until the page is parsed and dropped. That is the client's own processing. | The LangSmith source (#3738) |
-| R16 | A self-hosted LangSmith host is repointed at an internal address, and the scanner sends the API key there. | Checked at configuration as a customer-named host, and resolved again before every request; a private, loopback, link-local or metadata address stops the read before the key is sent. An estate's private-range allowlist admits only the ranges it lists, never metadata, loopback or link-local, and both checks apply it. Residual, unchanged by the allowlist: the connection is not pinned to the checked address. | `packages/agent-harness-scanner/src/customer-host.ts` (#3738) |
+| R15 | The LangSmith source receives run metadata, project text or a deployment's secret values inside a listing it calls, and passes them on. | It requests aggregates and never a run. The secrets-bearing deployments listing is requested only when an estate opts in (`readDeployments`, off by default), and the default is tested by request log. Of each listing it reads ids, a deployment's tracing project, and a project's tool-call count and tool-name facets; every other member is dropped with the page, and markers in each of them are absent from the signed report and the log (proved by scanent's LangSmith source tests since scanent #26; in this repository by `tests/unit/agent-harness-scanner/langsmith-source.test.ts` until it was removed with the package). A tool name that is not an identifier is reported as a digest. Residual: for an estate that opts in, each page of the deployments listing — every deployment's secret names and values and its source configuration — is held in the scanner process's memory, in the client's estate, until the page is parsed and dropped. That is the client's own processing. | The LangSmith source (#3738), in scanent since scanent #26 |
+| R16 | A self-hosted LangSmith host is repointed at an internal address, and the scanner sends the API key there. | Checked at configuration as a customer-named host, and resolved again before every request; a private, loopback, link-local or metadata address stops the read before the key is sent. An estate's private-range allowlist admits only the ranges it lists, never metadata, loopback or link-local, and both checks apply it. Residual, unchanged by the allowlist: the connection is not pinned to the checked address. | scanent's customer-host check, in [scanent's repository](https://github.com/RodnaPamet/scanent) since scanent #26 (`packages/agent-harness-scanner/src/customer-host.ts` in this repository until it was removed, #3738) |
 
 ## Gaps
 
@@ -809,3 +816,19 @@ read tool, which is a `tools/call`. Condition 2 now says the scanner never calls
 dates and flags, and the owner it reports is an Inflect user id, already a
 member this assessment classifies. The merge of the pull request that carries
 this paragraph signs the amendment.
+
+Agent Pay Phase 2 (`docs/ai-architecture/mastercard-agent-pay.md`) reopens it
+on the contract ids the ingest accepts: `HARNESS_CONTRACT_IDS` gains
+`inflect-agent-harness/4`, which is `/3` plus one optional per-agent member,
+`paymentCapabilities[]`, classified in the table under
+[Personal data](#personal-data) above. Each entry is a protocol, a
+library from a closed list and a `code://` locator of the call, so it adds no
+data category and carries no content; the `code` source that produces it reads
+code statically under condition 15, as it already did. The ingest verifies it
+with the report and does not keep it as a column; what reaches storage is the
+`SPENDING_AGENT_UNDECLARED` finding it derives, which names the library and the
+locator, about a REGISTERED agent and keyed by the register row, so no person is
+profiled by it and no column that names a person is added. **The owner signed this
+amendment on 2026-11-12**: the merge of the pull request carrying this signed
+paragraph signs it, and the reference scanner may then ship `/4` to a client
+estate.

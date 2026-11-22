@@ -301,6 +301,7 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
         domain: { kind: 'inert' },
         adminEmail: { kind: 'inert' },
         enrichSso: { kind: 'inert' },
+        enrichOrgUnits: { kind: 'inert' },
         dormantDays: { kind: 'inert' },
         maxAdmins: { kind: 'inert' },
     },

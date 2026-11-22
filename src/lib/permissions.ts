@@ -89,6 +89,13 @@ export type PermissionSet = {
      *
      * So it follows `close` (OWNER/ADMIN) rather than `decide`. Owner ruling,
      * 2026-10-09.
+     *
+     * `view` is OWNER, ADMIN and AUDITOR (owner decision 2026-11-15, #5695):
+     * holding it opens the queue, which names candidate employees by name and
+     * work email, so it is not every member's. EDITOR, READER and AI_ADMIN
+     * (READER's set) held it until then, though the edge never let them reach
+     * the queue. A custom role may still grant it; one whose stored blob
+     * predates this domain takes its base role's default.
      */
     identity_reconciliation: { view: boolean; confirm: boolean };
     /**
@@ -387,6 +394,21 @@ export type PermissionSet = {
          */
         agent_harness_ingest: boolean;
         /**
+         * SUBMITTING a third-party application scan: a scanner in the client's
+         * environment posting its signed `scanent-integrations/1` report — the
+         * applications a directory (Entra, Okta, GitHub) has granted access to
+         * (`…/admin/agents/integration-scans`).
+         *
+         * Its own key, apart from `agent_harness_ingest`, by owner decision:
+         * the two reports describe different populations, and a key minted to
+         * post one must not be able to post the other. It is held, granted and
+         * classified exactly as `agent_harness_ingest` is: OWNER, ADMIN and
+         * AI_ADMIN by default, the scanner's API key through the
+         * `admin:integrations_ingest` scope, and a report counts only when a
+         * scanner key the register trusts signed it.
+         */
+        integrations_ingest: boolean;
+        /**
          * OWNING AN AGENT BY TRANSFER (#3699): propose, read, cancel and
          * complete a two-step agent ownership transfer
          * (`…/admin/agents/[agentId]/ownership-transfer` and `…/complete`).
@@ -519,6 +541,7 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
         'compliance_dsar_view', 'compliance_dsar_manage',
         'agent_registry', 'agent_registry_view', 'agent_tool_exposure', 'agent_policy_card',
         'agent_kill_switch', 'agent_external_tools', 'agent_harness_ingest',
+        'integrations_ingest',
         'agent_ownership', 'agent_skill_review', 'agent_skill_author',
     ],
 };
@@ -543,6 +566,7 @@ export const AGENT_ADMIN_KEYS = [
     'agent_kill_switch',
     'agent_external_tools',
     'agent_harness_ingest',
+    'integrations_ingest',
     'agent_ownership',
     'agent_skill_review',
     'agent_skill_author',
@@ -596,6 +620,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     agent_policy_card: true,
                     agent_kill_switch: true, agent_external_tools: true,
                     agent_harness_ingest: true,
+                    integrations_ingest: true,
                     agent_ownership: true,
                     agent_skill_review: true,
                     agent_skill_author: true,
@@ -645,6 +670,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     agent_policy_card: true,
                     agent_kill_switch: true, agent_external_tools: true,
                     agent_harness_ingest: true,
+                    integrations_ingest: true,
                     // Explicit false (#3699, owner default): ADMIN holds the
                     // register key, and an agent's accountable owner must not
                     // be movable by the role that owner is accountable to. An
@@ -675,13 +701,15 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 // OWNER/ADMIN only — see the `personnel` docblock above.
                 personnel: { view: false, manage: false },
                 access_reviews: { view: true, create: false, decide: true, close: false },
-                identity_reconciliation: { view: true, confirm: false },
+                // Not a reader of the reconciliation queue: AUDITOR, OWNER and ADMIN only
+                // (owner decision 2026-11-15, #5695). A custom role may still grant it.
+                identity_reconciliation: { view: false, confirm: false },
                 continuity: { edit: true },
                 processes: { edit: true },
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false, workpaper_view: false },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false, agent_skill_review: false, agent_skill_author: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, integrations_ingest: false, agent_ownership: false, agent_skill_review: false, agent_skill_author: false },
             };
         case 'AUDITOR':
             return {
@@ -707,7 +735,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 // Auditors can view and maybe export/share depending on policy, but let's keep view/share
                 audits: { view: true, manage: false, freeze: false, share: true, workpaper_view: false },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: true, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false, agent_skill_review: false, agent_skill_author: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: true, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, integrations_ingest: false, agent_ownership: false, agent_skill_review: false, agent_skill_author: false },
             };
         case 'READER':
             return readerPermissions();
@@ -739,6 +767,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     agent_kill_switch: true,
                     agent_external_tools: true,
                     agent_harness_ingest: true,
+                    integrations_ingest: true,
                     agent_ownership: true,
                     agent_skill_review: true,
                     agent_skill_author: true,
@@ -775,13 +804,15 @@ function readerPermissions(): PermissionSet {
         // OWNER/ADMIN only — see the `personnel` docblock on `PermissionSet`.
         personnel: { view: false, manage: false },
         access_reviews: { view: true, create: false, decide: true, close: false },
-        identity_reconciliation: { view: true, confirm: false },
+        // Not a reader of the reconciliation queue: AUDITOR, OWNER and ADMIN only
+        // (owner decision 2026-11-15, #5695). A custom role may still grant it.
+        identity_reconciliation: { view: false, confirm: false },
         continuity: { edit: false },
         processes: { edit: false },
         frameworks: { view: true, install: false },
         audits: { view: true, manage: false, freeze: false, share: false, workpaper_view: false },
         reports: { view: true, export: false, schedule_external: false },
-        admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false, agent_skill_review: false, agent_skill_author: false },
+        admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, integrations_ingest: false, agent_ownership: false, agent_skill_review: false, agent_skill_author: false },
     };
 }
 

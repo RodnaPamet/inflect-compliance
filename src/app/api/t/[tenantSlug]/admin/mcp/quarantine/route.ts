@@ -13,10 +13,16 @@
  *
  * ## Permission
  *
- * `admin.agent_registry`. Same key the sibling `review-quality` surface chose,
- * for the same reason: the operator's response to a quarantine finding is to
- * suspend or retire the agent that produced it, which is precisely the authority
- * that key names. It is held by OWNER and ADMIN and by nobody below them.
+ * Either inventory key at the route — `admin.agent_registry_view` or
+ * `admin.agent_registry` — and the full rule in the usecase
+ * (`mayReadOversightSurface`, `agent-oversight-settings.ts`): the register key
+ * reads the quarantine; the view key reads it only while the tenant's owner has
+ * switched on Auditors reading it (#4898). The register key is the authority to
+ * suspend or retire the agent that produced a quarantined row, which is the
+ * operator's response to one. AUDITOR holds the view key, so the route admits
+ * it and the usecase decides; with the switch off it is refused there, with an
+ * `AUTHZ_DENIED` row. (#5303 corrected this paragraph, which named the register
+ * key alone and said nobody below ADMIN was admitted.)
  *
  * `requirePermission` AT THE ROUTE and not `assertCanRead` alone in the usecase,
  * because a refusal here must write the hash-chained `AUTHZ_DENIED` row — an
@@ -109,35 +115,40 @@ export interface QuarantineTriagePage {
 }
 
 export const GET = withApiErrorHandling(
-    // The inventory VIEW key here, and the full rule in the usecase: the
+    // Either inventory key here, and the full rule in the usecase: the
     // register key, or the view key while an owner lets Auditors read the
     // quarantine (`agent-oversight-settings.ts`, #4898). A view-key holder the
-    // switch does not admit is refused there, with an AUTHZ_DENIED row.
-    requirePermission('admin.agent_registry_view', async (_req: NextRequest, _routeArgs, ctx) => {
-        const found = await listQuarantinedAgentProposals(ctx, {
-            take: QUARANTINE_TRIAGE_PAGE_SIZE + 1,
-        });
-        const truncated = found.length > QUARANTINE_TRIAGE_PAGE_SIZE;
-        const shown = found.slice(0, QUARANTINE_TRIAGE_PAGE_SIZE);
-        const names = await readQuarantineNames(ctx, shown);
-        const rows: QuarantinedProposalDTO[] = shown.map((p) => ({
-                id: p.id,
-                kind: p.kind,
-                operation: p.operation,
-                agentId: p.agentId,
-                targetEntityId: p.targetEntityId,
-                guardRuleIds: p.guardRuleIds,
-                guardInputDigest: p.guardInputDigest,
-                guardProvenance: p.guardProvenance,
-                payloadJson: p.payloadJson,
-                rationale: p.rationale,
-                proposedViaKeyId: p.proposedViaKeyId,
-                createdAt: p.createdAt.toISOString(),
-                agentName: p.agentId ? (names.agents[p.agentId] ?? null) : null,
-                keyName: p.proposedViaKeyId ? (names.keys[p.proposedViaKeyId] ?? null) : null,
-                composed: Boolean(p.composedByUserId),
-                composedByName: p.composedByUserId ? (names.people[p.composedByUserId] ?? null) : null,
-            }));
-        return jsonResponse<QuarantineTriagePage>({ rows, truncated });
-    }),
+    // switch does not admit is refused there, with an AUTHZ_DENIED row. The
+    // register key is named too: a custom role holding it without the view key
+    // is admitted by the usecase and the page, and was refused here (#5217).
+    requirePermission(
+        { keys: ['admin.agent_registry_view', 'admin.agent_registry'], mode: 'any' },
+        async (_req: NextRequest, _routeArgs, ctx) => {
+            const found = await listQuarantinedAgentProposals(ctx, {
+                take: QUARANTINE_TRIAGE_PAGE_SIZE + 1,
+            });
+            const truncated = found.length > QUARANTINE_TRIAGE_PAGE_SIZE;
+            const shown = found.slice(0, QUARANTINE_TRIAGE_PAGE_SIZE);
+            const names = await readQuarantineNames(ctx, shown);
+            const rows: QuarantinedProposalDTO[] = shown.map((p) => ({
+                    id: p.id,
+                    kind: p.kind,
+                    operation: p.operation,
+                    agentId: p.agentId,
+                    targetEntityId: p.targetEntityId,
+                    guardRuleIds: p.guardRuleIds,
+                    guardInputDigest: p.guardInputDigest,
+                    guardProvenance: p.guardProvenance,
+                    payloadJson: p.payloadJson,
+                    rationale: p.rationale,
+                    proposedViaKeyId: p.proposedViaKeyId,
+                    createdAt: p.createdAt.toISOString(),
+                    agentName: p.agentId ? (names.agents[p.agentId] ?? null) : null,
+                    keyName: p.proposedViaKeyId ? (names.keys[p.proposedViaKeyId] ?? null) : null,
+                    composed: Boolean(p.composedByUserId),
+                    composedByName: p.composedByUserId ? (names.people[p.composedByUserId] ?? null) : null,
+                }));
+            return jsonResponse<QuarantineTriagePage>({ rows, truncated });
+        },
+    ),
 );

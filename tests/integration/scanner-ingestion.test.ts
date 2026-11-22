@@ -157,3 +157,102 @@ describeFn('scanner ingestion (integration)', () => {
         expect(finding!.status).toBe('CLOSED');
     });
 });
+
+describeFn('scanner reconcile stays inside the scan that ran (#5077, #5206)', () => {
+    let prisma: PrismaClient;
+    let tenantId: string;
+    let ctx: RequestContext;
+
+    const IN_B = {
+        ...HIGH_RESULT,
+        ruleId: 'js/sqli',
+        message: { text: 'SQL injection in query builder' },
+        locations: [{ physicalLocation: { artifactLocation: { uri: 'src/db.ts' }, region: { startLine: 3 } } }],
+    };
+
+    const openScannerFindings = () =>
+        runInTenantContext(ctx, (db) =>
+            db.finding.findMany({
+                where: { tenantId, sourceKind: 'SCANNER', status: { not: 'CLOSED' } },
+                select: { title: true },
+            }),
+        );
+    const scannerStatus = (ruleId: string) =>
+        runInTenantContext(ctx, async (db) =>
+            (await db.scannerFinding.findFirst({ where: { tenantId, ruleId }, select: { status: true } }))?.status,
+        );
+
+    beforeAll(async () => {
+        prisma = prismaTestClient();
+        await prisma.$connect();
+        const suffix = `scanner-scope-${Date.now()}`;
+        const tenant = await createTenantWithDek({ name: 'Scanner Scope Co', slug: suffix });
+        tenantId = tenant.id;
+        const user = await prisma.user.create({ data: { email: `u-${suffix}@example.com`, name: 'Scope Owner' } });
+        ctx = ctxFor(tenantId, user.id);
+    });
+
+    afterAll(async () => {
+        try {
+            if (tenantId) {
+                await prisma.scannerFinding.deleteMany({ where: { tenantId } });
+                await prisma.scannerRun.deleteMany({ where: { tenantId } });
+                await prisma.finding.deleteMany({ where: { tenantId } });
+            }
+        } catch {
+            /* best-effort cleanup */
+        }
+    });
+
+    it('a clean scan of one repository closes nothing found in another', async () => {
+        await ingestScannerRun(ctx, {
+            sarif: sarifWith([HIGH_RESULT]), source: 'SEMGREP', repoRef: 'org/a@sha1', materializeFindings: true,
+        });
+        await ingestScannerRun(ctx, {
+            sarif: sarifWith([IN_B]), source: 'SEMGREP', repoRef: 'org/b@sha1', materializeFindings: true,
+        });
+
+        const clean = await ingestScannerRun(ctx, {
+            sarif: sarifWith([]), source: 'SEMGREP', repoRef: 'org/b@sha2', materializeFindings: true,
+        });
+
+        // Repo B's own finding closes — across commits, one scope.
+        expect(clean.findingsReconciledClosed).toBe(1);
+        const open = await openScannerFindings();
+        expect(open.map((f) => f.title)).toEqual(['SEMGREP: Reflected XSS in request handler']);
+        expect(await scannerStatus('js/xss')).toBe('OPEN');
+        expect(await scannerStatus('js/sqli')).toBe('FIXED');
+    });
+
+    it('another scanner on the same repository closes nothing either', async () => {
+        const clean = await ingestScannerRun(ctx, {
+            sarif: sarifWith([]), source: 'TRIVY', repoRef: 'org/a@sha2', materializeFindings: true,
+        });
+        expect(clean.findingsReconciledClosed).toBe(0);
+        expect((await openScannerFindings()).map((f) => f.title)).toEqual([
+            'SEMGREP: Reflected XSS in request handler',
+        ]);
+    });
+
+    it('a FIXED finding reported again is OPEN again, with a new Finding', async () => {
+        const res = await ingestScannerRun(ctx, {
+            sarif: sarifWith([IN_B]), source: 'SEMGREP', repoRef: 'org/b@sha3', materializeFindings: true,
+        });
+        expect(await scannerStatus('js/sqli')).toBe('OPEN');
+        expect(res.findingsMaterialized).toBe(1);
+        expect((await openScannerFindings()).map((f) => f.title).sort()).toEqual([
+            'SEMGREP: Reflected XSS in request handler',
+            'SEMGREP: SQL injection in query builder',
+        ]);
+    });
+
+    it('a triage status is a person\'s, and a re-report leaves it', async () => {
+        await runInTenantContext(ctx, (db) =>
+            db.scannerFinding.updateMany({ where: { tenantId, ruleId: 'js/sqli' }, data: { status: 'FALSE_POSITIVE' } }),
+        );
+        await ingestScannerRun(ctx, {
+            sarif: sarifWith([IN_B]), source: 'SEMGREP', repoRef: 'org/b@sha4', materializeFindings: true,
+        });
+        expect(await scannerStatus('js/sqli')).toBe('FALSE_POSITIVE');
+    });
+});

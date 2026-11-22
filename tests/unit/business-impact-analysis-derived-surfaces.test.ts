@@ -380,8 +380,13 @@ describe('getControlBiaSurface — the no-dead-tab ladder', () => {
         expect(db.processNode.findMany.mock.calls[0][0]).toStrictEqual({
             where: {
                 tenantId: 't-acme',
-                processMapId: { in: ['map-1'] },
-                nodeKey: { in: ['step-a', 'step-b', 'step-c'] },
+                // Exact (map, node) pairs, each once (#5260) — never the
+                // `mapId in [...] AND nodeKey in [...]` cross-product.
+                OR: [
+                    { processMapId: 'map-1', nodeKey: 'step-a' },
+                    { processMapId: 'map-1', nodeKey: 'step-b' },
+                    { processMapId: 'map-1', nodeKey: 'step-c' },
+                ],
             },
             select: { processMapId: true, nodeKey: true, label: true },
             take: 400,
@@ -487,7 +492,13 @@ describe('getIncidentBiaContext — recovery deadline chain', () => {
         await expect(getIncidentBiaContext(ctx, 'inc-1')).resolves.toStrictEqual([]);
 
         expect(db.processNode.findMany.mock.calls[0][0]).toStrictEqual({
-            where: { tenantId: 't-acme', processMapId: { in: ['map-1'] }, nodeKey: { in: ['step-a', 'step-b'] } },
+            where: {
+                tenantId: 't-acme',
+                OR: [
+                    { processMapId: 'map-1', nodeKey: 'step-a' },
+                    { processMapId: 'map-1', nodeKey: 'step-b' },
+                ],
+            },
             select: { processMapId: true, nodeKey: true },
             take: 500,
         });

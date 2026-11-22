@@ -14,10 +14,10 @@ On a legacy application connection's own page (see [{{ui:admin.integrations.outc
 
 | Action | Roles |
 | --- | --- |
-| Open the queue and read the evidence | Owner, Admin |
+| Open the queue and read the evidence | Owner, Admin, Auditor, unless a custom role takes away viewing the reconciliation queue |
 | Record a decision | Owner, Admin, unless a custom role takes away confirming matches |
 
-Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}** instead of the page. A person who can open the queue but not decide sees the accounts and their evidence with no decision buttons.
+Editors, Readers and AI admins see **{{ui:admin.forbidden.title}}** instead of the page. A custom role that grants viewing the queue does not change that for an Editor, Reader or AI admin member: the queue sits in the admin area, which only Owner, Admin and, for this page, Auditor members can open. A person who can open the queue but not decide sees the accounts and their evidence with no decision buttons. Only Owners and Admins reach the connection's own page, so an Auditor opens the queue from a link to it. A person whose custom role takes away viewing the queue sees **{{ui:admin.forbidden.title}}** instead of the page.
 
 ## What it is for
 

@@ -18,9 +18,17 @@
  * — it is the same judgement twice, and it would drive the disagreement rate to
  * zero exactly in the tenants where rubber-stamping is worst, because there the
  * approver is also the only person looking. So `recordSampleAuditOutcome`
- * refuses when the caller is the proposal's `reviewedByUserId`, writes a
- * hash-chained `AUTHZ_DENIED` row, and returns a 403 naming the condition and
- * nothing else.
+ * refuses when the caller is ANY of the proposal's approvers — its recorded
+ * `reviewedByUserId` or the holder of any counted `AgentProposalApproval`
+ * signature — writes a hash-chained `AUTHZ_DENIED` row, and returns a 403
+ * naming the condition and nothing else.
+ *
+ * READING `reviewedByUserId` ALONE IS NOT ENOUGH, and that was the bug (#5112).
+ * Only the FINAL signer of a multi-approver proposal is written there; the
+ * earlier signatures live in `AgentProposalApproval`. So the first signer of a
+ * two-approver proposal could answer the audit of their own approval, and the
+ * sampler draws by status with no `requiredApprovals` filter, so those
+ * proposals are in scope by default.
  *
  * That refusal is a 403 rather than a 400 for the reason `refuseExpired` is:
  * it is a statement about who has the authority to answer, not about the shape
@@ -48,6 +56,11 @@ import {
     narrowDissentCodes,
     type SampleAuditDissentCode,
 } from '@/lib/agentic/proposal-sampling';
+import {
+    sampleAuditAnswerRefusal,
+    sampleAuditSelfReviewBasis,
+    type SampleAuditAnswerRefusal,
+} from '@/lib/agentic/sample-audit-answerability';
 import type { RequestContext } from '@/app-layer/types';
 
 /**
@@ -112,6 +125,126 @@ export async function listAgentProposalSampleAudits(
             take,
         }),
     );
+}
+
+/** One row of the answering queue, as `/agents/review-quality` renders it. */
+export type SampleAuditReviewRow = {
+    id: string;
+    proposalId: string;
+    /** What kind of record the approval created — the reviewer's first cue. */
+    proposalKind: string;
+    /** The agent that proposed it, for the page to resolve to a name. */
+    agentId: string | null;
+    sampledAt: Date;
+    /** When the approval under review was decided. */
+    approvedAt: Date | null;
+    /**
+     * WHO WAS ASKED, which is not who replied — #5738.
+     *
+     * NULL for three reasons the row cannot tell apart: the proposal had no
+     * agent, the agent had no registered owner, or that owner was one of the
+     * approvers (#5307). So a reader is told "not assigned" and never a reason
+     * the data does not carry.
+     */
+    assignedToUserId: string | null;
+    outcome: AgentSampleAuditOutcome;
+    dissentCodes: string[];
+    /**
+     * Null when THIS caller may answer THIS row; otherwise the first refusal
+     * `recordSampleAuditOutcome` would reach, in the write's own order.
+     */
+    refusal: SampleAuditAnswerRefusal | null;
+};
+
+/**
+ * The answering queue with a per-row verdict on whether the caller may answer.
+ *
+ * `listAgentProposalSampleAudits` is the plain read, and the API route serves
+ * it. This one exists because a PAGE needs a second thing the plain read cannot
+ * give it: whether to offer an Answer control at all. An admin page offers a
+ * write only where the server takes it (#4467), and the hardest of the three
+ * conditions — the caller approved the proposal under review — is a fact about
+ * rows the queue does not contain.
+ *
+ * SO THE APPROVERS ARE READ AND THE VERDICT IS RETURNED, never the ids. The
+ * `reviewedByUserId` and signature rows go into `sampleAuditSelfReviewBasis`
+ * and are dropped on the floor; what crosses to the client is a
+ * `SampleAuditAnswerRefusal` or null. Who approved a proposal is not this
+ * surface's business to show — it is the review-quality report's, which names
+ * reviewers deliberately and under its own gate — and a client that held the
+ * ids could render a self-review refusal as an accusation naming somebody.
+ *
+ * It is a separate function rather than an option on the plain read because the
+ * extra `select` is a join per row: the API route serves callers who want the
+ * queue, and the page is the only caller that needs the verdict.
+ */
+export async function listSampleAuditsForReview(
+    ctx: RequestContext,
+    opts: { open?: boolean; take?: number } = {},
+): Promise<SampleAuditReviewRow[]> {
+    assertCanRead(ctx);
+    const take = Math.min(opts.take ?? 50, 200);
+    const rows = await runInTenantContext(ctx, (db) =>
+        db.agentProposalSampleAudit.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                ...(opts.open === false ? {} : { outcome: 'PENDING' }),
+            },
+            // Oldest first, as the plain read is, and for its reason: an audit
+            // nobody ever answers is the failure mode this surface exists to
+            // make visible.
+            orderBy: { sampledAt: 'asc' },
+            take,
+            select: {
+                id: true,
+                proposalId: true,
+                sampledAt: true,
+                outcome: true,
+                dissentCodes: true,
+                assignedToUserId: true,
+                proposal: {
+                    select: {
+                        kind: true,
+                        agentId: true,
+                        reviewedAt: true,
+                        reviewedByUserId: true,
+                        approvals: {
+                            // The same filter the write uses, for the same
+                            // reason: a REJECTED signature is not an approval
+                            // and a PENDING row records no judgement.
+                            where: { outcome: { in: ['ACCEPTED', 'EDITED'] } },
+                            select: { approverUserId: true },
+                        },
+                    },
+                },
+            },
+        }),
+    );
+
+    return rows.map((row) => ({
+        id: row.id,
+        proposalId: row.proposalId,
+        proposalKind: row.proposal.kind,
+        agentId: row.proposal.agentId,
+        sampledAt: row.sampledAt,
+        approvedAt: row.proposal.reviewedAt,
+        assignedToUserId: row.assignedToUserId,
+        outcome: row.outcome,
+        dissentCodes: row.dissentCodes,
+        refusal: sampleAuditAnswerRefusal({
+            canWrite: ctx.permissions.canWrite,
+            selfReviewBasis: sampleAuditSelfReviewBasis(
+                {
+                    reviewedByUserId: row.proposal.reviewedByUserId,
+                    countedApproverUserIds: row.proposal.approvals.map(
+                        (a) => a.approverUserId,
+                    ),
+                },
+                ctx.userId,
+            ),
+            alreadyAnswered: row.outcome !== 'PENDING',
+        }),
+    }));
 }
 
 /**
@@ -211,13 +344,63 @@ export async function recordSampleAuditOutcome(
                 id: true,
                 outcome: true,
                 proposalId: true,
-                proposal: { select: { reviewedByUserId: true } },
+                proposal: {
+                    select: {
+                        reviewedByUserId: true,
+                        /*
+                            EVERY COUNTED SIGNATURE, not just the final one (#5112).
+
+                            At the two-approver rung `approveAgentProposal` records
+                            each signature in `AgentProposalApproval` and writes only
+                            the LAST signer to `AgentProposal.reviewedByUserId`. So a
+                            check against that column alone let the FIRST signer of a
+                            two-approver proposal answer the retrospective audit of
+                            their own approval — on exactly the proposals held to the
+                            highest bar, and pushing the ASI09 disagreement rate
+                            toward zero there.
+
+                            `outcome` is filtered to the two values the model's own
+                            docstring says "count toward the requirement": a REJECTED
+                            signature is not an approval (and a rejected proposal is
+                            never drawn, since the sampler takes ACCEPTED/EDITED), and
+                            a PENDING row records no judgement to be re-made.
+                        */
+                        approvals: {
+                            where: { outcome: { in: ['ACCEPTED', 'EDITED'] } },
+                            select: { approverUserId: true },
+                        },
+                    },
+                },
             },
         }),
     );
     if (!audit) throw notFound('Sample audit not found');
 
-    if (audit.proposal.reviewedByUserId && audit.proposal.reviewedByUserId === ctx.userId) {
+    // The caller is barred if they are the recorded final reviewer OR hold any
+    // counted signature on the proposal. Both are "the approver" for the purpose
+    // of the control; the two are distinguished only in the audit row below, so a
+    // reader can tell a single-approver self-review from a first-signer one.
+    //
+    // The comparison itself lives in `sampleAuditSelfReviewBasis` because the
+    // review-quality page has to reach the same verdict to decide whether to
+    // offer an Answer control at all (#4467). A second copy of it in the page
+    // would be a copy that could forget the FIRST signer, which is the half
+    // #5112 added.
+    const selfReviewBasis = sampleAuditSelfReviewBasis(
+        {
+            reviewedByUserId: audit.proposal.reviewedByUserId,
+            countedApproverUserIds: audit.proposal.approvals.map((a) => a.approverUserId),
+        },
+        ctx.userId,
+    );
+    // Re-derived as a boolean purely so the audit row below keeps naming its
+    // two possible values as LITERALS. `tests/guards/no-raw-prompt-logging.ts`
+    // counts a field bound to an identifier as a position it cannot analyse, and
+    // this refactor was meant to move where the VERDICT is computed, not to make
+    // what reaches a hash-chained row any less legible to the scanner that reads
+    // that path. The emitted row is byte-identical to the one before it.
+    const isFinalReviewer = selfReviewBasis === 'reviewed_by';
+    if (selfReviewBasis !== null) {
         await appendAuditEntry({
             tenantId: ctx.tenantId,
             userId: ctx.userId,
@@ -231,6 +414,11 @@ export async function recordSampleAuditOutcome(
                 event: 'authz_denied',
                 reason: 'sample_audit_self_review',
                 proposalId: audit.proposalId,
+                // Which of the two conditions matched. A first-signer refusal
+                // and a sole-approver refusal are the same verdict and
+                // different facts, and the row is the only place to tell them
+                // apart — the 403 names the condition and nothing else.
+                basis: isFinalReviewer ? 'reviewed_by' : 'recorded_signature',
             },
             metadataJson: { role: ctx.role, proposalId: audit.proposalId },
         }).catch(() => undefined);

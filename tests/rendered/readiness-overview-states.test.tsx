@@ -28,13 +28,20 @@ const overview = {
     scoresByCycleId: { c1: { score: 63 } },
 };
 
-function serve(coverage: () => ReturnType<typeof reply>) {
+function serve(coverage: () => ReturnType<typeof reply>, nis2: unknown = { latest: null }) {
     global.fetch = jest.fn(async (url: string) => {
         if (url.endsWith('/audits/readiness/overview')) return coverage();
         if (url.endsWith('/tests/readiness')) return reply(200, []);
-        return reply(200, { latest: null });
+        return reply(200, nis2);
     }) as unknown as typeof fetch;
 }
+
+// GET /audits/nis2-gap always carries a `latest` readiness; with nothing
+// answered its score is the number 0.
+const nis2Readiness = (answeredTotal: number, overall: number) => ({
+    latest: { answeredTotal, score: { overall } },
+    history: [],
+});
 
 describe('readiness overview', () => {
     it("shows each cycle's coverage score and its framework's name", async () => {
@@ -68,5 +75,21 @@ describe('readiness overview', () => {
         expect(screen.getAllByText(O.loading).length).toBeGreaterThan(0);
         expect(screen.queryByText(O.coverageEmpty)).toBeNull();
         expect(screen.queryByText(O.testEmpty)).toBeNull();
+    });
+
+    it('shows no maturity card to a tenant that has answered nothing (#5163)', async () => {
+        serve(() => reply(200, overview), nis2Readiness(0, 0));
+        render(<ReadinessOverviewClient tenantSlug="acme" />);
+        await screen.findByTestId('overview-coverage-row');
+        await waitFor(() => expect(screen.queryAllByText(O.loading)).toHaveLength(0));
+        expect(screen.queryByText(O.maturityTitle)).toBeNull();
+        expect(screen.queryByText('0%')).toBeNull();
+    });
+
+    it('shows the maturity card once the assessment has answers', async () => {
+        serve(() => reply(200, overview), nis2Readiness(12, 41.6));
+        render(<ReadinessOverviewClient tenantSlug="acme" />);
+        expect(await screen.findByText('42%')).toBeInTheDocument();
+        expect(screen.getByText(O.maturityTitle)).toBeInTheDocument();
     });
 });

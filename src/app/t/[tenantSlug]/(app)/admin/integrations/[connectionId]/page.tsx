@@ -134,6 +134,9 @@ export default function ConnectionOutcomePage() {
     };
 
     const providerId = connection?.provider ?? rows[0]?.provider ?? null;
+    // What the legacy cards decide from (#5313): `undefined` while loading,
+    // `null` when the read failed, else the connection's own provider.
+    const connectionProvider = loading ? undefined : error ? null : (connection?.provider ?? null);
     // The provider's translated name, as the Integrations page shows it — not
     // the id (`mcp-server`) in the page title (#4466).
     const provider = providerId && LABELLED_PROVIDERS.has(providerId)
@@ -243,19 +246,23 @@ export default function ConnectionOutcomePage() {
               * from the connection's PROVIDER rather than from whether it happens
               * to carry an endpoint, so every other provider's page is unchanged.
               */}
-            <LegacyAccessMappingCard connectionId={connectionId} />
+            <LegacyAccessMappingCard
+                connectionId={connectionId}
+                provider={connectionProvider}
+            />
 
             {/*
               * Reading the accounts and matching them to people, for a
               * `legacy-mcp` connection only. Both are background jobs whose
-              * result is an execution row, so the card reads the rows this page
-              * already loaded for Check runs, and Refresh reloads them here too.
+              * result is an execution row. The card asks the server for the
+              * newest row of each kind itself (#5313, item 10): the rows this
+              * page loads are the 50 newest of every kind, a history, and an
+              * older match run is not among them. Refresh reloads the history
+              * here too.
               */}
             <LegacyAccessRunsCard
                 connectionId={connectionId}
-                runs={rows}
-                runsLoading={loading}
-                runsError={error}
+                provider={connectionProvider}
                 onReloadRuns={load}
             />
 

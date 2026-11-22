@@ -147,3 +147,38 @@ describe('the finding carries the idempotency key the guard reads', () => {
         expect(createFinding.mock.calls[0][1]).toMatchObject({ sourceRef: COMMENT });
     });
 });
+
+describe('a create that fails releases the claim (#5118)', () => {
+    it('puts the entry back to OPEN, only where this reviewer holds the claim, and rethrows', async () => {
+        createFinding.mockImplementationOnce(async () => { throw new Error('plan limit'); });
+        db.auditPackShareComment.updateMany
+            .mockImplementationOnce(async () => ({ count: 1 })) // the claim
+            .mockImplementationOnce(async () => ({ count: 1 })); // the release
+
+        await expect(materializeShareCommentFinding(ctx, PACK, COMMENT)).rejects.toThrow('plan limit');
+
+        expect(db.auditPackShareComment.updateMany).toHaveBeenCalledTimes(2);
+        expect(db.auditPackShareComment.updateMany.mock.calls[1][0]).toEqual({
+            where: { id: COMMENT, tenantId: 't1', auditPackId: PACK, status: 'RESOLVED', resolvedByUserId: 'reviewer-1' },
+            data: { status: 'OPEN', resolvedAt: null, resolvedByUserId: null },
+        });
+        expect(createTask).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+
+    it('surfaces the create error, not the release error, when the release fails too', async () => {
+        createFinding.mockImplementationOnce(async () => { throw new Error('plan limit'); });
+        db.auditPackShareComment.updateMany
+            .mockImplementationOnce(async () => ({ count: 1 }))
+            .mockImplementationOnce(async () => { throw new Error('db gone'); });
+
+        await expect(materializeShareCommentFinding(ctx, PACK, COMMENT)).rejects.toThrow('plan limit');
+    });
+
+    it('the stuck-state refusal no longer tells the reviewer to re-open the entry', async () => {
+        db.auditPackShareComment.findFirst.mockResolvedValue(comment({ status: 'RESOLVED' }));
+        db.finding.findFirst.mockResolvedValue(null);
+        await expect(materializeShareCommentFinding(ctx, PACK, COMMENT)).rejects.toThrow(/by hand/i);
+        await expect(materializeShareCommentFinding(ctx, PACK, COMMENT)).rejects.not.toThrow(/re-?open/i);
+    });
+});

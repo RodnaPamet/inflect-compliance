@@ -274,13 +274,14 @@ describe('approving an external definition', () => {
         expect({ writes: writePinMock.mock.calls.length }).toEqual({ writes: 0 });
     });
 
-    it('says "past the cap" rather than "gone" when the catalogue was truncated', async () => {
+    it('says "we could not read it all" rather than "gone" when OUR CAP truncated it', async () => {
         listToolsMock.mockResolvedValue({
             tools: Array.from({ length: MAX_EXTERNAL_TOOLS + 1 }, (_, i) => ({
                 ...ALERTS,
                 name: i === MAX_EXTERNAL_TOOLS ? 'list_alerts' : `tool_${i}`,
             })),
             refusedNames: 0,
+            truncated: false,
         });
         await expect(
             approveExternalToolManifest(adminCtx, {
@@ -288,7 +289,33 @@ describe('approving an external definition', () => {
                 toolName: 'list_alerts',
                 expectedManifestHash: liveHashes().manifestHash,
             }),
-        ).rejects.toThrow(new RegExp(`not among the first ${MAX_EXTERNAL_TOOLS}`));
+            // The DISTINCTION, not the sentence. This asserted
+            // `not among the first ${MAX_EXTERNAL_TOOLS}`, which pinned both
+            // the cap figure and the wording — and #5311 had to reword it,
+            // because `truncated` now also means the server paginated past the
+            // client's bound, so the tool can be within the cap and still
+            // unread. What must hold is that a tool we could not SEE is not
+            // reported as GONE.
+        ).rejects.toThrow(/catalogue we could read/);
+    });
+
+    it('says the same thing when the SERVER paginated past our cursor bound (#5311)', async () => {
+        // The other cause of the same operator-facing fact. `listTools` sets
+        // `truncated` when it stops following `nextCursor`, and a tool it never
+        // read must not be reported as one the server stopped advertising —
+        // the two call for different actions.
+        listToolsMock.mockResolvedValue({
+            tools: [{ ...ALERTS, name: 'tool_0' }],
+            refusedNames: 0,
+            truncated: true,
+        });
+        await expect(
+            approveExternalToolManifest(adminCtx, {
+                connectionId: CONN,
+                toolName: 'list_alerts',
+                expectedManifestHash: liveHashes().manifestHash,
+            }),
+        ).rejects.toThrow(/catalogue we could read/);
     });
 
     it('will not approve without an approving user', async () => {

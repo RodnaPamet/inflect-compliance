@@ -5,11 +5,11 @@
  *
  *   1. THE USECASE, per built-in role. Owner, Admin and Auditor get the rows;
  *      Reader, Editor and AI admin get `recentActivity: []` and the same counts.
- *   2. THE REST DOOR, per key shape. A key's role comes from its scopes, so
- *      only `*` and `admin:write` resolve to ADMIN and read the rows. Each key
- *      is also sent to `GET /audit-log`: the dashboard returns rows exactly
- *      when that route answers 200, which is the claim "the same gate", tested
- *      rather than restated.
+ *   2. THE REST DOOR, per key shape. The dashboard maps to no scope, so only a
+ *      `*` key reaches it at all (`src/lib/auth/api-key-path-scope.ts`); the
+ *      others are refused before the handler. Each key is also sent to
+ *      `GET /audit-log`, whose answer is unchanged: `*` and `admin:write`
+ *      read it, and the `*` key that reaches the dashboard gets its rows.
  *   3. THE AGENT DOOR. `/api/mcp` intersects every key with its creator, so an
  *      ADMIN-scoped key reads the rows only when its creator is an Owner, Admin
  *      or Auditor, and the usual agent key (`mcp:read` + read scopes) never does.
@@ -109,6 +109,18 @@ async function mcpTenantContext(token: string): Promise<{ body: DashboardBody | 
     return { body: text === undefined ? undefined : (JSON.parse(text) as DashboardBody), error: json.error?.message };
 }
 
+/** Through the real hash-chained writer: a hand-made row would break this tenant's chain. */
+async function writeMarker(): Promise<void> {
+    await appendAuditEntry({
+        tenantId: TENANT,
+        userId: USERS.owner,
+        entity: 'Membership',
+        entityId: MARKER,
+        action: 'MEMBER_INVITED',
+        detailsJson: { category: 'access' },
+    });
+}
+
 /** The seeded audit row is in the feed. */
 function hasMarker(body: DashboardBody | undefined): boolean {
     return (body?.recentActivity ?? []).some((r) => r.entityId === MARKER);
@@ -139,17 +151,13 @@ describeFn('the dashboard API returns audit-log rows only to audit-log readers',
                 data: { tenantId: TENANT, title: `${SUITE}-risk-${i}`, score: 4, inherentScore: 4, status: 'OPEN' },
             });
         }
-        // Through the real hash-chained writer: a hand-made row would break
-        // this tenant's chain.
-        await appendAuditEntry({
-            tenantId: TENANT,
-            userId: USERS.owner,
-            entity: 'Membership',
-            entityId: MARKER,
-            action: 'MEMBER_INVITED',
-            detailsJson: { category: 'access' },
-        });
+        await writeMarker();
     });
+
+    // The marker must be among the ten latest rows when a case reads the feed.
+    // Refused key requests write AUTHZ_DENIED rows, so it is written afresh
+    // before each case rather than once.
+    beforeEach(writeMarker);
 
     afterAll(async () => {
         await prisma.tenantApiKey.deleteMany({ where: { tenantId: TENANT } });
@@ -199,15 +207,16 @@ describeFn('the dashboard API returns audit-log rows only to audit-log readers',
             [['*'], true],
         ];
 
-        it.each(CASES)('a key scoped %j reads the rows: %s', async (scopes, readsAuditLog) => {
+        it.each(CASES)('a key scoped %j reads the audit log: %s', async (scopes, readsAuditLog) => {
             const key = await mintKey(USERS.owner, scopes);
             const { status, body } = await restDashboard(key);
-            expect(status).toBe(200);
-            expect(body.stats?.risks).toBe(RISK_COUNT);
-            if (readsAuditLog) {
+            if (scopes.includes('*')) {
+                expect(status).toBe(200);
+                expect(body.stats?.risks).toBe(RISK_COUNT);
                 expect(hasMarker(body)).toBe(true);
             } else {
-                expect(body.recentActivity).toEqual([]);
+                // The dashboard maps to no scope: a key short of `*` is refused.
+                expect(status).toBe(403);
             }
             // Same gate as the audit log itself, measured on the same key.
             expect(await restAuditLogStatus(key)).toBe(readsAuditLog ? 200 : 403);

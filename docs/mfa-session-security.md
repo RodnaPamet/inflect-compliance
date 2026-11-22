@@ -35,6 +35,34 @@ UserSession.revokedAt (one sign-in each, named by the JWT's userSessionId)
  └─ JWT callback detects either → SessionRevokedError → no session
 ```
 
+## Which workspaces ask, and how a challenge clears
+
+MFA is asked of every workspace a session can reach, not only the one it
+signed in to (`src/lib/auth/workspace-mfa.ts`). `mfaPending` is the PRIMARY
+workspace's flag (the oldest membership) and holds the whole session at its
+challenge; every other workspace whose policy wants a code is listed in the
+token's `mfaPendingTenantIds`, and the edge holds that workspace's paths until
+its own challenge is passed. A workspace past the `MAX_JWT_MEMBERSHIPS` claim
+cap is not in the token at all, so `getTenantCtx` asks it at the server gate
+(`workspaceStillAsksThisSession`): an API request gets the edge's own 403 and a
+page is sent to that workspace's challenge.
+
+A pass belongs to the session that answered it. `verifyMfaChallenge` appends
+the workspace to `UserSession.mfaPassedTenantIds` on the token's own session
+row, and the `jwt` callback clears a pending workspace only from that row, so
+passing the challenge on one device clears nothing on another, and a request
+that names no live session of the user cannot pass. A TOTP code is accepted
+once: `UserMfaEnrollment.lastAcceptedTotpStep` records the step of the last
+accepted code, and a code is accepted only for a later step, through a
+conditional update. Enrolment verification records its step too.
+
+A read that fails while the callback checks whether a challenge was passed
+leaves the workspace pending, for every tenant. The tenant's `mfaFailClosed`
+switch governs only the sign-in policy read — whether a session is admitted
+when the policy itself cannot be read. The flag has its own one-column read,
+ahead of the policy read, so a failure of the policy read does not also hide
+the flag; when both fail, the token keeps the value a previous pass read.
+
 ## MFA Policy Modes
 
 | Policy | Not Enrolled | Enrolled (verified) | Admin Protection |

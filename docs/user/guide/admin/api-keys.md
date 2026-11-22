@@ -39,6 +39,7 @@ Give each system its own key, with only the access that system needs, and revoke
 | {{ui:admin.apiKeys.bindingLabel}} | The registered agent the key acts as. The list offers the workspace's active agents and starts at {{ui:admin.apiKeys.agentPlaceholder}}. The agent can be chosen only now, when the key is created, never afterwards |
 | {{ui:admin.apiKeys.autonomyLabel}} | Appears once an agent is chosen. {{ui:admin.apiKeys.autonomyNone}}, or a level from **L0** up to the agent's own level. It can only lower what the agent may do with this key |
 | {{ui:admin.apiKeys.scopesLabel}} | What the key may do. Required: at least one scope |
+| {{ui:admin.apiKeys.requiresExchangeLabel}} | Appears once the scopes let the key call agent tools: **{{ui:admin.apiKeys.fullAccess}}**, or **Read** or **Propose** under {{ui:admin.scopeGroup.mcp}}. Starts unticked. {{ui:admin.apiKeys.requiresExchangeHint}} It can be set only now, when the key is created |
 
 **Scopes.** Click a choice to select it; a selected choice shows a tick. **{{ui:admin.apiKeys.fullAccess}}** gives the key read and write on every area and hides the other choices. Otherwise, pick choices area by area:
 
@@ -47,9 +48,10 @@ Give each system its own key, with only the access that system needs, and revoke
 | {{ui:admin.scopeGroup.controls}}, {{ui:admin.scopeGroup.evidence}}, {{ui:admin.scopeGroup.tasks}}, {{ui:admin.scopeGroup.risks}}, {{ui:admin.scopeGroup.assets}}, {{ui:admin.scopeGroup.vendors}}, {{ui:admin.scopeGroup.findings}}, {{ui:admin.scopeGroup.tests}}, {{ui:admin.scopeGroup.frameworks}}, {{ui:admin.scopeGroup.reports}} | **Read**, **Write** |
 | {{ui:admin.scopeGroup.policies}}, {{ui:admin.scopeGroup.access_reviews}} | **Read**, **Write**, **Admin** |
 | {{ui:admin.scopeGroup.incidents}}, {{ui:admin.scopeGroup.personnel}}, {{ui:admin.scopeGroup.identity_reconciliation}} | **Read**, **Admin** |
-| {{ui:admin.scopeGroup.continuity}}, {{ui:admin.scopeGroup.processes}} | **Write** |
+| {{ui:admin.scopeGroup.processes}} | **Read**, **Write** |
+| {{ui:admin.scopeGroup.continuity}} | **Write** |
 | {{ui:admin.scopeGroup.audits}} | **Read**, **Write**, **Workpaper_view** |
-| {{ui:admin.scopeGroup.admin}} | **Read**, **Write**, **External_tools**, **Harness_ingest**, **Agent_registry_view** |
+| {{ui:admin.scopeGroup.admin}} | **Read**, **Write**, **External_tools**, **Harness_ingest**, **Integrations_ingest**, **Agent_registry_view** |
 | {{ui:admin.scopeGroup.mcp}} | **Read**, **Propose**, **Orchestrate** |
 
 A few of these need a word of explanation:
@@ -57,6 +59,8 @@ A few of these need a word of explanation:
 - **Workpaper_view** reads the auditor agent's workpapers, and **Agent_registry_view** reads the workspace's agent register. Neither is part of **{{ui:admin.apiKeys.fullAccess}}**, so a key gets them only when you pick them by name.
 - **External_tools** lets the key reach tools on a server outside Inflect. It is separate from **Write** under {{ui:admin.scopeGroup.admin}} so that no key gains it by accident.
 - **Harness_ingest** is the one scope a harness scanner's key needs to send its reports.
+- **Integrations_ingest** is the scope a scanner's key needs to send its other report: the third-party applications a directory has granted access to. It is separate from **Harness_ingest**, so a key sends one kind of report and not both.
+- **Read** under {{ui:admin.scopeGroup.processes}} lets the key read nothing through the API on its own, because process maps have no separate read permission. It is for keys that agents use, alongside the {{ui:admin.scopeGroup.mcp}} choices. **Write** is what edits process maps.
 - The {{ui:admin.scopeGroup.mcp}} choices are for keys that agents use: **Read** lets the key read through Inflect's agent tools, **Propose** lets it draft proposals for a person to approve, and **Orchestrate** lets it drive an agent run.
 
 **The new key.** After you click **{{ui:admin.apiKeys.createKey}}**, a box shows the key under the warning **{{ui:admin.apiKeys.copyWarning}}** Only its first characters are visible. The eye button, **{{ui:admin.apiKeys.showKey}}**, reveals the rest. **{{ui:admin.apiKeys.copy}}** copies it, and **{{ui:admin.apiKeys.dismissKey}}** closes the box.
@@ -67,7 +71,7 @@ A few of these need a word of explanation:
 | --- | --- |
 | {{ui:admin.apiKeys.colName}} | The key's name |
 | {{ui:admin.apiKeys.colKey}} | The key's first characters, such as `iflk_1a2b3c4d...`, so you can match it to the key a system holds |
-| {{ui:admin.apiKeys.colBinding}} | The agent the key is bound to, and its autonomy ceiling if it has one. **{{ui:admin.apiKeys.noBinding}}** means the key acts as no agent, which is normal for an integration |
+| {{ui:admin.apiKeys.colBinding}} | The agent the key is bound to, and its autonomy ceiling if it has one. **{{ui:admin.apiKeys.noBinding}}** means the key acts as no agent, which is normal for an integration. **{{ui:admin.apiKeys.requiresExchangeTag}}** marks a key created with **{{ui:admin.apiKeys.requiresExchangeLabel}}** ticked |
 | {{ui:admin.apiKeys.colScopes}} | The key's first three scopes as the API writes them, such as `controls:read` or `*` for full access, and a count of the rest |
 | {{ui:admin.apiKeys.colExpires}} | When the key stops working, or {{ui:admin.apiKeys.colNever}} |
 | {{ui:admin.apiKeys.colLastUsed}} | When a system last used the key, or a dash if it never has |
@@ -91,7 +95,7 @@ Click **{{ui:admin.apiKeys.revokeAria}}**, the bin icon at the end of the key's 
 
 ### Change or replace a key
 
-A key cannot be edited once it exists, and its agent can be chosen only when it is created. To change a key's scopes, expiry or agent, create a new key, switch the other system to it, then revoke the old one. Doing it in that order also replaces a key without a gap.
+A key cannot be edited once it exists, and its agent can be chosen only when it is created. To change a key's scopes, expiry, agent or whether it needs a short-lived token for agent tools, create a new key, switch the other system to it, then revoke the old one. Doing it in that order also replaces a key without a gap.
 
 ## What happens next
 

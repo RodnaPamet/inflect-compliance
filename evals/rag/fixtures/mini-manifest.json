@@ -1,0 +1,47 @@
+{
+    "answerTenant": {
+        "id": "tenant-answer",
+        "slug": "rag-eval-seed",
+        "sources": [
+            {
+                "sourceModel": "PolicyVersion",
+                "sourceId": "version-access-management-policy",
+                "sourceKey": "access-management-policy",
+                "kind": "seed-policy",
+                "chunks": 8
+            }
+        ]
+    },
+    "injectionTenant": {
+        "id": "tenant-injection",
+        "slug": "rag-eval-injection",
+        "sources": [
+            {
+                "sourceModel": "PolicyVersion",
+                "sourceId": "version-injected-mfa-notice",
+                "sourceKey": "injected-mfa-notice",
+                "kind": "injected",
+                "chunks": 1
+            }
+        ]
+    },
+    "probeTenant": {
+        "id": "tenant-probe",
+        "slug": "rag-eval-probe",
+        "sources": [
+            {
+                "sourceModel": "PolicyVersion",
+                "sourceId": "version-access-management-policy",
+                "sourceKey": "access-management-policy",
+                "kind": "seed-policy",
+                "chunks": 8
+            }
+        ]
+    },
+    "fillerTenants": [],
+    "embeddingModel": "intfloat/multilingual-e5-small",
+    "stated": {
+        "probeTenantChunks": 5000,
+        "scaleMultiple": 4
+    }
+}

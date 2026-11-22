@@ -15,7 +15,7 @@
  */
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus, UserFocus } from '@inflect/ui/components/ui/icons/nucleo';
+import { Plus, UserFocus } from '@inflect/ui/components/ui/icons/glyphs';
 import { formatDate } from '@inflect/ui/lib/format-date';
 
 import { EntityListPage } from '@/components/layout/EntityListPage';

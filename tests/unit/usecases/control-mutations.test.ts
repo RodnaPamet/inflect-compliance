@@ -34,6 +34,7 @@ jest.mock('@/app-layer/repositories/ControlRepository', () => ({
         update: jest.fn(),
         setApplicability: jest.fn(),
         setOwner: jest.fn(),
+        listByIds: jest.fn(),
     },
 }));
 
@@ -57,6 +58,7 @@ import {
     setControlApplicability,
     setControlOwner,
     deleteControl,
+    bulkDeleteControl,
 } from '@/app-layer/usecases/control/mutations';
 import { runInTenantContext } from '@/lib/db-context';
 import { ControlRepository } from '@/app-layer/repositories/ControlRepository';
@@ -70,6 +72,7 @@ const mockUpdate = ControlRepository.update as jest.MockedFunction<typeof Contro
 const mockSetApplicability = ControlRepository.setApplicability as jest.MockedFunction<typeof ControlRepository.setApplicability>;
 const mockSetOwner = ControlRepository.setOwner as jest.MockedFunction<typeof ControlRepository.setOwner>;
 const mockLog = logEvent as jest.MockedFunction<typeof logEvent>;
+const mockListByIds = ControlRepository.listByIds as jest.MockedFunction<typeof ControlRepository.listByIds>;
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -318,7 +321,16 @@ describe('deleteControl', () => {
     it('emits SOFT_DELETE audit on success', async () => {
         const deleteSpy = jest.fn();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ control: { delete: deleteSpy } } as never),
+            fn({
+                control: { delete: deleteSpy },
+                // The RESTRICT children `deleteControl` now checks (#5083),
+                // all at zero. The usecase throws on a MISSING delegate
+                // rather than treating absence as "nothing blocks", so an
+                // omission fails loudly instead of passing quietly.
+                controlException: { count: async () => 0 },
+                controlTestPlan: { count: async () => 0 },
+                controlTestRun: { count: async () => 0 },
+            } as never),
         );
         mockGetById.mockResolvedValueOnce({
             id: 'c1', tenantId: 'tenant-1', code: 'CTRL', name: 'X',
@@ -332,5 +344,94 @@ describe('deleteControl', () => {
             expect.anything(),
             expect.objectContaining({ action: 'SOFT_DELETE' }),
         );
+    });
+});
+
+describe('bulkDeleteControl — a control with kept records is left in place (#5763)', () => {
+    /**
+     * The db the usecase sees: `c-plan` has a test plan, `c-free` has
+     * nothing. Each blocking edge answers its `findMany` from this table, so
+     * the check is real rather than stubbed to a verdict.
+     */
+    function dbWith(children: Record<string, string[]>) {
+        const deleteMany = jest.fn().mockResolvedValue({ count: 0 });
+        const edge = (model: string) => ({
+            findMany: jest.fn(async (args: { where: { controlId: { in: string[] } } }) =>
+                (children[model] ?? [])
+                    .filter((id) => args.where.controlId.in.includes(id))
+                    .map((controlId) => ({ controlId })),
+            ),
+        });
+        const db = {
+            control: { deleteMany },
+            controlException: edge('ControlException'),
+            controlTestPlan: edge('ControlTestPlan'),
+            controlTestRun: edge('ControlTestRun'),
+        };
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
+        return { deleteMany };
+    }
+
+    beforeEach(() => {
+        mockListByIds.mockResolvedValue([
+            { id: 'c-plan', tenantId: 'tenant-1' },
+            { id: 'c-free', tenantId: 'tenant-1' },
+        ] as never);
+    });
+
+    it('soft-deletes only the unblocked control and reports the blocked one with its reason', async () => {
+        const { deleteMany } = dbWith({ ControlTestPlan: ['c-plan'] });
+
+        const out = await bulkDeleteControl(makeRequestContext('ADMIN'), ['c-plan', 'c-free', 'c-gone']);
+
+        expect(deleteMany).toHaveBeenCalledTimes(1);
+        expect(deleteMany.mock.calls[0][0].where.id.in).toEqual(['c-free']);
+        expect(out.deleted).toBe(1);
+        expect(out.results).toEqual([
+            {
+                id: 'c-plan',
+                status: 'blocked',
+                reason: 'CONTROL_HAS_KEPT_RECORDS',
+                blockedBy: ['ControlTestPlan'],
+            },
+            { id: 'c-free', status: 'ok' },
+            { id: 'c-gone', status: 'not_found' },
+        ]);
+        // An audit row for the deleted control, none for the kept one.
+        const audited = mockLog.mock.calls.map(([, , e]) => (e as { entityId: string }).entityId);
+        expect(audited).toEqual(['c-free']);
+    });
+
+    it('names every kind of record that holds a control, sorted', async () => {
+        dbWith({ ControlTestRun: ['c-plan'], ControlException: ['c-plan'] });
+
+        const out = await bulkDeleteControl(makeRequestContext('ADMIN'), ['c-plan']);
+
+        expect(out.results[0]).toEqual(
+            expect.objectContaining({
+                status: 'blocked',
+                blockedBy: ['ControlException', 'ControlTestRun'],
+            }),
+        );
+    });
+
+    it('deletes nothing when every selected control is blocked', async () => {
+        const { deleteMany } = dbWith({ ControlTestPlan: ['c-plan', 'c-free'] });
+
+        const out = await bulkDeleteControl(makeRequestContext('ADMIN'), ['c-plan', 'c-free']);
+
+        expect(deleteMany).not.toHaveBeenCalled();
+        expect(mockLog).not.toHaveBeenCalled();
+        expect(out.deleted).toBe(0);
+        expect(out.results.map((r) => r.status)).toEqual(['blocked', 'blocked']);
+    });
+
+    it('deletes them all when nothing blocks (the refusal above is the records, not the batch)', async () => {
+        const { deleteMany } = dbWith({});
+
+        const out = await bulkDeleteControl(makeRequestContext('ADMIN'), ['c-plan', 'c-free']);
+
+        expect(deleteMany.mock.calls[0][0].where.id.in).toEqual(['c-plan', 'c-free']);
+        expect(out.results.map((r) => r.status)).toEqual(['ok', 'ok']);
     });
 });

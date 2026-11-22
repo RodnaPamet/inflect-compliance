@@ -15,7 +15,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { rotateTenantDek } from '@/lib/security/tenant-key-manager';
-import { getQueue } from '@/app-layer/jobs/queue';
+import { findTenantJob } from '@/app-layer/jobs/tenant-job-lookup';
 import { logEvent } from '@/app-layer/events/audit';
 import { prisma } from '@/lib/prisma';
 import type { RequestContext } from '@/app-layer/types';
@@ -60,10 +60,10 @@ export async function rotateDekPostHandler(
 }
 
 /**
- * Poll the state of a previously-enqueued sweep job. Defends
- * against cross-tenant job-id guessing — even if an OWNER from
- * tenant A guesses a job id belonging to tenant B, the response is
- * 404 (not the leaked sibling-tenant payload).
+ * Poll the state of a previously-enqueued sweep job. Only this
+ * tenant's own `tenant-dek-rotation` job is reported: an id belonging
+ * to another tenant, to another kind of job, or to a platform-wide job
+ * is 404, the same as an id that does not exist.
  */
 export async function rotateDekGetHandler(
     req: NextRequest,
@@ -79,22 +79,8 @@ export async function rotateDekGetHandler(
         );
     }
 
-    const queue = getQueue();
-    const job = await queue.getJob(jobId);
+    const job = await findTenantJob(jobId, ctx.tenantId, 'tenant-dek-rotation');
     if (!job) {
-        return NextResponse.json(
-            {
-                error: {
-                    code: 'NOT_FOUND',
-                    message: `No job with id ${jobId}`,
-                },
-            },
-            { status: 404 },
-        );
-    }
-
-    const payload = job.data as { tenantId?: string } | undefined;
-    if (payload?.tenantId && payload.tenantId !== ctx.tenantId) {
         return NextResponse.json(
             {
                 error: {

@@ -57,8 +57,11 @@ import {
     registerAgent,
     updateRegisteredAgent,
 } from '@/app-layer/usecases/agent-registry';
-import { grantAgentTool } from '@/app-layer/usecases/agent-tool-exposure';
-import { completeAgentRiskAssessment } from '@/app-layer/usecases/agent-risk-assessment';
+import { grantAgentTool, revokeAgentTool } from '@/app-layer/usecases/agent-tool-exposure';
+import {
+    completeAgentRiskAssessment,
+    getAgentRiskAssessmentState,
+} from '@/app-layer/usecases/agent-risk-assessment';
 import { MAX_AUTONOMY_BY_TIER } from '@/lib/agentic/agent-risk-scoring';
 import fixture from '../../prisma/fixtures/agent-risk-assessment.json';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
@@ -89,7 +92,7 @@ const USER = `u-${SUITE}`;
 const AGENT_OWNER = `u2-${SUITE}`;
 const VENDOR = `v-${SUITE}`;
 
-const SCOPES = ['mcp:read', 'mcp:propose', 'risks:read', 'audits:read', 'findings:write'];
+const SCOPES = ['mcp:read', 'mcp:propose', 'risks:read', 'findings:read', 'findings:write'];
 
 const ctx = () =>
     makeRequestContext('OWNER', { tenantId: TENANT, tenantSlug: TENANT, userId: USER });
@@ -755,7 +758,7 @@ describeFn('a widening re-scores the agent', () => {
             const beforeRead = await callTool(token, 'list_risks');
             expect(errorOf(beforeRead.json)).toBeUndefined();
             const beforePropose = await callTool(token, 'propose_finding', {
-                items: [{ severity: 'LOW', type: 'OTHER', title: 'before the widening' }],
+                items: [{ severity: 'LOW', type: 'OBSERVATION', title: 'before the widening' }],
             });
             expect(errorOf(beforePropose.json)).toBeUndefined();
 
@@ -770,7 +773,7 @@ describeFn('a widening re-scores the agent', () => {
             expect((await row(agentId)).riskTier).toBe('CRITICAL');
 
             const afterPropose = await callTool(token, 'propose_finding', {
-                items: [{ severity: 'LOW', type: 'OTHER', title: 'after the widening' }],
+                items: [{ severity: 'LOW', type: 'OBSERVATION', title: 'after the widening' }],
             });
             expect(errorOf(afterPropose.json)).toMatch(/autonomy/i);
 
@@ -865,6 +868,48 @@ describeFn('a widening re-scores the agent', () => {
             // there is nothing to recompute, and the grant was bounded at the
             // moment it was written instead.
             expect((await row(agentId)).riskTier).toBe(tierBefore);
+        });
+
+        /**
+         * #5304, owner decision 2026-11-14: TOOL_GRANTED is decided by GRANT
+         * TIME, not by the tool count. The count read 2 → 2 here, so a swap —
+         * revoke one tool, grant another, the ordinary way to replace a tool —
+         * was never flagged, and the answers stood unchallenged for a tool set
+         * that never included the new one.
+         */
+        it('a swap (revoke one, grant another) marks the run stale although the count is unchanged', async () => {
+            const agentId = await createAgent('grant-swap', { dataAccessScope: 'READ_TENANT_DATA' });
+            await grantAgentTool(ctx(), agentId, { toolName: 'list_risks' });
+            await grantAgentTool(ctx(), agentId, { toolName: 'list_controls' });
+            await completeAgentRiskAssessment(ctx(), agentId);
+            expect((await standingRun(agentId)).basisToolCount).toBe(2);
+
+            // A revoke alone is the safe direction and leaves the run fresh.
+            await revokeAgentTool(ctx(), agentId, 'list_controls');
+            const afterRevoke = await getAgentRiskAssessmentState(ctx(), agentId);
+            expect(afterRevoke.standing?.staleness?.stale).toBe(false);
+
+            const granted = await grantAgentTool(ctx(), agentId, { toolName: 'list_findings' });
+            expect(granted.staleness.triggers).toContain('TOOL_GRANTED');
+            expect((await standingRun(agentId)).staleTriggers).toContain('TOOL_GRANTED');
+        });
+
+        it('a re-grant of a tool the run already saw also marks it stale — accepted by the decision', async () => {
+            const agentId = await createAgent('grant-regrant', { dataAccessScope: 'READ_TENANT_DATA' });
+            await grantAgentTool(ctx(), agentId, { toolName: 'list_risks' });
+            await completeAgentRiskAssessment(ctx(), agentId);
+
+            await revokeAgentTool(ctx(), agentId, 'list_risks');
+            const granted = await grantAgentTool(ctx(), agentId, { toolName: 'list_risks' });
+            expect(granted.staleness.triggers).toContain('TOOL_GRANTED');
+        });
+
+        it('grants made BEFORE the scoring do not mark the run stale', async () => {
+            const agentId = await createAgent('grant-before', { dataAccessScope: 'READ_TENANT_DATA' });
+            await grantAgentTool(ctx(), agentId, { toolName: 'list_risks' });
+            await completeAgentRiskAssessment(ctx(), agentId);
+            const state = await getAgentRiskAssessmentState(ctx(), agentId);
+            expect(state.standing?.staleness).toEqual({ stale: false, triggers: [], detail: [] });
         });
     });
 });

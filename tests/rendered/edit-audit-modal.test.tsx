@@ -132,6 +132,7 @@ function installFetch() {
 
 function mount(overrides: {
     open?: boolean;
+    audit?: typeof AUDIT;
     save?: jest.Mock;
     onSaved?: jest.Mock;
     setOpen?: jest.Mock;
@@ -146,7 +147,7 @@ function mount(overrides: {
                     <EditAuditModal
                         open={overrides.open ?? true}
                         setOpen={setOpen}
-                        audit={AUDIT}
+                        audit={overrides.audit ?? AUDIT}
                         save={save}
                         onSaved={onSaved}
                     />
@@ -209,6 +210,31 @@ describe('EditAuditModal — what reaches the wire', () => {
         // Never set on this audit, and `null` is what clears it.
         expect(body.schedule).toBeNull();
         expect(body.auditCycleId).toBeNull();
+    });
+
+    it('keeps the scheduled day for a viewer west of UTC (#5161)', async () => {
+        // The stored schedule is UTC midnight; in New York that is the
+        // evening before. Reading local fields sent the day before, so every
+        // save moved the audit back a day.
+        // Jest cannot change the process time zone at run time, so the
+        // LOCAL calendar getters are made to read four hours behind UTC, as
+        // they would in New York. The UTC getters stay real.
+        const west = (d: Date) => new Date(d.getTime() - 4 * 3_600_000);
+        const spies = [
+            jest.spyOn(Date.prototype, 'getFullYear').mockImplementation(function (this: Date) { return west(this).getUTCFullYear(); }),
+            jest.spyOn(Date.prototype, 'getMonth').mockImplementation(function (this: Date) { return west(this).getUTCMonth(); }),
+            jest.spyOn(Date.prototype, 'getDate').mockImplementation(function (this: Date) { return west(this).getUTCDate(); }),
+        ];
+        try {
+            expect(new Date('2026-05-01T00:00:00.000Z').getDate()).toBe(30);
+            const { save } = mount({ audit: { ...AUDIT, schedule: '2026-05-01T00:00:00.000Z' } });
+            await waitFor(() => expect(document.querySelector('#edit-audit-title')).toBeTruthy());
+            await submit();
+            expect(save).toHaveBeenCalledTimes(1);
+            expect(save.mock.calls[0][0].schedule).toBe('2026-05-01');
+        } finally {
+            spies.forEach((s) => s.mockRestore());
+        }
     });
 
     it('closes and reports success only after the save resolves', async () => {

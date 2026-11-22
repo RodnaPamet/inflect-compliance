@@ -26,6 +26,7 @@ const findManyAgentProposal = jest.fn();
 const findManyCard = jest.fn();
 const findManyVersion = jest.fn();
 const findManyAuditLog = jest.fn();
+const findManyApproval = jest.fn();
 const appendAuditEntry = jest.fn();
 
 jest.mock('@/lib/db-context', () => ({
@@ -35,6 +36,7 @@ jest.mock('@/lib/db-context', () => ({
                 agentProposal: { findMany: findManyAgentProposal },
                 agentPolicyCard: { findMany: findManyCard },
                 agentPolicyCardVersion: { findMany: findManyVersion },
+                agentProposalApproval: { findMany: findManyApproval },
                 auditLog: { findMany: findManyAuditLog },
             }),
     ),
@@ -72,6 +74,7 @@ beforeEach(() => {
     findManyCard.mockResolvedValue([]);
     findManyVersion.mockResolvedValue([]);
     findManyAuditLog.mockResolvedValue([]);
+    findManyApproval.mockResolvedValue([]);
     appendAuditEntry.mockResolvedValue(undefined);
 });
 
@@ -133,6 +136,26 @@ describe('the approval rung comes from the version the proposal pinned', () => {
         // reconstructed today's rules wearing an old version number.
         expect(agent?.rungCounts).toEqual({ SECOND_APPROVER: 2 });
         expect(agent?.secondApproverDeclared).toBe(2);
+    });
+
+    it('counts the recorded signers, so a two-signature approval is not "unrecorded" (#5232)', async () => {
+        findManyAgentProposal.mockResolvedValue(stampRows(2));
+        findManyCard.mockResolvedValue([{ id: 'card-1', agentId: 'agent-1' }]);
+        findManyVersion.mockResolvedValue([{ cardId: 'card-1', version: 1, approvalRung: 'SECOND_APPROVER' }]);
+        // p-0 carries a first signer and the final reviewer; p-1 only the reviewer.
+        findManyApproval.mockResolvedValue([
+            { proposalId: 'p-0', approverUserId: 'u-first' },
+            { proposalId: 'p-0', approverUserId: 'u-stamp' },
+            { proposalId: 'p-1', approverUserId: 'u-stamp' },
+        ]);
+
+        const report = await computeAgentReviewQuality(ctx, { alert: false });
+
+        // One read for every proposal's signers, never one per row.
+        expect(findManyApproval).toHaveBeenCalledTimes(1);
+        expect(findManyApproval.mock.calls[0][0].where.proposalId).toEqual({ in: ['p-0', 'p-1'] });
+        const gap = report.signals.find((sig) => sig.code === 'SECOND_APPROVER_UNRECORDED');
+        expect(gap?.observed).toBe(1);
     });
 
     it('leaves the rung unknown when nothing pinned one, rather than defaulting', async () => {

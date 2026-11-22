@@ -11,11 +11,12 @@
  *     envelope used to be stringified onto the screen as JSON.
  */
 import * as React from 'react';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SWRConfig } from 'swr';
 
+const mockPush = jest.fn();
 jest.mock('next/navigation', () => ({
-    useRouter: () => ({ push: jest.fn(), replace: jest.fn(), back: jest.fn(), refresh: jest.fn(), prefetch: jest.fn() }),
+    useRouter: () => ({ push: mockPush, replace: jest.fn(), back: jest.fn(), refresh: jest.fn(), prefetch: jest.fn() }),
     usePathname: () => '/t/acme/onboarding',
     useSearchParams: () => new URLSearchParams(),
     useParams: () => ({ tenantSlug: 'acme' }),
@@ -198,5 +199,32 @@ describe('a refused request', () => {
 
         expect(await screen.findByText('Something specific went wrong.')).toBeTruthy();
         expect(screen.queryByText(/"code"/)).toBeNull();
+    });
+});
+
+describe('Save & exit (#5309)', () => {
+    beforeEach(() => mockPush.mockReset());
+
+    it('stays on the wizard, with the error shown, when the save fails', async () => {
+        serve(stateAt('ASSET_SETUP', { ASSET_SETUP: { assets: ['CRM'] } }), {
+            status: 429,
+            body: { error: { code: 'RATE_LIMITED', message: 'Too many requests, slow down.' } },
+        });
+        renderWizard();
+
+        fireEvent.click(await screen.findByRole('button', { name: w.saveExit }));
+
+        expect(await screen.findByText('Too many requests, slow down.')).toBeTruthy();
+        expect(mockPush).not.toHaveBeenCalled();
+    });
+
+    it('leaves for the dashboard once the save lands', async () => {
+        const state = stateAt('ASSET_SETUP', { ASSET_SETUP: { assets: ['CRM'] } });
+        serve(state);
+        renderWizard();
+
+        fireEvent.click(await screen.findByRole('button', { name: w.saveExit }));
+
+        await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/t/acme/dashboard'));
     });
 });

@@ -149,6 +149,25 @@ export interface ActionEvent {
     entityId?: string;
     actorUserId?: string | null;
     data?: Record<string, unknown>;
+    /**
+     * The `AutomationExecution` this action is being taken FOR — the row the
+     * calling dispatcher claimed for this rule (direct event, chain step or
+     * sub-flow entry alike).
+     *
+     * It is the parent an action names when it starts something downstream
+     * (`INVOKE_AGENT`'s run, `INVOKE_SUBFLOW`'s entry execution), because the
+     * readers walk `execution -> ruleId`: the process canvas's agent view
+     * (`listCanvasAgentRuns`) and the run page's "caused by rule" line both
+     * attribute the child to the rule of the execution it names. It used to
+     * be read from `data.__parentExecutionId`, which a chain step and a
+     * sub-flow entry set to THEIR OWN parent and a directly fired rule did not
+     * set at all, so a direct firing's run recorded `''` and a chained one
+     * named the upstream rule.
+     *
+     * Typed, not a `data` marker, on purpose: `data` is the event payload, and
+     * a WEBHOOK posts it verbatim.
+     */
+    executionId?: string;
 }
 
 // A loose Prisma surface — the dispatchers pass the singleton client or a tx.
@@ -213,10 +232,13 @@ async function notifyUser(db: Db, rule: ExecutableRule, event: ActionEvent): Pro
     if (!(await isNotificationsEnabled(db as never, event.tenantId))) {
         return { ok: true, summary: 'Notifications disabled for tenant', detail: { notified: 0 } };
     }
-    // Only notify actual members of the firing tenant — drops stale/foreign ids
-    // (tenant-isolation safety + avoids a dangling-FK insert).
+    // Only notify ACTIVE members of the firing tenant — drops stale/foreign ids
+    // (tenant-isolation safety + avoids a dangling-FK insert), and a member an
+    // admin has since deactivated or who has not yet joined (#5305): the bell
+    // row carries the rule's name and message, which is business content.
+    // The SLA sweep's breach recipients are filtered the same way.
     const members = await db.tenantMembership.findMany({
-        where: { tenantId: event.tenantId, userId: { in: requested } },
+        where: { tenantId: event.tenantId, userId: { in: requested }, status: 'ACTIVE' },
         select: { userId: true },
     });
     const userIds = members.map((m: { userId: string }) => m.userId);
@@ -237,6 +259,18 @@ async function notifyUser(db: Db, rule: ExecutableRule, event: ActionEvent): Pro
 
 async function createTask(db: Db, rule: ExecutableRule, event: ActionEvent): Promise<ActionResult> {
     const cfg = rule.actionConfigJson as CreateTaskActionConfig;
+    // Self-trigger guard, the twin of UPDATE_STATUS's (#5249). The task this
+    // action creates emits TASK_CREATED with a NEW entity id, so the per-entity
+    // dedupe below never matches and a rule on TASK_CREATED fired again on its
+    // own task, without bound. Refused before any read or write, by name.
+    if (event.event === 'TASK_CREATED') {
+        return {
+            ok: false,
+            summary:
+                'Refused: a CREATE_TASK action cannot be driven by TASK_CREATED — the task it ' +
+                'creates fires the rule again, so it would re-trigger itself without end',
+        };
+    }
     // Author first, firing actor only as the author-less fallback — see
     // `resolveActorCtx`.
     const principalUserId = rule.createdByUserId ?? event.actorUserId;
@@ -577,11 +611,17 @@ async function fireWebhook(rule: ExecutableRule, event: ActionEvent): Promise<Ac
  *
  * ── RECURSION ──────────────────────────────────────────────────────────────
  *
- * Carried exactly as `invokeSubflow` carries it, and for the reason that
- * comment gives: a rule whose agent run re-fires the same rule recursed without
- * bound before the sub-flow dispatcher was capped. `__agentInvokeDepth` is
- * stamped on the data handed forward, so an agent run that triggers a rule that
- * invokes an agent is depth 2, and the dispatcher refuses above the cap.
+ * The depth is READ from `__agentInvokeDepth` on the event and enqueued one
+ * higher, and the dispatcher refuses above `MAX_AGENT_INVOKE_DEPTH`. But NOTHING
+ * STAMPS `__agentInvokeDepth` today (#5305): unlike `__subflowDepth`, which the
+ * sub-flow dispatcher writes onto the data it hands forward, an agent run does
+ * not record its depth, and the automation events its effects cause carry
+ * none. So every invoke is enqueued at depth 1 and the cap bounds only what a
+ * payload itself carries. An agent ↔ rule cycle is bounded today only by each
+ * lap needing an automation event that a usecase the run's effects reach
+ * emits, not by this counter.
+ * Making the cap real means recording the depth on the `WorkflowRun` and
+ * stamping it on the events that run causes.
  */
 async function invokeAgent(rule: ExecutableRule, event: ActionEvent): Promise<ActionResult> {
     const cfg = rule.actionConfigJson as {
@@ -609,7 +649,11 @@ async function invokeAgent(rule: ExecutableRule, event: ActionEvent): Promise<Ac
         // which input key, so what reaches prompt assembly is bounded by the
         // event's shape rather than by what someone typed into a rule.
         inputMapping: cfg.inputMapping ?? {},
-        parentExecutionId: (event.data?.__parentExecutionId as string) ?? '',
+        // THE EXECUTION THAT TOOK THIS ACTION, which is what the run's
+        // `parentExecutionId` means (#3537). `''` only when a caller supplied
+        // no execution — kept as the empty string, not null, because NULL is
+        // "nothing caused this run" and a rule did.
+        parentExecutionId: event.executionId ?? '',
         triggerEvent: event.event,
         data: event.data ?? {},
         depth: (Number.isFinite(currentDepth) ? currentDepth : 0) + 1,
@@ -621,7 +665,8 @@ async function invokeSubflow(rule: ExecutableRule, event: ActionEvent): Promise<
     const cfg = rule.actionConfigJson as { targetGroupId?: string };
     if (!cfg?.targetGroupId) return { ok: false, summary: 'No sub-flow target configured' };
     // The chained execution is created by the subflow-dispatch job; here we
-    // only enqueue it. parentExecutionId is wired by the caller via the event.
+    // only enqueue it. Its parent is the execution taking THIS action
+    // (`event.executionId`), which also keys the sub-flow's claim (#5103).
     // Carry the recursion depth forward. `__subflowDepth` is stamped by
     // subflow-dispatcher on the data it hands to `executeAction`; absent on
     // the first hop, so an initial invoke enqueues depth 1. The dispatcher
@@ -631,9 +676,13 @@ async function invokeSubflow(rule: ExecutableRule, event: ActionEvent): Promise<
     await enqueue('subflow-dispatch', {
         tenantId: event.tenantId,
         targetGroupId: cfg.targetGroupId,
-        parentExecutionId: (event.data?.__parentExecutionId as string) ?? '',
+        parentExecutionId: event.executionId ?? '',
         triggerEvent: event.event,
         data: event.data ?? {},
+        // The invoking execution's entity, so the sub-flow's actions act on
+        // it rather than on none (#5248).
+        entityType: event.entityType,
+        entityId: event.entityId,
         depth: (Number.isFinite(currentDepth) ? currentDepth : 0) + 1,
     });
     return { ok: true, summary: `Enqueued sub-flow ${cfg.targetGroupId}` };

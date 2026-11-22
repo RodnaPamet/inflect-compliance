@@ -51,7 +51,12 @@ jest.mock('@/app-layer/usecases/identity-write-policy', () => ({
 const findCandidates = jest.fn();
 const disableBatch = jest.fn();
 jest.mock('@/app-layer/usecases/identity-disable-account', () => ({
-    findLeaverCandidates: (...a: unknown[]) => findCandidates(...a),
+    // The read returns `{ candidates, truncated }` (#5142); a setup that
+    // returns a bare array is a population that was read whole.
+    findLeaverCandidates: async (...a: unknown[]) => {
+        const r = await findCandidates(...a);
+        return Array.isArray(r) ? { candidates: r, truncated: false } : r;
+    },
     disableAccountsForLeaver: (...a: unknown[]) => disableBatch(...a),
 }));
 const resolveWriter = jest.fn();
@@ -76,6 +81,7 @@ import {
     LEAVER_MAX_MODE,
     LINK_FRESHNESS_MS,
     MAX_REPORTED_DECISIONS,
+    MAX_TERMINATED_READ,
 } from '@/app-layer/usecases/identity-leaver-pass';
 import { LADDER, isAboveClamp } from '@/lib/identity/write-ladder';
 import { getPermissionsForRole } from '@/lib/permissions';
@@ -877,6 +883,53 @@ describe('who the feed says has left', () => {
         expect(r.refusal).toBe('NO_TERMINATED_WORKERS');
         expect(findCandidates).not.toHaveBeenCalled();
         expect(resolveWriter).not.toHaveBeenCalled();
+    });
+});
+
+describe('a history past the cap is read newest-first, and the cut is reported (#5142)', () => {
+    it('reads the newest departures first, and one past the cap', async () => {
+        await run();
+        const q = mockDb.employee.findMany.mock.calls[0][0];
+        // Unordered, a history past the cap came back as an arbitrary slice and
+        // this week's leavers could be left out of it.
+        expect(q.orderBy[0]).toEqual({ endDate: { sort: 'desc', nulls: 'first' } });
+        expect(q.take).toBe(MAX_TERMINATED_READ + 1);
+    });
+
+    it('acts on the newest slice and records the pass PARTIAL when the terminated read was cut', async () => {
+        const many = Array.from({ length: MAX_TERMINATED_READ + 1 }, (_, i) => ({ id: `emp-${i}` }));
+        mockDb.employee.findMany.mockResolvedValue(many);
+
+        const r = await run();
+
+        const ids = findCandidates.mock.calls[0][2] as string[];
+        expect(ids).toHaveLength(MAX_TERMINATED_READ);
+        expect(ids).not.toContain(`emp-${MAX_TERMINATED_READ}`);
+        expect(r.status).toBe('PARTIAL');
+        const data = mockDb.integrationExecution.create.mock.calls[0][0].data;
+        expect(data.status).toBe('PARTIAL');
+        expect(data.resultJson).toMatchObject({ terminatedTruncated: true, candidatesTruncated: false });
+    });
+
+    it('records the pass PARTIAL when the candidate read was cut', async () => {
+        findCandidates.mockResolvedValue({
+            candidates: [{ linkId: 'l1', externalUserId: 'x1', onPremisesSyncEnabled: false }],
+            truncated: true,
+        });
+
+        const r = await run();
+
+        expect(r.status).toBe('PARTIAL');
+        const data = mockDb.integrationExecution.create.mock.calls[0][0].data;
+        expect(data.status).toBe('PARTIAL');
+        expect(data.resultJson).toMatchObject({ terminatedTruncated: false, candidatesTruncated: true });
+    });
+
+    it('stays PASSED, with no truncation keys, when both reads were whole', async () => {
+        const r = await run();
+        expect(r.status).toBe('PASSED');
+        const data = mockDb.integrationExecution.create.mock.calls[0][0].data;
+        expect(data.resultJson.terminatedTruncated).toBeUndefined();
     });
 });
 

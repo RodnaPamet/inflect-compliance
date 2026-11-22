@@ -24,6 +24,7 @@ import { Heading } from '@/components/ui/typography';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { cn } from '@inflect/ui/lib/cn';
 import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
+import { applicabilityState } from '@/lib/controls/control-applicability';
 import {
     CONTROL_HEALTH_VERDICT_VARIANT,
     type ControlHealthVerdict,
@@ -85,6 +86,9 @@ export function ControlHealthCard({ controlId }: { controlId: string }) {
     }
 
     const eff = data.effectiveness;
+    // The list's three states (#5313): a control never assessed is stored as
+    // APPLICABLE, and reads "Not assessed", not "Applicable".
+    const applState = applicabilityState(data);
     return (
         <div className={cn(cardVariants(), 'space-y-default')}>
             <div className="flex items-center gap-1.5">
@@ -109,8 +113,8 @@ export function ControlHealthCard({ controlId }: { controlId: string }) {
                     </StatusBadge>
                 </Vital>
                 <Vital label={t('health.applicability')}>
-                    <StatusBadge variant={data.applicability === 'APPLICABLE' ? 'info' : 'neutral'}>
-                        {t(`filterEnums.applicability.${data.applicability}` as Parameters<typeof t>[0])}
+                    <StatusBadge variant={applState === 'APPLICABLE' ? 'info' : 'neutral'} id="control-health-applicability">
+                        {t(`filterEnums.applicability.${applState}` as Parameters<typeof t>[0])}
                     </StatusBadge>
                 </Vital>
                 <Vital label={t('health.coverage')}>

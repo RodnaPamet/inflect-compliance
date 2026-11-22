@@ -124,7 +124,7 @@ describe('bus-bootstrap', () => {
 
     describe('installAutomationBusDispatcher', () => {
         it('after install, emit() triggers queue.enqueue once per event', async () => {
-            installAutomationBusDispatcher();
+            installAutomationBusDispatcher('worker');
 
             await emitAutomationEvent(makeCtx(), {
                 event: 'RISK_CREATED',
@@ -148,7 +148,7 @@ describe('bus-bootstrap', () => {
             getAutomationBus().subscribe('RISK_CREATED', (e) => {
                 observed.push(e.event);
             });
-            installAutomationBusDispatcher();
+            installAutomationBusDispatcher('worker');
 
             await emitAutomationEvent(makeCtx(), {
                 event: 'RISK_CREATED',
@@ -163,9 +163,9 @@ describe('bus-bootstrap', () => {
         });
 
         it('is idempotent — repeated install does not multiply dispatch', async () => {
-            installAutomationBusDispatcher();
-            installAutomationBusDispatcher();
-            installAutomationBusDispatcher();
+            installAutomationBusDispatcher('worker');
+            installAutomationBusDispatcher('worker');
+            installAutomationBusDispatcher('worker');
 
             await emitAutomationEvent(makeCtx(), {
                 event: 'RISK_CREATED',
@@ -180,7 +180,7 @@ describe('bus-bootstrap', () => {
 
         it('enqueue failure does not throw out of emit (bus swallows)', async () => {
             enqueue.mockRejectedValueOnce(new Error('redis down'));
-            installAutomationBusDispatcher();
+            installAutomationBusDispatcher('worker');
 
             await expect(
                 emitAutomationEvent(makeCtx(), {

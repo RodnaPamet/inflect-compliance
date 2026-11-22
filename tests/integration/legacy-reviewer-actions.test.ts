@@ -89,6 +89,42 @@ async function seedResolution(opts: {
     return exec.id;
 }
 
+/**
+ * A second legacy connection with its own snapshot and one resolution for
+ * `accountKey` — the same login in another application (#5144). Returns the
+ * connection and the execution that resolved it.
+ */
+async function seedOtherConnectionResolution(
+    accountKey: string,
+    outcome: 'SUGGESTED' | 'UNMATCHED' = 'UNMATCHED',
+): Promise<{ connectionId: string; executionId: string }> {
+    const otherConnection = (await prisma.integrationConnection.create({
+        data: { tenantId: T1, provider: 'legacy-mcp', name: 'second legacy', configJson: {} },
+    })).id;
+    const otherSnapshot = (await prisma.legacyAccessSnapshot.create({
+        data: {
+            tenantId: T1, connectionId: otherConnection, remoteSnapshotId: 'snap-2', mappingVersion: 1,
+            columnSetFingerprint: 'e'.repeat(64), payloadHash: 'g'.repeat(64),
+            rowCount: 1, rowsReceived: 1, status: 'COMPLETE', completedAt: new Date(),
+        },
+    })).id;
+    const exec = await prisma.integrationExecution.create({
+        data: {
+            tenantId: T1, connectionId: otherConnection, status: 'PASSED',
+            provider: 'legacy-mcp', automationKey: 'legacy-reconcile',
+            executedAt: new Date(), completedAt: new Date(),
+        },
+    });
+    await prisma.legacyAccountResolution.create({
+        data: {
+            tenantId: T1, executionId: exec.id, snapshotId: otherSnapshot,
+            accountKey, outcome, method: 'NO_CANDIDATES',
+            signalsJson: [], candidatesJson: [], vetoesJson: [],
+        },
+    });
+    return { connectionId: otherConnection, executionId: exec.id };
+}
+
 beforeAll(async () => {
     await resetDatabase(prisma);
     await clearOwnRows();
@@ -178,9 +214,17 @@ describe('authorisation', () => {
         expect(r.outcome).toBe('WRITTEN');
     });
 
+    // The view key is OWNER, ADMIN and AUDITOR since #5695 (owner decision
+    // 2026-11-15); AUDITOR is the role that holds it and nothing that decides.
     it('viewing the queue needs only the view key', async () => {
-        const q = await listReconciliationQueue(ctx('READER'), { executionId, connectionId });
+        const q = await listReconciliationQueue(ctx('AUDITOR'), { executionId, connectionId });
         expect(q.map((x) => x.accountKey)).toEqual(['alovelace']);
+    });
+
+    it('a READER, which no longer holds the view key, is refused the queue', async () => {
+        await expect(listReconciliationQueue(ctx('READER'), { executionId, connectionId })).rejects.toThrow(
+            /identity_reconciliation\.view/,
+        );
     });
 });
 
@@ -199,6 +243,18 @@ describe('the server re-checks what the client claims', () => {
                 action: { kind: 'CONFIRM', employeeId },
             })
         ).rejects.toThrow(/replaced by a newer run/);
+    });
+
+    it('a newer run on ANOTHER connection with the same account key does not supersede this one (#5144)', async () => {
+        // `alovelace` is also a login in a second legacy application. Its
+        // newer resolution is that application's evidence, not this one's.
+        await seedOtherConnectionResolution('alovelace');
+
+        const r = await decideLegacyAccount(ctx(), {
+            connectionId, accountKey: 'alovelace', executionId,
+            action: { kind: 'CONFIRM', employeeId },
+        });
+        expect(r.outcome).toBe('WRITTEN');
     });
 
     it('refuses CONFIRM for an employee the engine never scored', async () => {
@@ -324,6 +380,27 @@ describe('each action writes what it claims', () => {
         });
         expect(r.classification).toBe('NON_PERSON');
         expect((await alias()).employeeId).toBeNull();
+    });
+
+    it('NON_PERSON refuses an owner whose membership is no longer ACTIVE (#5318)', async () => {
+        await prisma.tenantMembership.updateMany({
+            where: { tenantId: T1, userId: 'user-owner' },
+            data: { status: 'DEACTIVATED' },
+        });
+        await expect(
+            decideLegacyAccount(ctx(), {
+                connectionId, accountKey: 'alovelace', executionId,
+                action: {
+                    kind: 'NON_PERSON', ownerUserId: 'user-owner',
+                    justification: 'batch job for the nightly export',
+                },
+            })
+        ).rejects.toThrow(/member of this tenant/);
+        expect(
+            await prisma.legacyIdentityAlias.count({
+                where: { tenantId: T1, connectionId, accountKey: 'alovelace' },
+            })
+        ).toBe(0);
     });
 
     it('EXTERNAL refuses an expiry in the past', async () => {
@@ -574,11 +651,11 @@ describe('the queue stops asking once a reviewer has answered', () => {
     });
 
     it('an alias on a DIFFERENT connection does not suppress', async () => {
-        const other = await prisma.integrationConnection.create({
-            data: { tenantId: T1, provider: 'legacy-mcp', name: 'second legacy', configJson: {} },
-        });
+        // The other application's own run: a decision there is made against
+        // its resolution, never this connection's (#5144).
+        const other = await seedOtherConnectionResolution('alovelace');
         await decideLegacyAccount(ctx(), {
-            connectionId: other.id, accountKey: 'alovelace', executionId,
+            connectionId: other.connectionId, accountKey: 'alovelace', executionId: other.executionId,
             action: { kind: 'ORPHAN', justification: 'unattributable in the OTHER system' },
         });
         // The same login name in two legacy systems is two accounts, and one

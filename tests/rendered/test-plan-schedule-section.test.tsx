@@ -416,3 +416,42 @@ describe('TestPlanScheduleSection — custom schedule warning', () => {
         expect(warning).toHaveTextContent(/overwrite/i);
     });
 });
+
+// ─── 6. The plan's own timezone (#5309) ───────────────────────────
+
+describe('TestPlanScheduleSection — the stored timezone', () => {
+    // The test runner's zone is never a plausible stored one, so a plan zone
+    // that leaks back to the browser's is visible.
+    const PLAN_TZ = 'Pacific/Chatham';
+
+    test('shows the plan\'s stored timezone, not the viewer\'s', () => {
+        render(
+            <TestPlanScheduleSection
+                {...BASE_PROPS}
+                initialSchedule="0 9 * * *"
+                initialScheduleTimezone={PLAN_TZ}
+                initialNextRunAt={new Date(Date.now() + 3600_000).toISOString()}
+            />,
+        );
+        expect(screen.getByText(`All times in ${PLAN_TZ}`)).toBeInTheDocument();
+    });
+
+    test('a cadence change keeps the stored timezone', async () => {
+        global.fetch = jest.fn(async () => fakeOk()) as unknown as typeof fetch;
+        const user = userEvent.setup();
+        render(
+            <TestPlanScheduleSection
+                {...BASE_PROPS}
+                initialSchedule="0 9 * * *"
+                initialScheduleTimezone={PLAN_TZ}
+                initialNextRunAt={new Date(Date.now() + 3600_000).toISOString()}
+            />,
+        );
+        await user.click(screen.getByRole('combobox'));
+        await user.click(screen.getByRole('option', { name: /Weekly/i }));
+        await user.click(screen.getByRole('button', { name: /Save schedule/i }));
+        await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+        const [, init] = (global.fetch as jest.Mock).mock.calls[0] as [string, RequestInit];
+        expect(JSON.parse(init.body as string).scheduleTimezone).toBe(PLAN_TZ);
+    });
+});

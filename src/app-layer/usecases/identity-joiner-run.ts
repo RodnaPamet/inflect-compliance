@@ -230,7 +230,8 @@ async function readJoinerEntitlementConfig(ctx: RequestContext): Promise<{
 
     // Both halves are read, and NEITHER is defaulted. A missing settings row
     // and a row with a null column are the same state — no fallback — and the
-    // planner names it NO_DEFAULT_GROUP rather than choosing a group.
+    // planner names it NO_DEFAULT_GROUP rather than choosing a group, whenever
+    // a planned starter's department is unmapped and so needs one.
     return {
         departmentGroups,
         defaultGroupId: settings?.identityDefaultGroupId ?? null,
@@ -394,9 +395,10 @@ async function writeJoinerExecutionRow(
     status: 'PASSED' | 'NOT_APPLICABLE' | 'ERROR',
     // An OBJECT, so the request block is added here rather than by each caller.
     resultJson: Prisma.InputJsonObject,
-): Promise<void> {
+): Promise<{ id: string; resultJson: Prisma.InputJsonObject }> {
     const request = passRequestRecord(trigger);
-    await runInTenantContext(ctx, (db) =>
+    const stored = request ? { ...resultJson, request } : resultJson;
+    const row = await runInTenantContext(ctx, (db) =>
         db.integrationExecution.create({
             data: {
                 tenantId: ctx.tenantId,
@@ -413,10 +415,12 @@ async function writeJoinerExecutionRow(
                 // A manual pass says who asked, whose authority it carried,
                 // and why it was not theirs when it was refused. A scheduled
                 // pass's row carries no such block and is otherwise unchanged.
-                resultJson: request ? { ...resultJson, request } : resultJson,
+                resultJson: stored,
             },
+            select: { id: true },
         }),
     );
+    return { id: row.id, resultJson: stored };
 }
 
 /**
@@ -434,9 +438,9 @@ async function safeRecordPlan(
     provider: string,
     plan: JoinerPlan,
     extra: Record<string, unknown>,
-): Promise<void> {
+): Promise<{ id: string; resultJson: Prisma.InputJsonObject } | null> {
     try {
-        await writeJoinerExecutionRow(ctx, trigger, provider, plan.refusal ? 'NOT_APPLICABLE' : 'PASSED', {
+        return await writeJoinerExecutionRow(ctx, trigger, provider, plan.refusal ? 'NOT_APPLICABLE' : 'PASSED', {
             mode: plan.mode,
             clamp: plan.clamp,
             refusal: plan.refusal,
@@ -460,6 +464,102 @@ async function safeRecordPlan(
             component: 'identity-joiner-pass',
             tenantId: ctx.tenantId,
             provider,
+            error: redactDirectoryIdentifiers(err instanceof Error ? err.message : String(err), null),
+        });
+        return null;
+    }
+}
+
+/**
+ * The row's status once the creates have run (#5317). The plan's own status
+ * (PASSED, or NOT_APPLICABLE for a plan-level refusal) stands only when there
+ * was nothing to create or everything planned was created.
+ *
+ *   - every planned create refused BEFORE any was attempted (no live
+ *     provisioner, no undo writer) → NOT_APPLICABLE, the refusal named in the
+ *     execution block — this page's word for "ran and refused";
+ *   - anything else short of every planned account created → PARTIAL.
+ */
+export function joinerExecutionStatus(
+    planned: number,
+    execution: CreateExecution,
+): 'PASSED' | 'PARTIAL' | 'NOT_APPLICABLE' {
+    if (planned === 0 || execution.created === planned) return 'PASSED';
+    if (execution.attempted === 0 && execution.refused > 0) return 'NOT_APPLICABLE';
+    return 'PARTIAL';
+}
+
+/** One sentence for the row: what the creates DID, in counts. */
+function executionDetail(mode: IdentityWriteMode, planned: number, execution: CreateExecution): string {
+    const parts = [`${execution.created} of ${planned} planned account(s) created in the directory at ${mode}`];
+    if (execution.partial > 0) parts.push(`${execution.partial} created without every entitlement`);
+    if (execution.collided > 0) parts.push(`${execution.collided} skipped: the identifier is already taken`);
+    if (execution.unverifiable > 0) parts.push(`${execution.unverifiable} skipped: the identifier could not be checked`);
+    if (execution.refused > 0) parts.push(`${execution.refused} refused`);
+    const sentence = `${parts.join('; ')}.`;
+    return execution.refusalDetail ? `${sentence} ${execution.refusalDetail}` : sentence;
+}
+
+/**
+ * Write what the creates DID onto the pass's row (#5317).
+ *
+ * The plan row is written first — capture-before-write — and said only what
+ * the pass decided. At AUTOMATIC that left the only durable record reading
+ * PASSED with "would be provisioned" and nothing about which accounts were
+ * really created, collided or refused, so a pass that decided could not be told
+ * from one that acted. Counts only: the row is read on an OWNER-gated page,
+ * and the refusal sentence is scrubbed as the errored pass's is. Never fails
+ * the pass, for the reason `safeRecordPlan` gives.
+ */
+async function safeRecordExecution(
+    ctx: RequestContext,
+    provider: string,
+    record: { id: string; resultJson: Prisma.InputJsonObject } | null,
+    mode: IdentityWriteMode,
+    plan: JoinerPlan,
+    execution: CreateExecution,
+): Promise<void> {
+    if (!record) return;
+    const planned = plan.decisions.filter((d) => d.outcome === 'PLANNED').length;
+    const refusalDetail = execution.refusalDetail ? redactDirectoryIdentifiers(execution.refusalDetail, null) : null;
+    const scrubbed: CreateExecution = { ...execution, refusalDetail };
+    try {
+        await runInTenantContext(ctx, (db) =>
+            db.integrationExecution.updateMany({
+                where: { id: record.id, tenantId: ctx.tenantId },
+                data: {
+                    // A plan-level refusal keeps its status and its sentence.
+                    // A refused plan no longer reaches the creates at all, so
+                    // this arm is a belt: were one ever to act, the execution
+                    // block is added beside the refusal so the row never
+                    // hides a create that happened.
+                    status: plan.refusal ? 'NOT_APPLICABLE' : joinerExecutionStatus(planned, execution),
+                    resultJson: {
+                        ...record.resultJson,
+                        created: execution.created,
+                        detail: plan.refusal
+                            ? `${plan.detail} ${executionDetail(mode, planned, scrubbed)}`
+                            : executionDetail(mode, planned, scrubbed),
+                        execution: {
+                            planned,
+                            attempted: execution.attempted,
+                            created: execution.created,
+                            partial: execution.partial,
+                            refused: execution.refused,
+                            collided: execution.collided,
+                            unverifiable: execution.unverifiable,
+                            refusalDetail,
+                        },
+                    },
+                },
+            }),
+        );
+    } catch (err) {
+        logger.error('joiner pass acted but what it did could not be recorded', {
+            component: 'identity-joiner-pass',
+            tenantId: ctx.tenantId,
+            provider,
+            created: execution.created,
             error: redactDirectoryIdentifiers(err instanceof Error ? err.message : String(err), null),
         });
     }
@@ -612,16 +712,29 @@ export async function runIdentityJoinerPass(input: {
         // called with a mode that means "decide only". Above it, the pass is
         // reachable only when `JOINER_MAX_MODE` permits — which is the clamp
         // doing its job, and now the ONLY thing between a plan and a create.
-        await safeRecordPlan(ctx, trigger, input.provider, plan, {
+        const record = await safeRecordPlan(ctx, trigger, input.provider, plan, {
             observedAddresses: observed.addresses.length,
             observedTruncated: observed.truncated,
             linkFreshnessMs: JOINER_LINK_FRESHNESS_MS,
         });
 
+        // A REFUSED plan creates nothing, at any rung (owner decision
+        // 2026-11-14). `BATCH_OVER_CAP`, `NO_DEPARTMENT_MAP` and
+        // `NO_DEFAULT_GROUP` all carry their per-starter decisions — PLANNED
+        // ones included, because the identity verdicts are what the rung is
+        // for — and this branch used to execute them anyway: at AUTOMATIC the
+        // cap that exists to stop a bad roster morning was a sentence on the
+        // row and nothing more. Gated on `refusal === null` rather than on a
+        // list of kinds, so a refusal added to the planner later is covered
+        // without anybody remembering this line. The plan's row, already
+        // written above, records the refusal by name as NOT_APPLICABLE.
         const execution =
-            mode === 'DRY_RUN'
+            mode === 'DRY_RUN' || plan.refusal !== null
                 ? NOTHING_EXECUTED
                 : await executePlannedCreates(ctx, input.provider, mode, plan, starters);
+        if (execution.attempted > 0 || execution.refused > 0) {
+            await safeRecordExecution(ctx, input.provider, record, mode, plan, execution);
+        }
 
         if (execution.attempted > 0 || execution.refused > 0) {
             logger.info('joiner pass acted', {
@@ -747,6 +860,11 @@ async function executePlannedCreates(
     plan: JoinerPlan,
     starters: readonly JoinerCandidate[],
 ): Promise<CreateExecution> {
+    // The caller already skips a refused plan; this is the same rule held
+    // where the creates are, so a second caller cannot execute one either.
+    // Returned BEFORE either factory is asked: a refused plan constructs no
+    // provisioner and no writer, and reaches no journal.
+    if (plan.refusal !== null) return NOTHING_EXECUTED;
     const planned = plan.decisions.filter((d) => d.outcome === 'PLANNED');
     if (planned.length === 0) return NOTHING_EXECUTED;
 
@@ -853,17 +971,24 @@ async function executePlannedCreates(
                 },
                 groupId: decision.groupId,
                 mode,
-                // The prior state for the undo is KNOWN rather than read
-                // back: this pass created the account moments ago and the
-                // create's last step enables it, so `enabled: true` is what
-                // the disable is reverting. Re-reading would be a second
-                // round trip whose answer we already have, and a read that
-                // failed would strand the undo.
-                disableCreated: (externalUserId: string) =>
-                    writing.writer.disable(externalUserId, {
-                        enabled: true,
-                        priorState: { createdBy: 'joiner-pass', employeeId: decision.employeeId },
-                    }),
+                // The undo READS the account before it disables it (#5096).
+                // It used to hand the writer a capture it built itself
+                // (`{ createdBy, employeeId }`), and both live writers refuse
+                // one they did not take: Entra needs the observed on-premises
+                // flag, Active Directory the journalled userAccountControl and
+                // DN. So every rollback failed and left the half-made account
+                // for a human. A failed read throws, which the rollback
+                // records as an unsettled undo — the same place a failed
+                // disable lands.
+                //
+                // An account that already reads disabled needs no undo: a
+                // create that failed before its enable step left it blocked,
+                // and Active Directory refuses to disable a disabled account.
+                disableCreated: async (externalUserId: string) => {
+                    const current = await writing.writer.readState(externalUserId);
+                    if (current.enabled === false) return;
+                    await writing.writer.disable(externalUserId, current);
+                },
             });
             if (outcome.kind === 'APPLIED') created += 1;
             else if (outcome.kind === 'REFUSED') refused += 1;

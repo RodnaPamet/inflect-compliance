@@ -15,6 +15,10 @@ import { logEvent } from '../../../events/audit';
 import { encryptField, decryptField } from '@/lib/security/encryption';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { validateProviderConfig } from '../../config-schema';
+import {
+    CONNECTION_NAME_INVALID_CHARACTERS,
+    connectionNameHasInvalidCharacters,
+} from '@/lib/text/connection-name';
 import { Prisma } from '@prisma/client';
 import { SharePointClient, type SharePointConnectionConfig } from './client';
 import {
@@ -40,6 +44,18 @@ export async function completeSharePointConnect(
     deps: { fetchImpl?: typeof fetch } = {},
 ): Promise<{ id: string }> {
     assertCanAdmin(ctx);
+    // This path writes `name` without the admin route's schema, so the #5317
+    // rule (owner decision 2026-11-15: no control characters, no lone
+    // surrogates) is asked here, before the code is exchanged or anything is
+    // written. The OAuth callback passes no name today; this keeps a future
+    // caller that does from storing one the form would have refused.
+    const requestedName = input.name?.trim();
+    if (requestedName && connectionNameHasInvalidCharacters(requestedName)) {
+        throw badRequest(
+            'A connection name may not contain control characters or broken (unpaired) characters.',
+            { reason: CONNECTION_NAME_INVALID_CHARACTERS },
+        );
+    }
     const secret = await exchangeCodeForSharePointToken(
         { code: input.code, redirectUri: input.redirectUri },
         { fetchImpl: deps.fetchImpl },
@@ -61,7 +77,7 @@ export async function completeSharePointConnect(
                 data: {
                     tenantId: ctx.tenantId,
                     provider: SHAREPOINT_PROVIDER,
-                    name: input.name?.trim() || 'SharePoint',
+                    name: requestedName || 'SharePoint',
                     configJson: validateProviderConfig(
                         SHAREPOINT_PROVIDER,
                         config as unknown as Record<string, unknown>,

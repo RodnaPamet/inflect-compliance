@@ -674,6 +674,47 @@ describe('the body says what is true as of the emission', () => {
     });
 });
 
+describe('an unregistered automated identity is held to no bar (owner decisions, 2026-11-13)', () => {
+    it('is counted among the agents and the unregistered, stated on its own, and left out of the below-bar count', async () => {
+        // Three principals, every source read in full. The registered agent
+        // and the shadow agent each list a write tool at H1: below the bar.
+        // The third is on no list and lists no tool and no model: an
+        // unregistered identity, which the ladder alone would also call short.
+        const identity: HarnessReportAgentV2 = { ...reportAgent('entra:sp:build-identity'), tools: [] };
+        await ingest('A', 'identity-1', 10, {
+            agents: [
+                reportAgent(DISCOVERED_ID_CANARY, { registeredAgentId: seeded.targetAgentId }),
+                reportAgent('entra:sp:shadow-A'),
+                identity,
+            ],
+        });
+        await ingest('B', 'identity-b', 10);
+        // The ingest classed it: the emitter reads that record, not the scan rows.
+        expect(
+            await prisma.finding.count({
+                where: { tenantId: T, sourceKind: 'AGENT_HARNESS', sourceRef: 'UNREGISTERED_IDENTITY:entra:sp:build-identity', status: 'OPEN' },
+            }),
+        ).toBe(1);
+
+        await emitAgenticEvidence(ownerCtx(), { asOf: AS_OF });
+        const rows = await harnessArtefacts();
+        expect(rows).toHaveLength(2);
+        for (const row of rows) {
+            expect(row.evidence.content).toContain('Agents: 3 ·');
+            expect(row.evidence.content).toContain('Below the report-only bar: 2 · Not in the agent register as of this emission: 2');
+            expect(row.evidence.content).toContain(
+                'Of those not in the register, unregistered automated identities (no sign of a model; held to no bar, so not counted below it): 1',
+            );
+            // Scanner B's two agents hold no identity, and its own line says so.
+            expect(row.evidence.content).toContain(
+                'Of those not in the register, unregistered automated identities (no sign of a model; held to no bar, so not counted below it): 0',
+            );
+            // A count, never the principal's id.
+            expect(row.evidence.content).not.toContain('entra:sp:build-identity');
+        }
+    });
+});
+
 describe('zero is never complete', () => {
     it('emits an all-COMPLETE report that found nobody as NEEDS_REVIEW, saying the scan was EMPTY', async () => {
         await ingest('A', 'empty-1', 8, { agents: [] });

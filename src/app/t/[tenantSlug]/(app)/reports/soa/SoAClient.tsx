@@ -195,12 +195,15 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
         if (!justModal) return;
         setSaving(true);
         try {
-            const res = await fetch(apiUrl(`/controls/${justModal.controlId}`), {
-                method: 'PATCH',
+            // Applicability has its own endpoint. The control PATCH is
+            // `.strict()` and declares neither field, so it refused every
+            // save from here with a 400 (#5218).
+            const res = await fetch(apiUrl(`/controls/${justModal.controlId}/applicability`), {
+                method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     applicability: 'NOT_APPLICABLE',
-                    applicabilityJustification: justText,
+                    justification: justText.trim(),
                 }),
             });
             if (!res.ok) {

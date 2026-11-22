@@ -230,7 +230,7 @@ const version = (over: Partial<AgentProfileVersionInput> = {}): AgentProfileVers
     effort: 'medium',
     maxTurns: 10,
     outputKind: 'ANSWER_ONLY',
-    allowedTriggers: ['TEST_RUN'],
+    allowedTriggers: ['TEST_RUN', 'AUTOMATION'],
     ...over,
 });
 
@@ -753,9 +753,9 @@ describeFn('agent profiles (real DB)', () => {
         });
 
         it('cannot resolve or run it by key, and no run row is written', async () => {
-            expect(await reasonOf(resolveRunDefinition(authorB(), keyA))).toBe('PROFILE_NOT_FOUND');
+            expect(await reasonOf(resolveRunDefinition(authorB(), keyA, { trigger: 'AUTOMATION' }))).toBe('PROFILE_NOT_FOUND');
             engineRunsProfiles = true;
-            expect(await reasonOf(startWorkflowRun(authorB({ agentId: AGENTS.b }), keyA))).toBe('PROFILE_NOT_FOUND');
+            expect(await reasonOf(startWorkflowRun(authorB({ agentId: AGENTS.b }), keyA, {}, { profileTrigger: 'AUTOMATION' }))).toBe('PROFILE_NOT_FOUND');
             expect(await runRowsFor(TB, keyA)).toBe(0);
         });
 
@@ -791,16 +791,16 @@ describeFn('agent profiles (real DB)', () => {
         const asAgentA = () => authorA({ agentId: AGENTS.a });
 
         it('resolves only the approved version in force, in the caller tenant', async () => {
-            const { def } = await resolveRunDefinition(asAgentA(), key);
+            const { def } = await resolveRunDefinition(asAgentA(), key, { trigger: 'AUTOMATION' });
             expect(def.profile).toMatchObject({ profileId, version: 1, instructionsHash: hash, toolNames: ['list_risks'] });
             // Step 1H: the text an engine is handed is exactly the text the pin hashes.
             expect(profileInstructionsHash(def.profile!.instructions)).toBe(hash);
             expect(def.readOnly).toBe(true);
-            expect(await reasonOf(resolveRunDefinition(asAgentA(), profileRunKey(profileId, 2)))).toBe('PROFILE_NOT_FOUND');
-            expect(await reasonOf(resolveRunDefinition(asAgentA(), `agent-profile:${profileId}`))).toBe('PROFILE_KEY_INVALID');
-            expect(await reasonOf(resolveRunDefinition(authorA({ agentId: AGENTS.a2 }), key))).toBe('PROFILE_AGENT_MISMATCH');
+            expect(await reasonOf(resolveRunDefinition(asAgentA(), profileRunKey(profileId, 2), { trigger: 'AUTOMATION' }))).toBe('PROFILE_NOT_FOUND');
+            expect(await reasonOf(resolveRunDefinition(asAgentA(), `agent-profile:${profileId}`, { trigger: 'AUTOMATION' }))).toBe('PROFILE_KEY_INVALID');
+            expect(await reasonOf(resolveRunDefinition(authorA({ agentId: AGENTS.a2 }), key, { trigger: 'AUTOMATION' }))).toBe('PROFILE_AGENT_MISMATCH');
             flagOn = false;
-            expect(await reasonOf(resolveRunDefinition(asAgentA(), key))).toBe('PROFILES_DISABLED');
+            expect(await reasonOf(resolveRunDefinition(asAgentA(), key, { trigger: 'AUTOMATION' }))).toBe('PROFILES_DISABLED');
             flagOn = true;
             // A registered key resolves exactly as before.
             expect((await resolveRunDefinition(asAgentA(), WF)).def.key).toBe(WF);
@@ -809,13 +809,13 @@ describeFn('agent profiles (real DB)', () => {
 
         it('a version that is not the one in force is refused', async () => {
             const v2 = await createAgentProfileVersion(authorA(), AGENTS.a, version({ instructions: `${INSTRUCTIONS} v2` }));
-            expect(await reasonOf(resolveRunDefinition(asAgentA(), profileRunKey(profileId, v2.version)))).toBe('PROFILE_VERSION_NOT_APPROVED');
+            expect(await reasonOf(resolveRunDefinition(asAgentA(), profileRunKey(profileId, v2.version), { trigger: 'AUTOMATION' }))).toBe('PROFILE_VERSION_NOT_APPROVED');
             await retireAgentProfileVersion(authorA(), AGENTS.a, v2.version);
         });
 
         it('PROFILE_NEEDS_REASONING_ENGINE on the static engine, before any run row exists', async () => {
             mockDriver = 'static';
-            expect(await reasonOf(startWorkflowRun(asAgentA(), key))).toBe('PROFILE_NEEDS_REASONING_ENGINE');
+            expect(await reasonOf(startWorkflowRun(asAgentA(), key, {}, { profileTrigger: 'AUTOMATION' }))).toBe('PROFILE_NEEDS_REASONING_ENGINE');
             expect(await runRowsFor(TA, key)).toBe(0);
         });
 
@@ -823,21 +823,21 @@ describeFn('agent profiles (real DB)', () => {
             // Step 2c: the compiled definition asks for 'tool-runner', so a
             // tenant permitted only Flue gets the static engine for it.
             mockDriver = 'flue';
-            expect(await reasonOf(startWorkflowRun(asAgentA(), key))).toBe('PROFILE_NEEDS_REASONING_ENGINE');
+            expect(await reasonOf(startWorkflowRun(asAgentA(), key, {}, { profileTrigger: 'AUTOMATION' }))).toBe('PROFILE_NEEDS_REASONING_ENGINE');
             expect(await runRowsFor(TA, key)).toBe(0);
         });
 
         it('PROFILE_ENGINE_CANNOT_RUN_PROFILES on a reasoning engine that does not run profiles, before any run row exists', async () => {
             mockDriver = 'tool-runner';
             engineRunsProfiles = false;
-            expect(await reasonOf(startWorkflowRun(asAgentA(), key))).toBe('PROFILE_ENGINE_CANNOT_RUN_PROFILES');
+            expect(await reasonOf(startWorkflowRun(asAgentA(), key, {}, { profileTrigger: 'AUTOMATION' }))).toBe('PROFILE_ENGINE_CANNOT_RUN_PROFILES');
             expect(await runRowsFor(TA, key)).toBe(0);
         });
 
         it('an admitted run pins the version and its hash, write-once; a registered run pins neither', async () => {
             mockDriver = 'tool-runner';
             engineRunsProfiles = true;
-            const started = await startWorkflowRun(asAgentA(), key);
+            const started = await startWorkflowRun(asAgentA(), key, {}, { profileTrigger: 'AUTOMATION' });
             const run = await prisma.workflowRun.findFirstOrThrow({
                 where: { id: started.runId },
                 select: { profileVersionId: true, profileInstructionsHash: true, workflowKey: true },
@@ -856,6 +856,22 @@ describeFn('agent profiles (real DB)', () => {
             expect(plainRun).toEqual({ profileVersionId: null, profileInstructionsHash: null });
         });
 
+        // #5716. The run RECORDS the depth a rule invoked it at, because the
+        // worker and the resume path rebuild a continuation's context from the
+        // row: a depth that reached the run and was not persisted would be lost
+        // the moment a deferral parked it, and the next lap would restart at 1.
+        it('records the invoke depth its context carried, and NULL when none did', async () => {
+            mockDriver = 'static';
+            const invoked = await startWorkflowRun(authorA({ agentInvokeDepth: 2 }), WF);
+            const human = await startWorkflowRun(authorA(), WF);
+            const rows = await prisma.workflowRun.findMany({
+                where: { id: { in: [invoked.runId, human.runId] } },
+                select: { id: true, agentInvokeDepth: true },
+            });
+            expect(rows.find((r) => r.id === invoked.runId)?.agentInvokeDepth).toBe(2);
+            expect(rows.find((r) => r.id === human.runId)?.agentInvokeDepth).toBeNull();
+        });
+
         it('PROFILE_HASH_MISMATCH: text swapped in under the re-wrap exception does not run', async () => {
             // The trigger admits one change to a frozen version: ciphertext to
             // v2 ciphertext with every other column unchanged, for the rotation
@@ -867,7 +883,7 @@ describeFn('agent profiles (real DB)', () => {
                 versionId,
                 other.versionId,
             );
-            expect(await reasonOf(resolveRunDefinition(asAgentA(), key))).toBe('PROFILE_HASH_MISMATCH');
+            expect(await reasonOf(resolveRunDefinition(asAgentA(), key, { trigger: 'AUTOMATION' }))).toBe('PROFILE_HASH_MISMATCH');
         });
     });
 
@@ -902,6 +918,12 @@ describeFn('agent profiles (real DB)', () => {
                 maxTurns: 50,
                 rejectionReasonMaxChars: 1_000,
                 skillCatalogueBudgetBytes: MAX_CATALOG_BYTES,
+                // Step 2g: a version may lower the engine's compaction threshold, never raise it.
+                compactionThreshold: {
+                    min: 10_000,
+                    maxByTier: { balanced: 150_000, deep: 150_000 },
+                    engineDefaultByTier: { balanced: 30_000, deep: 30_000 },
+                },
             });
 
             // The pickers offer what the save accepts, PER OPTION — every tool
@@ -1080,12 +1102,12 @@ describeFn('agent profiles (real DB)', () => {
 
             // The named tenant reads, writes and resolves as if the switch were on.
             expect((await getAgentProfile(reviewerA(), AGENTS.a)).profile?.profileId).toBe(profile.id);
-            expect(await reasonOf(resolveRunDefinition(authorA({ agentId: AGENTS.a }), key))).not.toBe('PROFILES_DISABLED');
+            expect(await reasonOf(resolveRunDefinition(authorA({ agentId: AGENTS.a }), key, { trigger: 'AUTOMATION' }))).not.toBe('PROFILES_DISABLED');
 
             // Every other tenant answers as if it were off, on every path.
             expect(await reasonOf(getAgentProfile(authorB(), AGENTS.b))).toBe('PROFILES_DISABLED');
             expect(await reasonOf(createAgentProfile(authorB(), AGENTS.b, version()))).toBe('PROFILES_DISABLED');
-            expect(await reasonOf(resolveRunDefinition(authorB({ agentId: AGENTS.b }), key))).toBe('PROFILES_DISABLED');
+            expect(await reasonOf(resolveRunDefinition(authorB({ agentId: AGENTS.b }), key, { trigger: 'AUTOMATION' }))).toBe('PROFILES_DISABLED');
             expect(await prisma.agentProfile.count({ where: { tenantId: TB } })).toBe(0);
 
             // A context that carries no slug is never on the list.

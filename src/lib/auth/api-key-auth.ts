@@ -166,13 +166,22 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     // acted on automatically from then on. An unattended key doing that is the
     // shape recertification exists to detect.
     identity_reconciliation: { read: ['view'], admin: ['confirm'] },
-    // No `read` group on these two: `PermissionSet` gives them a single
+    // No `read` group on `continuity`: `PermissionSet` gives it a single
     // `edit` action and no `view`, so there is no flag a read scope could
-    // set. `continuity:write` / `processes:write` are the only meaningful
-    // grants, and `<domain>:read` is deliberately not a valid scope rather
+    // set, and `continuity:read` is deliberately not a valid scope rather
     // than a valid scope that resolves to nothing.
     continuity: { write: ['edit'] },
-    processes:  { write: ['edit'] },
+    // `processes` has the same single `edit` action, but it DOES carry a
+    // `read` group, and that group is empty, like the `mcp` capability scopes
+    // below (#5053, owner decision 2026-11-11). It is the resource scope the
+    // propose-not-commit tool for process maps requires, and a propose tool's
+    // resource scope is a `read` (`McpProposeTool.resourceScope.action`): a
+    // propose key must never carry `processes:write`, which would let it
+    // overwrite maps directly over REST. So `processes:read` sets no
+    // `PermissionSet` flag and reaches no REST route; it only lets a key name
+    // the domain to the MCP boundary. Every key minted before it resolves to
+    // exactly the permissions it resolved to before.
+    processes:  { read: [], write: ['edit'] },
     frameworks: { read: ['view'], write: ['install'] },
     // `workpaper_view` (#3749) is its own action, named-only like
     // `admin:agent_registry_view` (`WILDCARD_EXCLUDED_ACTIONS` below): it is how
@@ -199,13 +208,19 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     // lets a key submit a report; a report counts only when signed by a key the
     // tenant registered for that scanner, which takes `agent_registry`.
     //
+    // `integrations_ingest` is its twin for the second report the scanner
+    // signs, `scanent-integrations/1` (the third-party applications a
+    // directory has granted access to), and its own action by owner decision:
+    // a key minted to post agent reports does not post application reports,
+    // nor the other way round. Same verification, same registered signing key.
+    //
     // `agent_registry_view` (#3710) is its own action too, and the only one
     // here a WILDCARD does not reach (`WILDCARD_EXCLUDED_ACTIONS` below): it is
     // how an agent's key reads the agent inventory — the register and the
     // harness scans, `DiscoveredAgent.ownerRef` among them — and a key reads
     // that only when somebody minted it for that purpose. It maps to the view
     // key alone, never to `agent_registry`.
-    admin:      { read: ['view'], write: ['manage', 'members', 'sso', 'scim'], external_tools: ['agent_external_tools'], harness_ingest: ['agent_harness_ingest'], agent_registry_view: ['agent_registry_view'] },
+    admin:      { read: ['view'], write: ['manage', 'members', 'sso', 'scim'], external_tools: ['agent_external_tools'], harness_ingest: ['agent_harness_ingest'], integrations_ingest: ['integrations_ingest'], agent_registry_view: ['agent_registry_view'] },
     // MCP capability gate (Epic MCP). These are CAPABILITY scopes, not
     // resource permissions — they deliberately map to NO PermissionSet flags
     // (empty action arrays). `mcp:read` gates access to the read-only MCP tool
@@ -298,10 +313,31 @@ export function validateScopes(scopes: unknown): string[] {
 }
 
 /**
+ * A READ-CLASS action group: `read`, or a named `*_view` group
+ * (`admin:agent_registry_view`, `audits:workpaper_view`). What such a group
+ * grants is a permission to look, and a coarse tier raised from it would let a
+ * look-only key pass the `assertCanWrite` / `assertCanAdmin` behind a route
+ * gated on a view key (#5306; see `raiseApiKeyCoarseTier`).
+ */
+export function isReadClassScopeGroup(group: string): boolean {
+    return group === 'read' || group.endsWith('_view');
+}
+
+/**
  * Convert an array of scope strings into a PermissionSet.
  * Used to build appPermissions for API-key-authenticated contexts.
+ *
+ * `readClassGroups: 'exclude'` answers a narrower question: which of these
+ * permissions do the scopes grant through a group that is NOT read-class
+ * (`isReadClassScopeGroup`)? Only the per-request coarse raise asks it. It
+ * also skips the `*` shortcut, whose holder already sits at ADMIN, the top of
+ * what any scope can reach, so it has nothing to raise.
  */
-export function scopesToPermissions(scopes: string[]): PermissionSet {
+export function scopesToPermissions(
+    scopes: string[],
+    opts: { readClassGroups?: 'include' | 'exclude' } = {},
+): PermissionSet {
+    const excludeReadClass = opts.readClassGroups === 'exclude';
     // Start with all-false
     const base = getPermissionsForRole('READER');
     const result: Record<string, Record<string, boolean>> = {};
@@ -331,7 +367,7 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
     // which `*` DOES grant, and deliberately: those are ordinary privileged
     // operations on data. These two are authority over the principals
     // themselves, which is a different kind of thing to hand a token.
-    if (scopes.includes('*')) {
+    if (!excludeReadClass && scopes.includes('*')) {
         // Resolved ONCE, rather than calling the role resolver a second time
         // for the nested spread. Two calls built two identical objects for no
         // reason, and the duplicated call site also made
@@ -388,13 +424,14 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
             const excluded = WILDCARD_EXCLUDED_ACTIONS[resource] ?? [];
             for (const [group, permActions] of Object.entries(SCOPE_ACTION_MAP[resource])) {
                 if (excluded.includes(group)) continue;
+                if (excludeReadClass && isReadClassScopeGroup(group)) continue;
                 for (const permAction of permActions) {
                     if (permAction in result[resource]) {
                         result[resource][permAction] = true;
                     }
                 }
             }
-        } else if (action in SCOPE_ACTION_MAP[resource]) {
+        } else if (action in SCOPE_ACTION_MAP[resource] && !(excludeReadClass && isReadClassScopeGroup(action))) {
             // Specific action group
             const permActions = SCOPE_ACTION_MAP[resource][action];
             for (const permAction of permActions) {
@@ -421,6 +458,13 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
  * Scopes ALONE. An agent-bound key is narrowed further by its principal, and a
  * job is narrowed by the initiator's membership — both at their own call sites,
  * because neither term is knowable from a scope list.
+ *
+ * The role is the key's BASELINE coarse tier, kept as it is (#5306, owner
+ * decision 2026-11-14): `admin:*` still reads EDITOR here. Behind a route's
+ * `requirePermission(<key>)` the tier is raised for that request alone to the
+ * lowest built-in role holding the key (`raiseApiKeyCoarseTier` in
+ * `src/lib/security/api-key-coarse-raise.ts`); do not raise it here, where it
+ * would reach every coarse-only route.
  */
 export function keyAuthorityFromScopes(scopes: string[]): {
     role: Role;

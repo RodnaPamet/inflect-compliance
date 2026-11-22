@@ -111,3 +111,38 @@ describe('<FreshnessBadge>', () => {
         );
     });
 });
+
+/**
+ * The tint and border are colour utilities Tailwind actually generates
+ * (#5309). `bg-success` / `border-success` name no colour in the config — the
+ * status colours live under `bg.*` and `border.*` — so the pill rendered
+ * transparent with a currentColor border, and the contrast its comment claims
+ * was measured against a tint that never painted.
+ */
+describe('<FreshnessBadge> colour utilities resolve', () => {
+    const colors = require('../../tailwind.config.js').theme.extend.colors as Record<string, unknown>;
+    /** `bg-bg-success` → colors.bg.success; `border-border-error` → colors.border.error. */
+    function resolves(utility: string, prefix: 'bg-' | 'border-'): boolean {
+        const [group, ...rest] = utility.slice(prefix.length).split('-');
+        const scale = colors[group];
+        return typeof scale === 'object' && scale !== null && rest.join('-') in scale;
+    }
+
+    it.each([
+        ['fresh', 5],
+        ['stale', 45],
+        ['outdated', 120],
+    ])('%s paints a tint and a border from the theme', (level, age) => {
+        render(<FreshnessBadge lastRefreshedAt={daysAgo(age)} now={NOW} data-testid="fb" />);
+        const badge = screen.getByTestId('fb');
+        expect(badge.getAttribute('data-freshness')).toBe(level);
+        const classes = badge.className.split(/\s+/);
+        const tint = classes.filter((c) => c.startsWith('bg-'));
+        const edge = classes.filter((c) => c.startsWith('border-') && c !== 'border');
+        expect(tint).toHaveLength(1);
+        expect(edge).toHaveLength(1);
+        expect(resolves(tint[0], 'bg-')).toBe(true);
+        expect(resolves(edge[0], 'border-')).toBe(true);
+    });
+});
+

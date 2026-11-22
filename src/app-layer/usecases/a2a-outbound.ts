@@ -224,6 +224,15 @@ export async function dispatchA2aSend(
             'This run was started by a task from an A2A peer, and such a run may not send a task to a peer.',
         );
     }
+    // A READ-ONLY run sends no task (#5365). The offer withholds the send tool
+    // from such a run; this is the backstop, before any read or row.
+    if (ctx.readOnlyRun) {
+        recordA2aMetric({ direction: 'OUTBOUND', outcome: 'READ_ONLY_RUN_REFUSED' });
+        throw refusedForModel(
+            'a2a_send_refused_for_read_only_run',
+            'This run is read-only, and a read-only run may not send a task to a peer.',
+        );
+    }
     const parsedArgs = A2aSendArgsSchema.safeParse(call.outbound);
     if (!parsedArgs.success) {
         throw refusedForModel(
@@ -389,15 +398,19 @@ export async function sendA2aJournalRow(
     const agentKill = await resolveKillState(ctx.tenantId, row.agentId);
     if (agentKill) return settle('FAILED', `A ${agentKill.scope} kill switch is in force, so the task was not sent.`, 'AGENT_KILLED');
 
-    // R14 at the send: a row whose run a peer started never leaves. Unreachable
-    // through the tool, which refuses first; this holds it for every other way a
-    // row could have been opened.
+    // R14 at the send: a row whose run an inbound principal started — a peer OR
+    // a host consumer — never leaves. Unreachable through the tool, which
+    // refuses both (`ctx.a2aInbound`) first; this holds it for every other way a
+    // row could have been opened, so it asks about both as well (#5317).
     if (row.runId) {
         const run = await runInTenantContext(ctx, (db) =>
-            db.workflowRun.findFirst({ where: { id: row.runId as string, tenantId: ctx.tenantId }, select: { inboundPeerId: true } }),
+            db.workflowRun.findFirst({
+                where: { id: row.runId as string, tenantId: ctx.tenantId },
+                select: { inboundPeerId: true, inboundHostConsumerId: true },
+            }),
         );
-        if (run?.inboundPeerId) {
-            return settle('FAILED', 'The run behind this task was started by an A2A peer, and such a run may not send to a peer.', 'INBOUND_RUN_REFUSED');
+        if (run?.inboundPeerId || run?.inboundHostConsumerId) {
+            return settle('FAILED', 'The run behind this task was started by an inbound A2A caller, and such a run may not send to a peer.', 'INBOUND_RUN_REFUSED');
         }
     }
 

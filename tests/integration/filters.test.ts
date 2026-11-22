@@ -215,6 +215,32 @@ describe('RiskRepository._buildWhere', () => {
         const where = mockFindMany.mock.calls[0][0].where;
         expect(where.tenantId).toBe('tenant-1');
     });
+
+    // #5104 — both facets are multi-select, so the value arrives comma-joined.
+    // An equality on the joined string matched no risk once two were picked.
+    it('splits a multi-select owner or category into an IN, keeping a comma-bearing category whole', async () => {
+        const { RiskRepository } = await import('@/app-layer/repositories/RiskRepository');
+        const mockFindMany = jest.fn().mockResolvedValue([]);
+        const mockDb = { risk: { findMany: mockFindMany } } as unknown as PrismaTx;
+        const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
+
+        await RiskRepository.list(mockDb, ctx, { ownerUserId: 'idA,idB', category: 'Ops,Security' });
+
+        const where = mockFindMany.mock.calls[0][0].where;
+        expect(where.ownerUserId).toEqual({ in: ['idA', 'idB'] });
+        expect(where.category).toEqual({ in: ['Ops,Security', 'Ops', 'Security'] });
+    });
+
+    it('keeps a single owner as an equality', async () => {
+        const { RiskRepository } = await import('@/app-layer/repositories/RiskRepository');
+        const mockFindMany = jest.fn().mockResolvedValue([]);
+        const mockDb = { risk: { findMany: mockFindMany } } as unknown as PrismaTx;
+        const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
+
+        await RiskRepository.list(mockDb, ctx, { ownerUserId: 'idA' });
+
+        expect(mockFindMany.mock.calls[0][0].where.ownerUserId).toBe('idA');
+    });
 });
 
 describe('AssetRepository._buildWhere', () => {

@@ -242,7 +242,7 @@ export const ChartFlowGradient = forwardRef<
  * Build the canonical SVG def id for a chart's series gradient.
  * Use inside consumers so the id strategy stays consistent:
  *
- *     const gradId = chartGradientId('risk-overview', 2);
+ *     const gradId = chartGradientId('weekly-overview', 2);
  *     <defs><ChartLinearGradient id={gradId} series={2} /></defs>
  *     <rect fill={`url(#${gradId})`} ... />
  */

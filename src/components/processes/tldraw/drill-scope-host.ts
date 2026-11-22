@@ -39,12 +39,16 @@ import {
     type DrillEdge,
     type DrillNode,
 } from '@/lib/processes/canvas-drill-filter';
-import { PROCESS_EDGE_BINDING_TYPE } from './process-edge-binding';
+import {
+    PROCESS_EDGE_BINDING_TYPE,
+    edgeEndpointKeys,
+    type ProcessEdgeBinding,
+} from './process-edge-binding';
 import { edgeKeyFromShapeId } from './process-edge-shape';
 import { PROCESS_NODE_SHAPE_TYPE } from './process-node-shape';
 
 /** The shape fields this module reads. Structural on purpose. */
-interface StoreShape {
+export interface StoreShape {
     id: string;
     type?: string;
     props?: {
@@ -140,6 +144,41 @@ export function collapsedHiddenKeys(editor: Editor): Set<string> {
 }
 
 /**
+ * Where a double-click on a shape drills to, or null for a shape it does not.
+ *
+ *   • a GROUP drills into its sub-flow, on this canvas (`nodeKey`);
+ *   • an AGENT step drills out of the map, into the agent it invokes, drawn on
+ *     the agent view (Phase 2.3 of `docs/ai-architecture/langflow.md`). The
+ *     step names its rule (`dataJson.ruleId`), and the rule names the agent, so
+ *     what is returned is the RULE: the host resolves the agent from the rule
+ *     as the server stores it, never from anything the shape carries.
+ *
+ * An agent step whose map was never saved has no rule yet, and drills nowhere.
+ * Every other step drills nowhere: a double-click on it is the editor's.
+ *
+ * `ruleId` is narrowed here rather than read through `ruleIdFromDataJson`,
+ * because the node shape util imports this module and the reverse import would
+ * make the two a cycle. Same rule: a non-empty string, or nothing.
+ */
+export type DrillTarget = { kind: 'group'; nodeKey: string } | { kind: 'agent'; ruleId: string };
+
+export function drillTargetOf(shape: StoreShape | undefined): DrillTarget | null {
+    if (!shape || shape.type !== PROCESS_NODE_SHAPE_TYPE) return null;
+    const nodeType = shape.props?.nodeType;
+    if (nodeType === 'group') {
+        const key = shape.props?.nodeKey;
+        return typeof key === 'string' && key.length > 0 ? { kind: 'group', nodeKey: key } : null;
+    }
+    if (nodeType === 'agent') {
+        const data = shape.props?.dataJson;
+        if (typeof data !== 'object' || data === null) return null;
+        const ruleId = (data as { ruleId?: unknown }).ruleId;
+        return typeof ruleId === 'string' && ruleId.length > 0 ? { kind: 'agent', ruleId } : null;
+    }
+    return null;
+}
+
+/**
  * Process nodes as the filter wants them, keyed by `nodeKey`.
  *
  * `parentId` is the filter's name for "the group this belongs to", and on a
@@ -171,7 +210,10 @@ export function drillNodesFrom(editor: Editor): DrillNode[] {
         });
 }
 
-/** Process edges as the filter wants them: endpoints by row key. */
+/**
+ * Process edges as the filter wants them: endpoints by row key, resolved
+ * through the bound shapes as the save resolves them (`edgeEndpointKeys`).
+ */
 export function drillEdgesFrom(editor: Editor): DrillEdge[] {
     return editor.store
         .allRecords()
@@ -181,8 +223,8 @@ export function drillEdgesFrom(editor: Editor): DrillEdge[] {
                 (r as { type?: string }).type === PROCESS_EDGE_BINDING_TYPE,
         )
         .map((r) => {
-            const b = r as unknown as { props: { sourceKey: string; targetKey: string } };
-            return { source: b.props.sourceKey, target: b.props.targetKey };
+            const ends = edgeEndpointKeys(editor, r as unknown as ProcessEdgeBinding);
+            return { source: ends.sourceKey, target: ends.targetKey };
         });
 }
 
@@ -282,10 +324,12 @@ export function edgeEndpointIndex(
     for (const r of editor.store.allRecords()) {
         if (r.typeName !== 'binding') continue;
         if ((r as { type?: string }).type !== PROCESS_EDGE_BINDING_TYPE) continue;
-        const b = r as unknown as {
-            props: { edgeKey: string; sourceKey: string; targetKey: string };
-        };
-        out.set(b.props.edgeKey, { source: b.props.sourceKey, target: b.props.targetKey });
+        const b = r as unknown as ProcessEdgeBinding;
+        // Endpoints through the bound shapes, not the props — see
+        // `edgeEndpointKeys`. A stale prop hid a copied edge's line whenever
+        // its ORIGINALS were out of scope.
+        const ends = edgeEndpointKeys(editor, b);
+        out.set(b.props.edgeKey, { source: ends.sourceKey, target: ends.targetKey });
     }
     return out;
 }

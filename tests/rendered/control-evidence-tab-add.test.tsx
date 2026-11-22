@@ -64,11 +64,14 @@ jest.mock('next/navigation', () => ({
 
 // Attaching evidence here links it to the control, which takes `controls.edit`.
 let mockControlsEdit = true;
+// #5313 — each half of the form also asks its own evidence key.
+let mockEvidence = { upload: true, edit: true };
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantContext: () => ({
         permissions: { canWrite: true, canAdmin: true, canRead: true },
         appPermissions: {
             controls: { view: true, create: true, edit: mockControlsEdit },
+            evidence: { view: true, download: true, ...mockEvidence },
             // The exceptions panel reads `admin.manage` for its approve/reject
             // gate (#4387). A real context always carries it; this mock did
             // not, so the page threw at render rather than failing a gate.
@@ -149,6 +152,7 @@ function json(body: unknown, status = 200): Response {
 
 beforeEach(() => {
     mockControlsEdit = true;
+    mockEvidence = { upload: true, edit: true };
     mockControlOverride = {};
     mockToastError.mockClear();
     fetchMock.mockReset();
@@ -291,6 +295,71 @@ describe('control Evidence tab — attaching needs controls.edit', () => {
         // cases in this file are the positive control.
         await waitFor(() => expect(tab.getAttribute('aria-selected')).toBe('true'));
         expect(document.getElementById('link-evidence-btn')).toBeNull();
+    });
+});
+
+describe('control Evidence tab — each half asks its own evidence key (#5313)', () => {
+    it('without evidence.upload, offers the link and not the file', async () => {
+        // The file goes to `/evidence/uploads`, which asks `evidence.upload`.
+        mockEvidence = { upload: false, edit: true };
+        await openEvidenceForm();
+        expect(document.getElementById('control-file-input')).toBeNull();
+        expect(document.getElementById('evidence-url-input')).not.toBeNull();
+    });
+
+    it('without evidence.edit, offers the file and not the link', async () => {
+        // The link creates a library record through `/evidence`, which asks
+        // `evidence.edit`.
+        mockEvidence = { upload: true, edit: false };
+        await openEvidenceForm();
+        expect(document.getElementById('control-file-input')).not.toBeNull();
+        expect(document.getElementById('evidence-url-input')).toBeNull();
+    });
+
+    it('with neither, offers no form at all', async () => {
+        mockEvidence = { upload: false, edit: false };
+        render(
+            <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false, dedupingInterval: 0 }}>
+                <ControlDetailPage />
+            </SWRConfig>,
+        );
+        const tab = await waitFor(() => {
+            const el = document.getElementById('tab-evidence');
+            expect(el).not.toBeNull();
+            return el as HTMLElement;
+        });
+        fireEvent.click(tab);
+        await waitFor(() => expect(tab.getAttribute('aria-selected')).toBe('true'));
+        expect(document.getElementById('link-evidence-btn')).toBeNull();
+    });
+});
+
+describe('control detail header — applicability in the list\'s three states (#5313)', () => {
+    const mountHeader = () =>
+        render(
+            <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false, dedupingInterval: 0 }}>
+                <ControlDetailPage />
+            </SWRConfig>,
+        );
+    const applicabilityText = () =>
+        waitFor(() => {
+            const el = document.getElementById('control-applicability');
+            expect(el).not.toBeNull();
+            return (el as HTMLElement).textContent ?? '';
+        });
+
+    it('a control never assessed reads "Not assessed", not "Applicable"', async () => {
+        mockControlOverride = { applicability: 'APPLICABLE', applicabilityDecidedAt: null };
+        mountHeader();
+        expect(await applicabilityText()).toContain('Not assessed');
+    });
+
+    it('a control decided applicable reads "Applicable"', async () => {
+        mockControlOverride = { applicability: 'APPLICABLE', applicabilityDecidedAt: '2026-05-01T00:00:00.000Z' };
+        mountHeader();
+        const text = await applicabilityText();
+        expect(text).toContain('Applicable');
+        expect(text).not.toContain('Not assessed');
     });
 });
 

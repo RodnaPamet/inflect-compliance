@@ -55,6 +55,7 @@ function makeDb() {
                 riskTier: null,
                 riskTierScoredAt: null,
                 _count: { tools: 0 },
+                tools: [],
             })),
         },
         agentAssessmentQuestion: {

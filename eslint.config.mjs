@@ -84,21 +84,6 @@ const PLATFORM_SYNTAX_BANS = [
     },
 ];
 
-// The harness scanner package's import boundary (#3678), shared by the
-// package block and the stricter block for its `code` source (#3737), which
-// would otherwise replace it.
-const HARNESS_SCANNER_IMPORT_PATTERNS = [
-    {
-        regex: '^@/(?!lib/agentic/harness-(contract|findings|ladder)$|lib/canonical-json$|lib/security/cidr$)',
-        message:
-            'The harness scanner imports the wire contract (harness-contract, harness-findings, harness-ladder, canonical-json) and the pure CIDR parser (lib/security/cidr), and nothing else of the application. See packages/agent-harness-scanner/README.md.',
-    },
-    {
-        group: ['@prisma/*', 'next', 'next/*', '@inflect/ui', '@inflect/ui/*'],
-        message: 'The harness scanner runs in a client estate: no database client, no Next.js, no UI.',
-    },
-];
-
 const config = [
     ...nextCoreWebVitals,
     {
@@ -362,71 +347,19 @@ const config = [
                 {
                     patterns: [
                         {
-                            group: ['@/lib/agentic/harness-ladder', '**/harness-ladder'],
+                            group: [
+                                '@/lib/agentic/harness-ladder',
+                                '**/harness-ladder',
+                                // Where the ladder lives since scanent #26, and
+                                // the table model that imports it at run time.
+                                '@rodnapamet/scanent-contract/harness-ladder',
+                                '@rodnapamet/scanent-contract/harness-matrix-model',
+                            ],
                             message:
                                 'The harness ladder is report-only: a level raises findings and never gates a call or an activation. Do not import it into the authority funnel.',
                         },
                     ],
                 },
-            ],
-        },
-    },
-    {
-        // ── The harness scanner package's boundary (#3678) ──
-        //
-        // `packages/agent-harness-scanner` runs in a CLIENT's estate, with that
-        // estate's credentials. It shares the wire contract with the ingest —
-        // it must, so the report it signs is checked by the schemas and signed
-        // through the function the ingest verifies with — and nothing else of
-        // the application: no database, no tenant, no Next.js, no usecase. A
-        // scanner that could import `@/lib/prisma` is one refactor from a
-        // scanner that writes somewhere it should only read. One exception,
-        // `@/lib/security/cidr` (#3738): the strict CIDR parser, pure and
-        // import-free, so the scanner's private-range allowlist parses ranges
-        // exactly as the application's egress allowlist does, not by a copy.
-        //
-        // A regex rather than a `group` with negations: gitignore semantics
-        // cannot re-include a file under an excluded parent, so `@/*` with
-        // `!@/lib/agentic/harness-contract` would refuse the contract too.
-        files: ['packages/agent-harness-scanner/src/**/*.ts'],
-        rules: {
-            'no-restricted-imports': ['error', { patterns: HARNESS_SCANNER_IMPORT_PATTERNS }],
-        },
-    },
-    {
-        // ── The `code` source READS an estate's code and never runs it (#3737) ──
-        //
-        // The LangChain and LangGraph detector parses files it did not write,
-        // from a repository a client controls. Loading one — a `require`, a
-        // dynamic `import()`, an interpreter, `eval` — would hand that
-        // repository code execution inside the scanner, beside its signing key.
-        // So nothing in the source's files can reach any of them; the
-        // side-effect test in tests/unit/agent-harness-scanner/
-        // langchain-code-source.test.ts is the behavioural half.
-        files: [
-            'packages/agent-harness-scanner/src/sources/code/**/*.ts',
-            'packages/agent-harness-scanner/src/sources/langchain.ts',
-        ],
-        rules: {
-            'no-restricted-imports': [
-                'error',
-                {
-                    paths: ['child_process', 'vm', 'worker_threads', 'module', 'cluster', 'inspector'].flatMap((name) =>
-                        [name, `node:${name}`].map((n) => ({
-                            name: n,
-                            message: 'The code source reads code and never runs it: no subprocess, VM, worker or module loader.',
-                        })),
-                    ),
-                    patterns: HARNESS_SCANNER_IMPORT_PATTERNS,
-                },
-            ],
-            'no-restricted-syntax': [
-                'error',
-                ...PLATFORM_SYNTAX_BANS,
-                { selector: 'ImportExpression', message: 'The code source never loads a module at run time.' },
-                { selector: "CallExpression[callee.name='require']", message: 'The code source never loads a module at run time.' },
-                { selector: "CallExpression[callee.name='eval']", message: 'The code source never evaluates text.' },
-                { selector: "NewExpression[callee.name='Function'], CallExpression[callee.name='Function']", message: 'The code source never evaluates text.' },
             ],
         },
     },
@@ -449,6 +382,40 @@ const config = [
         // The seam itself.
         files: ['src/lib/agentic/tool-runner/client.ts'],
         rules: { 'local/anthropic-client-single-seam': 'off' },
+    },
+    {
+        // ── One way into the vector store (Layer 4, D-L4-1 pgvector first) ──
+        //
+        // `src/app-layer/repositories/VectorRepository.ts` takes the tenant
+        // from the request context, refuses any record carrying more than a
+        // key, a content hash and a vector (D-L4-2, vectors only), and bounds
+        // every read. So no other file under `src/` may load a backend under
+        // `repositories/vector/`, or name the store's table in a literal.
+        // See eslint-rules/rules/vector-store-single-seam.js.
+        files: ['src/**/*.ts', 'src/**/*.tsx'],
+        rules: { 'local/vector-store-single-seam': 'error' },
+    },
+    {
+        // The seam and its backends.
+        files: ['src/app-layer/repositories/VectorRepository.ts', 'src/app-layer/repositories/vector/**/*.ts'],
+        rules: { 'local/vector-store-single-seam': 'off' },
+    },
+    {
+        // ── One bot seam for requests to third-party websites (Web Bot Auth Phase 2) ──
+        //
+        // `src/lib/web-bot-auth/bot-fetch.ts` is `safeFetch` plus the bot's
+        // honest User-Agent plus the deployment's request signature. So no
+        // other file under `src/` may load the request signer, or carry the
+        // bot's product token in a literal: a signature made elsewhere could
+        // ride a request that skipped the SSRF checks.
+        // See eslint-rules/rules/web-bot-auth-single-seam.js.
+        files: ['src/**/*.ts', 'src/**/*.tsx'],
+        rules: { 'local/web-bot-auth-single-seam': 'error' },
+    },
+    {
+        // The seam and the signer it calls.
+        files: ['src/lib/web-bot-auth/bot-fetch.ts', 'src/lib/web-bot-auth/sign.ts'],
+        rules: { 'local/web-bot-auth-single-seam': 'off' },
     },
     {
         // ── The engine-neutral tool core imports no engine (Step 0a) ──
@@ -556,7 +523,7 @@ const config = [
                     message: 'An audit procedure writes no Finding; it raises a propose_finding proposal.',
                 },
                 {
-                    selector: "Literal[value=/^(propose_risks|propose_controls|draft_policy)$/]",
+                    selector: "Literal[value=/^(propose_risks|propose_controls|draft_policy|propose_process_map)$/]",
                     message: 'The auditor proposes findings and nothing else.',
                 },
             ],
@@ -704,6 +671,43 @@ const config = [
         },
         rules: {
             '@typescript-eslint/no-floating-promises': 'error',
+        },
+    },
+    {
+        // THE AGENT-FLOW CANVAS IS TLDRAW, NEVER XYFLOW (D-L2-3, 2026-10-29;
+        // docs/ai-architecture/langflow.md). The process canvas is retiring
+        // xyflow (#2962), and a feature built on it would be built twice and
+        // would block that removal. Error level, over every agent-flow file:
+        // the projection, its graph, its shapes and its route.
+        //
+        // This REPLACES the base block's `no-restricted-imports` for these
+        // files, so the table-barrel pattern is repeated here rather than lost.
+        files: [
+            'src/lib/agentic/agent-canvas-projection.ts',
+            'src/app-layer/usecases/agent-canvas-projection.ts',
+            'src/lib/processes/agent-view/**/*.{ts,tsx}',
+            'src/components/processes/agent-view/**/*.{ts,tsx}',
+            'src/lib/processes/agent-flow/**/*.{ts,tsx}',
+            'src/components/processes/agent-flow/**/*.{ts,tsx}',
+            'src/app/t/**/processes/agents/**/*.{ts,tsx}',
+        ],
+        rules: {
+            'no-restricted-imports': [
+                'error',
+                {
+                    patterns: [
+                        {
+                            group: ['@xyflow/*', 'reactflow', 'reactflow/*'],
+                            message:
+                                'The agent-flow canvas is drawn by tldraw only (D-L2-3); xyflow is being retired (#2962).',
+                        },
+                        {
+                            group: ['@/components/ui/table/*'],
+                            message: "Import from '@/components/ui/table' (barrel) instead of deep sub-modules.",
+                        },
+                    ],
+                },
+            ],
         },
     },
 ];

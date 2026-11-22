@@ -142,6 +142,13 @@ echo ""
 echo "→ Backfilling task checklists..."
 node dist/backfill-task-checklists.mjs || echo "⚠ task-checklist backfill skipped (non-fatal)"
 
+# ── Data-subject-request values (#5107) ──
+# The model left the field-encryption manifest; any value written while it was
+# listed is decrypted here. Non-fatal: an unopenable value stays as ciphertext.
+echo ""
+echo "→ Decrypting legacy data-subject-request values..."
+node dist/decrypt-legacy-dsr-fields.mjs || echo "⚠ some data-subject-request values are still ciphertext (non-fatal)"
+
 # ── 2. Create upload directory if missing ──
 FILE_DIR="${FILE_STORAGE_ROOT:-/data/uploads}"
 mkdir -p "$FILE_DIR" 2>/dev/null || true

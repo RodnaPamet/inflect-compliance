@@ -25,6 +25,7 @@
 import { readFileSync } from 'fs';
 
 import { repoRelativeFiles } from '../helpers/repo-files';
+import { toolCallIdsOf } from '@/lib/agentic/flue/turn-tool-calls';
 import path from 'path';
 
 import {
@@ -53,6 +54,8 @@ const EXECUTE = 'src/lib/agentic/flue/execute.ts';
  * exists to catch.
  */
 const RECORDER = 'src/lib/agentic/flue/model-decision.ts';
+/** The one module that reads a `turn` event's reply, for its tool-call ids (Inspect task 9). */
+const TURN_CALLS = 'src/lib/agentic/flue/turn-tool-calls.ts';
 const A2A_INBOUND = 'src/app-layer/usecases/a2a-inbound.ts';
 const A2A_ANSWER = 'src/app-layer/usecases/a2a-run-answer.ts';
 
@@ -70,13 +73,18 @@ describe('output that becomes an action was already scanned', () => {
         // The second scan, which is what makes the missing one here a choice
         // rather than a gap.
         //
-        // The CALL, not the bare name: `createAgentProposal` occurs twice in
-        // that file (its import and its one call site), and a needle satisfied
-        // by the import would still pass with the call deleted — the assertion
-        // would then be claiming a second scan that no longer runs, which is
-        // the exact shape of the wrong comment this whole file exists to
-        // replace.
-        expect(read('src/lib/mcp/tools/propose-tools.ts')).toContain('await createAgentProposal(');
+        // The CALL, not the bare name: a needle satisfied by the import would
+        // still pass with the call deleted — the assertion would then be
+        // claiming a second scan that no longer runs, which is the exact shape
+        // of the wrong comment this whole file exists to replace.
+        //
+        // Since #5304 the scan is the queue's `prepareAgentProposal`, run over
+        // every item of a batch before any is written; `createAgentProposal`
+        // then writes the item it prepared. Both calls are asserted, the
+        // second at its one queueing site.
+        const proposeTools = read('src/lib/mcp/tools/propose-tools.ts');
+        expect(proposeTools).toContain('await prepareAgentProposal(');
+        expect(proposeTools).toContain('const proposal = await createAgentProposal(ctx, item);');
     });
 });
 
@@ -143,6 +151,34 @@ describe('output that becomes nothing reaches ONE column', () => {
         expect(interfaceBodyOf(engine, 'TurnRecord')).not.toContain('string');
         expect(engine).not.toContain('response.output');
         expect(declarationOf(engine, 'onTurn')).toContain('event.response.usage');
+    });
+
+    it('the turn a tool call came from is read as IDS, in one module, never as the reply', () => {
+        // Owner decision 2026-11-15 (Inspect task 9): each Flue TOOL_CALL step
+        // names the model call that issued it, which only the `turn` event's
+        // reply can say. The reply is model output, so `execute.ts` still never
+        // reads `response.output` (above); one module does, and hands back the
+        // runtime's correlation ids and nothing else.
+        const turnCalls = read(TURN_CALLS);
+        expect(turnCalls.split('response.output').length - 1).toBe(1);
+        const body = functionBodyOf(turnCalls, 'toolCallIdsOf');
+        expect(body).toContain("block.type === 'toolCall'");
+        expect(body).toContain('ids.push(block.id)');
+        for (const field of ['.text', '.thinking', '.arguments', '.name']) expect(body).not.toContain(field);
+        expect(declarationOf(engine, 'onTurn')).toContain('toolCallIdsOf(event.response)');
+        // Behaviour: a reply carrying text, thinking and two calls yields the two ids.
+        expect(
+            toolCallIdsOf({
+                output: {
+                    content: [
+                        { type: 'text', text: 'model prose' } as { type: string },
+                        { type: 'thinking', thinking: 'model thought' } as { type: string },
+                        { type: 'toolCall', id: 'call-1', name: 'list_risks', arguments: { q: 'x' } } as { type: string; id: string },
+                        { type: 'toolCall', id: 'call-2', name: 'list_controls', arguments: {} } as { type: string; id: string },
+                    ],
+                },
+            }),
+        ).toEqual(['call-1', 'call-2']);
     });
 
     it('which `logAiDecision` sanitises and bounds', () => {

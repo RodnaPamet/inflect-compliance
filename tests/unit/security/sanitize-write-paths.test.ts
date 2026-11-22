@@ -147,7 +147,6 @@ jest.mock('@/app-layer/repositories/VendorRepository', () => ({
 jest.mock('@/app-layer/repositories/AssessmentRepository', () => ({
     QuestionnaireRepository: {},
     VendorAssessmentRepository: {},
-    VendorAnswerRepository: {},
 }));
 
 jest.mock('@/app-layer/repositories/AuditRepository', () => ({
@@ -184,6 +183,7 @@ jest.mock('@/app-layer/repositories/EvidenceRepository', () => ({
     EvidenceRepository: {
         getById: (...a: unknown[]) => mockEvidenceGetById(...a),
         update: (...a: unknown[]) => mockEvidenceUpdate(...a),
+        transitionStatus: jest.fn(async () => true),
         addReview: (...a: unknown[]) => mockEvidenceAddReview(...a),
         getLatestSubmitters: (...a: unknown[]) => mockEvidenceGetLatestSubmitters(...a),
     },
@@ -209,18 +209,20 @@ jest.mock('@/app-layer/policies/evidence.policies', () => ({
 jest.mock('@/lib/cache/list-cache', () => ({
     cachedListRead: jest.fn(async (_k: unknown, fn: () => unknown) => fn()),
     bumpEntityCacheVersion: jest.fn(async () => undefined),
+    bumpTenantCacheVersion: jest.fn(async () => undefined),
 }));
 
 jest.mock('@/app-layer/usecases/nis2-readiness', () => ({
     snapshotNis2Readiness: jest.fn(async () => undefined),
 }));
 
-// `runInTenantContext` returns a stub Prisma tx. Risk usecase uses
-// `tenant.findUnique` against it for maxScale lookup.
+// `runInTenantContext` returns a stub Prisma tx. Risk usecase reads the
+// tenant's RiskMatrixConfig from it for the score bounds (#5080).
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx, fn) =>
         fn({
             tenant: { findUnique: (...a: unknown[]) => mockTenantFindUnique(...a) },
+            riskMatrixConfig: { findUnique: async () => null },
             // Task child-row writes (comment/watcher/link) now pre-check that
             // the parent task belongs to the tenant before inserting, so the
             // stub tx needs a resolvable task row.

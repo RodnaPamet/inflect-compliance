@@ -12,7 +12,12 @@
  *   • the tool picker offers exactly the tools the agent is granted;
  *   • Test run (Step 2c) starts the version's run and opens the Runs tab when
  *     it can, and otherwise is disabled, says why, and starts nothing;
- *   • a refusal from the save is shown beside the field it concerns.
+ *   • a refusal from the save is shown beside the field it concerns;
+ *   • a drawn flow, which the approval hash covers, is shown and diffed for
+ *     the reviewer like the instructions, and its Test run is disabled;
+ *   • a version's sub-agents (Step 2e), which the hash also covers, are shown
+ *     and diffed in full, and the editor's sub-agent pickers offer only the
+ *     version's own tools and skills.
  */
 import * as React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -98,10 +103,13 @@ function version(over: Partial<ProfileVersionView> = {}): ProfileVersionView {
         instructions: 'Summarise the open risks for the weekly review.',
         instructionsHash: HASH_1,
         toolNames: ['list_risks'],
+        flow: null,
+        subagents: [],
         skillRefs: [],
         modelTier: 'balanced',
         effort: 'medium',
         maxTurns: 10,
+        compactionThresholdTokens: null,
         outputKind: 'ANSWER_ONLY',
         allowedTriggers: ['TEST_RUN'],
         author: { label: 'Avery Author', isViewer: false },
@@ -128,7 +136,17 @@ function view(versions: ProfileVersionView[], over: Partial<ProfileView> = {}): 
             skills: [{ origin: 'repository', name: 'risk-register-review', catalogueBytes: 300 }],
         },
         testRun: { available: false, reason: 'ENGINE_DOES_NOT_RUN_PROFILES', engine: 'STATIC' },
-        limits: { instructionsMaxChars: 16_000, maxTurns: 50, rejectionReasonMaxChars: 1_000, skillCatalogueBudgetBytes: 2_048 },
+        limits: {
+            instructionsMaxChars: 16_000,
+            maxTurns: 50,
+            rejectionReasonMaxChars: 1_000,
+            skillCatalogueBudgetBytes: 2_048,
+            compactionThreshold: {
+                min: 10_000,
+                maxByTier: { balanced: 150_000, deep: 150_000 },
+                engineDefaultByTier: { balanced: 30_000, deep: 30_000 },
+            },
+        },
         ...over,
     };
 }
@@ -156,7 +174,7 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-function renderTab(data: ProfileView, props: { retired?: boolean; onOpenRuns?: () => void } = {}) {
+function renderTab(data: ProfileView, props: { retired?: boolean; onOpenRuns?: () => void; canvasHref?: string | null } = {}) {
     const mutate = jest.fn().mockResolvedValue(undefined);
     swr.mockReturnValue({ data, error: undefined, isLoading: false, mutate });
     render(
@@ -165,6 +183,7 @@ function renderTab(data: ProfileView, props: { retired?: boolean; onOpenRuns?: (
             agentId="agent-1"
             retired={props.retired ?? false}
             onOpenRuns={props.onOpenRuns}
+            canvasHref={props.canvasHref}
         />,
     );
     return { mutate };
@@ -251,6 +270,67 @@ describe('the Behaviour tab, state by state', () => {
         expect(document.querySelector('img')).toBeNull();
     });
 
+    /**
+     * #5714 — RETIRE, which the tab never offered. The verb shipped with Step 1a,
+     * is permissioned and tested at the usecase level, and a profile version
+     * could not be retired from the product at all.
+     *
+     * The affordance mirrors what the server refuses and nothing else:
+     * `ALREADY_RETIRED` for a retired version, `AGENT_RETIRED` from `findAgent`
+     * for a retired agent. The author case below is the one that encodes the
+     * design decision — retirement is NOT a four-eyes act, so gating it on
+     * `canDecide` (the obvious copy of Approve) would hide it from somebody the
+     * server lets act.
+     */
+    it('retires the open version, posting to its own verb', async () => {
+        const { mutate } = renderTab(view([version({ status: 'DRAFT', decidedBy: null, decidedAt: null, submittedAt: null })]));
+        fetchMock.mockResolvedValue(ok({ status: 'RETIRED' }));
+        await act(async () => {
+            fireEvent.click(screen.getByTestId('behaviour-retire'));
+        });
+        expect(fetchMock).toHaveBeenCalledWith(
+            '/api/t/acme/admin/agents/agent-1/profile/versions/1/retire',
+            expect.objectContaining({ method: 'POST' }),
+        );
+        await waitFor(() => expect(mutate).toHaveBeenCalled());
+    });
+
+    it('offers Retire to the AUTHOR of their own draft, because it is not a four-eyes act', () => {
+        renderTab(view([version({ status: 'DRAFT', canDecide: false, author: { label: 'Avery Author', isViewer: true } })]));
+        expect(screen.getByTestId('behaviour-retire')).toBeTruthy();
+        // ...while Approve stays the author's refusal.
+        expect(screen.queryByTestId('behaviour-approve')).toBeNull();
+    });
+
+    // The open card holds only a DRAFT or SUBMITTED version, so the version whose
+    // retirement actually changes what the agent does needs its own affordance
+    // beside the approval that put it in force.
+    it('offers Retire on the version IN FORCE, and says what retiring it costs', async () => {
+        renderTab(view([version({ status: 'APPROVED' })]));
+        expect(screen.getByTestId('behaviour-retire-in-force-note')).toBeTruthy();
+        fetchMock.mockResolvedValue(ok({ status: 'RETIRED' }));
+        await act(async () => {
+            fireEvent.click(screen.getByTestId('behaviour-retire-in-force'));
+        });
+        expect(fetchMock).toHaveBeenCalledWith(
+            '/api/t/acme/admin/agents/agent-1/profile/versions/1/retire',
+            expect.objectContaining({ method: 'POST' }),
+        );
+    });
+
+    it('offers no Retire at all when there is no profile to retire from', () => {
+        renderTab(view([]));
+        expect(screen.queryByTestId('behaviour-retire')).toBeNull();
+        expect(screen.queryByTestId('behaviour-retire-in-force')).toBeNull();
+    });
+
+    it('does not offer Retire when the AGENT is retired, which the server refuses', () => {
+        renderTab(view([SUBMITTED(), version({ status: 'APPROVED' })]), { retired: true });
+        expect(screen.queryByTestId('behaviour-retire')).toBeNull();
+        expect(screen.queryByTestId('behaviour-retire-in-force')).toBeNull();
+        expect(screen.queryByTestId('behaviour-retire-in-force-note')).toBeNull();
+    });
+
     it('a retired agent: no authoring, and Reject is still offered on a version waiting for review', () => {
         renderTab(view([SUBMITTED(), version()]), { retired: true });
         expect(screen.queryByTestId('behaviour-write')).toBeNull();
@@ -272,6 +352,73 @@ describe('instructions are text everywhere', () => {
         expect((within(editor).getByRole('textbox', { name: copy('field.instructions') }) as HTMLTextAreaElement).value).toBe(XSS);
         expect(document.querySelector('img')).toBeNull();
         expect((window as unknown as { __pwned?: number }).__pwned).toBeUndefined();
+    });
+});
+
+const FLOW_V1 = {
+    nodes: [
+        { key: 'risks', kind: 'read' as const, label: 'Gather the open risks', tool: 'list_risks' },
+        { key: 'answer', kind: 'synthesis' as const, label: 'Summarise by owner' },
+    ],
+    edges: [{ from: 'risks', to: 'answer' }],
+};
+const FLOW_V2 = {
+    nodes: [
+        { key: 'risks', kind: 'read' as const, label: `Read every risk ${XSS}`, tool: 'list_risks' },
+        { key: 'rate', kind: 'subagent' as const, label: 'Ask the risk agent to rate each risk', profileRef: 'prof-rater' },
+        { key: 'answer', kind: 'synthesis' as const, label: 'Summarise by owner' },
+    ],
+    edges: [
+        { from: 'risks', to: 'rate' },
+        { from: 'rate', to: 'answer' },
+    ],
+};
+
+describe('a drawn flow is shown to the person who approves it', () => {
+    it('every step, tool, profile reference and connection the hash covers is on screen and in a diff, as text', async () => {
+        renderTab(view([SUBMITTED({ flow: FLOW_V2, toolNames: ['list_risks'] }), version({ flow: FLOW_V1 })]));
+        const open = screen.getByTestId('behaviour-open');
+        const body = within(open).getByTestId('behaviour-version-2-flow').textContent ?? '';
+        expect(body).toContain('[READ] Read every risk');
+        expect(body).toContain('(tool: list_risks)');
+        expect(body).toContain('[SUBAGENT] Ask the risk agent to rate each risk {rate} (profile: prof-rater)');
+        expect(body).toContain('rate -> answer');
+        // Labels are text, as the instructions are.
+        expect(body).toContain('<img src=x onerror=');
+        expect(document.querySelector('img')).toBeNull();
+
+        const flowDiff = within(open).getByTestId('behaviour-review-flow-diff');
+        expect(flowDiff.textContent).toContain('Ask the risk agent to rate each risk');
+        expect(within(open).getByText(copy('review.flowDiffIntro', { from: 1, to: 2 }))).toBeTruthy();
+        expect(open.textContent).toContain(copy('review.hashNoteWithFlow'));
+        expect(open.textContent).not.toContain(copy('review.hashNote'));
+
+        fetchMock.mockResolvedValue(ok({ status: 'APPROVED' }));
+        await act(async () => {
+            fireEvent.click(within(open).getByTestId('behaviour-approve'));
+        });
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ instructionsHash: HASH_2 });
+    });
+
+    it('a flow added where the version in force had none is diffed from nothing', () => {
+        renderTab(view([SUBMITTED({ flow: FLOW_V1 }), version()]));
+        expect(screen.getByTestId('behaviour-review-flow-diff').textContent).toContain('Gather the open risks');
+        expect(screen.getByTestId('behaviour-version-2-flow').textContent).toContain('risks -> answer');
+        expect(screen.queryByTestId('behaviour-version-1-flow')).toBeNull();
+    });
+
+    it('a version with no flow shows no flow, no flow diff, and the plain hash note', () => {
+        renderTab(view([SUBMITTED(), version()]));
+        expect(screen.queryByTestId('behaviour-version-2-flow')).toBeNull();
+        expect(screen.queryByTestId('behaviour-review-flow-diff')).toBeNull();
+        expect(screen.getByTestId('behaviour-open').textContent).toContain(copy('review.hashNote'));
+    });
+
+    it('a flow version\'s Test run is disabled and says no engine runs a drawn flow yet', () => {
+        renderTab(view([SUBMITTED({ flow: FLOW_V1 }), version()], { testRun: { available: true } }));
+        expect((screen.getByTestId('behaviour-test-run-2-button') as HTMLButtonElement).disabled).toBe(true);
+        expect(screen.getByTestId('behaviour-test-run-2-reason').textContent).toBe(copy('testRun.reason.FLOW_NOT_RUNNABLE'));
+        expect((screen.getByTestId('behaviour-test-run-1-button') as HTMLButtonElement).disabled).toBe(false);
     });
 });
 
@@ -326,6 +473,20 @@ describe('Test run (Step 2c)', () => {
         expect(onOpenRuns).not.toHaveBeenCalled();
     });
 
+    it('a version naming only propose tools is disabled, since a Test run is read-only (#5374)', () => {
+        renderTab(
+            view([SUBMITTED({ toolNames: ['propose_risks'] }), version({ toolNames: ['list_risks', 'propose_risks'] })], {
+                testRun: { available: true },
+            }),
+        );
+        expect((screen.getByTestId('behaviour-test-run-2-button') as HTMLButtonElement).disabled).toBe(true);
+        expect(screen.getByTestId('behaviour-test-run-2-reason').textContent).toBe(copy('testRun.reason.NO_READ_TOOL'));
+        // One read tool is enough: the in-force version can still be tried.
+        expect((screen.getByTestId('behaviour-test-run-1-button') as HTMLButtonElement).disabled).toBe(false);
+        fireEvent.click(screen.getByTestId('behaviour-test-run-2-button'));
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     it('is not offered on a draft', () => {
         renderTab(view([version({ status: 'DRAFT', decidedBy: null, decidedAt: null })]));
         expect(screen.queryByTestId('behaviour-test-run-1')).toBeNull();
@@ -370,6 +531,7 @@ describe('the editor', () => {
             modelTier: 'balanced',
             effort: 'medium',
             maxTurns: 10,
+            compactionThresholdTokens: null,
             outputKind: 'ANSWER_ONLY',
             allowedTriggers: ['TEST_RUN'],
         });
@@ -379,6 +541,24 @@ describe('the editor', () => {
         expect(document.getElementById('behaviour-tools')?.getAttribute('aria-describedby')).toContain('behaviour-tools-error');
         expect(document.getElementById('behaviour-instructions-error')).toBeNull();
         expect(screen.queryByTestId('behaviour-editor-error')).toBeNull();
+    });
+
+    it('editing a version with a drawn flow keeps the flow, and sends it in place of a tool list (#5374)', async () => {
+        renderTab(view([version({ flow: FLOW_V1, toolNames: ['list_risks'] })]));
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        const editor = await screen.findByTestId('behaviour-editor');
+        // Said before the save, and the flow's tools are shown, not offered.
+        expect(within(editor).getByTestId('behaviour-editor-flow-kept').textContent).toBe(copy('editor.flowKept', { nodes: 2 }));
+        expect(within(editor).getByTestId('behaviour-editor-flow-tools').textContent).toBe('list_risks');
+        expect(document.getElementById('behaviour-tools')).toBeNull();
+        fetchMock.mockResolvedValue(ok({ version: 2 }));
+        await act(async () => {
+            fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+        });
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.flow).toEqual(FLOW_V1);
+        // Never both: the save refuses a tool list beside a flow.
+        expect(body).not.toHaveProperty('toolNames');
     });
 
     describe('the skill catalogue budget (#4590)', () => {
@@ -524,6 +704,122 @@ describe('the editor', () => {
     });
 });
 
+describe('Summarise long conversations (Step 2g, #5531)', () => {
+    it('the approval view shows the version\'s choice: the engine default, off, or the lower threshold', () => {
+        renderTab(
+            view([
+                SUBMITTED({ compactionThresholdTokens: 12_000 }),
+                version({ compactionThresholdTokens: 0 }),
+            ]),
+        );
+        expect(screen.getAllByTestId('behaviour-version-2-compaction')[0].textContent).toBe(copy('compaction.atTokens', { count: 12000 }));
+        expect(screen.getAllByTestId('behaviour-version-1-compaction')[0].textContent).toBe(copy('compaction.off'));
+    });
+
+    it('a version that leaves it to the engine says so', () => {
+        renderTab(view([version()]));
+        expect(screen.getAllByTestId('behaviour-version-1-compaction')[0].textContent).toBe(copy('compaction.default'));
+    });
+
+    it('the editor keeps the starting version\'s lower threshold, bounded by the tier, and saves the value chosen', async () => {
+        renderTab(view([version({ compactionThresholdTokens: 12_000 })]));
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        const editor = await screen.findByTestId('behaviour-editor');
+        expect(within(editor).getByTestId('behaviour-editor-compaction').textContent).toContain(
+            copy('editor.compactionThresholdHint', { min: 10000, max: 150000 }),
+        );
+        const input = within(editor).getByRole('spinbutton', { name: copy('editor.compactionThresholdLabel') });
+        expect(input).toHaveValue('12000');
+        fireEvent.change(input, { target: { value: '11000' } });
+        fetchMock.mockResolvedValue(ok({ version: 2 }));
+        await act(async () => {
+            fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+        });
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body).compactionThresholdTokens).toBe(11_000);
+    });
+
+    it('a version that turned it off saves 0, and a refusal is shown beside the control', async () => {
+        renderTab(view([version({ compactionThresholdTokens: 0 })]));
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        const editor = await screen.findByTestId('behaviour-editor');
+        expect(within(editor).queryByRole('spinbutton', { name: copy('editor.compactionThresholdLabel') })).toBeNull();
+        const message = 'A version may lower the engine\'s compaction threshold, never raise it.';
+        fetchMock.mockResolvedValue(refused('COMPACTION_THRESHOLD_ABOVE_TIER', message));
+        await act(async () => {
+            fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+        });
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body).compactionThresholdTokens).toBe(0);
+        expect(within(editor).getByTestId('behaviour-editor-compaction-error').textContent).toBe(message);
+        expect(screen.queryByTestId('behaviour-editor-error')).toBeNull();
+    });
+});
+
+describe('Wait for a person (Step 2f, #5530)', () => {
+    const PROPOSES = { tools: ['list_risks', 'propose_risks'], skills: [] };
+
+    it('the approval view lists the deferred tools, and says none when there are none', () => {
+        renderTab(
+            view([SUBMITTED({ toolNames: ['list_risks', 'propose_risks'], deferredToolNames: ['propose_risks'] }), version()]),
+        );
+        expect(screen.getAllByTestId('behaviour-version-2-deferral')[0].textContent).toBe('propose_risks');
+        expect(screen.getAllByTestId('behaviour-version-1-deferral')[0].textContent).toBe(copy('deferral.none'));
+    });
+
+    it('the editor offers the version\'s own propose tools, keeps the starting choice, and saves it', async () => {
+        renderTab(
+            view(
+                [
+                    version({
+                        toolNames: ['list_risks', 'propose_risks'],
+                        outputKind: 'ANSWER_AND_PROPOSALS',
+                        deferredToolNames: ['propose_risks'],
+                    }),
+                ],
+                { options: PROPOSES },
+            ),
+        );
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        const editor = await screen.findByTestId('behaviour-editor');
+        const picker = within(editor).getByTestId('behaviour-editor-deferral');
+        // Over the propose tools only: the read tool is not offered.
+        expect(within(picker).queryByText('list_risks')).toBeNull();
+        expect(within(picker).getByRole('checkbox', { name: 'propose_risks' })).toBeChecked();
+        fetchMock.mockResolvedValue(ok({ version: 2 }));
+        await act(async () => {
+            fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+        });
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body).deferredToolNames).toEqual(['propose_risks']);
+    });
+
+    it('a version that only answers offers no picker and sends no deferred tools', async () => {
+        renderTab(view([version({ toolNames: ['list_risks', 'propose_risks'], outputKind: 'ANSWER_ONLY' })], { options: PROPOSES }));
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        const editor = await screen.findByTestId('behaviour-editor');
+        expect(within(editor).queryByTestId('behaviour-editor-deferral')).toBeNull();
+        fetchMock.mockResolvedValue(ok({ version: 2 }));
+        await act(async () => {
+            fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+        });
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body).deferredToolNames).toBeUndefined();
+    });
+
+    it('a refusal by name is shown beside the picker', async () => {
+        renderTab(
+            view([version({ toolNames: ['list_risks', 'propose_risks'], outputKind: 'ANSWER_AND_PROPOSALS', deferredToolNames: ['propose_risks'] })], {
+                options: PROPOSES,
+            }),
+        );
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        const editor = await screen.findByTestId('behaviour-editor');
+        const message = 'Sub-agent r names propose_risks, and a sub-agent cannot wait for a person.';
+        fetchMock.mockResolvedValue(refused('SUBAGENT_TOOL_DEFERRED', message));
+        await act(async () => {
+            fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+        });
+        expect(within(editor).getByTestId('behaviour-editor-deferral-error').textContent).toBe(message);
+    });
+});
+
 describe('Reject', () => {
     it('needs a reason, sends it, and shows a refusal beside it', async () => {
         renderTab(view([SUBMITTED(), version()]));
@@ -549,5 +845,136 @@ describe('Reject', () => {
             fireEvent.click(confirm);
         });
         await waitFor(() => expect(screen.queryByTestId('behaviour-reject-confirm')).toBeNull());
+    });
+});
+
+describe('sub-agents (Step 2e, #4594)', () => {
+    const READER = {
+        name: 'risk_reader',
+        instructions: 'Read the open risks. <img src=x onerror="window.__pwned=1"> List each owner.',
+        toolNames: ['list_risks'],
+        skillRefs: [],
+        maxTurns: 4,
+    };
+
+    it('the approval view shows every sub-agent in full, as text, diffs it, and names it in the hash note', async () => {
+        renderTab(view([SUBMITTED({ subagents: [READER] }), version()]));
+        const open = screen.getByTestId('behaviour-open');
+        const body = within(open).getByTestId('behaviour-version-2-subagents').textContent ?? '';
+        expect(body).toContain('Sub-agent: risk_reader');
+        expect(body).toContain('Tools: list_risks');
+        expect(body).toContain('Turn limit: 4');
+        expect(body).toContain('List each owner.');
+        expect(body).toContain('<img src=x onerror=');
+        expect(document.querySelector('img')).toBeNull();
+        expect(within(open).getByTestId('behaviour-review-subagents-diff').textContent).toContain('List each owner.');
+        expect(within(open).getByText(copy('review.subagentsDiffIntro', { from: 1, to: 2 }))).toBeTruthy();
+        expect(open.textContent).toContain(copy('review.hashNoteWithSubagents'));
+        fetchMock.mockResolvedValue(ok({ status: 'APPROVED' }));
+        await act(async () => {
+            fireEvent.click(within(open).getByTestId('behaviour-approve'));
+        });
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ instructionsHash: HASH_2 });
+    });
+
+    it('a version with none shows no sub-agents and no sub-agent diff; the history counts them', () => {
+        renderTab(view([SUBMITTED({ subagents: [READER, { ...READER, name: 'owner_finder' }] }), version()]));
+        expect(screen.queryByTestId('behaviour-version-1-subagents')).toBeNull();
+        expect(screen.getByTestId('behaviour-version-2-subagent-count').textContent).toBe('2');
+        expect(screen.getByTestId('behaviour-version-1-subagent-count').textContent).toBe(copy('none'));
+    });
+
+    it('a version with sub-agents can be Test-run on the Tool Runner engine, which runs them', () => {
+        renderTab(view([SUBMITTED({ subagents: [READER] }), version()], { testRun: { available: true } }));
+        expect((screen.getByTestId('behaviour-test-run-2-button') as HTMLButtonElement).disabled).toBe(false);
+        expect(screen.queryByTestId('behaviour-test-run-2-reason')).toBeNull();
+    });
+
+    it('the editor\'s sub-agent tool picker offers only the tools this version has chosen, never the wider grants', async () => {
+        const user = userEvent.setup();
+        // The agent is granted two tools; the version chose one.
+        renderTab(view([version({ toolNames: ['list_risks'] })]));
+        await user.click(screen.getByTestId('behaviour-write'));
+        await screen.findByTestId('behaviour-editor');
+        expect(screen.getByTestId('behaviour-subagents-none')).toBeTruthy();
+        await user.click(screen.getByTestId('behaviour-subagent-add'));
+        await user.click(document.getElementById('behaviour-subagent-0-tools') as HTMLElement);
+        const listbox = await screen.findByRole('listbox');
+        expect(within(listbox).getAllByRole('option').map((o) => o.textContent?.trim())).toEqual(['list_risks']);
+    });
+
+    it('saving sends the sub-agents with the version, and a sub-agent outside the version is marked and blocks the save', async () => {
+        renderTab(view([version({ toolNames: ['list_risks', 'list_controls'], subagents: [{ ...READER, toolNames: ['list_controls'] }] })]));
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        const editor = await screen.findByTestId('behaviour-editor');
+        expect((document.getElementById('behaviour-subagent-0-name') as HTMLInputElement).value).toBe('risk_reader');
+        expect(within(editor).queryByTestId('behaviour-subagent-0-outside')).toBeNull();
+
+        fetchMock.mockResolvedValue(ok({ version: 2 }));
+        await act(async () => {
+            fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+        });
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.subagents).toEqual([{ ...READER, toolNames: ['list_controls'] }]);
+        expect(Object.keys(body.subagents[0]).sort()).toEqual(['instructions', 'maxTurns', 'name', 'skillRefs', 'toolNames']);
+    });
+
+    it('a sub-agent naming a tool the version no longer has is marked in place, and Save stays shut', async () => {
+        // The starting version's sub-agent names a tool the version (and so
+        // the editor's selection) does not hold.
+        renderTab(view([version({ toolNames: ['list_risks'], subagents: [{ ...READER, toolNames: ['list_controls'] }] })]));
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        const editor = await screen.findByTestId('behaviour-editor');
+        expect(within(editor).getByTestId('behaviour-subagent-0-outside').textContent).toContain('list_controls');
+        expect((within(editor).getByTestId('behaviour-editor-save') as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('offers at most four, and none beside a drawn flow', async () => {
+        const four = ['a_one', 'b_two', 'c_three', 'd_four'].map((name) => ({ ...READER, name }));
+        renderTab(view([version({ subagents: four })]));
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        await screen.findByTestId('behaviour-editor');
+        expect((screen.getByTestId('behaviour-subagent-add') as HTMLButtonElement).disabled).toBe(true);
+        cleanup();
+        renderTab(view([version({ flow: FLOW_V1, toolNames: ['list_risks'] })]));
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        await screen.findByTestId('behaviour-editor');
+        expect(screen.queryByTestId('behaviour-subagents')).toBeNull();
+    });
+});
+
+describe('the process canvas (Phases 2.3 and 2.4, docs/ai-architecture/langflow.md)', () => {
+    const CANVAS = '/t/acme/processes/agents/agent-1';
+
+    it('without the process-canvas module there is no canvas link anywhere on the tab', () => {
+        renderTab(view([SUBMITTED(), version()]), { canvasHref: null });
+        expect(screen.queryByTestId('behaviour-in-force-canvas')).toBeNull();
+        expect(screen.queryByTestId('behaviour-open-canvas')).toBeNull();
+        expect(screen.queryByTestId('behaviour-review-canvas-diff')).toBeNull();
+    });
+
+    it('the version in force opens on the canvas as itself', () => {
+        renderTab(view([version()]), { canvasHref: CANVAS });
+        const link = within(screen.getByTestId('behaviour-in-force')).getByTestId('behaviour-in-force-canvas');
+        expect(link).toHaveAttribute('href', `${CANVAS}?version=ver-1`);
+        expect(link.textContent).toBe(copy('canvas.open'));
+    });
+
+    it('a reviewer is offered the submitted version\'s changes from the version in force, drawn on the canvas', () => {
+        renderTab(view([SUBMITTED(), version()]), { canvasHref: CANVAS });
+        const open = screen.getByTestId('behaviour-open');
+        expect(within(open).getByTestId('behaviour-review-canvas-diff')).toHaveAttribute(
+            'href',
+            `${CANVAS}?version=ver-2&compare=ver-1`,
+        );
+        expect(within(open).getByTestId('behaviour-open-canvas')).toHaveAttribute('href', `${CANVAS}?version=ver-2`);
+    });
+
+    it('the author of the submission can open it on the canvas, and is not offered the review', () => {
+        renderTab(view([SUBMITTED({ canDecide: false, author: { label: 'Avery Author', isViewer: true } }), version()]), {
+            canvasHref: CANVAS,
+        });
+        expect(screen.queryByTestId('behaviour-review-canvas-diff')).toBeNull();
+        expect(screen.getByTestId('behaviour-open-canvas')).toHaveAttribute('href', `${CANVAS}?version=ver-2`);
     });
 });

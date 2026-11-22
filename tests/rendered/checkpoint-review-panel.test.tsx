@@ -81,6 +81,7 @@ jest.mock('next-intl', () => {
             const v = resolve(key);
             return typeof v === 'string' ? v : key;
         };
+        t.has = (key: string) => typeof resolve(key) === 'string';
         cache.set(ns, t);
         return t;
     };
@@ -103,7 +104,20 @@ import {
     useCheckpointReview,
 } from '@/lib/processes/canvas-checkpoint-review';
 import { computeProposalDiff } from '@/lib/agentic/proposal-diff';
+import type { ProposalDiff } from '@/lib/agentic/proposal-diff-status';
 import { CACHE_KEYS } from '@/lib/swr-keys';
+
+/** A string from the real `agents` catalogue, so a copy edit cannot break a test. */
+function agentsEn(dotted: string): string {
+    const v = dotted
+        .split('.')
+        .reduce<unknown>(
+            (o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined),
+            (require('../../messages/en.json') as Record<string, unknown>).agents,
+        );
+    if (typeof v !== 'string') throw new Error(`messages/en.json has no string at agents.${dotted}`);
+    return v;
+}
 
 /**
  * The guard columns, constant across this file.
@@ -140,9 +154,25 @@ const proposal = (over: Record<string, unknown> = {}) => ({
     expiresAt: null,
     createdAt: '2026-10-14T09:00:00.000Z',
     diff: UPDATE_DIFF,
+    // The server's answer to "would the approve usecase take this viewer's
+    // approval of this kind" (#5053). True here; the refusal has its own case.
+    viewerMayApprove: true,
     ...SCANNED_CLEAN,
     ...over,
 });
+
+/**
+ * The diff a release gives a kind it reads but does not approve: a process map
+ * while `PROCESS_MAP_PROPOSALS_IMPLEMENTED` is false (#5053). Written out,
+ * because with the brake on nothing in this release produces it, and the panel
+ * still has to render it the day the brake is put back.
+ */
+const KIND_NOT_APPROVABLE_DIFF: ProposalDiff = {
+    status: 'KIND_NOT_APPROVABLE',
+    fields: [],
+    baseDigest: null,
+    comparedFieldCount: 0,
+};
 
 const review = (over: Record<string, unknown> = {}) => ({
     runId: 'run-1',
@@ -307,8 +337,17 @@ describe('a parked run that queued nothing', () => {
     it('a settled run names its status instead', () => {
         load({ data: review({ proposals: [], status: 'COMPLETED', awaitingHuman: false }) });
         mount();
-        expect(screen.getByTestId('checkpoint-none')).toHaveTextContent('COMPLETED');
+        expect(screen.getByTestId('checkpoint-none')).toHaveTextContent(agentsEn('runs.status.COMPLETED'));
+        expect(screen.getByTestId('checkpoint-none').textContent).not.toContain('COMPLETED');
     });
+
+    it('names the run status by its label in the subtitle (#5309)', () => {
+        mount();
+        const subtitle = screen.getByTestId('checkpoint-subtitle');
+        expect(subtitle).toHaveTextContent(agentsEn('runs.status.AWAITING_APPROVAL'));
+        expect(subtitle.textContent).not.toContain('AWAITING_APPROVAL');
+    });
+
 
     it('a truncated checkpoint says so rather than looking complete', () => {
         load({ data: review({ truncated: true }) });
@@ -392,6 +431,88 @@ describe('the decision goes through the proposals routes', () => {
         expect(screen.getByText('Proposal is already REJECTED')).toBeInTheDocument();
         // The row STAYS — nothing was decided.
         expect(screen.getByTestId('checkpoint-proposal-prop-1')).toBeInTheDocument();
+    });
+});
+
+describe('a proposal is named in words, never by its stored codes (#5053)', () => {
+    it('labels the kind and the operation', () => {
+        mount();
+        const label = screen.getByTestId('checkpoint-kind-prop-1');
+        expect(label).toHaveTextContent(
+            agentsEn('quarantine.kindOperation')
+                .replace('{kind}', agentsEn('proposals.kind.RISK'))
+                .replace('{operation}', agentsEn('quarantine.operation.UPDATE')),
+        );
+        expect(label.textContent).not.toContain('RISK');
+        expect(label.textContent).not.toContain('UPDATE');
+    });
+
+    it('a process-map proposal under the brake is labelled, offers no Approve, and can be rejected', () => {
+        load({
+            data: review({
+                proposals: [
+                    proposal({
+                        kind: 'PROCESS_MAP',
+                        operation: 'CREATE',
+                        targetEntityId: null,
+                        diff: KIND_NOT_APPROVABLE_DIFF,
+                    }),
+                ],
+            }),
+        });
+        mount();
+        expect(screen.getByTestId('checkpoint-kind-prop-1')).toHaveTextContent(
+            agentsEn('proposals.kind.PROCESS_MAP'),
+        );
+        expect(screen.getByTestId('checkpoint-kind-prop-1').textContent).not.toContain('PROCESS_MAP');
+        expect(screen.queryByTestId('checkpoint-approve-prop-1')).toBeNull();
+        expect(screen.getByTestId('checkpoint-reject-prop-1')).toBeInTheDocument();
+        // Its notice says this version cannot approve it yet, not that its
+        // content could not be read.
+        expect(screen.getByTestId('proposal-diff-withheld-prop-1')).toHaveTextContent(
+            agentsEn('proposals.diff.reasonKindNotApprovable'),
+        );
+        expect(screen.queryByTestId('proposal-diff-uncomputable-prop-1')).toBeNull();
+        expect(screen.getByTestId('proposal-diff-prop-1').textContent).not.toContain(
+            agentsEn('proposals.diff.reasonPayloadUnreadable'),
+        );
+    });
+
+    it('a refusal the queue words is worded here too', async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            json: async () => ({
+                error: {
+                    message: 'PROCESS_MAP_PROPOSALS_NOT_AVAILABLE: this release reads process-map proposals',
+                    details: { reason: 'PROCESS_MAP_PROPOSALS_NOT_AVAILABLE' },
+                },
+            }),
+        });
+        mount();
+        await act(async () => {
+            fireEvent.click(screen.getByTestId('checkpoint-approve-prop-1'));
+        });
+        expect(screen.getByText(agentsEn('proposals.refused.processMapNotAvailable'))).toBeInTheDocument();
+        expect(screen.queryByText(/PROCESS_MAP_PROPOSALS_NOT_AVAILABLE/)).toBeNull();
+    });
+});
+
+describe('a viewer the server would refuse for this kind (#5053)', () => {
+    it('is not offered Approve, is told why, and can still reject', () => {
+        load({ data: review({ proposals: [proposal({ kind: 'PROCESS_MAP', operation: 'CREATE', targetEntityId: null, diff: CREATE_DIFF, viewerMayApprove: false })] }) });
+        mount();
+        expect(screen.queryByTestId('checkpoint-approve-prop-1')).toBeNull();
+        expect(screen.getByTestId('checkpoint-approve-unavailable-prop-1')).toHaveTextContent(
+            agentsEn('proposals.approveNeedsKindPermission'),
+        );
+        expect(screen.getByTestId('checkpoint-reject-prop-1')).toBeInTheDocument();
+    });
+
+    it('the same row with the flag true offers Approve', () => {
+        load({ data: review({ proposals: [proposal({ kind: 'PROCESS_MAP', operation: 'CREATE', targetEntityId: null, diff: CREATE_DIFF, viewerMayApprove: true })] }) });
+        mount();
+        expect(screen.getByTestId('checkpoint-approve-prop-1')).toBeInTheDocument();
+        expect(screen.queryByTestId('checkpoint-approve-unavailable-prop-1')).toBeNull();
     });
 });
 
@@ -502,8 +623,9 @@ describe('the run’s own window is shown, not discovered', () => {
         // will not continue: `resumeWorkflowRun` refuses past this instant.
         load({ data: review({ approvalExpiresAt: '2026-10-15T12:00:00.000Z' }) });
         mount();
-        expect(screen.getByTestId('checkpoint-window')).toHaveTextContent(
-            '2026-10-15T12:00:00.000Z',
-        );
+        // Formatted, and marked as UTC — never the raw ISO string (#5309).
+        const window = screen.getByTestId('checkpoint-window');
+        expect(window).toHaveTextContent('15 Oct 2026, 12:00 (UTC)');
+        expect(window.textContent).not.toContain('2026-10-15T12:00:00');
     });
 });

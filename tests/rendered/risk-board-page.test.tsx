@@ -141,6 +141,7 @@ function mockFetch(opts: {
     bestValue?: unknown;
     failDashboard?: boolean;
     failBestValue?: boolean;
+    failedSlots?: string[];
 } = {}) {
     const failed = {
         ok: false, status: 500, headers: new Headers({ 'content-type': 'application/json' }),
@@ -161,6 +162,7 @@ function mockFetch(opts: {
                     appetite: pick(opts, 'appetite', null),
                     simulation: pick(opts, 'simulation', SIM_RUN),
                     matrix: MATRIX,
+                    failed: opts.failedSlots ?? [],
                 }),
             } as Response;
         }
@@ -249,6 +251,41 @@ describe('RiskBoardPage — five-section board view', () => {
         renderPage();
         await waitFor(() => expect(screen.getByTestId('board-hygiene-all-fresh')).toBeInTheDocument());
         expect(screen.getByTestId('board-hygiene-pct').textContent).toBe('0%');
+    });
+});
+
+// #5168 — a slot the server could not compute arrives as null, like an
+// empty one. The board used to read it as empty and say "every assessment is
+// current", "not quantified yet" or "no appetite set".
+describe('RiskBoardPage — a failed section is not an empty one', () => {
+    afterEach(() => {
+        jest.clearAllMocks();
+        mockTenant = null;
+    });
+
+    it('a failed staleness read never says every assessment is current', async () => {
+        mockFetch({ staleness: null, failedSlots: ['staleness'] });
+        renderPage();
+        await waitFor(() => expect(screen.getByTestId('board-hygiene-unavailable')).toBeInTheDocument());
+        expect(screen.queryByTestId('board-hygiene-all-fresh')).toBeNull();
+        expect(screen.queryByTestId('board-hygiene-pct')).toBeNull();
+    });
+
+    it('a failed simulation or appetite read is not "not quantified" or "no appetite set"', async () => {
+        mockFetch({ simulation: null, appetite: null, failedSlots: ['simulation', 'appetite'] });
+        renderPage();
+        await waitFor(() => expect(screen.getByTestId('board-position-unavailable')).toBeInTheDocument());
+        expect(screen.getByTestId('board-appetite-unavailable')).toBeInTheDocument();
+        expect(screen.queryByTestId('board-position-empty')).toBeNull();
+        expect(screen.queryByTestId('board-appetite-empty')).toBeNull();
+    });
+
+    it('names the failed sections and offers a retry', async () => {
+        mockFetch({ staleness: null, failedSlots: ['staleness'] });
+        renderPage();
+        const banner = await screen.findByTestId('board-partial');
+        expect(banner.textContent).toContain('Stale assessments');
+        expect(document.getElementById('board-partial-retry')).not.toBeNull();
     });
 });
 

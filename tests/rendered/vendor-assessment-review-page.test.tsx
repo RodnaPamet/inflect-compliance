@@ -160,4 +160,50 @@ describe('vendor assessment review page', () => {
 
         expect(await screen.findByTestId('prefill-panel')).toBeInTheDocument();
     });
+
+    // #5313 — the override field keeps the text as typed, so a decimal point
+    // or a minus sign survives the keystroke that adds it.
+    it('takes a fractional and a negative override typed a keystroke at a time', async () => {
+        const posts: unknown[] = [];
+        global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+            if (init?.method === 'POST') {
+                posts.push(JSON.parse(String(init.body)));
+                return ok({});
+            }
+            return ok(view('SUBMITTED'));
+        }) as unknown as typeof fetch;
+        render(<VendorAssessmentReviewClient assessmentId="as-1" />);
+
+        const field = (await screen.findByTestId('override-points-q-1')) as HTMLInputElement;
+        for (const typed of ['0', '0.', '0.5']) fireEvent.change(field, { target: { value: typed } });
+        expect(field.value).toBe('0.5');
+        fireEvent.click(screen.getByRole('button', { name: AR.saveReview }));
+        await waitFor(() => expect(posts).toHaveLength(1));
+        expect((posts[0] as { overrides: Array<{ overridePoints: number }> }).overrides[0].overridePoints).toBe(0.5);
+
+        const again = (await screen.findByTestId('override-points-q-1')) as HTMLInputElement;
+        fireEvent.change(again, { target: { value: '-' } });
+        expect(again.value).toBe('-');
+        fireEvent.change(again, { target: { value: '-1.5' } });
+        expect(again.value).toBe('-1.5');
+    });
+
+    it('refuses to save while an override is not a number, and says so', async () => {
+        const posts: unknown[] = [];
+        global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+            if (init?.method === 'POST') {
+                posts.push(init.body);
+                return ok({});
+            }
+            return ok(view('SUBMITTED'));
+        }) as unknown as typeof fetch;
+        render(<VendorAssessmentReviewClient assessmentId="as-1" />);
+
+        const field = (await screen.findByTestId('override-points-q-1')) as HTMLInputElement;
+        fireEvent.change(field, { target: { value: '-' } });
+        expect(field).toHaveAttribute('aria-invalid', 'true');
+        fireEvent.click(screen.getByRole('button', { name: AR.saveReview }));
+        expect(await screen.findByText(AR.overrideInvalid)).toBeInTheDocument();
+        expect(posts).toHaveLength(0);
+    });
 });

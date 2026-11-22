@@ -33,6 +33,9 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
+import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
+import { runWithAuditContext } from '@/lib/audit-context';
+import appPrisma from '@/lib/prisma';
 import { makeRequestContext } from '../helpers/make-context';
 import {
     verifyRunEvidence,
@@ -75,10 +78,19 @@ async function makeRun(over: Record<string, unknown> = {}): Promise<string> {
 describeFn('test-hardening usecases (real DB)', () => {
     beforeAll(async () => {
         await prisma.$connect();
-        await prisma.tenant.upsert({
-            where: { id: TENANT }, update: {},
-            create: { id: TENANT, name: SUITE, slug: SUITE },
-        });
+        /*
+            WITH A DEK (#5150). A raw `tenant.create` leaves `encryptedDek`
+            NULL, and the encryption middleware resolves no DEK for such a
+            tenant, so every manifest field on it is written in PLAINTEXT. The
+            at-rest assertion below would then fail for an environmental reason
+            rather than a defect — a false negative, and the kind that gets a
+            correct fix reverted. `createTenantWithDek` is the usecase a real
+            tenant is born through.
+        */
+        const existing = await prisma.tenant.findUnique({ where: { id: TENANT } });
+        if (!existing) {
+            await createTenantWithDek({ id: TENANT, name: SUITE, slug: SUITE });
+        }
         const email = `${SUITE}@example.test`;
         await prisma.user.upsert({
             where: { id: ctx.userId }, update: {},
@@ -250,6 +262,76 @@ describeFn('test-hardening usecases (real DB)', () => {
         expect(parsed.testRun.id).toBe(runId);
         // Duplicate → badRequest.
         await expect(snapshotTestRun(ctx, runId, packId)).rejects.toThrow(/already in the audit pack/i);
+    });
+
+    /**
+     * #5150 — the snapshot must not re-expose what the source row encrypts.
+     *
+     * `ControlTestRun.notes` and `findingSummary` are in the Epic B manifest, so
+     * the middleware has DECRYPTED them by the time `snapshotTestRun` reads the
+     * run. Copying them into `AuditPackItem.snapshotJson` therefore wrote them
+     * back to disk in clear, where a database dump, a backup or the read replica
+     * exposes what the source row protects — and neither DEK rotation nor the
+     * encryption-at-rest guarantee covered the copy.
+     *
+     * Asserted on the RAW column through this file's own unextended client, not
+     * on the usecase's return value: the extended client would decrypt it and
+     * the test would pass whether or not anything was encrypted.
+     */
+    it('snapshotTestRun leaves no plaintext run notes at rest (#5150)', async () => {
+        const SECRET_NOTES = 'tester saw the bypass on jump-host-7';
+        const SECRET_SUMMARY = 'exception: shared admin credential at /ops/legacy';
+        const runId = await makeRun();
+        const packId = await makePack('DRAFT');
+
+        /*
+            THE AMBIENT AUDIT CONTEXT IS WHAT MAKES ENCRYPTION HAPPEN.
+
+            `resolveTenantDekPair` reads `getAuditContext()` and returns
+            NO_DEK_PAIR when there is no ambient `tenantId` — so a test that
+            calls a usecase directly gets NO encryption for ANY manifest field,
+            and an at-rest assertion written without this wrapper can never fail
+            for the right reason. It reads as "the fix does not work" when what
+            is missing is the context a real request always has.
+
+            `source: 'api'` matters too: a `BYPASS_SOURCES` source would also
+            return NO_DEK_PAIR, by design.
+
+            Awaited INSIDE the callback, per `runWithAuditContext`'s own warning:
+            a PrismaPromise is lazy, so returning one would fire the query after
+            the store has gone and silently fall back.
+        */
+        let itemId = '';
+        await runWithAuditContext({ tenantId: TENANT, source: 'api' }, async () => {
+            // Give the SOURCE row encrypted notes, as production has them: the
+            // fixtures above write through this file's unextended client, so
+            // without this the run's notes are plaintext and the snapshot would
+            // be copying something that was never protected.
+            await appPrisma.controlTestRun.update({
+                where: { id: runId },
+                data: { notes: SECRET_NOTES, findingSummary: SECRET_SUMMARY },
+            });
+            const item = await snapshotTestRun(ctx, runId, packId);
+            itemId = item.id;
+        });
+
+        // The SOURCE is encrypted — the premise of the finding, and a positive
+        // control: if this is plaintext the test below proves nothing.
+        const srcRaw = await prisma.$queryRawUnsafe<Array<{ notes: string }>>(
+            `SELECT "notes" FROM "ControlTestRun" WHERE "id" = $1`, runId,
+        );
+        expect(srcRaw[0].notes.startsWith('v2:')).toBe(true);
+
+        // And the COPY is too. Read raw through this file's unextended client:
+        // the extended one would decrypt and the assertion would pass either way.
+        const raw = await prisma.$queryRawUnsafe<Array<{ snapshotJson: string }>>(
+            `SELECT "snapshotJson" FROM "AuditPackItem" WHERE "id" = $1`, itemId,
+        );
+        expect(raw).toHaveLength(1);
+        expect(raw[0].snapshotJson.startsWith('v2:')).toBe(true);
+        // Said independently of the prefix: the property is the ABSENCE.
+        expect(raw[0].snapshotJson).not.toContain(SECRET_NOTES);
+        expect(raw[0].snapshotJson).not.toContain(SECRET_SUMMARY);
     });
 
     it('snapshotTestRun increments sortOrder for a second distinct run', async () => {

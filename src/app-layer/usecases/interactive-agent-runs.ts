@@ -182,23 +182,29 @@ export async function resolveInteractiveAgent(ctx: RequestContext): Promise<Inte
     //    row and pass. Scoped on `tenantId` for that reason, and `deletedAt`
     //    is excluded because a soft-deleted row vouches for nothing.
     //
-    //    STATUS IS NOT READ HERE. The Flue gate inside `startWorkflowRun`
-    //    decides standing, once, with its own named refusal — two controls over
-    //    one fact would eventually disagree.
+    //    STANDING IS NOT DECIDED HERE. The Flue gate inside `startWorkflowRun`
+    //    decides it, once, with its own named refusal — two controls over one
+    //    fact would eventually disagree. RETIRED is the one exception, and it
+    //    is not standing: it is terminal (a trigger refuses every move out of
+    //    it), so a retired agent is gone for good, and the designation kept
+    //    after a retirement must read AGENT_NOT_FOUND here (#5317). Without it
+    //    a caller asking whether to offer Ask offered it, and every question
+    //    then failed inside the Flue gate under a different refusal.
     const agent = await runInTenantContext(ctx, (db) =>
         db.registeredAgent.findFirst({
             where: { id: agentId, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true },
+            select: { id: true, status: true },
         }),
     );
-    if (!agent) {
+    if (!agent || agent.status === 'RETIRED') {
         return {
             ok: false,
             refusal: 'AGENT_NOT_FOUND',
             detail:
-                `The designated interactive agent (${agentId}) is not an agent this workspace holds. The ` +
-                'designation is kept rather than cleared when an agent is retired, so this is what an ' +
-                'operator sees after a retirement — choose "Use for Ask" on another agent in the register.',
+                `The designated interactive agent (${agentId}) is not an agent this workspace holds, or it ` +
+                'has been retired. The designation is kept rather than cleared when an agent is retired, so ' +
+                'this is what an operator sees after a retirement — choose "Use for Ask" on another agent ' +
+                'in the register.',
         };
     }
 
@@ -279,6 +285,9 @@ export async function startInteractiveRun(
     // and `ad-hoc-question` declares it.
     const started = await startWorkflowRun(interactiveRunContext(ctx, resolved.agentId), workflowKey, input, {
         readOnlyAuthority: true,
+        // The Ask path is the ASK trigger (#5367): a profile key runs from here
+        // only when its version allows it. Ignored for a registered workflow key.
+        profileTrigger: 'ASK',
     });
     return { runId: started.runId };
 }

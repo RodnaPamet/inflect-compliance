@@ -41,11 +41,13 @@ const CANDIDATE_REF =
 /**
  * A jest failure line: `FAIL node tests/integration/x.test.ts`.
  *
- * The runner label is optional because the three projects print different ones
- * (`node`, `jsdom`, `flue`) and a shard prints none for a suite it could not
- * load.
+ * The runner label is optional because the projects print different ones
+ * (`node`, `jsdom`, `flue`, `scan`) and a shard prints none for a suite it
+ * could not load. Any single-word label is accepted, not a list of today's
+ * (#5092): the list predated the `scan` project, so a failing ratchet was
+ * never attributed, and a project added later is covered without an edit.
  */
-const FAIL_LINE = /\bFAIL\s+(?:node|jsdom|flue)?\s*(tests\/[^\s]+)/;
+const FAIL_LINE = /\bFAIL\s+(?:[A-Za-z][\w-]*\s+)?(tests\/[^\s]+)/;
 
 /** `{ base, pr, sha }`, or null when the ref is not a candidate ref. */
 function parseCandidateRef(ref) {
@@ -81,14 +83,36 @@ function failingTestFiles(logText) {
  * means the logs were read and contained no assertion failure — an OOM, a setup
  * step, an infrastructure error. Collapsing them would report an absence of
  * evidence as evidence of innocence.
+ *
+ * `DIFF_UNREADABLE` is the same rule on the other side of the comparison
+ * (#5308): `changedFiles: null` means listing the PR's files FAILED, which is
+ * not the same as a PR that changes nothing. Reading it as an empty list would
+ * exonerate the diff on a read that never happened.
+ *
+ * `INCOMPLETE` exists for the same reason, one layer along (#5630). The rule
+ * above was honoured only when NO failing file was found; once any was, the
+ * `logsReadable` flag was never consulted again, so two failed shards — one
+ * whose log could not be fetched, one naming a suite outside the diff — came
+ * out as `OUTSIDE_DIFF` and told the author "not this diff". The unread shard
+ * is exactly where an in-diff failure would hide.
+ *
+ * The asymmetry is deliberate: `IN_DIFF` does NOT consult the flag. Finding an
+ * in-diff failure is POSITIVE evidence and stays true however many other logs
+ * were unreadable. Only the negative verdict needs every log read.
  */
 function verdictOf({ cancelled, failingFiles, changedFiles, logsReadable }) {
     if (cancelled) return 'CANCELLED';
     const failing = failingFiles ?? [];
     if (failing.length === 0) return logsReadable === false ? 'UNREADABLE' : 'NO_FAIL_LINE';
+    if (changedFiles === null) return 'DIFF_UNREADABLE';
     const changed = new Set(changedFiles ?? []);
     const touched = failing.filter((f) => changed.has(f));
-    if (touched.length === 0) return 'OUTSIDE_DIFF';
+    if (touched.length === 0) {
+        // A NEGATIVE claim about a population, so it needs the whole
+        // population. "Every failing suite is outside this PR's diff" is not
+        // sayable about logs nobody could read.
+        return logsReadable === false ? 'INCOMPLETE' : 'OUTSIDE_DIFF';
+    }
     return 'IN_DIFF';
 }
 
@@ -106,7 +130,9 @@ function attributionBody(input) {
         stillRunningCount = 0,
     } = input;
 
-    const changedSet = new Set(changedFiles);
+    // `changedFiles: null` (the listing failed) is kept distinct from `[]` for
+    // the verdict; for the set arithmetic below either means "nothing known".
+    const changedSet = new Set(changedFiles ?? []);
     const touched = failingFiles.filter((f) => changedSet.has(f));
     const untouched = failingFiles.filter((f) => !changedSet.has(f));
     const verdict = verdictOf({ cancelled: conclusion === 'cancelled', failingFiles, changedFiles, logsReadable });
@@ -123,6 +149,16 @@ function attributionBody(input) {
         lines.push('**No `FAIL <path>` line was found in the failed jobs\' logs**, so this was probably not an assertion failure — an OOM (exit 134), a setup step, or an infrastructure error. The failing jobs are listed below; their logs are the next place to look.');
     } else if (verdict === 'UNREADABLE') {
         lines.push('**The failed jobs\' logs could not be read**, so no comparison against your diff was possible. This is not evidence either way about your changes.');
+    } else if (verdict === 'DIFF_UNREADABLE') {
+        lines.push('**This PR\'s changed files could not be listed**, so no comparison against your diff was possible. This is not evidence either way about your changes.');
+        lines.push('');
+        lines.push('Failing:');
+        for (const f of failingFiles.slice(0, 10)) lines.push(`- \`${f}\``);
+    } else if (verdict === 'INCOMPLETE') {
+        lines.push(`**Some failed jobs' logs could not be read, so this comparison is incomplete.** The failing ${untouched.length === 1 ? 'suite' : 'suites'} that could be read ${untouched.length === 1 ? 'is' : 'are'} outside the ${changedFiles.length} file(s) this PR changes — but an unread log is where an in-diff failure would hide, so this is **not** evidence either way about your changes.`);
+        lines.push('');
+        lines.push('Failing, read, and untouched by this PR:');
+        for (const f of untouched.slice(0, 10)) lines.push(`- \`${f}\``);
     } else if (verdict === 'OUTSIDE_DIFF') {
         lines.push(`**Every failing suite is outside this PR's diff.** The failing ${untouched.length === 1 ? 'suite is' : 'suites are'} not among the ${changedFiles.length} file(s) this PR changes, so the most likely causes are a queue-mate's changes, the base the candidate was built on, or infrastructure — not this diff.`);
         lines.push('');

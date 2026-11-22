@@ -145,6 +145,7 @@ const PINS = EN.manifests as unknown as {
     schemaLive: string;
     schemaUnchanged: string;
     manifestLive: string;
+    forbiddenTitle: string;
     status: Record<string, string>;
     explain: Record<string, string>;
 };
@@ -809,7 +810,7 @@ describe('tools the runtime supplies, which nobody granted', () => {
         {
             name: 'task',
             appearsWhen: 'always',
-            boundedBy: 'No subagent is declared, so it has no valid agent value.',
+            boundedBy: 'Delegates to one of four declared specialists, within this run\'s resolved set.',
         },
         {
             name: 'activate_skill',
@@ -848,7 +849,7 @@ describe('tools the runtime supplies, which nobody granted', () => {
         // surface where the bound is stated beside the tool.
         mockReads({ runtimeProvided: RUNTIME });
         renderTab();
-        expect(screen.getByText(/No subagent is declared/)).toBeInTheDocument();
+        expect(screen.getByText(/four declared specialists/)).toBeInTheDocument();
         expect(screen.getByText(/already mounted/)).toBeInTheDocument();
     });
 
@@ -863,5 +864,37 @@ describe('tools the runtime supplies, which nobody granted', () => {
         // And the rest of the panel is intact, so this is an omission rather
         // than a render that failed before reaching the card.
         expect(within(grantsSection()).getByText('list_risks')).toBeInTheDocument();
+    });
+});
+
+// #5313 — the server's ANNOTATIONS_CHANGED status is worded, with a badge.
+describe('an annotations-only change is legible', () => {
+    it('shows the status and its sentence in words, not message keys', () => {
+        mockReads({
+            manifests: [manifest({ status: 'ANNOTATIONS_CHANGED' as ToolManifestState['status'] })],
+        });
+        renderTab();
+        const pins = pinsSection();
+        expect(within(pins).getByText(PINS.status.ANNOTATIONS_CHANGED)).toBeInTheDocument();
+        expect(within(pins).getByText(PINS.explain.ANNOTATIONS_CHANGED)).toBeInTheDocument();
+        expect(pins.textContent ?? '').not.toMatch(/manifests\.(status|explain)\./);
+        expect(BG_PINS.explain.ANNOTATIONS_CHANGED).toEqual(expect.any(String));
+    });
+});
+
+// #5313 — the shell opens this tab on the tool-exposure key alone. Without the
+// register key the pin read is never sent (each would be refused and write an
+// AUTHZ_DENIED row), and the grants list says the blocked state is unknown.
+describe('a principal without the register key', () => {
+    it('sends no pin read, says the pins are not visible, and says the boundary was not checked', () => {
+        mockReads({ granted: [grant('list_risks')], manifests: [manifest()] });
+        render(
+            <ToolsTab tenantSlug="acme" agentId={AGENT_ID} canGrantTools canReadRegistry={false} />,
+        );
+        const keys = mockSWR.mock.calls.map((c) => c[0]);
+        expect(keys).not.toContain(TOOL_MANIFEST_PATH);
+        expect(keys).toContain(GRANTS_PATH);
+        expect(within(grantsSection()).getByText(EN.blockedUnknown)).toBeInTheDocument();
+        expect(screen.getByText(PINS.forbiddenTitle)).toBeInTheDocument();
     });
 });

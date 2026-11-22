@@ -285,10 +285,11 @@ describe('a disabled connection', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Enable integration' }));
 
         await waitFor(() => expect(message()).toHaveTextContent('Connection enabled'));
+        // No `name`: an update without one keeps the stored label (#5317), so
+        // enabling never trips the name rule on a label stored before it.
         expect(sent('POST', '/admin/integrations')[0].body).toEqual({
             id: 'c-okta',
             provider: 'okta',
-            name: 'Corp directory',
             configJson: { domain: 'corp.okta.com' },
             isEnabled: true,
         });
@@ -311,6 +312,51 @@ describe('a disabled connection', () => {
     });
 });
 
+describe('the connection name (#5317)', () => {
+    it('an edit that leaves the name alone does not send it', async () => {
+        serve([conn({})], { 'POST /admin/integrations': () => ({ body: { id: 'c-okta' } }) });
+        await renderPage();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit connection' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Update Connection' }));
+
+        await waitFor(() => expect(sent('POST', '/admin/integrations')).toHaveLength(1));
+        const body = sent('POST', '/admin/integrations')[0].body as Record<string, unknown>;
+        expect(body).toMatchObject({ id: 'c-okta', provider: 'okta' });
+        expect(body).not.toHaveProperty('name');
+    });
+
+    it("shows the server's refusal of the name's characters beside the name field", async () => {
+        serve([conn({})], {
+            'POST /admin/integrations': () => ({
+                status: 400,
+                body: {
+                    error: {
+                        code: 'VALIDATION_ERROR',
+                        message: 'Invalid request payload',
+                        details: [{ path: ['name'], code: 'custom', message: 'CONNECTION_NAME_INVALID_CHARACTERS' }],
+                        requestId: 'req-1',
+                    },
+                },
+            }),
+        });
+        await renderPage();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit connection' }));
+        fireEvent.change(screen.getByDisplayValue('Corp directory'), { target: { value: 'Corp\u0007directory' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Update Connection' }));
+
+        const field = document.getElementById('integration-name-input') as HTMLElement;
+        await waitFor(() => expect(field).toHaveAttribute('aria-invalid', 'true'));
+        const errorId = field.getAttribute('aria-describedby')?.split(' ').find((id) => id.endsWith('-error'));
+        expect(document.getElementById(errorId as string)).toHaveTextContent(
+            "A connection name can't contain control characters or broken characters.",
+        );
+        // Beside the field, not as the server's code in the banner.
+        expect(screen.queryByText(/CONNECTION_NAME_INVALID_CHARACTERS/)).not.toBeInTheDocument();
+    });
+});
+
 describe('Enable internal checks', () => {
     it('turns a DISABLED internal check back on rather than skipping it', async () => {
         serve([conn({ id: 'c-pers', provider: 'personnel', name: 'Personnel', isEnabled: false, configJson: {} })], {
@@ -322,7 +368,7 @@ describe('Enable internal checks', () => {
 
         await waitFor(() => expect(message()).toHaveTextContent('Internal check providers enabled.'));
         expect(sent('POST', '/admin/integrations').map((c) => c.body)).toEqual([
-            { id: 'c-pers', provider: 'personnel', name: 'Personnel', configJson: {}, isEnabled: true },
+            { id: 'c-pers', provider: 'personnel', configJson: {}, isEnabled: true },
         ]);
     });
 

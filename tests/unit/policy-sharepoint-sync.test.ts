@@ -136,6 +136,21 @@ describe('pullPolicyFromSharePoint', () => {
         );
     });
 
+    it('skips an item whose eTag is the one already synced — the echo of our own push (#5148)', async () => {
+        mockDb.policy.findFirst.mockResolvedValueOnce({ id: 'p1', spItemETag: 'etag-1' });
+        const r = await pullPolicyFromSharePoint(ctx, { driveId: 'd1', itemId: 'i1' });
+        expect(r.pulled).toBe(false);
+        expect(mockClient.downloadItemContent).not.toHaveBeenCalled();
+        expect(mockCreateVersion).not.toHaveBeenCalled();
+    });
+
+    it('pulls when the eTag moved since the last sync', async () => {
+        mockDb.policy.findFirst.mockResolvedValueOnce({ id: 'p1', spItemETag: 'etag-0' });
+        const r = await pullPolicyFromSharePoint(ctx, { driveId: 'd1', itemId: 'i1' });
+        expect(r.pulled).toBe(true);
+        expect(mockCreateVersion).toHaveBeenCalledTimes(1);
+    });
+
     it('no-ops when no policy matches the drive/item', async () => {
         mockDb.policy.findFirst.mockResolvedValueOnce(null);
         const r = await pullPolicyFromSharePoint(ctx, { driveId: 'd1', itemId: 'i1' });

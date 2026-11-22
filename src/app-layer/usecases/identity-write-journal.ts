@@ -450,6 +450,12 @@ export async function findRestorableState(
                 tenantId: ctx.tenantId,
                 provider,
                 externalUserId,
+                // A DISABLE's capture, and only that (#5141). A restore or a
+                // joiner enable is journalled under the same account too, and
+                // the newest of those was being handed back as the state to
+                // restore — a capture of the account DISABLED, which a restore
+                // refuses, or an unrelated create's "no account existed".
+                action: 'DISABLE_ACCOUNT',
                 outcome: { in: ['APPLIED', 'INDETERMINATE'] },
             },
             orderBy: { attemptedAt: 'desc' },
@@ -710,6 +716,10 @@ export async function hasUnsettledWrite(
                 tenantId: ctx.tenantId,
                 provider,
                 externalUserId,
+                // The disable path's question (#5141): an unconfirmed restore
+                // or create is not something an observed-disabled account can
+                // settle.
+                action: 'DISABLE_ACCOUNT',
                 outcome: { in: ['INDETERMINATE', 'PENDING'] },
             },
             select: { id: true },
@@ -740,6 +750,11 @@ export async function settleIndeterminateAsApplied(
                 tenantId: ctx.tenantId,
                 provider,
                 externalUserId,
+                // Only a DISABLE is settled by observing the account disabled
+                // (#5141). Without this an unconfirmed RESTORE — whose intended
+                // end state is enabled — was marked APPLIED by the very read
+                // that shows it did not land.
+                action: 'DISABLE_ACCOUNT',
                 outcome: { in: ['INDETERMINATE', 'PENDING'] },
             },
             orderBy: { attemptedAt: 'desc' },

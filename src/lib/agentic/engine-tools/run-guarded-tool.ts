@@ -90,7 +90,8 @@ export async function runGuardedTool(
     // proposal a run produced is traceable back to the step that produced it;
     // the direct MCP route resolves none, and the funnel's own signature makes
     // that absence an answer rather than an omission.
-    const result = isProposeTool(name)
+    const proposing = isProposeTool(name);
+    const result = proposing
         ? await runProposeTool(inv, name, args, origin)
         : await runReadTool(inv, name, args);
 
@@ -104,9 +105,20 @@ export async function runGuardedTool(
         .map((block) => ('text' in block ? block.text : ''))
         .join('\n');
 
-    const injected = await guardUntrustedInput(ctx, text, {
-        source: `${prefix}-tool-result:${name}:${toolCallId}`,
-    });
+    // NOT on a propose result (#5548, owner decision 2026-11-13). That text is
+    // built entirely by `runProposeTool` — counts, proposal ids, the kind and a
+    // fixed sentence, `PROPOSE_RESULT_FIELDS` pinned by test — and carries no
+    // tenant- or model-authored text, so there is nothing in it to steer the
+    // model with. Scanning it was a false positive on our OWN structure: its
+    // `"quarantined": 0` key matched `inj.answer_steering.refusal_vocabulary`,
+    // so under BALANCED every engine propose call tripped the review latch.
+    // A read result is tenant data and is still scanned. The egress (secret)
+    // scan below still runs on both.
+    const injected = proposing
+        ? null
+        : await guardUntrustedInput(ctx, text, {
+              source: `${prefix}-tool-result:${name}:${toolCallId}`,
+          });
     // The funnel has already run, and that is fine on both surfaces: a read is
     // a read, and a propose queued a PENDING row nobody has approved — audited
     // either way, and committed neither way. What must not happen is the text
@@ -116,7 +128,7 @@ export async function runGuardedTool(
     // The slice that protects the QUEUE is the egress one above, which runs on
     // the proposed content before the funnel sees it; `createAgentProposal`
     // then guards each item again and can quarantine it on its own.
-    review.check(injected, name, 'result', toolCallId);
+    if (injected) review.check(injected, name, 'result', toolCallId);
 
     // ── 3. The RESULT, on its way OUT to the model provider ─────────────────
     //

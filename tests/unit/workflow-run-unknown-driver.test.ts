@@ -84,6 +84,8 @@ const aiDecisionUpdateMany = jest.fn(async () => ({ count: 0 }));
 const mockDb = {
     workflowRun: { findFirst, findMany, update },
     aiDecisionLog: { updateMany: aiDecisionUpdateMany },
+    // A parked run's deferral, settled by the abort (Step 2f): none here.
+    workflowRunDeferral: { updateMany: jest.fn(async () => ({ count: 0 })) },
     $queryRaw: queryRaw,
 };
 

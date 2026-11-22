@@ -319,6 +319,40 @@ describe('source-blocks — codeOf', () => {
             expect(probe('.replace(/plain/g, "q")')).not.toContain('SENTINEL');
         });
 
+        it('a trailing line comment does not decide whether the NEXT line opens a regex', () => {
+            // #5545. `regexCanStartAt` walked backwards over WHITESPACE only,
+            // so it landed on the last character of the previous line's
+            // COMMENT. Where that is a `)` — `// secret access key (40-char)`
+            // in `src/app-layer/integrations/aws-posture-provider.ts` — it read
+            // the next line's `/` as division, declined the regex, and the `"`
+            // inside the regex's character class then opened a string literal
+            // that ran to the end of the file. 6,925 characters of that file,
+            // its whole provider class among them, were handed to guards as a
+            // string literal, and every extractor threw on anchors inside it.
+            //
+            // Asserted as the exact masked lines rather than a sentinel: it
+            // says in one expression that both comments are gone AND that both
+            // regexes survive, which a negated assertion cannot.
+            const src = [
+                'const PATTERNS = [',
+                '    /\\b[A-Za-z0-9/+=]{40}\\b/g,      // secret access key (40-char)',
+                '    /(TOKEN)["\'\\s:=]+[A-Za-z0-9]{20,}/gi,',
+                '];',
+                '// after the array',
+            ].join('\n');
+            expect(
+                codeOf(src)
+                    .split('\n')
+                    .map((l) => l.trimEnd()),
+            ).toEqual([
+                'const PATTERNS = [',
+                '    /\\b[A-Za-z0-9/+=]{40}\\b/g,',
+                '    /(TOKEN)["\'\\s:=]+[A-Za-z0-9]{20,}/gi,',
+                '];',
+                '',
+            ]);
+        });
+
         it('the regex BODY survives, because a regex is code and not a comment', () => {
             // The fix CONSUMES the regex span so the quote inside it never
             // reaches the string branch. It must not BLANK it: `codeOf` masks
@@ -396,6 +430,77 @@ describe('source-blocks — codeOf', () => {
  * strip is shown losing the code where it did, so a regression to it in a
  * guard is visibly a regression rather than a matter of taste.
  */
+describe('source-blocks — a literal cannot run away (#5696)', () => {
+    it('consumes a ${…} interpolation, so an inner template does not close the outer one', () => {
+        // The shape is live in tests/guards/card-padding-cascade.test.ts. The
+        // scanner closed the OUTER template on the inner backtick and every
+        // comment after it reached guards as code — #4658's harm, reached by
+        // a third route.
+        const src = [
+            'const msg = `rung(s) ${xs.map((r) => `\\`${r}\\``).join(", ")} emit nothing`;',
+            'expect(ok).toBe(true);',
+            '// prose after the template',
+        ].join('\n');
+        expect(
+            codeOf(src)
+                .split('\n')
+                .map((l) => l.trimEnd()),
+        ).toEqual([
+            'const msg = `rung(s) ${xs.map((r) => `\\`${r}\\``).join(", ")} emit nothing`;',
+            'expect(ok).toBe(true);',
+            '',
+        ]);
+    });
+
+    it('follows braces, strings and comments inside an interpolation', () => {
+        // An interpolated expression is code: each of these carries a `}` or a
+        // quote that does not close anything, and counting braces blindly
+        // would stop at the wrong one.
+        const src = [
+            'const m = `a ${ { k: "}" }.k } b ${ f(/[}]/g) } c ${ /* } */ 1 } d`;',
+            '// prose after the template',
+        ].join('\n');
+        expect(
+            codeOf(src)
+                .split('\n')
+                .map((l) => l.trimEnd()),
+        ).toEqual([
+            'const m = `a ${ { k: "}" }.k } b ${ f(/[}]/g) } c ${ /* } */ 1 } d`;',
+            '',
+        ]);
+    });
+
+    it('ends an unterminated quoted string at the line break, not at the next quote', () => {
+        // JavaScript forbids a raw newline in a '…' or "…" string, so an
+        // unterminated one is a syntax error rather than a long string. Ending
+        // the span at the break bounds any future desync of this class to one
+        // line — #5545 blanked 6,925 characters of one file because nothing
+        // stopped the runaway.
+        const src = [
+            "const broken = 'oops;",
+            '// prose on the next line',
+            "const after = 'fine';",
+        ].join('\n');
+        const lines = codeOf(src)
+            .split('\n')
+            .map((l) => l.trimEnd());
+        expect(lines[1]).toEqual('');
+        expect(lines[2]).toEqual("const after = 'fine';");
+    });
+
+    it('a template still spans newlines, because it legitimately may', () => {
+        // The control for the case above: the newline bound must apply to
+        // ' and " only. Blanket-applying it would cut every multi-line
+        // template in the repo at its first line.
+        const src = ['const t = `line one', 'line two`;', '// prose after'].join('\n');
+        expect(
+            codeOf(src)
+                .split('\n')
+                .map((l) => l.trimEnd()),
+        ).toEqual(['const t = `line one', 'line two`;', '']);
+    });
+});
+
 describe('source-blocks — codeOf against the positional strip it replaced (#4659)', () => {
     // eslint-disable-next-line local/no-positional-comment-strip -- the strip this table exists to contrast with
     const oldBlock = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '');

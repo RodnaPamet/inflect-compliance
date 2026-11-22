@@ -410,9 +410,9 @@
   "reason": "Upgraded GENERIC->MIXED by the mechanical pass (brand-as-text): areas.tsx:102 text-brand-default. Audited note: Generic visx area-series renderer driven entirely by ChartContext. No domain vocabulary, no UI copy, no storage. The `text-brand-*` defaults are NOT brand-as-text findings: they set `color` so that the SVG `fill`/`stroke` resolve via `currentColor` — a non-text paint, which the rule explicitly permits (see notes)."
  },
  "packages/ui/src/components/ui/charts/bar-field-3d.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "A stub 3D cross-tab chart that is generic in shape (x/z/y data, seriesIndex, ariaLabel, FallbackComponent) but whose head matter and prop JSDoc are written in product and compliance terms. Removable without touching the API."
+  "reason": "A stub 3D cross-tab chart, generic in shape (x/z/y data, seriesIndex, ariaLabel, FallbackComponent). Its head matter and prop JSDoc, once written in product and compliance terms, were made product-neutral for Islestone #7 without touching the API."
  },
  "packages/ui/src/components/ui/charts/bars.tsx": {
   "classification": "MIXED",
@@ -440,19 +440,19 @@
   "reason": "Genuinely generic responsive frame with loading/empty/error branches, and its user-facing copy is correctly routed through next-intl (`useTranslations('common.chart')`). What remains is compliance vocabulary in the JSDoc usage example and the head matter."
  },
  "packages/ui/src/components/ui/charts/chart-gloss.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Pure SVG gradient-def primitives (ChartGloss, ChartSheenSweep) plus two id builders — no runtime coupling at all. The only coupling is the worked example chosen for the id builders' JSDoc."
+  "reason": "Pure SVG gradient-def primitives (ChartGloss, ChartSheenSweep) plus two id builders, with no runtime coupling at all. The id builders' JSDoc example, the one recorded coupling, now uses a neutral chart id (Islestone #7)."
  },
  "packages/ui/src/components/ui/charts/chart-gradient.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Three token-backed SVG gradient defs plus an id builder. Shape is fully generic (series index 1..6, direction, opacity); the coupling is one JSDoc worked example."
+  "reason": "Three token-backed SVG gradient defs plus an id builder. Shape is fully generic (series index 1..6, direction, opacity), and the one JSDoc worked example that carried product wording now uses a neutral chart id (Islestone #7)."
  },
  "packages/ui/src/components/ui/charts/chart-legend.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Generic series-swatch / gradient-strip legend, but it composes its gradient variant's aria-label from hardcoded English rather than next-intl, and names a GRC metric as the JSDoc example for `label`. Both are removable without changing the component's shape."
+  "reason": "Generic series-swatch / gradient-strip legend. Its gradient variant's aria-label goes through next-intl (`scaleAria` / `scaleAriaUnlabelled`), and the JSDoc example for `label` is a neutral metric (Islestone #7), so neither recorded coupling remains."
  },
  "packages/ui/src/components/ui/charts/chart-motion.tsx": {
   "classification": "GENERIC",
@@ -460,9 +460,9 @@
   "reason": "Four motion hooks (hover-pop, gradient flow, entrance spring, sheen sweep) plus a reduced-motion listener. Pure numbers, refs and RAF loops. No copy, no domain vocabulary, no storage, no domain imports."
  },
  "packages/ui/src/components/ui/charts/examples.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Sample data for the generic chart contracts, but the samples are compliance samples — and the file's own head matter asserts the opposite, which makes this the clearest removable case in the slice: swap the literals and the module is fully generic."
+  "reason": "Sample data for the generic chart contracts. The samples were compliance samples while the head matter claimed otherwise; the labels and segment ids are now neutral (Islestone #7), so the head matter is true and the module is fully generic."
  },
  "src/components/ui/charts/funnel-chart.tsx": {
   "classification": "MIXED",
@@ -475,14 +475,14 @@
   "reason": "Generic Gantt renderer (rows with start/end/seriesIndex/dependencies, token-backed chrome, dependency-chain BFS). Two removable couplings: an English aria-label default and a compliance JSDoc example."
  },
  "packages/ui/src/components/ui/charts/index.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "A re-export barrel with no runtime coupling of its own. It no longer names the two COUPLED quantitative-risk widgets, nor ChartFrame and the four charts that wrap it — shedding those is exactly what let it move (#3046). What remains is scale, axis, gradient and motion vocabulary."
+  "reason": "A re-export barrel with no runtime coupling of its own. It names no product widget or domain module: what stays in a host's own chart barrel is described in general terms (Islestone #7). What remains is scale, axis, gradient, motion and interaction vocabulary."
  },
  "packages/ui/src/components/ui/charts/interaction.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Hover/keyboard hooks and two token-backed tooltip surface components; the code is entirely generic (all labels and values are caller-supplied ReactNode, no English literals). Coupling is confined to the head-matter prose."
+  "reason": "Hover/keyboard hooks and two token-backed tooltip surface components. The code is entirely generic (all labels and values are caller-supplied ReactNode, no English literals), and the head matter no longer names the product or its surfaces (Islestone #7)."
  },
  "packages/ui/src/components/ui/charts/layout.ts": {
   "classification": "GENERIC",
@@ -507,7 +507,7 @@
  "packages/ui/src/components/ui/charts/time-series-chart.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "The slice's generic interactive time-series host — context providers, scales, hover capture, tooltip wrapper. One removable coupling: its default empty state hardcodes English rather than taking it from next-intl (the `emptyState` prop lets callers override, which is exactly why this is the default-value case)."
+  "reason": "The slice's generic interactive time-series host: context providers, scales, hover capture, tooltip wrapper. Its default empty state reads its text through next-intl (#5312) and its head matter is product-neutral (Islestone #7). It stays MIXED for the mechanical pass alone: the hover dot's default `text-brand-emphasis` (`fill=\"currentColor\"`) trips brand-as-text, the same non-text fill case as areas.tsx and bars.tsx."
  },
  "packages/ui/src/components/ui/charts/tooltip-sync.tsx": {
   "classification": "GENERIC",
@@ -520,9 +520,9 @@
   "reason": "Type-only module (plus five tiny ChartState constructors) and the single most vendorable contract surface here. It used to claim domain-freedom while its JSDoc carried compliance examples; #3046 removed all three — the brand name at :117, the noun enumeration at :120 (which stated the no-domain rule by listing the very nouns it excludes, the same self-defeating shape `use-local-storage`'s docstring has), and the `\"controls\"` display-unit example at :229. No type or field was ever domain-shaped, so GENERIC."
  },
  "packages/ui/src/components/ui/charts/use-heat-scale.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Pure math hook (clamp, color-mix string builder, step values) with no runtime coupling — the extracted helpers are unit-testable without React. Coupling is confined to the rationale comments naming the consuming domain widget and hue."
+  "reason": "Pure math hook (clamp, color-mix string builder, step values) with no runtime coupling; the extracted helpers are unit-testable without React. The rationale comments no longer name a consuming domain widget or a domain hue (Islestone #7)."
  },
  "packages/ui/src/components/ui/charts/use-tooltip.ts": {
   "classification": "GENERIC",
@@ -1134,11 +1134,6 @@
   "derivation": "audited",
   "reason": "Pure SVG glyph, SVGProps passthrough only."
  },
- "packages/ui/src/components/ui/icons/file-send.tsx": {
-  "classification": "GENERIC",
-  "derivation": "audited",
-  "reason": "Pure SVG glyph, SVGProps passthrough only."
- },
  "packages/ui/src/components/ui/icons/github.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
@@ -1214,1355 +1209,535 @@
   "derivation": "audited",
   "reason": "Pure SVG decorative line grid, SVGProps passthrough only. ('Matrix' here is the geometric pattern, not a risk matrix — no domain prop or text.)"
  },
- "packages/ui/src/components/ui/icons/nucleo/android-logo.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/arrow-left.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/apple-logo.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/arrow-right.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/apple.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/arrow-trend-up.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/arrow-bold-up.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/arrow-up-right.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/arrow-left.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/badge-check.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/arrow-right.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/bolt.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/arrow-trend-up.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/book2.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/arrow-turn-left.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/box-archive.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/arrow-turn-right2.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/bullet-list.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/arrow-up-right.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/calendar-refresh.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/arrows-opposite-direction-x.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/calendar.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/arrows-opposite-direction-y.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/calendar6.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/at-sign.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/chart-activity2.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/badge-check.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/chart-line.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/badge-check2-fill.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/check.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/bell.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/check2.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/blog.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/checkbox-checked-fill.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/bolt-fill.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/checkbox-unchecked.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/bolt.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/chevron-left.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/book-open.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/chevron-right.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/book2-fill.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/chevron-up.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/book2-small.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/circle-check-fill.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/book2.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/circle-check.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/books2.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/circle-dotted.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/box-archive.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/circle-half-dotted-check.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/brackets-curly.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/circle-half-dotted-clock.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/briefcase-fill.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/circle-info.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/brush.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/circle-percentage.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/bullet-list-fill.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/circle-question.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/bullet-list.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/circle-user.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/calculator.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/circle-warning.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/calendar-days.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/cloud-upload.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/calendar-refresh.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/cloud.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/calendar.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/connected-dots4.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/calendar6.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/cube.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/cards.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/currency-dollar.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/caret-up-fill.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/cursor-rays.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/chart-activity2.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/database-key.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/chart-area2.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/desktop.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/chart-line.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/download.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/check.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/eye-slash.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/check2.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/eye.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/checkbox-checked-fill.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/file-content.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/checkbox-unchecked.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/file-zip2.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/chevron-left.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/flask.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/chevron-right.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/folder-bookmark.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/chevron-up.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/folder.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/circle-arrow-right.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/folder5.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/circle-check-fill.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/gauge6.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/circle-check.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/gear.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/circle-dollar-out.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/gear3.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/circle-dollar.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/gift.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/circle-dollar3.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/globe.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/circle-dotted.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/grid.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/circle-half-dotted-check.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/grip-dots-vertical.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/circle-half-dotted-clock.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/hyperlink.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/circle-info.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/index.ts": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "Barrel of the lucide-backed glyph set (#5772): `export *` lines only, no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/circle-percentage.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/invoice-dollar.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/circle-play-fill.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/key.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/circle-play.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/license.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/circle-question.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/life-ring.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/circle-user.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/lock.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/circle-warning.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/magnifier.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/circle-xmark.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/marketing-target.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/circles.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/menu3.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/circles3.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/minus.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/cloud-upload.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/money-bills2.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/cloud.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/msgs.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/code.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/note.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/color-palette2.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/office-building.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/connected-dots-fill.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/paper-plane.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/connected-dots.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/pen-writing.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/connected-dots4.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/pen2.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/connections3.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/percentage-arrow-down.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/credit-card.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/plug2.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/crosshairs3.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/plus.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/crown.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/receipt2.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/cube-settings-fill.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/robot.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/cube-settings.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/shield-alert.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/cube.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/shield-check.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/currency-dollar.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/shield-keyhole.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/cursor-rays.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/shield-slash.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/database-key.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/shop.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/desktop.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/shuffle.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/diamond-turn-right-fill.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/sitemap.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/diamond-turn-right.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/sparkle3.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/directions.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/square-chart.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/discount.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/square-check.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/dots.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/square-layout-grid5.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/download.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/timer2.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/duplicate.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/trash.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/earth-position.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/triangle-warning.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/earth.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/trophy.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/envelope-alert.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/user-arrow-right.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/envelope-arrow-right.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/user-crown.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/envelope-ban.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/user-focus.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/envelope-check.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/user-minus.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/envelope-fill.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/user-plus.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/envelope-open.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/users-settings.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/envelope.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/users.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/eye-slash.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/users2.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/eye.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/users6.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/face-smile.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/versions2.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/feather-fill.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/webhook.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/file-content.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/workflow.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
- "packages/ui/src/components/ui/icons/nucleo/file-zip2.tsx": {
+ "packages/ui/src/components/ui/icons/glyphs/xmark.tsx": {
   "classification": "GENERIC",
   "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/filter-bars.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/filter2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/flag-wavy.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/flag.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/flag2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/flag6.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/flask-small.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/flask.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/folder-bookmark.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/folder-lock.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/folder-plus.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/folder-shield.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/folder.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/folder5.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/gaming-console.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/gauge6.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/gear.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/gear2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/gear3.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/gem.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/gift-fill.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/gift.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/globe-pointer.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/globe-search.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/globe.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/globe2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/greek-temple.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/grid-layout-rows.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/grid-plus.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/grid.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/grip-dots-vertical.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/heading-1.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/heading-2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/headset.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/heart-fill.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/heart.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/hexadecagon-star.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/history.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/hyperlink.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/icosahedron.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/image-icon.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/incognito.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/index.ts": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/infinity-icon.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/input-field.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/input-password-pointer.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/input-password.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/input-search.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/invoice-dollar.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/key.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/layout-sidebar.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/license.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/life-ring-fill.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/life-ring.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/lines-y.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/link-broken.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/link4.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/location-pin.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/lock-fill.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/lock.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/magnifier.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/map-position.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/marketing-target.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/media-pause.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/media-play.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/megaphone.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/menu3.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/message-smile.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/microphone-fill.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/minus.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/mobile-phone.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/money-bill.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/money-bill2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/money-bills2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/msg.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/msgs-dotted.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/msgs-fill.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/msgs.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/note.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/office-building.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/page2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/paintbrush.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/palette-2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/paper-plane.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/pen-writing.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/pen2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/percentage-arrow-down.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/photo.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/plug2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/plus.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/plus2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/post.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/pyramid.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/qrcode.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/receipt2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/referred-via.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/refresh2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/robot.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/satellite-dish.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/scan-text.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/scribble.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/shield-alert.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/shield-check.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/shield-keyhole.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/shield-slash.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/shield-user.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/shop.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/shuffle.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/sitemap.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/sliders.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/sort-alpha-ascending.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/sort-alpha-descending.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/sparkle3.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/square-chart.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/square-check.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/square-layout-grid5.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/square-layout-grid6.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/square-user-sparkle2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/square-xmark.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/stack-y-3.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/star-fill.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/star.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/stars2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/suitcase.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/table-icon.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/table-rows2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/tablet.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/tag.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/tags.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/text-bold.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/text-italic.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/text-strike.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/timer2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/toggle2-fill.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/toggles.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/trash.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/triangle-warning.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/trophy.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/tv.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/ui-card.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/user-arrow-right.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/user-check.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/user-crown.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/user-delete.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/user-focus.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/user-minus.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/user-plus.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/user-search.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/user-xmark.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/user.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/users-fill.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/users-settings.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/users.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/users2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/users6.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/versions2.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/views.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/watch.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/webhook.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/window-search.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/window-settings.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/window.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/workflow.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
- },
- "packages/ui/src/components/ui/icons/nucleo/xmark.tsx": {
-  "classification": "GENERIC",
-  "derivation": "mechanical",
-  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+  "reason": "lucide-react icon under the product's local name (#5772): no copy, no storage key, no brand-as-text, no domain import"
  },
  "packages/ui/src/components/ui/icons/openai.tsx": {
   "classification": "GENERIC",
@@ -2688,11 +1863,6 @@
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Pure SVG brand logo, className-only prop."
- },
- "packages/ui/src/components/ui/icons/user-clock.tsx": {
-  "classification": "GENERIC",
-  "derivation": "audited",
-  "reason": "Pure SVG glyph, SVGProps passthrough only."
  },
  "packages/ui/src/components/ui/icons/veriff.tsx": {
   "classification": "GENERIC",

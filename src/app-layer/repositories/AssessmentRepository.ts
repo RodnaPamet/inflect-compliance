@@ -99,31 +99,3 @@ export class VendorAssessmentRepository {
         });
     }
 }
-
-export class VendorAnswerRepository {
-    static async upsertMany(db: PrismaTx, ctx: RequestContext, assessmentId: string, answers: { questionId: string; answerJson: unknown; computedPoints: number }[]) {
-        const results = [];
-        for (const a of answers) {
-            const result = await db.vendorAssessmentAnswer.upsert({
-                where: { assessmentId_questionId: { assessmentId, questionId: a.questionId } },
-                update: { answerJson: a.answerJson as Prisma.InputJsonValue, computedPoints: a.computedPoints },
-                create: {
-                    tenantId: ctx.tenantId,
-                    assessmentId,
-                    questionId: a.questionId,
-                    answerJson: a.answerJson as Prisma.InputJsonValue,
-                    computedPoints: a.computedPoints,
-                },
-            });
-            results.push(result);
-        }
-        return results;
-    }
-
-    static async listByAssessment(db: PrismaTx, ctx: RequestContext, assessmentId: string) {
-        return db.vendorAssessmentAnswer.findMany({
-            where: { tenantId: ctx.tenantId, assessmentId },
-            include: { question: true },
-        });
-    }
-}

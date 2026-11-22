@@ -45,13 +45,19 @@ to operators via Caddy (see below) — never bind it to `0.0.0.0`.
 ### 1. Find the app's docker network name
 
 This stack attaches to the app compose's pre-existing bridge network so the
-app's `app` container can resolve `otel-collector`. The app compose declares a
-network literally named `internal`; docker prefixes it with the compose
-project name, so the real network is usually `inflect_internal`:
+app's `app` container can resolve `otel-collector`. Which network that is
+depends on which app compose file runs:
+
+- **Production VM** — `deploy/docker-compose.prod.yml` in `/opt/inflect`
+  declares no networks, so every container is on the Compose project's
+  default network, `inflect_default`. That is the default `APP_NETWORK_NAME`.
+- **Local root `docker-compose.prod.yml`** — it declares a network literally
+  named `internal`, which docker prefixes with the compose project name:
+  `<project>_internal`.
 
 ```bash
 docker network ls
-# look for a *_internal bridge, e.g.  inflect_internal
+# production: inflect_default    local root stack: <project>_internal
 ```
 
 ### 2. Configure environment
@@ -167,13 +173,14 @@ Everything. Nothing is configured by hand in the UI:
   provider) loading `grafana/dashboards/*.json`.
 - **Alert delivery** — `grafana/provisioning/alerting/contact-points.yml`
   (one webhook contact point fed by `GRAFANA_ALERT_WEBHOOK` + a notification
-  policy). Alert *rules* themselves live in Prometheus
-  (`prometheus/rules/alerting-rules.yml`).
+  policy) and `grafana/provisioning/alerting/alert-rules.yml` (the alert
+  rules, Grafana-managed).
 
 ## Alerting model
 
-Alert **rules** are Prometheus-native
-(`prometheus/rules/alerting-rules.yml`), in five groups:
+Alert **rules** are Grafana-managed
+(`grafana/provisioning/alerting/alert-rules.yml`, #5238), each a Prometheus
+query Grafana evaluates, in five groups:
 
 - **stack_health** — collector/Prometheus/Tempo/Grafana down, collector
   export failures, data refused by `memory_limiter`, and a `DeadMansSwitch`
@@ -197,10 +204,10 @@ derives those names from `src/` and fails on a rule or panel that selects
 anything the stack does not export. See
 `docs/observability/03-prometheus-grafana.md`.
 
-This stack does **not** ship an Alertmanager. Delivery is via Grafana unified
-alerting's provisioned webhook contact point. If you prefer Prometheus-native
-routing, deploy an Alertmanager and uncomment the `alerting:` block in
-`prometheus/prometheus.yml`.
+This stack does **not** ship an Alertmanager, by owner decision (#5238).
+Grafana evaluates the alert rules and delivers them through its provisioned
+webhook contact point. They used to be Prometheus rules, which reached nothing:
+Grafana routes only the rules it evaluates itself.
 
 > There is no disk alert: one would need `node_exporter` metrics
 > (`node_filesystem_*`), and this stack does not deploy node_exporter. Disk
@@ -253,15 +260,16 @@ infra/observability/
 ├── prometheus/
 │   ├── prometheus.yml                 # scrape config + rule_files
 │   └── rules/
-│       ├── recording-rules.yml        # pre-computed RED / job PromQL
-│       └── alerting-rules.yml         # stack / app / resource alerts
+│       └── recording-rules.yml        # pre-computed RED / job PromQL
 ├── tempo/
 │   └── tempo.yaml                     # trace storage + retention
 └── grafana/
     ├── provisioning/
     │   ├── datasources/datasources.yml
     │   ├── dashboards/dashboards.yml
-    │   └── alerting/contact-points.yml
+    │   └── alerting/
+    │       ├── contact-points.yml     # webhook contact point + policy
+    │       └── alert-rules.yml        # the alert rules (Grafana-managed)
     └── dashboards/
         ├── inflect-api-overview.json
         ├── inflect-jobs-and-queues.json

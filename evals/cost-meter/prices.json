@@ -1,0 +1,18 @@
+{
+    "table": "ci-eval-model-prices",
+    "version": "2026-11-17",
+    "currency": "USD",
+    "basis": "Anthropic list prices per million tokens. claude-haiku-4-5 read 2026-11-12 (the rates .garak/budget.json carried since D-EV-1); claude-sonnet-5-5 added 2026-11-17 at the list price the owner stated that day, for the product's answers in the Ragas nightly. Prompt caching and batch discounts are not modelled: a cheaper call is never charged below list here, so the meter can only over-count. A price change is a new version of this file, and every record names the table it was priced under by hash.",
+    "models": {
+        "claude-haiku-4-5": {
+            "provider": "anthropic",
+            "usdPerMillionInputTokens": 1,
+            "usdPerMillionOutputTokens": 5
+        },
+        "claude-sonnet-5-5": {
+            "provider": "anthropic",
+            "usdPerMillionInputTokens": 2,
+            "usdPerMillionOutputTokens": 10
+        }
+    }
+}

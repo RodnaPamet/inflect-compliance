@@ -4,15 +4,16 @@ import { VerifyMfaInput } from '@/app-layer/schemas/mfa.schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { checkRateLimit, resetRateLimit, MFA_VERIFY_LIMIT } from '@/lib/security/rate-limit';
 import { verifyMfaChallenge } from '@/app-layer/usecases/mfa-challenge';
-import { env } from '@/env';
 import { jsonResponse } from '@/lib/api-response';
 import { activeMemberWorkspaceId } from '@/lib/auth/workspace-mfa';
+import { currentSessionIdOf } from '@/lib/security/session-tracker';
 
 /**
  * POST /api/t/[tenantSlug]/security/mfa/challenge/verify
  *
  * Verifies a TOTP code during the MFA challenge (login flow).
- * On success, clears the mfaPending flag by updating lastChallengeAt.
+ * On success, records the pass on THIS session's UserSession row, which the
+ * jwt callback reads to clear the workspace's pending challenge.
  *
  * Rate limited: 5 attempts per 15 min, 5 min lockout.
  *
@@ -74,7 +75,13 @@ export const POST = withApiErrorHandling(async (
     }
 
     // Delegate to usecase
-    const result = await verifyMfaChallenge(userId, tenantId, parsed.data.code, rateCheck.remaining);
+    const result = await verifyMfaChallenge(
+        userId,
+        tenantId,
+        parsed.data.code,
+        rateCheck.remaining,
+        await currentSessionIdOf(req),
+    );
 
     if (!result.success) {
         return jsonResponse({
@@ -87,19 +94,8 @@ export const POST = withApiErrorHandling(async (
     // Reset rate limit on success
     resetRateLimit(rateLimitKey);
 
-    const response = jsonResponse({
+    return jsonResponse({
         success: true,
         message: result.message,
     });
-
-    // Set mfa-cleared cookie for JWT callback to detect
-    response.cookies.set('mfa-cleared', userId, {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 300,
-        secure: env.NODE_ENV === 'production',
-    });
-
-    return response;
 });

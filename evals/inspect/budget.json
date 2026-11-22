@@ -1,0 +1,16 @@
+{
+    "decision": "D-EV-6 (owner, 2026-11-11): the Inspect nightly is capped at USD 10 per night for BOTH engines together, non-blocking at first. Inspect runs each engine's own model, because a record about a different model evidences a different system.",
+    "nightlyCapUsd": 10,
+    "engines": ["flue", "tool-runner"],
+    "perEngineCapUsd": 5,
+    "perEngineBasis": "The night's cap split evenly; the measured spend is read before each engine starts, and an engine does not start when what is left cannot hold one planned engine pass.",
+    "model": "claude-haiku-4-5",
+    "usdPerMillionInputTokens": 1,
+    "usdPerMillionOutputTokens": 5,
+    "epochs": 1,
+    "plannedEnginePass": {
+        "inputTokens": 900000,
+        "outputTokens": 60000,
+        "basis": "Task 7 alone drives one engine TOKENS cap (200000) per epoch, and the other nine tasks are short runs of a few model calls each. An ESTIMATE until the first keyed nights measure it from the decision log."
+    }
+}

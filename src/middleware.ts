@@ -658,7 +658,7 @@ export default async function middleware(
         passedThrough: isPassThrough,
     });
     if (documentRoute !== null) {
-        edgeLogger.info(DOCUMENT_LOAD_MSG, { route: documentRoute });
+        edgeLogger.info(DOCUMENT_LOAD_MSG, { route: documentRoute, requestId });
     }
 
     // AND ONE PER CLIENT-SIDE NAVIGATION (#4195), which is what four of the
@@ -674,7 +674,7 @@ export default async function middleware(
         passedThrough: isPassThrough,
     });
     if (softNavRoute !== null) {
-        edgeLogger.info(SOFT_NAVIGATION_MSG, { route: softNavRoute });
+        edgeLogger.info(SOFT_NAVIGATION_MSG, { route: softNavRoute, requestId });
     }
 
     return res;

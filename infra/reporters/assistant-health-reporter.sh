@@ -47,10 +47,11 @@
 # ── WHAT IS AND IS NOT COUNTED AS A REFUSAL ────────────────────────────────
 #
 # COUNTED: `AuditLog` rows with `entity='AiGuard'` whose `entityId` (the guard
-# `source`) starts with `assistant`. That covers all three of the assistant's
-# guard sources — `assistant`, `assistant:page-context` and
-# `assistant:outbound` — and will cover a fourth automatically, which is why
-# the match is a prefix rather than a list.
+# `source`) starts with `assistant`. That covers all four of the assistant's
+# guard sources — `assistant`, `assistant:page-context`, `assistant:history`
+# (the earlier turns a request carries, #5054) and `assistant:outbound` — and
+# will cover a fifth automatically, which is why the match is a prefix rather
+# than a list.
 #
 # NOT COUNTED, stated so the coverage claim is honest:
 #
@@ -122,10 +123,22 @@ SELECT count(*) FROM \"AiDecisionLog\"
    AND \"createdAt\" > now() - interval '1 hour';
 ") || eval "$BAIL"
 
+# A REFUSAL, not a guard row (#5236). The guard writes a row for every
+# non-clean scan, including the ones it let through: AUDIT mode records and
+# never enforces, and a flagged egress is allowed. The assistant refuses an
+# input whose enforcement is `flag` or `block` (assertNoReviewRequired) and an
+# egress only when it is blocked (assertGuardAllowed), so that is what counts.
+REFUSED_GUARD_ROW="entity = 'AiGuard'
+   AND \"entityId\" LIKE 'assistant%'
+   AND (
+        action = 'AI_GUARD_EGRESS_BLOCKED'
+     OR (action IN ('AI_GUARD_INPUT_FLAGGED', 'AI_GUARD_INPUT_BLOCKED')
+         AND \"detailsJson\"->>'enforcement' IN ('flag', 'block'))
+   )"
+
 REFUSALS=$(check assistant_refusals "
 SELECT count(*) FROM \"AuditLog\"
- WHERE entity = 'AiGuard'
-   AND \"entityId\" LIKE 'assistant%'
+ WHERE $REFUSED_GUARD_ROW
    AND \"createdAt\" > now() - interval '1 hour';
 ") || eval "$BAIL"
 
@@ -148,13 +161,17 @@ fi
 # the WHICH as well as the HOW MANY.
 if [ "$REFUSAL_PCT" -ge "$REFUSAL_PCT_ALARM" ]; then
     echo "assistant refusal rate ${REFUSAL_PCT}% (refusals=$REFUSALS attempts=$ATTEMPTS) over the last hour" >&2
+    # Grouped in a subquery (#5235): the one output column is a concatenation,
+    # so `GROUP BY 1, 2` named a column that does not exist and the triage
+    # detail never printed.
     read_count "
-SELECT \"entityId\" || ' ' || action || ' n=' || count(*)
-  FROM \"AuditLog\"
- WHERE entity = 'AiGuard'
-   AND \"entityId\" LIKE 'assistant%'
-   AND \"createdAt\" > now() - interval '1 hour'
- GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 20;
+SELECT \"entityId\" || ' ' || action || ' n=' || n
+  FROM (SELECT \"entityId\", action, count(*) AS n
+          FROM \"AuditLog\"
+         WHERE $REFUSED_GUARD_ROW
+           AND \"createdAt\" > now() - interval '1 hour'
+         GROUP BY 1, 2) refusals
+ ORDER BY n DESC LIMIT 20;
 " >&2
 fi
 

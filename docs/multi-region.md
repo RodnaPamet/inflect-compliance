@@ -14,8 +14,8 @@ snapshot, described in [`docs/disaster-recovery.md`](disaster-recovery.md).
 
 | Layer | Today |
 |-------|-------|
-| **Region** | One VM in one zone of one EU region (`docs/sub-processors.md` names it). There is no standby in another zone or region. |
-| **Database** | The `postgres` service (`postgres:16-alpine`) on the VM, behind PgBouncer. Its data is a Docker volume on the VM's one disk. No replica, no WAL archive (`archive_mode=off`), no point-in-time recovery. |
+| **Region** | One VM in one zone of `europe-west1` (Belgium). Every tenant's declared region, `Tenant.region`, is `EUROPE_WEST1`, the column and creation default and the only provisioned region (#5288; [data residency](./data-residency.md)). There is no standby in another zone or region. |
+| **Database** | The `postgres` service (`ghcr.io/rodnapamet/postgres-pgvector:16-alpine`, `postgres:16-alpine` plus pgvector) on the VM, behind PgBouncer. Its data is a Docker volume on the VM's one disk. No replica, no WAL archive (`archive_mode=off`), no point-in-time recovery. |
 | **Cache and queue** | The `redis` service (`redis:7-alpine`): BullMQ jobs, rate-limit counters and the cache. AOF persistence, on a Docker volume on the same disk. |
 | **Evidence files** | `STORAGE_PROVIDER=local`: a Docker volume on the same disk. There is no object store. |
 | **Secrets and keys** | Host env files on the same disk, including the master KEK (`DATA_ENCRYPTION_KEY`). There is no managed secret store and no cloud KMS key. |

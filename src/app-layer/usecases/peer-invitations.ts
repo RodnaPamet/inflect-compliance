@@ -74,7 +74,9 @@ import { issuePeerInboundCredential, revokePeerInboundCredential } from './a2a-p
 import { ownA2aIdentity } from './a2a-agent-card';
 import { resolveTenantA2aSigningKey } from './a2a-signing-key';
 import { upsertIntegrationConnection } from './integrations';
+import { savableConnectionName } from '@/lib/text/connection-name';
 import { A2A_PEER_PROVIDER_ID } from '@/app-layer/integrations/providers/a2a-peer-provider';
+import { peerInvitationRefusal } from '@/lib/agentic/peer-invitation-rules';
 
 const RISK_TIERS = ['LOW', 'MODERATE', 'HIGH', 'CRITICAL'] as const;
 
@@ -132,16 +134,23 @@ function refuse(message: string, reason: PeerInvitationRefusal): never {
 
 /** A person holding the register key: an invitation is never issued or accepted by a credential. */
 function assertMayInvite(ctx: RequestContext): void {
-    if (!ctx.appPermissions.admin.agent_registry) {
+    // The register key is checked here as well as in the rule, so this stays a
+    // gate in its own right: a view-only principal is refused before anything
+    // else is read (agent-registry-view-key.test.ts walks every caller of it).
+    if (!ctx.appPermissions?.admin?.agent_registry) {
         throw forbidden('Inviting or accepting an A2A peer requires admin.agent_registry');
     }
-    if (ctx.apiKeyId) throw forbidden('An A2A peer invitation is created and accepted by a person, not by an API key');
-    // The flow also stores an outbound connection, which `upsertIntegrationConnection`
-    // gates on the coarse admin tier. Asked first, so nothing is half-written.
-    if (!ctx.permissions?.canAdmin) {
-        throw forbidden('Connecting a peer also creates its outbound connection, which needs an owner or admin', {
-            reason: 'NEEDS_ADMIN' satisfies PeerInvitationRefusal,
-        });
+    switch (peerInvitationRefusal(ctx)) {
+        case null:
+            return;
+        case 'NO_REGISTER_KEY':
+            throw forbidden('Inviting or accepting an A2A peer requires admin.agent_registry');
+        case 'NOT_A_PERSON':
+            throw forbidden('An A2A peer invitation is created and accepted by a person, not by an API key');
+        case 'NEEDS_ADMIN':
+            throw forbidden('Connecting a peer also creates its outbound connection, which needs an owner or admin', {
+                reason: 'NEEDS_ADMIN' satisfies PeerInvitationRefusal,
+            });
     }
 }
 
@@ -379,7 +388,14 @@ async function storeOutboundConnection(ctx: RequestContext, peerId: string, peer
         provider: A2A_PEER_PROVIDER_ID,
         // Connection names are unique per provider in a tenant; the card's
         // address makes this one unique, because one peer is registered per card.
-        name: `A2A → ${peerName} (${peerCardLabel(cardUrl)})`.slice(0, 200),
+        //
+        // Made savable, not refused (#5317): the name carries another
+        // organisation's card text, and on the accepting side this runs AFTER
+        // the acceptance was sent, so a refusal here would leave the peer
+        // connected with no outbound route. `savableConnectionName` drops what
+        // the save refuses and cuts without splitting a surrogate pair, which a
+        // plain `.slice(0, 200)` could.
+        name: savableConnectionName(`A2A → ${peerName} (${peerCardLabel(cardUrl)})`, 200),
         configJson: { peerId },
         secrets: { authorization: `Bearer ${token}` },
     });

@@ -63,6 +63,8 @@
  * the sake of saving a round trip that takes milliseconds.
  */
 import { safeFetch } from '@/app-layer/automation/webhook-safety';
+import { keyedChangeDigest } from '@/lib/security/encryption';
+import { canonicalJson } from '@/lib/canonical-json';
 
 /** Microsoft's token endpoint host. Fixed — only the tenant segment varies. */
 const LOGIN_HOST = 'https://login.microsoftonline.com';
@@ -376,14 +378,54 @@ export function resolveMcpCredentials(
 }
 
 /**
- * In-process cache of minted tokens, keyed by connection.
+ * In-process cache of minted tokens, keyed by connection AND by the identity
+ * the token was minted for.
  *
  * Deliberately NOT a database column. A cached access token is a live
  * credential; keeping it in memory means it dies with the process and never
  * appears in a backup, a replica or a dump. The cost is one token mint per
  * process per hour, which is nothing.
+ *
+ * The key is the connection id plus a keyed digest of the credential AND the
+ * destination (#5252). It was the connection id alone, and nothing invalidates
+ * an entry, so a token minted from the real credential stayed live for up to
+ * an hour after that credential was replaced, rotated or revoked — and was
+ * sent to whatever `url` the connection then carried. Rotating a compromised
+ * secret did not take effect, which is the half of this that bites an honest
+ * administrator during an incident.
  */
 const cache = new Map<string, { accessToken: string; expiresAt: number }>();
+
+/**
+ * The cache key: this connection, this credential, this destination.
+ *
+ * Every credential field goes in by SPREAD rather than by name, so a field
+ * added to `McpCredentials` later is covered without anybody remembering to
+ * add it here — the failure of a by-name list is silent and returns a token
+ * minted under different terms. The audience is in the key because a token
+ * minted for one destination must never be replayed to another.
+ *
+ * The digest is keyed (HMAC under the master key, domain-separated), so the
+ * key cannot be walked back to the client secret it covers.
+ */
+function tokenCacheKey(connectionId: string, creds: McpCredentials, audienceUrl: string): string {
+    const identity = canonicalJson({ creds: { ...creds }, audience: audienceUrl });
+    return `${connectionId}\u0000${keyedChangeDigest('mcp-token-cache', identity)}`;
+}
+
+/**
+ * Drop expired entries, on a caller's turn.
+ *
+ * Keying on the credential means one connection can hold several entries over
+ * its life — each rotation strands the previous one — where before it held
+ * exactly one. No module-scope timer (#4613): a never-cleared `setInterval`
+ * holds its whole test file's module graph alive for the rest of the shard.
+ */
+function sweepExpired(now: number): void {
+    for (const [k, v] of cache) {
+        if (v.expiresAt <= now) cache.delete(k);
+    }
+}
 
 /** Test seam — the cache is process-global and would otherwise leak between tests. */
 export function _resetTokenCache(): void {
@@ -401,15 +443,23 @@ export function _resetTokenCache(): void {
 export async function authorizationForConnection(
     connectionId: string,
     creds: McpCredentials,
+    audienceUrl: string,
     onRotated?: (refreshToken: string) => Promise<void>,
 ): Promise<string> {
-    const hit = cache.get(connectionId);
-    if (hit && hit.expiresAt - RENEW_MARGIN_MS > Date.now()) {
+    // `audienceUrl` is REQUIRED and has no default: a caller that forgot it
+    // would otherwise share one cache entry across destinations, which is the
+    // defect this parameter exists to close, and a default would make that
+    // omission compile.
+    const now = Date.now();
+    sweepExpired(now);
+    const key = tokenCacheKey(connectionId, creds, audienceUrl);
+    const hit = cache.get(key);
+    if (hit && hit.expiresAt - RENEW_MARGIN_MS > now) {
         return `Bearer ${hit.accessToken}`;
     }
 
     const minted = await mintToken(creds);
-    cache.set(connectionId, { accessToken: minted.accessToken, expiresAt: minted.expiresAt });
+    cache.set(key, { accessToken: minted.accessToken, expiresAt: minted.expiresAt });
 
     if (minted.rotatedRefreshToken && onRotated) {
         await onRotated(minted.rotatedRefreshToken);
@@ -456,7 +506,11 @@ export async function authorizationFor(
     // `resolveMcpCredentials` for what the two copies cost.
     const credentials = resolveMcpCredentials(config, secrets);
     if (credentials) {
-        return authorizationForConnection(connectionId, credentials, onRotated);
+        // The destination is read from the same config the credential came
+        // from, so the cached token is bound to the host this call will send
+        // it to.
+        const audience = typeof config.url === 'string' ? config.url.trim() : '';
+        return authorizationForConnection(connectionId, credentials, audience, onRotated);
     }
 
     const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');

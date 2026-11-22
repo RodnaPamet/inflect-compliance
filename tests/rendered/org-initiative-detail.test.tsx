@@ -98,6 +98,28 @@ it('shows linked work by name and workspace, opens it, and says when an item is 
     expect(screen.getByTestId('initiative-owner')).toHaveTextContent('Olivia Owner');
 });
 
+it('shows work linked since the page loaded once the refresh brings it, without a reload (#5271)', () => {
+    const first = { id: 'l-1', entityType: 'CONTROL', entityId: 'c-1', linkedTenantId: 't-eu', workspaceName: 'Acme EU', name: 'C-1 · MFA for admins', href: '/t/acme-eu/controls/c-1' };
+    const added = { id: 'l-2', entityType: 'CONTROL', entityId: 'c-2', linkedTenantId: 't-eu', workspaceName: 'Acme EU', name: 'C-2 · Phishing training', href: '/t/acme-eu/controls/c-2' };
+    const view = renderPage([first]);
+    expect(within(screen.getByTestId('initiative-links-table')).queryByText('C-2 · Phishing training')).toBeNull();
+
+    // What `router.refresh()` does: the server component re-renders and hands
+    // the client the new list.
+    view.rerender(
+        <InitiativeDetailClient
+            orgSlug="acme"
+            canManage
+            members={members}
+            workspaces={workspaces}
+            initiative={initiative([first, added])}
+            progress={progress}
+        />,
+    );
+
+    expect(within(screen.getByTestId('initiative-links-table')).getByText('C-2 · Phishing training')).toBeInTheDocument();
+});
+
 it('an initiative with no linked work says so, and how to add some', () => {
     renderPage();
     expect(screen.getByText(EN.emptyLinksTitle)).toBeInTheDocument();

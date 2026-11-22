@@ -40,7 +40,7 @@ import {
     bandRangeLabel,
 } from '@/lib/risk-matrix/scoring';
 import { formatCompactCurrency } from '@/lib/risk-coherence';
-import { pluralize } from '@/lib/pluralize';
+import { useTranslations } from 'next-intl';
 import type { RiskMatrixConfigShape } from '@/lib/risk-matrix/types';
 
 // ─── Props ──────────────────────────────────────────────────────────
@@ -93,6 +93,12 @@ export interface RiskMatrixCellProps {
      * compact € line under the count and joins the tooltip.
      */
     aleOverlay?: boolean;
+    /**
+     * Formats a money amount in the tenant's currency (#5281). The matrix
+     * page passes `useMoneyFormatter()`; without it the cell fell back to the
+     * '€' default, so a '$' tenant saw its heatmap in euros.
+     */
+    formatMoney?: (v: number) => string;
     /** Summed ALE of this cell's risks (currency). */
     totalAle?: number;
     /** This cell's ALE ÷ the max cell ALE (0..1). */
@@ -157,8 +163,6 @@ function readableTextOnHex(hex: string): string {
     return lum > 0.55 ? 'rgb(15, 23, 42)' : 'rgb(255, 255, 255)';
 }
 
-// RQ3-OB-A — pluralization moved to the shared helper.
-
 // ─── Component ──────────────────────────────────────────────────────
 
 export function RiskMatrixCell({
@@ -173,6 +177,7 @@ export function RiskMatrixCell({
     onClick,
     selected = false,
     aleOverlay = false,
+    formatMoney,
     totalAle,
     aleShare,
     collisionRatio,
@@ -187,19 +192,24 @@ export function RiskMatrixCell({
         [likelihood, impact, config],
     );
     const { score, band, likelihoodLabel, impactLabel } = resolved;
+    // Every word in the cell's label, tooltip and summary is the reader's
+    // language (#5309); the axis titles beside it already were.
+    const t = useTranslations('common.chart');
+    const riskNoun = (n: number) => (n === 1 ? t('riskOne') : t('riskOther'));
     const isEmpty = count <= 0;
+    const money = formatMoney ?? ((v: number) => formatCompactCurrency(v));
 
     const hasAle = typeof totalAle === 'number' && totalAle > 0;
     const hasCollision = typeof collisionRatio === 'number' && collisionRatio > 1;
     const ariaLabel =
         `${config.axisLikelihoodLabel} ${likelihoodLabel} × ` +
         `${config.axisImpactLabel} ${impactLabel} = ${score} (${band.name})` +
-        ` — ${count} ${pluralize(count, 'risk')}` +
+        ` — ${count} ${riskNoun(count)}` +
         (aleOverlay && hasAle
-            ? ` — annualised loss expectancy ${formatCompactCurrency(totalAle)}`
+            ? ` — ${t('cellAleAria', { amount: money(totalAle) })}`
             : '') +
         (hasCollision
-            ? ` — warning: same-cell loss estimates differ ~${Math.round(collisionRatio)}×`
+            ? ` — ${t('cellCollisionAria', { ratio: Math.round(collisionRatio) })}`
             : '');
 
     const tooltipContent = (
@@ -211,17 +221,16 @@ export function RiskMatrixCell({
                 {band.name} ({bandRangeLabel(band)})
             </p>
             <p className="text-content-default">
-                {count} {pluralize(count, 'risk')}
+                {count} {riskNoun(count)}
             </p>
             {hasAle && (
                 <p className="text-content-default">
-                    ALE {formatCompactCurrency(totalAle)}
+                    {t('cellAle', { amount: money(totalAle) })}
                 </p>
             )}
             {hasCollision && (
                 <p className="text-content-warning">
-                    ALEs in this cell differ ~{Math.round(collisionRatio)}× — the
-                    matrix compresses them into one box; check the histogram view.
+                    {t('cellCollision', { ratio: Math.round(collisionRatio) })}
                 </p>
             )}
             {description && (
@@ -236,7 +245,7 @@ export function RiskMatrixCell({
                     ))}
                     {risks.length > 8 && (
                         <li className="text-content-subtle">
-                            … + {risks.length - 8} more
+                            {t('cellMore', { count: risks.length - 8 })}
                         </li>
                     )}
                 </ul>
@@ -244,7 +253,13 @@ export function RiskMatrixCell({
         </div>
     );
 
+    // `interactive`: clicking / Enter opens the cell — only when it has risks.
+    // `navigable`: the cell belongs to an interactive grid, so it takes the
+    // roving tab stop and arrow keys whether or not it is empty (#5280). An
+    // empty cell used to be neither, so an empty default cell left the grid
+    // with no tab stop at all, and arrowing onto an empty cell stranded focus.
     const interactive = Boolean(onClick) && !isEmpty;
+    const navigable = Boolean(onClick);
     const fg = readableTextOnHex(band.color);
 
     const cell = (
@@ -256,7 +271,7 @@ export function RiskMatrixCell({
             // others stay at `-1` until they become the active cell.
             // Non-interactive cells stay at `-1` regardless (a focused
             // empty cell with no callbacks would be a dead-end stop).
-            tabIndex={interactive ? (tabbable ? 0 : -1) : -1}
+            tabIndex={navigable ? (tabbable ? 0 : -1) : -1}
             aria-label={ariaLabel}
             data-testid={dataTestId ?? `risk-matrix-cell-${likelihood}-${impact}`}
             data-empty={isEmpty ? 'true' : 'false'}
@@ -268,11 +283,11 @@ export function RiskMatrixCell({
             data-collision-ratio={hasCollision ? Math.round(collisionRatio) : undefined}
             onClick={interactive ? onClick : undefined}
             onKeyDown={
-                interactive
+                navigable
                     ? (e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                               e.preventDefault();
-                              onClick?.();
+                              if (interactive) onClick?.();
                               return;
                           }
                           // RQ3-OB-E — arrow / Home / End route to the
@@ -363,7 +378,7 @@ export function RiskMatrixCell({
                             className="text-[9px] font-medium"
                             data-testid="risk-matrix-cell-ale"
                         >
-                            {formatCompactCurrency(totalAle)}
+                            {money(totalAle)}
                         </span>
                     )}
                 </span>
@@ -413,6 +428,7 @@ function BubbleOverlay({
     limit: number;
     fg: string;
 }) {
+    const t = useTranslations('common.chart');
     // `count` is authoritative; `risks.length` guards the (pathological)
     // case where the two disagree so we never cram a multi-risk cell.
     const total = Math.max(count, risks.length);
@@ -424,7 +440,7 @@ function BubbleOverlay({
                 style={{ color: fg }}
                 data-testid="risk-matrix-cell-count-summary"
             >
-                {total} {pluralize(total, 'Risk')} identified
+                {t('cellRisksIdentified', { count: total })}
             </span>
         );
     }

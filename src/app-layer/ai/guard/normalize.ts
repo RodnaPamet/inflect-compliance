@@ -195,10 +195,20 @@ export function normalizeForScan(input: string): string {
     // anchored rule more likely to fire. The opposite default would be the
     // dangerous one.
     out = decodeJsonEscapes(out);
-    // (2)/(3) decode BEFORE stripping so an encoded blob's plaintext is added.
+    // (1)/(4) FOLD AND STRIP BEFORE DECODING (#5305).
+    //
+    // The decoders used to run first, against the raw text, so a blob split by
+    // a zero-width character (`aWdub3Jl\u200BIGFsbCBwcmV2aW91cyBpbnN0cnVjdGlvbnM=`)
+    // or spelt in full-width letters never matched the base64 alphabet and was
+    // never decoded — while the model, which does not see invisible characters,
+    // reads it whole. Folding first gives the decoders the contiguous blob the
+    // model reads. All three passes are idempotent, so they run again below
+    // over the decoded plaintext the decoders append.
+    out = stripInvisible(foldHomoglyphs(out.normalize('NFKC')));
+    // (2)/(3) decode, APPENDING an encoded blob's plaintext.
     out = decodeBase64Blobs(out);
     out = decodeHexBlobs(out);
-    // (1) unicode NFKC + homoglyph fold.
+    // (1) unicode NFKC + homoglyph fold, now over the appended plaintext too.
     out = out.normalize('NFKC');
     out = foldHomoglyphs(out);
     // (4) zero-width / bidi strip.

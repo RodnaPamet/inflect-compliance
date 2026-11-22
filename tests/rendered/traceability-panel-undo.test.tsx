@@ -116,7 +116,8 @@ function mountPanel() {
                     apiBase="/api/t/acme/"
                     entityType="control"
                     entityId="ctrl-1"
-                    canWrite
+                    canLinkControlRisk
+                    canLinkAsset
                     tenantHref={(p) => p}
                     tenantSlug="acme"
                 />

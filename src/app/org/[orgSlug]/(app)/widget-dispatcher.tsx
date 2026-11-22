@@ -86,6 +86,12 @@ export interface PortfolioData {
     initiatives: InitiativeWidgetData;
     /** Whether the viewer may manage initiatives (ORG_ADMIN). */
     canManageInitiatives: boolean;
+    /**
+     * Whether the viewer may open per-workspace detail (`canDrillDown`;
+     * not ORG_READER). Without it the tenant rows and the drill-down cards
+     * are shown as text, not links to a page that refuses them (#5313).
+     */
+    canDrillDown: boolean;
 }
 
 interface DispatcherProps {
@@ -364,6 +370,50 @@ function widgetDomId(widget: OrgDashboardWidgetDto): string | undefined {
     return undefined;
 }
 
+/**
+ * A widget that owns its own surface (KPI, threat level, maturity,
+ * initiatives) and so renders without `DashboardWidget`'s header — but still
+ * carries the edit-mode actions and the resize handle (#5270). These four
+ * returned a bare `<div>` and dropped `actionsSlot`, so in edit mode they
+ * were the only widgets with no way to edit or delete them.
+ */
+function BareWidget({
+    id,
+    widgetId,
+    actionsSlot,
+    children,
+}: {
+    id: string | undefined;
+    widgetId: string;
+    actionsSlot?: React.ReactNode;
+    children: React.ReactNode;
+}) {
+    return (
+        <div id={id} data-widget-id={widgetId} className="relative h-full">
+            {children}
+            {actionsSlot ? (
+                <>
+                    <div
+                        data-widget-actions
+                        className="absolute right-2 top-2 z-10 flex items-center gap-1"
+                    >
+                        {actionsSlot}
+                    </div>
+                    <span
+                        data-widget-resize-handle
+                        aria-hidden="true"
+                        className="react-resizable-handle pointer-events-auto absolute bottom-1 right-1 size-4 cursor-se-resize text-content-subtle/60 hover:text-content-muted"
+                    >
+                        <svg viewBox="0 0 16 16" fill="currentColor" className="size-full">
+                            <path d="M14 2v12H2v-2h10V2h2zM10 6v6H4v-2h4V6h2z" />
+                        </svg>
+                    </span>
+                </>
+            ) : null}
+        </div>
+    );
+}
+
 export function DispatchedWidget({
     widget,
     data,
@@ -386,9 +436,9 @@ export function DispatchedWidget({
             // so the legacy `#org-stat-*` E2E selectors keep resolving.
             const props = resolveKpiContent(t, widget, data);
             return (
-                <div id={domId} className="h-full">
+                <BareWidget id={domId} widgetId={widget.id} actionsSlot={actionsSlot}>
                     <ChartRenderer {...props} />
-                </div>
+                </BareWidget>
             );
         }
         case 'ORG_THREAT_LEVEL': {
@@ -396,21 +446,21 @@ export function DispatchedWidget({
             // so render bare like KPI rather than inside a DashboardWidget.
             const cfg = widget.config as { showHistory?: boolean };
             return (
-                <div id={domId} className="h-full">
+                <BareWidget id={domId} widgetId={widget.id} actionsSlot={actionsSlot}>
                     <OrgThreatLevelWidget
                         data={data.threatLevel}
                         canSet={data.canSetThreatLevel}
                         showHistory={Boolean(cfg.showHistory)}
                         orgSlug={data.orgSlug}
                     />
-                </div>
+                </BareWidget>
             );
         }
         case 'ORG_MATURITY': {
             // Self-assessed maturity — radar + overall KPI; owns its surface.
             const cfg = widget.config as { view?: 'radar' | 'trend'; showCoverageHint?: boolean };
             return (
-                <div id={domId} className="h-full">
+                <BareWidget id={domId} widgetId={widget.id} actionsSlot={actionsSlot}>
                     <OrgMaturityWidget
                         data={data.maturity}
                         canSet={data.canSetMaturity}
@@ -418,15 +468,15 @@ export function DispatchedWidget({
                         showCoverageHint={Boolean(cfg.showCoverageHint)}
                         orgSlug={data.orgSlug}
                     />
-                </div>
+                </BareWidget>
             );
         }
         case 'ORG_INITIATIVES': {
             // Portfolio programme tracker — top-N in-flight initiatives.
             return (
-                <div id={domId} className="h-full">
+                <BareWidget id={domId} widgetId={widget.id} actionsSlot={actionsSlot}>
                     <OrgInitiativesWidget data={data.initiatives} orgSlug={data.orgSlug} />
-                </div>
+                </BareWidget>
             );
         }
         case 'DONUT': {
@@ -449,6 +499,7 @@ export function DispatchedWidget({
                         rows={data.tenantHealth}
                         sortBy={cfg.sortBy}
                         limit={cfg.limit}
+                        canDrillDown={data.canDrillDown}
                     />
                 </div>
             );
@@ -464,6 +515,7 @@ export function DispatchedWidget({
                     summary={data.summary}
                     orgSlug={data.orgSlug}
                     entries={cfg.entries}
+                    canDrillDown={data.canDrillDown}
                 />
             );
             break;

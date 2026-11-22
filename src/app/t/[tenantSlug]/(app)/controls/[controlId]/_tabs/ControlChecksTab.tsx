@@ -19,6 +19,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { cardVariants } from '@/components/ui/card';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
@@ -84,7 +85,7 @@ export function ControlChecksTab({ controlId }: { controlId: string }) {
                 : s,
         [t],
     );
-    const { data, isLoading } = useTenantSWR<{ executions: ExecutionRow[] }>(
+    const { data, isLoading, error, mutate } = useTenantSWR<{ executions: ExecutionRow[] }>(
         CACHE_KEYS.controls.executions(controlId),
     );
     const rows = data?.executions ?? [];
@@ -137,6 +138,25 @@ export function ControlChecksTab({ controlId }: { controlId: string }) {
             ]),
         [t, humanizeStatus],
     );
+
+    // A failed read is not an empty history: "no automated checks" would
+    // tell a reader the control has never been checked (#5313).
+    if (error && !data) {
+        return (
+            <div id="checks-load-error">
+                <InlineNotice variant="error">
+                    {t('checksTab.loadError')}{' '}
+                    <button
+                        type="button"
+                        className="underline hover:no-underline"
+                        onClick={() => void mutate()}
+                    >
+                        {t('checksTab.retry')}
+                    </button>
+                </InlineNotice>
+            </div>
+        );
+    }
 
     if (!isLoading && rows.length === 0) {
         return (

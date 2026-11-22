@@ -677,7 +677,8 @@ describe('an image push is gated by a scan that ran before it', () => {
         // renamed step, new push mechanism — shows up here as a shrinking
         // list rather than as a silently-green ordering check below.
         expect(sites.map((s) => `${s.workflow}:${s.jobId}`).sort()).toEqual([
-            // ONE SITE, and it was two until 2026-10-14.
+            // ONE SITE, and it was two until 2026-10-14 and again from
+            // 2026-10-20 to 2026-11-15.
             // `laya-image.yml:build-scan-push` — Step 6d's model-server publish,
             // which pushed by digest with the same blocking Trivy gate — was
             // deleted when the owner retired the Laya estate.
@@ -691,10 +692,17 @@ describe('an image push is gated by a scan that ran before it', () => {
             // site stopped being recognised", which is why the deletion is
             // written down.
             'ghcr-publish.yml:build-push',
-            // TWO again from 2026-10-20: the harness scanner's image, published
-            // by dispatch only and pinned by digest, so Inflect's own estate can
-            // run it on the production VM (owner decision on #3659).
-            'scanner-image.yml:build-scan-push',
+            // `scanner-image.yml:build-scan-push`, the harness scanner's
+            // dispatch-only publish (2026-10-20 to 2026-11-15), was deleted with
+            // the in-repo scanner: the VM runs scanent's own image (scanent #26).
+            // TWO again from 2026-11-15: tei-embed's patched TEI image, published
+            // by dispatch and weekly, pinned by digest in the canonical Compose
+            // file (owner decision, option B on #5687).
+            'tei-embed-image.yml:build-scan-push',
+            // THREE from 2026-11-15: the postgres-pgvector image, published as a
+            // moving line tag plus an immutable per-build tag by dispatch, weekly
+            // and on an upstream digest move (vector store Phase 1.1, D-L4-8).
+            'postgres-pgvector-image.yml:build-scan-push',
         ].sort());
         expect(() => assertPopulation(sites)).not.toThrow();
     });
@@ -985,5 +993,39 @@ describe('a running publish is never cancelled by the next push (#4280)', () => 
             .filter(([, job]) => job.concurrency !== undefined)
             .map(([id]) => id);
         expect(overrides).toEqual([]);
+    });
+});
+
+/**
+ * `:latest` is tagged only on main (#5084).
+ *
+ * The workflow also takes `workflow_dispatch`, which a maintainer can run
+ * from ANY branch. Watchtower rolls whatever `:latest` names onto production
+ * within a minute, so an unconditional `type=raw,value=latest` let a dispatch
+ * from an unmerged branch ship it. The rolling tag must be enabled only when
+ * the ref is main; the immutable `:sha-<short>` tag is harmless anywhere.
+ */
+describe('only main moves `:latest` (#5084)', () => {
+    const publish = workflowDocs().find((d) => path.basename(d.file) === PUBLISH_WORKFLOW);
+    type MetaStep = { uses?: string; with?: { tags?: string } };
+    const tagLines = (): string[] => {
+        const steps = (publish?.wf.jobs?.[PUBLISH_JOB] as { steps?: MetaStep[] } | undefined)?.steps ?? [];
+        const meta = steps.find((s) => typeof s.uses === 'string' && s.uses.startsWith('docker/metadata-action'));
+        return String(meta?.with?.tags ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
+    };
+
+    it('reads the metadata step (positive control)', () => {
+        expect(tagLines().some((l) => l.startsWith('type=sha'))).toBe(true);
+    });
+
+    it('every tag line naming `latest` is enabled only on refs/heads/main', () => {
+        const latest = tagLines().filter((l) => /value=latest\b/.test(l));
+        expect(latest).toEqual(["type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}"]);
+    });
+
+    it('the metadata flavor does not add `latest` behind the tags list', () => {
+        const steps = (publish?.wf.jobs?.[PUBLISH_JOB] as { steps?: Array<MetaStep & { with?: { flavor?: string } }> } | undefined)?.steps ?? [];
+        const meta = steps.find((s) => typeof s.uses === 'string' && s.uses.startsWith('docker/metadata-action'));
+        expect(String(meta?.with?.flavor ?? '').trim()).toBe('latest=false');
     });
 });

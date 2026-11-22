@@ -43,6 +43,7 @@ import type { BulkRejectSkipReason } from '@/app-layer/usecases/agent-proposals'
 // that guard exists to force someone to make.
 import { ProposalDiffPanel } from '@/components/agentic/ProposalDiffPanel';
 import { proposalKindLabelKey } from '@/lib/agentic/proposal-labels';
+import { proposalRefusalKey } from '@/lib/agentic/proposal-refusal-keys';
 
 export interface ProposalRow {
     id: string;
@@ -80,6 +81,12 @@ export interface ProposalRow {
      */
     runId: string | null;
     stepSeq: number | null;
+    /**
+     * A run is WAITING on this proposal (Step 2f): it deferred a tool call to a
+     * person and parked until this decision. Deciding it continues the run.
+     * Absent reads as false, for a row built before the field existed.
+     */
+    runWaits?: boolean;
     /**
      * The agentic output guard's verdict on this proposal's content.
      *
@@ -136,6 +143,14 @@ export interface ProposalRow {
      * refused, so it is not offered; Reject, which withdraws it, still is.
      */
     composedByViewer?: boolean;
+    /**
+     * The approve usecase would take THIS viewer's approval of this row's
+     * kind, as far as authority goes (#5053): the role-tier write, plus the
+     * kind's extra key (`processes.edit` for a process map). Computed on the
+     * server by `viewerMayApproveProposal`, the table the usecase asserts, so
+     * Approve is offered only where the server would take it.
+     */
+    viewerMayApprove: boolean;
 }
 
 /**
@@ -181,9 +196,30 @@ function guardRuleText(
  * closed window outranks a recorded signature: nothing can complete the
  * proposal now. Read from the row's data, so a reload shows what a click did.
  */
+/**
+ * A proposal that is no longer PENDING (#5764). The queue reads PENDING only,
+ * but `?proposal=<id>` reads one proposal by id in any reviewable status, so a
+ * reviewer sent to an approval they are auditing gets it as it was decided.
+ * Approve and Reject on it could only be refused ("no longer pending").
+ */
+function isDecided(p: Pick<ProposalRow, 'status'>): boolean {
+    return p.status !== 'PENDING';
+}
+
+/** The badge a decided proposal wears, by its stored status. */
+const DECIDED_BADGE: Record<string, { variant: 'success' | 'neutral'; key: string }> = {
+    ACCEPTED: { variant: 'success', key: 'proposals.decided.ACCEPTED' },
+    EDITED: { variant: 'success', key: 'proposals.decided.EDITED' },
+    REJECTED: { variant: 'neutral', key: 'proposals.decided.REJECTED' },
+};
+
 function decisionBadgeFor(
-    p: Pick<ProposalRow, 'windowClosed' | 'approvalsRecorded'>,
-): { variant: 'warning' | 'info'; key: string; testid: string } | null {
+    p: Pick<ProposalRow, 'status' | 'windowClosed' | 'approvalsRecorded'>,
+): { variant: 'warning' | 'info' | 'success' | 'neutral'; key: string; testid: string } | null {
+    if (isDecided(p)) {
+        const badge = DECIDED_BADGE[p.status] ?? { variant: 'neutral' as const, key: 'proposals.decided.other' };
+        return { ...badge, testid: 'proposal-decided-badge' };
+    }
     if (p.windowClosed) {
         return { variant: 'warning', key: 'proposals.window.closed', testid: 'proposal-window-closed-badge' };
     }
@@ -191,25 +227,6 @@ function decisionBadgeFor(
         return { variant: 'info', key: 'proposals.awaitingSecond', testid: 'proposal-awaiting-second-badge' };
     }
     return null;
-}
-
-/**
- * The refusals of a single approve or reject this page words itself, keyed by
- * `error.details.reason` (#4970). Anything else, the four-eyes refusals
- * included, is shown as the server wrote it: those keep WHICH rule refused out
- * of the response by design, so the server's sentence is the only one that
- * says it.
- */
-const REFUSAL_KEY: Readonly<Record<string, 'composer' | 'ownDissent' | 'unknownDissent' | 'expired'>> = {
-    COMPOSER_MAY_NOT_APPROVE: 'composer',
-    DISSENT_AUTHOR_MAY_NOT_DECIDE: 'ownDissent',
-    DISSENT_AUTHOR_UNKNOWN: 'unknownDissent',
-    agent_proposal_expired: 'expired',
-};
-
-function refusalKey(body: unknown): 'composer' | 'ownDissent' | 'unknownDissent' | 'expired' | null {
-    const reason = (body as { error?: { details?: { reason?: unknown } } } | null)?.error?.details?.reason;
-    return typeof reason === 'string' ? (REFUSAL_KEY[reason] ?? null) : null;
 }
 
 /** The sentence each bulk-reject skip reason is reported with. */
@@ -436,7 +453,7 @@ export function AgentProposalsClient({
                 // (#4970); any other keeps the server's sentence, then the
                 // action's own fallback.
                 const body = await res.json().catch(() => null);
-                const known = refusalKey(body);
+                const known = proposalRefusalKey(body);
                 throw new Error(known ? t(`proposals.refused.${known}`) : apiErrorMessage(body, fallback));
             }
 
@@ -631,6 +648,7 @@ export function AgentProposalsClient({
                         const guardState = resolveProposalGuardState(p);
                         const guardBadge = GUARD_BADGE[guardState];
                         const decisionBadge = decisionBadgeFor(p);
+                        const decided = isDecided(p);
                         return (
                         <li
                             key={p.id}
@@ -653,7 +671,7 @@ export function AgentProposalsClient({
                                         size="sm"
                                         aria-label={t('proposals.bulk.selectRow')}
                                         data-testid={`proposal-select-${p.id}`}
-                                        disabled={!canOperate || p.windowClosed}
+                                        disabled={!canOperate || p.windowClosed || decided}
                                         checked={selected.has(p.id)}
                                         onCheckedChange={() => toggleSelected(p.id)}
                                     />
@@ -703,7 +721,7 @@ export function AgentProposalsClient({
                                         {t('proposals.proposedAt', {
                                             date: formatDateTime(p.createdAt),
                                         })}
-                                        {p.expiresAt && !p.windowClosed
+                                        {p.expiresAt && !p.windowClosed && !decided
                                             ? t('proposals.decideBy', {
                                                 date: formatDateTime(p.expiresAt),
                                             })
@@ -717,9 +735,11 @@ export function AgentProposalsClient({
                                   branch that has already rendered a diff body.
                                   Not rendered once the window has closed: no
                                   role can reject then, and the notice below
-                                  says why.
+                                  says why. Nor on a proposal already decided
+                                  (#5764): the server refuses it as no longer
+                                  pending.
                                 */}
-                                {!p.windowClosed && (
+                                {!p.windowClosed && !decided && (
                                     <PermissionGated allowed={canOperate} reason={t('runs.needsWrite')}>
                                         <Button
                                             variant="ghost"
@@ -734,7 +754,7 @@ export function AgentProposalsClient({
                                 )}
                             </div>
 
-                            {p.windowClosed && p.expiresAt && (
+                            {!decided && p.windowClosed && p.expiresAt && (
                                 // The sweep that stamps EXPIRED runs overnight,
                                 // so the row is still listed. Say what that
                                 // means before anybody clicks.
@@ -770,6 +790,18 @@ export function AgentProposalsClient({
                               has no step, and a disabled control would imply a
                               run existed and was unreachable.
                             */}
+                            {p.runWaits && p.runId && (
+                                <InlineNotice variant="info" data-testid={`proposal-run-waits-${p.id}`}>
+                                    {t('proposals.runWaits')}{' '}
+                                    <a
+                                        className="underline"
+                                        data-testid={`proposal-run-waits-link-${p.id}`}
+                                        href={tenantHref(`/agents/runs/${p.runId}`)}
+                                    >
+                                        {t('proposals.runWaitsLink')}
+                                    </a>
+                                </InlineNotice>
+                            )}
                             {p.runId && (
                                 <p className="text-xs text-content-subtle">
                                     <a
@@ -839,7 +871,14 @@ export function AgentProposalsClient({
                                 proposalId={p.id}
                                 diff={p.diff}
                                 approveAction={
-                                    p.windowClosed ? (
+                                    decided ? (
+                                        <span
+                                            data-testid={`proposal-decided-action-${p.id}`}
+                                            className="text-xs text-content-subtle"
+                                        >
+                                            {t('proposals.decided.notice')}
+                                        </span>
+                                    ) : p.windowClosed ? (
                                         <span
                                             data-testid={`proposal-window-closed-action-${p.id}`}
                                             className="text-xs text-content-subtle"
@@ -861,6 +900,18 @@ export function AgentProposalsClient({
                                             className="text-xs text-content-subtle"
                                         >
                                             {t('proposals.signedByYou')}
+                                        </span>
+                                    ) : canOperate && !p.viewerMayApprove ? (
+                                        // The approve usecase would refuse this
+                                        // viewer for this KIND (#5053: a process
+                                        // map also needs permission to edit
+                                        // process maps), so it is not offered.
+                                        // Reject, which only withdraws, still is.
+                                        <span
+                                            data-testid={`proposal-approve-unavailable-${p.id}`}
+                                            className="text-xs text-content-subtle"
+                                        >
+                                            {t('proposals.approveNeedsKindPermission')}
                                         </span>
                                     ) : (
                                         <PermissionGated allowed={canOperate} reason={t('runs.needsWrite')}>

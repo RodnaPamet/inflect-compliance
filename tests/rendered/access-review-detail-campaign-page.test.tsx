@@ -116,7 +116,7 @@ function makeReview(over: Record<string, unknown> = {}) {
         decisions: [decision('dec_alice', 'usr_alice', 'EDITOR'), decision('dec_bob', 'usr_bob', 'READER')],
         connectedDecisions: [],
         snapshotTruncated: false,
-        lastActivityByUser: {},
+        lastSignInByUser: {},
         ...over,
     };
 }

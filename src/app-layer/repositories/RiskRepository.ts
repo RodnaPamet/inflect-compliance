@@ -4,7 +4,7 @@ import { Prisma, RiskStatus, TreatmentDecision } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { traceRepository } from '@/lib/observability/repository-tracing';
-import { parseEnumListFilter } from '../domain/list-filter';
+import { parseEnumListFilter, parseIdListFilter } from '../domain/list-filter';
 import { withDeleted } from '@/lib/soft-delete';
 
 export interface RiskKpiCounts {
@@ -85,7 +85,13 @@ const riskListSelect = {
     // `createdAt` is required by the cursor-pagination helper
     // (`computePageInfo`) — it's not rendered in the table.
     createdAt: true,
+    // The Controls column is `controls.length`. A control in the trash keeps
+    // its `RiskControl` row, and the soft-delete extension filters top-level
+    // reads only — never a nested select — so without this `where` it was
+    // still counted (#5376, owner decision 2026-11-12; the Risk Register PDF
+    // follows the same rule in `ReportRepository`).
     controls: {
+        where: { control: { deletedAt: null } },
         select: {
             id: true,
             control: { select: { id: true, name: true, annexId: true, status: true } },
@@ -103,12 +109,16 @@ const riskListSelect = {
     // so a risk wired to fifty assets cannot fan the list query out; the
     // `_count` supplies the honest "+N" without fetching the rest.
     // Covered by the existing `@@index([tenantId, riskId])` on AssetRiskLink.
+    //
+    // An asset in the trash is neither shown nor counted (#5442, owner
+    // decision 2026-11-12) — the same rule the Controls column takes above.
     assetLinks: {
+        where: { asset: { deletedAt: null } },
         select: { asset: { select: { id: true, name: true } } },
         orderBy: { createdAt: 'asc' as const },
         take: 1,
     },
-    _count: { select: { assetLinks: true } },
+    _count: { select: { assetLinks: { where: { asset: { deletedAt: null } } } } },
 } as const;
 
 export class RiskRepository {
@@ -262,8 +272,19 @@ export class RiskRepository {
                 where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), { OR: pairs }];
             }
         }
-        if (filters.category) where.category = filters.category;
-        if (filters.ownerUserId) where.ownerUserId = filters.ownerUserId;
+        // Both facets are multi-select, so the value arrives comma-joined; an
+        // equality on the joined string matched nothing once two were picked
+        // (#5104). Category is free text and may itself hold a comma, so the
+        // raw value is matched as well as its members, as Policies does.
+        const categories = parseIdListFilter(filters.category);
+        if (categories) {
+            where.category =
+                typeof categories === 'string'
+                    ? categories
+                    : { in: [...new Set([filters.category!.trim(), ...categories.in])] };
+        }
+        const owners = parseIdListFilter(filters.ownerUserId);
+        if (owners) where.ownerUserId = owners;
         if (filters.residualScoreMin !== undefined || filters.residualScoreMax !== undefined) {
             where.residualScore = {};
             if (filters.residualScoreMin !== undefined) where.residualScore.gte = filters.residualScoreMin;
@@ -316,7 +337,9 @@ export class RiskRepository {
             return db.risk.findFirst({
                 where: { id, tenantId: ctx.tenantId },
                 include: {
-                    controls: { include: { control: true } },
+                    // Controls in the trash are hidden on the risk page, as in
+                    // the list's Controls column above (#5376).
+                    controls: { where: { control: { deletedAt: null } }, include: { control: true } },
                 },
             });
         });

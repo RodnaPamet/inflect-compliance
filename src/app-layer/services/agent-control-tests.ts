@@ -1,5 +1,5 @@
 /**
- * THE FOUR AGENTIC CHECKS, AS AUTOMATED CONTROL TESTS.
+ * THE AGENTIC CHECKS, AS AUTOMATED CONTROL TESTS.
  *
  * Nine prompts built agent governance. Every one of them produced state a
  * person can look at — a policy card, a tool pin, a review-quality report, a
@@ -8,7 +8,7 @@
  * month, on a Tuesday, without anybody being asked". That is a CONTROL TEST,
  * and this repo has had a runner for one since Epic G-2.
  *
- * So there is no second runner here and no new job. Four checks, one handler,
+ * So there is no second runner here and no new job. Five checks, one handler,
  * registered on the seam `control-test-runner.ts` already exposed:
  *
  *   ControlTestPlan(automationType=INTEGRATION, schedule=<cron>,
@@ -74,6 +74,15 @@
  *                             a daily cron, not an hourly one.
  *   KILL_SWITCH_DRILL         2 point reads, both index-served
  *                             (`[tenantId, startedAt]`), plus one count.
+ *   A2A_INTEGRITY             4 queries — ACTIVE peers (`PEER_SCAN_CAP`), the
+ *                             signing key in force, the newest
+ *                             `RECEIPT_SAMPLE_SIZE` receipts, and the keys
+ *                             those receipts name. Plus one LIVE card read per
+ *                             pinned peer, through the same ≤15-minute copy
+ *                             admission compares against, in parallel and
+ *                             each bounded by the card fetch's own timeout.
+ *                             The only check that leaves the database; see
+ *                             `checkA2aIntegrity`.
  *
  * No check reads in a loop and none is unbounded, which is what
  * `tests/guardrails/query-shape-guardrails.test.ts` asks of anything under
@@ -103,6 +112,9 @@ import {
     type ToolManifestHashes,
 } from '@/lib/mcp/tool-manifest';
 import type { PrismaTx } from '@/lib/db-context';
+import { recentAgentCard, type RecentCardResult } from '@/lib/agentic/a2a/card-cache';
+import { compareAgentCard, pinnedCardHashesOf } from '@/lib/agentic/peer-agent-card';
+import { storedReceiptVerificationKey, verifyStoredA2aReceipt } from '@/lib/agentic/a2a/receipt';
 
 import { loadReviewObservations, DEFAULT_WINDOW_DAYS } from '../usecases/agent-review-quality';
 import { auditProcedureHandler } from './audit-procedures';
@@ -113,13 +125,16 @@ import {
     type AutomationHandlerResult,
 } from '../jobs/control-test-runner';
 
-// ─── The four checks ────────────────────────────────────────────────
+// ─── The checks ─────────────────────────────────────────────────────
 
 export const AGENTIC_CHECK_IDS = [
     'AGENTIC_POLICY_CARD_CONFORMANCE',
     'AGENTIC_TOOL_MANIFEST_INTEGRITY',
     'AGENTIC_REVIEW_QUALITY',
     'AGENTIC_KILL_SWITCH_DRILL',
+    // Last on purpose: the setup reports the first check it cannot place, and a
+    // tenant that set up the first four should hear about them first (#5305).
+    'AGENTIC_A2A_INTEGRITY',
 ] as const;
 
 export type AgenticCheckId = (typeof AGENTIC_CHECK_IDS)[number];
@@ -167,6 +182,12 @@ export const AGENTIC_CHECKS: Readonly<Record<AgenticCheckId, AgenticCheckDefinit
         covers: ['ASI08', 'ASI10'],
         severity: 'CRITICAL',
     },
+    AGENTIC_A2A_INTEGRITY: {
+        id: 'AGENTIC_A2A_INTEGRITY',
+        title: 'Peer agents still match their approved cards, keys and receipts',
+        covers: ['ASI07'],
+        severity: 'HIGH',
+    },
 };
 
 /**
@@ -178,10 +199,16 @@ export const AGENTIC_CHECKS: Readonly<Record<AgenticCheckId, AgenticCheckDefinit
  * what it says.
  *
  * The bar for landing here is not "hard"; it is "a periodic re-read of tenant
- * STATE cannot answer this question". Three of the four below are per-call
- * controls proved in CI, which is where a wiring fact belongs — the same
- * argument `agent-kill-switch-drill.ts` makes for why its own drill probes
- * state and leaves the wiring to an integration test.
+ * STATE cannot answer this question". The three below are per-call controls
+ * proved in CI, which is where a wiring fact belongs — the same argument
+ * `agent-kill-switch-drill.ts` makes for why its own drill probes state and
+ * leaves the wiring to an integration test.
+ *
+ * ASI07 (inter-agent communication) was a fourth, on the claim that no A2A
+ * transport shipped. A2A ships (#3673, #3679), and its state DRIFTS between
+ * messages: a peer's card moves, a signing key ages, a stored receipt stops
+ * verifying, a peer is registered and never pinned. So it left this list for
+ * `AGENTIC_A2A_INTEGRITY` (owner decision 2026-11-14, #5305).
  */
 export const AGENTIC_CONTROL_EXEMPTIONS: Readonly<Record<string, string>> = {
     ASI01:
@@ -205,12 +232,6 @@ export const AGENTIC_CONTROL_EXEMPTIONS: Readonly<Record<string, string>> = {
         'every step as it runs. A periodic re-verification would have to decrypt every ' +
         'stored context to re-hash it, moving unvetted content through the worker for a ' +
         'signal the step boundary already produced at the only moment it could act on it.',
-    ASI07:
-        'No inter-agent transport ships in this build — there is no agent-to-agent ' +
-        'channel, so there is no state whose integrity could drift and nothing for a ' +
-        'periodic check to read. This exemption expires the day a multi-agent surface ' +
-        'lands; it is the one entry here that is about absence rather than about where ' +
-        'the control lives.',
 };
 
 // ─── Outcome shape ──────────────────────────────────────────────────
@@ -817,6 +838,283 @@ export async function checkKillSwitchDrill(
     };
 }
 
+// ─── 5. A2A integrity (ASI07) ───────────────────────────────────────
+
+/** ACTIVE peers examined in one run. */
+const PEER_SCAN_CAP = 100;
+
+/** The newest stored receipts re-verified in one run: a bounded recent sample. */
+export const A2A_RECEIPT_SAMPLE_SIZE = 200;
+
+/**
+ * How old the tenant's IN-FORCE A2A signing key may be before the control reads
+ * as failed: 365 days.
+ *
+ * Not the API-key rotation age (`apiKeyRotationDays`, 90 by default). That one
+ * governs a BEARER secret presented on every request, which leaks by being
+ * used; this is an Ed25519 signing key whose private half never leaves the
+ * tenant's encrypted row. And rotating it is not free: it changes the tenant's
+ * published card, so every peer must read and re-approve the card inside the
+ * seven days the card keeps naming the previous key
+ * (`A2A_PREVIOUS_KEY_GRACE_MS`). A quarterly cadence would put every partner
+ * through that four times a year for a key nobody has presented. A year is the
+ * short end of the one-to-three-year cryptoperiod NIST SP 800-57 Part 1 gives a
+ * private signature key. A plan may set its own (`signingKeyMaxAgeDays`,
+ * 30..1095 days).
+ */
+export const A2A_SIGNING_KEY_MAX_AGE_DAYS = 365;
+
+/**
+ * How long an ACTIVE peer may stay unpinned before it is a breach: seven days,
+ * the life of the invitation code that connects two workspaces
+ * (`peer-invitations.ts`). Invite, accept and approve the card are meant to
+ * happen inside that life; a peer still unpinned after it has been LEFT
+ * unpinned. Admission refuses every message to it meanwhile, so the breach is
+ * about governance (a registration nobody finished reviewing), not traffic.
+ */
+export const A2A_UNPINNED_GRACE_DAYS = 7;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The live-card reader, injectable so a test decides what each peer serves. */
+export type A2aCardReader = (peer: { tenantId: string; peerId: string; cardUrl: string }) => Promise<RecentCardResult>;
+
+type CardRead = RecentCardResult | { readonly ok: false; readonly reason: 'READ_THREW' };
+
+/**
+ * Is the tenant's A2A state still what was approved? Four drifts, each of
+ * which the per-message path either cannot see or sees only when a message
+ * happens to arrive:
+ *
+ *   • CARD_MOVED_SINCE_PIN: an ACTIVE, approved peer whose LIVE card no longer
+ *     hashes to its pin. Admission refuses the next message within fifteen
+ *     minutes, but a peer that sends nothing for a month is refused by nobody,
+ *     and nobody is told. Read through `recentAgentCard`, the same ≤15-minute
+ *     copy admission compares against, so the check and the gate cannot
+ *     disagree about what the peer serves. The card's TEXT is never recorded:
+ *     only which components moved.
+ *   • SIGNING_KEY_PAST_ROTATION_AGE: the key in force is older than
+ *     `A2A_SIGNING_KEY_MAX_AGE_DAYS` (or the plan's own age). Asked only while
+ *     the tenant has an ACTIVE peer, which is when the key is in use.
+ *   • RECEIPT_DOES_NOT_VERIFY: a stored receipt, among the newest
+ *     `A2A_RECEIPT_SAMPLE_SIZE`, that no longer verifies against the key its
+ *     row names (`storedReceiptVerificationKey`, the receipts list's own rule).
+ *     The rows are write-once by trigger, so a failure is evidence of a change
+ *     below the application or of a key row that moved.
+ *   • PEER_LEFT_UNPINNED: an ACTIVE peer with no approved card past
+ *     `A2A_UNPINNED_GRACE_DAYS`.
+ *
+ * FAIL CLOSED. A pinned peer whose live card cannot be read, or a receipt whose
+ * key is not held here, is not a pass: with no breach elsewhere the result is
+ * INCONCLUSIVE (`A2A_STATE_UNVERIFIABLE`), and a breach still FAILS. Zero
+ * ACTIVE peers and zero stored receipts is `NO_A2A_PEERS`, vacuous: nothing to
+ * check, never a PASS. A database read that throws throws, and the runner
+ * records the run as errored.
+ *
+ * Unlike the other checks this one reads the network, inside the runner's
+ * transaction (`AUTOMATED_RUN_TX_TIMEOUT_MS`, 120 s). The reads are parallel,
+ * each is bounded by the card fetch's own timeout, and `PEER_SCAN_CAP` bounds
+ * how many there are.
+ */
+export async function checkA2aIntegrity(
+    db: PrismaTx,
+    tenantId: string,
+    now: Date,
+    opts: { signingKeyMaxAgeDays?: number; readCard?: A2aCardReader } = {},
+): Promise<AgenticCheckOutcome> {
+    const maxKeyAgeDays = opts.signingKeyMaxAgeDays ?? A2A_SIGNING_KEY_MAX_AGE_DAYS;
+    const readCard: A2aCardReader = opts.readCard ?? ((key) => recentAgentCard(key));
+
+    const scannedPeers = await db.peerAgent.findMany({
+        where: { tenantId, status: 'ACTIVE' },
+        select: {
+            id: true,
+            cardUrl: true,
+            createdAt: true,
+            pinnedCardHash: true,
+            pinnedTextHash: true,
+            pinnedEndpointHash: true,
+            pinnedOtherHash: true,
+            pinRevision: true,
+        },
+        orderBy: { id: 'asc' },
+        take: PEER_SCAN_CAP + 1,
+    });
+    const peerScanTruncated = scannedPeers.length > PEER_SCAN_CAP;
+    const peers = peerScanTruncated ? scannedPeers.slice(0, PEER_SCAN_CAP) : scannedPeers;
+
+    const sampled = await db.peerAgentMessage.findMany({
+        where: { tenantId },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: {
+            id: true,
+            peerId: true,
+            direction: true,
+            receiptJson: true,
+            signature: true,
+            signerKeyFingerprint: true,
+            body: true,
+        },
+        take: A2A_RECEIPT_SAMPLE_SIZE + 1,
+    });
+    const receiptSampleFull = sampled.length > A2A_RECEIPT_SAMPLE_SIZE;
+    const receipts = receiptSampleFull ? sampled.slice(0, A2A_RECEIPT_SAMPLE_SIZE) : sampled;
+
+    if (peers.length === 0 && receipts.length === 0) {
+        return {
+            checkId: 'AGENTIC_A2A_INTEGRITY',
+            verdict: 'INCONCLUSIVE',
+            basis: 'NO_A2A_PEERS',
+            vacuous: true,
+            population: 0,
+            breaches: 0,
+            truncated: false,
+            facts: ['activePeers=0', 'receiptsSampled=0'],
+        };
+    }
+
+    // The keys the sampled receipts name: the peers' registered keys (any
+    // status, so a receipt from a peer since suspended still verifies) and the
+    // tenant's own, in force or retired. Public halves only; the seed is never
+    // selected.
+    const receiptPeerIds = [...new Set(receipts.filter((r) => r.direction === 'INBOUND').map((r) => r.peerId))];
+    const ownFingerprints = [
+        ...new Set(receipts.filter((r) => r.direction === 'OUTBOUND').map((r) => r.signerKeyFingerprint)),
+    ];
+    const receiptPeers =
+        receiptPeerIds.length === 0
+            ? []
+            : await db.peerAgent.findMany({
+                  where: { tenantId, id: { in: receiptPeerIds } },
+                  select: { id: true, signingPublicKey: true, signingKeyFingerprint: true },
+                  take: receiptPeerIds.length,
+              });
+    const ownKeys =
+        ownFingerprints.length === 0
+            ? []
+            : await db.tenantA2aSigningKey.findMany({
+                  where: { tenantId, fingerprint: { in: ownFingerprints } },
+                  select: { fingerprint: true, publicKey: true },
+                  take: ownFingerprints.length,
+              });
+    const inForce = await db.tenantA2aSigningKey.findFirst({
+        where: { tenantId, retiredAt: null },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, createdAt: true },
+    });
+
+    const facts: string[] = [];
+    let breaches = 0;
+    let unverifiable = 0;
+
+    // ── Peers: left unpinned, or a live card that moved off its pin ──
+    let awaitingPin = 0;
+    const pinned: { id: string; cardUrl: string; pin: NonNullable<ReturnType<typeof pinnedCardHashesOf>> }[] = [];
+    for (const peer of peers) {
+        const pin = pinnedCardHashesOf(peer);
+        if (pin) {
+            pinned.push({ id: peer.id, cardUrl: peer.cardUrl, pin });
+            continue;
+        }
+        const ageDays = (now.getTime() - peer.createdAt.getTime()) / DAY_MS;
+        if (ageDays > A2A_UNPINNED_GRACE_DAYS) {
+            breaches += 1;
+            facts.push(`peer=${peer.id} code=PEER_LEFT_UNPINNED ageDays=${Math.floor(ageDays)}`);
+        } else {
+            awaitingPin += 1;
+        }
+    }
+
+    const reads: CardRead[] = await Promise.all(
+        pinned.map((p) =>
+            readCard({ tenantId, peerId: p.id, cardUrl: p.cardUrl }).catch(
+                (): CardRead => ({ ok: false, reason: 'READ_THREW' }),
+            ),
+        ),
+    );
+    pinned.forEach((p, i) => {
+        const read = reads[i];
+        if (!read.ok) {
+            unverifiable += 1;
+            facts.push(`peer=${p.id} code=PEER_CARD_UNREADABLE reason=${read.reason}`);
+            return;
+        }
+        const verdict = compareAgentCard(read.hashes, p.pin);
+        if (verdict.status === 'CHANGED') {
+            breaches += 1;
+            facts.push(
+                `peer=${p.id} code=CARD_MOVED_SINCE_PIN revision=${verdict.revision} ` +
+                    `moved=${verdict.moved.join('|') || 'CARD'}`,
+            );
+        }
+    });
+
+    // ── The signing key in force ─────────────────────────────────────
+    let keyExamined = 0;
+    if (peers.length > 0) {
+        if (!inForce) {
+            facts.push('signingKey=none');
+        } else {
+            keyExamined = 1;
+            const ageDays = (now.getTime() - inForce.createdAt.getTime()) / DAY_MS;
+            if (ageDays > maxKeyAgeDays) {
+                breaches += 1;
+                facts.push(
+                    `signingKey=${inForce.id} code=SIGNING_KEY_PAST_ROTATION_AGE ` +
+                        `ageDays=${Math.floor(ageDays)} maxAgeDays=${maxKeyAgeDays}`,
+                );
+            }
+        }
+    }
+
+    // ── Stored receipts ──────────────────────────────────────────────
+    const peerById = new Map(receiptPeers.map((p) => [p.id, p] as const));
+    const ownKeyByFingerprint = new Map(ownKeys.map((k) => [k.fingerprint, k.publicKey] as const));
+    let receiptsFailing = 0;
+    for (const r of receipts) {
+        const key = storedReceiptVerificationKey(r, peerById.get(r.peerId) ?? null, ownKeyByFingerprint);
+        if (key === null) {
+            unverifiable += 1;
+            facts.push(`receipt=${r.id} peer=${r.peerId} direction=${r.direction} code=RECEIPT_KEY_NOT_HELD`);
+            continue;
+        }
+        if (!verifyStoredA2aReceipt(r, key, r.signerKeyFingerprint)) {
+            receiptsFailing += 1;
+            facts.push(`receipt=${r.id} peer=${r.peerId} direction=${r.direction} code=RECEIPT_DOES_NOT_VERIFY`);
+        }
+    }
+    breaches += receiptsFailing;
+
+    const verdict: AgenticCheckOutcome['verdict'] =
+        breaches > 0 ? 'FAIL' : unverifiable > 0 ? 'INCONCLUSIVE' : 'PASS';
+    const basis =
+        breaches > 0 ? 'A2A_STATE_DRIFTED' : unverifiable > 0 ? 'A2A_STATE_UNVERIFIABLE' : 'A2A_STATE_AS_APPROVED';
+
+    return {
+        checkId: 'AGENTIC_A2A_INTEGRITY',
+        verdict,
+        basis,
+        vacuous: false,
+        population: peers.length + keyExamined + receipts.length,
+        breaches,
+        // The receipts are a SAMPLE: when more exist than it holds, the numbers
+        // cover the newest of them, not the whole.
+        truncated: peerScanTruncated || receiptSampleFull,
+        facts: bounded([
+            `activePeers=${peers.length}`,
+            `pinnedPeers=${pinned.length}`,
+            `awaitingPin=${awaitingPin}`,
+            `unpinnedGraceDays=${A2A_UNPINNED_GRACE_DAYS}`,
+            `signingKeyMaxAgeDays=${maxKeyAgeDays}`,
+            `receiptsSampled=${receipts.length}`,
+            `receiptSampleSize=${A2A_RECEIPT_SAMPLE_SIZE}`,
+            `receiptsFailing=${receiptsFailing}`,
+            `unverifiable=${unverifiable}`,
+            ...facts,
+        ]),
+    };
+}
+
 // ─── Dispatch ───────────────────────────────────────────────────────
 
 /** The `automationConfig` shape a plan carries to select one of these checks. */
@@ -826,6 +1124,8 @@ export interface AgenticCheckConfig {
     windowDays?: number;
     /** KILL_SWITCH_DRILL only. How stale a PASSED drill may be. */
     maxAgeHours?: number;
+    /** A2A_INTEGRITY only. How old the in-force signing key may be, in days. */
+    signingKeyMaxAgeDays?: number;
 }
 
 /**
@@ -859,7 +1159,15 @@ export function parseAgenticCheckConfig(config: unknown): AgenticCheckConfig | n
             ? raw.maxAgeHours
             : undefined;
 
-    return { check: check as AgenticCheckId, windowDays, maxAgeHours };
+    const signingKeyMaxAgeDays =
+        typeof raw.signingKeyMaxAgeDays === 'number' &&
+        Number.isInteger(raw.signingKeyMaxAgeDays) &&
+        raw.signingKeyMaxAgeDays >= 30 &&
+        raw.signingKeyMaxAgeDays <= 1095
+            ? raw.signingKeyMaxAgeDays
+            : undefined;
+
+    return { check: check as AgenticCheckId, windowDays, maxAgeHours, signingKeyMaxAgeDays };
 }
 
 /** Run one check by id. Exported so a test drives the check without the runner. */
@@ -868,6 +1176,7 @@ export async function runAgenticCheck(
     tenantId: string,
     config: AgenticCheckConfig,
     now: Date,
+    deps: { readCard?: A2aCardReader } = {},
 ): Promise<AgenticCheckOutcome> {
     switch (config.check) {
         case 'AGENTIC_POLICY_CARD_CONFORMANCE':
@@ -878,6 +1187,11 @@ export async function runAgenticCheck(
             return checkReviewQuality(db, tenantId, now, config.windowDays);
         case 'AGENTIC_KILL_SWITCH_DRILL':
             return checkKillSwitchDrill(db, tenantId, now, config.maxAgeHours);
+        case 'AGENTIC_A2A_INTEGRITY':
+            return checkA2aIntegrity(db, tenantId, now, {
+                signingKeyMaxAgeDays: config.signingKeyMaxAgeDays,
+                readCard: deps.readCard,
+            });
     }
 }
 

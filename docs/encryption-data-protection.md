@@ -51,6 +51,8 @@
 |---|---|---|---|
 | `DATA_ENCRYPTION_KEY` | Master key for AES-256-GCM + HMAC | `openssl rand -base64 48` | **Yes** in production. Boot exits 1 if missing, too short (<32 chars), or equal to the dev fallback. |
 | `DATA_ENCRYPTION_KEY_PREVIOUS` | Decrypt fallback during master-KEK rotation | `openssl rand -base64 48` | Optional. Set ONLY during a rotation; remove once the rotation job reports zero remaining v1 rows under the previous key. |
+| `LOOKUP_HASH_KEY` | Material for the HMAC lookup hashes (`hashForLookup`: `emailHash`, `emailAtLinkTimeHash`) | Set to the CURRENT `DATA_ENCRYPTION_KEY` value | Optional; unset falls back to the master key's material, so upgrading moves no hash. Required before a master-KEK rotation: a lookup hash is an index with no previous-key fallback, so rotating it broke every email sign-in (#5071). A production boot with `DATA_ENCRYPTION_KEY_PREVIOUS` set and this unset refuses to start. |
+| `DERIVED_SUBKEY_KEY` | Material for the HKDF subkeys that are not encryption keys (`deriveSubkey`: the audit sampling seeds, the assistant's answer seal, the MCP exchanged-token signing key) | Set to the CURRENT `DATA_ENCRYPTION_KEY` value | Optional, with the same fallback and the same boot refusal mid-rotation (#5500). A sibling of `LOOKUP_HASH_KEY`, not the same setting. See [Epic B](./epic-b-encryption.md) |
 
 > [!CAUTION]
 > Losing `DATA_ENCRYPTION_KEY` means **permanent data loss** for all encrypted columns.
@@ -230,7 +232,7 @@ docker compose -f docker-compose.prod.yml exec app \
 |---|---|---|
 | `DATA_ENCRYPTION_KEY` | App-layer column encryption | Environment variable |
 | `AUTH_SECRET` | NextAuth session signing | Environment variable |
-| `JWT_SECRET` | JWT token signing | Environment variable |
+| `JWT_SECRET` | Required by the env schema; signs nothing since the legacy `token` cookie was removed | Environment variable |
 | `POSTGRES_PASSWORD` | Database authentication | Environment variable |
 | `S3_SECRET_ACCESS_KEY` | S3/R2 authentication | Environment variable |
 | `AV_WEBHOOK_SECRET` | AV scan webhook HMAC | Environment variable |
@@ -239,8 +241,8 @@ docker compose -f docker-compose.prod.yml exec app \
 
 | Key | Rotation procedure |
 |---|---|
-| `DATA_ENCRYPTION_KEY` | 1. Set new key, 2. Run `scripts/backfill-encryption.ts` to re-encrypt, 3. Remove old key |
-| `AUTH_SECRET` / `JWT_SECRET` | Set new value — existing sessions are invalidated |
+| `DATA_ENCRYPTION_KEY` | 0. If `LOOKUP_HASH_KEY` and `DERIVED_SUBKEY_KEY` are not set, set both to the CURRENT `DATA_ENCRYPTION_KEY` value and restart first. 1. Set `DATA_ENCRYPTION_KEY_PREVIOUS` to the outgoing key and `DATA_ENCRYPTION_KEY` to the new one, then deploy; `decryptField` falls back to the previous key, so every existing value still reads. 2. For each tenant, `POST /api/t/{slug}/admin/key-rotation`, which enqueues the `key-rotation` job: it re-wraps the tenant's DEK under the new key and re-encrypts any remaining `v1:` values, including the four tenant-scoped models' PII `*Encrypted` columns. `User` and `Account` carry no `tenantId`, so their PII columns are re-encrypted by `scripts/rotate-global-pii.ts` (dry run by default) (#5505). 3. Remove `DATA_ENCRYPTION_KEY_PREVIOUS` only once every tenant reports zero `v1:` values under the old key and the global PII script reports none. `scripts/backfill-encryption.ts` is not a rotation tool (#5244): it only fills empty `*Encrypted` columns and skips any value already encrypted, so it re-encrypts nothing. |
+| `AUTH_SECRET` | Set new value — existing sessions are invalidated |
 | `POSTGRES_PASSWORD` | Update in both Docker env and `.env.production` |
 
 ### Provider-specific secret storage
@@ -308,6 +310,48 @@ Use this checklist to verify encryption posture in each deployment environment.
 | **Sensitive** | Evidence content, policy text | ❌ (volume only) | ✅ Volume/provider |
 | **Business** | Controls, risks, assets, tasks | ❌ | ✅ Volume/provider |
 | **System** | Audit logs, sessions, tokens | ❌ | ✅ Volume/provider |
+| **Business (derivative)** | `KnowledgeChunkEmbedding.embedding`, the vector of an encrypted chunk | ❌ (plaintext floats, see below) | ✅ Volume/provider |
+
+### The knowledge store's vectors: a plaintext derivative of encrypted text
+
+The knowledge store (`docs/ai-architecture/weaviate.md`, owner decisions
+D-L4-1 and D-L4-2) holds chunk text in exactly one column,
+`KnowledgeChunk.text`, which is in the Epic B manifest
+(`src/lib/security/encrypted-fields.ts`) and is ciphertext at rest under the
+tenant's DEK. Beside it, `KnowledgeChunkEmbedding.embedding` holds one
+embedding model's vector of each chunk, and **that column is not encrypted**:
+an approximate-nearest-neighbour index (pgvector's HNSW) compares plaintext
+floats, so a vector the database cannot read is a vector it cannot search.
+
+What that means, stated plainly:
+
+- **The vector is derived from text the manifest protects.** Embedding
+  inversion is a real attack: a party holding a vector and the model that
+  produced it can recover an approximation of the text. So the column is
+  classified as business content, the same class as the text it came from, and
+  not as an opaque index.
+- **It is held only in Postgres and its backups.** The embedding row carries
+  the tenant, the chunk reference, the model, the dimension count, the content
+  hash and the vector, never text (the vectors-only rule, D-L4-2), and no other
+  store, cache, log or service holds it. A database backup now carries it, so
+  the backup encryption below covers it and the volume encryption above is its
+  at-rest protection.
+- **It is tenant-isolated like every other tenant row.** RLS with `FORCE`, the
+  repository's `tenantId` filter, and a composite foreign key to its chunk that
+  refuses a vector filed against another tenant's chunk even for a superuser
+  (`tests/integration/vector-tenant-isolation.test.ts`).
+- **It leaves with its chunk and its tenant.** A chunk's vectors are deleted
+  with it (`ON DELETE CASCADE`), and the tenant purge removes both tables
+  (`docs/data-retention.md`).
+- **Only the worker writes it.** The `knowledge-index` job embeds a chunk
+  through the in-deployment embedding seam (`src/lib/ai/embeddings/`) and files
+  the vector through `VectorRepository`, the only module that touches the
+  column (ESLint `local/vector-store-single-seam`). The embedding service runs
+  inside the deployment, so chunk text reaches no third party on the way to a
+  vector.
+
+The encryption-manifest entry for `KnowledgeChunk.text` is the protection; this
+section is the account of what it does not cover.
 
 ---
 
@@ -398,9 +442,22 @@ All 12 critical entity models are intercepted by `SOFT_DELETE_MODELS` in the sof
 
 ### Key rotation caveats
 
-1. **DATA_ENCRYPTION_KEY rotation** requires running `scripts/backfill-encryption.ts` after setting the new key — all existing encrypted values must be re-encrypted under the new key
-2. During rotation, there is a brief window where new writes use the new key but old reads may fail if the backfill hasn't completed — the middleware's `decryptField` catch block falls back to the plaintext column during this window
-3. **AUTH_SECRET** and **JWT_SECRET** rotation invalidates all existing sessions immediately — users must re-authenticate
+1. **DATA_ENCRYPTION_KEY rotation** goes through the dual-key path in the table above: the outgoing key stays set as `DATA_ENCRYPTION_KEY_PREVIOUS` while the `key-rotation` job re-wraps each tenant's DEK and re-encrypts the remaining `v1:` values. `scripts/backfill-encryption.ts` cannot do this (#5244) and must not be used for it.
+2. During rotation, new writes use the new key and existing values still read: `decryptField` tries the primary key and falls back to `DATA_ENCRYPTION_KEY_PREVIOUS`. Removing that variable before every tenant has been swept is what makes values unreadable, not the rotation itself. `v2:` values are wrapped under the tenant DEK and are untouched by a master-key rotation.
+3. **AUTH_SECRET** rotation invalidates all existing sessions immediately — users must re-authenticate. (`JWT_SECRET` is still required by the env schema but signs nothing since the legacy `token` cookie was removed.)
+
+### Rows written before a column was encrypted
+
+Adding a column to `ENCRYPTED_FIELDS` encrypts every write from then on, and nothing else. Existing plaintext rows keep reading correctly because the read path passes a value with no `v1:`/`v2:` envelope through, and for the same reason they stay in plaintext: neither rotation job selects them, since both rewrite only values that already carry an envelope.
+
+`AuditPackItem.snapshotJson` is the column this applies to today. It was added in #5150, and audit packs frozen before that hold test-run notes, finding summaries and the executor's email in plaintext. The daily `audit-pack-snapshot-encryption` job (02:23 UTC, #5455) encrypts them:
+
+- **Under each tenant's own DEK** (`v2:`), the envelope the middleware writes. A tenant with no DEK gets one first, as it would on its first application write.
+- **Never across a DEK rotation.** A tenant with `previousEncryptedDek` set is skipped (`ROTATION_IN_FLIGHT`). Each batch takes `FOR SHARE` on the tenant row and checks that the key it read is still current, so a rotation that starts waits for the batch and then re-encrypts its rows with everything else (`KEY_CHANGED` stops the tenant for the night).
+- **Verified and conditional.** Each ciphertext is decrypted again before it is written, and the UPDATE only lands if the row still holds the value that was read.
+- **Counted, not assumed.** Each run logs the column's plaintext, `v2:`, `v1:`, empty and total counts before and after, and the metric `security.audit_pack_snapshot_encryption.pass` records each tenant's outcome. A run that found no plaintext is recorded as `no_plaintext`, and one over an empty table as `empty_table`, so neither reads as a pass that did work.
+
+Once the plaintext count is zero the job costs two counts over the table a night, and it closes anything a bypass path writes in plaintext later.
 
 ### Future work (non-blocking)
 

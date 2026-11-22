@@ -21,6 +21,7 @@ import {
     MICROSOFT_FIRST_PARTY_TENANT_IDS,
     type ServicePrincipalState,
 } from '@/app-layer/integrations/providers/entra-id/service-principal';
+import { IntegrationTerminalError } from '@/app-layer/integrations/http-resilience';
 
 const SP = '9f1c2b7e-4a3d-4c1e-8b2f-6d5e4c3b2a19';
 const CLIENT = '0a1b2c3d-1111-2222-3333-444455556666';
@@ -39,6 +40,30 @@ const state = (over: Partial<ServicePrincipalState> = {}): ServicePrincipalState
     appOwnerOrganizationId: CONNECTION.tenantId,
     ...over,
 });
+
+/**
+ * A double that fails the way the REAL transport fails (#5311).
+ *
+ * `recordingFetch` below RETURNS whatever status it is given. `resilientFetch`
+ * does not: it classifies 404 as terminal (`TERMINAL_STATUS`) and THROWS
+ * `IntegrationTerminalError` before the caller sees a response. So a test built
+ * on the forgiving double certifies a path production never takes — which is
+ * exactly how the 404 handling here stayed broken while a green test said
+ * otherwise.
+ */
+function throwingFetch(status: number) {
+    const impl = (async (url: unknown) => {
+        const u = String(url);
+        if (u.includes('/oauth2/v2.0/token')) {
+            return new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }
+        throw new IntegrationTerminalError(status, u);
+    }) as unknown as typeof fetch;
+    return impl;
+}
 
 function recordingFetch(reply: { status: number; body?: unknown }) {
     const calls: Array<{ url: string; method: string; body: string | null }> = [];
@@ -129,10 +154,40 @@ describe('readServicePrincipal', () => {
         expect(f.calls[0].method).toBe('GET');
     });
 
-    it('answers null on 404 — no principal is a fact, not an error', async () => {
+    it('answers null on a RETURNED 404 — the injected-transport case', async () => {
+        // Kept, but it is not the production path: this double returns the
+        // status, and `resilientFetch` throws it. The test below is the one
+        // that covers what actually happens. (#5311)
         const f = recordingFetch({ status: 404, body: { error: { code: 'Request_ResourceNotFound' } } });
         const client = createEntraServicePrincipalClient({ connection: CONNECTION, doFetch: f.impl });
         expect(await client.readServicePrincipal(SP)).toBeNull();
+    });
+
+    it('answers null on a THROWN terminal 404 — what resilientFetch actually does (#5311)', async () => {
+        // The real transport classifies 404 as terminal and throws before this
+        // function sees a response, so the status check alone was unreachable
+        // in production. A principal deleted from Entra — the ordinary state for
+        // an orphaned agent — therefore propagated a throw instead of the null
+        // this function is declared to return, and the external-write dispatch
+        // settled an INDETERMINATE row for a human rather than taking the
+        // NOT_FOUND refusal that exists for it.
+        const client = createEntraServicePrincipalClient({
+            connection: CONNECTION,
+            doFetch: throwingFetch(404),
+        });
+        expect(await client.readServicePrincipal(SP)).toBeNull();
+    });
+
+    it('does NOT swallow a thrown terminal status that is not 404', async () => {
+        // The other side: 403 is the classifier's auth verdict and must keep
+        // propagating. Returning null for it would report "no such principal"
+        // for a permission problem — a wrong fact, and one that would make the
+        // orphan pass silently skip a principal it cannot read.
+        const client = createEntraServicePrincipalClient({
+            connection: CONNECTION,
+            doFetch: throwingFetch(403),
+        });
+        await expect(client.readServicePrincipal(SP)).rejects.toThrow(/terminally \(403\)/);
     });
 
     it('maps a missing accountEnabled to null, never to false', async () => {

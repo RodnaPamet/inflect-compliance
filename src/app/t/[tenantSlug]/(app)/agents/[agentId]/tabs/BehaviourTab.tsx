@@ -19,22 +19,44 @@
  * `<pre>` (and as text inside the diff), so `<img onerror>` in them is
  * characters on the screen and no element.
  *
+ * A version's drawn flow (Phase 1 of `docs/ai-architecture/langflow.md`) is
+ * covered by the same hash as its instructions, so it is shown and diffed the
+ * same way: `describeFlowForReview` renders every step, tool, profile reference
+ * and connection as text. An approver is never sent a hash over content the
+ * tab did not show them. A flow version does not run before Phase 5, so its
+ * Test run is disabled and says so.
+ *
+ * A version's inline sub-agents (Step 2e, #4594) are covered by the same hash,
+ * so every one is shown as text (`describeSubagentsForReview`: name, tools,
+ * skills, turn limit and every word of its instructions) and diffed against
+ * the version in force, and the history counts them. A Test run runs on the
+ * Tool Runner, which runs sub-agents, so a version with them is not held back
+ * here (#5764).
+ *
+ * Where the tenant has the process-canvas module, the version in force and the
+ * open version each carry "Open on canvas", and a reviewer of a submitted
+ * version is offered its changes from the version in force drawn on the canvas
+ * (Phases 2.3 and 2.4 of `docs/ai-architecture/langflow.md`). Both are plain
+ * links into the processes segment: this tab imports nothing from the canvas.
+ *
  * The four-eyes affordance is the server's (`canDecide`: a SUBMITTED version,
  * a signed-in person, never its author), and the usecase refuses the author
  * again if a request is crafted by hand. Approve sends the hash on screen, so
- * what is approved is the text the reviewer read.
+ * what is approved is the text, and the flow, the reviewer read.
  *
  * Test run is offered on a SUBMITTED or APPROVED version (Step 2c). It starts a
  * read-only run of that version as the agent, on the Tool Runner engine, and
  * opens the Runs tab. When it cannot start, it is disabled and says why: the
- * workspace's engine (named), the engine not in force, the agent not ready, or
- * a version that does not allow Test runs. The server refuses each of these
- * again.
+ * workspace's engine (named), the engine not in force, the agent not ready, a
+ * version that does not allow Test runs, or one that names only propose tools,
+ * which a read-only run is never offered (#5374). The server refuses each of
+ * these again.
  */
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { useToast } from '@/components/ui/hooks';
@@ -47,8 +69,11 @@ import { VersionDiff } from '@/components/ui/VersionDiff';
 import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { describeFlowForReview } from '@/lib/agentic/agent-flow';
+import { describeSubagentsForReview, profileNamesNoReadTool } from '@/lib/agentic/agent-profile';
+import { withAgentCanvasVersions } from '@/lib/processes/agent-view/agent-canvas-link';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
-import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/glyphs';
 
 import { BehaviourEditorSheet } from './BehaviourEditorSheet';
 import { BehaviourRejectModal } from './BehaviourRejectModal';
@@ -69,7 +94,7 @@ const STATUS_VARIANT: Record<ProfileVersionStatus, StatusBadgeVariant> = {
     RETIRED: 'warning',
 };
 
-export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: BehaviourTabProps) {
+export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns, canvasHref = null }: BehaviourTabProps) {
     const t = useTranslations('agents.behaviour');
     const apiUrl = useTenantApiUrl();
     const toast = useToast();
@@ -107,7 +132,7 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
     };
 
     /** POST one act; the refusal, if any, is the server's sentence. */
-    const act = async (version: number, verb: 'submit' | 'approve' | 'reject', body: unknown): Promise<string | null> => {
+    const act = async (version: number, verb: 'submit' | 'approve' | 'reject' | 'retire', body: unknown): Promise<string | null> => {
         setBusy(true);
         setActError(null);
         try {
@@ -148,6 +173,23 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
     const open = data.versions.find((v) => v.status === 'DRAFT' || v.status === 'SUBMITTED') ?? null;
     const who = (p: ProfilePerson) => (p.isViewer ? t('you') : p.label ?? t('unknownMember'));
 
+    /**
+     * One version on the process canvas, or the approver's diff of two
+     * (Phases 2.3 and 2.4 of `docs/ai-architecture/langflow.md`). A plain link
+     * into the processes segment, and none at all without the module, whose
+     * pages answer 404 there.
+     */
+    const canvasLink = (testId: string, label: string, versions: { version: string; compare?: string }) =>
+        canvasHref === null ? null : (
+            <Link
+                href={withAgentCanvasVersions(canvasHref, versions)}
+                data-testid={testId}
+                className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+            >
+                {label}
+            </Link>
+        );
+
     const testRun = (v: ProfileVersionView) => {
         // Why the button is disabled, or null when it can start. The version's
         // own triggers decide last, so the engine and the agent are named first.
@@ -156,9 +198,16 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
             ? state.reason === 'ENGINE_DOES_NOT_RUN_PROFILES'
                 ? t('testRun.reason.ENGINE_DOES_NOT_RUN_PROFILES', { engine: t(`testRun.engine.${state.engine}`) })
                 : t(`testRun.reason.${state.reason}`)
-            : !v.allowedTriggers.includes('TEST_RUN')
-              ? t('testRun.reason.TRIGGER_NOT_ALLOWED')
-              : null;
+            : v.flow !== null
+              ? t('testRun.reason.FLOW_NOT_RUNNABLE')
+              : !v.allowedTriggers.includes('TEST_RUN')
+                ? t('testRun.reason.TRIGGER_NOT_ALLOWED')
+                : // A Test run is read-only: a version naming only propose
+                  // tools would be offered nothing (#5374). The start refuses
+                  // it as TEST_RUN_NO_READ_TOOL.
+                  profileNamesNoReadTool(v.toolNames)
+                  ? t('testRun.reason.NO_READ_TOOL')
+                  : null;
         return (
             <div className="space-y-tight" data-testid={`behaviour-test-run-${v.version}`}>
                 <Button
@@ -218,7 +267,38 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
                             })}
                         </p>
                         <VersionBody v={inForce} />
+                        {canvasLink('behaviour-in-force-canvas', t('canvas.open'), { version: inForce.id })}
                         {testRun(inForce)}
+                        {/*
+                          * RETIRE THE VERSION IN FORCE (#5714). The open card above
+                          * reaches only a DRAFT or SUBMITTED version — `open` is
+                          * defined as one of those — so without this the one version
+                          * whose retirement actually changes what the agent does was
+                          * unreachable from the product.
+                          *
+                          * The consequence is said inline rather than behind a
+                          * confirm, the way this tab explains its others: Approve is
+                          * one click here too, and that is the act that puts a
+                          * version INTO force.
+                          */}
+                        {!retired ? (
+                            <div className="space-y-tight">
+                                <p className="text-xs text-content-muted" data-testid="behaviour-retire-in-force-note">
+                                    {t('open.retireInForceNote')}
+                                </p>
+                                <div className="flex justify-end">
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        disabled={busy}
+                                        data-testid="behaviour-retire-in-force"
+                                        onClick={async () => setActError(await act(inForce.version, 'retire', {}))}
+                                    >
+                                        {t('open.retire')}
+                                    </Button>
+                                </div>
+                            </div>
+                        ) : null}
                     </>
                 ) : (
                     <div data-testid="behaviour-in-force-empty">
@@ -253,12 +333,61 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
                                 toVersionId={open.id}
                                 data-testid="behaviour-review-diff"
                             />
+                            {inForce.flow !== null || open.flow !== null ? (
+                                <>
+                                    <p className="text-xs text-content-muted">
+                                        {t('review.flowDiffIntro', { from: inForce.version, to: open.version })}
+                                    </p>
+                                    <VersionDiff
+                                        versions={[
+                                            { id: inForce.id, versionNumber: inForce.version, text: flowText(inForce) },
+                                            { id: open.id, versionNumber: open.version, text: flowText(open) },
+                                        ]}
+                                        fromVersionId={inForce.id}
+                                        toVersionId={open.id}
+                                        data-testid="behaviour-review-flow-diff"
+                                    />
+                                </>
+                            ) : null}
+                            {inForce.subagents.length > 0 || open.subagents.length > 0 ? (
+                                <>
+                                    <p className="text-xs text-content-muted">
+                                        {t('review.subagentsDiffIntro', { from: inForce.version, to: open.version })}
+                                    </p>
+                                    <VersionDiff
+                                        versions={[
+                                            { id: inForce.id, versionNumber: inForce.version, text: subagentsText(inForce) },
+                                            { id: open.id, versionNumber: open.version, text: subagentsText(open) },
+                                        ]}
+                                        fromVersionId={inForce.id}
+                                        toVersionId={open.id}
+                                        data-testid="behaviour-review-subagents-diff"
+                                    />
+                                </>
+                            ) : null}
+                            {canvasHref !== null ? (
+                                <div className="space-y-tight">
+                                    <p className="text-xs text-content-muted">
+                                        {t('canvas.compareIntro', { from: inForce.version, to: open.version })}
+                                    </p>
+                                    {canvasLink('behaviour-review-canvas-diff', t('canvas.compare'), {
+                                        version: open.id,
+                                        compare: inForce.id,
+                                    })}
+                                </div>
+                            ) : null}
                         </div>
                     ) : null}
                     <VersionBody v={open} />
+                    {canvasLink('behaviour-open-canvas', t('canvas.open'), { version: open.id })}
                     {open.status === 'SUBMITTED' && open.canDecide ? (
                         <p className="text-xs text-content-muted">
-                            {t('review.hashNote')} <code className="break-all">{open.instructionsHash}</code>
+                            {open.flow !== null
+                                ? t('review.hashNoteWithFlow')
+                                : open.subagents.length > 0
+                                  ? t('review.hashNoteWithSubagents')
+                                  : t('review.hashNote')}{' '}
+                            <code className="break-all">{open.instructionsHash}</code>
                         </p>
                     ) : null}
                     {open.status === 'SUBMITTED' && open.author.isViewer ? (
@@ -308,7 +437,31 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
                                 {t('review.approve')}
                             </Button>
                         ) : null}
+                        {/*
+                          * RETIRE (#5714). The verb shipped with Step 1a and the tab
+                          * never offered it, so a version could not be retired from
+                          * the product at all.
+                          *
+                          * The condition mirrors what the server refuses and nothing
+                          * else: `ALREADY_RETIRED` for a retired version, and
+                          * `AGENT_RETIRED` from `findAgent` for a retired agent.
+                          * Deliberately NOT `canDecide` — retirement is not a
+                          * four-eyes act, and gating on it would hide the button from
+                          * the author of a draft the server lets them retire.
+                          */}
+                        {open.status !== 'RETIRED' && !retired ? (
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                disabled={busy}
+                                data-testid="behaviour-retire"
+                                onClick={async () => setActError(await act(open.version, 'retire', {}))}
+                            >
+                                {t('open.retire')}
+                            </Button>
+                        ) : null}
                     </div>
+
                     {open.status === 'SUBMITTED' ? testRun(open) : null}
                 </Card>
             ) : null}
@@ -343,6 +496,10 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
                                             </dd>
                                         </>
                                     ) : null}
+                                    <dt>{t('history.subagents')}</dt>
+                                    <dd data-testid={`behaviour-version-${v.version}-subagent-count`}>
+                                        {v.subagents.length > 0 ? v.subagents.length : t('none')}
+                                    </dd>
                                     <dt>{t('history.hash')}</dt>
                                     <dd>
                                         <code className="break-all" data-testid={`behaviour-version-${v.version}-hash`}>
@@ -395,7 +552,17 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
     );
 }
 
-/** One version's instructions, as text, and the settings it runs with. */
+/** A version's flow as the reviewer reads it, or empty for a version with none. */
+function flowText(v: ProfileVersionView): string {
+    return v.flow !== null ? describeFlowForReview(v.flow) : '';
+}
+
+/** A version's sub-agents as the reviewer reads them, or empty for a version with none. */
+function subagentsText(v: ProfileVersionView): string {
+    return v.subagents.length > 0 ? describeSubagentsForReview(v.subagents) : '';
+}
+
+/** One version's instructions and flow, as text, and the settings it runs with. */
 function VersionBody({ v }: { v: ProfileVersionView }) {
     const t = useTranslations('agents.behaviour');
     return (
@@ -407,6 +574,28 @@ function VersionBody({ v }: { v: ProfileVersionView }) {
             >
                 {v.instructions}
             </pre>
+            {v.flow !== null ? (
+                <>
+                    <p className="text-xs text-content-muted">{t('field.flow')}</p>
+                    <pre
+                        className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded border border-border-subtle p-2 text-xs text-content-default"
+                        data-testid={`behaviour-version-${v.version}-flow`}
+                    >
+                        {flowText(v)}
+                    </pre>
+                </>
+            ) : null}
+            {v.subagents.length > 0 ? (
+                <>
+                    <p className="text-xs text-content-muted">{t('field.subagents')}</p>
+                    <pre
+                        className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded border border-border-subtle p-2 text-xs text-content-default"
+                        data-testid={`behaviour-version-${v.version}-subagents`}
+                    >
+                        {subagentsText(v)}
+                    </pre>
+                </>
+            ) : null}
             <dl className="grid grid-cols-2 gap-x-default gap-y-tight text-xs text-content-muted">
                 <dt>{t('field.tools')}</dt>
                 <dd data-testid={`behaviour-version-${v.version}-tools`}>{v.toolNames.join(', ')}</dd>
@@ -418,6 +607,20 @@ function VersionBody({ v }: { v: ProfileVersionView }) {
                 <dd>{t(`effort.${v.effort}`)}</dd>
                 <dt>{t('field.maxTurns')}</dt>
                 <dd>{v.maxTurns}</dd>
+                <dt>{t('field.compaction')}</dt>
+                <dd data-testid={`behaviour-version-${v.version}-compaction`}>
+                    {v.compactionThresholdTokens === null
+                        ? t('compaction.default')
+                        : v.compactionThresholdTokens === 0
+                          ? t('compaction.off')
+                          : t('compaction.atTokens', { count: v.compactionThresholdTokens })}
+                </dd>
+                {/* WHICH CALLS WAIT FOR A PERSON (Step 2f): part of what the
+                    approver approves, so it is shown whatever it holds. */}
+                <dt>{t('field.deferral')}</dt>
+                <dd data-testid={`behaviour-version-${v.version}-deferral`}>
+                    {(v.deferredToolNames ?? []).length > 0 ? (v.deferredToolNames ?? []).join(', ') : t('deferral.none')}
+                </dd>
                 <dt>{t('field.outputKind')}</dt>
                 <dd>{t(`outputKind.${v.outputKind}`)}</dd>
                 <dt>{t('field.triggers')}</dt>

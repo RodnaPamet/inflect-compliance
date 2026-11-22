@@ -21,6 +21,8 @@ const mockTx = {
     vendor: { findFirst: jest.fn() },
     vendorAssessmentTemplate: { findFirst: jest.fn() },
     vendorAssessment: { findFirst: jest.fn(), create: jest.fn() },
+    // The sender's display name for the email (#5318).
+    user: { findUnique: jest.fn() },
 };
 
 jest.mock('@/lib/db-context', () => ({
@@ -103,6 +105,8 @@ beforeEach(() => {
         (fn as jest.Mock).mockReset(),
     );
     mockEnqueueEmail.mockReset();
+    mockTx.user.findUnique.mockReset();
+    mockTx.user.findUnique.mockResolvedValue({ name: 'Dana Sender' });
     delete mockEnv.APP_URL;
 });
 
@@ -347,6 +351,21 @@ describe('sendAssessment — happy path', () => {
         expect(enqueueArgs.payload.responseUrl).toContain(
             `t=${result.externalAccessToken}`,
         );
+    });
+
+    test('names the sender by display name, never by user id (#5318)', async () => {
+        setupSuccess();
+        await sendAssessment(makeCtx(), 'v-1', 't-v3', VALID_INPUT);
+        const payload = mockEnqueueEmail.mock.calls[0][1].payload;
+        expect(payload.inviterName).toBe('Dana Sender');
+        expect(JSON.stringify(payload)).not.toContain(makeCtx().userId);
+    });
+
+    test('omits the sender when the user has no name, rather than naming them by id (#5318)', async () => {
+        setupSuccess();
+        mockTx.user.findUnique.mockResolvedValue({ name: null });
+        await sendAssessment(makeCtx(), 'v-1', 't-v3', VALID_INPUT);
+        expect(mockEnqueueEmail.mock.calls[0][1].payload.inviterName).toBeUndefined();
     });
 
     test('honours expiresInDays clamping (max 90)', async () => {

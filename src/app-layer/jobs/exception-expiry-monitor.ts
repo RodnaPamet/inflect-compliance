@@ -123,6 +123,8 @@ export async function runExceptionExpiryMonitor(
             status: 'APPROVED',
             deletedAt: null,
             expiresAt: { not: null, gte: now, lte: horizon },
+            // A removed workspace's exceptions remind nobody (#5298).
+            tenant: { deletedAt: null },
             ...(tenantId ? { tenantId } : {}),
         },
         select: {
@@ -162,6 +164,25 @@ export async function runExceptionExpiryMonitor(
     let skippedNoRecipient = 0;
     let inWindowCount = 0;
 
+    // The accepters and approvers who still hold an ACTIVE membership in the
+    // exception's tenant, read once (#5298). Somebody who has left is not
+    // emailed about the tenant's controls.
+    const people = candidates.flatMap((ex) =>
+        [ex.riskAcceptedByUserId, ex.approvedByUserId]
+            .filter((u): u is string => !!u)
+            .map((userId) => ({ tenantId: ex.tenantId, userId })),
+    );
+    const activeMembers = new Set<string>();
+    if (people.length) {
+        const memberships = await db.tenantMembership.findMany({ // guardrail-allow: unbounded -- bounded by the candidate exceptions
+            where: { status: 'ACTIVE', OR: people },
+            select: { tenantId: true, userId: true },
+        });
+        for (const m of memberships) activeMembers.add(`${m.tenantId}:${m.userId}`);
+    }
+    const isActive = (tenantId: string, userId: string | null) =>
+        !!userId && activeMembers.has(`${tenantId}:${userId}`);
+
     for (const ex of candidates) {
         if (!ex.expiresAt) continue; // type-narrow; `not: null` already filters at DB
         const window = reminderWindowFor(ex.expiresAt, now);
@@ -173,7 +194,7 @@ export async function runExceptionExpiryMonitor(
             email: string;
             name: string;
         }> = [];
-        if (ex.riskAcceptedBy?.email) {
+        if (ex.riskAcceptedBy?.email && isActive(ex.tenantId, ex.riskAcceptedByUserId)) {
             recipients.push({
                 email: ex.riskAcceptedBy.email,
                 name: ex.riskAcceptedBy.name ?? ex.riskAcceptedBy.email,
@@ -181,6 +202,7 @@ export async function runExceptionExpiryMonitor(
         }
         if (
             ex.approvedBy?.email &&
+            isActive(ex.tenantId, ex.approvedByUserId) &&
             ex.approvedByUserId !== ex.riskAcceptedByUserId &&
             ex.approvedBy.email !== ex.riskAcceptedBy?.email
         ) {

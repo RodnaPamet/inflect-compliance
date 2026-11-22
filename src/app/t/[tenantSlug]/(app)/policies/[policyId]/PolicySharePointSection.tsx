@@ -31,7 +31,9 @@ export function PolicySharePointSection({ policyId }: { policyId: string }) {
     const [status, setStatus] = useState<SpStatus | null>(null);
     const [pickerOpen, setPickerOpen] = useState(false);
     const [busy, setBusy] = useState(false);
-    const [msg, setMsg] = useState<string | null>(null);
+    // What the last action said, and whether it worked: a refusal used to be
+    // shown in the green success notice (#5313).
+    const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
     const loadStatus = useCallback(async () => {
         try {
@@ -70,7 +72,7 @@ export function PolicySharePointSection({ policyId }: { policyId: string }) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ connectionId: connId, driveId: items[0].driveId, itemId: items[0].itemId }),
                 });
-                if (!res.ok) { setMsg(t('sharepoint.linkFailed')); return; }
+                if (!res.ok) { setMsg({ text: t('sharepoint.linkFailed'), ok: false }); return; }
                 await loadStatus();
             } finally {
                 setBusy(false);
@@ -85,8 +87,8 @@ export function PolicySharePointSection({ policyId }: { policyId: string }) {
             setMsg(null);
             try {
                 const res = await fetch(apiUrl(`/policies/${policyId}/sharepoint${path}`), { method });
-                if (!res.ok) { setMsg(t('sharepoint.actionFailed')); return; }
-                setMsg(okMsg);
+                if (!res.ok) { setMsg({ text: t('sharepoint.actionFailed'), ok: false }); return; }
+                setMsg({ text: okMsg, ok: true });
                 await loadStatus();
             } finally {
                 setBusy(false);
@@ -121,7 +123,11 @@ export function PolicySharePointSection({ policyId }: { policyId: string }) {
                     {t('sharepoint.conflict')}
                 </InlineNotice>
             )}
-            {msg && <InlineNotice variant="success">{msg}</InlineNotice>}
+            {msg && (
+                <InlineNotice variant={msg.ok ? 'success' : 'error'} id="policy-sharepoint-notice">
+                    {msg.text}
+                </InlineNotice>
+            )}
 
             {status?.linked ? (
                 <div className="flex flex-wrap items-center gap-tight">

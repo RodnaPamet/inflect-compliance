@@ -165,6 +165,15 @@ const ADMIN_GATED_WRITES: Record<string, { methods: string[]; reason: string }> 
             'corrected to admin.manage in #2117; who may bulk-delete is ' +
             'unchanged, where the refusal is recorded is not.',
     },
+    '[taskId]/restore/route.ts': {
+        methods: ['POST'],
+        reason:
+            'restoreTask reaches restoreEntity, which asserts assertCanAdmin, ' +
+            'and restore undoes the admin.manage DELETE above. The route ' +
+            'declared tasks.edit, so an EDITOR passed it and was refused ' +
+            'deeper with no AUTHZ_DENIED row; corrected to admin.manage in ' +
+            '#5303.',
+    },
 };
 
 const VIEW_GATED_WRITES: Record<string, { methods: string[]; reason: string }> = {

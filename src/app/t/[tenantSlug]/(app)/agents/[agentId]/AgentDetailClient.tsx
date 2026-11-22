@@ -7,6 +7,7 @@ import { MetaStrip, type MetaItem } from '@/components/ui/meta-strip';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { ServicePrincipalLinkCard } from './tabs/ServicePrincipalLinkCard';
 import { OwnershipTransferCard } from './tabs/OwnershipTransferCard';
+import { SpendingAuthorityCard } from './tabs/SpendingAuthorityCard';
 import { OverviewTab } from './tabs/OverviewTab';
 import { RiskAssessmentTab } from './tabs/RiskAssessmentTab';
 import { PolicyCardTab } from './tabs/PolicyCardTab';
@@ -16,12 +17,16 @@ import { SkillsTab } from './tabs/SkillsTab';
 import { BehaviourTab } from './tabs/BehaviourTab';
 import { RunsTab } from './tabs/RunsTab';
 import { CircuitBreakerTab } from './tabs/CircuitBreakerTab';
+import { BehaviourFingerprintCard } from './tabs/BehaviourFingerprintCard';
 import { AgentKillSwitchAction, AgentKillSwitchBanner } from './AgentKillSwitchAction';
 import { AgentAmendModal } from './AgentAmendModal';
 import { ConnectAgentSheet } from './ConnectAgentSheet';
 import { InteractiveAgentAction } from './InteractiveAgentAction';
-import { Button } from '@/components/ui/button';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import type { AgentDetailTabKey } from './agent-detail-tabs';
 
 export interface AgentSummary {
     id: string;
@@ -141,10 +146,10 @@ export interface AgentDetailPermissions {
 // `behaviour` (Step 1b, #4144) sits after `skills`: what the agent should DO,
 // written in terms of the tools and skills the two tabs before it govern. It is
 // in the list only while AGENT_PROFILES is on (`profilesEnabled`).
-const TAB_KEYS = [
-    'overview', 'risk', 'policy', 'tools', 'skills', 'behaviour', 'coverage', 'runs', 'breaker',
-] as const;
-type TabKey = (typeof TAB_KEYS)[number];
+//
+// The list lives in `agent-detail-tabs.ts`, which the loading skeleton reads
+// too (#5313).
+type TabKey = AgentDetailTabKey;
 
 /**
  * The stored codes the header shows, each with its label (#4937). An unknown
@@ -181,12 +186,18 @@ export function AgentDetailClient({
     vendors,
     viewerUserId,
     profilesEnabled = false,
+    canvasHref = null,
 }: {
     tenantSlug: string;
     agent: AgentSummary;
     perms: AgentDetailPermissions;
     owners: OwnerChoice[];
-    vendors: VendorChoice[];
+    /**
+     * The supplier picker's options, or `null` when the vendors could not be
+     * read (or the agent's own supplier could not be named): the field is then
+     * disabled rather than offering "None" over a value nobody can see (#5313).
+     */
+    vendors: VendorChoice[] | null;
     /** The signed-in person; the transfer card says which side of an open transfer they are on. */
     viewerUserId?: string;
     /**
@@ -194,8 +205,17 @@ export function AgentDetailClient({
      * is no Behaviour tab at all, as the profile routes answer 404.
      */
     profilesEnabled?: boolean;
+    /**
+     * Where this agent opens on the process canvas, or null where the tenant
+     * does not have the process-canvas module (Phase 2.3 of
+     * `docs/ai-architecture/langflow.md`). A plain link into the processes
+     * segment: this page imports nothing from the canvas, so the licensed
+     * editor stays out of its bundle.
+     */
+    canvasHref?: string | null;
 }) {
     const t = useTranslations('admin');
+    const tCanvas = useTranslations('agentCanvas');
     // The register's copy lives in the top-level `agents` namespace now that
     // the subtree is no longer under `/admin` (#2426); `admin.agentDetail.*`
     // — this page's own ~90 keys — deliberately stayed put, so the page reads
@@ -211,6 +231,14 @@ export function AgentDetailClient({
     // breaker) can make the others re-read without the shell knowing what
     // any of them holds.
     const refresh = useCallback(() => setRefreshToken((n) => n + 1), []);
+    // An amend changes what the SERVER rendered — the header, the meta strip
+    // and the `agent` this modal is seeded from — so the tabs re-reading is
+    // not enough; the route has to render again (#5152).
+    const router = useRouter();
+    const afterAmend = useCallback(() => {
+        refresh();
+        router.refresh();
+    }, [refresh, router]);
 
     const meta: MetaItem[] = [
         {
@@ -323,6 +351,15 @@ export function AgentDetailClient({
                         data-testid="agent-connect-action"
                         text={t('agentDetail.connect.action')}
                     />
+                    {canvasHref !== null && (
+                        <Link
+                            href={canvasHref}
+                            id="agent-open-on-canvas"
+                            className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+                        >
+                            {tCanvas('openOnCanvas')}
+                        </Link>
+                    )}
                     <AgentKillSwitchAction
                         agentId={agent.id}
                         canKill={perms.canKill}
@@ -408,6 +445,23 @@ export function AgentDetailClient({
                     {/* The register key, which the link route takes for its
                         read and its confirm alike (#3807). */}
                     {perms.canReadRegistry && <ServicePrincipalLinkCard {...props} />}
+                    {/* The register key, which the spending-authority routes take
+                        for every act and the read (Agent Pay Phase 1, #5333).
+                        Writes are offered by the server's own answer for this
+                        viewer, ANDed with the page's edge-aware register gate. */}
+                    {perms.canReadRegistry && (
+                        <SpendingAuthorityCard
+                            {...props}
+                            onChanged={refresh}
+                            canManageRegistry={perms.canManageRegistry}
+                            people={owners}
+                        />
+                    )}
+                    {/* The breaker's read key, which the fingerprint route
+                        takes for its read and its acceptance (Morpheus 1.3). */}
+                    {perms.canReadRegistry && (
+                        <BehaviourFingerprintCard {...props} onChanged={refresh} />
+                    )}
                     {perms.canTransferOwnership && viewerUserId && (
                         <OwnershipTransferCard
                             {...props}
@@ -434,7 +488,12 @@ export function AgentDetailClient({
                 />
             )}
             {tab === 'tools' && (
-                <ToolsTab {...props} onChanged={refresh} canGrantTools={perms.canGrantTools} />
+                <ToolsTab
+                    {...props}
+                    onChanged={refresh}
+                    canGrantTools={perms.canGrantTools}
+                    canReadRegistry={perms.canReadRegistry}
+                />
             )}
             {tab === 'skills' && <SkillsTab
                     {...props}
@@ -445,6 +504,10 @@ export function AgentDetailClient({
                 <BehaviourTab
                     {...props}
                     retired={agent.status === 'RETIRED'}
+                    // The same link the header carries, or null without the
+                    // process-canvas module: the tab asks for a version on it
+                    // (Phase 2.3) and imports nothing from the canvas.
+                    canvasHref={canvasHref}
                     // A started Test run is shown where the agent's runs are,
                     // re-read so it is listed (Step 2c).
                     onOpenRuns={() => {
@@ -484,7 +547,7 @@ export function AgentDetailClient({
                     // The whole shell re-reads rather than this header alone:
                     // an amend can change autonomy and provenance, which the
                     // risk and coverage tabs both derive from.
-                    onAmended={refresh}
+                    onAmended={afterAmend}
                 />
             )}
         </EntityDetailLayout>

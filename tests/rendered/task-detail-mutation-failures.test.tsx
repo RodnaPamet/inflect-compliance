@@ -388,6 +388,10 @@ describe('task detail — the edit dialog’s assignee picker follows tasks.assi
         await waitFor(() =>
             expect(document.getElementById('task-panel-title')).toHaveValue(TASK.title),
         );
+        // The panel holds its fields disabled until its own GET has landed
+        // (#5309 item 10), and the title's value arrives from props before
+        // that. Loaded is when the form opens, so wait for that too.
+        await waitFor(() => expect(document.getElementById('task-panel-title')).toBeEnabled());
     }
 
     it('a built-in Editor can pick an assignee there', async () => {
@@ -505,6 +509,25 @@ describe('task detail — each write control follows its route’s key', () => {
         return { ...overview, ...evidence, ...links };
     }
 
+    // #5313 — the add-link form's pickers showed the stored codes.
+    it('the add-link form names its entity type and relation in words', async () => {
+        renderPage();
+        await waitForTaskLoaded();
+        fireEvent.click(screen.getByRole('tab', { name: /links/i }));
+        await screen.findByText('Access control policy');
+        fireEvent.click(document.getElementById('add-link-btn') as HTMLElement);
+        const entityType = await waitFor(() => {
+            const el = document.getElementById('link-entity-type');
+            expect(el).not.toBeNull();
+            return el as HTMLElement;
+        });
+        expect(entityType).toHaveTextContent('Control');
+        expect(entityType).not.toHaveTextContent('CONTROL');
+        const relation = document.getElementById('link-relation') as HTMLElement;
+        expect(relation).toHaveTextContent('Relates to');
+        expect(relation).not.toHaveTextContent('RELATES');
+    });
+
     it('names each link\'s type and relation in words, not the stored codes (#4698)', async () => {
         renderPage();
         await waitForTaskLoaded();
@@ -582,6 +605,30 @@ function getCountExactList(): number {
     ).length;
 }
 
+// #5313 — RESOLVED is not offered as a choice, and the picker dropped it
+// even as the task's CURRENT status, so the control read its placeholder.
+describe('task detail — a RESOLVED task\'s status picker shows where it is', () => {
+    beforeEach(() => {
+        fetchMock.mockReset();
+        fetchMock.mockImplementation(async (url: string) =>
+            url.split('?')[0] === '/api/t/acme/tasks/task_1' ? json({ ...TASK, status: 'RESOLVED' }) : baseGet(url),
+        );
+        (global as unknown as { fetch: jest.Mock }).fetch = fetchMock;
+    });
+
+    it('reads "Resolved", not the placeholder', async () => {
+        renderPage();
+        await waitForTaskLoaded();
+        const picker = await waitFor(() => {
+            const el = document.getElementById('task-status-select');
+            expect(el).not.toBeNull();
+            return el as HTMLElement;
+        });
+        expect(picker).toHaveTextContent('Resolved');
+        expect(picker).not.toHaveTextContent(EN.statusPlaceholder);
+    });
+});
+
 describe('task detail — removing someone else as a watcher follows tasks.edit', () => {
     // Removing YOURSELF needs no write permission; removing another person
     // makes `removeTaskWatcher` assert the write tier AND `tasks.edit`. The
@@ -606,6 +653,14 @@ describe('task detail — removing someone else as a watcher follows tasks.edit'
     });
 
     it('a built-in Admin may remove another watcher', async () => {
+        renderPage();
+        await waitForTaskLoaded();
+        expect(document.getElementById('remove-watcher-user_2')).not.toBeNull();
+    });
+
+    // #5313 — the page also asked OWNER/ADMIN, which the server does not.
+    it('a built-in Editor may remove another watcher, as the server allows', async () => {
+        viewAsEditor();
         renderPage();
         await waitForTaskLoaded();
         expect(document.getElementById('remove-watcher-user_2')).not.toBeNull();
@@ -687,6 +742,21 @@ describe('task detail — delete, comments and the reviewer (owner decisions, 20
         await waitForTaskLoaded();
         await openComments();
         expect(document.getElementById('comment-body')).toBeNull();
+    });
+
+    it('a custom role over Reader that grants tasks.edit gets the comment box (#5376)', async () => {
+        // Commenting takes `tasks.edit` alone (owner decision, 2026-11-12):
+        // the base role no longer decides, on the server or here.
+        const reader = getPermissionsForRole('READER');
+        mockViewer = {
+            role: 'READER',
+            permissions: { canWrite: false, canAdmin: false },
+            appPermissions: { ...reader, tasks: { ...reader.tasks, edit: true } },
+        };
+        renderPage();
+        await waitForTaskLoaded();
+        await openComments();
+        await waitFor(() => expect(document.getElementById('comment-body')).not.toBeNull());
     });
 
     it('a Reader sees who the reviewer is, without the picker', async () => {

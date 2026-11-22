@@ -49,7 +49,8 @@
  */
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Xmark } from '@inflect/ui/components/ui/icons/nucleo/xmark';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
+import { Xmark } from '@inflect/ui/components/ui/icons/glyphs/xmark';
 
 import { Button } from '@/components/ui/button';
 import { InlineNotice } from '@/components/ui/inline-notice';
@@ -60,6 +61,8 @@ import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useCheckpointReview } from '@/lib/processes/canvas-checkpoint-review';
 import { resolveProposalGuardState } from '@/lib/agentic/proposal-guard-state';
+import { proposalKindLabelKey } from '@/lib/agentic/proposal-labels';
+import { proposalRefusalKey } from '@/lib/agentic/proposal-refusal-keys';
 import type { AgentGuardVerdict } from '@/app-layer/ai/guard/proposal-guard';
 
 /**
@@ -154,7 +157,12 @@ export function CheckpointReviewPanel() {
                 const body = (await res.json().catch(() => null)) as
                     | { error?: { message?: string } }
                     | null;
-                throw new Error(body?.error?.message ?? fallback);
+                // A refusal the queue words itself is worded here too (#5053);
+                // any other keeps the server's sentence, then the fallback.
+                const known = proposalRefusalKey(body);
+                throw new Error(
+                    known ? ta(`proposals.refused.${known}`) : (body?.error?.message ?? fallback),
+                );
             }
             // TWO SUCCESS SHAPES, AND THEY MEAN OPPOSITE THINGS — the same
             // reconciliation the queue does, for the same reason. A tiered
@@ -192,6 +200,26 @@ export function CheckpointReviewPanel() {
 
     const rows = (data?.proposals ?? []).filter((p) => !decided.has(p.id));
 
+    /** The run's status by its label; a value this client does not know is shown as stored. */
+    function runStatusLabel(status: string): string {
+        return ta.has?.(`runs.status.${status}`) ? ta(`runs.status.${status}`) : status;
+    }
+
+    /**
+     * "Risk (new)": the kind and operation as labels, never as stored codes
+     * (#5053). A value this client does not know is shown as stored.
+     */
+    function kindOperationLabel(p: CheckpointProposalRow): string {
+        const kindKey = proposalKindLabelKey(p.kind);
+        return ta('quarantine.kindOperation', {
+            kind: kindKey ? ta(kindKey) : p.kind,
+            operation:
+                p.operation === 'CREATE' || p.operation === 'UPDATE'
+                    ? ta(`quarantine.operation.${p.operation}`)
+                    : p.operation,
+        });
+    }
+
     return (
         <aside
             data-testid="checkpoint-review-panel"
@@ -211,7 +239,7 @@ export function CheckpointReviewPanel() {
                         >
                             {tp('checkpoint.subtitle', {
                                 workflowKey: data.workflowKey,
-                                status: data.status,
+                                status: runStatusLabel(data.status),
                             })}
                         </span>
                     ) : null}
@@ -265,7 +293,7 @@ export function CheckpointReviewPanel() {
                         discovered. */}
                     {data?.approvalExpiresAt ? (
                         <p className="text-xs text-content-subtle" data-testid="checkpoint-window">
-                            {tp('checkpoint.windowCloses', { at: data.approvalExpiresAt })}
+                            {tp('checkpoint.windowCloses', { at: formatDateTime(data.approvalExpiresAt) })}
                         </p>
                     ) : null}
 
@@ -281,7 +309,7 @@ export function CheckpointReviewPanel() {
                             <p className="text-sm text-content-muted">
                                 {data.awaitingHuman
                                     ? tp('checkpoint.noneAwaiting')
-                                    : tp('checkpoint.noneSettled', { status: data.status })}
+                                    : tp('checkpoint.noneSettled', { status: runStatusLabel(data.status) })}
                             </p>
                             <a
                                 className="text-xs text-content-link underline"
@@ -310,8 +338,11 @@ export function CheckpointReviewPanel() {
                                         className="flex flex-col gap-tight rounded-md border border-border-subtle bg-bg-default p-compact"
                                     >
                                         <div className="flex items-center justify-between gap-tight">
-                                            <span className="text-sm font-medium text-content-default">
-                                                {p.kind} · {p.operation}
+                                            <span
+                                                data-testid={`checkpoint-kind-${p.id}`}
+                                                className="text-sm font-medium text-content-default"
+                                            >
+                                                {kindOperationLabel(p)}
                                             </span>
                                             <StatusBadge variant={badge.variant}>
                                                 {ta(badge.key)}
@@ -354,6 +385,17 @@ export function CheckpointReviewPanel() {
                                                 ) : !canOperate ? (
                                                     <InlineNotice variant="info">
                                                         {ta('runs.needsWrite')}
+                                                    </InlineNotice>
+                                                ) : !p.viewerMayApprove ? (
+                                                    // The server would refuse
+                                                    // this viewer for this kind
+                                                    // (#5053), so it is not
+                                                    // offered; Reject still is.
+                                                    <InlineNotice
+                                                        variant="info"
+                                                        data-testid={`checkpoint-approve-unavailable-${p.id}`}
+                                                    >
+                                                        {ta('proposals.approveNeedsKindPermission')}
                                                     </InlineNotice>
                                                 ) : (
                                                     <Button

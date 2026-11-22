@@ -384,3 +384,15 @@ describe('getPolicyAcknowledgementRoster', () => {
         expect(entry?.assignedByName).toBe(null); // 'admin' not in the user lookup here
     });
 });
+
+describe('an acknowledgement is a person’s statement', () => {
+    it.each([
+        ['an API key', { apiKeyId: 'key-1' }],
+        ['an agent', { agentId: 'agent-1' }],
+    ])('refuses %s acknowledging a policy in the person’s name', async (_l, extra) => {
+        await expect(attestPolicy(makeRequestContext('EDITOR', extra), 'p1')).rejects.toMatchObject({
+            status: 403,
+            details: { reason: 'NOT_A_PERSON' },
+        });
+    });
+});

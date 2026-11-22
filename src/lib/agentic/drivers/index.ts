@@ -26,13 +26,13 @@ export type { RunDriver, RunDriverOutcome } from './types';
 /**
  * The implementations this build has.
  *
- * `flue` is now a real entry, not a stub — `runFlueDriver` resolves the
+ * `flue` is a real entry, not a stub — `runFlueDriver` resolves the
  * tenant's residency, plans the run and hands off to the runtime. That it is
- * mapped here does NOT mean runs reach it: `DRIVER_IMPLEMENTED.flue` is the
- * gate, `resolveAgentDriver` ANDs it with the operator switch and the tenant
- * toggle, and until that flag is flipped `selectRunDriver` can never choose
- * this key. Mapping it and gating it are separate facts on purpose — the flip
- * should be a diff that changes one line and nothing else.
+ * mapped here does NOT mean runs reach it: `resolveAgentDriver` ANDs
+ * `DRIVER_IMPLEMENTED.flue` (true since #2770) with the operator switch and
+ * the tenant toggle, and `selectRunDriver` chooses this key only when all
+ * three agree. Mapping it and gating it are separate facts on purpose —
+ * turning the engine off is a diff that changes one flag and nothing else.
  *
  * The map stays `Partial` so a future driver added to `AgentDriver` is an
  * absent key rather than a type error at every read.
@@ -40,9 +40,10 @@ export type { RunDriver, RunDriverOutcome } from './types';
 const DRIVERS: Partial<Record<AgentDriver, RunDriver>> = {
     static: runStaticDriver,
     flue: runFlueDriver,
-    // Mapped and gated, as Flue was: `DRIVER_IMPLEMENTED['tool-runner']` is
-    // false until Step 2c, so `resolveAgentDriver` never permits this key and
-    // `selectRunDriver` never chooses it.
+    // Mapped and gated, as Flue is: `DRIVER_IMPLEMENTED['tool-runner']` is true
+    // since Step 2c, but `resolveAgentDriver` permits this key only when the
+    // tenant chose it and the Tool Runner is available to the workspace
+    // (`AGENT_DRIVER_TOOL_RUNNER`, or its organization's choice when unset).
     'tool-runner': runToolRunnerDriver,
 };
 

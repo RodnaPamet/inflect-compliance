@@ -241,6 +241,19 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'Read-only sibling at /risk-matrix-config (risks.view).',
     },
 
+    // ── Risk appetite approval (#5313 item 11) ──────────────────────
+    {
+        path: new RegExp(`^${T}\\/risk-appetite\\/approve$`),
+        methods: ['POST'],
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Approves the risk appetite statement and its limits, stamping the '
+            + 'caller and the time. OWNER-only by owner decision (2026-11-15): '
+            + 'the approval is the board\'s sign-off, so the role that edits the '
+            + 'limits (ADMIN) does not also approve them. Any save that changes '
+            + 'the statement or a limit clears it.',
+    },
+
     // ── M2M API keys ────────────────────────────────────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/api-keys(\\/.*)?$`),
@@ -435,6 +448,22 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'the paged view of data the unpaged view hands out.',
     },
     {
+        // D-EV-8 (owner decision 2026-11-15). The run's gate here, and the
+        // decision log's own rule (`assertMayReadOversightSurface`) in the
+        // usecase, so a reader of a run's rows is a reader of the decisions
+        // page too. The second term reads a tenant setting, which is why it
+        // cannot be a key in this map.
+        path: new RegExp(`^${T}\\/agent-runs\\/[^/]+\\/decisions$`),
+        methods: ['GET'],
+        permission: ['admin.view', 'admin.agent_registry_view'],
+        mode: 'any',
+        note:
+            "The EU AI Act Art 12 rows one run wrote: id, input digest, agent, " +
+            'time and outcome code, no text. The run detail page\'s gate, and ' +
+            "the decision log's own read rule in the usecase on top of it, so " +
+            'nobody reads a row here they could not read on /agents/decisions.',
+    },
+    {
         path: new RegExp(`^${T}\\/agent-runs\\/[^/]+\\/(resume|abort)$`),
         methods: ['POST'],
         permission: ['admin.view', 'admin.agent_registry_view'],
@@ -593,11 +622,12 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     {
         path: new RegExp(`^${T}\\/admin\\/mcp\\/quarantine$`),
         methods: ['GET'],
-        permission: 'admin.agent_registry_view',
+        permission: ['admin.agent_registry_view', 'admin.agent_registry'],
+        mode: 'any',
         note:
             'The QUARANTINE TRIAGE read — the proposals the agentic output ' +
             'guard refused, with the payload that was attempted. The route ' +
-            'takes the inventory VIEW key and the usecase applies the full ' +
+            'takes either inventory key (#5217) and the usecase applies the full ' +
             'rule: the register key, or the view key only while an owner has ' +
             'let Auditors read the quarantine (owner decision 2026-11-01, ' +
             '#4898; `agent-oversight-settings.ts`). Off by default, which is ' +
@@ -621,6 +651,22 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'admin.agent_harness_ingest',
         note:
             'Submit a signed inflect-agent-harness/2 report. The key alone ' +
+            'ingests nothing: the report must be signed by a scanner key the ' +
+            'tenant registered, which takes admin.agent_registry.',
+    },
+    // ── Third-party application scans (`scanent-integrations/1`) ─────
+    //
+    // The scanner's second report, its own key by owner decision: a key
+    // minted to post agent reports does not post application reports. Above
+    // the catch-all so a POST resolves here; the GET is the inventory read
+    // (below), as the harness list's is.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/integration-scans$`),
+        methods: ['POST'],
+        permission: 'admin.integrations_ingest',
+        note:
+            'Submit a signed scanent-integrations/1 report: the third-party ' +
+            'applications a directory has granted access to. The key alone ' +
             'ingests nothing: the report must be signed by a scanner key the ' +
             'tenant registered, which takes admin.agent_registry.',
     },
@@ -713,7 +759,8 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         methods: ['POST'],
         permission: 'admin.agent_registry',
         note:
-            'Register a shadow agent from its SHADOW_AGENT harness finding: a ' +
+            'Register a shadow agent from its SHADOW_AGENT harness finding, or an ' +
+            'unregistered identity from its UNREGISTERED_IDENTITY one: a ' +
             'DRAFT register row and a provisional AI-system entry at ' +
             'UNCLASSIFIED, in one transaction, owned by the person the caller ' +
             'confirms. The agent cannot be activated until the entry is classified.',
@@ -730,6 +777,18 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'Confirm that a discovered Entra service principal is a registered ' +
             "agent's own — the condition for an UNATTENDED disable of that " +
             'principal when the owner-orphan pass contains the agent.',
+    },
+    // Agent Pay Phase 1 (#5333). The same key as the catch-all below, stated on
+    // its own because the issue names it: spending authority is a privilege on
+    // the register, and its four-eyes rule (the reviewer is neither the
+    // declarer nor the owner) is held by the writer and a CHECK, not a key.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/[^/]+\\/spending-authority(\\/[^/]+(\\/review)?)?$`),
+        permission: 'admin.agent_registry',
+        note:
+            "Read, declare, narrow, review and withdraw an agent's declared " +
+            'spending authority: the envelope a cardholder consented to, which a ' +
+            'second person reviews before the agent may go into service.',
     },
 
     // Agent profiles (Step 1a of docs/claude-agent-sdk-design.md, #4143). The
@@ -786,6 +845,15 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note:
             'List harness scans. Reading the inventory, so the view key or the ' +
             'register key; submitting one is the ingest key, above.',
+    },
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/integration-scans$`),
+        methods: ['GET'],
+        permission: ['admin.agent_registry_view', 'admin.agent_registry'],
+        mode: 'any',
+        note:
+            'List third-party application scans. Reading the inventory, as the ' +
+            'harness list is; submitting one is the integrations ingest key, above.',
     },
     {
         path: new RegExp(`^${T}\\/admin\\/agents\\/discovered$`),
@@ -862,16 +930,6 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'Delegating a NIS2 gap re-assessment to respondents + finalising it ' +
             'is an assessment-admin action; per-respondent answering is ' +
             'self-service (ctx-scoped in the usecase).',
-    },
-
-    // ── Admin plan change (business-KPI plan-change boundary) ───────
-    {
-        path: new RegExp(`^${T}\\/admin\\/billing\\/plan(\\/.*)?$`),
-        permission: 'admin.tenant_lifecycle',
-        note:
-            'Mutates BillingAccount.plan — direct billing + entitlement ' +
-            'consequences. No Stripe webhook in this deployment, so this ' +
-            'is the only first-party plan-change path; OWNER-only.',
     },
 
     // ── Which ENGINE executes this tenant's agentic runs ────────────
@@ -1000,14 +1058,18 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         methods: ['POST'],
         permission: 'admin.tenant_lifecycle',
         note:
-            'Fires a joiner pass NOW, off the 04:30 schedule. NOT because it ' +
-            'writes to a customer directory — JOINER_MAX_MODE is DRY_RUN and ' +
-            'the pass writes none — but because the artefact it produces names ' +
-            'which of a customer\'s people the product would create an account ' +
-            'for, and at what address. Same OWNER-only key as reading that ' +
-            'report and as the write policy the passes run under. Its own ' +
-            'exact-anchored rule rather than riding the subtree rule, so a ' +
-            'later weakening of the read surface cannot reach the trigger.',
+            'Fires a joiner pass NOW, off the 04:30 schedule. OWNER-only for TWO ' +
+            'reasons, and this note recorded only the second until #5566. A pass ' +
+            'at AUTOMATIC on a consented connection DOES write to a customer ' +
+            'directory. This note used to deny that, on the strength of a clamp ' +
+            'value that #2954 moved; see the joiner pass for the constant rather ' +
+            'than any sentence about it. The second reason stands on ' +
+            'its own and is why the key was never weaker: the artefact this ' +
+            'produces names which of a customer\'s people the product would ' +
+            'create an account for, and at what address. Same OWNER-only key as ' +
+            'reading that report and as the write policy the passes run under. ' +
+            'Its own exact-anchored rule rather than riding the subtree rule, so ' +
+            'a later weakening of the read surface cannot reach the trigger.',
     },
 
     // ── JML joiner pass reports (the seven-day observation record) ──
@@ -1672,6 +1734,18 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'assert, so an EDITOR passed the middleware and was refused deeper ' +
             'where nothing writes an audit row. Not an access change.',
     },
+    {
+        path: new RegExp(`^${T}\\/tasks\\/[^/]+\\/restore$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note:
+            'Restoring a soft-deleted task. Previously gated tasks.edit while ' +
+            'restoreTask reaches restoreEntity\'s assertCanAdmin, so an EDITOR ' +
+            'passed the route and was refused deeper with no audit row ' +
+            '(#5303). admin.manage is the key the task DELETE takes and the ' +
+            'asset / risk / policy restores take. Not an access change for a ' +
+            'built-in role.',
+    },
 
     // ── Destructive register verbs, second tranche (#2117) ──────────
     // Same defect, the single-entity half of the population: a correct
@@ -1837,6 +1911,18 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'files to close. assertCanManageAutomation reads ' +
             'ctx.permissions.canAdmin behind every one of them. GET is a ' +
             'canRead-tier read and stays at the usecase layer.',
+    },
+    {
+        path: new RegExp(`^${T}\\/automation\\/(rules|templates)$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note:
+            'Creating an automation rule, directly or from a template, takes ' +
+            'the key every write on rules/[id] takes (#5303): a role that ' +
+            'could create a standing side-effect producer it was refused ' +
+            'disabling or archiving is the gap this closes. ' +
+            'assertCanManageAutomation reads ctx.permissions.canAdmin behind ' +
+            'both. GET on either stays at the usecase layer.',
     },
     {
         path: new RegExp(`^${T}\\/vendors\\/[^/]+\\/bundles\\/[^/]+$`),
@@ -2025,6 +2111,17 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'scorer weights, capped, and re-checked row by row.',
     },
     {
+        path: new RegExp(`^${T}\\/admin\\/legacy-access\\/queue\\/latest-run$`),
+        methods: ['GET'],
+        permission: 'identity_reconciliation.view',
+        note:
+            'Which run the queue opens: the legacy connection\'s name and its ' +
+            'newest PASSED match run. The queue\'s own key, because a member who ' +
+            'may read the queue must be able to find the run it is for (#5695, ' +
+            'owner decision 2026-11-15). Legacy connections only, four fields of ' +
+            'the run; the admin connection read stays admin.manage.',
+    },
+    {
         path: new RegExp(`^${T}\\/admin\\/legacy-access\\/queue$`),
         methods: ['GET'],
         permission: 'identity_reconciliation.view',
@@ -2141,6 +2238,28 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'only narrows, so it does not also need admin.agent_tool_exposure. ' +
             'decideAgentNarrowing keeps the assigned-reviewer-or-admin rule and ' +
             'refuses the agent\'s owner.',
+    },
+    {
+        path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/agent-spending-withdrawals$`),
+        methods: ['POST'],
+        permission: 'access_reviews.decide',
+        note:
+            'The reviewer confirms an agent can no longer pay on one rail, which ' +
+            'proposes withdrawing that spending authority (Agent Pay 1.4 ground ' +
+            '(d), owner decision of 2026-11-20). It withdraws nothing by itself; ' +
+            'confirmAgentHasNoPaymentAbility keeps the assigned-reviewer-or-admin ' +
+            'rule and refuses the agent\'s owner.',
+    },
+    {
+        path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/agent-spending-withdrawals\\/[^/]+$`),
+        methods: ['POST'],
+        permission: 'access_reviews.decide',
+        note:
+            'Accepting or rejecting a proposed withdrawal of an agent\'s spending ' +
+            'authority (Agent Pay 1.4, owner decision 3 of 2026-11-20). Accepting ' +
+            'only takes authority away, so it does not also need ' +
+            'admin.agent_registry; decideAgentSpendingWithdrawal keeps the ' +
+            'assigned-reviewer-or-admin rule and refuses the agent\'s owner.',
     },
     {
         path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/agent-samples\\/[^/]+$`),

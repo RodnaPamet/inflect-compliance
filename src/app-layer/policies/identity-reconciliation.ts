@@ -30,13 +30,19 @@ import { forbidden } from '@/lib/errors/types';
 import type { RequestContext } from '../types';
 
 /**
- * Seeing the queue. Granted to every built-in role, matching
- * `access_reviews.view`: a reviewer who cannot see why an account was
- * suggested to somebody cannot sanely confirm it, and the evidence is the whole
- * point of showing the queue at all. (It also matched `personnel.view` until
- * that became OWNER/ADMIN only on 2026-10-29. The queue's route sits under
- * `/api/t/:slug/admin/`, where the edge admits a session only on an OWNER or
- * ADMIN membership.)
+ * Seeing the queue: OWNER, ADMIN and AUDITOR (owner decisions 2026-11-15,
+ * #5695). A reviewer who cannot see why an account was suggested to somebody
+ * cannot sanely confirm it, and an auditor checking that the queue is being
+ * worked needs exactly this read.
+ *
+ * This key alone opens the queue. The edge admits an AUDITOR to a GET of the
+ * queue and of its run lookup (`RECONCILIATION_VIEW_READ_PATHS` in
+ * `src/lib/auth/guard.ts`), and the page's server gate asks this key. The
+ * queue names its candidates by name and work email (`readQueuePeople`), which
+ * is why the key is not every member's: EDITOR, READER and AI_ADMIN held it
+ * until 2026-11-15, and `personnel.view` is OWNER/ADMIN only. A custom role
+ * may grant it, but the edge reads the membership role, so on a READER,
+ * EDITOR or AI_ADMIN membership it still reaches no admin path.
  */
 export function assertCanViewReconciliation(ctx: RequestContext): void {
     if (!ctx.appPermissions?.identity_reconciliation?.view) {

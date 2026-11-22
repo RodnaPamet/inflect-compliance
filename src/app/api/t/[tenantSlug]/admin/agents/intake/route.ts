@@ -3,7 +3,7 @@
  *
  * POST `{ findingId, ownerUserId, confirmOwner: true, name, autonomyLevel,
  * dataAccessScope, reversibility, provenance, … , attribution? }` — take a
- * SHADOW_AGENT harness finding into the register: one transaction creates a
+ * SHADOW_AGENT or UNREGISTERED_IDENTITY harness finding into the register: one transaction creates a
  * PROVISIONAL AI-system entry at UNCLASSIFIED and a DRAFT register row linked to
  * it, owned by the person the caller CONFIRMS. An owner suggested by the
  * attribution skill (`attribution`) is recorded as provenance and never becomes

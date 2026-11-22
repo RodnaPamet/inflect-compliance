@@ -17,19 +17,19 @@ inflect · ai architecture · ragas · roadmap v1 · 2026-10-29
 | --- | --- |
 | Column · box | Validation · "Ragas (testing)" — evaluates Layer 4 |
 | Wave | 1, alongside the first RAG wave — the mount gate in [`weaviate.md`](./weaviate.md) Phase 3 consumes its record |
-| Depends on | [`weaviate.md`](./weaviate.md) Phases 1–2, [`nemotron-retriever.md`](./nemotron-retriever.md) Phase 1 |
+| Depends on | [`weaviate.md`](./weaviate.md) Phases 1–2 (the index to evaluate — **D-L4-1**, owner 2026-11-11: pgvector first, Weaviate only on a measured floor), [`nemotron-retriever.md`](./nemotron-retriever.md) Phase 1 |
 | Unblocks | `search_knowledge` being offered at all; [`ares.md`](./ares.md) (needs Ragas's cases to calibrate against) |
-| Owner decisions | **D-EV-2** (the judge model's residency and cost) |
+| Owner decisions | **D-EV-2** — decided, initialled by the owner 2026-11-11: a Haiku-class judge on an external provider through a dedicated CI key, under the USD 5/night CI cap shared with garak (D-EV-1), seed data only; **amended 2026-11-16**: the judge prefers a dedicated key, `RAGAS_ANTHROPIC_API_KEY`, over the repository's `ANTHROPIC_API_KEY` (an owner action to create); **amended 2026-11-17**: the judge stays Haiku 4.5, the product's answers are written by the assistant's own production model (`AGENT_FLUE_MODEL`, default `claude-sonnet-5-5`) and every record names it, the nightly cap is USD 6.50 with Ragas holding USD 4.00 and garak USD 2.50 (D-EV-1 and D-EV-11 amended), and the injection cases are asked in a tenant of their own. **D-L4-9's floors gate the tool** — decided 2026-11-16: recall@10 at least 0.95 of exact and p95 at most 300 ms at k = 10 (D-L4-9, adopted 2026-11-12 as the Weaviate trigger) also decide whether `search_knowledge` is offered; Phase 2's answer-quality floors join the gate when Phase 2 defines them. **The probe corpus** — decided 2026-11-16: 5,000 chunks in the probe tenant and 4 times that in the shared index, re-sized once production's largest tenant is indexed |
 | Complete at | Phase 3 |
 
 ## At a glance
 
-Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+Green: Phase 0, on `main` with D-EV-2 decided. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
 
 ```mermaid
 flowchart LR
-  P0{{"Phase 0 · sets and judge<br/>questionnaire-200, four case kinds<br/>rag-record schema<br/>D-EV-2 judge"}}:::gate
-  P1["Phase 1 · harness and nightly<br/>drives the product's own retrieval<br/>record proposed by PR"]:::todo
+  P0["Phase 0 · sets and judge<br/>seed-policies set, four case kinds<br/>rag-record schema<br/>D-EV-2 decided"]:::done
+  P1["Phase 1 · harness and nightly<br/>built: corpus, retrieval figures,<br/>in-process answers, judge<br/>no record yet"]:::todo
   P2["Phase 2 · floors and the gate<br/>search_knowledge only<br/>with a passing record"]:::todo
   P3["Phase 3 · drift and distractors<br/>re-run on every revision"]:::todo
   WV["weaviate P2<br/>an index to evaluate"]:::ext
@@ -52,8 +52,45 @@ flowchart LR
 
 ## Current state (true today)
 
-- **There is nothing to evaluate yet** — no retrieval, no index
-  ([`weaviate.md`](./weaviate.md) § Current state).
+- **The harness and the nightly are built; no record exists yet** (Phase
+  1, 2026-11-16). `.github/workflows/rag-eval.yml` (off unless the repository
+  variable `RAG_EVAL_ENABLED` is `true`, non-blocking until 2027-02-28) builds
+  a corpus through the product's own usecases and index job against the
+  deployment's TEI (`scripts/rag-eval/corpus.ts`), measures D-L4-9's two
+  retrieval figures over `VectorRepository.search` against an exact scan of
+  its own (`scripts/rag-eval/probe.ts`), and runs the Ragas judge
+  (`evals/rag/`, Ragas 0.4.3, every dependency locked by version and hash)
+  through a metering proxy that holds the key — `RAGAS_ANTHROPIC_API_KEY`
+  when set, the repository's `ANTHROPIC_API_KEY` otherwise — and the ragas
+  share (`evals/cost-meter/anthropic-proxy.mjs`). The retrieval stage issues
+  the product's own store call — `searchKnowledge`'s 20-deep, source-filtered
+  query (`knowledgeVectorQuery`) — on the index path (`strategy: 'index'`,
+  under `HNSW_SEARCH`), scores recall over its first 10 against the exact
+  top 10 under the same filter — tie-aware: a hit within 1e-6 of the exact
+  10th-best distance counts, over min(10, exact count), and an empty exact
+  list is unscored (D-L4-9 amended (f)) — and times the whole call. It keys its output
+  by `knowledgeRetrieverRevision`, the revision the `search_knowledge` mount
+  gate looks records up by, and its figures are read against D-L4-9's
+  floors, the gate's own
+  (`src/lib/ai/evals/rag-retrieval-floors.ts`). **The product answers in
+  process** (`scripts/rag-eval/answer.ts`): the owner of the case's tenant asks
+  the real assistant usecase each question — the injection cases in the
+  injection tenant, which holds the set's injected chunks and nothing else,
+  every other case in the answer tenant, which holds none (owner decision
+  2026-11-17) — `search_knowledge` runs through the offer, the funnel and the
+  guards, and its model turns go through the same metering proxy as the
+  judge. The answers are written by the assistant's own production model,
+  resolved by the assistant itself, and every record names it
+  (`answerRevision`); the judge stays Haiku 4.5. The tool is mounted for that run by the
+  evaluation's own scoped decision (`src/app-layer/services/rag-evaluation-mount.ts`),
+  which nothing under `src/` can open and a production process refuses — there
+  is no route and no flag. The answers file (`rag-answers@1`,
+  `evals/rag/fixtures/answer-contract.json`) is what the judge scores. **No
+  keyed night has run**, so no record exists and the gate stays closed. See
+  `docs/implementation-notes/2026-11-16-ragas-phase1-harness.md`,
+  `docs/implementation-notes/2026-11-16-rag-eval-gate-wiring.md`,
+  `docs/implementation-notes/2026-11-16-rag-eval-answer-stage.md` and
+  `docs/implementation-notes/2026-11-17-rag-eval-owner-decisions.md`.
 - **The house already has the eval discipline Ragas must fit into.**
   `flue/skills/evaluation-record.ts` and
   `identity-match/evaluation-record.ts`: an *evaluation set* authored beside the
@@ -62,10 +99,37 @@ flowchart LR
   answers** every time, a stored rate refused; four case kinds required (task,
   refusal, injection, missing-input); a gate that refuses to mount anything
   without a record (`flue/skills/mount-gate.ts`).
-- **Ground truth exists in the product.** The questionnaire answer library
-  (question → approved answer, reviewer-edited), policies, SoA justifications,
-  control descriptions. For the *seed tenant* this is usable as an evaluation
-  set; for customer tenants it is customer data and is not.
+- **Ground truth exists in the product, but the seed holds less of it than
+  this document once assumed.** The questionnaire answer library (question →
+  approved answer, reviewer-edited), policies, SoA justifications and control
+  descriptions are ground truth in a tenant. The *seed tenant* has **no answer
+  library rows** — `prisma/seed.ts` never writes `QuestionnaireAnswerLibrary`,
+  only `usecases/questionnaire.ts` does, when a person accepts an answer. What
+  the seed does publish is three policies (Information Security, Access
+  Management, Incident Management), whose text is the
+  `policy-templates-imported.json` fixture, the last writer of those titles.
+  For customer tenants all of it is customer data and is not usable.
+- **The Phase 0 format is on `main`.** `evals/rag/sets/seed-policies.json`
+  (52 authored cases over the three seeded policies: 37 task, 5 refusal,
+  5 injection, 5 missing-input) with its content hash in
+  `seed-policies.json.sha256`, and `src/lib/ai/evals/rag-record.ts`, the strict
+  set and record schemas with the recompute
+  (`checkRagEvaluationRecord`). `tests/unit/rag-evaluation-seed-set.test.ts`
+  holds every ground-truth passage to a verbatim substring of the text the
+  seed publishes; `tests/unit/rag-evaluation-record.test.ts` holds the
+  recompute. No record exists yet: nothing retrieves.
+- **The record matches the pgvector store, and the CI spend is metered from
+  one place** (sub-phase 0.6). The retriever revision is dense-only
+  (`dimensions`, `indexParams`, no `alpha`); a record states its `spendUsd`,
+  its `status` and the hash of the price table it was metered under, and the
+  retrieval floor figures are recomputed from per-case probes.
+  `evals/cost-meter/` holds the pinned price table, the per-job shares
+  (garak USD 2.50 on Haiku alone, Ragas USD 4.00 on its Haiku judge and the
+  assistant's model, of a USD 6.50 cap: D-EV-11 as the owner amended it on
+  2026-11-17; it was USD 2.50 each of USD 5), each share listing the models it
+  may spend on, and the meter garak's between-role breaker already reads;
+  `tests/guardrails/eval-cost-meter-shares.test.ts` refuses shares above the
+  cap, a cap above USD 6.50 and an unpriced model.
 - **Python runs nowhere in the app image** (G5). An eval harness in Python is
   a CI image, like the garak and ZAP containers.
 
@@ -96,21 +160,87 @@ shape so the mount gate can consume it.
 ### Phase 0 — Sets and the judge
 
 **Sub-phases.**
-- [ ] 0.1 Author `evals/rag/sets/questionnaire-200.json`: 200 question →
-      ground-truth answer → ground-truth chunk refs, from the seed tenant's
-      answer library and policies (reuse the retriever Phase 0 seed set).
-- [ ] 0.2 Add the four required case kinds the house format demands: task
-      (answerable), refusal (out of corpus — the right answer is "not in the
-      corpus"), injection (a chunk carrying instructions), missing-input
-      (question needs a document the corpus lacks).
-- [ ] 0.3 D-EV-2: the judge — an external provider with a CI key (budgeted);
-      a local model only if Layer 5 is taken up; record on the sub-processor row that eval text
-      (seed only) goes to the vendor.
-- [ ] 0.4 `src/lib/ai/evals/rag-record.ts`: the TS schema for a RAG evaluation
-      record (set hash, retriever revision `{embeddingModel, rerankModel,
-      chunker, k, alpha}`, judge revision, per-case raw metric values),
-      aggregates recomputed, `passRate` key refused — mirroring
-      `skills/evaluation-record.ts`.
+- [x] 0.1 Author the seed set — **as `evals/rag/sets/seed-policies.json`, 52
+      cases, not `questionnaire-200.json`.** The seed has no answer library
+      (§ Current state), so the set is drawn from the three policies the seed
+      publishes, and its name says so. Ground-truth references name a
+      verbatim **passage**, not a chunk index: the chunker is part of the
+      retriever revision under evaluation, so a set keyed on chunk indices
+      would be invalidated by the very change it measures. The harness
+      resolves a passage to chunks under the revision it runs, and the record
+      carries the chunk indices (`retrieved[].chunkIndex`). `sourceKey` is the
+      seeded policy's slug, never a cuid.
+- [x] 0.2 All four case kinds, each with its own shape: task and injection
+      cases name passages, refusal and missing-input cases name none;
+      injection cases carry the injected chunk and the markers following it
+      would emit (one in Bulgarian); missing-input cases name the absent
+      document. One refusal is a placeholder trap: the policy says
+      "incorporated in [location]".
+- [x] 0.3 D-EV-2, initialled by the owner 2026-11-11: a Haiku-class judge
+      on an external provider, through a **dedicated CI key** (never the
+      product's key), under the **USD 5/night** CI cap shared with garak's
+      D-EV-1 (USD 6.50 since the owner's amendment of 2026-11-17), over **seed data only**; a local judge only if Layer 5 is taken
+      up. `docs/sub-processors.md` is unchanged, on purpose: it registers who
+      processes customer data, and a set or record is unrepresentable over
+      anything but `corpus: 'seed'`. See
+      `docs/implementation-notes/2026-11-11-ragas-phase0-sets-and-record.md`.
+- [x] 0.4 `src/lib/ai/evals/rag-record.ts`: strict set and record schemas
+      (set hash, retriever revision `{embeddingModel, rerankModel, chunker,
+      k, alpha}`, judge revision `{provider, model, embeddingModel,
+      ragasVersion}`, per-case answer, retrieved chunks, the four raw metric
+      values, the judge's raw `abstained` verdict, raw judge outputs) and
+      `checkRagEvaluationRecord`, which recomputes every aggregate. A
+      `passRate` anywhere is an unknown key; a metric Ragas could not compute
+      is `null`, never 0 or 1, and a mean over no scored case is `null` —
+      which a kind with cases can still have, so a `null` mean is never a
+      pass. Refusal and missing-input cases are scored by
+      `declinedCorrectly`, recomputed from `abstained` (and, for
+      missing-input, whether the answer names the missing document): the
+      four Ragas metrics cannot say it, and `answer_relevancy` scores a
+      noncommittal answer 0, so its mean over those kinds is inverted.
+- [ ] 0.5 Grow the set toward the schema's 200-case ceiling: seed an answer
+      library (a reviewed fixture, written by the seed) and draw questionnaire
+      cases from it, and reconcile with the 200-pair set
+      [`nemotron-retriever.md`](./nemotron-retriever.md) Phase 0.4 authors —
+      one seed set for both roadmaps, not two that drift.
+- [x] 0.6 Align the record with the pgvector store and the shared spend cap
+      (from the 2026-11-11 knowledge re-plan): the store is dense-only, so
+      `alpha` leaves the retriever revision and `dimensions` and
+      `indexParams` join it (`hnsw` with distance, `m`, `efConstruction`,
+      `efSearch`, `iterativeScan` and `maxScanTuples`, or `exact`); the judge
+      revision gains a `priceTableHash` (SHA-256 of the table file's exact
+      bytes); the record gains `spendUsd` (at most the decided cap: USD 5, USD
+      6.50 since 2026-11-17), a
+      `status` of `COMPLETE` or `BUDGET_EXHAUSTED` — which may leave cases
+      unanswered, lists them, and never passes a floor (`floor.eligible` is
+      false whatever its figures) — and the two retrieval floor figures,
+      **recomputed rather than stored**: each case carries a raw
+      `retrievalProbe` (the ANN top-10, the exact top-10, the ANN latency),
+      and the check derives recall@10 against exact search (mean per-case
+      overlap, `null` over no exact list) and the nearest-rank p95 latency.
+      A stored `retrievalFloors` is an unknown key, as a stored pass rate is.
+      Given the meter's facts, the check refuses a record priced under another
+      table (`PRICE_TABLE_MISMATCH`), by an unpriced judge
+      (`MODEL_NOT_PRICED`) or over the job's share (`SPEND_OVER_SHARE`).
+      `evals/cost-meter/`, shared with [`garak.md`](./garak.md): a pinned
+      price table keyed by model id (`prices.json`), the shares
+      (`shares.json`, garak and Ragas USD 2.50 each, the split the owner
+      decided under D-EV-11 on 2026-11-12 — amended 2026-11-17 to garak USD
+      2.50 and Ragas USD 4.00 of USD 6.50, each share listing the models it may
+      spend on), and `meter.mjs`, which
+      reserves each call at counted input plus `max_tokens` before it is sent,
+      refuses the call that could pass the share, settles to reported usage
+      (keeping the worst case when none comes back or it cannot be read), and refuses shares that
+      sum above the cap, a cap above the decided one (USD 5.00, USD 6.50
+      since 2026-11-17), or a model the table does not price. garak's between-role breaker (`.garak/spend.mjs`) now prices and
+      caps from it; `.garak/budget.json` holds no price or cap of its own, and
+      garak's planned night is cut to fit its share (4 prompts per probe, 40
+      per role, 80 a night: USD 2.40 at the planned turn).
+      See `docs/implementation-notes/2026-11-12-ragas-cost-meter.md`, which
+      also lists what the meter does not yet cover (the per-request reservation
+      at garak's proxy, and the retriever revision key in
+      `src/lib/ai/embeddings/revision.ts`, which then still carried `alpha`; since
+      2026-11-16 it is the record's own revision, `alpha` gone — [`weaviate.md`](./weaviate.md) 3.5).
 
 **Prompt.**
 ```text
@@ -143,19 +273,82 @@ a vendor is still text to a vendor), G1.
 ### Phase 1 — The harness and the nightly job
 
 **Sub-phases.**
-- [ ] 1.1 `evals/rag/` Python project with a pinned Ragas version, run from a
-      digest-pinned image in CI only (never in the app image, G5).
-- [ ] 1.2 The harness drives the *product's* retrieval, not a reimplementation:
-      it calls the harness route from [`garak.md`](./garak.md) Phase 1 (or a
-      sibling) to retrieve + answer through `search_knowledge` on the seed
-      tenant, so what is measured is the composed pipeline with its guards.
-- [ ] 1.3 Output → the TS record shape; `rag-record.ts` validates it in the
-      job before it is uploaded; the record is committed by PR under
-      `evals/rag/records/<retriever-revision>.json`.
-- [ ] 1.4 `.github/workflows/rag-eval.yml`: nightly, service containers
-      (Postgres, Redis, Weaviate, TEI), seed + index the seed corpus, run,
-      validate, upload, auto-issue on regression, `RAG-EVAL-NON-BLOCKING-UNTIL:`
-      marker parsed by a guard.
+- [x] 1.1 `evals/rag/` Python project, run from a digest-pinned image in CI
+      only (never the app image, G5): Ragas 0.4.3 (the newest release older
+      than two weeks) and its WHOLE dependency set in `requirements.lock`,
+      installed `--no-deps` and `pip check`ed — a floating resolution of
+      0.4.3 breaks on import (langchain-community 0.4.2 removed a module it
+      uses). The image's first stage runs the harness's tests. The judge is
+      the cost meter's share model through `anthropic-proxy.mjs`, which holds
+      the key and reserves every call against the ragas share before it is
+      sent; `answer_relevancy` embeds with the deployment's own TEI. *Since
+      2026-11-16:* both locks (`requirements.lock`, and `requirements-test.lock`
+      for the test stage's pytest) carry every PyPI file's sha256 and are
+      installed `--require-hashes`; the key is the dedicated
+      `RAGAS_ANTHROPIC_API_KEY` when set (D-EV-2, amended).
+- [x] 1.2 The harness drives the *product's* retrieval, not a reimplementation.
+      **Retrieval half built**: `scripts/rag-eval/probe.ts` asks every question
+      through `VectorRepository.search` on a probe tenant and against an exact
+      scan it runs itself, through one seam (`scripts/rag-eval/search-seam.ts`),
+      **wired 2026-11-16** to the product's search: `searchKnowledge`'s own
+      20-deep, source-filtered query (`knowledgeVectorQuery`, recall over its
+      first 10), `strategy: 'index'`, `HNSW_SEARCH`, and
+      `knowledgeRetrieverRevision`, so a record the nightly
+      writes carries exactly the revision the mount gate compares
+      (`tests/unit/rag-eval-gate-agreement.test.ts`), and the probe refuses a
+      run searched with other settings than that revision states.
+      **Answer half built 2026-11-16, in process and with no route and no
+      flag** (owner rule: no gate bypass may exist in a deployed app):
+      `scripts/rag-eval/answer.ts` asks every question through the real
+      `askAssistant` usecase as the owner of the case's tenant (the injection
+      cases in the injection tenant, the rest in the answer tenant, since
+      2026-11-17) — the feature gate,
+      the rate limit, the input guard, the tool loop, `search_knowledge`
+      through `runGuardedTool` and the funnel to `searchKnowledge`, the
+      egress guard, the decision log — and writes the answers file
+      (`rag-answers@1`; the contract in `evals/rag/fixtures/answer-contract.json`,
+      held by `src/lib/ai/evals/rag-answer-contract.ts` and the Python reader).
+      The chicken and the egg (the gate offers the tool only with a passing
+      record, and the record needs answers given with the tool) is broken by
+      the stage's own decision, supplied rather than read:
+      `withRagEvaluationMount` (`src/app-layer/services/rag-evaluation-mount.ts`)
+      mounts the tool for one call's async scope, for the measured revision and
+      the one tenant that question is asked in. No file under `src/` imports the opener, no app
+      entry point reaches `scripts/rag-eval/`, `askAssistant` is called with
+      two arguments everywhere in `src/`
+      (`tests/guards/rag-evaluation-mount-unreachable.test.ts`, an import
+      graph and call-site walk with the TypeScript parser), and a production
+      process refuses the scope at both ends. The model turns are the
+      assistant's own production model's (owner decision 2026-11-17; resolved
+      by the assistant's own `resolveFlueModel`, never set by the nightly, and
+      named in the record as `answerRevision`), sent through the loopback
+      metering proxy by the product's own provider (`askAssistant`'s
+      `turnProvider` seam), so the answers and the Haiku judge spend one USD
+      4.00 share, each call at its own model's price; a 402 stops answering and
+      the file says BUDGET_EXHAUSTED, which the record then says too. The
+      contexts are the `search_knowledge` results as the model saw them, read
+      off the loop's next request. *Not yet true:* no keyed night has run, so
+      no record exists.
+- [x] 1.3 Output → the TS record shape; `scripts/rag-eval/check.ts` validates
+      it with `checkRagEvaluationRecord` (price table and share included)
+      before it is uploaded; the artifact names it
+      `evals/rag/records/<ragRetrieverRevisionId>.json` and a person commits
+      it by PR, as Inspect's records are.
+- [x] 1.4 `.github/workflows/rag-eval.yml`: nightly at 00:40 UTC, off unless
+      `RAG_EVAL_ENABLED` is `true`; Postgres with pgvector, Redis and the
+      deployment's TEI image by digest; corpus, retrieval figures, judge,
+      validate, upload, auto-issue on a D-L4-9 miss or a failed judge;
+      `RAG-EVAL-NON-BLOCKING-UNTIL: 2027-02-28` parsed by
+      `tests/guardrails/rag-eval-workflow-pinning.test.ts`.
+- [x] 1.5 The two retrieval figures (weaviate.md 3.6) in the record, on a
+      stated corpus: a probe tenant of `RAG_EVAL_PROBE_TENANT_CHUNKS` (5,000:
+      the seed policies plus distractor paragraphs drawn from the template
+      library) in an index of `RAG_EVAL_SCALE_MULTIPLE` (4) times that. A
+      seed-sized tenant is planned as a B-tree read and a sort, an exact
+      search, so its recall is 1 by construction; every question's plan is
+      read and a run whose plans disagree with the revision is refused. The
+      record carries the counts (`probeCorpus`, optional, added compatibly);
+      the multiple is recomputed.
 
 **Prompt.**
 ```text
@@ -185,20 +378,28 @@ the search_knowledge mount gate open for the seed retriever revision.
 ```
 
 **Hardening.** G11 (the harness measures the product, through its guards;
-the gate bypass is test-mode-only and build-guarded), G10 (dated marker +
-parsing guard), G5 (Python in a CI image). The record-by-PR rule keeps a
-human between a nightly run and a gate opening.
+the prompt above asked for a test-mode flag, and the owner ruled on
+2026-11-16 that no gate bypass may exist in a deployed app, so there is no
+flag and no route: the answer stage runs in process and supplies the mount
+decision through a scope nothing under `src/` can open, held by an import-graph
+guard), G10 (dated marker + parsing guard), G5 (Python in a CI image). The
+record-by-PR rule keeps a human between a nightly run and a gate opening.
 
 ### Phase 2 — Floors and the gate
 
 **Sub-phases.**
-- [ ] 2.1 Floors in `evals/rag/floors.json` per metric per case kind (a
-      refusal case's "faithfulness" is whether it refused), set from the first
-      three records.
+- [ ] 2.1 Floors in `evals/rag/floors.json` per metric per case kind, set
+      from the first three records. A refusal or missing-input kind is floored
+      on its recomputed `declinedCorrectly` rate, never on `answer_relevancy`
+      (inverted there); a task kind also bounds `abstention.abstained` (false
+      refusals). A `null` mean or rate is under floor.
 - [ ] 2.2 The `search_knowledge` mount gate ([`weaviate.md`](./weaviate.md)
       Phase 3.4) reads the committed record for the current retriever revision
       and compares to the floors; no record or under floor → tool not offered,
-      run message says so.
+      run message says so. *Partly true 2026-11-16:* the gate exists (vector
+      store 3.5) and holds a record to D-L4-9's two retrieval floors, the
+      owner's decision of that day; the answer-quality floors of 2.1 join it
+      once 2.1 sets them.
 - [ ] 2.3 Flip the nightly to blocking on regression below floor.
 
 **Hardening.** G11 (floors are ratchets: down only with a cited reason),

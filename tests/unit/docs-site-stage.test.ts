@@ -444,3 +444,23 @@ describe('generated fragments — {{generated:<name>}}', () => {
         expect(r).toEqual({ kind: 'github', href: 'https://github.com/RodnaPamet/inflect-compliance/blob/main/src/app/t/%28app%29/page.tsx' });
     });
 });
+
+describe('the landing page gets the published-page content policy (#5310)', () => {
+    const rel = 'site/developers/index.md';
+
+    it('refuses a landing page that carries a production coordinate', () => {
+        // The one published page the forbidden-content scan never read.
+        const refusals = stage.landingPageRefusals(
+            { problems: [], missing: [], text: 'Operators: the stack lives under /opt/inflect on the VM.' },
+            rel,
+        );
+        expect(refusals).toEqual([`${rel}: carries the Compose root on the production VM (vm-host-path)`]);
+    });
+
+    it('passes a clean landing page, and still refuses one that links to an unpublished doc', () => {
+        expect(stage.landingPageRefusals({ problems: [], missing: [], text: 'See [the guide](/inflect-compliance/x/).' }, rel)).toEqual([]);
+        expect(stage.landingPageRefusals({ problems: [], missing: [], text: 'See [a doc](docs/x.md).' }, rel)).toEqual([
+            `${rel}: links to something that is not a published page`,
+        ]);
+    });
+});

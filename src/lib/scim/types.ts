@@ -56,7 +56,8 @@ export interface ScimError {
 export interface ScimPatchOp {
     schemas: string[];
     Operations: Array<{
-        op: 'add' | 'remove' | 'replace';
+        /** As received — any case (`"Replace"` from Entra). See `@/lib/scim/patch`. */
+        op: string;
         path?: string;
         value?: unknown;
     }>;

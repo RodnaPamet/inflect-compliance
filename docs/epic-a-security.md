@@ -109,7 +109,7 @@ OTel spans on `api.request` carry `rate_limit.scope` as an attribute when a 429 
 
 ## Verification runbook
 
-Each section can be run against the live dev DB (port 5434 direct) and the running Next.js server.
+Each section can be run against the live dev DB (port 5436 direct) and the running Next.js server.
 
 ### V.1 — Cross-tenant isolation (RLS)
 
@@ -243,10 +243,10 @@ Never run `ALTER TABLE … NO FORCE ROW LEVEL SECURITY` in production.
 
 1. **The in-memory rate-limit store is per-process.** For multi-instance deployments, the counters on `withApiErrorHandling` do NOT share state. The edge-runtime Upstash limiter in `src/lib/rate-limit/authRateLimit.ts` handles the edge/middleware surface with a shared Redis; the Node-side counters are intentionally local so MFA / progressive-delay don't require a Redis call. If global consistency becomes a product requirement, the swap point is `store` in `src/lib/security/rate-limit.ts` — one file, behind the existing API.
 
-2. **The progressive brute-force counter is in-memory.** Same caveat as above. A determined attacker rotating between app replicas could sustain ~10 failures × N_REPLICAS per hour before hitting any single replica's lockout. Given each replica still incurs bcrypt cost per attempt, this is back-pressure rather than a loss. If this matters, the same swap point applies.
+2. **The progressive brute-force counter is in-memory, and its lockout is shorter than its window.** Same caveat as above. Failures are counted over one hour, but the lockout lasts 15 minutes from the last failure and the next attempt after it finds the counter reset, so the policy alone admits about 10 guesses per 15 minutes per identifier on each replica — roughly 40 an hour, times N_REPLICAS for an attacker rotating between them (the docstring on `LOGIN_PROGRESSIVE_POLICY` sizes it the same way, #5306). The per-email limiter in `src/lib/auth/credential-rate-limit.ts` bounds the same path independently, and every refusal still pays the bcrypt cost, so this is back-pressure rather than a loss. If this matters, the same swap point applies.
 
-3. **HIBP check is not enforced on password change / reset.** Those routes don't exist in the codebase yet. When they land, call `checkPasswordAgainstHIBP` alongside `validatePasswordPolicy` the same way `/api/auth/register` does — test coverage pattern is in `tests/unit/password-check.test.ts`.
+3. **The HIBP check fails open.** All three routes that accept a user-chosen password — `/api/auth/register`, `/api/auth/change-password` and `/api/auth/reset-password` — call `checkPasswordAgainstHIBP` alongside `validatePasswordPolicy`, and `tests/guardrails/hibp-coverage.test.ts` fails CI for a new password route that does not. When HIBP cannot be reached the password is accepted and a warning is logged, so an HIBP outage weakens the breached-password check rather than blocking sign-up.
 
 4. **`runWithoutRls` caller fingerprint uses `Error.stack`.** Stack trace format is Node-implementation-dependent; a future V8 change could subtly change the `module/file.ts:line` format. Tests cover the happy-path extraction; if the format changes, the log field silently becomes `'unknown'` (documented behaviour). Not a security regression — just a telemetry regression.
 
-5. **The `allow_all` policy tripwire** in the guardrail test covers the residue of `prisma/rls-fix.sql` stopgaps. If a future migration adds its own `allow_all` for a new reason, the guardrail will fail — at which point either legitimise the pattern with a comment + allowlist, or adopt the EXISTS-based pattern from `PolicyControlLink`.
+5. **The `allow_all` policy tripwire** in the guardrail test covers the residue of the deferred-table stopgaps that `prisma/migrations/20260422180000_enable_rls_coverage` replaced with real tenant policies. (The `prisma/rls-fix.sql` replay script those stopgaps were written in was retired on 2026-11-15 — #5423; the migrations are the only apply path, so the residue the tripwire watches is theirs.) If a future migration adds its own `allow_all` for a new reason, the guardrail will fail — at which point either legitimise the pattern with a comment + allowlist, or adopt the EXISTS-based pattern from `PolicyControlLink`.

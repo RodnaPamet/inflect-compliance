@@ -75,12 +75,12 @@ describe('Tier C never becomes editable', () => {
             it was never exercised.
         */
         const rows = [
-            ...REPORTING_CHANNELS.map((c) => displayForChannel(c.key, DECLARED)),
+            ...REPORTING_CHANNELS.map((c) => displayForChannel(c.key, DECLARED, 'answered')),
             ...REPORTING_CHANNELS.map((c) =>
-                displayForChannel(c.key, { ...DECLARED, configured: false }),
+                displayForChannel(c.key, { ...DECLARED, configured: false }, 'answered'),
             ),
             ...REPORTING_CHANNELS.map((c) =>
-                displayForChannel(c.key, { ...DECLARED, reachableVersion: null }),
+                displayForChannel(c.key, { ...DECLARED, reachableVersion: null }, 'unreachable'),
             ),
             displayForEnforcement(),
             displayForExecutionSwitch(false, false),

@@ -1,0 +1,13 @@
+# The PII service's runtime, pinned (G5). config_hash() covers this file, so a
+# changed pin is a changed configuration and needs a new evaluation record.
+presidio-analyzer==2.2.366
+spacy==3.8.18
+phonenumbers==9.0.43
+regex==2026.11.9
+tldextract==5.4.0
+numpy==2.4.6
+pydantic==2.14.3
+# NER models (docs/ai-architecture/presidio.md, Phase 0.3). pip verifies the
+# sha256 fragment, so a re-published wheel under the same name is refused.
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl#sha256=1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85
+xx_ent_wiki_sm @ https://github.com/explosion/spacy-models/releases/download/xx_ent_wiki_sm-3.8.0/xx_ent_wiki_sm-3.8.0-py3-none-any.whl#sha256=6f3c4b853852ea9e9d2dc76cc950dddb10a7e4c42d813308caefe6c5e8be2f0a

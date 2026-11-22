@@ -16,6 +16,7 @@
 import type {
     ScheduledCheckProvider,
     ConnectionConfigSchema,
+    ConnectionValidationOptions,
     ConnectionValidationResult,
     CheckResult,
     EvidencePayload,
@@ -126,6 +127,7 @@ export class WorkdayProvider implements ScheduledCheckProvider, HrisSyncProvider
     async validateConnection(
         config: Record<string, unknown>,
         secrets: Record<string, unknown>,
+        opts: ConnectionValidationOptions = {},
     ): Promise<ConnectionValidationResult> {
         const { client, secret, missing } = readConfig({ ...config, ...secrets });
         if (missing.length) {
@@ -147,7 +149,23 @@ export class WorkdayProvider implements ScheduledCheckProvider, HrisSyncProvider
             // expiresAt: 0 forces the refresh path, so this always makes a live
             // call. Probing with a token we already believe is valid would pass
             // on a revoked grant right up until it expired.
-            await resolveToken({ ...secret, expiresAt: 0 }, { client }, { fetchImpl: this.deps.fetchImpl });
+            //
+            // Workday ROTATES the refresh token on that call and invalidates
+            // the old one, so the new pair is persisted the moment it arrives,
+            // exactly as a sync does. Discarding it left the connection holding
+            // a dead refresh token after every Test (#5194).
+            await resolveToken({ ...secret, expiresAt: 0 }, { client }, {
+                fetchImpl: this.deps.fetchImpl,
+                persist: opts.persistSecret
+                    ? async (rotated) => {
+                          await opts.persistSecret?.({
+                              accessToken: rotated.accessToken,
+                              refreshToken: rotated.refreshToken,
+                              expiresAt: rotated.expiresAt,
+                          });
+                      }
+                    : undefined,
+            });
             return { valid: true };
         } catch (e) {
             return { valid: false, error: `Workday rejected the credentials: ${e instanceof Error ? e.message : String(e)}` };

@@ -13,11 +13,12 @@
  * prompt-5 constraint that normal users see business-friendly
  * choices, not raw cron.
  *
- * Timezone defaults to the browser's IANA tz from
- * `Intl.DateTimeFormat().resolvedOptions().timeZone` so a user in
- * Sofia scheduling "Daily 09:00" actually gets 09:00 local, not
- * 09:00 UTC. The next-run timestamp re-renders in the same zone
- * via the existing `formatDate` primitive.
+ * Timezone: a plan that already has one keeps it — it is shown, and
+ * saving a new cadence keeps it, so a colleague in another zone does
+ * not see "09:00" in their own zone nor silently move the plan there
+ * (#5309). Only a plan with no stored zone takes the browser's IANA tz
+ * from `Intl.DateTimeFormat().resolvedOptions().timeZone`, so a user in
+ * Sofia scheduling "Daily 09:00" gets 09:00 local, not 09:00 UTC.
  *
  * Permission gating mirrors the edit form on the same page: the
  * picker is disabled when `canEdit=false`, and the save action is
@@ -142,6 +143,9 @@ export function TestPlanScheduleSection({
             return 'UTC';
         }
     }, []);
+    // The zone the plan's times are in: its own, or — for a plan that has
+    // none yet — the zone of whoever schedules it.
+    const planTz = initialScheduleTimezone || browserTz;
 
     // Saved state — what the server confirmed last.
     const savedCadence = cronToCadence(initialSchedule);
@@ -171,7 +175,7 @@ export function TestPlanScheduleSection({
             }
             const body = {
                 schedule: target.cron,
-                scheduleTimezone: target.cron === null ? null : browserTz,
+                scheduleTimezone: target.cron === null ? null : planTz,
                 // A cadence keeps the plan's own automation type (#4796). A
                 // MANUAL plan on a cadence stays MANUAL: each tick instantiates
                 // a PLANNED "awaiting manual completion" run, and this section
@@ -226,7 +230,7 @@ export function TestPlanScheduleSection({
                     {t('title')}
                 </Heading>
                 <span className="text-xs text-content-subtle">
-                    {t('allTimesIn', { tz: browserTz })}
+                    {t('allTimesIn', { tz: planTz })}
                 </span>
             </div>
 

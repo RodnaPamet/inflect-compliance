@@ -15,7 +15,7 @@
  * The fake below is a recording client, not a mock of the answer: it returns
  * catalog-shaped rows and counts, and the test reads the plan back out.
  */
-import { planErasure, type ErasurePlanDb } from '@/app-layer/jobs/dsar-erasure';
+import { IMMUTABLE_USER_REFERENCES, planErasure, type ErasurePlanDb } from '@/app-layer/jobs/dsar-erasure';
 
 interface FkRow { table_name: string; column_name: string; confdeltype: string }
 
@@ -162,5 +162,82 @@ describe('planErasure — the dry run', () => {
         const plan = await planErasure('subject-1', { db });
         expect(plan.blockers.map((b) => b.table)).toEqual(['TenantMembership']);
         expect(sql.some((s) => s.includes('"TenantMembership"'))).toBe(true);
+    });
+});
+
+describe('planErasure — references from immutable or stamped records (#5595)', () => {
+    // Owner decision 2026-11-14: refuse up front. These references are
+    // RESTRICT since 20261114140000, and the plan names WHY each refuses.
+
+    it('reports an org audit reference as a blocker with IMMUTABLE_AUDIT_TRAIL', async () => {
+        const { db } = recordingDb(
+            [{ table_name: 'OrgAuditLog', column_name: 'targetUserId', confdeltype: 'r' }],
+            { OrgAuditLog: 2 },
+        );
+        const plan = await planErasure('subject-1', { db });
+        expect(plan.blockers).toEqual([
+            {
+                table: 'OrgAuditLog',
+                column: 'targetUserId',
+                onDelete: 'RESTRICT',
+                rows: 2,
+                effect: 'BLOCKS_DELETE',
+                reason: 'IMMUTABLE_AUDIT_TRAIL',
+            },
+        ]);
+        expect(plan.wouldSucceed).toBe(false);
+    });
+
+    it('a STALE SET NULL edge into an immutable record still BLOCKS — the #5595 defect', async () => {
+        // On a database that predates the migration the action is still SET
+        // NULL, and the delete fails part-way on the trigger or the CHECK. The
+        // plan used to call this ATTRIBUTION_ANONYMIZED and report success.
+        const { db } = recordingDb(
+            [
+                { table_name: 'OrgAuditLog', column_name: 'actorUserId', confdeltype: 'n' },
+                { table_name: 'TreatmentMilestone', column_name: 'completedByUserId', confdeltype: 'n' },
+            ],
+            { OrgAuditLog: 1, TreatmentMilestone: 1 },
+        );
+        const plan = await planErasure('subject-1', { db });
+        expect(plan.blockers.map((b) => [b.table, b.onDelete, b.effect, b.reason])).toEqual([
+            ['OrgAuditLog', 'SET NULL', 'BLOCKS_DELETE', 'IMMUTABLE_AUDIT_TRAIL'],
+            ['TreatmentMilestone', 'SET NULL', 'BLOCKS_DELETE', 'STAMPED_DECISION_ACTOR'],
+        ]);
+        expect(plan.wouldSucceed).toBe(false);
+    });
+
+    it('names every other refusing reference RESTRICT_REFERENCE, and gives non-blockers no reason', async () => {
+        const { db } = recordingDb(FKS, { AuditLog: 9, Session: 2, TenantMembership: 1, Notification: 4 });
+        const plan = await planErasure('subject-1', { db });
+        const reasonOf = Object.fromEntries(plan.references.map((r) => [r.table, r.reason]));
+        expect(reasonOf).toEqual({
+            AuditLog: null,
+            Session: null,
+            TenantMembership: 'RESTRICT_REFERENCE',
+            Notification: 'RESTRICT_REFERENCE',
+            Account: null,
+        });
+    });
+
+    it('AuditLog.userId is NOT one of them: it stays a pseudonymization, not a blocker', async () => {
+        // Its trigger permits exactly value -> NULL, and eraseUser nulls it
+        // itself with an erasure record. Listing it would refuse every
+        // erasure of anybody who ever acted.
+        expect(IMMUTABLE_USER_REFERENCES['AuditLog.userId']).toBeUndefined();
+        const { db } = recordingDb([FKS[0]], { AuditLog: 9 });
+        const plan = await planErasure('subject-1', { db });
+        expect(plan.blockers).toEqual([]);
+        expect(plan.auditRowsToPseudonymize).toBe(9);
+    });
+
+    it('an immutable reference with no rows for this subject blocks nothing', async () => {
+        const { db } = recordingDb(
+            [{ table_name: 'OrgAuditLog', column_name: 'actorUserId', confdeltype: 'r' }],
+            {},
+        );
+        const plan = await planErasure('subject-1', { db });
+        expect(plan.references[0]).toMatchObject({ effect: 'NO_ROWS', reason: null });
+        expect(plan.wouldSucceed).toBe(true);
     });
 });

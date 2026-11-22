@@ -336,7 +336,7 @@ describe('the two failure flags, which are different failures', () => {
         // "The agent had nothing to call" is not "the agent failed" — M2 gave
         // the first its own WorkflowRunStatus for exactly this reason, so the
         // stub has to be able to produce it without looking broken.
-        await expect(listTools(OPTS)).resolves.toEqual({ tools: [], refusedNames: 0 });
+        await expect(listTools(OPTS)).resolves.toEqual({ tools: [], refusedNames: 0, truncated: false });
     });
 
     it('--fail-mode returns a tool ERROR, not a transport failure', async () => {
@@ -386,5 +386,73 @@ describe('the A2A projection J4 reads', () => {
         // above pass or fail depending on when the suite ran.
         expect(ANCHOR.toISOString()).toBe('2026-06-17T09:30:00.000Z');
         expect(TODAY).toBe('2026-06-17');
+    });
+});
+
+describe('a request the stub cannot answer is an error, never a confident answer (#5312)', () => {
+    /** One raw JSON-RPC exchange with the handler, body as the wire carries it. */
+    async function raw(body: string, options: StubOptions = {}) {
+        const res = await createStubHandler(options)('/', { body });
+        return (await res.json()) as { result?: unknown; error?: { code: number; message: string } };
+    }
+    const toolsCall = (name: string, args: unknown) =>
+        JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name, arguments: args } });
+    const valid = { sap_username: 'TQUIET', sold_to_party: '0000100201', date_from: TODAY, date_to: TODAY };
+
+    it.each([
+        ['a misspelt argument', { ...valid, soldToParty: valid.sold_to_party, sold_to_party: undefined }],
+        ['a missing required argument', { sap_username: 'TQUIET', sold_to_party: '0000100201', date_from: TODAY }],
+        ['an argument that is not a string', { ...valid, date_to: 20260617 }],
+        ['arguments that are not an object', ['TQUIET']],
+    ])('%s is invalid params, not "no orders"', async (_label, args) => {
+        const reply = await raw(toolsCall('sales_orders_by_creator', JSON.parse(JSON.stringify(args))));
+        expect(reply.result).toBeUndefined();
+        expect(reply.error?.code).toBe(-32602);
+        expect(reply.error?.message).toMatch(/^invalid params: /);
+    });
+
+    it('the well-formed call it guards still answers', async () => {
+        const reply = await raw(toolsCall('sales_orders_by_creator', valid));
+        expect(reply.error).toBeUndefined();
+        expect(reply.result).toBeDefined();
+    });
+
+    it.each(['null', '[]', '42', '"text"'])('a body of %s is an invalid request, and the handler does not reject', async (body) => {
+        const reply = await raw(body);
+        expect(reply.error?.code).toBe(-32600);
+    });
+
+    it('the bound server answers 500 when a handler rejects, rather than dying with the request open', async () => {
+        const { serveRequest } = await import('../../packages/sap-mcp-stub/src/server');
+        const { EventEmitter } = await import('node:events');
+        const req = Object.assign(new EventEmitter(), { url: '/' });
+        const res = { headersSent: false, status: 0, ended: false, writeHead: jest.fn(), end: jest.fn() };
+        res.writeHead.mockImplementation((status: number) => {
+            res.status = status;
+            res.headersSent = true;
+        });
+        const ended = new Promise<void>((resolve) =>
+            res.end.mockImplementation(() => {
+                res.ended = true;
+                resolve();
+            }),
+        );
+        serveRequest(async () => {
+            throw new Error('handler exploded');
+        })(req as never, res as never);
+        req.emit('data', Buffer.from('{}'));
+        req.emit('end');
+        await ended;
+        expect(res.status).toBe(500);
+        expect(res.ended).toBe(true);
+    });
+
+    it('the boot banner names the catalogue actually served', async () => {
+        const { bootBanner } = await import('../../packages/sap-mcp-stub/src/server');
+        const at = { host: '192.168.1.20', port: 8443 };
+        const empty = bootBanner(at, { emptyCatalogue: true });
+        expect(empty).toContain('tools (empty catalogue)');
+        for (const t of TOOL_DEFINITIONS) expect(empty).not.toContain(t.name);
+        expect(bootBanner(at, {})).toContain(`tools ${TOOL_DEFINITIONS.map((t) => t.name).join(', ')}`);
     });
 });

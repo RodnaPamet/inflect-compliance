@@ -37,6 +37,7 @@ import { logEvent } from '../events/audit';
 import { logger } from '@/lib/observability';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { createFinding } from './finding';
+import { assertCanCreateFinding, assertCanUpdateFinding } from '../policies/finding.policies';
 import {
     parseSarif,
     type ScannerSeverity,
@@ -176,6 +177,20 @@ export async function ingestScannerRun(
     // defaults and enum validation just the same.
     const input = IngestScannerRunSchema.parse(rawInput);
 
+    // AN INGEST THAT RAISES FINDINGS NEEDS THE FINDING KEYS, ASKED FIRST (#5369).
+    // Phase 2 creates findings through `createFinding` (`findings.create`) and
+    // closes stale ones in the reconcile (`findings.edit`). Those floors would
+    // refuse a caller without them only AFTER phase 1 had committed the scan
+    // run and its evidence, leaving half an ingest behind. So the refusal comes
+    // here, before anything is written (owner decision, 2026-11-12). A key with
+    // a write scope was migrated to `findings:write` (#4535), so CI keys keep
+    // working; a caller that wants the scan without findings sends
+    // `materializeFindings: false`.
+    if (input.materializeFindings) {
+        assertCanCreateFinding(ctx);
+        assertCanUpdateFinding(ctx);
+    }
+
     // Parse OUTSIDE the tenant transaction — pure CPU, and a malformed
     // upload should 400 before we open a DB transaction.
     let parsed;
@@ -280,6 +295,20 @@ export async function ingestScannerRun(
                     // must not null an existing link.
                     ...(resolvedAssetId ? { assetId: resolvedAssetId } : {}),
                 },
+            });
+        }
+
+        // A finding this run reports is not fixed. FIXED is the one status the
+        // ingest itself sets, so it is the one it takes back; a triage status
+        // (FALSE_POSITIVE, ACCEPTED, TRIAGED) stays a person's (#5206).
+        if (parsed.findings.length > 0) {
+            await db.scannerFinding.updateMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    fingerprint: { in: parsed.findings.map((f) => f.fingerprint) },
+                    status: 'FIXED',
+                },
+                data: { status: 'OPEN' },
             });
         }
 
@@ -427,8 +456,49 @@ export async function ingestScannerRun(
 
         // Reconcile: close scanner Findings whose finding no longer
         // appears at/above threshold (fixed) — the nis2-readiness pattern.
+        //
+        // Only within THIS scan's scope (#5077): the same source and scan
+        // type, on the same target. A scan of one repository says nothing
+        // about another, nor a dependency scan about a SAST one, and the
+        // reconcile used to close every open scanner finding in the tenant
+        // that this run did not happen to report. A finding is in scope when
+        // the run that last reported it is. The target is the repository
+        // without its '@<ref>' suffix, as the asset resolution above reads
+        // it, so successive commits of one repository are one scope.
+        const scopeTarget = input.repoRef
+            ? sanitizePlainText(input.repoRef).split('@')[0].trim()
+            : null;
+        const inScope = new Set(
+            (
+                await runInTenantContext(ctx, async (db) =>
+                    drainPages((cursor) =>
+                        db.scannerFinding.findMany({
+                            where: {
+                                tenantId: ctx.tenantId,
+                                scannerRun: {
+                                    source,
+                                    scanType,
+                                    ...(scopeTarget
+                                        ? {
+                                              OR: [
+                                                  { repoRef: scopeTarget },
+                                                  { repoRef: { startsWith: `${scopeTarget}@` } },
+                                              ],
+                                          }
+                                        : { repoRef: null }),
+                                },
+                            },
+                            select: { id: true, fingerprint: true },
+                            orderBy: { id: 'asc' },
+                            take: DRAIN_PAGE_SIZE,
+                            ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+                        }),
+                    ),
+                )
+            ).map((f) => f.fingerprint),
+        );
         const staleRefs = [...byRef.entries()]
-            .filter(([ref, v]) => !currentRefs.has(ref) && v.status !== 'CLOSED')
+            .filter(([ref, v]) => inScope.has(ref) && !currentRefs.has(ref) && v.status !== 'CLOSED')
             .map(([ref]) => ref);
         if (staleRefs.length > 0) {
             findingsReconciledClosed = await runInTenantContext(ctx, async (db) => {

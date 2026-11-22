@@ -5,14 +5,15 @@ import { jsonResponse } from '@/lib/api-response';
 
 type TaskRestoreParams = { tenantSlug: string; taskId: string };
 
-// Restore reverses a soft-delete. Gated on `tasks.edit` to match the
-// DELETE handler it undoes (same shape as the asset / risk / policy
-// restore routes) so a denial audits cleanly through the Epic C.1
-// permission guard. `restoreEntity` applies its own `assertCanAdmin`
-// underneath — the route gate is the outer, auditable layer.
+// Restore reverses a soft-delete. Gated on `admin.manage`, the key the task
+// DELETE it undoes takes, and the predicate `restoreEntity`'s `assertCanAdmin`
+// applies underneath (same shape as the asset / risk / policy restore
+// routes), so a denial audits cleanly through the Epic C.1 permission guard.
+// It was `tasks.edit`, which an EDITOR holds: the route admitted them, the
+// usecase refused them, and the refusal wrote no AUTHZ_DENIED row (#5303).
 export const POST = withApiErrorHandling(
     requirePermission<TaskRestoreParams>(
-        'tasks.edit',
+        'admin.manage',
         async (_req, { params }, ctx) => {
             const { taskId } = await params;
             const result = await restoreTask(ctx, taskId);

@@ -14,23 +14,22 @@
  * `evidence: { view: false }` still got evidence titles back from
  * search and off the graph.
  *
- * BE PRECISE ABOUT WHICH DOMAINS, because the first draft of this
- * comment claimed parity with the list pages and had it backwards for
- * five of the eight. Only THREE domains have a server-side
- * `appPermissions.<domain>.view` gate today — evidence
- * (`evidence.policies.ts:18`), frameworks (`framework.policies.ts:33`)
- * and tests (`test.policies.ts:17`). Risks, controls, assets, policies
- * and tasks gate on `ctx.permissions.canRead`, a ROLE-TIER check that is
- * true for every built-in role (e.g. `risk.policies.ts:9-13`), so their
- * list pages never refused a `view: false` custom role at all.
+ * BE PRECISE ABOUT WHICH DOMAINS. When this was written only three
+ * domains had a server-side `appPermissions.<domain>.view` gate —
+ * evidence, frameworks and tests — and risks, controls, assets, policies
+ * and tasks gated their list APIs on the coarse `ctx.permissions.canRead`
+ * alone, so search and the graph were STRICTER than those list APIs.
  *
- * So after this change search and the graph are STRICTER than the
- * corresponding list APIs for those five: a custom role with
- * `risks: { view: false }` now sees no risks here but can still
- * `GET /api/t/:slug/risks`. That direction is fail-closed, so it is not
- * a hole — but "it matches how the product already behaves" is not the
- * argument. The argument is that this is the correct reading of the flag
- * and the list APIs have not caught up.
+ * That is no longer so (#5305 corrected this paragraph). Every one of the
+ * eight now reads its granular view key on its own read path: evidence
+ * (`assertCanReadEvidence`), frameworks and tests read `.view` alone, and
+ * controls, policies, tasks, assets and risks (#5376) read the coarse read
+ * tier AND `.view` (`assertCanReadControls`, `assertCanReadPolicies`,
+ * `assertCanReadTasks`, `assertCanReadAssets`, `assertCanReadRisk`). So a
+ * custom role with `risks: { view: false }` is refused by
+ * `GET /api/t/:slug/risks` as it is left without risks here: the list APIs
+ * and the discovery surfaces agree. Do not lean on the old asymmetry when
+ * reasoning about a custom role.
  *
  * The shape of the fix is per-domain SKIPPING, not an all-or-nothing
  * refusal:

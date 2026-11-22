@@ -37,7 +37,7 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
-import { CircleCheck, CircleDotted } from '@inflect/ui/components/ui/icons/nucleo';
+import { CircleCheck, CircleDotted } from '@inflect/ui/components/ui/icons/glyphs';
 import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { usePermissions, useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';

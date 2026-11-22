@@ -221,6 +221,9 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
 
     // Processes
     '/processes/governance': { href: '/processes', label: 'Processes' },
+    '/processes/agents/[agentId]': { href: '/agents', label: 'Agents' },
+    // The flow editor's parent is the agent itself, as its breadcrumbs say.
+    '/processes/agents/[agentId]/flow': { href: '/agents/[agentId]', label: 'Agent' },
 
     // Reports
     '/reports/soa': { href: '/reports', label: 'Reports' },

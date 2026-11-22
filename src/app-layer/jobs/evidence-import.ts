@@ -166,6 +166,79 @@ export function isLikelyZipBombEntry(opts: {
     return opts.uncompressedSize / opts.compressedSize > maxRatio;
 }
 
+// ─── Bounded inflation ──────────────────────────────────────────────
+
+/**
+ * The archive's own size claims were false: an entry inflated past what the
+ * central directory declared for it, or past what is left of the archive's
+ * whole uncompressed budget. The import stops — every check before inflation
+ * read those claims, so nothing else in the archive can be trusted either.
+ */
+export class ArchiveSizeClaimError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'ArchiveSizeClaimError';
+    }
+}
+
+/**
+ * JSZip's `internalStream` — documented in its API, absent from its type
+ * definitions. Only what `inflateEntryBounded` uses is declared.
+ */
+export interface JSZipEntryStream {
+    on(event: 'data', listener: (chunk: Buffer) => void): JSZipEntryStream;
+    on(event: 'error', listener: (err: Error) => void): JSZipEntryStream;
+    on(event: 'end', listener: () => void): JSZipEntryStream;
+    pause(): JSZipEntryStream;
+    resume(): JSZipEntryStream;
+}
+type StreamableEntry = { internalStream(type: 'nodebuffer'): JSZipEntryStream };
+
+/**
+ * Inflate one entry, counting bytes as they arrive, and stop as soon as more
+ * than `limitBytes` have come out. Inflating to a Buffer first and measuring
+ * after would hold the whole lie in memory before noticing it.
+ */
+export function inflateEntryBounded(
+    obj: JSZip.JSZipObject,
+    limitBytes: number,
+    path: string,
+): Promise<Buffer> {
+    return new Promise<Buffer>((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        let total = 0;
+        let settled = false;
+        const stream = (obj as unknown as StreamableEntry).internalStream('nodebuffer');
+        stream.on('data', (chunk) => {
+            if (settled) return;
+            total += chunk.length;
+            if (total > limitBytes) {
+                settled = true;
+                stream.pause();
+                chunks.length = 0;
+                reject(
+                    new ArchiveSizeClaimError(
+                        `evidence-import: entry "${path}" inflated past ${limitBytes} bytes, more than the archive declared; refusing the archive`,
+                    ),
+                );
+                return;
+            }
+            chunks.push(chunk);
+        });
+        stream.on('error', (err) => {
+            if (settled) return;
+            settled = true;
+            reject(err);
+        });
+        stream.on('end', () => {
+            if (settled) return;
+            settled = true;
+            resolve(Buffer.concat(chunks, total));
+        });
+        stream.resume();
+    });
+}
+
 // ─── MIME allow-list mirror ─────────────────────────────────────────
 //
 // We can't import the existing isAllowedMime because it lives next to
@@ -286,6 +359,33 @@ async function buildJobContext(payload: EvidenceImportPayload): Promise<RequestC
     return ctx;
 }
 
+/**
+ * Delete the staged ZIP and its FileRecord. Best-effort: a failure is logged
+ * and never masks the outcome the caller is reporting.
+ */
+async function cleanupStaging(
+    storage: ReturnType<typeof getStorageProvider>,
+    payload: EvidenceImportPayload,
+): Promise<void> {
+    try {
+        await storage.delete(payload.stagingPathKey);
+    } catch (err) {
+        logger.warn('evidence-import.staging_cleanup_failed', {
+            component: 'evidence-import',
+            tenantId: payload.tenantId,
+            stagingPathKey: payload.stagingPathKey,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+    try {
+        await prisma.fileRecord.delete({
+            where: { id: payload.stagingFileRecordId },
+        });
+    } catch {
+        // Already cleaned up — no-op.
+    }
+}
+
 // ─── Public job entry point ─────────────────────────────────────────
 
 export async function runEvidenceImport(
@@ -312,7 +412,29 @@ export async function runEvidenceImport(
         const stream = storage.readStream(payload.stagingPathKey);
         const archiveBuffer = await streamToBuffer(stream);
 
-        const zip = await JSZip.loadAsync(archiveBuffer);
+        /**
+         * Refuse the ARCHIVE, and drop its staged copy (#5307).
+         *
+         * For a refusal about the archive's own bytes — unreadable, too many
+         * entries, a declared or actual ZIP bomb — no re-enqueue can ever
+         * succeed, and this job is `attempts: 1`, so nothing else would ever
+         * delete the staged ZIP or its FileRecord: every refused upload stayed
+         * in the tenant's temp/ storage for good. A TRANSIENT failure (storage
+         * read, permission re-check, a DB fault) still leaves the staging in
+         * place for an operator to re-enqueue, as `types.ts` documents; only
+         * these deterministic refusals clean up.
+         */
+        const refuseArchive = async (err: unknown): Promise<never> => {
+            await cleanupStaging(storage, payload);
+            throw err;
+        };
+
+        let zip: JSZip;
+        try {
+            zip = await JSZip.loadAsync(archiveBuffer);
+        } catch (err) {
+            return refuseArchive(err);
+        }
 
         // Build a flat list of file entries (skip directories /
         // metadata) with declared sizes from the central directory.
@@ -349,19 +471,19 @@ export async function runEvidenceImport(
 
         // ── Top-level archive checks ────────────────────────────────
         if (entries.length > MAX_ENTRIES) {
-            throw new Error(
+            return refuseArchive(new Error(
                 `evidence-import: archive has ${entries.length} entries; max is ${MAX_ENTRIES}. Split into multiple uploads.`,
-            );
+            ));
         }
         const totalDeclared = entries.reduce(
             (sum, e) => sum + (e.uncompressedSize || 0),
             0,
         );
         if (totalDeclared > MAX_UNCOMPRESSED_BYTES) {
-            throw new Error(
+            return refuseArchive(new Error(
                 `evidence-import: archive declares ${totalDeclared} uncompressed bytes; cap is ${MAX_UNCOMPRESSED_BYTES}. ` +
                     'Possible ZIP-bomb — refusing to extract.',
-            );
+            ));
         }
 
         const skipReasons: EvidenceImportSkip[] = [];
@@ -370,6 +492,8 @@ export async function runEvidenceImport(
         let errored = 0;
         let firstError: string | undefined;
         const evidenceIds: string[] = [];
+        // Bytes actually inflated so far, against MAX_UNCOMPRESSED_BYTES.
+        let inflatedBytes = 0;
 
         const recordSkip = (path: string, reason: string) => {
             skipped += 1;
@@ -406,16 +530,18 @@ export async function runEvidenceImport(
 
             // ── Decompress + create evidence ────────────────────────
             try {
-                const buf = await entry.obj.async('nodebuffer');
-                if (buf.length > entry.uncompressedSize + 64) {
-                    // Defence in depth: if actual decompressed size
-                    // wildly exceeds the declared one, abort the
-                    // archive rather than the entry — the central
-                    // directory was lying to us.
-                    throw new Error(
-                        `evidence-import: entry "${entry.path}" decompressed to ${buf.length} bytes vs declared ${entry.uncompressedSize}`,
-                    );
-                }
+                // Defence in depth: the checks above read the sizes the
+                // central directory declares. Inflation is counted as it
+                // happens and stops past the entry's declared size or the
+                // archive's remaining budget, whichever is smaller; that
+                // aborts the whole archive (rethrown below), because the
+                // central directory was lying to us.
+                const limit = Math.min(
+                    entry.uncompressedSize + 64,
+                    MAX_UNCOMPRESSED_BYTES - inflatedBytes,
+                );
+                const buf = await inflateEntryBounded(entry.obj, limit, entry.path);
+                inflatedBytes += buf.length;
                 // Slice into a fresh `ArrayBuffer` so the File
                 // constructor's strict BlobPart typing accepts the
                 // value (Node's `Buffer` carries a wider
@@ -436,6 +562,7 @@ export async function runEvidenceImport(
                 evidenceIds.push(evidence.id);
                 extracted += 1;
             } catch (err) {
+                if (err instanceof ArchiveSizeClaimError) return refuseArchive(err);
                 errored += 1;
                 const message =
                     err instanceof Error ? err.message : String(err);
@@ -476,23 +603,7 @@ export async function runEvidenceImport(
         // ── Cleanup the staged ZIP. Best-effort — the worker has
         // already created the evidence rows and the staging slot is
         // tenant-scoped, so a leak here is bounded + recoverable.
-        try {
-            await storage.delete(payload.stagingPathKey);
-        } catch (err) {
-            logger.warn('evidence-import.staging_cleanup_failed', {
-                component: 'evidence-import',
-                tenantId: payload.tenantId,
-                stagingPathKey: payload.stagingPathKey,
-                error: err instanceof Error ? err.message : String(err),
-            });
-        }
-        try {
-            await prisma.fileRecord.delete({
-                where: { id: payload.stagingFileRecordId },
-            });
-        } catch {
-            // Already cleaned up — no-op.
-        }
+        await cleanupStaging(storage, payload);
 
         const result: EvidenceImportResult = {
             tenantId: payload.tenantId,

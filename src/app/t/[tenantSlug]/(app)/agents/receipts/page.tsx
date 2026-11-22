@@ -298,10 +298,12 @@ export default async function AgentReceiptsPage({
                                             <div>
                                                 <dt className="font-medium">{t('mcp.receiptProvenance')}</dt>
                                                 <dd>
+                                                    {/* No revision in any of these sentences (#5313): a
+                                                        pin-moved receipt stores none — the definition in
+                                                        force at the time is exactly what is not known — so
+                                                        the page read "revision 0", which does not exist. */}
                                                     {provenanceKey
-                                                        ? t(`mcp.receiptProvenanceValue.${provenanceKey}`, {
-                                                              revision: r.toolManifestRevision ?? 0,
-                                                          })
+                                                        ? t(`mcp.receiptProvenanceValue.${provenanceKey}`)
                                                         : t('mcp.receiptProvenanceValue.NONE')}
                                                 </dd>
                                             </div>

@@ -11,6 +11,7 @@ import type { AgentGuardVerdict } from '@/app-layer/ai/guard/proposal-guard';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { appendAuditEntry } from '@/lib/audit';
 import type { ContentProvenance } from '@/lib/agentic/content-provenance';
+import type { PrismaTx } from '@/lib/db-context';
 
 /**
  * THE ONE PLACE A `WorkflowStep` IS WRITTEN.
@@ -83,6 +84,14 @@ export interface StepRecord {
      * review wants and the cap does not read.
      */
     tokens?: number;
+    /**
+     * The inline sub-agent this step belongs to (Step 2e, #4594): set on every
+     * MODEL_CALL and TOOL_CALL a sub-agent produces, absent on every parent
+     * step. Written to `WorkflowStep.subagentName` and to the audit row, so a
+     * step's owner is READ, not inferred from a span: a run killed during a
+     * delegation never writes the marker that closes its span.
+     */
+    subagent?: string;
 }
 
 export async function recordStep(
@@ -92,9 +101,17 @@ export async function recordStep(
     kind: WorkflowStepKind,
     rec: StepRecord,
     contextSeq?: number,
+    /**
+     * A write that must land in the SAME transaction as this step, or not at
+     * all (Step 2f): a resumed segment's first step moves its deferral to
+     * RESUMED and clears the transcript, so the ledger never holds the
+     * continuation of a conversation a retry would send again.
+     */
+    alsoInTx?: (db: PrismaTx) => Promise<void>,
 ): Promise<void> {
-    await runInTenantContext(ctx, (db) =>
-        db.workflowStep.create({
+    await runInTenantContext(ctx, async (db) => {
+        if (alsoInTx) await alsoInTx(db);
+        return db.workflowStep.create({
             data: {
                 runId, tenantId: ctx.tenantId, seq, kind,
                 contextSeq: contextSeq ?? null,
@@ -117,9 +134,12 @@ export async function recordStep(
                 // enforced total and the cap still reads it — this is the
                 // detail an incident review wants and a run total cannot give.
                 costTokens: rec.tokens,
+                // Whose step it was: a sub-agent's name, or NULL for the
+                // parent. An identifier (CHECK `WorkflowStep_subagent_name_shape`).
+                subagentName: rec.subagent ?? null,
             },
-        }),
-    );
+        });
+    });
     await appendAuditEntry({
         tenantId: ctx.tenantId,
         userId: ctx.userId,
@@ -165,6 +185,10 @@ export async function recordStep(
             // it ran and found nothing.
             guardVerdict: rec.guardVerdict ?? null,
             guardRuleIds: rec.guardRuleIds ? [...rec.guardRuleIds] : [],
+            // …and WHOSE step it was (Step 2e): the sub-agent's name, or null
+            // for the parent's own. In the hash-chained trail as well as the
+            // column, for the reason the verdict is.
+            subagent: rec.subagent ?? null,
         },
         metadataJson: { apiKeyId: ctx.apiKeyId ?? null, runId },
     }).catch(() => undefined);

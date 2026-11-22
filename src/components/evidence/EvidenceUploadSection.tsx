@@ -17,10 +17,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { FileDropzone, type FileUploadEntry } from '@/components/ui/FileDropzone';
 import { Button } from '@/components/ui/button';
-import { Download, ArrowUpRight } from '@inflect/ui/components/ui/icons/nucleo';
+import { Download, ArrowUpRight } from '@inflect/ui/components/ui/icons/glyphs';
 import { uploadWithProgress } from '@/lib/upload/upload-with-progress';
 import { EVIDENCE_ACCEPT, EVIDENCE_MAX_FILE_MB, EVIDENCE_UPLOAD_HINT } from '@/lib/evidence-upload-limits';
 import { apiErrorMessage } from '@/lib/api-error';
+import { normaliseHref } from '@/lib/security/safe-url';
 
 // Mirrors the evidence upload modal's accept list + hint copy so every
 // evidence surface advertises the same supported types + size cap.
@@ -363,7 +364,7 @@ export function EvidenceUploadSection({
                         // Download (FileRecord) takes precedence over external URL.
                         const href = it.downloadId
                             ? `/api/t/${tenantSlug}/evidence/files/${it.downloadId}/download`
-                            : it.externalUrl || null;
+                            : normaliseHref(it.externalUrl); // an unsafe address is shown as text
                         const isFile = Boolean(it.downloadId);
                         return (
                             <li

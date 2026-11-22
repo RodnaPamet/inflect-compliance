@@ -54,6 +54,7 @@ permissions:
 jobs:
     scanner-vm:
         name: Scanner VM (${{ inputs.action }})
+        if: github.ref == 'refs/heads/main'
         runs-on: ubuntu-latest
         environment: production
         timeout-minutes: 20
@@ -78,8 +79,10 @@ jobs:
                   SCANNER_ENTRA_DIRECTORY_ID: ${{ secrets.SCANNER_ENTRA_DIRECTORY_ID }}
                   SCANNER_ENTRA_CLIENT_ID: ${{ secrets.SCANNER_ENTRA_CLIENT_ID }}
                   INFLECT_INGEST_KEY: ${{ secrets.INFLECT_INGEST_KEY }}
+                  INFLECT_INTEGRATIONS_KEY: ${{ secrets.INFLECT_INTEGRATIONS_KEY }}
                   ENTRA_CLIENT_SECRET: ${{ secrets.ENTRA_CLIENT_SECRET }}
                   SCANNER_GITHUB_READ_TOKEN: ${{ secrets.SCANNER_GITHUB_READ_TOKEN }}
+                  SCANNER_GITHUB_INTEGRATIONS_TOKEN: ${{ secrets.SCANNER_GITHUB_INTEGRATIONS_TOKEN }}
                   GCP_SCANNER_KEY: ${{ secrets.GCP_SCANNER_KEY }}
               run: deploy/harness-scanner/stage-config.sh "$RUNNER_TEMP/harness-scanner"
 

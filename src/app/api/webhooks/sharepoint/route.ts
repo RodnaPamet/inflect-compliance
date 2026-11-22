@@ -47,9 +47,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         const policyId = clientState.slice(sep + 1);
 
         // Anti-spoof: the clientState must match a policy whose stored
-        // subscription id equals the notification's subscriptionId.
+        // subscription id equals the notification's subscriptionId. A note
+        // with no subscriptionId is refused: an undefined filter is dropped
+        // by Prisma, which would match on the clientState alone.
+        if (!note.subscriptionId) {
+            edgeLogger.warn('SharePoint webhook: notification without subscriptionId', { component: 'sharepoint' });
+            continue;
+        }
         const policy = await prisma.policy.findFirst({
-            where: { id: policyId, tenantId, spSubscriptionId: note.subscriptionId ?? undefined },
+            where: { id: policyId, tenantId, spSubscriptionId: note.subscriptionId },
             select: { id: true, tenantId: true },
         });
         if (!policy) {

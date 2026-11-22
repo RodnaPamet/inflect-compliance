@@ -12,8 +12,8 @@
  *      listRisksWithDeleted.
  *   2. Epic D.2 — every free-text field passes through sanitizePlainText
  *      on create AND on update via sanitizeOptional (three-state).
- *   3. inherentScore = calculateRiskScore(likelihood, impact, maxScale)
- *      with maxScale fetched from tenant.maxRiskScale (default 5).
+ *   3. inherentScore = calculateRiskScore(likelihood, impact, L, I), each axis
+ *      bounded by the tenant's RiskMatrixConfig levels (default 5x5, #5080).
  *   4. createRiskFromTemplate: notFound for missing template; merges
  *      override over template and sanitises the merged value.
  *   5. notFound paths: getRisk, updateRisk, deleteRisk, linkControlToRisk.
@@ -73,6 +73,7 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
 import { calculateRiskScore } from '@/lib/risk-scoring';
 import { logEvent } from '@/app-layer/events/audit';
 import { makeRequestContext } from '../../helpers/make-context';
+import { CreateRiskSchema } from '@/lib/schemas';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenantContext>;
 const mockCreate = RiskRepository.create as jest.MockedFunction<typeof RiskRepository.create>;
@@ -92,10 +93,11 @@ beforeEach(() => {
     mockUpdate.mockResolvedValue({ id: 'r1' } as never);
 });
 
-function dbWithTenant(maxRiskScale: number | null = 5) {
+/** `matrix` is the tenant's saved RiskMatrixConfig levels; null = none saved. */
+function dbWithTenant(matrix: { likelihoodLevels: number; impactLevels: number } | null = null) {
     return {
-        tenant: {
-            findUnique: jest.fn().mockResolvedValue({ maxRiskScale }),
+        riskMatrixConfig: {
+            findUnique: jest.fn().mockResolvedValue(matrix),
         },
         // RQ2-1 — every score-changing write appends a ledger event.
         riskScoreEvent: {
@@ -119,7 +121,7 @@ describe('createRisk', () => {
     });
 
     it('sanitises every free-text field before persistence (Epic D.2)', async () => {
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithTenant();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await createRisk(makeRequestContext('EDITOR'), {
@@ -146,28 +148,28 @@ describe('createRisk', () => {
         expect(repoArgs.treatmentNotes).toBe('SANITISED(notes)');
     });
 
-    it('uses tenant.maxRiskScale when computing inherentScore', async () => {
-        const fakeDb = dbWithTenant(10);
+    it('bounds each axis by the tenant matrix when computing inherentScore (#5080)', async () => {
+        const fakeDb = dbWithTenant({ likelihoodLevels: 6, impactLevels: 10 });
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await createRisk(makeRequestContext('EDITOR'), {
             title: 't', likelihood: 4, impact: 5,
         });
 
-        expect(mockScore).toHaveBeenCalledWith(4, 5, 10);
+        expect(mockScore).toHaveBeenCalledWith(4, 5, 6, 10);
     });
 
-    it('falls back to maxScale=5 when tenant.maxRiskScale is null', async () => {
+    it('falls back to the default 5x5 matrix when the tenant saved none', async () => {
         const fakeDb = dbWithTenant(null);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await createRisk(makeRequestContext('EDITOR'), { title: 't' });
 
-        expect(mockScore).toHaveBeenCalledWith(3, 3, 5);
+        expect(mockScore).toHaveBeenCalledWith(3, 3, 5, 5);
     });
 
     it('emits a CREATE audit row', async () => {
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithTenant();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await createRisk(makeRequestContext('EDITOR'), { title: 't' });
@@ -180,6 +182,52 @@ describe('createRisk', () => {
                 entityType: 'Risk',
             }),
         );
+    });
+
+    // #5313 item 48 — the template the New Risk form started from is
+    // provenance, recorded in the creation audit row, not on the risk.
+    it('records the template it started from in the CREATE audit row', async () => {
+        mockTemplateGet.mockResolvedValue({ id: 'tpl-1', title: 'Phishing' } as never);
+        const fakeDb = dbWithTenant();
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
+
+        await createRisk(makeRequestContext('EDITOR'), { title: 't', templateId: 'tpl-1' });
+
+        expect(mockTemplateGet).toHaveBeenCalledWith('tpl-1');
+        expect(mockLog).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            expect.objectContaining({
+                action: 'CREATE',
+                entityType: 'Risk',
+                detailsJson: { category: 'custom', event: 'create', templateId: 'tpl-1' },
+            }),
+        );
+        expect(mockCreate.mock.calls[0][2]).not.toHaveProperty('templateId');
+    });
+
+    it('refuses a templateId that names no template, and creates nothing', async () => {
+        mockTemplateGet.mockResolvedValue(null);
+
+        await expect(
+            createRisk(makeRequestContext('EDITOR'), { title: 't', templateId: 'no-such-tpl' }),
+        ).rejects.toMatchObject({ status: 400, details: { reason: 'RISK_TEMPLATE_NOT_FOUND' } });
+        expect(mockRunInTx).not.toHaveBeenCalled();
+        expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    it('a risk from no template records none, and looks none up', async () => {
+        const fakeDb = dbWithTenant();
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
+
+        await createRisk(makeRequestContext('EDITOR'), { title: 't' });
+
+        expect(mockTemplateGet).not.toHaveBeenCalled();
+        expect(mockLog.mock.calls[0][2].detailsJson).toEqual({ category: 'custom', event: 'create' });
+    });
+
+    it('the create schema keeps templateId rather than stripping it', () => {
+        expect(CreateRiskSchema.parse({ title: 't', templateId: 'tpl-1' })).toMatchObject({ templateId: 'tpl-1' });
     });
 });
 
@@ -209,7 +257,7 @@ describe('createRiskFromTemplate', () => {
             defaultLikelihood: 3,
             defaultImpact: 4,
         } as never);
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithTenant();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await createRiskFromTemplate(makeRequestContext('EDITOR'), 'tpl-1', {
@@ -227,7 +275,7 @@ describe('createRiskFromTemplate', () => {
 
 describe('updateRisk — sanitizeOptional three-state', () => {
     it('preserves "untouched" semantics: undefined fields are NOT written', async () => {
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithTenant();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await updateRisk(makeRequestContext('EDITOR'), 'r1', {
@@ -246,7 +294,7 @@ describe('updateRisk — sanitizeOptional three-state', () => {
     });
 
     it('preserves "explicit-clear" semantics: null fields write SET NULL', async () => {
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithTenant();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await updateRisk(makeRequestContext('EDITOR'), 'r1', {
@@ -259,8 +307,25 @@ describe('updateRisk — sanitizeOptional three-state', () => {
         expect(repoArgs.treatmentNotes).toBeNull();
     });
 
+    // #5212 — clearing a date was collapsed to "leave it alone", so a cleared
+    // review date came back after a reload behind a "saved" toast.
+    it('clears nextReviewAt and targetDate on an explicit null, and leaves them on undefined', async () => {
+        const fakeDb = dbWithTenant();
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
+        await updateRisk(makeRequestContext('EDITOR'), 'r1', { nextReviewAt: null, targetDate: null });
+        const cleared = mockUpdate.mock.calls.at(-1)![3];
+        expect(cleared.nextReviewAt).toBeNull();
+        expect(cleared.targetDate).toBeNull();
+
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
+        await updateRisk(makeRequestContext('EDITOR'), 'r1', { title: 't' });
+        const untouched = mockUpdate.mock.calls.at(-1)![3];
+        expect(untouched.nextReviewAt).toBeUndefined();
+        expect(untouched.targetDate).toBeUndefined();
+    });
+
     it('throws notFound when repository returns null', async () => {
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithTenant();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
         mockUpdate.mockResolvedValueOnce(null as never);
 
@@ -269,6 +334,11 @@ describe('updateRisk — sanitizeOptional three-state', () => {
         ).rejects.toThrow(/Risk not found/);
     });
 });
+
+/** A db double whose RESTRICT-child counts are all zero. */
+function noBlockers() {
+    return { riskTreatmentPlan: { count: async () => 0 } };
+}
 
 describe('deleteRisk', () => {
     it('rejects EDITOR — delete requires canAdmin (separation from canWrite)', async () => {
@@ -281,7 +351,11 @@ describe('deleteRisk', () => {
     });
 
     it('emits SOFT_DELETE audit on success', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        // `riskTreatmentPlan.count` is the RESTRICT-child check `deleteRisk`
+        // now makes (#5083). Zero means nothing blocks; the usecase THROWS on
+        // a missing delegate rather than reading absence as zero, so a bare
+        // `{}` fails loudly instead of passing quietly.
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(noBlockers() as never));
         mockDelete.mockResolvedValueOnce({ id: 'r1' } as never);
 
         await deleteRisk(makeRequestContext('ADMIN'), 'r1');
@@ -294,7 +368,7 @@ describe('deleteRisk', () => {
     });
 
     it('throws notFound when repo.delete returns null', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(noBlockers() as never));
         mockDelete.mockResolvedValueOnce(null as never);
 
         await expect(

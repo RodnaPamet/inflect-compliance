@@ -94,6 +94,7 @@ import { getSampleAuditDisagreementRate } from './agent-proposal-sample-audit';
 import { getWorkpaperReviewRate } from './audit-workpaper-sample-review';
 import { effectiveSamplePercent } from '@/lib/agentic/workpaper-review-sampling';
 import { listToolManifests } from './mcp-tool-manifest';
+import { SPENDING_RAILS } from '@/lib/agentic/spending-authority';
 import type { RequestContext } from '../types';
 
 /** Default lookback for the two window-scoped reports. A quarter. */
@@ -204,6 +205,29 @@ export interface InventoryRow {
     killState: 'RUNNING' | 'KILLED_BY_AGENT_SCOPE' | 'KILLED_BY_TENANT_SCOPE';
     /** `null` means no breaker row — never observed, not "closed". */
     breakerState: string | null;
+    /**
+     * The agent's declared spending authority (Agent Pay Phase 1.6, #5333):
+     * one entry per rail whose envelope is not WITHDRAWN. Empty means the
+     * register records no spending authority, which is not the same as "this
+     * agent cannot pay" — discovery is the harness's `SPENDING_AGENT_UNDECLARED`.
+     * Rail, status and review only: the envelope's amounts, merchants and token
+     * reference stay on the register page, which reads under the register key.
+     */
+    spendingAuthority: InventorySpendingEnvelope[];
+}
+
+/** One rail of an agent's spending authority, as the inventory reports it. */
+export interface InventorySpendingEnvelope {
+    rail: string;
+    /** DECLARED | REVIEWED | SUSPENDED_REQUESTED (WITHDRAWN rows are left out). */
+    status: string;
+    reviewedAt: Date | null;
+    /**
+     * `readUnreviewedSpendingAuthority`'s rule: DECLARED, or
+     * SUSPENDED_REQUESTED by a kill before anybody reviewed it. What holds an
+     * agent back from activation.
+     */
+    unreviewed: boolean;
 }
 
 export interface AgentInventoryBody {
@@ -247,6 +271,7 @@ export async function buildAgentInventoryReport(
         policyCardVersion: a.policyCardVersion,
         killState: a.killState,
         breakerState: a.breakerState,
+        spendingAuthority: a.spendingAuthority,
     }));
 
     const total = rows.length;
@@ -267,6 +292,9 @@ export async function buildAgentInventoryReport(
             'inventory.unattended_agents': count((r) => r.unattended),
             'inventory.third_party_agents': count((r) => r.provenance === 'THIRD_PARTY'),
             'inventory.agents_without_policy_card': count((r) => r.policyCardVersion === null),
+            'inventory.agents_with_spending_authority': count((r) => r.spendingAuthority.length > 0),
+            'inventory.agents_with_unreviewed_spending_authority': count((r) =>
+                r.spendingAuthority.some((e) => e.unreviewed)),
         },
         { agents: rows, legacyPlaceholderPresent },
     );
@@ -1259,6 +1287,7 @@ interface LoadedAgent {
     policyCardVersion: number | null;
     killState: 'RUNNING' | 'KILLED_BY_AGENT_SCOPE' | 'KILLED_BY_TENANT_SCOPE';
     breakerState: string | null;
+    spendingAuthority: InventorySpendingEnvelope[];
 }
 
 interface VendorRow {
@@ -1312,18 +1341,28 @@ async function loadAgents(ctx: RequestContext): Promise<{
                 ownerUserId: true, vendorId: true, riskTier: true,
                 riskTierScoredAt: true, isLegacyPlaceholder: true,
                 owner: { select: { name: true } },
-                _count: { select: { apiKeys: true } },
+                // LIVE keys only: a revoked or expired key no longer speaks for
+                // the agent, and counting the cascade's revoked keys made a
+                // retired agent look as if it still held credentials (#5317).
+                _count: {
+                    select: {
+                        apiKeys: {
+                            where: { revokedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+                        },
+                    },
+                },
             },
         });
 
         const real = rows.filter((r) => !r.isLegacyPlaceholder);
+        const ids = real.map((r) => r.id);
         const vendorIds = [
             ...new Set(real.map((r) => r.vendorId).filter((v): v is string => v !== null)),
         ];
 
-        const [cards, toolCounts, assessments, kills, breakers, vendors] = await Promise.all([
+        const [cards, toolCounts, assessments, kills, breakers, vendors, envelopes] = await Promise.all([
             db.agentPolicyCard.findMany({
-                where: { tenantId: ctx.tenantId },
+                where: { tenantId: ctx.tenantId, agentId: { in: ids } },
                 take: AGENT_ROW_CAP,
                 select: { agentId: true, currentVersion: true },
             }),
@@ -1332,12 +1371,16 @@ async function loadAgents(ctx: RequestContext): Promise<{
                 where: { tenantId: ctx.tenantId },
                 _count: { _all: true },
             }),
-            // Newest-completed first, so the first row seen per agent is the
-            // judgement in force. `staleAt` on THAT row is what makes an agent
-            // stale — an older run going stale says nothing about the current tier.
+            // Newest completed, ONE PER AGENT read above: the judgement in
+            // force. `staleAt` on THAT row is what makes an agent stale — an
+            // older run going stale says nothing about the current tier. It
+            // was the 500 newest assessments tenant-wide, so a tenant whose
+            // busiest agents were re-assessed often reported the rest as never
+            // assessed (#5140). Same shape as the register read.
             db.agentRiskAssessment.findMany({
-                where: { tenantId: ctx.tenantId, status: 'COMPLETED' },
-                orderBy: [{ completedAt: 'desc' }],
+                where: { tenantId: ctx.tenantId, agentId: { in: ids }, status: 'COMPLETED' },
+                orderBy: [{ agentId: 'asc' }, { completedAt: 'desc' }],
+                distinct: ['agentId'],
                 take: AGENT_ROW_CAP,
                 select: { agentId: true, staleAt: true, staleTriggers: true },
             }),
@@ -1347,12 +1390,31 @@ async function loadAgents(ctx: RequestContext): Promise<{
                 select: { agentId: true },
             }),
             db.agentCircuitBreaker.findMany({
-                where: { tenantId: ctx.tenantId },
+                where: { tenantId: ctx.tenantId, agentId: { in: ids } },
                 take: AGENT_ROW_CAP,
                 select: { agentId: true, state: true },
             }),
             loadVendors(db, ctx.tenantId, vendorIds),
+            // Agent Pay Phase 1.6 (#5333): at most one envelope per agent per
+            // rail (the unique), so this cap reads every live one.
+            db.agentSpendingAuthority.findMany({
+                where: { tenantId: ctx.tenantId, agentId: { in: ids }, status: { not: 'WITHDRAWN' } },
+                orderBy: [{ agentId: 'asc' }, { rail: 'asc' }],
+                take: ids.length * SPENDING_RAILS.length,
+                select: { agentId: true, rail: true, status: true, reviewedAt: true },
+            }),
         ]);
+        const envelopesByAgent = new Map<string, InventorySpendingEnvelope[]>();
+        for (const e of envelopes) {
+            const list = envelopesByAgent.get(e.agentId) ?? [];
+            list.push({
+                rail: String(e.rail),
+                status: String(e.status),
+                reviewedAt: e.reviewedAt,
+                unreviewed: e.status === 'DECLARED' || (e.status === 'SUSPENDED_REQUESTED' && e.reviewedAt === null),
+            });
+            envelopesByAgent.set(e.agentId, list);
+        }
 
         const cardVersion = new Map(cards.map((c) => [c.agentId, c.currentVersion]));
         const toolCount = new Map(toolCounts.map((t) => [t.agentId, t._count._all]));
@@ -1406,6 +1468,7 @@ async function loadAgents(ctx: RequestContext): Promise<{
                       ? 'KILLED_BY_AGENT_SCOPE'
                       : 'RUNNING',
                 breakerState: breakerState.get(r.id) ?? null,
+                spendingAuthority: envelopesByAgent.get(r.id) ?? [],
             };
         });
 

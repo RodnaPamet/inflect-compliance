@@ -288,8 +288,10 @@ describe('the Proposals badge appears only when proposals await review', () => {
     const badgeText = () => {
         const row = document.getElementById('agents-view-proposals');
         if (!row) return null;
-        // The visible chip, not the sr-only sentence beside it.
-        const chip = row.querySelector('[aria-hidden="true"]');
+        // The visible chip, not the sr-only sentence beside it. A SPAN: the
+        // row's icon is an aria-hidden <svg> too (lucide marks unlabelled
+        // icons hidden, #5772), and it comes first.
+        const chip = row.querySelector('span[aria-hidden="true"]');
         return chip?.textContent ?? null;
     };
 
@@ -319,7 +321,7 @@ describe('the Proposals badge appears only when proposals await review', () => {
 
     it('no OTHER entry carries a badge', async () => {
         await openMenu({ proposalsAwaitingReview: 7 });
-        const badged = items().filter((el) => el.querySelector('[aria-hidden="true"]'));
+        const badged = items().filter((el) => el.querySelector('span[aria-hidden="true"]'));
         expect(badged.map((el) => el.id)).toEqual(['agents-view-proposals']);
     });
 });

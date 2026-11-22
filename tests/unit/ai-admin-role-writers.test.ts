@@ -124,6 +124,8 @@ const NAMING_FILES: Readonly<Record<string, string>> = {
     'src/app/t/[tenantSlug]/(app)/admin/members/page.tsx':
         'a badge tone; the role-change picker offers it to an OWNER only, never the invite picker',
     'src/app/t/[tenantSlug]/(app)/admin/entra/GroupMappingsSection.tsx': 'shows its tie rule while a mapping to it is being added',
+    'src/components/policies/PolicyAcknowledgementsPanel.tsx':
+        'ROLE_VALUES: an audience for requesting policy acknowledgement by role; reads the role, writes none (#5309)',
 };
 
 /** Files that WRITE AI_ADMIN to a membership — the two the owner decided on, and no third. */
@@ -281,6 +283,7 @@ describe('BEHAVIOUR — the two writers write it', () => {
     it('updateTenantMemberRole: an OWNER moves an existing member into AI_ADMIN, audited', async () => {
         const update = jest.fn().mockResolvedValue({ id: 'm-1', role: 'AI_ADMIN', user: { email: 'u@x' } });
         const db = {
+            $executeRawUnsafe: jest.fn().mockResolvedValue(0),
             tenantMembership: {
                 findFirst: jest.fn().mockResolvedValue({
                     id: 'm-1',
@@ -307,6 +310,7 @@ describe('BEHAVIOUR — the two writers write it', () => {
     ] as const)('syncEntraMembershipRole writes it through a mapping on %s', async (_label, ceiling) => {
         const update = jest.fn();
         const db = {
+            $executeRawUnsafe: jest.fn().mockResolvedValue(0),
             tenantIdentityProvider: { findFirst: jest.fn().mockResolvedValue(null) },
             tenantEntraGroupMapping: {
                 findMany: jest.fn().mockResolvedValue([{ aadGroupId: 'g-ai', role: 'AI_ADMIN', priority: 0 }]),
@@ -393,6 +397,7 @@ describe('BEHAVIOUR — every other membership-role writer refuses it', () => {
 
     it('closing a review whose stored MODIFY targets it refuses the whole close before any row executes', async () => {
         const db = {
+            $executeRawUnsafe: jest.fn().mockResolvedValue(0),
             accessReview: {
                 findFirst: jest.fn().mockResolvedValue({
                     id: 'ar-1',
@@ -439,6 +444,7 @@ describe('BEHAVIOUR — every other membership-role writer refuses it', () => {
             }),
         ).rejects.toThrow(/Invalid base role: AI_ADMIN/);
         const db = {
+            $executeRawUnsafe: jest.fn().mockResolvedValue(0),
             tenantCustomRole: {
                 findFirst: jest.fn().mockResolvedValue({ id: 'cr-1', tenantId: 'tenant-1', baseRole: 'READER' }),
                 update: jest.fn(),

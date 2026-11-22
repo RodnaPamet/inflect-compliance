@@ -535,6 +535,10 @@ function RemoveMemberModal({
                 setSubmitting(false);
                 return;
             }
+            // The modal stays mounted between uses, so a success must clear
+            // its own busy state too (#5272): it used to reopen with Remove
+            // already disabled and spinning.
+            setSubmitting(false);
             onSuccess();
         } catch {
                 // A network failure's own message ("Failed to fetch") says
@@ -676,6 +680,9 @@ function ChangeRoleModal({
                 setSubmitting(false);
                 return;
             }
+            // Mounted between uses: clear the busy state on success as well
+            // (#5272), or the next open's Save is disabled.
+            setSubmitting(false);
             onSuccess();
             // Reset cached chosen role so the next open recomputes
             // the default.
@@ -1051,6 +1058,10 @@ function InviteMemberModal({ orgSlug, open, onClose, onSuccess }: InviteMemberMo
                             type="button"
                             variant="primary"
                             onClick={() => {
+                                // Clear the issued link before closing (#5272):
+                                // the modal stays mounted, and the next Invite
+                                // opened on this one's result.
+                                reset();
                                 onSuccess();
                             }}
                             data-testid="org-invite-issued-done"

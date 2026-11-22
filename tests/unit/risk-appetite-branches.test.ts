@@ -55,6 +55,8 @@ import {
     listBreaches,
     acknowledgeBreach,
     getAppetiteStatus,
+    approveAppetiteConfig,
+    getAppetiteApproval,
     type Breach,
 } from '@/app-layer/usecases/risk-appetite';
 import { logEvent } from '@/app-layer/events/audit';
@@ -71,9 +73,11 @@ const readerCtx = makeRequestContext('READER');
 
 function makeDb() {
     return {
+        $queryRaw: jest.fn().mockResolvedValue([]),
         riskAppetiteConfig: {
             findFirst: jest.fn(),
             update: jest.fn(),
+            updateMany: jest.fn(),
             create: jest.fn(),
         },
         risk: {
@@ -88,6 +92,9 @@ function makeDb() {
         },
         tenant: {
             findUnique: jest.fn().mockResolvedValue({ currencySymbol: '$' }),
+        },
+        user: {
+            findUnique: jest.fn().mockResolvedValue(null),
         },
     };
 }
@@ -127,8 +134,6 @@ describe('upsertAppetiteConfig', () => {
             testedPercentile: 90,
             categoryOverridesJson: { Ops: { totalAleMax: 1 } },
             appetiteStatement: 'stmt',
-            approvedByUserId: 'u-9',
-            approvedAt: '2026-01-01T00:00:00Z',
             reviewCadence: 'QUARTERLY',
             nextReviewAt: '2026-04-01T00:00:00Z',
         });
@@ -137,7 +142,9 @@ describe('upsertAppetiteConfig', () => {
         expect(mockDbHolder.db.riskAppetiteConfig.update).not.toHaveBeenCalled();
         const data = mockDbHolder.db.riskAppetiteConfig.create.mock.calls[0][0].data;
         expect(data.tenantId).toBe(adminCtx.tenantId);
-        expect(data.approvedAt).toBeInstanceOf(Date);
+        // A save never approves (#5313 item 11).
+        expect(data).not.toHaveProperty('approvedAt');
+        expect(data).not.toHaveProperty('approvedByUserId');
         expect(data.nextReviewAt).toBeInstanceOf(Date);
         expect(logEvent).toHaveBeenCalledWith(
             expect.anything(), adminCtx,
@@ -157,9 +164,180 @@ describe('upsertAppetiteConfig', () => {
         const args = mockDbHolder.db.riskAppetiteConfig.update.mock.calls[0][0];
         expect(args.where).toEqual({ id: 'cfg-existing' });
         expect(args.data.totalAleThreshold).toBeNull();
-        expect(args.data.approvedAt).toBeNull();      // falsy approvedAt → null
+        expect(args.data).not.toHaveProperty('approvedAt'); // a save never touches the approval
         expect(args.data.nextReviewAt).toBeNull();    // falsy nextReviewAt → null
         expect(args.data.categoryOverridesJson).toBeUndefined();
+    });
+});
+
+// ─── #5313 item 11 — the approval is its own act, and a change clears it ───
+describe('risk-appetite approval (#5313 item 11)', () => {
+    const ownerCtx = makeRequestContext('OWNER', { userId: 'owner-1' });
+    const stored = {
+        id: 'cfg-1',
+        appetiteStatement: 'We accept moderate operational risk.',
+        totalAleThreshold: 1_000_000,
+        singleRiskAleMax: 200_000,
+        qualScoreMax: 15,
+        testedPercentile: 80,
+        categoryOverridesJson: { Ops: { totalAleMax: 5, singleAleMax: 1 } },
+        approvedAt: new Date('2026-11-01T00:00:00Z'),
+    };
+    const sameTerms = {
+        appetiteStatement: stored.appetiteStatement,
+        totalAleThreshold: stored.totalAleThreshold,
+        singleRiskAleMax: stored.singleRiskAleMax,
+        qualScoreMax: stored.qualScoreMax,
+        testedPercentile: 80 as const,
+        // Same overrides, keys in another order: not a change.
+        categoryOverridesJson: { Ops: { singleAleMax: 1, totalAleMax: 5 } },
+    };
+
+    function savedData() {
+        mockDbHolder.db.riskAppetiteConfig.update.mockResolvedValue({ id: 'cfg-1' });
+        return () => mockDbHolder.db.riskAppetiteConfig.update.mock.calls[0][0].data;
+    }
+
+    it('a save that changes the statement clears the approval, and says so in the audit row', async () => {
+        mockDbHolder.db.riskAppetiteConfig.findFirst.mockResolvedValue(stored);
+        const data = savedData();
+        await upsertAppetiteConfig(adminCtx, { ...sameTerms, appetiteStatement: 'We accept high risk.' });
+        expect(data()).toMatchObject({ approvedByUserId: null, approvedAt: null });
+        expect(logEvent).toHaveBeenCalledWith(
+            expect.anything(), adminCtx,
+            expect.objectContaining({
+                action: 'RISK_APPETITE_CONFIGURED',
+                detailsJson: expect.objectContaining({ approvalCleared: true }),
+            }),
+        );
+    });
+
+    it.each([
+        ['a limit', { totalAleThreshold: 2_000_000 }],
+        ['a limit cleared', { qualScoreMax: null }],
+        ['the tested percentile', { testedPercentile: 95 as const }],
+        ['a category override', { categoryOverridesJson: { Ops: { totalAleMax: 6, singleAleMax: 1 } } }],
+    ])('a save that changes %s clears the approval', async (_label, change) => {
+        mockDbHolder.db.riskAppetiteConfig.findFirst.mockResolvedValue(stored);
+        const data = savedData();
+        await upsertAppetiteConfig(adminCtx, { ...sameTerms, ...change });
+        expect(data()).toMatchObject({ approvedByUserId: null, approvedAt: null });
+    });
+
+    it('a save that changes neither keeps the approval (cadence and review date are not the terms)', async () => {
+        mockDbHolder.db.riskAppetiteConfig.findFirst.mockResolvedValue(stored);
+        const data = savedData();
+        await upsertAppetiteConfig(adminCtx, { ...sameTerms, reviewCadence: 'QUARTERLY', nextReviewAt: '2027-01-01T00:00:00Z' });
+        expect(data()).not.toHaveProperty('approvedAt');
+        expect(data()).not.toHaveProperty('approvedByUserId');
+        expect(logEvent).toHaveBeenCalledWith(
+            expect.anything(), adminCtx,
+            expect.objectContaining({ detailsJson: expect.objectContaining({ approvalCleared: false }) }),
+        );
+    });
+
+    it('a save never carries an approval the caller supplies', async () => {
+        mockDbHolder.db.riskAppetiteConfig.findFirst.mockResolvedValue({ ...stored, approvedAt: null });
+        const data = savedData();
+        await upsertAppetiteConfig(adminCtx, {
+            ...sameTerms,
+            // The input type no longer has these; a caller that forces them in
+            // still cannot get them stored.
+            ...({ approvedByUserId: 'someone-else', approvedAt: '2026-01-01T00:00:00Z' } as object),
+        });
+        expect(data()).not.toHaveProperty('approvedAt');
+        expect(data()).not.toHaveProperty('approvedByUserId');
+    });
+
+    // The version the approver's page loaded (owner decision 2026-11-15).
+    const viewed = { configId: 'cfg-1', viewedUpdatedAt: '2026-11-15T09:00:00.123Z' };
+
+    it('approve stamps the caller and the server clock in ONE write bound to the version shown', async () => {
+        mockDbHolder.db.riskAppetiteConfig.updateMany.mockResolvedValue({ count: 1 });
+        mockDbHolder.db.riskAppetiteConfig.findFirst.mockResolvedValue({ id: 'cfg-1' });
+        const before = Date.now();
+        await approveAppetiteConfig(ownerCtx, viewed);
+        expect(mockDbHolder.db.riskAppetiteConfig.updateMany).toHaveBeenCalledTimes(1);
+        const args = mockDbHolder.db.riskAppetiteConfig.updateMany.mock.calls[0][0];
+        expect(args.where).toEqual({
+            tenantId: ownerCtx.tenantId,
+            id: 'cfg-1',
+            updatedAt: new Date('2026-11-15T09:00:00.123Z'),
+        });
+        expect(args.data.approvedByUserId).toBe('owner-1');
+        expect(args.data.approvedAt.getTime()).toBeGreaterThanOrEqual(before);
+        // Never read-then-write: nothing was read before the stamp.
+        expect(mockDbHolder.db.riskAppetiteConfig.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+            mockDbHolder.db.riskAppetiteConfig.findFirst.mock.invocationCallOrder[0],
+        );
+        expect(mockDbHolder.db.riskAppetiteConfig.update).not.toHaveBeenCalled();
+        expect(logEvent).toHaveBeenCalledWith(
+            expect.anything(), ownerCtx,
+            expect.objectContaining({ action: 'RISK_APPETITE_APPROVED', entityId: 'cfg-1' }),
+        );
+    });
+
+    it('approve of a version that is no longer stored is a 409 and writes no audit row', async () => {
+        // A save after the page loaded moved updatedAt: the conditional write
+        // matches nothing.
+        mockDbHolder.db.riskAppetiteConfig.updateMany.mockResolvedValue({ count: 0 });
+        mockDbHolder.db.riskAppetiteConfig.findFirst.mockResolvedValue({ id: 'cfg-1' });
+        await expect(approveAppetiteConfig(ownerCtx, viewed)).rejects.toMatchObject({
+            status: 409,
+            details: { reason: 'RISK_APPETITE_CHANGED_SINCE_VIEWED' },
+        });
+        expect(mockDbHolder.db.riskAppetiteConfig.update).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+
+    it('approve refuses an ADMIN (no admin.tenant_lifecycle) and writes nothing', async () => {
+        await expect(approveAppetiteConfig(adminCtx, viewed)).rejects.toMatchObject({
+            status: 403,
+            details: { reason: 'RISK_APPETITE_APPROVAL_IS_OWNER_TIER' },
+        });
+        expect(mockDbHolder.db.riskAppetiteConfig.updateMany).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+
+    it('approve refuses an API key, even one carrying the key', async () => {
+        await expect(approveAppetiteConfig({ ...ownerCtx, apiKeyId: 'key-1' }, viewed)).rejects.toMatchObject({
+            status: 403,
+            details: { reason: 'RISK_APPETITE_APPROVAL_NEEDS_PERSON' },
+        });
+        expect(mockDbHolder.db.riskAppetiteConfig.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('approve with nothing saved is a 404', async () => {
+        mockDbHolder.db.riskAppetiteConfig.updateMany.mockResolvedValue({ count: 0 });
+        mockDbHolder.db.riskAppetiteConfig.findFirst.mockResolvedValue(null);
+        await expect(approveAppetiteConfig(ownerCtx, viewed)).rejects.toMatchObject({ status: 404 });
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+
+    it('approve naming no valid version is a 400 and writes nothing', async () => {
+        await expect(approveAppetiteConfig(ownerCtx, { configId: 'cfg-1', viewedUpdatedAt: 'not a date' }))
+            .rejects.toMatchObject({ status: 400 });
+        expect(mockDbHolder.db.riskAppetiteConfig.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('a save locks the row before it reads it, so an approval cannot land between its read and its write', async () => {
+        mockDbHolder.db.riskAppetiteConfig.findFirst.mockResolvedValue(stored);
+        savedData();
+        await upsertAppetiteConfig(adminCtx, sameTerms);
+        expect(mockDbHolder.db.$queryRaw).toHaveBeenCalledTimes(1);
+        const sql = (mockDbHolder.db.$queryRaw.mock.calls[0][0] as string[]).join('?');
+        expect(sql).toMatch(/FROM "RiskAppetiteConfig"\s+WHERE "tenantId" = \?\s+FOR UPDATE/);
+        expect(mockDbHolder.db.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+            mockDbHolder.db.riskAppetiteConfig.findFirst.mock.invocationCallOrder[0],
+        );
+    });
+
+    it('getAppetiteApproval names the approver, and is null when unapproved', async () => {
+        mockDbHolder.db.user.findUnique.mockResolvedValue({ name: 'Olga Owner', email: 'o@example.test' });
+        await expect(getAppetiteApproval(adminCtx, {
+            approvedByUserId: 'owner-1', approvedAt: new Date('2026-11-15T10:00:00Z'),
+        })).resolves.toEqual({ approvedAt: '2026-11-15T10:00:00.000Z', approverName: 'Olga Owner' });
+        await expect(getAppetiteApproval(adminCtx, { approvedByUserId: null, approvedAt: null })).resolves.toBeNull();
     });
 });
 

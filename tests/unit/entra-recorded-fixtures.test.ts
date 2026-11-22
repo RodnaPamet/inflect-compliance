@@ -48,11 +48,14 @@ describe('Entra recorded fixtures parse through the real code', () => {
             .mockResolvedValueOnce(okJson(page)) // page 1 (carries @odata.nextLink)
             .mockResolvedValueOnce(okJson({ value: [] })); // terminal page via nextLink
 
-        const groups = await fetchUserGroupsFromGraph('tok', fetchImpl as unknown as typeof fetch);
+        const read = await fetchUserGroupsFromGraph('tok', fetchImpl as unknown as typeof fetch);
 
         // The `microsoft.graph.group` typed endpoint returns groups only, so
         // every id in the page is a group id and all are kept.
-        expect(groups.map((g) => g.id)).toEqual(expectedIds);
+        expect(read.groups.map((g) => g.id)).toEqual(expectedIds);
+        // A recorded page plus its terminal page IS the whole membership, so
+        // the read reports itself complete and the caller may act on it (#5600).
+        expect(read.complete).toBe(true);
         expect(fetchImpl).toHaveBeenCalledTimes(2);
     });
 

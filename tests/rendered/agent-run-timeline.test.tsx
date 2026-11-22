@@ -87,6 +87,7 @@ const EN = jest.requireActual('../../messages/en.json') as {
                 skillsNotRecorded: string;
                 stepStatus: Record<string, string>;
                 proposalStatus: Record<string, string>;
+                compaction: { label: string; sizes: string; notUsed: string };
             };
             status: Record<string, string>;
         };
@@ -131,6 +132,9 @@ function step(over: Partial<RunStepRow> = {}): RunStepRow {
         // #3473 part 3 — null for every step that is not a delegation, which
         // is every step in these fixtures.
         delegation: null,
+        subagent: null,
+        compaction: null,
+        modelTurn: null,
         proposals: [],
         ...over,
     };
@@ -721,6 +725,15 @@ describe('what caused the run', () => {
         expect(screen.getByTestId('run-caused-by')).toHaveTextContent(/automation rule, not by a person/i);
     });
 
+    it("reads a stored '' as a rule cause whose execution was lost, never as a person's start", () => {
+        // A directly fired rule's run recorded `''` until the lineage fix: a
+        // rule caused it, but no execution was named. Truthiness read that as
+        // "no parent" and credited the rule's owner as the person who started it.
+        renderDetail([step()], { ...RUN, parentExecutionId: '', startedBy: 'Ana Petrova' });
+        expect(screen.getByTestId('run-caused-by')).toHaveTextContent(/automation rule, not by a person/i);
+        expect(screen.queryByTestId('run-started-by')).toBeNull();
+    });
+
     it('names the person who started a run nothing else caused', () => {
         renderDetail([step()], { ...RUN, parentExecutionId: null, startedBy: 'Ana Petrova' });
         expect(screen.getByTestId('run-started-by')).toHaveTextContent('Started by Ana Petrova.');
@@ -1013,6 +1026,49 @@ describe('the delegation section', () => {
         expect(document.getElementById('step-3')).not.toHaveAttribute('data-delegates');
         // And the marker itself is not its own delegate's work.
         expect(document.getElementById('step-2')).not.toHaveAttribute('data-delegates');
+    });
+
+    it('a Tool Runner `delegate` marker groups its child steps, and each child step names its sub-agent from its own column (Step 2e)', () => {
+        renderDetail([
+            step({ seq: 0, kind: 'MODEL_CALL' }),
+            step({ seq: 1, kind: 'MODEL_CALL', subagent: 'risk_reader' }),
+            step({ seq: 2, kind: 'TOOL_CALL', tool: 'list_risks', subagent: 'risk_reader' }),
+            delegation('risk_reader', 0, { seq: 3, tool: 'delegate' }),
+            step({ seq: 4, kind: 'MODEL_CALL' }),
+        ]);
+        for (const seq of [1, 2]) {
+            expect(document.getElementById(`step-${seq}`)).toHaveAttribute('data-subagent', 'risk_reader');
+            expect(document.getElementById(`step-${seq}`)).toHaveAttribute('data-delegates', 'risk_reader');
+        }
+        expect(document.getElementById('step-0')).not.toHaveAttribute('data-subagent');
+        expect(document.getElementById('step-4')).not.toHaveAttribute('data-subagent');
+    });
+
+    it('a compaction step reads "Conversation summarised", with the request\'s size before and after (Step 2g)', () => {
+        renderDetail([
+            step({ seq: 0, kind: 'MODEL_CALL' }),
+            step({ seq: 1, kind: 'MODEL_CALL', compaction: { estimatedTokensBefore: 40029, estimatedTokensAfter: 419 } }),
+            step({ seq: 2, kind: 'MODEL_CALL', status: 'FAILED', compaction: { estimatedTokensBefore: 41000, estimatedTokensAfter: null } }),
+        ]);
+        const used = document.getElementById('step-1');
+        expect(used?.textContent).toContain(D.compaction.label);
+        expect(used?.textContent).not.toContain(D.kind.MODEL_CALL);
+        expect(screen.getByTestId('step-1-compaction').textContent).toBe(
+            D.compaction.sizes.replace('{before}', '40029').replace('{after}', '419'),
+        );
+        expect(screen.getByTestId('step-2-compaction').textContent).toBe(D.compaction.notUsed.replace('{before}', '41000'));
+        // An ordinary model call keeps its own label.
+        expect(document.getElementById('step-0')?.textContent).toContain(D.kind.MODEL_CALL);
+    });
+
+    it('a child step whose span was never closed (a run killed mid-delegation) still names its sub-agent', () => {
+        renderDetail([
+            step({ seq: 0, kind: 'MODEL_CALL' }),
+            step({ seq: 1, kind: 'MODEL_CALL', subagent: 'risk_reader' }),
+        ]);
+        expect(document.getElementById('step-1')).toHaveAttribute('data-subagent', 'risk_reader');
+        expect(document.getElementById('step-1')).not.toHaveAttribute('data-delegates');
+        expect(document.getElementById('step-1')?.textContent).toContain('Sub-agent: risk_reader');
     });
 });
 

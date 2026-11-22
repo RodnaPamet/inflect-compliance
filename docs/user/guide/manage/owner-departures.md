@@ -34,6 +34,7 @@ An owner has left when they no longer hold an active membership in this workspac
   | --- | --- |
   | **{{ui:agents.orphanPass.passStatus.PASSED}}** | The pass checked every active agent |
   | **{{ui:agents.orphanPass.passStatus.PARTIAL}}** | It checked them, but something it asked for did not finish, such as a service principal it could not disable |
+  | **{{ui:agents.orphanPass.passStatus.DRY_RUN_CHECKED}}** | A dry run checked every active agent and changed nothing |
   | **{{ui:agents.orphanPass.passStatus.NOT_APPLICABLE}}** | It checked nothing, and says why |
   | **{{ui:agents.orphanPass.passStatus.ERROR}}** | The pass broke before it finished |
 
@@ -55,7 +56,7 @@ An owner has left when they no longer hold an active membership in this workspac
   | Membership, with its state | The owner's membership is not active. The state is one of: {{ui:agents.orphanPass.membership.INVITED}}, {{ui:agents.orphanPass.membership.DEACTIVATED}}, {{ui:agents.orphanPass.membership.REMOVED}}, or {{ui:agents.orphanPass.membership.ABSENT}} |
   | {{ui:agents.orphanPass.signal.HR_TERMINATED}} | The HR feed marks the owner as terminated |
 
-  and, for a pass in **{{ui:admin.writeLadder.mode.DRY_RUN}}** or **{{ui:admin.writeLadder.mode.AUTOMATIC}}**, what happened to the agent's Entra service principal, in a sentence. The ones that need you are:
+  and, for a pass in **{{ui:admin.writeLadder.mode.DRY_RUN}}** or **{{ui:admin.writeLadder.mode.AUTOMATIC}}**, what happened to the agent's Entra service principal, in a sentence. A dry run reads **{{ui:agents.orphanPass.servicePrincipalStatus.WOULD_REQUEST_DISABLE}}**. The ones that need you are:
 
   | What it says | What to do |
   | --- | --- |

@@ -14,7 +14,7 @@
 # What this file pins:
 #   - `name`             one canonical config identifier, helps GH
 #                        match runs to config
-#   - `paths`            scan all src + tests
+#   - `paths`            scan src, tests, scripts and packages
 #   - `paths-ignore`     bypass generated / vendored / declarative
 #                        directories that produce false positives
 #                        and slow analysis without value
@@ -42,6 +42,12 @@ paths:
     - src
     - tests
     - scripts
+    # The workspace packages (#5086). `packages/ui` is imported by every page
+    # and `packages/sap-mcp-stub` is a stub SAP MCP server; before this entry no
+    # package was scanned (nor the in-repo harness scanner, removed in scanent
+    # #26), so the merge-queue SAST gate (#4047) saw no alert in them whatever
+    # they held.
+    - packages
 
 paths-ignore:
     # Build artifacts + generated code.

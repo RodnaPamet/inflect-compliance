@@ -24,8 +24,8 @@
  *
  * What this ratchet does NOT police
  *
- *   - The icon library (lucide-react). The no-lucide ratchet
- *     handles import discipline product-wide.
+ *   - The icon library (lucide-react, directly or through the
+ *     local glyph set).
  *   - The stroke width — that's the icon component's own
  *     responsibility (Lucide defaults to 2; design-system
  *     standardisation on 1.5 is a separate concern).

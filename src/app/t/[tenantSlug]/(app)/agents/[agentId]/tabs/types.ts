@@ -94,6 +94,12 @@ export interface PolicyCardTabProps extends AgentTabProps {
 export interface ToolsTabProps extends AgentTabProps {
     /** Same shape as the policy card's flag: absent means no read either. */
     canGrantTools: boolean;
+    /**
+     * `admin.agent_registry`, which the manifest-pin read takes (#5313). The
+     * shell opens this tab on the tool-exposure key alone, so it cannot be
+     * assumed. Defaults to true for a caller that predates it.
+     */
+    canReadRegistry?: boolean;
 }
 
 /** Circuit breaker. */
@@ -154,4 +160,12 @@ export interface BehaviourTabProps extends AgentTabProps {
      * agent's runs are. Optional so a caller that predates it still renders.
      */
     onOpenRuns?: () => void;
+    /**
+     * Where this agent opens on the process canvas, or null where the tenant
+     * does not have the process-canvas module (Phase 2.3 of
+     * `docs/ai-architecture/langflow.md`). The tab asks for one version on it,
+     * or for the approver's diff of two (2.4); it is a plain link, so the tab
+     * imports nothing from the canvas.
+     */
+    canvasHref?: string | null;
 }

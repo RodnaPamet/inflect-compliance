@@ -56,6 +56,14 @@ export interface ExternalWriteDispatchJobResult extends ExternalWriteDispatchRes
      * only a wait — summing them would hide the one behind the other.
      */
     expiry: GrantExpiryResult;
+
+    /**
+     * Per-tenant halves (dispatch, reconcile, expiry) that THREW and were
+     * isolated (#5307). Each is caught so one tenant cannot stop the others,
+     * but a pass that isolated any is not a clean pass: the executor reports
+     * it as a job failure, as `snapshot` and `sla-monitor` do.
+     */
+    failedTenantPasses: number;
 }
 
 export async function runExternalWriteDispatchJob(
@@ -89,9 +97,11 @@ export async function runExternalWriteDispatchJob(
         applied: 0,
         refused: 0,
         indeterminate: 0,
+        inFlight: 0,
         accepted: 0,
         reconcile: { scanned: 0, promoted: 0, notYet: 0, unreadable: 0, unverifiable: 0, indeterminate: 0 },
-        expiry: { scanned: 0, confirmedExpired: 0, raised: 0, alreadyRaised: 0, unreadable: 0 },
+        expiry: { scanned: 0, confirmedExpired: 0, raised: 0, alreadyRaised: 0, unreadable: 0, raiseFailed: 0 },
+        failedTenantPasses: 0,
     };
 
     for (const tenantId of tenants) {
@@ -101,6 +111,11 @@ export async function runExternalWriteDispatchJob(
             total.applied += r.applied;
             total.refused += r.refused;
             total.indeterminate += r.indeterminate;
+            // Accumulated for the same reason `accepted` is: a pass whose rows
+            // were all held by an overlapping pass would otherwise report
+            // scanned-but-nothing-done, which reads as a silent failure rather
+            // than as the claim doing its job (#5256).
+            total.inFlight += r.inFlight;
             // Accumulated too, or an accepted write is counted NOWHERE: a pass
             // that accepted twelve requests would report zero applied, zero
             // refused and zero indeterminate, and read as a pass that did
@@ -108,8 +123,21 @@ export async function runExternalWriteDispatchJob(
             total.accepted += r.accepted;
         } catch (err) {
             // One tenant's broken connection must not stop every other tenant's
-            // approved writes. The row stays PENDING and the next pass retries
-            // it, which is safe precisely because nothing was sent.
+            // approved writes.
+            //
+            // What the next pass does with the row depends on whether it was
+            // CLAIMED (#5256). Unclaimed, it stays PENDING and is retried,
+            // which is safe because the claim is taken immediately before
+            // `callTool` — so an unclaimed row provably never reached the far
+            // end. Claimed and unsettled, it is NOT retried: the next pass
+            // settles it INDETERMINATE once the claim goes stale, because the
+            // write may have landed before this throw.
+            //
+            // This comment used to say the retry was "safe precisely because
+            // nothing was sent", full stop. That was the bug: it stopped being
+            // true the moment `callTool` returned and `settleWrite` then threw,
+            // and the same row was sent again on the next tick.
+            total.failedTenantPasses += 1;
             logger.error('external write dispatch failed for one tenant', {
                 component: 'external-write-dispatch',
                 tenantId,
@@ -134,6 +162,7 @@ export async function runExternalWriteDispatchJob(
         } catch (err) {
             // Nothing is settled on this path, so a failure is a delay and the
             // next pass retries. The row stays ACCEPTED either way.
+            total.failedTenantPasses += 1;
             logger.error('external write reconcile failed for one tenant', {
                 component: 'external-write-reconcile',
                 tenantId,
@@ -154,7 +183,9 @@ export async function runExternalWriteDispatchJob(
             total.expiry.raised += r.raised;
             total.expiry.alreadyRaised += r.alreadyRaised;
             total.expiry.unreadable += r.unreadable;
+            total.expiry.raiseFailed += r.raiseFailed;
         } catch (err) {
+            total.failedTenantPasses += 1;
             logger.error('grant expiry verification failed for one tenant', {
                 component: 'external-write-expiry',
                 tenantId,

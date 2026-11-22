@@ -92,6 +92,28 @@ describe('Risk hierarchy page', () => {
         expect(del.body).toEqual({ riskId: 'r1' });
     });
 
+    // #5166 — node writes revalidated '/risks/hierarchy' while the tree on
+    // screen is '/risks/hierarchy?type=…', so a saved rename kept showing the
+    // old name until a reload.
+    it('shows the new name once a rename is saved', async () => {
+        let name = 'Engineering';
+        (global.fetch as jest.Mock).mockImplementation(async (url: string, init?: RequestInit) => {
+            const method = (init?.method ?? 'GET').toUpperCase();
+            if (method === 'PATCH') name = JSON.parse(String(init!.body)).name;
+            const body = method === 'GET' ? { treemap: [{ ...TREE[0], nodeName: name }] } : {};
+            return {
+                ok: true, status: 200, headers: new Headers({ 'content-type': 'application/json' }),
+                json: async () => body, text: async () => JSON.stringify(body),
+            };
+        });
+        mount();
+        await act(async () => { fireEvent.click(await screen.findByTestId('node-rename-n1')); });
+        fireEvent.change(screen.getByRole('textbox', { name: H.rename }), { target: { value: 'Platform engineering' } });
+        await act(async () => { fireEvent.click(screen.getByTestId('node-rename-save-n1')); });
+        expect(await screen.findByText('Platform engineering')).toBeInTheDocument();
+        expect(screen.queryByText('Engineering')).toBeNull();
+    });
+
     it('keeps a failed rename open, with the reason', async () => {
         patchStatus = 400;
         mount();

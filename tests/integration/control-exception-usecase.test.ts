@@ -463,6 +463,50 @@ describeFn('Epic G-5 — control exception usecases', () => {
         expect(prior.approvedAt).toBeInstanceOf(Date);
     });
 
+    it('renewException refuses an acceptor who is not an active member: supplied or carried over', async () => {
+        const { exceptionId: priorId } = await requestException(
+            ctxAs(Role.ADMIN, admin.userId),
+            {
+                controlId: CONTROL_ID,
+                justification: 'accepted by the reader',
+                riskAcceptedByUserId: reader.userId,
+            },
+        );
+        await approveException(ctxAs(Role.ADMIN, approver.userId), priorId, {
+            expiresAt: futureDate(15),
+        });
+
+        // A user of another tenant, supplied.
+        await expect(
+            renewException(ctxAs(Role.EDITOR, editor.userId), priorId, {
+                riskAcceptedByUserId: foreignAdmin.userId,
+            }),
+        ).rejects.toThrow(/not an active member/i);
+
+        // The prior acceptor, carried over, after they have left.
+        await globalPrisma.tenantMembership.updateMany({
+            where: { tenantId: TENANT_ID, userId: reader.userId },
+            data: { status: MembershipStatus.DEACTIVATED },
+        });
+        try {
+            await expect(
+                renewException(ctxAs(Role.EDITOR, editor.userId), priorId, {}),
+            ).rejects.toThrow(/not an active member/i);
+            // Naming an active member renews.
+            const { renewedFromId } = await renewException(
+                ctxAs(Role.EDITOR, editor.userId),
+                priorId,
+                { riskAcceptedByUserId: admin.userId },
+            );
+            expect(renewedFromId).toBe(priorId);
+        } finally {
+            await globalPrisma.tenantMembership.updateMany({
+                where: { tenantId: TENANT_ID, userId: reader.userId },
+                data: { status: MembershipStatus.ACTIVE },
+            });
+        }
+    });
+
     it('renewException rejects renewal of a REJECTED row', async () => {
         const { exceptionId } = await requestException(
             ctxAs(Role.ADMIN, admin.userId),

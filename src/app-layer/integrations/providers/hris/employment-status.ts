@@ -47,11 +47,40 @@ export interface EmploymentSignals {
  * compared: `new Date('not a date') > now` is false, so a naive comparison reads
  * a garbage termination date as "not in the future" and answers from the wrong
  * branch without anything looking wrong.
+ *
+ * Exported because the rosters need the same rule for `startDate`/`endDate`:
+ * a bare `new Date(raw)` there stored an Invalid Date on the Employee row,
+ * which Prisma refuses, and the whole roster write failed (#5199).
  */
-function parseVendorDate(value: string | Date | null | undefined): Date | null {
+export function parseVendorDate(value: string | Date | null | undefined): Date | null {
     if (!value) return null;
     const d = value instanceof Date ? value : new Date(value);
     return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** A calendar date with no time: what all three HRIS vendors send. */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The instant a worker becomes a leaver, from their termination date (#5200).
+ *
+ * A date-only value names the LAST WORKING DAY, so the person is still
+ * employed through all of it and becomes a leaver at 00:00 UTC on the
+ * FOLLOWING day (owner decision, 2026-11-13; no tenant timezone). `new Date`
+ * reads `2026-11-13` as midnight UTC at the START of that day, so comparing it
+ * as it was marked a Californian TERMINATED at 16:00 the evening before their
+ * last day, and the 05:00 UTC leaver pass disabled their account for the whole
+ * of it. A value carrying a time is an instant the vendor chose and is used as
+ * it is.
+ */
+export function leaverFrom(value: string | Date | null | undefined): Date | null {
+    const end = parseVendorDate(value);
+    if (!end) return null;
+    if (typeof value === 'string' && DATE_ONLY.test(value.trim())) {
+        return new Date(end.getTime() + ONE_DAY_MS);
+    }
+    return end;
 }
 
 /**
@@ -69,9 +98,10 @@ export function deriveEmploymentStatus(
     now: Date = new Date(),
 ): EmploymentStatusValue | null {
     // ── DATES FIRST. This ordering IS the rule. ──
-    // Pending termination — still employed, last day in the future.
-    const end = parseVendorDate(signals.terminationDate);
-    if (end) return end > now ? 'OFFBOARDING' : 'TERMINATED';
+    // Pending termination — still employed until the day AFTER their last
+    // working day begins (#5200).
+    const leaves = leaverFrom(signals.terminationDate);
+    if (leaves) return leaves > now ? 'OFFBOARDING' : 'TERMINATED';
 
     // Pre-hire — start date in the future.
     const start = parseVendorDate(signals.hireDate);

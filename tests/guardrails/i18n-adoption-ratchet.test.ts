@@ -301,7 +301,6 @@ function rel(abs: string): string {
 // A file with next-intl and zero hardcoded strings scores 0 and needs no entry,
 // which is the state the old set was trying to describe by omission.
 const STRING_BUDGET: Readonly<Record<string, number>> = {
-    'packages/ui/src/components/ui/charts/time-series-chart.tsx': 1, // no-intl, 1 jsx
     'src/app/org/[orgSlug]/(app)/members/MembersTable.tsx': 2, // partial, 2 prop
     'src/app/org/[orgSlug]/(app)/tenants/new/NewTenantForm.tsx': 2, // partial, 2 prop
     // 23 -> 24: #3272 (Step 5a) added `label: 'Access reviews'` to the scope
@@ -328,7 +327,6 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/app/t/[tenantSlug]/(app)/admin/sso/page.tsx': 9, // partial, 9 prop
     'src/app/t/[tenantSlug]/(app)/admin/trust-center/TrustCenterAdminClient.tsx': 3, // partial, 3 prop
     'src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx': 1, // partial, 1 prop
-    'src/app/t/[tenantSlug]/(app)/calendar/_components/CalendarHeatmap.tsx': 1, // partial, 1 prop
     'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx': 2, // partial, 1 jsx + 1 prop
     'src/app/t/[tenantSlug]/(app)/policies/[policyId]/PolicySharePointSection.tsx': 1, // partial, 1 jsx
     'src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx': 1, // partial, 1 prop
@@ -352,11 +350,10 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/components/ui/SankeyChart.tsx': 1, // intl wired #3209; #4794 translated the rest but 1 remains
     'src/components/ui/TreeView.tsx': 1, // no-intl, 1 jsx
     'src/components/ui/ai-assist-rail.tsx': 5, // no-intl, 2 jsx + 3 prop
-    'src/components/ui/date-picker/date-range-picker.tsx': 3, // no-intl, 1 jsx + 2 prop
+    'src/components/ui/date-picker/date-range-picker.tsx': 1, // partial, 1 prop (#5309 paid down the Clear label and the placeholder)
     'src/components/ui/filter/filter-list.tsx': 3, // no-intl, 2 jsx + 1 prop
     'src/components/ui/filter/filter-select.tsx': 2, // no-intl, 1 jsx + 1 prop
     'src/components/ui/selection-summary-panel.tsx': 1, // no-intl, 1 jsx
-    'src/components/ui/status-breakdown.tsx': 1, // no-intl, 1 jsx
     'src/components/ui/table-load-more-footer.tsx': 1, // no-intl, 1 jsx
 };
 

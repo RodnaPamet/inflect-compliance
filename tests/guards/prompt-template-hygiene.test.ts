@@ -63,7 +63,18 @@ describe('2. no hardcoded secrets in prompt templates', () => {
     // Minimal loader mirroring tests/guardrails/no-secrets.test.ts: `name | regex`,
     // `#`/blank lines skipped, first `|` splits, a leading `(?i)` → 'i' flag.
     function loadPatterns(): { name: string; regex: RegExp }[] {
-        const raw = read('.secret-patterns');
+        // RAW, not `read()`. `read` applies `codeOf`, which masks JavaScript
+        // comments — correct for the prompt-builder SOURCES below, wrong for
+        // this file, which is not JavaScript. Its own comment marker is `#`
+        // (skipped a few lines down), and it is full of `//` inside URL
+        // regexes, which `codeOf` reads as the start of a line comment.
+        //
+        // Measured: that truncated exactly one pattern, and silently —
+        // `Slack Webhook URL` loaded as `https:` instead of
+        // `https://hooks\.slack\.com/services/T…/B…/…`, so this guard was
+        // testing "contains https:" under that name. It passed only because
+        // no prompt builder's masked source happened to carry a URL.
+        const raw = fs.readFileSync(path.join(ROOT, '.secret-patterns'), 'utf8');
         const out: { name: string; regex: RegExp }[] = [];
         for (const line of raw.split('\n')) {
             const t = line.trim();
@@ -90,6 +101,28 @@ describe('2. no hardcoded secrets in prompt templates', () => {
 
     it('loads the shared secret patterns', () => {
         expect(patterns.length).toBeGreaterThan(0);
+    });
+
+    it('loads each pattern WHOLE — a URL regex is not cut at its first //', () => {
+        // The guard-against-the-fix. Reading the pattern file through a
+        // JavaScript masker reduced `Slack Webhook URL` to `https:`, which is
+        // both far too loose and no longer a check for a Slack webhook. A
+        // count of patterns cannot see that; comparing each loaded source
+        // against the file's own text can.
+        const fileLines = fs
+            .readFileSync(path.join(ROOT, '.secret-patterns'), 'utf8')
+            .split('\n')
+            .map((l) => l.trim())
+            .filter((l) => l && !l.startsWith('#') && l.includes('|'));
+        const expected = fileLines.map((l) => {
+            const bar = l.indexOf('|');
+            return `${l.slice(0, bar).trim()} :: ${l.slice(bar + 1).trim().replace(/^\(\?i\)/, '')}`;
+        });
+        // `RegExp.source` renders a literal `/` as `\\/`, so normalise that back
+        // before comparing — it is the same pattern written two ways, and the
+        // thing under test is whether the TEXT survived, not how V8 prints it.
+        const loaded = patterns.map((p) => `${p.name} :: ${p.regex.source.replace(/\\\//g, '/')}`);
+        expect(loaded).toEqual(expected);
     });
 
     it.each(PROMPT_BUILDERS)('%s contains no secret-shaped content', (rel) => {

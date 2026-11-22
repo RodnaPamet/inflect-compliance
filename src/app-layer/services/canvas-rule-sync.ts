@@ -18,7 +18,10 @@
  * sync. So this bridge's job is narrow + invariant-safe:
  *   Canvas → Rules (on save): create a stub rule for each NEW action node
  *     (write `ruleId` back), then wire chain topology (`chain-delay` edges →
- *     `nextRuleId`/`nextRuleDelay`). It never copies node logic to the rule.
+ *     `nextRuleId`/`nextRuleDelay`), then sub-flow group membership
+ *     (`subFlowGroupId`, #5477 — see canvas-subflow-membership.ts, which owns
+ *     the one structural fact a rule takes from the canvas). It never copies
+ *     node logic to the rule.
  *   Rules → Canvas (on load): merge each rule's live status + executionCount
  *     + a derived subtitle into the node for DISPLAY only (not persisted).
  */
@@ -33,6 +36,8 @@ import { logEvent } from '../events/audit';
 import { UNSET_TRIGGER_EVENT } from '../automation/rule-readiness';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { RULE_OWNING_KINDS } from './canvas-rule-link';
+import { reconcileSubFlowMembership } from './canvas-subflow-membership';
+import { HYDRATED_DISPLAY_KEYS } from '@/lib/processes/canvas-rule-wiring';
 
 /** Rule names are capped at 200 by the rule schema. */
 const MAX_RULE_NAME = 200;
@@ -91,6 +96,8 @@ interface GraphEdge {
 export interface SyncResult {
     rulesCreated: number;
     chainsLinked: number;
+    /** Rules whose sub-flow group membership this save changed (#5477). */
+    subFlowMembershipChanged: number;
     /**
      * The rule every rule-owning step is linked to after the sync, by
      * `nodeKey`. The save returns it so the open canvas learns a NEW step's
@@ -99,13 +106,9 @@ export interface SyncResult {
     ruleIdByNodeKey: Record<string, string>;
 }
 
-/**
- * The display-only fields `hydrateCanvasFromRules` merges into a step's
- * `dataJson` on load. They describe the rule as it was when the map was read,
- * so a save must not store them on the node: they are the rule's facts, and a
- * copy on the node goes stale the moment the rule changes.
- */
-export const HYDRATED_DISPLAY_KEYS = ['ruleStatus', 'executionCount', 'ruleSubtitle'] as const;
+// The display-only keys a save strips live with the client-safe wiring
+// constants, so the canvas's version diff strips the same set (#5285).
+export { HYDRATED_DISPLAY_KEYS };
 
 interface SavedNodeLike {
     nodeKey: string;
@@ -175,6 +178,13 @@ export async function syncCanvasToRules(
     db: PrismaTx,
     ctx: RequestContext,
     processMapId: string,
+    options: {
+        /**
+         * The map's group keys BEFORE the save replaced the graph, so a rule
+         * whose group was deleted in this save leaves that group (#5477).
+         */
+        priorGroupKeys?: readonly string[];
+    } = {},
 ): Promise<SyncResult> {
     const nodes = (await db.processNode.findMany({
         where: { processMapId, tenantId: ctx.tenantId, nodeType: { in: [...RULE_OWNING_KINDS] } },
@@ -301,29 +311,81 @@ export async function syncCanvasToRules(
         chainsLinked++;
     }
 
+    // UNLINK what the canvas no longer draws (#5116). The loop above only ever
+    // SET a link, so deleting a chain or branch edge left `nextRuleId` /
+    // `elseRuleId` in place and the rule kept chaining to a step the canvas
+    // showed as disconnected. A link is cleared only when its TARGET is a rule
+    // on this canvas: the canvas owns the topology between its own steps,
+    // while a link to a rule elsewhere may have been set from the Rules tab
+    // and is not this save's to remove.
+    const onCanvas = new Set(ruleByNodeKey.values());
+    const drawnNext = new Set<string>();
+    const drawnElse = new Set<string>();
+    for (const edge of edges) {
+        const sourceRuleId = ruleByNodeKey.get(edge.sourceKey);
+        if (!sourceRuleId || !ruleByNodeKey.get(edge.targetKey)) continue;
+        (edge.edgeKind === FAIL_EDGE_KIND ? drawnElse : drawnNext).add(sourceRuleId);
+    }
+    let chainsUnlinked = 0;
+    if (onCanvas.size > 0) {
+        const current = await db.automationRule.findMany({
+            where: { id: { in: [...onCanvas] }, tenantId: ctx.tenantId },
+            select: { id: true, nextRuleId: true, elseRuleId: true },
+        });
+        for (const rule of current) {
+            const clearNext = !drawnNext.has(rule.id) && rule.nextRuleId !== null && onCanvas.has(rule.nextRuleId);
+            const clearElse = !drawnElse.has(rule.id) && rule.elseRuleId !== null && onCanvas.has(rule.elseRuleId);
+            if (!clearNext && !clearElse) continue;
+            await AutomationRuleRepository.update(db, ctx, rule.id, {
+                ...(clearNext ? { nextRuleId: null, nextRuleDelay: null } : {}),
+                ...(clearElse ? { elseRuleId: null } : {}),
+            });
+            chainsUnlinked++;
+        }
+    }
+
+    // Sub-flow group membership (#5477): a rule belongs to the group its step
+    // is nested in. Written after the chain wiring so it sees every rule this
+    // save linked, and gated by the same `assertCanManageAutomation` inside.
+    const membershipChanged = await reconcileSubFlowMembership(
+        db,
+        ctx,
+        processMapId,
+        ruleByNodeKey,
+        options.priorGroupKeys ?? [],
+    );
+    const subFlowMembershipChanged = membershipChanged.length;
+
     // Audit the RULE writes specifically. `saveProcessMap` already emits a
     // ProcessMap/UPDATE row, but it carries no rule ids — so a chain rewire
     // through the canvas left no trace naming which automation rules changed,
     // which is exactly what a reviewer would need. Emitted only when something
     // was written, so a read-only save stays quiet.
-    if (rulesCreated > 0 || chainsLinked > 0) {
+    if (rulesCreated > 0 || chainsLinked > 0 || chainsUnlinked > 0 || subFlowMembershipChanged > 0) {
         await logEvent(db, ctx, {
             action: 'AUTOMATION_RULES_SYNCED_FROM_CANVAS',
             entityType: 'ProcessMap',
             entityId: processMapId,
-            details: `Canvas sync wrote ${rulesCreated} rule(s) and ${chainsLinked} chain link(s)`,
+            details: `Canvas sync wrote ${rulesCreated} rule(s), ${chainsLinked} chain link(s), removed ${chainsUnlinked} and changed ${subFlowMembershipChanged} sub-flow membership(s)`,
             detailsJson: {
                 category: 'relationship',
                 entityName: 'ProcessMap',
                 operation: 'updated',
                 rulesCreated,
                 chainsLinked,
-                ruleIds: Array.from(new Set(ruleByNodeKey.values())),
+                chainsUnlinked,
+                subFlowMembershipChanged,
+                ruleIds: Array.from(new Set([...ruleByNodeKey.values(), ...membershipChanged])),
             },
         });
     }
 
-    return { rulesCreated, chainsLinked, ruleIdByNodeKey: Object.fromEntries(ruleByNodeKey) };
+    return {
+        rulesCreated,
+        chainsLinked,
+        subFlowMembershipChanged,
+        ruleIdByNodeKey: Object.fromEntries(ruleByNodeKey),
+    };
 }
 
 export interface HydratedNode extends GraphNode {

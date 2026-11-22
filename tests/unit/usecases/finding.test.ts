@@ -56,8 +56,8 @@ beforeEach(() => {
 });
 
 const baseInput = {
-    severity: 'HIGH',
-    type: 'CONTROL_DEFICIENCY',
+    severity: 'HIGH' as const,
+    type: 'NONCONFORMITY' as const,
     title: 'Risk found',
     description: '<script>alert(1)</script>raw description',
     rootCause: '<img onerror=...>',

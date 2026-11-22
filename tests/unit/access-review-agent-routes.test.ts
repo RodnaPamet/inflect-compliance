@@ -13,10 +13,12 @@ const mockScopeOf = jest.fn();
 const mockSubmitConnected = jest.fn();
 const mockSubmitAgent = jest.fn();
 const mockCreateAgent = jest.fn();
-const mockPrepare = jest.fn();
+const mockRequestPacks = jest.fn();
 const mockGetPacks = jest.fn();
+const mockReadPreparation = jest.fn();
 const mockDecideNarrowing = jest.fn();
 const mockRecordSample = jest.fn();
+const mockDecideWithdrawal = jest.fn();
 
 jest.mock('@/app-layer/usecases/access-review-connected', () => ({
     scopeOfConnectedDecision: (...a: unknown[]) => mockScopeOf(...a),
@@ -25,10 +27,12 @@ jest.mock('@/app-layer/usecases/access-review-connected', () => ({
 jest.mock('@/app-layer/usecases/access-review-agent', () => ({
     submitAgentDecision: (...a: unknown[]) => mockSubmitAgent(...a),
     createAgentAccessReview: (...a: unknown[]) => mockCreateAgent(...a),
-    prepareAgentReviewPacks: (...a: unknown[]) => mockPrepare(...a),
+    requestAgentReviewPacks: (...a: unknown[]) => mockRequestPacks(...a),
     getAgentReviewPacks: (...a: unknown[]) => mockGetPacks(...a),
+    readAgentPackPreparation: (...a: unknown[]) => mockReadPreparation(...a),
     decideAgentNarrowing: (...a: unknown[]) => mockDecideNarrowing(...a),
     recordAgentDecisionSampleOutcome: (...a: unknown[]) => mockRecordSample(...a),
+    decideAgentSpendingWithdrawal: (...a: unknown[]) => mockDecideWithdrawal(...a),
 }));
 jest.mock('@/lib/security/permission-middleware', () => ({
     requirePermission: (_key: string, handler: unknown) => handler,
@@ -42,6 +46,7 @@ import { POST as createAgents } from '@/app/api/t/[tenantSlug]/access-reviews/ag
 import { GET as readPacks, POST as preparePacks } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/agent-packs/route';
 import { POST as decideNarrowing } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/agent-narrowings/[narrowingId]/route';
 import { POST as answerSample } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/agent-samples/[sampleId]/route';
+import { POST as decideWithdrawal } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/agent-spending-withdrawals/[withdrawalId]/route';
 import { resolveRoutePermission } from '@/lib/security/route-permissions';
 
 type Handler = (r: Request, a: unknown, c: unknown) => Promise<Response>;
@@ -63,6 +68,7 @@ beforeEach(() => {
     mockSubmitAgent.mockResolvedValue({ via: 'agent' });
     mockDecideNarrowing.mockResolvedValue({ outcome: 'ACCEPTED' });
     mockRecordSample.mockResolvedValue({ outcome: 'CONCURRED' });
+    mockDecideWithdrawal.mockResolvedValue({ outcome: 'REJECTED' });
 });
 
 describe('the verdict route dispatches an AGENT subject to the agent decide', () => {
@@ -92,12 +98,34 @@ describe('the agent routes forward the campaign from the URL', () => {
 
     it('packs: GET reads, POST prepares', async () => {
         mockGetPacks.mockResolvedValue({ packs: [] });
-        mockPrepare.mockResolvedValue({ packs: 2 });
+        mockReadPreparation.mockResolvedValue(null);
+        mockRequestPacks.mockResolvedValue({ mode: 'PREPARED', packs: 2 });
         await call(readPacks, { reviewId: 'ar-1' }, undefined, 'GET');
         expect(mockGetPacks).toHaveBeenCalledWith(ctx, 'ar-1');
         const res = await call(preparePacks, { reviewId: 'ar-1' });
         expect(res.status).toBe(201);
-        expect(mockPrepare).toHaveBeenCalledWith(ctx, 'ar-1');
+        expect(mockRequestPacks).toHaveBeenCalledWith(ctx, 'ar-1');
+    });
+
+    it('packs: a campaign handed to the job answers 202 (#5317)', async () => {
+        mockRequestPacks.mockResolvedValue({ mode: 'QUEUED', accessReviewId: 'ar-1', jobId: 'agent-recert-packs-ar-1', runs: 9, alreadyQueued: false });
+        const res = await call(preparePacks, { reviewId: 'ar-1' });
+        expect(res.status).toBe(202);
+        expect(await res.json()).toMatchObject({ mode: 'QUEUED', jobId: 'agent-recert-packs-ar-1' });
+    });
+
+    it('packs: GET carries the preparation while there are no packs, and does not read the queue once there are', async () => {
+        mockGetPacks.mockResolvedValue({ packs: [] });
+        mockReadPreparation.mockResolvedValue({ state: 'RUNNING', done: 4, total: 12 });
+        const before = await call(readPacks, { reviewId: 'ar-1' }, undefined, 'GET');
+        expect(await before.json()).toMatchObject({ preparation: { state: 'RUNNING', done: 4, total: 12 } });
+        expect(mockReadPreparation).toHaveBeenCalledWith(ctx, 'ar-1');
+
+        mockReadPreparation.mockClear();
+        mockGetPacks.mockResolvedValue({ packs: [{ id: 'pk-1' }] });
+        const after = await call(readPacks, { reviewId: 'ar-1' }, undefined, 'GET');
+        expect(await after.json()).toMatchObject({ preparation: null });
+        expect(mockReadPreparation).not.toHaveBeenCalled();
     });
 
     it('a narrowing and a sample are answered with their campaign’s id', async () => {
@@ -105,6 +133,11 @@ describe('the agent routes forward the campaign from the URL', () => {
         expect(mockDecideNarrowing).toHaveBeenCalledWith(ctx, 'ar-1', 'n-1', { outcome: 'ACCEPT' });
         await call(answerSample, { reviewId: 'ar-1', sampleId: 's-1' }, { outcome: 'CONCURRED' });
         expect(mockRecordSample).toHaveBeenCalledWith(ctx, 'ar-1', 's-1', { outcome: 'CONCURRED' });
+    });
+
+    it('a spending withdrawal is answered with its campaign’s id (Agent Pay 1.4)', async () => {
+        await call(decideWithdrawal, { reviewId: 'ar-1', withdrawalId: 'w-1' }, { outcome: 'REJECT' });
+        expect(mockDecideWithdrawal).toHaveBeenCalledWith(ctx, 'ar-1', 'w-1', { outcome: 'REJECT' });
     });
 });
 
@@ -115,6 +148,7 @@ describe('each agent route resolves to the key the roadmap names', () => {
         ['/api/t/acme/access-reviews/ar-1/agent-packs', 'POST', 'access_reviews.create'],
         ['/api/t/acme/access-reviews/ar-1/agent-narrowings/n-1', 'POST', 'access_reviews.decide'],
         ['/api/t/acme/access-reviews/ar-1/agent-samples/s-1', 'POST', 'access_reviews.decide'],
+        ['/api/t/acme/access-reviews/ar-1/agent-spending-withdrawals/w-1', 'POST', 'access_reviews.decide'],
     ] as const)('%s %s → %s', (p, method, key) => {
         expect(resolveRoutePermission(p, method)?.permission).toBe(key);
     });

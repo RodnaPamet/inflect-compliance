@@ -26,16 +26,42 @@
  * and only by calling `safeFetch` again on the new URL. The redirect target
  * gets the same checks as the first URL. The request is a GET with no body
  * and no credential, so a public hop leaks nothing. A hop to http, or to a
- * private address, ends the grade with nothing graded.
+ * private address, ends the grade with nothing graded, as `BLOCKED`.
+ *
+ * ── Every request is the deployment's bot, through `botFetch` ──
+ *
+ * Since Web Bot Auth Phase 2 the provider never calls `safeFetch` directly:
+ * `botFetch` is `safeFetch` plus the bot's honest User-Agent and, when the
+ * deployment has a key, an HTTP Message Signature (each hop and each retry
+ * signed on its own). No key, no signature, and the request is the unsigned
+ * one it always was.
+ *
+ * ── robots.txt is honoured before the homepage is requested ──
+ *
+ * Once per origin per grade (the start origin, and the origin of any redirect
+ * target), `https://<origin>/robots.txt` is read through the same seam, and
+ * EVERY URL requested, each redirect hop included, is judged against its
+ * origin's rules for the bot's product token by its own path (RFC 9309,
+ * `src/lib/web-bot-auth/robots.ts`). A disallowed path is REFUSED with reason
+ * ROBOTS and is never requested — a same-origin redirect to a disallowed path
+ * too. A robots.txt that is missing or "unavailable" (a 4xx) restricts
+ * nothing; one that is "unreachable" (a 5xx or a network failure) means
+ * complete disallow (RFC 9309 §2.3.1.4), so nothing is requested and the
+ * grade is UNREACHABLE.
+ *
+ * ── A fetch that does not grade says why ──
+ *
+ * Every signal carries an outcome (`TlsFetchOutcome`): GRADED, REFUSED,
+ * UNREACHABLE or BLOCKED. The sweep keeps the last grade on anything but
+ * GRADED and records the outcome, so a site that starts refusing the monitor
+ * shows as a stale grade rather than an unchanged one.
  */
-import {
-    RedirectNotAllowedError,
-    SsrfBlockedError,
-    safeFetch,
-} from '@/app-layer/automation/webhook-safety';
+import { RedirectNotAllowedError, SsrfBlockedError } from '@/app-layer/automation/webhook-safety';
 import { logger } from '@/lib/observability';
+import { botFetch, botFetchSigns, VENDOR_MONITOR_BOT_TOKEN } from '@/lib/web-bot-auth/bot-fetch';
+import { ROBOTS_MAX_BYTES, robotsAllows } from '@/lib/web-bot-auth/robots';
 import { gradeSecurityHeaders } from './evaluate';
-import type { TlsProvider, TlsSignal } from './types';
+import type { TlsFetchOutcome, TlsProvider, TlsRefusalReason, TlsSignal } from './types';
 
 /**
  * Deterministic stub — grades from the domain hash, no network. A given
@@ -54,6 +80,7 @@ export class TestModeTlsProvider implements TlsProvider {
         const g = gradeSecurityHeaders(headers);
         return {
             source: this.name,
+            outcome: 'GRADED',
             grade: g.grade,
             checkedAt: new Date(0).toISOString(),
             presentHeaders: g.presentHeaders,
@@ -61,8 +88,6 @@ export class TestModeTlsProvider implements TlsProvider {
         };
     }
 }
-
-const USER_AGENT = 'InflectCompliance-VendorMonitor/1.0';
 
 /** The bounds of one grade. Exported so the tests assert against them. */
 export const HOMEPAGE_FETCH_LIMITS = {
@@ -97,6 +122,36 @@ export function vendorHomepageUrl(domain: string): string | null {
     return url.href;
 }
 
+/**
+ * A recognised bot-challenge response, read from the headers alone (the body
+ * is never read). Each entry is a header the vendor documents as marking a
+ * challenge, whatever status it rides on: Cloudflare sends a challenge as a
+ * 403 or 503 with `cf-mitigated: challenge`, and AWS WAF answers a challenge
+ * with a 202 and a CAPTCHA with a 405, each with `x-amzn-waf-action`. A 202
+ * challenge page would otherwise be graded as the vendor's homepage, and a
+ * 503 one retried and reported as an outage.
+ */
+export function recognisedChallenge(headers: Headers): string | null {
+    if (headers.get('cf-mitigated')?.trim().toLowerCase() === 'challenge') return 'cloudflare';
+    const waf = headers.get('x-amzn-waf-action')?.trim().toLowerCase();
+    if (waf === 'challenge' || waf === 'captcha') return 'aws-waf';
+    return null;
+}
+
+/** A fetch that ended without a page to grade. */
+interface Ungraded {
+    outcome: Exclude<TlsFetchOutcome, 'GRADED'>;
+    /** For the log line only: an HTTP status, a challenge vendor, a cause. */
+    detail: string;
+    /** Why a REFUSED fetch was refused, when the reason is the site's stated policy. */
+    reason?: TlsRefusalReason;
+}
+
+type HomepageRead = { headers: Record<string, string> } | Ungraded;
+type AttemptResult = { res: Response } | Ungraded;
+/** An origin's robots.txt text (`null`: unavailable, restricts nothing), or what stops the origin. */
+type RobotsRules = { text: string | null } | Ungraded;
+
 /** Real provider — GET the homepage through the SSRF guard, grade its headers. */
 export class HeaderGradeTlsProvider implements TlsProvider {
     readonly name = 'header-grade';
@@ -105,97 +160,196 @@ export class HeaderGradeTlsProvider implements TlsProvider {
 
     async grade(domain: string): Promise<TlsSignal> {
         const now = new Date().toISOString();
-        // Unreachable, refused or invalid → ungraded (null), not a failing
-        // grade: we don't punish a vendor for a transient network error.
-        const ungraded: TlsSignal = { source: this.name, grade: null, checkedAt: now, presentHeaders: [], missingHeaders: [] };
+        // A fetch that does not grade is never a failing grade: we don't
+        // punish a vendor for a refusal or an outage. It is reported as what
+        // it was, so the sweep can mark the last grade stale.
+        const ungraded = (u: Ungraded): TlsSignal => {
+            logger.info('Vendor monitor could not grade a homepage', {
+                component: 'vendor-monitoring',
+                outcome: u.outcome,
+                detail: u.detail,
+            });
+            return {
+                source: this.name,
+                outcome: u.outcome,
+                ...(u.reason ? { refusalReason: u.reason } : {}),
+                signed: botFetchSigns(),
+                grade: null,
+                checkedAt: now,
+                presentHeaders: [],
+                missingHeaders: [],
+            };
+        };
 
         const start = vendorHomepageUrl(domain);
         if (!start) {
             logger.warn('Vendor monitor skipped a domain that is not a bare host name', { component: 'vendor-monitoring' });
-            return ungraded;
+            return ungraded({ outcome: 'BLOCKED', detail: 'not a bare host name' });
         }
+        let read: HomepageRead;
         try {
-            const headers = await this.fetchHomepageHeaders(start);
-            if (!headers) return ungraded;
-            const g = gradeSecurityHeaders(headers);
-            return {
-                source: this.name,
-                grade: g.grade,
-                checkedAt: now,
-                presentHeaders: g.presentHeaders,
-                missingHeaders: g.missingHeaders,
-            };
+            read = await this.fetchHomepageHeaders(start);
         } catch (err) {
             if (err instanceof SsrfBlockedError) {
-                // The reason names the cause: an unresolvable name, a private
-                // address, a hop to http. Each leaves the vendor ungraded.
+                // The reason names the cause: a private address, a hop to
+                // http, or a name that did not resolve. Only the last is not
+                // the guard's decision about the destination.
                 logger.warn('Vendor monitor did not request a URL the SSRF guard refused', {
                     component: 'vendor-monitoring',
                     reason: err.message,
                 });
+                return ungraded(
+                    err.kind === 'UNRESOLVED'
+                        ? { outcome: 'UNREACHABLE', detail: 'name did not resolve' }
+                        : { outcome: 'BLOCKED', detail: 'ssrf guard refused' },
+                );
             }
-            return ungraded;
+            return ungraded({ outcome: 'UNREACHABLE', detail: 'unexpected error' });
         }
+        if (!('headers' in read)) return ungraded(read);
+        const g = gradeSecurityHeaders(read.headers);
+        return {
+            source: this.name,
+            outcome: 'GRADED',
+            signed: botFetchSigns(),
+            grade: g.grade,
+            checkedAt: now,
+            presentHeaders: g.presentHeaders,
+            missingHeaders: g.missingHeaders,
+        };
     }
 
     /**
      * The headers of the first 2xx answer, following redirects one checked hop
-     * at a time. Null when the homepage cannot be read within the bounds.
-     * Throws `SsrfBlockedError` when the start URL or any hop is refused.
+     * at a time, or what stopped the read. Throws `SsrfBlockedError` when the
+     * start URL or any hop is refused.
      */
-    private async fetchHomepageHeaders(startUrl: string): Promise<Record<string, string> | null> {
+    private async fetchHomepageHeaders(startUrl: string): Promise<HomepageRead> {
         const deadline = Date.now() + HOMEPAGE_FETCH_LIMITS.deadlineMs;
+        // The robots.txt read per origin, kept for the whole grade: every hop
+        // is judged against its origin's rules by ITS OWN path, so a redirect
+        // that stays on the origin but moves to a disallowed path is refused
+        // rather than followed. `null` text is "unavailable": nothing restricted.
+        const robotsByOrigin = new Map<string, RobotsRules>();
         let url = startUrl;
         for (let hop = 0; hop <= HOMEPAGE_FETCH_LIMITS.maxRedirects; hop++) {
-            let res: Response | null;
+            const target = new URL(url);
+            let rules = robotsByOrigin.get(target.origin);
+            if (!rules) {
+                rules = await this.readRobots(target.origin, deadline);
+                robotsByOrigin.set(target.origin, rules);
+            }
+            if (!('text' in rules)) return rules;
+            if (rules.text !== null && !robotsAllows(rules.text, VENDOR_MONITOR_BOT_TOKEN, `${target.pathname}${target.search}`)) {
+                return { outcome: 'REFUSED', detail: 'robots.txt disallows the monitor', reason: 'ROBOTS' };
+            }
+            let attempt: AttemptResult;
             try {
-                res = await this.getWithRetry(url, deadline);
+                attempt = await this.getWithRetry(url, deadline);
             } catch (err) {
                 if (!(err instanceof RedirectNotAllowedError)) throw err;
-                if (!err.location) return null;
+                if (!err.location) return { outcome: 'UNREACHABLE', detail: `${err.status} redirect without a location` };
                 // Resolved against the URL that answered, then checked like
                 // the first one by the next `safeFetch`.
                 url = new URL(err.location, url).href;
                 continue;
             }
-            if (!res) return null;
+            if (!('res' in attempt)) return attempt;
             const headers: Record<string, string> = {};
-            res.headers.forEach((v, k) => { headers[k] = v; });
-            await discardBody(res);
-            return headers;
+            attempt.res.headers.forEach((v, k) => { headers[k] = v; });
+            await discardBody(attempt.res);
+            return { headers };
         }
-        return null;
+        return { outcome: 'UNREACHABLE', detail: 'redirect limit reached' };
+    }
+
+    /**
+     * The origin's robots.txt: its text, `{ text: null }` when it is
+     * "unavailable" and restricts nothing, or what stops the origin being
+     * requested at all. Judging a path against the text is the caller's, once
+     * per hop. One request (plus redirect hops), never retried: a robots.txt
+     * that cannot be read now is read again on the next check. Throws
+     * `SsrfBlockedError` when the robots URL or a hop is refused.
+     */
+    private async readRobots(origin: string, deadline: number): Promise<RobotsRules> {
+        const unavailable = { text: null };
+        let robotsUrl = `${origin}/robots.txt`;
+        for (let hop = 0; hop <= HOMEPAGE_FETCH_LIMITS.maxRedirects; hop++) {
+            const remaining = deadline - Date.now();
+            if (remaining <= 0) return { outcome: 'UNREACHABLE', detail: 'deadline reached before robots.txt' };
+            let res: Response;
+            try {
+                res = await botFetch(robotsUrl, {
+                    signal: AbortSignal.timeout(Math.min(HOMEPAGE_FETCH_LIMITS.requestTimeoutMs, remaining)),
+                });
+            } catch (err) {
+                if (err instanceof SsrfBlockedError) throw err;
+                if (err instanceof RedirectNotAllowedError) {
+                    // RFC 9309 §2.3.1.2: a redirect without a target leaves
+                    // robots.txt "unavailable", which restricts nothing.
+                    if (!err.location) return unavailable;
+                    robotsUrl = new URL(err.location, robotsUrl).href;
+                    continue;
+                }
+                // §2.3.1.4: unreachable means complete disallow.
+                return { outcome: 'UNREACHABLE', detail: 'robots.txt network failure or timeout' };
+            }
+            const challenge = recognisedChallenge(res.headers);
+            if (challenge) {
+                await discardBody(res);
+                return { outcome: 'REFUSED', detail: `robots.txt ${res.status} ${challenge} challenge` };
+            }
+            if (res.ok) {
+                return { text: await readTextCapped(res, ROBOTS_MAX_BYTES) };
+            }
+            await discardBody(res);
+            if (res.status === 429) return { outcome: 'REFUSED', detail: 'robots.txt 429' };
+            if (res.status >= 500) return { outcome: 'UNREACHABLE', detail: `robots.txt ${res.status}` };
+            // §2.3.1.3: any other 4xx is "unavailable" and restricts nothing.
+            return unavailable;
+        }
+        // §2.3.1.2: past the redirect limit robots.txt MAY be treated as unavailable.
+        return unavailable;
     }
 
     /**
      * One URL, up to `maxAttempts` tries inside the deadline. Returns the 2xx
-     * response, or null for any other answer. A redirect and a refused address
-     * propagate as `safeFetch` throws them; neither is retried.
+     * response, or what the last try came to. A redirect and a refused address
+     * propagate as `safeFetch` throws them; neither is retried. Only a network
+     * failure, a 429 and a 5xx are retried; a challenge never is.
      */
-    private async getWithRetry(url: string, deadline: number): Promise<Response | null> {
+    private async getWithRetry(url: string, deadline: number): Promise<AttemptResult> {
         const retryDelayMs = this.opts.retryDelayMs ?? 1_000;
+        let last: Ungraded = { outcome: 'UNREACHABLE', detail: 'deadline reached' };
         for (let attempt = 1; attempt <= HOMEPAGE_FETCH_LIMITS.maxAttempts; attempt++) {
             const remaining = deadline - Date.now();
-            if (remaining <= 0) return null;
+            if (remaining <= 0) return last;
             let res: Response;
             try {
-                res = await safeFetch(url, {
-                    method: 'GET',
-                    headers: { 'User-Agent': USER_AGENT },
+                res = await botFetch(url, {
                     signal: AbortSignal.timeout(Math.min(HOMEPAGE_FETCH_LIMITS.requestTimeoutMs, remaining)),
                 });
             } catch (err) {
                 if (err instanceof SsrfBlockedError || err instanceof RedirectNotAllowedError) throw err;
                 // Network failure or timeout: retry while time and attempts remain.
+                last = { outcome: 'UNREACHABLE', detail: 'network failure or timeout' };
                 if (attempt < HOMEPAGE_FETCH_LIMITS.maxAttempts) await sleep(retryDelayMs);
                 continue;
             }
-            if (res.ok) return res;
+            // Before `ok`: a challenge can ride on a 2xx, and must never be
+            // graded as the homepage or retried as an outage.
+            const challenge = recognisedChallenge(res.headers);
+            if (challenge) {
+                await discardBody(res);
+                return { outcome: 'REFUSED', detail: `${res.status} ${challenge} challenge` };
+            }
+            if (res.ok) return { res };
             await discardBody(res);
-            if (res.status !== 429 && res.status < 500) return null;
+            if (res.status !== 429 && res.status < 500) return { outcome: 'REFUSED', detail: String(res.status) };
+            last = { outcome: res.status === 429 ? 'REFUSED' : 'UNREACHABLE', detail: String(res.status) };
             if (attempt < HOMEPAGE_FETCH_LIMITS.maxAttempts) await sleep(retryDelayMs);
         }
-        return null;
+        return last;
     }
 }
 
@@ -211,6 +365,42 @@ async function discardBody(res: Response): Promise<void> {
     } catch {
         // Already consumed or closed: nothing to release.
     }
+}
+
+/**
+ * The body as text, reading at most `maxBytes` and cancelling the stream
+ * there: a robots.txt larger than RFC 9309's floor is judged on its first
+ * 500 KiB, and nothing larger is ever buffered.
+ */
+async function readTextCapped(res: Response, maxBytes: number): Promise<string> {
+    if (!res.body) return '';
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+        while (total < maxBytes) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const take = value.subarray(0, maxBytes - total);
+            chunks.push(take);
+            total += take.length;
+        }
+    } catch {
+        // A body cut off mid-read is judged on what arrived.
+    } finally {
+        try {
+            await reader.cancel();
+        } catch {
+            // Already closed.
+        }
+    }
+    const all = new Uint8Array(total);
+    let at = 0;
+    for (const c of chunks) {
+        all.set(c, at);
+        at += c.length;
+    }
+    return new TextDecoder('utf-8', { fatal: false }).decode(all);
 }
 
 function sleep(ms: number): Promise<void> {

@@ -12,6 +12,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { getPermissionsForRole, PERMISSION_SCHEMA } from '@/lib/permissions';
+import { repoRelativeFiles } from '../helpers/repo-files';
 import { matchRoutes, parseApiRoute, type ApiRoute } from '../../scripts/docs-reference/api-routes';
 import { areaOf, isRedirectOnly, sidebarSections } from '../../scripts/docs-reference/inventory';
 import { cell, linkLabel, repoHref } from '../../scripts/docs-reference/markdown';
@@ -90,6 +91,32 @@ describe('the API route table', () => {
         expect(r.methods).toEqual({ GET: ['risks.view'], POST: ['risks.create', 'risks.edit'], DELETE: [], PATCH: [] });
     });
 
+    it('reads the keys of the { keys, mode } form too (#5135)', () => {
+        // Read as no keys, these routes were published as "checked in the use case".
+        const r = route(
+            'src/app/api/t/[tenantSlug]/admin/mcp/quarantine/route.ts',
+            [
+                'export const GET = withApiErrorHandling(',
+                "    requirePermission({ keys: ['admin.agent_registry_view', 'admin.agent_registry'], mode: 'any' }, async () => ok()),",
+                ');',
+            ].join('\n'),
+        );
+        expect(r.methods).toEqual({ GET: ['admin.agent_registry_view', 'admin.agent_registry'] });
+    });
+
+    it('the real routes using the { keys, mode } form all publish their keys (#5135)', () => {
+        const files = repoRelativeFiles()
+            .filter((f) => f.startsWith('src/app/api/') && f.endsWith('/route.ts'))
+            .filter((f) => /requirePermission\(\s*\{\s*keys:/.test(fs.readFileSync(path.resolve(__dirname, '../..', f), 'utf8')));
+        expect(files.length).toBeGreaterThan(0);
+        const unpublished = files.filter((f) => {
+            const parsed = route(f, fs.readFileSync(path.resolve(__dirname, '../..', f), 'utf8'));
+            return Object.values(parsed.methods).some((keys) => keys !== undefined && keys.length === 0)
+                && !Object.values(parsed.methods).some((keys) => (keys ?? []).length > 0);
+        });
+        expect(unpublished).toEqual([]);
+    });
+
     it('drops route groups from the URL', () => {
         expect(route('src/app/api/(internal)/health/route.ts', 'export const GET = h;').url).toBe('/api/health');
     });
@@ -138,6 +165,12 @@ describe('page actions — the calls a page makes', () => {
             "import { Panel } from '@/components/risks/Panel';",
             "import { BULK } from './endpoints';",
             'export function RisksClient({ endpoint, open, query }: Props) {',
+            // BOUND, as real code binds it. This fixture used `apiUrl(…)` with
+            // no binding anywhere and resolved through the legacy NAME test,
+            // which #5707 deleted — so it was exercising the heuristic rather
+            // than the resolver. Every one of the 147 real call sites writes
+            // this line.
+            '    const apiUrl = useTenantApiUrl();',
             '    useTenantSWR(CACHE_KEYS.risks.list());',
             "    useTenantSWR(open ? CACHE_KEYS.risks.detail('x') : null);",
             "    fetch(apiUrl(BULK), { method: 'POST' });",
@@ -185,10 +218,10 @@ describe('page actions — the calls a page makes', () => {
             'GET /api/t/[tenantSlug]/risks/staleness (use case)',
         ]);
         expect(a.unresolved.map((u) => `${u.line} ${u.why} ${u.expression}`)).toEqual([
-            '10 the URL is built in a way the scan cannot follow endpoint',
+            '11 the URL is built in a way the scan cannot follow endpoint',
         ]);
         // The list key built in a useMemo is one call site, however many returns it has.
-        expect(a.resolved.find((r) => r.method === 'GET' && r.route.url === '/api/t/[tenantSlug]/risks')!.sites.map((s) => s.line)).toEqual([5, 13]);
+        expect(a.resolved.find((r) => r.method === 'GET' && r.route.url === '/api/t/[tenantSlug]/risks')!.sites.map((s) => s.line)).toEqual([6, 14]);
     });
 
     it('reads a template ending in a query-named value as the query string, and one after a slash as a segment', () => {
@@ -200,6 +233,799 @@ describe('page actions — the calls a page makes', () => {
     it('treats two run-time values in one segment as unreadable, not as a path', () => {
         expect(toSegments('/api/t/\u0000\u0000')).toBeNull();
         expect(toSegments('/api/t/\u0000/risks?x=1')).toEqual(['api', 't', null, 'risks']);
+    });
+});
+
+/**
+ * #5661. The resolver reads a name at ONE use site, so it may only answer from
+ * declarations that site can see: a parameter, then an enclosing scope, then
+ * the file's imports. It used to answer from a flat whole-file map of every
+ * `const` by name — any scope, and on a miss a declaration AFTER the use — so
+ * it reported routes a page does not call and left the real one uncounted.
+ */
+describe('page actions — a name resolves from the scopes its use site can see', () => {
+    const file = 'src/app/t/[tenantSlug]/(app)/x/C.tsx';
+    const segmentsOf = (text: string, files: Record<string, string> = {}) => {
+        const src = memory({ ...files, [file]: text });
+        return apiCalls(file, src.parsed(file), new UrlResolver(src)).map((c) => c.segments);
+    };
+
+    // The shape it was found in: a `postJson(url, …)` helper fetches its own
+    // parameter, and the file's only `const url` is 800 lines below, inside an
+    // unrelated callback. One name, two use sites, two different answers.
+    const helperAndCallSite = [
+        'async function postJson(url: string, body: unknown) {',
+        "    return fetch(url, { method: 'POST', body: JSON.stringify(body) });",
+        '}',
+        'export default function P() {',
+        "    const url = '/api/t/x/agent-samples/1';",
+        '    return postJson(url, {});',
+        '}',
+    ].join('\n');
+
+    // #5665 answered the helper's own fetch too, from the call site below it.
+    // The #5661 property is unchanged and is what the next case states: the
+    // parameter is never answered from a `const` of a scope it cannot see.
+    it('reads the helper parameter from its call site, and the same name there as that scope own const', () => {
+        expect(segmentsOf(helperAndCallSite)).toEqual([
+            ['api', 't', 'x', 'agent-samples', '1'],
+            ['api', 't', 'x', 'agent-samples', '1'],
+        ]);
+    });
+
+    it('attributes both the helper fetch and its call site to the one route the caller names', () => {
+        const page = 'src/app/t/[tenantSlug]/(app)/x/page.tsx';
+        const a = pageActions(page, memory({ [page]: helperAndCallSite }), [
+            route('src/app/api/t/[tenantSlug]/agent-samples/[sampleId]/route.ts', "export const POST = withApiErrorHandling(requirePermission('access_reviews.decide', h));"),
+        ]);
+        expect(a.resolved.map((x) => `${x.method} ${x.route.url} ${x.permission.join(',')} @${x.sites.map((y) => y.line).join(',')}`)).toEqual([
+            'POST /api/t/[tenantSlug]/agent-samples/[sampleId] access_reviews.decide @2,6',
+        ]);
+        expect(a.unresolved).toEqual([]);
+    });
+
+    // Without the parameter check this one still resolves: a top-level const is
+    // in every use site chain, so the scope walk alone does not refuse a
+    // parameter that SHADOWS one.
+    it('reads a parameter that shadows a top-level const as unresolvable, not as that const', () => {
+        expect(
+            segmentsOf(
+                [
+                    "const url = '/api/t/x/fallback';",
+                    'export function Direct() {',
+                    '    return fetch(url);',
+                    '}',
+                    'export function Shadow(url: string) {',
+                    '    return fetch(url);',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 't', 'x', 'fallback'], null]);
+    });
+
+    it('resolves a const an enclosing scope declares before the use', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export function Enclosing() {',
+                    "    const base = '/api/widgets';",
+                    '    const load = () => fetch(base);',
+                    '    return load;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 'widgets']]);
+    });
+
+    it('does not reach into a sibling scope, nor forward to a declaration below the use', () => {
+        // `G` has no `url` of its own — its prop is destructured, so it is not
+        // even a named parameter — and the only one in the file belongs to
+        // `other`, below. Answering from it attributes one component call to
+        // another route.
+        expect(
+            segmentsOf(
+                [
+                    'export function G({ url }: { url: string }) {',
+                    '    return fetch(url);',
+                    '}',
+                    "function other() { const url = '/api/other'; return fetch(url); }",
+                ].join('\n'),
+            ),
+        ).toEqual([null, ['api', 'other']]);
+    });
+
+    it('does not resolve a const an enclosing scope declares BELOW the use site', () => {
+        // Deliberate, and inherited from refusals.ts so there stays ONE
+        // definition: a closure called after line 3 would see it, but the scan
+        // reads source order, and an unresolved call is listed with its reason
+        // while a guess is not retractable. Pinned because the scope walk alone
+        // does not refuse this, so nothing else would notice the guard going.
+        expect(
+            segmentsOf(
+                [
+                    'export function P() {',
+                    '    const load = () => fetch(url);',
+                    "    const url = '/api/later';",
+                    '    return load;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([null]);
+    });
+
+    // A prop is the one name a use site cannot resolve on its own: its value is
+    // written at the render site. This codebase hands `apiBase` to sibling
+    // components in the same file, so the render site is where to read it.
+    it('resolves a destructured prop from the render sites in the same file, including a renamed one', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export function Panel() {',
+                    "    const apiBase = '/api/exceptions';",
+                    '    return <Child apiBase={apiBase} />;',
+                    '}',
+                    'function Child({ apiBase: base }: { apiBase: string }) {',
+                    "    return <button onClick={() => fetch(base, { method: 'POST' })} />;",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 'exceptions']]);
+    });
+
+    it('unions the values when two render sites pass different ones', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export function Panel() {',
+                    "    return <><Child to={'/api/one'} /><Child to={'/api/two'} /></>;",
+                    '}',
+                    'function Child({ to }: { to: string }) {',
+                    '    return <button onClick={() => fetch(to)} />;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 'one'], ['api', 'two']]);
+    });
+
+    it('reports the call when a render site spreads its props, rather than answering from the others', () => {
+        // One unknown member makes the union unknown. Answering from the rest
+        // would report a route the page may not call and omit one it does.
+        expect(
+            segmentsOf(
+                [
+                    'export function Panel(props: Props) {',
+                    "    return <><Child to={'/api/one'} /><Child {...props} /></>;",
+                    '}',
+                    'function Child({ to }: { to: string }) {',
+                    '    return <button onClick={() => fetch(to)} />;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([null]);
+    });
+
+    it('reports the call when the component is never rendered in this file', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export function Child({ to }: { to: string }) {',
+                    '    return <button onClick={() => fetch(to)} />;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([null]);
+    });
+
+    it('still resolves a top-level const and one the file imports by name', () => {
+        expect(
+            segmentsOf(
+                [
+                    "import { BULK } from './endpoints';",
+                    "const LIST = '/api/list';",
+                    'export function C() {',
+                    '    fetch(LIST);',
+                    '    fetch(BULK);',
+                    '    return null;',
+                    '}',
+                ].join('\n'),
+                { 'src/app/t/[tenantSlug]/(app)/x/endpoints.ts': "export const BULK = '/api/bulk';" },
+            ),
+        ).toEqual([
+            ['api', 'list'],
+            ['api', 'bulk'],
+        ]);
+    });
+});
+
+/**
+ * #5665. A local helper's `fetch(url, …)` is only as readable as its callers,
+ * so a PARAMETER resolves to the union of what every call site in the file
+ * passes for it. `AccessReviewDetailClient.tsx` reached
+ * `POST …/access-reviews/<reviewId>/agent-samples/<sampleId>` through nothing
+ * else: the `agentAct` that passes the URL on is not a recognised callee, so
+ * the chain is two parameters deep.
+ *
+ * A union missing a member is not a union, so each of the three ways it can be
+ * incomplete refuses instead: an exported helper, the function handed to a
+ * caller this file cannot see, and a call that omits the argument. Every one of
+ * those is a case here, because each is what stops the mechanism inventing a
+ * route a page does not call.
+ */
+describe('page actions — a local helper parameter resolves from its call sites', () => {
+    const file = 'src/app/t/[tenantSlug]/(app)/x/C.tsx';
+    const run = (text: string) => {
+        const src = memory({ [file]: text });
+        return apiCalls(file, src.parsed(file), new UrlResolver(src));
+    };
+    const segmentsOf = (text: string) => run(text).map((c) => c.segments);
+    const callsOf = (text: string) => run(text).map((c) => `${c.methods.join('|')} ${c.segments ? c.segments.join('/') : '—'}`);
+
+    it('follows a chain two parameters deep, which is the shape it was found in', () => {
+        expect(
+            segmentsOf(
+                [
+                    'async function relayJson(url: string, body: unknown) {',
+                    "    return fetch(url, { method: 'POST', body: JSON.stringify(body) });",
+                    '}',
+                    'function agentAct(url: string, note: string) {',
+                    '    return relayJson(url, { note });',
+                    '}',
+                    'export default function P() {',
+                    "    const base = '/api/t/x/access-reviews/7';",
+                    '    return agentAct(`${base}/agent-samples/1`, "act");',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 't', 'x', 'access-reviews', '7', 'agent-samples', '1']]);
+    });
+
+    // One `fetch`, two resolved paths: `apiCalls` lists a call per path.
+    it('unions what two call sites pass, and keeps each path whole', () => {
+        expect(
+            segmentsOf(
+                [
+                    'function load(path: string) {',
+                    '    return fetch(path);',
+                    '}',
+                    'export default function P() {',
+                    "    void load('/api/widgets');",
+                    "    void load('/api/gadgets');",
+                    '    return null;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([
+            ['api', 'widgets'],
+            ['api', 'gadgets'],
+        ]);
+    });
+
+    // The #5661 property, restated for the new mechanism: the answer comes
+    // from the CALL SITE, never from a `const` the parameter shadows.
+    it('answers from the call site rather than the const the parameter shadows', () => {
+        expect(
+            segmentsOf(
+                [
+                    "const url = '/api/t/x/fallback';",
+                    'function post(url: string) {',
+                    "    return fetch(url, { method: 'POST' });",
+                    '}',
+                    'export default function P() {',
+                    "    return post('/api/t/x/real');",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 't', 'x', 'real']]);
+    });
+
+    it('refuses an EXPORTED helper, whose call sites are not all in this file', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export async function relayJson(url: string) {',
+                    "    return fetch(url, { method: 'POST' });",
+                    '}',
+                    'export default function P() {',
+                    "    return relayJson('/api/widgets');",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([null]);
+    });
+
+    it('refuses when the helper is handed to a caller this file cannot see, even beside a real call site', () => {
+        expect(
+            segmentsOf(
+                [
+                    'function post(url: string) {',
+                    "    return fetch(url, { method: 'POST' });",
+                    '}',
+                    'export default function P({ onReady }: { onReady: (f: unknown) => void }) {',
+                    '    onReady(post);',
+                    "    return post('/api/widgets');",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([null]);
+    });
+
+    it('refuses when a call site omits the argument', () => {
+        expect(
+            segmentsOf(
+                [
+                    'function post(body: unknown, url?: string) {',
+                    "    return fetch(url, { method: 'POST', body: JSON.stringify(body) });",
+                    '}',
+                    'export default function P() {',
+                    "    void post({}, '/api/widgets');",
+                    '    void post({});',
+                    '    return null;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([null]);
+    });
+
+    it('does not read a dependency array as the helper escaping', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export default function P() {',
+                    '    const load = useCallback(async (url: string) => fetch(url), []);',
+                    "    const run = useCallback(() => load('/api/widgets'), [load]);",
+                    '    return run;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 'widgets']]);
+    });
+
+    // `{ method }` is a SHORTHAND assignment. Read as "no method given" it
+    // reported the `fetch` default, so a helper taking its verb as a parameter
+    // claimed GET on every route its callers passed — invisible until the URL
+    // resolved, and then 11 "exports no GET" rows at once.
+    const verbAndPath = [
+        'async function send(path: string, method: string, body: unknown) {',
+        '    return fetch(`/api/t/x/templates${path}`, { method, body: JSON.stringify(body) });',
+        '}',
+        'export default function P() {',
+        "    void send('/clone', 'POST', {});",
+        "    void send('/sections', 'DELETE', {});",
+        '    return null;',
+        '}',
+    ].join('\n');
+
+    it('reads a shorthand method, so the verbs are the callers and never the fetch default', () => {
+        expect(callsOf(verbAndPath)).toEqual([
+            'POST|DELETE api/t/x/templates/clone',
+            'POST|DELETE api/t/x/templates/sections',
+        ]);
+    });
+
+    it('keeps only the pairings the routes serve, and claims no GET', () => {
+        const page = 'src/app/t/[tenantSlug]/(app)/x/page.tsx';
+        const a = pageActions(page, memory({ [page]: verbAndPath }), [
+            route('src/app/api/t/[tenantSlug]/templates/clone/route.ts', "export const POST = withApiErrorHandling(requirePermission('vendors.edit', h));"),
+            route('src/app/api/t/[tenantSlug]/templates/sections/route.ts', "export const DELETE = withApiErrorHandling(requirePermission('vendors.edit', h));"),
+        ]);
+        expect(a.resolved.map((x) => `${x.method} ${x.route.url}`)).toEqual([
+            'POST /api/t/[tenantSlug]/templates/clone',
+            'DELETE /api/t/[tenantSlug]/templates/sections',
+        ]);
+        expect(a.unresolved).toEqual([]);
+    });
+});
+
+/**
+ * #5713. A page reaches an API route by putting its URL in an ANCHOR as well as
+ * by calling it, and `apiCalls` walked call expressions alone — so every export
+ * and download link was reported as called by nobody. Eleven sites and eight
+ * routes, among them the policy PDF, the SoA CSV, the evidence download and
+ * both invite sign-in starts.
+ *
+ * A LINK IS NOT A CALL, and two gates carry that difference. A `fetch(…)` whose
+ * URL cannot be read is a gap worth naming; an `href` that cannot be read says
+ * nothing, because it might be a page route, an external site or a `mailto:`.
+ * Wiring the first gate alone put twelve page links — `tenantHref('/agents/
+ * proposals')`, `/t/${slug}${targetPath}`, a `mailto:${email}` — into the
+ * unresolved list as unreadable API calls, which is the second gate's case.
+ */
+describe('page actions — a link to an API route is a GET site', () => {
+    const file = 'src/app/t/[tenantSlug]/(app)/x/C.tsx';
+    const run = (text: string) => {
+        const src = memory({ [file]: text });
+        return apiCalls(file, src.parsed(file), new UrlResolver(src));
+    };
+    /** `*` is a run-time segment; `UNREADABLE` is a reported-but-unsegmentable call. */
+    const callsOf = (text: string) =>
+        run(text).map((c) => `${c.methods.join('|')} ${c.segments ? c.segments.map((x) => x ?? '*').join('/') : 'UNREADABLE'}`);
+
+    it('reads an anchor built from a template as a GET of that route', () => {
+        expect(
+            callsOf(
+                [
+                    'export default function P({ id }: { id: string }) {',
+                    '    return <a href={`/api/t/x/policies/${id}/export`}>PDF</a>;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual(['GET api/t/x/policies/*/export']);
+    });
+
+    it('reads a plain string href too', () => {
+        expect(callsOf(['export default function P() {', '    return <a href="/api/health">ok</a>;', '}'].join('\n'))).toEqual([
+            'GET api/health',
+        ]);
+    });
+
+    it('composes with a local builder, so the tenant prefix is the builder own', () => {
+        expect(
+            callsOf(
+                [
+                    'export default function P({ tenantSlug, id }: { tenantSlug: string; id: string }) {',
+                    '    const apiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;',
+                    '    return <a href={apiUrl(`/evidence/files/${id}/download`)}>get</a>;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual(['GET api/t/*/evidence/files/*/download']);
+    });
+
+    it('is not fooled by a page route, an external site or a fragment', () => {
+        expect(
+            callsOf(
+                [
+                    'export default function P({ id }: { id: string }) {',
+                    '    return (',
+                    '        <>',
+                    '            <a href={`/t/x/risks/${id}`}>risk</a>',
+                    '            <a href="https://example.com/api/widgets">out</a>',
+                    '            <a href="#top">top</a>',
+                    '        </>',
+                    '    );',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([]);
+    });
+
+    // GATE 1. The fetch is reported; the link beside it is not.
+    it('reports an unreadable fetch URL and stays silent about an unreadable href', () => {
+        expect(
+            callsOf(
+                [
+                    'export default function P({ target }: { target: string }) {',
+                    '    void fetch(target);',
+                    '    return <a href={target}>go</a>;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual(['GET UNREADABLE']);
+    });
+
+    // GATE 2. These RESOLVE and then fail to segment, which is a different
+    // branch from gate 1 and the one that leaked twelve page links.
+    it('stays silent about a resolved href that cannot be segmented', () => {
+        expect(
+            callsOf(
+                [
+                    'export default function P({ email, subject, a, b }: { email: string; subject: string; a: string; b: string }) {',
+                    '    return (',
+                    '        <>',
+                    '            <a href={`mailto:${email}?subject=${subject}`}>mail</a>',
+                    '            <a href={`/api/t/x/${a}${b}`}>two values, one segment</a>',
+                    '        </>',
+                    '    );',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([]);
+    });
+
+    it('still reports the same unsegmentable path when a FETCH is what reaches it', () => {
+        expect(
+            callsOf(
+                [
+                    'export default function P({ a, b }: { a: string; b: string }) {',
+                    '    return fetch(`/api/t/x/${a}${b}`);',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual(['GET UNREADABLE']);
+    });
+
+    it('reads only the attributes in the GET set, so a form action is not a call', () => {
+        expect(
+            callsOf(
+                [
+                    'export default function P() {',
+                    '    return <form action="/api/t/x/widgets" />;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([]);
+    });
+
+    it('ignores a valueless href rather than throwing', () => {
+        expect(callsOf(['export default function P() {', '    return <a href>nothing</a>;', '}'].join('\n'))).toEqual([]);
+    });
+});
+
+/**
+ * #5662. A URL builder is recognised by what the callee is BOUND to, never by
+ * its name. The retired name test (`apiUrl` / `buildApiUrl` / `tenantApiUrl`
+ * -> always the tenant prefix) was right 144 times and wrong three: an
+ * org-scoped builder published two live routes as "no API route matches", and
+ * a slug-first helper had its FIRST argument read as the path.
+ */
+describe('page actions — a URL builder is read from its binding', () => {
+    const file = 'src/app/t/[tenantSlug]/(app)/x/C.tsx';
+    const run = (text: string) => {
+        const src = memory({ [file]: text });
+        const r = new UrlResolver(src);
+        return { segments: apiCalls(file, src.parsed(file), r).map((c) => c.segments), resolver: r };
+    };
+    const segmentsOf = (text: string) => run(text).segments;
+
+    it('gives an org-scoped builder the org prefix, not the tenant one', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export function S() {',
+                    '    const apiUrl = useOrgApiUrl();',
+                    "    return fetch(apiUrl('/agent-switches'), { method: 'PUT' });",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 'org', null, 'agent-switches']]);
+    });
+
+    it('keeps the tenant prefix for a tenant-scoped builder', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export function S() {',
+                    '    const apiUrl = useTenantApiUrl();',
+                    "    return fetch(apiUrl('/risks'));",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 't', null, 'risks']]);
+    });
+
+    // 17 of this repo's local builders are declared inside useCallback against
+    // 10 bare arrows, so treating the wrapper as "not a builder" cost 42 route
+    // rows — measured, which is why the unwrap exists.
+    // Named OUTSIDE the legacy set on purpose. With `apiUrl` the name fallback
+    // returns the same answer, so the case cannot tell the unwrap from the
+    // fallback and stays green when the unwrap is removed — it proved nothing
+    // until the name changed. It now also pins the claim that keying on the
+    // hook is wider than the three names it replaced.
+    it('unwraps a builder declared inside useCallback, whatever the local name', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export function S({ tenantSlug }: Props) {',
+                    '    const buildUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);',
+                    "    return fetch(buildUrl('/assets/bulk/delete'), { method: 'POST' });",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 't', null, 'assets', 'bulk', 'delete']]);
+    });
+
+    // Reading the body beats any fixed prefix: this shape is live in
+    // incidents/[incidentId]/page.tsx, and the name test emitted
+    // `/api/t/<slug>` for it, silently dropping two segments.
+    it('reads a local builder whose body carries more than the prefix', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export function S({ tenantSlug, incidentId }: Props) {',
+                    '    const apiUrl = (path: string) => `/api/t/${tenantSlug}/incidents/${incidentId}${path}`;',
+                    "    return fetch(apiUrl('/timeline'));",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 't', null, 'incidents', null, 'timeline']]);
+    });
+
+    // The #5662 defect itself: argument 0 is the SLUG here. Binding each
+    // parameter to the argument in its own position makes the arity irrelevant
+    // and the answer exact, where reading argument 0 as the path built a URL
+    // out of the workspace slug.
+    it('binds a slug-first helper by position rather than reading argument 0 as the path', () => {
+        expect(
+            segmentsOf(
+                [
+                    'function apiUrl(tenantSlug: string, path: string) {',
+                    '    return `/api/t/${tenantSlug}/onboarding/${path}`;',
+                    '}',
+                    'export function W({ tenantSlug }: Props) {',
+                    "    return fetch(apiUrl(tenantSlug, 'step'), { method: 'POST' });",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 't', null, 'onboarding', 'step']]);
+    });
+
+    it('reports a call whose builder cannot be read and whose name is not a legacy one', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export function U({ fetchUrl }: { fetchUrl: (p: string) => string }) {',
+                    "    return fetch(fetchUrl('/widgets'));",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([null]);
+    });
+
+    // The legacy NAME test is GONE (#5707). It survived #5662 as a last
+    // resort because deleting it then cost 14 route rows — builders reached a
+    // call site through shapes the resolver could not yet read. #5688 taught it
+    // the page's reach and #5707 the import binding, which took the count 19 ->
+    // 3 -> 0, and at zero a name test is exactly what this resolver exists not
+    // to have. A builder it cannot read is now REPORTED.
+    it('reports a call whose builder cannot be read, even under a legacy builder name', () => {
+        // `apiUrl` was one of the three privileged names. With no render site
+        // for `L` anywhere, nothing says what it is bound to.
+        expect(
+            segmentsOf(
+                [
+                    'export function L({ apiUrl }: { apiUrl: (p: string) => string }) {',
+                    "    return fetch(apiUrl('/widgets'));",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([null]);
+    });
+});
+
+/**
+ * #5688. A builder handed down as a prop is resolved from the render sites in
+ * the PAGE'S REACH, not the declaring file alone — #5661 read only the latter,
+ * which left 19 calls answering from the callee's NAME.
+ */
+describe('page actions — a prop is resolved across the files of one page', () => {
+    const page = 'src/app/t/[tenantSlug]/(app)/x/page.tsx';
+    const child = 'src/app/t/[tenantSlug]/(app)/x/Child.tsx';
+    const route = (f: string, t: string) => parseApiRoute(f, t);
+    const table: ApiRoute[] = [route('src/app/api/t/[tenantSlug]/widgets/route.ts', 'export const GET = a;')];
+
+    const act = (files: Record<string, string>) => pageActions(page, memory(files), table);
+
+    // EVERY fixture here names the builder `buildUrl`, outside
+    // LEGACY_BUILDER_NAMES, and that is load-bearing. Named `apiUrl`, the name
+    // fallback resolves these to the same route and the cases pass with the
+    // cross-file mechanism removed — they prove nothing. Mutation-proving
+    // caught exactly that, twice (the first time in #5696's useCallback case).
+    it('resolves a builder the parent passes from another file in the reach', () => {
+        const a = act({
+            [page]: "import { Child } from './Child';\nexport default function P() {\n    const buildUrl = useTenantApiUrl();\n    return <Child buildUrl={buildUrl} />;\n}",
+            [child]: "export function Child({ buildUrl }: { buildUrl: (p: string) => string }) {\n    return <button onClick={() => fetch(buildUrl('/widgets'))} />;\n}",
+        });
+        expect(a.resolved.map((r) => `${r.method} ${r.route.url}`)).toEqual(['GET /api/t/[tenantSlug]/widgets']);
+        expect(a.unresolved).toEqual([]);
+    });
+
+    it('follows a builder FUNCTION the parent wrote, not just a context hook', () => {
+        // Nine of the twelve fallbacks left after the cross-file read were this
+        // shape: the parent writes `const buildUrl = useCallback((path) => …)`,
+        // so the prefix is not a constant — it is the function's body.
+        const a = act({
+            [page]: "import { Child } from './Child';\nexport default function P({ tenantSlug }: Props) {\n    const buildUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);\n    return <Child buildUrl={buildUrl} />;\n}",
+            [child]: "export function Child({ buildUrl }: { buildUrl: (p: string) => string }) {\n    return <button onClick={() => fetch(buildUrl('/widgets'))} />;\n}",
+        });
+        expect(a.resolved.map((r) => `${r.method} ${r.route.url}`)).toEqual(['GET /api/t/[tenantSlug]/widgets']);
+        expect(a.unresolved).toEqual([]);
+    });
+
+    it('a same-named component elsewhere is NOT a render site unless it imports the declaring one', () => {
+        // The guard that makes a cross-file search sound. Two files can each
+        // declare a `Child`; matching by name alone would read one component's
+        // render site as another's — a wrong answer dressed as a resolution,
+        // which is the class this whole thread is about.
+        const other = 'src/app/t/[tenantSlug]/(app)/x/Other.tsx';
+        const a = act({
+            // The page IMPORTS the declaring Child (so it is in the reach) but
+            // renders only Other. That matters: if the page rendered `<Child />`
+            // with no attribute, fail-closed would return null on its own and
+            // the import guard would never be the thing under test.
+            [page]: "import { Child } from './Child';\nimport { Other } from './Other';\nexport default function P() {\n    return <Other />;\n}",
+            // A BARE identifier callee. Written `buildUrl!(…)` the callee is a
+            // NonNullExpression, the builder machinery never runs, and the call
+            // is unresolvable whatever the guard does — vacuous.
+            [child]: "export function Child({ buildUrl }: { buildUrl: (p: string) => string }) {\n    return <button onClick={() => fetch(buildUrl('/widgets'))} />;\n}",
+            [other]: "function Child({ buildUrl }: { buildUrl: (p: string) => string }) {\n    return <i onClick={() => fetch(buildUrl('/widgets'))} />;\n}\nexport function Other() {\n    const buildUrl = useTenantApiUrl();\n    return <Child buildUrl={buildUrl} />;\n}",
+        });
+        // Other's `Child` is a DIFFERENT component that happens to share the
+        // name, and it supplies the attribute. Without the import guard its
+        // render site would answer for the declaring Child too, which is a
+        // wrong answer dressed as a resolution.
+        expect(a.unresolved.map((u) => u.expression)).toContain("buildUrl('/widgets')");
+    });
+
+    it('one render site that omits the attribute makes the value unknown, across files too', () => {
+        const a = act({
+            [page]: "import { Child } from './Child';\nexport default function P() {\n    const buildUrl = useTenantApiUrl();\n    return <><Child buildUrl={buildUrl} /><Child /></>;\n}",
+            [child]: "export function Child({ buildUrl }: { buildUrl: (p: string) => string }) {\n    return <button onClick={() => fetch(buildUrl('/widgets'))} />;\n}",
+        });
+        // A union missing a member is not a union — reported, not answered
+        // from the site that does supply it.
+        expect(a.resolved).toEqual([]);
+    });
+});
+
+/**
+ * #5707. A component is found at a render site by the name THAT FILE binds it
+ * to, resolved from the import — never by the name it declares itself. For a
+ * DEFAULT export the two need not match at all, and `next/dynamic` binds one
+ * without an `ImportDeclaration` to read.
+ */
+describe('page actions — a render site is matched by the importer\'s own alias', () => {
+    const page = 'src/app/t/[tenantSlug]/(app)/y/page.tsx';
+    const child = 'src/app/t/[tenantSlug]/(app)/y/Child.tsx';
+    const decoy = 'src/app/t/[tenantSlug]/(app)/y/Decoy.tsx';
+    const other = 'src/app/t/[tenantSlug]/(app)/y/Other.tsx';
+    const route = (f: string, t: string) => parseApiRoute(f, t);
+    const table: ApiRoute[] = [
+        route('src/app/api/t/[tenantSlug]/widgets/route.ts', 'export const GET = a;'),
+        route('src/app/api/t/[tenantSlug]/gadgets/route.ts', 'export const GET = a;'),
+    ];
+    const act = (files: Record<string, string>) => pageActions(page, memory(files), table);
+    const CHILD = "export default function Child({ buildUrl }: { buildUrl: (p: string) => string }) {\n    return <button onClick={() => fetch(buildUrl('/widgets'))} />;\n}";
+
+    it('follows a default export loaded through next/dynamic under a different local name', () => {
+        // The shape that left PolicyTraceabilityPanel's three calls guessing.
+        // CLAUDE.md requires `next/dynamic` for a component that must not be
+        // server-rendered, so this is a recurring shape, not one file's quirk.
+        const a = act({
+            [page]: "const Panel = dynamic(() => import('./Child'), { ssr: false });\nexport default function P() {\n    const buildUrl = useTenantApiUrl();\n    return <Panel buildUrl={buildUrl} />;\n}",
+            [child]: CHILD,
+        });
+        expect(a.resolved.map((r) => `${r.method} ${r.route.url}`)).toEqual(['GET /api/t/[tenantSlug]/widgets']);
+    });
+
+    it('follows a plain default import under a different local name', () => {
+        const a = act({
+            [page]: "import Panel from './Child';\nexport default function P() {\n    const buildUrl = useTenantApiUrl();\n    return <Panel buildUrl={buildUrl} />;\n}",
+            [child]: CHILD,
+        });
+        expect(a.resolved.map((r) => `${r.method} ${r.route.url}`)).toEqual(['GET /api/t/[tenantSlug]/widgets']);
+    });
+
+    it('keys on the import SPECIFIER, so two default exports under one local name do not mix', () => {
+        // The acceptance test for #5707, and the reason it is not done by
+        // name: both files bind a DEFAULT export to the local name `Child`,
+        // but to DIFFERENT files. Matching `<Child …>` by name would union the
+        // decoy's render site into this one and report a route the declaring
+        // component never calls — the exact failure #5662 removed.
+        const a = act({
+            [page]: "import Child from './Child';\nimport { Other } from './Other';\nexport default function P() {\n    const buildUrl = useTenantApiUrl();\n    return <><Child buildUrl={buildUrl} /><Other /></>;\n}",
+            [child]: CHILD,
+            [decoy]: "export default function Decoy({ buildUrl }: { buildUrl: (p: string) => string }) {\n    return <i onClick={() => fetch(buildUrl('/gadgets'))} />;\n}",
+            // Binds the DECOY under the name `Child`.
+            [other]: "import Child from './Decoy';\nexport function Other() {\n    const gadgetUrl = useTenantApiUrl();\n    return <Child buildUrl={gadgetUrl} />;\n}",
+        });
+        // `/widgets` from the real Child, `/gadgets` from the decoy — each from
+        // its OWN render site. Neither call reports both.
+        expect(a.resolved.map((r) => `${r.method} ${r.route.url}`).sort()).toEqual([
+            'GET /api/t/[tenantSlug]/gadgets',
+            'GET /api/t/[tenantSlug]/widgets',
+        ]);
+        expect(a.unresolved).toEqual([]);
+    });
+
+    it('does not look outside its own file for a component that is not exported', () => {
+        // Nothing else can render it, so there is nothing to find — and a
+        // same-named component elsewhere must not stand in for it.
+        const a = act({
+            [page]: "import { Other } from './Other';\nexport default function P() {\n    return <Other />;\n}",
+            [other]: "function Child({ buildUrl }: { buildUrl: (p: string) => string }) {\n    return <i onClick={() => fetch(buildUrl('/gadgets'))} />;\n}\nexport function Other() {\n    return <div />;\n}",
+        });
+        expect(a.resolved).toEqual([]);
+        expect(a.unresolved.map((u) => u.expression)).toContain("buildUrl('/gadgets')");
     });
 });
 

@@ -7,9 +7,10 @@
  * `humanOutcome` on review (Art 14), closed loop". The Art 12 half shipped for
  * the Flue engine; the Art 14 half could not reach the rows it wrote.
  *
- * `recordDecisionOutcomeForDigest` matches on `inputDigest`, and all three of
- * its call sites pass `AgentProposal.guardInputDigest` — a digest over
- * `{ kind, payload, rationale }`. The Flue row's digest is over the dispatched
+ * The proposal stamp (`recordDecisionOutcomeForDigest` then, keyed by
+ * `inputDigest`; `recordDecisionOutcomeForProposal` since #5191, which reads
+ * the digest only for a legacy row) was handed
+ * `AgentProposal.guardInputDigest` — a digest over `{ kind, payload, rationale }`. The Flue row's digest is over the dispatched
  * run PROMPT. Two `sha256:` strings of identical shape over different content,
  * which never match. `updateMany` reports `count: 0` and raises nothing, so
  * every `agentic-run:*` row stayed PENDING for ever while the loop looked
@@ -46,7 +47,7 @@ import {
     abortWorkflowRun,
 } from '@/app-layer/usecases/workflow-runs';
 import { recordModelDecision } from '@/lib/agentic/flue/model-decision';
-import { computeInputDigest, recordDecisionOutcomeForDigest } from '@/app-layer/ai/decision-log';
+import { computeInputDigest, recordDecisionOutcomeForProposal } from '@/app-layer/ai/decision-log';
 import { guardAgentProposal } from '@/app-layer/ai/guard/proposal-guard';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { makeRequestContext } from '../helpers/make-context';
@@ -174,10 +175,16 @@ describeFn('Art 14 closes on the run a human actually reviews', () => {
         }).inputDigest;
         expect([before[0].inputDigest, before[1].inputDigest]).not.toContain(proposalDigest);
 
-        // The negative control, run against the REAL digest stamper: the key
-        // the proposal path would use reaches zero of these rows.
+        // The negative control, run against the REAL proposal stamper: the
+        // key the proposal path uses — a proposal id, falling back to the
+        // proposal digest only for a legacy row — reaches zero of these rows.
         const digestStamped = await runInTenantContext(ctx(), (db) =>
-            recordDecisionOutcomeForDigest(db, ctx(), proposalDigest, 'ACCEPTED'),
+            recordDecisionOutcomeForProposal(
+                db,
+                ctx(),
+                { proposalId: `no-such-proposal-${SUITE}`, inputDigest: proposalDigest },
+                'ACCEPTED',
+            ),
         );
         expect(digestStamped).toBe(0);
 

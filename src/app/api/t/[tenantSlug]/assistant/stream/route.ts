@@ -71,7 +71,12 @@ export const POST = withApiErrorHandling(
             // stream: the whole point of #3826 is that a refusal must never
             // look like a hang, and that applies to being refused the stream
             // itself just as much as to a guard verdict inside one.
-            return new Response(JSON.stringify({ error: reason, reason: lease }), {
+            //
+            // The STANDARD error envelope (#5170): the client reads
+            // `error.message`, as it does for every other refusal, and a bare
+            // string under `error` fell through to "The assistant is
+            // unavailable (429)" — the reason never reached the person.
+            return new Response(JSON.stringify({ error: { code: 'RATE_LIMITED', message: reason }, reason: lease }), {
                 status: 429,
                 headers: { 'Content-Type': 'application/json' },
             });

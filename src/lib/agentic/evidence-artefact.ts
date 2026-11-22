@@ -164,6 +164,11 @@ export function isPerAgentKind(kind: string): kind is PerAgentArtefactKind {
 
 export type ArtefactWithdrawalReason =
     | 'CONTROL_REMOVED'
+    /**
+     * RESERVED (#5317): allowed by the DB CHECK, but no code path withdraws for
+     * it — nothing re-verifies a receipt after emission, and re-emission only
+     * recomputes the counts. See `withdrawStaleAgenticEvidence`.
+     */
     | 'SOURCE_UNVERIFIABLE'
     /**
      * The control still exists, but it no longer discharges this obligation —
@@ -493,15 +498,34 @@ export function periodForKind(kind: string, periodStart: Date): ArtefactPeriod {
 // ── Population digest ───────────────────────────────────────────────────────
 
 /**
- * SHA-256 over the SORTED ids of the records an artefact counted, bound to the
- * kind and the period.
+ * What the receipt and decision bodies say their digest covers. It must be the
+ * recipe `sourcePopulationDigest` computes, because the body tells an assessor
+ * how to re-derive the figure; it said "the sorted record ids" after the digest
+ * had moved to the rendered facts, which no assessor could reproduce.
+ */
+export const POPULATION_DIGEST_BASIS =
+    'SHA-256 over the canonical JSON of the kind, the period start (ISO 8601) and the ' +
+    'sorted canonical JSON of each record\'s fact: its id and every field this body counts';
+
+/** The extra terms a per-agent digest binds, stated in its preamble. */
+export const PER_AGENT_DIGEST_BASIS =
+    'The population digest below also binds the agent id and whether the read stopped at its ' +
+    'bound: it is SHA-256 over the canonical JSON of the kind, the period start (ISO 8601), the ' +
+    'agent id, that bounded flag and the sorted canonical JSON of each record\'s fact.';
+
+/**
+ * SHA-256 (hex) over `canonicalJson({ kind, periodStart, facts })`, where
+ * `periodStart` is the ISO string and `facts` is the SORTED list of each
+ * rendered fact's own canonical JSON — every field the body renders, not the
+ * record ids alone (see below). `POPULATION_DIGEST_BASIS` is the sentence the
+ * body prints, so an assessor re-derives the digest from this recipe.
  *
  * Sorted because the database's row order is not a fact about the population:
  * two runs that read the same records in different orders describe the same
  * month and must digest identically, or every tick would look like a change.
  *
  * Bound to kind + period so a digest cannot be mistaken for one of a different
- * population that happens to hold the same ids.
+ * population that happens to hold the same facts.
  */
 export function sourcePopulationDigest(
     kind: AgenticArtefactKind,
@@ -613,10 +637,20 @@ export interface HarnessSourceFact {
 export interface HarnessTallies {
     readonly levels: Readonly<Record<HarnessLevel, number>>;
     readonly reach: Readonly<Record<HarnessStoredReach, number>>;
-    /** Below the report-only bar for its reach. Reported; it gates nothing. */
+    /**
+     * Below the report-only bar for its reach. Reported; it gates nothing.
+     * An unregistered automated identity is held to no bar and is never
+     * counted here (owner decisions, 2026-11-13).
+     */
     readonly belowBar: number;
     /** Not linked to a live register row AS OF THE EMISSION (unregistered, or its register row deleted). */
     readonly notInRegister: number;
+    /**
+     * Of `notInRegister`, those on record AS OF THE EMISSION as unregistered
+     * automated identities: no sign of a model, so not shadow agents. Counted
+     * in the levels and the reaches like every other principal the scan found.
+     */
+    readonly unregisteredIdentities: number;
 }
 
 /**
@@ -765,7 +799,7 @@ export function buildReceiptArtefact(
             facts.map((f) => f.toolProvenance ?? 'unrecorded'),
         )}`,
         '',
-        `Population digest (SHA-256 over the sorted record ids): ${digest}`,
+        `Population digest (${POPULATION_DIGEST_BASIS}): ${digest}`,
         '',
         REDACTION_CONTRACT,
     ];
@@ -833,7 +867,7 @@ export function buildDecisionArtefact(
         `Output-guard verdicts — ${tally(facts.map((f) => f.guardVerdict ?? 'none'))}`,
         `Human outcomes — ${tally(facts.map((f) => f.humanOutcome))}`,
         '',
-        `Population digest (SHA-256 over the sorted record ids): ${digest}`,
+        `Population digest (${POPULATION_DIGEST_BASIS}): ${digest}`,
         '',
         REDACTION_CONTRACT,
     ];
@@ -851,6 +885,7 @@ function perAgentPreamble(agentId: string, records: string, bounded: boolean): s
         `Agent: ${agentId} (agent register id)`,
         `Attribution: ${records} No other record is counted here; every record of the tenant, ` +
             'attributed or not, is counted in the tenant-wide artefact for the same period and control.',
+        PER_AGENT_DIGEST_BASIS,
     ];
     if (bounded) {
         lines.push(
@@ -1079,6 +1114,7 @@ function scannerBlock(s: HarnessScanFact): string[] {
         `  Agents: ${s.agentCount} · by level — ${HARNESS_LEVELS.map((l) => `${l}: ${t.levels[l]}`).join(' · ')}`,
         `  Reach — READ_ONLY: ${t.reach.READ_ONLY} · WRITE_OR_EXTERNAL: ${t.reach.WRITE_OR_EXTERNAL} · UNKNOWN: ${t.reach.UNKNOWN}`,
         `  Below the report-only bar: ${t.belowBar} · Not in the agent register as of this emission: ${t.notInRegister}`,
+        `  Of those not in the register, unregistered automated identities (no sign of a model; held to no bar, so not counted below it): ${t.unregisteredIdentities}`,
     );
     return lines;
 }

@@ -763,6 +763,31 @@ describe('agent inventory', () => {
         expect(a3?.riskTierScoredAt).toBeNull();
     });
 
+    it('reads each agent\'s latest assessment, however many newer ones another agent has (#5140)', async () => {
+        // The read took the 500 newest assessments tenant-wide, so one agent
+        // re-assessed often pushed every other agent's latest out of the read
+        // and reported it NEVER_ASSESSED. 500 newer rows for A4 here.
+        const a4 = seeded[T1].agents.A4;
+        await prisma.agentRiskAssessment.createMany({
+            data: Array.from({ length: 500 }, (_, i) => ({
+                tenantId: T1, agentId: a4, status: 'COMPLETED' as const,
+                scoredTier: 'LOW' as const, completedAt: new Date(ago(1).getTime() + i * 1000),
+                staleAt: null, staleTriggers: [],
+            })),
+        });
+        try {
+            const report = await buildAgentInventoryReport(ctxFor(T1));
+            const byName = new Map(report.body.agents.map((a) => [a.name, a]));
+            expect(byName.get('Ops agent')?.assessmentState).toBe('ASSESSED');
+            expect(byName.get('Nightly sweeper')?.assessmentState).toBe('ASSESSED_STALE');
+            expect(byName.get('Vendor bot')?.assessmentState).toBe('NEVER_ASSESSED');
+        } finally {
+            await prisma.agentRiskAssessment.deleteMany({
+                where: { tenantId: T1, agentId: a4, completedAt: { gte: ago(1) } },
+            });
+        }
+    });
+
     it('keeps the kill axis, the card and the tool grants distinct per agent', async () => {
         const report = await buildAgentInventoryReport(ctxFor(T1));
         const byName = new Map(report.body.agents.map((a) => [a.name, a]));
@@ -784,11 +809,93 @@ describe('agent inventory', () => {
         expect(byName.get('Vendor bot')?.breakerState).toBeNull();
     });
 
+    it('counts only LIVE keys as credentials that speak for an agent (#5317)', async () => {
+        const agentId = seeded[T1].agents.A3;
+        const base = { tenantId: T1, agentId, createdById: seeded[T1].ownerUserId };
+        const day = 24 * 60 * 60 * 1000;
+        await prisma.tenantApiKey.createMany({
+            data: [
+                { ...base, name: 'live', keyPrefix: 'iflk_aa1', keyHash: 'cred-count-live' },
+                { ...base, name: 'revoked', keyPrefix: 'iflk_aa2', keyHash: 'cred-count-revoked', revokedAt: new Date() },
+                { ...base, name: 'expired', keyPrefix: 'iflk_aa3', keyHash: 'cred-count-expired', expiresAt: new Date(Date.now() - day) },
+                { ...base, name: 'future', keyPrefix: 'iflk_aa4', keyHash: 'cred-count-future', expiresAt: new Date(Date.now() + day) },
+            ],
+        });
+        try {
+            const report = await buildAgentInventoryReport(ctxFor(T1));
+            const row = report.body.agents.find((a) => a.name === 'Vendor bot');
+            expect(row?.credentialCount).toBe(2);
+        } finally {
+            await prisma.tenantApiKey.deleteMany({ where: { tenantId: T1, keyHash: { startsWith: 'cred-count-' } } });
+        }
+    });
+
     it('names the accountable human on every row', async () => {
         const report = await buildAgentInventoryReport(ctxFor(T1));
         expect(report.body.agents).toHaveLength(5);
         for (const row of report.body.agents) {
             expect(row.ownerUserId).toBe(seeded[T1].ownerUserId);
+        }
+    });
+
+    it('reports which agents hold spending authority, and which of it nobody else reviewed (Agent Pay 1.6, #5333)', async () => {
+        const before = await buildAgentInventoryReport(ctxFor(T1));
+        // The register records none: a measured zero over five agents.
+        expectMeasured(before.metrics['inventory.agents_with_spending_authority'], 0);
+        expectMeasured(before.metrics['inventory.agents_with_unreviewed_spending_authority'], 0);
+        const idOf = (name: string) => before.body.agents.find((a) => a.name === name)!.agentId;
+        const s = seeded[T1];
+        const envelope = (agentId: string, rail: 'AGENT_PAY_TOKEN' | 'AP4M') => ({
+            tenantId: T1,
+            agentId,
+            rail,
+            perTransactionLimitMinor: BigInt(5_000),
+            periodBudgetMinor: BigInt(50_000),
+            budgetPeriod: 'MONTH' as const,
+            currency: 'EUR',
+            merchantDomains: ['shop.example.com'],
+            merchantCategoryCodes: [],
+            expiresAt: new Date(CLOCK + 90 * DAY),
+            consentedByUserId: s.ownerUserId,
+            tokenRequestor: 'Example Agent Platform',
+            tokenReference: 'REF-1',
+            declaredByUserId: s.secondUserId,
+            declaredAt: ago(2),
+            ownerUserIdAtDeclaration: s.ownerUserId,
+        });
+        const ops = idOf('Ops agent');
+        const sweeper = idOf('Nightly sweeper');
+        const vendor = idOf('Vendor bot');
+        try {
+            // Ops agent: reviewed by a second person. Vendor bot: declared only.
+            // Nightly sweeper: withdrawn, which is no authority at all.
+            const reviewed = await prisma.agentSpendingAuthority.create({ data: envelope(ops, 'AGENT_PAY_TOKEN') });
+            await prisma.agentSpendingAuthority.update({
+                where: { id: reviewed.id },
+                data: { status: 'REVIEWED', reviewedByUserId: s.thirdUserId, reviewedAt: ago(1) },
+            });
+            await prisma.agentSpendingAuthority.create({ data: envelope(vendor, 'AP4M') });
+            const withdrawn = await prisma.agentSpendingAuthority.create({ data: envelope(sweeper, 'AGENT_PAY_TOKEN') });
+            await prisma.agentSpendingAuthority.update({
+                where: { id: withdrawn.id },
+                data: { status: 'WITHDRAWN', withdrawnAt: ago(1), withdrawnByUserId: s.secondUserId },
+            });
+
+            const report = await buildAgentInventoryReport(ctxFor(T1));
+            expectMeasured(report.metrics['inventory.agents_with_spending_authority'], 2);
+            expectMeasured(report.metrics['inventory.agents_with_unreviewed_spending_authority'], 1);
+            const byId = new Map(report.body.agents.map((a) => [a.agentId, a]));
+            expect(byId.get(ops)!.spendingAuthority).toEqual([
+                { rail: 'AGENT_PAY_TOKEN', status: 'REVIEWED', reviewedAt: ago(1), unreviewed: false },
+            ]);
+            expect(byId.get(vendor)!.spendingAuthority).toEqual([
+                { rail: 'AP4M', status: 'DECLARED', reviewedAt: null, unreviewed: true },
+            ]);
+            expect(byId.get(sweeper)!.spendingAuthority).toEqual([]);
+            // The inventory never carries the token reference.
+            expect(JSON.stringify(report)).not.toContain('REF-1');
+        } finally {
+            await prisma.agentSpendingAuthority.deleteMany({ where: { tenantId: T1 } });
         }
     });
 

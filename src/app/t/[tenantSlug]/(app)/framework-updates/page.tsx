@@ -20,6 +20,14 @@ export default async function FrameworkUpdatesPage({
     // in bounded batches by the usecase.
     const rows = await listTenantFrameworkUpdateViews(ctx);
     const canWrite = ctx.permissions.canWrite;
+    const canCreateFindings = canWrite && ctx.appPermissions.findings.create;
 
-    return <FrameworkUpdatesClient tenantSlug={tenantSlug} initialDeltas={rows} canWrite={canWrite} />;
+    return (
+        <FrameworkUpdatesClient
+            tenantSlug={tenantSlug}
+            initialDeltas={rows}
+            canWrite={canWrite}
+            canCreateFindings={canCreateFindings}
+        />
+    );
 }

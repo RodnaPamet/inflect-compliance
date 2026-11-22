@@ -135,6 +135,9 @@ export const ControlDetailDTOSchema = ControlListItemDTOSchema.extend({
     testingMethodology: z.string().nullable().optional(),
     createdBy: UserRefSchema.nullable().optional(),
     applicabilityDecidedBy: UserRefSchema.nullable().optional(),
+    // Null while the control has never been assessed — the third state
+    // (`applicabilityState`, `@/lib/controls/control-applicability`).
+    applicabilityDecidedAt: z.string().nullable().optional(),
     contributors: z.array(ContributorDTOSchema).optional(),
     evidenceLinks: z.array(EvidenceLinkDTOSchema).optional(),
     evidence: z.array(z.object({ id: z.string() }).passthrough()).optional(),

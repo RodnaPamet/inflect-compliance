@@ -195,6 +195,29 @@ describe('the peers list', () => {
         expect(screen.getByTestId('peer-register-owners-unavailable').textContent).toBe(P.register.ownersUnavailable);
     });
 
+    // #5764: an AI admin holds the register key, so the page opens, but the
+    // invitation usecase also needs the coarse admin tier and refuses them.
+    it('offers Invite and Accept only where the server would take them', () => {
+        const { unmount } = renderList();
+        expect(screen.queryByTestId('peer-invite-open')).toBeNull();
+        expect(screen.queryByTestId('peer-accept-open')).toBeNull();
+        expect(screen.getByTestId('peer-register-open')).toBeTruthy();
+        unmount();
+
+        render(
+            <PeersClient
+                tenantSlug="acme"
+                initialRows={ROWS}
+                signingKey={keyView()}
+                canReviewProposals
+                canCompose
+                canInvitePeers
+            />,
+        );
+        expect(screen.getByTestId('peer-invite-open').textContent).toBe(P.invite.open);
+        expect(screen.getByTestId('peer-accept-open').textContent).toBe(P.accept.open);
+    });
+
     it('a row opens its peer', () => {
         renderList();
         fireEvent.click(screen.getByTestId('peer-row-peerdrifted1'));

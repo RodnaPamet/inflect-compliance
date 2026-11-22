@@ -70,9 +70,11 @@ describe('vendor-doc — propose-not-commit (the core safety contract)', () => {
     it('the extract path writes PROPOSALS with citations, NEVER a VendorAssessmentAnswer', () => {
         expect(USECASE).toMatch(/vendorAnswerProposal\.create/);
         expect(USECASE).toMatch(/sourceCitation/);
-        expect(USECASE).toMatch(/status:\s*'PENDING'/);
         // extractVendorDocument must NOT write an assessment answer directly.
         const extractFn = USECASE.match(/export async function extractVendorDocument[\s\S]*?\n\}\n/)![0];
+        // Bound to the extract path: approveProposal's PENDING claim (#5156)
+        // also names the status, and must not be what satisfies this.
+        expect(extractFn).toMatch(/status:\s*'PENDING'/);
         expect(extractFn).not.toMatch(/vendorAssessmentAnswer\.(create|upsert)/);
     });
 
@@ -96,7 +98,7 @@ describe('vendor-doc — exceptions → proposed finding (opt-in + idempotent)',
         expect(USECASE).toMatch(/VENDOR_DOC_EXCEPTION_KIND\s*=\s*'VENDOR_DOC_EXCEPTION'/);
         expect(USECASE).toMatch(/createFinding\(/);
         expect(USECASE).toMatch(/sourceRef/);
-        // idempotent: skips already-materialised exceptions.
-        expect(USECASE).toMatch(/seen\.has\(sourceRef\)/);
+        // idempotent: skips a control already raised for this document (#5157).
+        expect(USECASE).toMatch(/seenControls\.has\(exc\.control\)/);
     });
 });

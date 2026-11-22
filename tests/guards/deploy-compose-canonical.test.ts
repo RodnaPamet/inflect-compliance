@@ -36,6 +36,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 
+import { repoRelativeFiles } from '../helpers/repo-files';
+import { EMBED_CANDIDATES } from '../../scripts/retriever-benchmark/candidates';
+import { MAX_EMBED_BATCH } from '@/lib/ai/embeddings/types';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
 const CANONICAL = 'deploy/docker-compose.prod.yml';
@@ -196,7 +200,7 @@ describe('deploy/docker-compose.prod.yml — the deployable set is complete', ()
 });
 
 describe('deploy compose — pipelock stays in the opt-in overlay', () => {
-    it('the canonical file defines exactly the eight services production runs', () => {
+    it('the canonical file defines exactly the nine services production runs', () => {
         // An EXACT list rather than a superset check, which is why adding a
         // service has to come through here: the regression this guard exists for
         // is a service that cannot start being left in the file, and `pipelock`
@@ -215,6 +219,11 @@ describe('deploy compose — pipelock stays in the opt-in overlay', () => {
         //
         // NOTE FOR WHOEVER RESTORES IT: the 6.68 GB pull is why it was named
         // here in the first place, and that cost returns with it.
+        //
+        // `tei-embed` was added 2026-11-15 (Retriever Phase 1.1): the
+        // embedding seam's backend, held by its own block below. It left the
+        // file again in #5687 until its patched image had a digest (D-L4-11),
+        // and returned pinned to that digest (Retriever 1.1b).
         expect(serviceNames(read(CANONICAL)).sort()).toEqual([
             'app',
             'caddy',
@@ -222,6 +231,7 @@ describe('deploy compose — pipelock stays in the opt-in overlay', () => {
             'pgbouncer',
             'postgres',
             'redis',
+            'tei-embed',
             'watchtower',
             'worker',
         ]);
@@ -247,6 +257,65 @@ describe('deploy compose — pipelock stays in the opt-in overlay', () => {
 });
 
 /**
+ * The pipelock overlay reads its own environment file (#5308, owner decision
+ * 2026-11-14). It loaded `./.env.prod`, and `env_file:` hands the container
+ * every variable in the file: DATA_ENCRYPTION_KEY, the master key over every
+ * tenant's DEK, in a third-party image's environment. Nothing fails at `up`
+ * when that comes back, so it is held here, on the PARSED service.
+ */
+describe('deploy compose — the pipelock overlay never receives the master key', () => {
+    type Service = { env_file?: unknown; environment?: unknown; volumes?: unknown };
+    const pipelock = (): Service =>
+        (yaml.load(read(OVERLAY)) as { services: Record<string, Service> }).services.pipelock;
+
+    /** The master-key variables, from the env schema itself, not a literal list. */
+    const masterKeyVars = (): string[] => [
+        ...new Set(
+            Array.from(read('src/env.ts').matchAll(/^\s+(DATA_ENCRYPTION_KEY[A-Z_]*):/gm), (m) => m[1]),
+        ),
+    ];
+
+    it('the schema read finds both master-key variables (the scan is not vacuous)', () => {
+        expect(masterKeyVars().sort()).toEqual(['DATA_ENCRYPTION_KEY', 'DATA_ENCRYPTION_KEY_PREVIOUS']);
+    });
+
+    it('loads ./.env.pipelock and no other env file', () => {
+        expect(pipelock().env_file).toEqual(['./.env.pipelock']);
+    });
+
+    it('names .env.prod nowhere in the service', () => {
+        // Every value the service has: env_file, environment, volumes, the lot.
+        expect(JSON.stringify(pipelock())).not.toContain('.env.prod');
+    });
+
+    it('names no master-key variable, as a key or inside a value', () => {
+        const svc = JSON.stringify(pipelock());
+        expect(masterKeyVars().filter((v) => svc.includes(v))).toEqual([]);
+    });
+
+    it('interpolates nothing, so the base file\'s --env-file scope cannot reach it', () => {
+        // The usage line passes `--env-file .env.prod` for the BASE file; a
+        // `${DATA_ENCRYPTION_KEY}` here would resolve from it. Comment lines are
+        // prose and are dropped first.
+        expect(codeLines(read(OVERLAY)).filter((l) => l.includes('${'))).toEqual([]);
+    });
+
+    it('its template sets no master-key variable and no line of .env.prod', () => {
+        const assigned = codeLines(read('deploy/.env.pipelock.example'))
+            .map((l) => /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=/.exec(l)?.[1])
+            .filter((k): k is string => k !== undefined);
+        expect(assigned.filter((k) => masterKeyVars().includes(k))).toEqual([]);
+        const prodKeys = new Set(
+            codeLines(read('deploy/.env.prod.example'))
+                .map((l) => /^([A-Za-z_][A-Za-z0-9_]*)=/.exec(l)?.[1])
+                .filter((k): k is string => k !== undefined),
+        );
+        expect(prodKeys.size).toBeGreaterThan(0);
+        expect(assigned.filter((k) => prodKeys.has(k))).toEqual([]);
+    });
+});
+
+/**
  * The harness scanner's overlay (#3665): Inflect's own estate scanned from the
  * production VM. Parsed as YAML, so each assertion is on a value the service
  * actually has rather than on the file's text.
@@ -256,6 +325,11 @@ describe('deploy compose — pipelock stays in the opt-in overlay', () => {
  * master encryption key; a tag instead of a digest, or a Watchtower label, lets
  * the image change underneath the pin; a dropped hardening line goes unnoticed
  * because the scanner runs the same either way.
+ *
+ * Since scanent #26 the image is scanent's (`ghcr.io/rodnapamet/scanent`), and
+ * the paths below are its image's: the CLI's default command, the proxy at
+ * `/app/packages/scanner/dist/egress-proxy.js`, the configuration at
+ * `/etc/scanent`.
  */
 describe('deploy compose — the harness scanner stays in its own overlay, pinned and narrowed', () => {
     const SCANNER_OVERLAY = 'deploy/docker-compose.harness-scanner.yml';
@@ -274,6 +348,7 @@ describe('deploy compose — the harness scanner stays in its own overlay, pinne
         command?: string[];
         entrypoint?: string[];
         networks?: string[];
+        pids_limit?: number;
     };
     const doc = yaml.load(read(SCANNER_OVERLAY)) as { services: Record<string, Service>; networks?: Record<string, unknown> };
     const svc = doc.services['harness-scanner'];
@@ -284,19 +359,28 @@ describe('deploy compose — the harness scanner stays in its own overlay, pinne
         expect(Object.keys(doc.services).sort()).toEqual(['harness-egress', 'harness-scanner']);
     });
 
-    it('pins the published image by digest', () => {
-        expect(svc.image).toMatch(/^ghcr\.io\/rodnapamet\/agent-harness-scanner@sha256:[0-9a-f]{64}$/);
+    it('pins scanent\'s published image by digest', () => {
+        expect(svc.image).toMatch(/^ghcr\.io\/rodnapamet\/scanent@sha256:[0-9a-f]{64}$/);
+    });
+
+    it('no longer runs the in-repo scanner\'s image', () => {
+        // The previous digest is kept in a comment for the rollback; no service
+        // names it.
+        for (const s of Object.values(doc.services)) expect(s.image).not.toContain('agent-harness-scanner');
     });
 
     it('reads its own environment file, never .env.prod, and interpolates nothing', () => {
         expect(svc.env_file).toEqual(['./.env.scanner']);
-        // The only literals it sets are the ones that point it at its proxy:
-        // no secret, and nothing interpolated from the host's env files.
+        // The only literals it sets are the ones that point it at its proxy,
+        // and the statement that the proxy is scanent's own, which checks the
+        // address it dials: no secret, and nothing interpolated from the
+        // host's env files.
         expect(svc.environment).toEqual({
             HTTPS_PROXY: 'http://harness-egress:3128',
             HTTP_PROXY: 'http://harness-egress:3128',
             NO_PROXY: '',
             NODE_USE_ENV_PROXY: '1',
+            EGRESS_PROXY_CHECKS_ADDRESSES: '1',
         });
         expect(read(SCANNER_OVERLAY)).not.toContain('${');
     });
@@ -309,7 +393,8 @@ describe('deploy compose — the harness scanner stays in its own overlay, pinne
 
     it('runs the proxy from the same pinned image, as narrowly as the scanner, holding no credential', () => {
         expect(proxy.image).toBe(svc.image);
-        expect(proxy.entrypoint).toEqual(['node', '--import', 'tsx', '/app/packages/agent-harness-scanner/src/egress-proxy.ts']);
+        expect(proxy.entrypoint).toEqual(['node', '/app/packages/scanner/dist/egress-proxy.js']);
+        expect(proxy.command).toEqual([]);
         expect(proxy.read_only).toBe(true);
         expect(proxy.user).toBe('1000:1000');
         expect(proxy.cap_drop).toEqual(['ALL']);
@@ -329,8 +414,14 @@ describe('deploy compose — the harness scanner stays in its own overlay, pinne
         expect(svc.security_opt).toEqual(['no-new-privileges:true']);
     });
 
+    it('bounds the process count of both, as scanent\'s own template does', () => {
+        expect(svc.pids_limit).toBe(256);
+        expect(proxy.pids_limit).toBe(256);
+    });
+
     it('mounts only its configuration directory, read-only', () => {
-        expect(svc.volumes).toEqual(['./harness-scanner:/etc/agent-harness-scanner:ro']);
+        // No writable mount: with the `inflect` output alone the scanner writes nothing.
+        expect(svc.volumes).toEqual(['./harness-scanner:/etc/scanent:ro']);
     });
 
     it('serves nothing and is never auto-updated', () => {
@@ -340,7 +431,250 @@ describe('deploy compose — the harness scanner stays in its own overlay, pinne
     });
 
     it('runs the schedule against the mounted configuration', () => {
-        expect(svc.command).toEqual(['schedule', '--config', '/etc/agent-harness-scanner/config.json']);
+        expect(svc.command).toEqual(['schedule', '--config', '/etc/scanent/config.json']);
+    });
+});
+
+/**
+ * The capacity budget (C1, 2026-11-12): every container on the production VM
+ * has a memory limit and a CPU cap, and the memory limits together leave the
+ * host 1.5 GB of its own.
+ *
+ * Before C1 no service declared either, so one container could take the whole
+ * VM and the kernel chose what to kill when memory ran out. Each assertion is
+ * one a "make it start" edit would plausibly undo — deleting a `mem_limit`
+ * because a container was OOM-killed, or raising one past the budget — and
+ * none of them fails at `up`. Parsed as YAML, so every assertion is on a value
+ * the service has rather than on the file's text.
+ *
+ * The population is the canonical file plus each overlay that runs on the VM.
+ * The pipelock overlay is not in it: it is not enabled, and its limits are owed
+ * when it is. The OrangeHRM lab overlay was retired in the same change.
+ */
+describe('deploy compose — every container has a memory limit and a CPU cap, within the budget', () => {
+    const BUDGETED_FILES = [
+        CANONICAL,
+        'deploy/docker-compose.harness-scanner.yml',
+        'deploy/docker-compose.legacy-mcp-proving.yml',
+    ] as const;
+
+    /** 16 GB host minus 1.5 GB for the kernel, Docker and the page cache. */
+    const MEMORY_BUDGET_MIB = 14848;
+    /** The VM's vCPU count: a cap above it is no cap at all. */
+    const HOST_CPUS = 2;
+    /** Batch-shaped: capped at one core so the request path keeps the other. */
+    const BATCH_SERVICES = ['clamav', 'worker', 'harness-scanner', 'tei-embed'] as const;
+
+    type LimitedService = { mem_limit?: unknown; cpus?: unknown };
+    const servicesOf = (rel: string): Record<string, LimitedService> =>
+        (yaml.load(read(rel)) as { services: Record<string, LimitedService> }).services;
+
+    /**
+     * A Compose byte value in MiB: a bare number of bytes, or a number with a
+     * b/k/m/g suffix. Anything else is NaN, so an unparseable limit fails the
+     * assertion that reads it rather than counting as zero against the budget.
+     */
+    function mib(value: unknown): number {
+        if (typeof value === 'number') return value / (1024 * 1024);
+        if (typeof value !== 'string') return NaN;
+        const m = /^(\d+(?:\.\d+)?)\s*([bkmg])?b?$/i.exec(value.trim());
+        if (!m) return NaN;
+        const factor: Record<string, number> = { b: 1 / (1024 * 1024), k: 1 / 1024, m: 1, g: 1024 };
+        return Number(m[1]) * factor[(m[2] ?? 'b').toLowerCase()];
+    }
+
+    const all = BUDGETED_FILES.flatMap((rel) =>
+        Object.entries(servicesOf(rel)).map(([name, svc]) => ({ rel, name, svc })),
+    );
+
+    it('reads every budgeted file and finds its services (the scan is not vacuous)', () => {
+        for (const rel of BUDGETED_FILES) {
+            expect(Object.keys(servicesOf(rel)).length).toBeGreaterThan(0);
+        }
+        // Nine canonical services, the scanner and its proxy, the proving server.
+        expect(all.length).toBe(12);
+    });
+
+    it('the byte parser reads the units Compose accepts', () => {
+        expect(mib('1536m')).toBe(1536);
+        expect(mib('2g')).toBe(2048);
+        expect(mib('512M')).toBe(512);
+        expect(mib(1073741824)).toBe(1024);
+        expect(mib('lots')).toBeNaN();
+        expect(mib(undefined)).toBeNaN();
+    });
+
+    it('every service declares a positive, parseable mem_limit', () => {
+        const missing = all
+            .filter(({ svc }) => !(mib(svc.mem_limit) > 0))
+            .map(({ rel, name }) => `${rel}: ${name}`);
+        expect(missing).toEqual([]);
+    });
+
+    it('every service declares a CPU cap above zero and no larger than the host', () => {
+        const bad = all
+            .filter(({ svc }) => {
+                const cpus = Number(svc.cpus);
+                return svc.cpus === undefined || !(cpus > 0 && cpus <= HOST_CPUS);
+            })
+            .map(({ rel, name }) => `${rel}: ${name}`);
+        expect(bad).toEqual([]);
+    });
+
+    it(`the memory limits together stay within ${MEMORY_BUDGET_MIB} MiB`, () => {
+        const total = all.reduce((sum, { svc }) => sum + mib(svc.mem_limit), 0);
+        expect(total).toBeLessThanOrEqual(MEMORY_BUDGET_MIB);
+    });
+
+    it.each(BATCH_SERVICES)('%s is batch-shaped and capped at one core', (name) => {
+        const found = all.filter((s) => s.name === name);
+        expect(found).toHaveLength(1);
+        expect(Number(found[0].svc.cpus)).toBeLessThanOrEqual(1);
+    });
+
+    /**
+     * `mem_limit` moves Node's DEFAULT heap ceiling: with no flag, V8 sizes old
+     * space from the cgroup limit (measured: 2096 MiB unlimited, 792 MiB under
+     * 1536m). A heap overrun then aborts at about half the limit, exit 134,
+     * and no OOM-kill counter sees it. So the app image's two services state
+     * the ceiling, below the limit, leaving room for native memory.
+     */
+    it.each(['app', 'worker'])('%s states a V8 heap ceiling below its mem_limit', (name) => {
+        const svc = servicesOf(CANONICAL)[name] as LimitedService & {
+            environment?: Record<string, unknown>;
+        };
+        const nodeOptions = String(svc.environment?.NODE_OPTIONS ?? '');
+        const m = /(?:^|\s)--max-old-space-size=(\d+)(?:\s|$)/.exec(nodeOptions);
+        expect(m).not.toBeNull();
+        const heapMib = Number(m![1]);
+        const limitMib = mib(svc.mem_limit);
+        // Above the default the cgroup would otherwise impose (about half the
+        // limit), and at most three quarters of it: the rest is buffers, code
+        // and native allocations, which the old-space flag does not bound.
+        expect(heapMib).toBeGreaterThan(limitMib / 2);
+        expect(heapMib).toBeLessThanOrEqual(limitMib * 0.75);
+    });
+
+    it('the OrangeHRM lab is retired: no overlay, and no service of it in any deploy compose file', () => {
+        const composeFiles = repoRelativeFiles().filter((f) => /^deploy\/docker-compose.*\.ya?ml$/.test(f));
+        expect(composeFiles).toContain(CANONICAL);
+        expect(composeFiles).not.toContain('deploy/docker-compose.orangehrm-lab.yml');
+        const labServices = composeFiles.flatMap((f) =>
+            Object.keys(servicesOf(f)).filter((n) => n.startsWith('orangehrm')),
+        );
+        expect(labServices).toEqual([]);
+    });
+});
+
+/**
+ * `tei-embed` (Retriever Phase 1.1, 2026-11-15): the embedding seam's backend.
+ *
+ * Each assertion is one a "make it start" edit would plausibly undo and none
+ * fails at `up`: dropping the revision because a Hub fetch failed (the model's
+ * `main` then decides what answers), handing it `.env.prod` like its
+ * neighbours (every secret of the stack in a third party's process), publishing
+ * a port to debug it, or making `app` wait for it (an embedder outage would
+ * then hold the request path). Parsed as YAML, so each is on a value.
+ */
+describe('deploy compose — tei-embed is pinned, private and holds nothing of ours', () => {
+    type TeiService = {
+        image?: string;
+        command?: unknown;
+        ports?: unknown;
+        env_file?: unknown;
+        environment?: unknown;
+        labels?: unknown;
+        volumes?: unknown;
+        healthcheck?: { test?: unknown };
+        depends_on?: unknown;
+    };
+    const doc = yaml.load(read(CANONICAL)) as {
+        services: Record<string, TeiService>;
+        volumes?: Record<string, unknown>;
+    };
+    const svc = doc.services['tei-embed'];
+    const command = (svc?.command ?? []) as unknown[];
+    const arg = (flag: string): string | undefined => {
+        const i = command.indexOf(flag);
+        return i === -1 ? undefined : String(command[i + 1]);
+    };
+
+    it('exists, with its command as a list (the scan is not vacuous)', () => {
+        expect(svc).toBeDefined();
+        expect(Array.isArray(svc.command)).toBe(true);
+    });
+
+    it('runs OUR patched image by digest, never the upstream TEI image (D-L4-11)', () => {
+        // deploy/tei-embed/Dockerfile is the benchmark's upstream digest plus
+        // `apt-get upgrade`; tests/guards/tei-embed-image.test.ts holds that
+        // FROM to the benchmark's pin and refuses the upstream repository in
+        // every deploy Compose file. Here: the repository is exactly ours,
+        // with no tag beside the digest (a tag would read as the pin and move).
+        const parts = String(svc.image).split('@');
+        expect(parts).toHaveLength(2);
+        expect(parts[0]).toBe('ghcr.io/rodnapamet/tei-embed');
+        expect(parts[1]).toMatch(/^sha256:[0-9a-f]{64}$/);
+    });
+
+    it('serves D-L4-3\'s embedder at the commit the benchmark pins', () => {
+        const chosen = EMBED_CANDIDATES.find((c) => c.id === 'multilingual-e5-small');
+        expect(chosen?.revision).toMatch(/^[0-9a-f]{40}$/);
+        expect(arg('--model-id')).toBe(chosen?.model);
+        expect(arg('--revision')).toBe(chosen?.revision);
+    });
+
+    it('listens on 8080 and admits the seam\'s largest batch', () => {
+        expect(arg('--port')).toBe('8080');
+        expect(Number(arg('--max-client-batch-size'))).toBeGreaterThanOrEqual(MAX_EMBED_BATCH);
+    });
+
+    it('publishes no port, and no Caddy site names it', () => {
+        expect(svc.ports).toBeUndefined();
+        const caddyMentions = read('deploy/caddy/Caddyfile').split('tei-embed').length - 1;
+        expect(caddyMentions).toBe(0);
+    });
+
+    it('receives no environment file, no environment and interpolates nothing', () => {
+        expect(svc.env_file).toBeUndefined();
+        expect(svc.environment).toBeUndefined();
+        const block = serviceBlock(read(CANONICAL), 'tei-embed');
+        expect(block.length).toBeGreaterThan(10);
+        expect(codeLines(block.join('\n')).filter((l) => l.includes('${'))).toEqual([]);
+    });
+
+    it('is not auto-updated: Watchtower watches only app and worker', () => {
+        expect(JSON.stringify(svc.labels ?? {})).not.toContain('watchtower');
+    });
+
+    it('keeps its weights in a named volume, so a recreate does not refetch them', () => {
+        expect(svc.volumes).toEqual(['tei-embed-data:/data']);
+        expect(Object.keys(doc.volumes ?? {})).toContain('tei-embed-data');
+    });
+
+    it('runs read-only, with every capability dropped and no privilege gain', () => {
+        const hardened = svc as TeiService & {
+            read_only?: unknown;
+            cap_drop?: unknown;
+            security_opt?: unknown;
+            pids_limit?: unknown;
+        };
+        expect(hardened.read_only).toBe(true);
+        expect(hardened.cap_drop).toEqual(['ALL']);
+        expect(hardened.security_opt).toEqual(['no-new-privileges:true']);
+        expect(Number(hardened.pids_limit)).toBeGreaterThan(0);
+    });
+
+    it('carries a healthcheck on its own /health', () => {
+        expect(svc.healthcheck?.test).toEqual(
+            expect.arrayContaining(['http://127.0.0.1:8080/health']),
+        );
+    });
+
+    it('no service waits for it: an embedder outage never holds another container', () => {
+        const waiting = Object.entries(doc.services)
+            .filter(([, s]) => JSON.stringify(s.depends_on ?? {}).includes('tei-embed'))
+            .map(([name]) => name);
+        expect(waiting).toEqual([]);
     });
 });
 
@@ -449,6 +783,18 @@ describe('the scripts it runs print no credential', () => {
 
     it.each(scripts)('%s never prints an environment file', (rel) => {
         expect(code(rel).filter((l) => /\b(cat|less|more|head|tail)\b[^|]*\.env(\.prod|\.scanner)?\b/.test(l))).toEqual([]);
+    });
+
+    it('configure has the pinned image read the staged configuration, and compares its hosts to EGRESS_ALLOW, before installing anything', () => {
+        const lines = code('deploy/harness-scanner/remote.sh');
+        const hosts = lines.findIndex((l) => l.includes('hosts --config /etc/scanent/config.json --format egress-allow'));
+        const compare = lines.findIndex((l) => l.includes("sed -n 's/^ *EGRESS_ALLOW: *//p'"));
+        const firstInstall = lines.findIndex((l) => l.includes('install -m 0644 -o root -g root'));
+        expect(hosts).toBeGreaterThan(-1);
+        expect(compare).toBeGreaterThan(hosts);
+        expect(firstInstall).toBeGreaterThan(compare);
+        // The configuration check runs with no network.
+        expect(lines.slice(hosts - 2, hosts + 1).join('\n')).toContain('--network none');
     });
 
     it('the dry run sends the report to the summariser, never to the log', () => {

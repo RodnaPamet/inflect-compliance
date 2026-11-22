@@ -3,8 +3,8 @@
  * roadmap): what the attribution skill's suggestion may contribute to a
  * registration, and the refusals the intake names.
  *
- * `usecases/agent-registration-intake.ts` turns a SHADOW_AGENT harness finding
- * into a DRAFT register row through a provisional AI-system entry. The owner of
+ * `usecases/agent-registration-intake.ts` turns a SHADOW_AGENT (or
+ * UNREGISTERED_IDENTITY) harness finding into a DRAFT register row through a provisional AI-system entry. The owner of
  * that row is a PERSON'S choice: the request names `ownerUserId` and confirms
  * it. The `nhi-ownership-attribution` skill may have suggested somebody, and
  * its answer may ride along — parsed through 1d's contract
@@ -41,7 +41,11 @@ import type { OwnerSignalKind, OwnershipAttribution } from './iam-skill-outputs'
 export const REGISTRATION_INTAKE_REFUSALS = [
     /** No live finding with that id in this tenant. */
     'FINDING_NOT_FOUND',
-    /** The finding exists and is not a harness SHADOW_AGENT finding. */
+    /**
+     * The finding exists and is not one the intake registers from: a harness
+     * SHADOW_AGENT or UNREGISTERED_IDENTITY finding (`registrableFindingOf`).
+     * The code's name predates the second kind and is kept: it is the API's.
+     */
     'NOT_A_SHADOW_AGENT_FINDING',
     /** The discovered agent the finding names is not in this tenant. */
     'DISCOVERED_AGENT_NOT_FOUND',

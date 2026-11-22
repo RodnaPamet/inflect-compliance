@@ -33,7 +33,7 @@ Six cards.
 | {{ui:admin.privacy.encryption.perTenantDek}} | **{{ui:admin.privacy.encryption.active}}** when the workspace's content is encrypted under a key of its own; **{{ui:admin.privacy.encryption.globalKeyOnly}}** when only the platform's shared key protects it |
 | {{ui:admin.privacy.encryption.rotation}} | **{{ui:admin.privacy.encryption.rotationInFlight}}** while the workspace's key is being replaced; **{{ui:admin.privacy.encryption.rotationIdle}}** otherwise. No button here starts a rotation; it is done on request |
 
-**{{ui:admin.privacy.residency.title}}.** The {{ui:admin.privacy.residency.region}}, by name, such as {{ui:admin.privacy.residency.regionName.EU_WEST_1}}, and whether infrastructure exists in that region (**{{ui:admin.privacy.residency.provisioned}}** or **{{ui:admin.privacy.residency.notProvisioned}}**). The region is a commitment recorded when the workspace was created, not a reading of where its data sits; the card's notice says so. Moving a workspace to another region is a migration, done on request.
+**{{ui:admin.privacy.residency.title}}.** The {{ui:admin.privacy.residency.region}}, by name, such as {{ui:admin.privacy.residency.regionName.EUROPE_WEST1}}, and whether infrastructure exists in that region (**{{ui:admin.privacy.residency.provisioned}}** or **{{ui:admin.privacy.residency.notProvisioned}}**). The region is a commitment recorded when the workspace was created, not a reading of where its data sits; the card's notice says so. Moving a workspace to another region is a migration, done on request.
 
 **{{ui:admin.privacy.retention.title}}.**
 

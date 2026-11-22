@@ -39,6 +39,13 @@
  *
  * A narrowing only ever DELETES a grant. There is no rule here, or anywhere in
  * the campaign, that proposes adding one or raising a card.
+ *
+ * ── The spending withdrawal (Agent Pay 1.4) ──────────────────────────────
+ *
+ * Beside the grants, a pack may propose WITHDRAWING a declared spending
+ * envelope, on the grounds its own spending section states
+ * (`spendingWithdrawalsFor`); never a lower limit, which no stored fact
+ * could derive. Like a narrowing it only takes authority away.
  */
 import { z } from 'zod';
 
@@ -47,8 +54,103 @@ import { canonicalJson } from '@/lib/canonical-json';
 /** How far back observed use is read: the 90 days before the campaign froze. */
 export const USE_WINDOW_DAYS = 90;
 
-/** Agents per pack-preparation run. One run's context must fit `MAX_CONTEXT_BYTES`. */
-export const PACK_PAGE_SIZE = 20;
+/**
+ * Agents per pack-preparation run. One run's sealed context holds its page of
+ * evidence and the plan built from it, and may not weigh more than
+ * `MAX_CONTEXT_BYTES` (262,144 bytes): over it the run fails, and with it the
+ * campaign's whole preparation.
+ *
+ * The worst agent, every section at its cap (the caps are in
+ * `agent-recertification-evidence.ts`) and every row at its largest, seals at
+ * 115,868 bytes (#5317 and #5333, measured by
+ * `tests/unit/agent-recertification-pack-budget.test.ts`, which states what
+ * "largest" assumes of a character's bytes):
+ *
+ *   grants             100 × ~297 B   ≈  30.3 KB   (GRANTS_PER_AGENT, each name cut at TOOL_NAME_IN_PACK;
+ *                                                  counts only on the five propose-tool grants, ~401 B)
+ *   their narrowings   100 × ~246 B   ≈  24.7 KB   (in the plan, beside the evidence)
+ *   time-bounded       100 × ~387 B   ≈  38.8 KB   (TIME_BOUNDED_PER_AGENT, each connection name cut at
+ *                                                  CONNECTION_NAME_IN_PACK, two bytes a character)
+ *   card versions       50 × ~243 B   ≈  12.2 KB
+ *   kill engagements    25 × ~184 B   ≈   4.6 KB   (KILLS_PER_AGENT)
+ *   spending authority   3 × ~850 B   ≈   2.6 KB   (one per rail, #5333; merchants counted)
+ *   their withdrawals    3 × ~200 B   ≈   0.6 KB   (in the plan, every ground at once; Agent Pay 1.4)
+ *   everything else                   ≈   2.4 KB
+ *
+ * Two such agents seal at 231,176 bytes: inside the budget the test holds a
+ * page to, `MAX_CONTEXT_BYTES` less 10% headroom (235,929), by 4,753. Three
+ * are over the cap itself. So a page is TWO agents. It was one while an agent
+ * could carry 200 grants with 200-character names (~178 KB of grants and
+ * narrowings on its own), and twenty before #5317, which fit only while no
+ * agent came near a cap.
+ *
+ * An agent with no grant at all seals at 57,949 bytes, 38.8 KB of it the
+ * time-bounded section, so no grant cap could make a page larger than four.
+ */
+export const PACK_PAGE_SIZE = 2;
+
+/**
+ * How much of a granted tool's name a pack carries (#5317, owner decision of
+ * 2026-11-15). A grant may be named up to 200 characters
+ * (`AgentToolGrantSchema`), and the name is carried twice, in the grant and in
+ * its narrowing, so it was most of a pack's weight. A built-in tool's name is
+ * under 30 characters and an external tool's is `mcp__<connectionId>__<name>`,
+ * 32 characters before the server's own name, so 64 carries every built-in
+ * name and an external name's first 32 characters of its own whole.
+ *
+ * A longer name is cut and the grant says so (`toolNameTruncated`). The full
+ * name stays in the store: the pack identifies a grant by `grantId`, and a
+ * narrowing is written with the stored name (`fullToolNameFor`), so what a
+ * reviewer accepts, and what the revocation records, names the tool whole.
+ */
+export const TOOL_NAME_IN_PACK = 64;
+
+/**
+ * How much of a time-bounded grant's connection name a pack carries (#5317,
+ * owner decision of 2026-11-15). The name is an administrator's label on the
+ * integration with no length bound, and it was the largest field of the
+ * largest section left once the grant names were cut. A longer name is cut
+ * and the row says so (`connectionNameTruncated`); the journal keeps it whole,
+ * and the row is identified by `journalId`.
+ */
+export const CONNECTION_NAME_IN_PACK = 64;
+
+/**
+ * `value` cut to its first `max` CHARACTERS — code points, so a cut never
+ * splits a surrogate pair. Half a pair is a lone surrogate, which Postgres
+ * refuses in a `jsonb` column: the pack's insert would fail.
+ */
+function cutForPack(value: string, max: number): { value: string; truncated: boolean } {
+    // Every code point is at least one UTF-16 unit, so a string no longer than
+    // `max` units has no more than `max` code points.
+    if (value.length <= max) return { value, truncated: false };
+    const points = Array.from(value);
+    return points.length > max
+        ? { value: points.slice(0, max).join(''), truncated: true }
+        : { value, truncated: false };
+}
+
+/** The name a pack carries for a granted tool, and whether it was cut. */
+export function packToolName(full: string): { toolName: string; truncated: boolean } {
+    const cut = cutForPack(full, TOOL_NAME_IN_PACK);
+    return { toolName: cut.value, truncated: cut.truncated };
+}
+
+/** The connection name a pack carries for a time-bounded grant, and whether it was cut. */
+export function packConnectionName(full: string): { connectionName: string; truncated: boolean } {
+    const cut = cutForPack(full, CONNECTION_NAME_IN_PACK);
+    return { connectionName: cut.value, truncated: cut.truncated };
+}
+
+/**
+ * The name to record for a narrowing whose pack carried `packName`: the
+ * stored name when the pack's is that name cut at `TOOL_NAME_IN_PACK` (or is
+ * it whole), else the pack's own. A stored name that does not reproduce the
+ * pack's is not the grant the evidence described, and is not borrowed.
+ */
+export function fullToolNameFor(packName: string, stored: string | undefined): string {
+    return stored !== undefined && packToolName(stored).toolName === packName ? stored : packName;
+}
 
 /** The most agents one campaign freezes; read one past to know it was cut off. */
 export const MAX_AGENT_SUBJECTS = 500;
@@ -79,6 +181,7 @@ export const PROPOSAL_KIND_BY_PROPOSE_TOOL: Readonly<Record<string, string>> = {
     propose_controls: 'CONTROL',
     draft_policy: 'POLICY',
     propose_finding: 'FINDING',
+    propose_process_map: 'PROCESS_MAP',
 };
 
 /** The observation window ending at `end` (the campaign's creation). */
@@ -103,12 +206,31 @@ export const GrantEvidenceSchema = z.object({
     heldForWholeWindow: z.boolean(),
     /** Proposals of the kind this tool queues, by outcome; null for a non-propose tool. */
     proposals: StatusCounts.nullable(),
+    /**
+     * True when `toolName` is the stored name cut at `TOOL_NAME_IN_PACK`
+     * (#5317); the grant is identified by `grantId`. Written only when true.
+     *
+     * OPTIONAL, and with no default, for the reason `timeBoundedTruncated`
+     * gives: a pack filed before it must re-parse to the sections it was hashed
+     * over. Absent means the name is whole, which every earlier pack's was.
+     */
+    toolNameTruncated: z.boolean().optional(),
 });
 
 export const TimeBoundedGrantSchema = z.object({
     journalId: z.string().min(1),
     toolName: z.string(),
     connectionName: z.string(),
+    /**
+     * True when `connectionName` is the journal's name cut at
+     * `CONNECTION_NAME_IN_PACK` (#5317); the grant is identified by
+     * `journalId`. Written only when true.
+     *
+     * OPTIONAL, and with no default, as `toolNameTruncated`: a pack filed
+     * before it must re-parse to the sections it was hashed over. Absent means
+     * the name is whole, which every earlier pack's was.
+     */
+    connectionNameTruncated: z.boolean().optional(),
     grantedAt: Iso,
     endsAt: NullableIso,
     /** EXPIRED_VERIFIED | OUTLIVED_WINDOW | RUNNING | AWAITING_VERIFICATION | END_UNREADABLE */
@@ -117,11 +239,61 @@ export const TimeBoundedGrantSchema = z.object({
     expiredOnTime: z.boolean().nullable(),
 });
 
+/**
+ * One rail of the agent's declared spending authority, as the pack carries it
+ * (Agent Pay Phase 1.4, #5333). Read as it stands when the pack is prepared,
+ * as the breaker is: an envelope is a standing privilege, not an event in the
+ * window.
+ *
+ * What a reviewer needs to judge the privilege, and no more. The merchant
+ * scope is COUNTED, not listed, and the token reference is left out: it is an
+ * identifier at a third party, and this section reaches the model that
+ * prepares the pack. Amounts are minor-unit decimal strings, as the register
+ * reports them, because JSON has no bigint.
+ */
+export const SpendingAuthorityEvidenceSchema = z.object({
+    rail: z.string().min(1),
+    /** DECLARED | REVIEWED | SUSPENDED_REQUESTED | WITHDRAWN */
+    status: z.string().min(1),
+    /** Held back from activation: DECLARED, or SUSPENDED_REQUESTED with no review. */
+    unreviewed: z.boolean(),
+    perTransactionLimitMinor: z.string(),
+    periodBudgetMinor: z.string(),
+    budgetPeriod: z.string(),
+    currency: z.string(),
+    merchantDomainCount: z.number().int().min(0),
+    merchantCategoryCodeCount: z.number().int().min(0),
+    /** Both lists empty: any merchant, the widest scope there is. */
+    merchantScopeUnrestricted: z.boolean(),
+    expiresAt: Iso,
+    /** True when the envelope had lapsed by the end of the campaign's window. */
+    expiredAtWindowEnd: z.boolean(),
+    /**
+     * True when it had NOT lapsed by the window's end but lapses before the
+     * campaign does: by its due date, or by the read when the campaign has none
+     * or is overdue (owner decision, 2026-11-20). OPTIONAL with no default, so
+     * evidence recorded before this field re-derives to the same plan.
+     */
+    expiresDuringCampaign: z.boolean().optional(),
+    tokenRequestor: z.string(),
+    consentedByUserId: z.string(),
+    declaredByUserId: z.string(),
+    declaredAt: Iso,
+    reviewedByUserId: z.string().nullable(),
+    reviewedAt: NullableIso,
+    suspensionRequestedAt: NullableIso,
+    withdrawnAt: NullableIso,
+});
+
 export const SubjectEvidenceSchema = z.object({
     decisionId: z.string().min(1),
     agentId: z.string().min(1),
     grants: z.array(GrantEvidenceSchema),
-    /** True when the grant read hit its cap: no narrowing is proposed from a partial list. */
+    /**
+     * True when this agent's grant read found more grants than its cap (per
+     * agent since #5317; before it, when the page's shared read filled): no
+     * narrowing is proposed from a partial list.
+     */
     grantsTruncated: z.boolean(),
     /** Proposals this agent made in the window whose kind maps to no granted tool. */
     otherProposals: z.record(z.string(), StatusCounts),
@@ -139,6 +311,20 @@ export const SubjectEvidenceSchema = z.object({
         })),
     }),
     timeBoundedGrants: z.array(TimeBoundedGrantSchema),
+    /**
+     * True when this agent's time-bounded-grant read hit its cap (#5317): the
+     * list holds its outlived and undetermined grants, then the newest that
+     * ended on time, and not all of them.
+     *
+     * OPTIONAL, and with no default, on purpose. A pack filed before #5317 —
+     * and a pack-preparation run whose READ was recorded before it — carries
+     * no such key, and its stored `contentHash` is `sha256Of` its sections as
+     * they were. A default would add the key when that evidence is re-parsed,
+     * so the sections the usecase stores and hashes would no longer be the
+     * sections the read recorded. Absent means "not stated": that read
+     * shared one 500-row cap across its page and could not tell.
+     */
+    timeBoundedTruncated: z.boolean().optional(),
     guardFlags: StatusCounts,
     breaker: z.object({
         state: z.string(),
@@ -153,6 +339,17 @@ export const SubjectEvidenceSchema = z.object({
         engagedByUserId: z.string(),
         liftedByUserId: z.string().nullable(),
     })),
+    /**
+     * True when this agent's kill-engagement read hit its cap (#5317): the
+     * list holds the kill in force, if any, then the most recently lifted, and
+     * not all of them.
+     *
+     * OPTIONAL with no default, for the reason `timeBoundedTruncated` gives: a
+     * pack filed before this field, or a run whose READ was recorded before it,
+     * must re-parse to the sections it was hashed over. Absent means "not
+     * stated": that read shared one 500-row cap across its page.
+     */
+    killsTruncated: z.boolean().optional(),
     harness: z.object({
         level: z.string().nullable(),
         previousLevel: z.string().nullable(),
@@ -160,6 +357,16 @@ export const SubjectEvidenceSchema = z.object({
         drift: z.string(),
         lastSeenAt: NullableIso,
     }),
+    /**
+     * The agent's spending authority, one entry per rail it has ever declared,
+     * withdrawn ones included (Agent Pay Phase 1.4, #5333). `[]` is "the
+     * register records none".
+     *
+     * OPTIONAL, and with no default, for the reason `timeBoundedTruncated`
+     * gives: a pack filed before it must re-parse to the sections it was hashed
+     * over. Absent means the pack predates the section, never "none".
+     */
+    spendingAuthority: z.array(SpendingAuthorityEvidenceSchema).optional(),
 });
 
 export const RecertificationEvidenceSchema = z.object({
@@ -172,6 +379,7 @@ export const RecertificationEvidenceSchema = z.object({
 });
 
 export type GrantEvidence = z.infer<typeof GrantEvidenceSchema>;
+export type SpendingAuthorityEvidence = z.infer<typeof SpendingAuthorityEvidenceSchema>;
 export type SubjectEvidence = z.infer<typeof SubjectEvidenceSchema>;
 export type RecertificationEvidence = z.infer<typeof RecertificationEvidenceSchema>;
 
@@ -216,6 +424,80 @@ export function narrowingsFor(subject: SubjectEvidence): NarrowingCandidate[] {
         .sort((a, b) => a.grantId.localeCompare(b.grantId));
 }
 
+// ── Spending-authority withdrawal (Agent Pay 1.4, owner decisions 2026-11-20) ──
+//
+// A pack may propose WITHDRAWING a declared spending envelope — never reducing
+// a limit (decision 2). Each PLANNED ground is a fact the pack's own spending
+// section states, so the proposal is re-derived from the stored evidence like a
+// grant narrowing is, and records every ground that holds (decision 1):
+//
+//   EXPIRED_BY_WINDOW_END   the envelope had lapsed by the end of the campaign's
+//                           window (`expiredAtWindowEnd`)
+//   SUSPENDED_AFTER_KILL    it is still SUSPENDED_REQUESTED — the state only an
+//                           AGENT-scope kill or an orphan containment writes —
+//                           so nobody has resolved the suspension since
+//   NEVER_REVIEWED          the declaration now on the row was never reviewed by
+//                           a second person (`reviewedAt` is null)
+//   EXPIRES_DURING_CAMPAIGN it lapses after the window but before the campaign
+//                           ends (`expiresDuringCampaign`)
+//
+// The fourth ground the owner named — "the agent can no longer pay" — is NEVER
+// derived from a scan: the scanner's code source reports no capability where it
+// cannot see (a helper module, a value it cannot resolve), so an absent
+// capability is absence, not evidence (Agent Pay 2.3 refused to close a finding
+// on the same signal). A PERSON states it instead (owner decision, 2026-11-20):
+// the campaign's reviewer confirms the agent has no payment ability, which
+// opens a PENDING withdrawal with the ground NO_PAYMENT_ABILITY_CONFIRMED and
+// their user id, decided like any other (`confirmAgentHasNoPaymentAbility`).
+
+/** The grounds a pack's plan derives from its evidence. Append; never repurpose a member. */
+export const PLANNED_SPENDING_WITHDRAWAL_GROUNDS = [
+    'EXPIRED_BY_WINDOW_END',
+    'SUSPENDED_AFTER_KILL',
+    'NEVER_REVIEWED',
+    'EXPIRES_DURING_CAMPAIGN',
+] as const;
+
+/** The ground a person states. Never in a plan: `PackPlanSchema` refuses it. */
+export const PERSON_CONFIRMED_WITHDRAWAL_GROUND = 'NO_PAYMENT_ABILITY_CONFIRMED' as const;
+
+/** Every ground a stored withdrawal may carry (the CHECK's vocabulary). */
+export const SPENDING_WITHDRAWAL_GROUNDS = [
+    ...PLANNED_SPENDING_WITHDRAWAL_GROUNDS,
+    PERSON_CONFIRMED_WITHDRAWAL_GROUND,
+] as const;
+export type SpendingWithdrawalGround = (typeof SPENDING_WITHDRAWAL_GROUNDS)[number];
+export type PlannedSpendingWithdrawalGround = (typeof PLANNED_SPENDING_WITHDRAWAL_GROUNDS)[number];
+
+export interface SpendingWithdrawalCandidate {
+    readonly rail: string;
+    /** The declaration's identity: an envelope re-declared since is a different one. */
+    readonly declaredAt: string;
+    readonly grounds: PlannedSpendingWithdrawalGround[];
+}
+
+/**
+ * The envelopes this subject's evidence supports withdrawing, in rail order.
+ * `undefined` when the evidence predates the spending section — so a plan
+ * recorded before it re-derives to the same bytes — and `[]` when the section
+ * is present and proposes nothing. A WITHDRAWN envelope proposes nothing.
+ */
+export function spendingWithdrawalsFor(subject: SubjectEvidence): SpendingWithdrawalCandidate[] | undefined {
+    if (subject.spendingAuthority === undefined) return undefined;
+    return subject.spendingAuthority
+        .filter((e) => e.status !== 'WITHDRAWN')
+        .map((e): SpendingWithdrawalCandidate => {
+            const grounds: PlannedSpendingWithdrawalGround[] = [];
+            if (e.expiredAtWindowEnd) grounds.push('EXPIRED_BY_WINDOW_END');
+            if (e.status === 'SUSPENDED_REQUESTED') grounds.push('SUSPENDED_AFTER_KILL');
+            if (e.reviewedAt === null) grounds.push('NEVER_REVIEWED');
+            if (!e.expiredAtWindowEnd && e.expiresDuringCampaign === true) grounds.push('EXPIRES_DURING_CAMPAIGN');
+            return { rail: e.rail, declaredAt: e.declaredAt, grounds };
+        })
+        .filter((c) => c.grounds.length > 0)
+        .sort((a, b) => a.rail.localeCompare(b.rail));
+}
+
 export const PackPlanSchema = z.object({
     accessReviewId: z.string().min(1),
     page: z.number().int().min(0),
@@ -229,6 +511,16 @@ export const PackPlanSchema = z.object({
             grantedAt: Iso,
             basis: z.literal(NARROWING_BASIS),
         })),
+        /**
+         * OPTIONAL with no default, for the reason `timeBoundedTruncated` gives:
+         * a plan derived from evidence without a spending section carries no
+         * such key, and must re-derive to the same bytes.
+         */
+        spendingWithdrawals: z.array(z.object({
+            rail: z.string().min(1),
+            declaredAt: Iso,
+            grounds: z.array(z.enum(PLANNED_SPENDING_WITHDRAWAL_GROUNDS)).min(1),
+        })).optional(),
     })),
 });
 
@@ -248,11 +540,15 @@ export function planAgentReviewPacks(evidence: unknown): PackPlan {
     return {
         accessReviewId: e.accessReviewId,
         page: e.page,
-        packs: e.subjects.map((s) => ({
-            decisionId: s.decisionId,
-            agentId: s.agentId,
-            narrowings: narrowingsFor(s),
-        })),
+        packs: e.subjects.map((s) => {
+            const withdrawals = spendingWithdrawalsFor(s);
+            return {
+                decisionId: s.decisionId,
+                agentId: s.agentId,
+                narrowings: narrowingsFor(s),
+                ...(withdrawals === undefined ? {} : { spendingWithdrawals: withdrawals }),
+            };
+        }),
     };
 }
 
@@ -333,6 +629,27 @@ export interface AgentCampaignEvidenceRows {
         readonly executedAt: Date | null;
         readonly executionResult: string | null;
     }>;
+    /**
+     * The spending-authority withdrawals the packs proposed (Agent Pay 1.4).
+     * Optional: a subject with none carries no key in the document, so a
+     * campaign closed before withdrawals existed rebuilds to the bytes it was
+     * hashed as.
+     */
+    readonly spendingWithdrawals?: ReadonlyArray<{
+        readonly id: string;
+        readonly decisionId: string;
+        readonly rail: string;
+        readonly declaredAt: Date;
+        readonly statusAtPack: string;
+        readonly expiresAt: Date;
+        readonly grounds: readonly string[];
+        readonly outcome: string;
+        readonly decidedAt: Date | null;
+        readonly decidedByUserId: string | null;
+        readonly executedAt: Date | null;
+        readonly executionResult: string | null;
+        readonly ownerTaskId: string | null;
+    }>;
     readonly samples: ReadonlyArray<{ readonly decisionId: string; readonly samplingEpoch: string }>;
     /** The obligations the evidence is filed against, as `(family, code)`. */
     readonly obligations: ReadonlyArray<{ readonly familyUrn: string; readonly requirementCode: string }>;
@@ -406,6 +723,7 @@ export function buildAgentCampaignEvidence(rows: AgentCampaignEvidenceRows) {
                         executedAt: iso(n.executedAt),
                         executionResult: n.executionResult,
                     })),
+                ...spendingWithdrawalsOf(rows, s.decisionId),
             })),
         sample: {
             epoch: sampled[0]?.samplingEpoch ?? null,
@@ -414,6 +732,35 @@ export function buildAgentCampaignEvidence(rows: AgentCampaignEvidenceRows) {
         obligations: [...rows.obligations]
             .map((o) => ({ familyUrn: o.familyUrn, requirementCode: o.requirementCode }))
             .sort((a, b) => `${a.familyUrn}|${a.requirementCode}`.localeCompare(`${b.familyUrn}|${b.requirementCode}`)),
+    };
+}
+
+/**
+ * A subject's withdrawals for the evidence document, as `{ spendingWithdrawals }`
+ * when it has any and as nothing when it has none: an absent key, not `[]`, so
+ * the document of a campaign without them is byte-for-byte what it was.
+ */
+function spendingWithdrawalsOf(rows: AgentCampaignEvidenceRows, decisionId: string) {
+    const mine = (rows.spendingWithdrawals ?? [])
+        .filter((w) => w.decisionId === decisionId)
+        .map((w) => ({ ...w }))
+        .sort((a, b) => a.id.localeCompare(b.id));
+    if (mine.length === 0) return {};
+    return {
+        spendingWithdrawals: mine.map((w) => ({
+            id: w.id,
+            rail: w.rail,
+            declaredAt: iso(w.declaredAt),
+            statusAtPack: w.statusAtPack,
+            expiresAt: iso(w.expiresAt),
+            grounds: [...w.grounds].sort(),
+            outcome: w.outcome,
+            decidedAt: iso(w.decidedAt),
+            decidedByUserId: w.decidedByUserId,
+            executedAt: iso(w.executedAt),
+            executionResult: w.executionResult,
+            ownerTaskId: w.ownerTaskId,
+        })),
     };
 }
 

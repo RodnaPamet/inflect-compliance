@@ -106,8 +106,8 @@
       "railCollapsed": "{label} (collapsed)",
       "previousPage": "previous page",
       "clearFilters": "Clear filters",
-      "noEntitiesAvailable": "No {entity}s available",
-      "noEntitiesMatch": "No {entity}s match",
+      "noEntitiesAvailable": "No {entity} available",
+      "noEntitiesMatch": "No {entity} match",
       "moreActions": "More actions",
       "menu": "Menu",
       "popoverContentDesc": "Popover content",
@@ -185,7 +185,21 @@
       "switcherWorkspaces": "Workspaces",
       "switcherNoWorkspaces": "No workspaces in this session.",
       "switcherNoOrganizations": "No organizations in this session.",
-      "switcherManageWorkspaces": "Manage workspaces"
+      "switcherManageWorkspaces": "Manage workspaces",
+      "entitiesLoadFailed": "Couldn't load {entity}",
+      "entityPlural": {
+        "CONTROL": "controls",
+        "RISK": "risks",
+        "ASSET": "assets",
+        "EVIDENCE": "evidence",
+        "VENDOR": "vendors",
+        "ISSUE": "tasks",
+        "POLICY": "policies",
+        "AUDIT_PACK": "audit packs",
+        "INCIDENT": "incidents",
+        "FRAMEWORK_REQUIREMENT": "framework requirements"
+      },
+      "noData": "No data"
     },
     "calendar": {
       "prevYear": "Go to previous year",
@@ -193,7 +207,22 @@
       "nextMonth": "Go to next month",
       "nextYear": "Go to next year",
       "selectDate": "Select date",
-      "clear": "Clear"
+      "clear": "Clear",
+      "clearRange": "Clear range",
+      "selectDateRange": "Select date range",
+      "presets": {
+        "today": "Today",
+        "yesterday": "Yesterday",
+        "last-7-days": "Last 7 days",
+        "last-30-days": "Last 30 days",
+        "last-90-days": "Last 90 days",
+        "month-to-date": "Month to date",
+        "quarter-to-date": "Quarter to date",
+        "year-to-date": "Year to date",
+        "last-month": "Last month",
+        "last-quarter": "Last quarter",
+        "last-year": "Last year"
+      }
     },
     "copy": {
       "copy": "Copy",
@@ -229,6 +258,7 @@
       "movementLegendHint": "thicker line + ×N where multiple risks share the path",
       "noData": "No data",
       "noDataAvailable": "No data available",
+      "noDataForRange": "No data for this range",
       "chartLoading": "Chart loading",
       "heatmapLoading": "Heatmap loading",
       "riskScore": "Risk score",
@@ -247,7 +277,16 @@
       "lossExceedanceAria": "Loss exceedance curve",
       "lossBucketsAria": "Loss buckets",
       "rangeAria": "{label}: {start} → {end}",
-      "pointAria": "{label}: {value}"
+      "pointAria": "{label}: {value}",
+      "scaleAria": "{label}: {min} to {max}",
+      "scaleAriaUnlabelled": "Scale: {min} to {max}",
+      "cellAleAria": "annualised loss expectancy {amount}",
+      "cellCollisionAria": "warning: same-cell loss estimates differ ~{ratio}×",
+      "cellAle": "ALE {amount}",
+      "cellCollision": "ALEs in this cell differ ~{ratio}× — the matrix compresses them into one box; check the histogram view.",
+      "cellMore": "… + {count} more",
+      "cellRisksIdentified": "{count} Risks identified",
+      "movementMore": "+{count} more"
     },
     "sections": {
       "accessReviews": "Access reviews",
@@ -943,6 +982,9 @@
         "updateFailed": "Couldn't save your change",
         "showResolved": "Show resolved",
         "showingResolved": "Showing resolved",
+        "capped": "Showing the {count} highest-scored vulnerabilities; this asset may have more. See all on the Vulnerabilities page.",
+        "viewRisk": "View risk",
+        "viewFinding": "View in Findings",
         "assignOwner": "Assign owner",
         "setDue": "Set due date",
         "note": "Note",
@@ -1198,7 +1240,9 @@
       "loadFailed": "Couldn't load the bow-tie analysis.",
       "retry": "Retry",
       "emptyTitle": "Nothing to diagram yet",
-      "emptyDesc": "This risk has no threats or consequences mapped yet, so there is no bow-tie to draw. Switch to the list view to see the barriers on their own."
+      "emptyDesc": "This risk has no threats or consequences mapped yet, so there is no bow-tie to draw. Switch to the list view to see the barriers on their own.",
+      "nodeScore": "Score {score}",
+      "nodeAlePerYear": "{amount}/yr"
     },
     "fair": {
       "readOnlyNotice": "Read-only — changes here are not saved.",
@@ -1861,7 +1905,8 @@
       "thresholdsLower": "Green ≥ {green} · Amber ≥ {amber}",
       "greenMin": "Green ≥",
       "amberMin": "Amber ≥",
-      "targetLine": "Target {value}"
+      "targetLine": "Target {value}",
+      "thresholdNotNumber": "Thresholds and the target must be numbers."
     },
     "lossEvents": {
       "breadcrumb": "Loss events",
@@ -2250,6 +2295,8 @@
       "delete": "Delete",
       "entityLabel": "controls",
       "deletedToast": "{count, plural, one {# control deleted} other {# controls deleted}}",
+      "deleteBlocked": "{blocked} of {total} selected controls were not deleted. They still have test plans, test runs or exceptions, which are kept as a record. Remove those first, or keep the controls.",
+      "deleteSkipped": "{skipped} of {total} selected controls could not be deleted and were left as they were.",
       "actionFailed": "Bulk action failed. Please try again.",
       "applied": "Changes applied",
       "partlyApplied": "Changes applied to {applied} of {total} selected controls. {skipped} could not be changed and were left as they were.",
@@ -2573,7 +2620,9 @@
       "latestStatus": "Latest status",
       "telemetryNote": "Automated monitoring checks — separate telemetry keyed to this control's automation. They update control health and open findings on failure, but they are not test runs and do not count toward the test-run effectiveness pass-rate.",
       "emptyTitle": "No automated checks yet",
-      "emptyDesc": "This control has no integration check runs. Set an automation key and evidence source of INTEGRATION to have the runner test it on a schedule."
+      "emptyDesc": "This control has no integration check runs. Set an automation key and evidence source of INTEGRATION to have the runner test it on a schedule.",
+      "loadError": "Couldn't load the automated checks.",
+      "retry": "Retry"
     },
     "bestValue": {
       "loadFailed": "Couldn't load the best-value controls.",
@@ -3026,7 +3075,6 @@
       "loadFailed": "Failed to load evidence.",
       "downloadArchived": "Archived evidence can't be downloaded.",
       "downloadNeedsControl": "This file can be downloaded once the evidence is linked to a control.",
-      "descriptionLabel": "Description",
       "versionsLabel": "File versions",
       "versionBadge": "v{version}",
       "versionsSingle": "Only one version — this file has not been replaced.",
@@ -3072,7 +3120,6 @@
       "description": "Update the details of this evidence record.",
       "discardConfirm": "Any edits you made will be lost.",
       "titleLabel": "Title",
-      "descriptionLabel": "Description",
       "addressLabel": "Address",
       "linkNeedsUrl": "A link needs its address.",
       "ownerLabel": "Owner",
@@ -3358,6 +3405,11 @@
   "training": {
     "title": "Training",
     "description": "{total, plural, one {# security-awareness training assignment} other {# security-awareness training assignments}}.",
+    "descriptionMatching": "{total, plural, one {# assignment matches} other {# assignments match}} the search and filters.",
+    "shownOfTotal": "Showing {shown, number} of {total, number}",
+    "loadMore": "Load more",
+    "loading": "Loading…",
+    "loadFailed": "The next assignments could not be loaded. Try again.",
     "resourceSingular": "assignment",
     "resourcePlural": "assignments",
     "searchPlaceholder": "Search assignments…",
@@ -3531,7 +3583,8 @@
         "ADMIN": "Admin",
         "EDITOR": "Editor",
         "READER": "Reader",
-        "AUDITOR": "Auditor"
+        "AUDITOR": "Auditor",
+        "AI_ADMIN": "AI admin"
       },
       "audienceUsers": "Specific users",
       "usersLabel": "Users",
@@ -4227,7 +4280,7 @@
         "ENTRY_NOT_RESOLVABLE": "A comment has nothing to resolve.",
         "ENTRY_ALREADY_RESOLVED": "That entry is already resolved.",
         "ENTRY_NOT_MATERIALISABLE": "Only a finding or an evidence request can become a finding.",
-        "ENTRY_RESOLVED_WITHOUT_FINDING": "That entry is resolved, but its finding was not created. Reopen the entry to try again.",
+        "ENTRY_RESOLVED_WITHOUT_FINDING": "That entry is resolved, but its finding was not created. Raise the finding by hand from the entry.",
         "ENTRY_BEING_MATERIALISED": "Another reviewer is creating the finding from this entry. Refresh in a moment."
       }
     },
@@ -4346,6 +4399,7 @@
       "depRemove": "Remove",
       "depMissing": "(no longer exists)",
       "addDependencyFailed": "Failed to add dependency.",
+      "removeDependencyFailed": "The dependency was not removed. It is back in the list.",
       "dependencyRemoved": "Dependency removed",
       "undo": "Undo",
       "secFrameworkDesc": "Framework coverage is derived from the controls this analysis is linked to as evidence — not assumed.",
@@ -4386,7 +4440,8 @@
       "impactAtAria": "Hours after the disruption, point {row}",
       "impactCellAria": "{dimension} impact, point {row}",
       "impactRemoveAria": "Remove point {row}",
-      "impactInvalid": "Each value must be a number, zero or more, and every point needs its hours. Fix the highlighted cells, then save."
+      "impactInvalid": "Each value must be a number, zero or more, and every point needs its hours. Fix the highlighted cells, then save.",
+      "hoursInvalid": "Enter whole hours, zero or more."
     },
     "nis2Gap": {
       "runStatus": {
@@ -5457,6 +5512,7 @@
         "agent_kill_switch": "Agent kill switch",
         "agent_external_tools": "Agent external tools",
         "agent_harness_ingest": "Agent scan reports",
+        "integrations_ingest": "Third-party application scan reports",
         "agent_ownership": "Own agents",
         "agent_skill_review": "Review agent skills",
         "agent_skill_author": "Author agent skills"
@@ -5689,6 +5745,28 @@
         "saved": "Rotation age saved. It applies from the next credential-hygiene pass.",
         "saveFailed": "Could not save the rotation age.",
         "unavailable": "The rotation age could not be loaded. Changing it requires security settings access."
+      },
+      "agentTurnCaps": {
+        "title": "Agent per-turn limits",
+        "description": "The most one agent turn may start in this workspace. Your organization sets the limit; this workspace can only lower it.",
+        "delegationsPerTurn": "Delegations per turn",
+        "toolCallsPerTurn": "Tool calls per turn",
+        "modeAria": "{cap}: follow the organization or set a lower limit",
+        "followOrg": "Follow the organization ({ceiling})",
+        "followNoOrg": "Use the product default ({ceiling})",
+        "custom": "Set a lower limit for this workspace",
+        "customDesc": "From {min} to {ceiling}.",
+        "applies": "{value} applies",
+        "basisOrganization": "Your organization's limit.",
+        "basisNoOrganization": "The product default: this workspace belongs to no organization.",
+        "basisWorkspace": "This workspace's own limit.",
+        "narrowedByOrg": "Narrowed by your organization: this workspace's setting of {stored} is above its limit of {ceiling}.",
+        "decrease": "Decrease",
+        "increase": "Increase",
+        "save": "Save",
+        "saved": "Saved.",
+        "saveFailed": "The change wasn't saved.",
+        "unavailable": "These limits could not be loaded."
       }
     },
     "agentDetail": {
@@ -5727,6 +5805,8 @@
         "bannerAgentTitle": "This agent is stopped",
         "bannerTenantTitle": "Every agent in this workspace is stopped",
         "bannerDetail": "Stopped {when}. Reason: {reason}",
+        "stateUnknownTitle": "Whether this agent is stopped could not be read",
+        "stateUnknown": "The list of stops in force did not load, so this page cannot say whether a stop holds this agent or the whole workspace. Reload the page before stopping or resuming it.",
         "engageTitle": "Stop this agent",
         "engagePrompt": "Every further tool call is refused, including inside a run already in progress, and so is reading the framework catalogue. The agent stays ACTIVE in the register. Suspending it refuses tool calls too, but not inside a run already under way, it leaves the framework catalogue readable, and it has no workspace-wide or platform-wide form.",
         "engageConfirm": "Stop agent",
@@ -5830,6 +5910,7 @@
         "ownerMovesByTransfer": "Ownership moves only by a two-step transfer: an Owner or AI admin proposes it, and the person it names accepts it.",
         "vendor": "Supplier",
         "vendorNone": "No supplier — first party",
+        "vendorUnavailable": "The supplier list could not be read, so the supplier cannot be changed here.",
         "save": "Save {count} change(s)",
         "failed": "Could not amend this agent."
       },
@@ -5912,6 +5993,7 @@
         "retireIrreversible": "Suspension stops this agent just as completely and can be lifted. Retirement cannot.",
         "retireTypeToConfirm": "Type {name} to confirm",
         "retireError": "Could not retire this agent.",
+        "retireUnconfirmed": "The request did not complete, so it is not known whether this agent was retired. Check its status before trying again.",
         "driverLabel": "Run engine",
         "driverValue": {
           "static": "Static",
@@ -6114,6 +6196,7 @@
         "runtimeBody": "These reach a Flue run whatever this agent was granted — the runtime adds them, not the register. Neither widens what the agent can reach today; each says below what bounds it. They are listed here because an operator reading the grants above was seeing a shorter list than the model is shown.",
         "runtimeAlways": "On every run",
         "runtimeWhenSkills": "Only with a skill mounted",
+        "runtimeWhenSubagents": "Only when the version defines sub-agents",
         "widensRead": "{tool} can READ this workspace's data. It cannot propose or change anything.",
         "widensPropose": "{tool} can PROPOSE changes. Proposals land in the approval queue for a human — granting this does not let the agent commit anything on its own.",
         "widensBlocked": "The tool boundary is refusing this tool right now because its definition changed and no one has accepted the new one. Granting it will have no effect until that pin is approved.",
@@ -6169,14 +6252,16 @@
             "UNPINNED": "Not yet pinned",
             "DESCRIPTION_CHANGED": "Description changed",
             "SCHEMA_CHANGED": "Schema changed",
-            "DEFINITION_CHANGED": "Definition changed"
+            "DEFINITION_CHANGED": "Definition changed",
+            "ANNOTATIONS_CHANGED": "Annotations changed"
           },
           "explain": {
             "APPROVED": "The definition in this build is byte-identical to the one approved here.",
             "UNPINNED": "Nothing is on file. The boundary met this definition first and let it through; approving it puts a named person behind it.",
             "DESCRIPTION_CHANGED": "The instruction text the model reads has been rewritten since it was approved. The name and the parameters are untouched, so this change is visible nowhere except here.",
             "SCHEMA_CHANGED": "The parameters changed. The instruction text the model reads is unchanged.",
-            "DEFINITION_CHANGED": "Both the parameters and the instruction text the model reads have changed since they were approved."
+            "DEFINITION_CHANGED": "Both the parameters and the instruction text the model reads have changed since they were approved.",
+            "ANNOTATIONS_CHANGED": "The hints the tool declares about itself (for example whether it only reads or may destroy data) have changed since it was approved. The parameters and the instruction text are unchanged."
           },
           "approveAction": "Approve definition",
           "approveSuccess": "Approved {toolName} at revision {revision}",
@@ -6224,7 +6309,7 @@
         "stalenessTriggerOther": "Another change the register recorded ({trigger}).",
         "stalenessTrigger": {
           "AUTONOMY_RAISED": "Its autonomy level was raised.",
-          "TOOL_GRANTED": "It holds more tools than it did when it was scored.",
+          "TOOL_GRANTED": "It was granted a tool after it was scored.",
           "DATA_SCOPE_WIDENED": "Its declared data access was widened.",
           "REVERSIBILITY_WORSENED": "Its actions became harder to undo.",
           "PROVENANCE_WIDENED": "It now depends on a third-party supplier.",
@@ -6339,6 +6424,7 @@
         "signalRejectionRate": "Rejection rate",
         "signalToolMix": "Tool mix",
         "signalGuardBlock": "Guard blocks",
+        "signalBehaviourAnomaly": "Behaviour anomaly (daily)",
         "anomalousBadge": "Anomalous",
         "countedYes": "Counted",
         "countedAnomalous": "Excluded — anomalous",
@@ -6498,7 +6584,135 @@
         }
       },
       "autonomyLevel": "Level {level}",
-      "viewOnlyTabs": "You can read this agent's Overview and Runs. The other tabs need the agent register permission, which Owners, Admins and AI admins have."
+      "viewOnlyTabs": "You can read this agent's Overview and Runs. The other tabs need the agent register permission, which Owners, Admins and AI admins have.",
+      "fingerprint": {
+        "heading": "Behaviour fingerprint",
+        "intro": "A nightly detector compares each day of this agent’s activity — counts only, never content — with its own previous days. A feature at z {finding} or above raises a finding; at z {latch} the circuit breaker can be latched. Judgement starts after {days} active days.",
+        "offDeployment": "The behaviour detector is not turned on for this deployment, so nothing is being compared. No anomalies here means nobody looked, not that the agent is steady.",
+        "offTenant": "The behaviour detector is on for this deployment but not for this workspace, so nothing is being compared. No anomalies here means nobody looked, not that the agent is steady.",
+        "unscored": "The detector is on, but this agent has not been scored yet: it has had no activity on a day the detector has scored.",
+        "lastScored": "Last scored day: {day} (UTC).",
+        "lastLearning": "Last scored day: {day} (UTC). Still learning — {have} of {need} baseline days.",
+        "epoch": "A person accepted a new baseline on {at}; days before it are not compared.",
+        "anomalyOn": "Anomaly on {day} · score {score}",
+        "latched": "Breaker latched",
+        "whyHeading": "Why",
+        "whyAria": "The features that drove the anomaly",
+        "whyLine": "{observed} against a baseline mean of {mean} (σ {sd}, z {z})",
+        "whyUnreadable": "The features that drove this anomaly could not be read.",
+        "moreAnomalies": "{count, plural, one {# earlier anomaly is} other {# earlier anomalies are}} listed on Agent reports → Behaviour anomalies.",
+        "noAnomalies": "No anomalies yet",
+        "breakerOpen": "The agent’s circuit breaker is open. Close it on the Circuit breaker tab, choosing whether the change was intended — that choice also decides this detector’s baseline.",
+        "acceptAction": "Accept as new normal",
+        "acceptTitle": "Accept this behaviour as the agent’s new normal?",
+        "acceptBody": "Both behaviour detectors — this nightly fingerprint and the hourly circuit breaker — discard the agent’s earlier baseline and re-learn from today. Until they have learned again, neither judges the agent. Use this only when the change was intended. The finding stays open until you close it.",
+        "acceptConfirm": "Accept new baseline",
+        "cancel": "Cancel",
+        "accepted": "New baseline accepted. Both detectors re-learn from today.",
+        "acceptFailed": "The new baseline could not be accepted.",
+        "loadError": "The behaviour fingerprint could not be loaded.",
+        "verdict": {
+          "LEARNING": "Learning",
+          "STEADY": "Steady",
+          "ANOMALOUS": "Anomalous"
+        },
+        "tier": {
+          "FINDING": "Finding",
+          "LATCH": "Latch threshold"
+        },
+        "feature": {
+          "readCalls": "Read calls",
+          "proposeCalls": "Propose calls",
+          "orchestrateCalls": "Orchestrate calls",
+          "activeHours": "Active hours",
+          "proposals": "Proposals",
+          "guardFlags": "Guard flags",
+          "modelCalls": "Model calls",
+          "tokens": "Tokens"
+        }
+      },
+      "spending": {
+        "heading": "Spending authority",
+        "intro": "What this agent may pay for, as the cardholder consented to it. Inflect records the envelope for review and never holds a card number or a payment token; the agent platform and the card issuer enforce the limits.",
+        "declare": "Declare",
+        "loadError": "Couldn't load the agent's spending authority.",
+        "none": "No spending authority is declared for this agent.",
+        "rail": {
+          "AGENT_PAY_TOKEN": "Mastercard Agent Pay token",
+          "AP4M": "Agent Pay for Machines",
+          "OTHER": "Other payment rail"
+        },
+        "status": {
+          "DECLARED": "Awaiting review",
+          "REVIEWED": "Reviewed",
+          "SUSPENDED_REQUESTED": "Suspension requested",
+          "WITHDRAWN": "Withdrawn"
+        },
+        "perTransaction": "Per-transaction limit",
+        "periodBudget": "Budget",
+        "perPeriod": "{amount} per {period}",
+        "period": {
+          "DAY": "day",
+          "WEEK": "week",
+          "MONTH": "month"
+        },
+        "merchants": "Merchants",
+        "anyMerchant": "Any merchant",
+        "mcc": "category {code}",
+        "expires": "Expires",
+        "expired": "expired",
+        "consentedBy": "Consented by",
+        "tokenRequestor": "Agent platform",
+        "tokenReference": "Platform's token reference",
+        "declared": "Declared",
+        "byOn": "{who}, {at}",
+        "reviewedLabel": "Reviewed",
+        "notReviewed": "Not yet",
+        "unreviewedNotice": "Nobody else has reviewed this envelope. The agent cannot be activated while it holds it, and if it is already active a finding stays open until the envelope is reviewed or withdrawn.",
+        "suspendedNotice": "A kill switch asked for this payment token to be suspended on {at}. Ask {requestor} to suspend it; a task for the agent's owner says the same. Lifting the kill switch does not restore it: declare it again for a second person to review, or withdraw it.",
+        "reviewWithheld": {
+          "NOT_PERMITTED": "You cannot change this agent's register entry.",
+          "AGENT_RETIRED": "A retired agent's envelope is not reviewed; withdraw it.",
+          "NOT_DECLARED": "Only an envelope awaiting review can be reviewed.",
+          "REVIEWER_NOT_A_PERSON": "A signed-in person reviews spending authority.",
+          "REVIEWER_IS_DECLARER": "You declared this envelope, so someone else reviews it.",
+          "REVIEWER_IS_OWNER": "You own this agent, so someone else reviews its spending authority."
+        },
+        "review": "Review",
+        "narrow": "Narrow",
+        "redeclare": "Declare again",
+        "withdraw": "Withdraw",
+        "failed": "The change could not be saved.",
+        "reviewed": "Spending authority reviewed",
+        "withdrawn": "Spending authority withdrawn",
+        "declaredToast": "Spending authority declared; a second person reviews it",
+        "narrowed": "Spending authority narrowed",
+        "reviewTitle": "Review this spending authority",
+        "reviewBody": "You are confirming, as the second person, that this envelope is what the cardholder consented to and what this agent should be allowed to spend. Once reviewed, it no longer holds the agent back from activation.",
+        "reviewConfirm": "Mark as reviewed",
+        "cancel": "Cancel",
+        "withdrawTitle": "Withdraw this spending authority",
+        "withdrawBody": "The register will no longer record that this agent may spend on this rail. Inflect cannot cancel the token itself: ask {requestor} to cancel it. Bringing it back takes a new declaration and a second person's review.",
+        "withdrawConfirm": "Revoke spending authority",
+        "declareTitle": "Declare spending authority",
+        "declareIntro": "Record the envelope the cardholder consented to. A second person, neither you nor the agent's owner, reviews it before it counts.",
+        "narrowTitle": "Narrow spending authority",
+        "narrowIntro": "Lower a limit, shorten the expiry or remove merchants. A narrowing keeps the review the envelope already has. Anything wider is a new declaration.",
+        "railLabel": "Payment rail",
+        "replacesNotice": "This replaces the envelope already declared on this rail, and a second person reviews it again.",
+        "currencyLabel": "Currency",
+        "periodLabel": "Budget period",
+        "amountInvalid": "Enter an amount, such as 250 or 49.99.",
+        "domainsLabel": "Merchant websites",
+        "domainsHint": "Host names, separated by commas, such as shop.example.com.",
+        "mccLabel": "Merchant category codes",
+        "mccHint": "Four-digit codes, separated by commas.",
+        "unrestrictedNotice": "With no merchant websites and no category codes, the agent may pay any merchant: the widest scope there is.",
+        "tokenRequestorHint": "The platform that holds the payment token, by name.",
+        "tokenReferenceHint": "The platform's own reference for the token, never the token or a card number.",
+        "declareSave": "Declare",
+        "narrowSave": "Save narrowing"
+      }
     },
     "mcp": {
       "title": "Agent credentials",
@@ -6590,7 +6804,7 @@
       "receiptProvenanceValue": {
         "BUILTIN": "An Inflect tool, as built in",
         "UNATTESTED": "Not attested: the description in force is not known",
-        "PIN_MOVED": "The approved description has changed since this action (revision {revision})",
+        "PIN_MOVED": "The approved description has changed since this action, so which description was in force is not recorded",
         "NONE": "Not recorded"
       }
     },
@@ -6825,6 +7039,10 @@
               "label": "SAML SSO enrichment",
               "description": "Read inbound SAML assignments so the SSO check reflects real coverage (default on; needs the cloud-identity.inboundsso.readonly scope)."
             },
+            "enrichOrgUnits": {
+              "label": "Org-unit SSO resolution",
+              "description": "Resolve which org units a SAML assignment covers, so the SSO check can pass for a tenant that enforces SAML through its top-level org unit and can name the accounts a partial rollout leaves out. OFF by default, because it needs ONE MORE scope authorised in your Admin console for this service account: https://www.googleapis.com/auth/admin.directory.orgunit.readonly. It is requested in a token exchange of its own, so leaving it unauthorised costs only this enrichment and never the directory sync. Without it, a SAML assignment scoped to an org unit reads as unknown rather than as coverage."
+            },
             "serviceAccountJson": {
               "label": "Service-account JSON",
               "description": "A domain-wide-delegated service-account key (JSON) — paste the whole file."
@@ -7015,8 +7233,8 @@
           }
         },
         "orangehrm": {
-          "description": "An OrangeHRM directory, read for the HRIS roster. Supports the OAuth2 client-credentials grant against an instance on a host covered by ORANGEHRM_HOSTS.",
-          "setupGuide": "Stand up an OrangeHRM instance on a host covered by ORANGEHRM_HOSTS, register an API client for the OAuth2 client-credentials grant, and provide the instance URL with the client id and secret. Test connection performs a real token exchange against the instance.",
+          "description": "An OrangeHRM directory, read for the HRIS roster. Connects as an OAuth2 authorization-code client against an instance on a host covered by ORANGEHRM_HOSTS.",
+          "setupGuide": "Stand up an OrangeHRM instance on a host covered by ORANGEHRM_HOSTS and register an OAuth client there for the authorization-code grant, with this deployment's /api/integrations/orangehrm/callback as its redirect URI. Provide the instance URL with the client id and secret and save, then use Authorize to grant access in OrangeHRM: the client id and secret alone cannot obtain a token. Test connection performs a real token exchange with the stored refresh token.",
           "fields": {
             "baseUrl": {
               "label": "OrangeHRM instance URL"
@@ -7068,7 +7286,7 @@
         },
         "mcp-server": {
           "description": "An external Model Context Protocol server an agent can be granted tools on. Connecting one does not grant anything: its tools must be reviewed and pinned, then granted to a specific registered agent, before any run can call them.",
-          "setupGuide": "Enter the server's HTTPS endpoint, then choose how it authenticates. A server behind Microsoft Entra takes the tenant ID, client ID and client secret, plus EITHER a refresh token (delegated — every token carries a named person's privileges, so an agent can never see more than that person) OR a token scope (app-only — no such ceiling, and the scope must name your server's own audience). Anything else takes a static Authorization header value, which works but expires with the token you paste. Testing the connection performs a real handshake with the tool server and reports how many tools it advertises. Those tools are NOT usable yet: an administrator reviews and approves them, and they must then be granted to a registered agent. The server must be reachable on a public address over HTTPS — private and link-local addresses are refused, and redirects are not followed.",
+          "setupGuide": "Enter the server's HTTPS endpoint, then choose how it authenticates. A server behind Microsoft Entra takes the tenant ID, client ID and client secret, plus EITHER a refresh token (delegated — every token carries a named person's privileges, so an agent can never see more than that person) OR a token scope (app-only — no such ceiling, and the scope must name your server's own audience). Anything else takes a static Authorization header value, which works but expires with the token you paste. Testing the connection performs a real handshake with the tool server and reads its catalogue, so a green test means the server answered both calls. The tools themselves, and how many it advertises, are shown under Agents, External tools. Those tools are NOT usable yet: an administrator reviews and approves them, and they must then be granted to a registered agent. The server must be reachable on a public address over HTTPS — private and link-local addresses are refused, and redirects are not followed.",
           "fields": {
             "url": {
               "label": "Server URL",
@@ -7135,6 +7353,7 @@
       "selectProvider": "Select a provider...",
       "connectionName": "Connection Name",
       "namePlaceholder": "e.g. Acme GitHub Org",
+      "nameInvalidCharacters": "A connection name can't contain control characters or broken characters. Remove them and save again.",
       "configuration": "Configuration",
       "secrets": "Secrets",
       "hide": "Hide",
@@ -7821,6 +8040,15 @@
       "acknowledged": "Acknowledged",
       "perYear": "{amount} a year",
       "testedAmount": "P{percentile}: {amount} a year",
+      "approvedBy": "Approved by {name} on {date}.",
+      "approvedOn": "Approved on {date}.",
+      "notApproved": "Not approved. A save that changes the statement or a limit clears an approval.",
+      "approve": "Approve",
+      "approving": "Approving…",
+      "approveSaveFirst": "Save your changes before approving them.",
+      "approvedMsg": "Approved.",
+      "approveFailed": "Approval failed.",
+      "approveChangedSinceViewed": "The saved appetite changed since you opened this page. The page now shows the saved version: review it before approving.",
       "breachType": {
         "PORTFOLIO_ALE": "Portfolio expected loss",
         "SINGLE_RISK_ALE": "One risk's expected loss",
@@ -7899,6 +8127,12 @@
       "document": "Document",
       "searchIndexing": "Search engine indexing",
       "allowIndexing": "Allow search engines to index this page",
+      "ndaSection": "Document requests",
+      "ndaRequired": "Require NDA acceptance",
+      "ndaRequiredDesc": "Requesters must accept the NDA terms, and a request that did not accept them cannot be approved.",
+      "refusal": {
+        "TRUST_CENTER_COMPOSE_NEEDS_ADMIN_MANAGE": "Only a member who can manage administration can change the trust center."
+      },
       "save": "Save",
       "publish": "Publish…",
       "unpublish": "Unpublish",
@@ -8098,6 +8332,7 @@
       "submittedAnswer": "Submitted answer",
       "auto": "Auto",
       "overridePlaceholder": "Override",
+      "overrideInvalid": "An override must be a number, such as 2.5 or -1. Correct the highlighted field or clear it.",
       "overrideLabel": "Override: {points}",
       "notes": "Notes",
       "finalRating": "Final risk rating",
@@ -8396,7 +8631,8 @@
         "regionName": {
           "US_EAST_1": "United States (East)",
           "EU_WEST_1": "European Union (Ireland)",
-          "AP_SOUTHEAST_1": "Asia Pacific (Singapore)"
+          "AP_SOUTHEAST_1": "Asia Pacific (Singapore)",
+          "EUROPE_WEST1": "European Union (Belgium)"
         }
       },
       "retention": {
@@ -9172,7 +9408,8 @@
       "bestValueError": "Couldn't load the best-value controls.",
       "loadErrorTitle": "Couldn't load the board",
       "loadError": "The risk figures didn't load.",
-      "retry": "Try again"
+      "retry": "Try again",
+      "sectionUnavailable": "This section could not be computed."
     },
     "dash": {
       "statusAria": "Risk status breakdown",
@@ -9230,7 +9467,8 @@
     "backToPreview": "Back to the preview",
     "fileReadError": "Couldn't read the file. Check that it is a CSV saved as text, then choose it again.",
     "untitledRows": "{count, plural, one {# row has} other {# rows have}} no title and won't be imported.",
-    "importBreadcrumb": "Import"
+    "importBreadcrumb": "Import",
+    "tooManyRows": "This file has {count} risks; one import takes at most {max}. Split the file and import each part."
   },
   "ui": {
     "combobox": {
@@ -9416,6 +9654,7 @@
     },
     "detail": {
       "activationNeedsReview": "This vendor can't be made Active until an assessment has been sent and its review completed with a risk rating.",
+      "activationReassessmentInProgress": "This vendor can't be made Active while a reassessment is in progress. Complete the review of its latest assessment, with a risk rating, then make it Active.",
       "saveFailed": "Couldn't save the vendor. Please try again.",
       "crumbVendors": "Vendors",
       "crumbFallback": "Vendor",
@@ -9592,7 +9831,13 @@
       },
       "freezeConfirmTitle": "Freeze this bundle?",
       "freezeConfirmBody": "Its items can no longer be added, removed or changed.",
-      "freezeFailed": "The bundle was not frozen. Try again."
+      "freezeFailed": "The bundle was not frozen. Try again.",
+      "addDocFailed": "Could not add the document.",
+      "createBundleFailed": "Could not create the evidence bundle.",
+      "addBundleItemFailed": "Could not add the item to the bundle.",
+      "removeBundleItemFailed": "Could not remove the item from the bundle.",
+      "addSubFailed": "Could not add the subprocessor.",
+      "enrichFailed": "Could not autofill the vendor's details."
     },
     "monitoring": {
       "loadFailed": "Failed to load monitoring",
@@ -9628,7 +9873,14 @@
       "toggleMaterializeFindings": "Escalate posture into Findings",
       "materializeFindingsHint": "Automatically turn posture events (breaches, expiries, TLS drops) into Findings.",
       "settingsSaveFailed": "Failed to update monitoring settings",
-      "stubMode": "Demo"
+      "stubMode": "Demo",
+      "tlsStale": "Stale",
+      "tlsLastFetch": "Last check {date}: {outcome}",
+      "tlsFetchOutcome": {
+        "REFUSED": "the site refused the monitor",
+        "UNREACHABLE": "the site could not be reached",
+        "BLOCKED": "the vendor's domain cannot be checked; correct it on the vendor record"
+      }
     },
     "dashboard": {
       "loadForbidden": "You don't have access to the vendor figures.",
@@ -9690,6 +9942,19 @@
       "prefillBtn": "Pre-fill",
       "extractionFailed": "Extraction failed",
       "updateFailed": "Could not update the proposal",
+      "refused": {
+        "AI_DISABLED": "AI features are switched off on this deployment, so the document cannot be read. Ask your administrator.",
+        "AI_TURNED_OFF_FOR_WORKSPACE": "AI is turned off for this workspace, so the document cannot be read. The workspace owner can turn it on under Admin → AI features.",
+        "AI_ROLE_REQUIRED": "Pre-filling needs an Editor, Admin or Owner role.",
+        "AI_AVAILABILITY_UNCONFIRMED": "Could not confirm that AI is on for this workspace, so nothing was read. Try again in a moment.",
+        "AI_PLAN_REQUIRED": "Your workspace's plan does not include AI pre-filling.",
+        "AI_PLAN_UNVERIFIED": "Could not confirm your workspace's plan, so nothing was read. Try again in a moment.",
+        "AI_DAILY_LIMIT_REACHED": "Your workspace has used today's AI allowance. Try again later.",
+        "AI_DAILY_LIMIT_REACHED_RESET": "Your workspace has used today's AI allowance. Try again in about {minutes} minutes.",
+        "AI_TOO_MANY_REQUESTS": "Too many AI requests in a short time. Wait a moment and try again.",
+        "AI_GUARD_BLOCKED": "The AI Guard blocked this document, so nothing was proposed. It may contain instructions aimed at the AI, or secret material.",
+        "DOCUMENT_VENDOR_MISMATCH": "This document belongs to a different vendor than the assessment. Choose a document of the assessed vendor."
+      },
       "unknownReport": "Unknown report",
       "period": "period → {date}",
       "periodExpired": "Report period expired",
@@ -9755,7 +10020,9 @@
       "RELATED": "Related",
       "USES": "Uses",
       "MITIGATES": "Mitigates",
-      "STORES_DATA_FOR": "Stores Data"
+      "STORES_DATA_FOR": "Stores Data",
+      "PROVIDES_SERVICE_TO": "Provides Service To",
+      "ASSESSMENT_SOURCED": "From Assessment"
     },
     "criticalityLabel": {
       "LOW": "Low",
@@ -9947,6 +10214,7 @@
       "allInstalled": "All controls already installed",
       "installN": "Install {count} Controls",
       "restoreN": "Restore {count, plural, one {# mapping} other {# mappings}}",
+      "addToScopeN": "Add {count, plural, one {# pack} other {# packs}} to scope",
       "mappingsToRestore": "{count, plural, one {# requirement mapping is} other {# requirement mappings are}} missing from controls you already have. Installing again restores them.",
       "installFailed": "Install failed",
       "networkError": "Network error",
@@ -9964,6 +10232,7 @@
       "previewChosen": "Preview {count} selected",
       "restrictedTitle": "You cannot install frameworks",
       "restricted": "Only an Owner or Admin can install a framework pack, or a member whose custom role allows installing frameworks. Ask one of them to install it. You can still read this framework's requirements.",
+      "planLimitReached": "Your plan allows {limit} controls and this workspace has {current}, so this install would go over the limit. Upgrade the plan to add more controls.",
       "previewFailed": "Could not preview this pack.",
       "refused": {
         "PACK_NOT_FOUND": "This pack is no longer in the catalogue. Reload the page.",
@@ -9997,6 +10266,7 @@
       "suggestedEvidence": "Suggested Evidence",
       "installFailed": "The install did not finish. Reload the page to see what was added.",
       "installRestricted": "Only an Owner or Admin, or a member whose custom role allows installing frameworks, can install templates.",
+      "planLimitReached": "Your plan allows {limit} controls and this workspace has {current}, so this install would go over the limit. Install fewer templates, or upgrade the plan.",
       "emptyFilter": "No templates match your filters.",
       "searchPlaceholder": "Search templates…",
       "frequency": {
@@ -10501,7 +10771,7 @@
       "openRun": "Open this run",
       "openQueue": "Open the proposals queue",
       "stepLabel": "Queued by step {seq}",
-      "windowCloses": "The run's approval window closes at {at}. A decision taken after it will not resume the run.",
+      "windowCloses": "The run's approval window closes at {at} (UTC). A decision taken after it will not resume the run.",
       "flaggedBlocked": "The output guard flagged this proposal ({rules}), so it is approved in the proposals queue rather than from the map — the rule ids and the run's own record are there.",
       "truncated": "This checkpoint queued more proposals than fit here. Review the rest in the proposals queue."
     },
@@ -10673,6 +10943,8 @@
       "signingSecret": "Signing secret",
       "secretSet": "Configured",
       "subflowTarget": "Target group",
+      "subflowTargetOption": "{map} › {group}",
+      "subflowTargetUnnamed": "Untitled group",
       "schedule": "Schedule",
       "scheduleTarget": "Target",
       "offsetDays": "Offset (days)",
@@ -10695,6 +10967,81 @@
         "TRIGGER_NOT_SET": "Choose the event that triggers it.",
         "SCHEDULE_NOT_SET": "Set its schedule.",
         "ACTION_INCOMPLETE": "Complete its action settings."
+      }
+    },
+    "controlCard": {
+      "loading": "Loading control…",
+      "unlinked": "Pick a control",
+      "missing": "Control removed",
+      "restricted": "Control (restricted)",
+      "unavailable": "Control details unavailable",
+      "effectiveness": "{percent}% effective",
+      "tested": "tested {date}",
+      "neverTested": "never tested",
+      "status": {
+        "NOT_STARTED": "Not started",
+        "PLANNED": "Planned",
+        "IN_PROGRESS": "In progress",
+        "IMPLEMENTING": "Implementing",
+        "IMPLEMENTED": "Implemented",
+        "NEEDS_REVIEW": "Needs review",
+        "NOT_APPLICABLE": "Not applicable"
+      }
+    },
+    "riskCard": {
+      "loading": "Loading risk…",
+      "unlinked": "Pick a risk",
+      "missing": "Risk removed",
+      "restricted": "Risk (restricted)",
+      "unavailable": "Risk details unavailable",
+      "residualScore": "{score} residual (inherent {inherent})",
+      "inherentScore": "{score} inherent",
+      "noMitigatingControl": "no mitigating control",
+      "noMitigationOnMap": "no mitigating control on this map",
+      "mitigatedHere": "mitigated here by {onMap} of {total} controls",
+      "reviewOverdue": "review overdue",
+      "status": {
+        "OPEN": "Open",
+        "MITIGATING": "Mitigating",
+        "MITIGATED": "Mitigated",
+        "ACCEPTED": "Accepted",
+        "CLOSED": "Closed"
+      },
+      "treatment": {
+        "TREAT": "Treat",
+        "TRANSFER": "Transfer",
+        "TOLERATE": "Tolerate",
+        "AVOID": "Avoid"
+      }
+    },
+    "assetCard": {
+      "loading": "Loading asset…",
+      "unlinked": "Pick an asset",
+      "missing": "Asset removed",
+      "restricted": "Asset (restricted)",
+      "unavailable": "Asset details unavailable",
+      "criticality": "{level} criticality",
+      "type": {
+        "INFORMATION": "Information",
+        "SYSTEM": "System",
+        "SERVICE": "Service",
+        "DATA_STORE": "Data store",
+        "VENDOR": "Vendor",
+        "PEOPLE_PROCESS": "People / process",
+        "APPLICATION": "Application",
+        "INFRASTRUCTURE": "Infrastructure",
+        "PROCESS": "Process",
+        "OTHER": "Other"
+      },
+      "level": {
+        "LOW": "Low",
+        "MEDIUM": "Medium",
+        "HIGH": "High",
+        "CRITICAL": "Critical"
+      },
+      "status": {
+        "ACTIVE": "Active",
+        "RETIRED": "Retired"
       }
     }
   },
@@ -10861,7 +11208,13 @@
         "INCIDENT_STEP_UNKNOWN": "That step is not part of this incident type’s runbook.",
         "INCIDENT_EVIDENCE_NOT_FOUND": "That evidence record no longer exists in this workspace."
       },
-      "forensicChecklistAria": "Forensic evidence checklist"
+      "forensicChecklistAria": "Forensic evidence checklist",
+      "countdown": {
+        "daysHours": "{days}d {hours}h",
+        "hoursMinutes": "{hours}h {minutes}m",
+        "left": "{time} left",
+        "overdue": "{time} overdue"
+      }
     },
     "filters": {
       "severity": "Severity",
@@ -11430,8 +11783,84 @@
       "tabsAria": "Report views",
       "tabPack": "Assessor pack",
       "tabHarness": "Harness matrix",
+      "tabIntegrations": "Integrations",
+      "integrations": {
+        "readOnly": "The applications a directory has granted access to — Entra, Okta and GitHub — as each scanner’s latest third-party application report found them. Read-only: what the scan raised is in the findings register, shown here beside the application it is about.",
+        "noScansTitle": "No third-party application scan has been received",
+        "noScansBody": "Nothing has looked at which applications your directories have granted access to, so this page can say nothing about them. A scanner submits its report with an API key carrying the admin:integrations_ingest scope, signed by a scanner key registered on the Harness matrix tab.",
+        "scannersNotShown": "{count, plural, one {# more scanner has} other {# more scanners have}} a scan in the window that is not shown here.",
+        "scannersWithoutScan": "{count, plural, one {# trusted scanner has} other {# trusted scanners have}} sent no third-party application report among the latest {window} scans: {names}. What they would read is unread, not empty.",
+        "scannersWithoutScanTruncated": "There are more trusted scanners than this page reads; some without a report may not be named.",
+        "scansTruncated": "Only the latest {count} scans are read. An older scanner’s report may not be shown.",
+        "findingsTruncated": "More open findings exist than this page reads. An application shown without a finding may have one.",
+        "sectionHeading": "{scanner} — as of {asOf}",
+        "scanLine": "Scan {scanRef}, scanner {version}, received {received}. {count, plural, one {# application} other {# applications}}; unused means no sign-in within {days} days.",
+        "coverageHeading": "Coverage",
+        "sourceComplete": "{product}: read in full ({rows} rows).",
+        "sourceIncomplete": "{product}: read in part ({reason}, {rows} rows). Its applications below are what was seen, not the whole.",
+        "signInComplete": "Sign-in activity read in full.",
+        "signInIncomplete": "Sign-in activity read in part ({reason}).",
+        "signInNotRead": "Sign-in activity not read.",
+        "sourcesUnreadable": "This scan’s stored sources could not be re-read, so how far it read is unknown. It counts as incomplete.",
+        "emptyScan": "Every source was read in full and no application was found. That is a finding, not a clean result: a directory in use holds applications, and an empty answer is what a read of the wrong directory looks like.",
+        "incompleteScan": "Not every source was read in full. The applications below are what was seen; an application missing from them may exist.",
+        "rowsUnread": "This scan’s applications could not be read whole, so none is shown rather than a part posing as the whole.",
+        "rowsTruncated": "Showing the first {shown} of {count} applications, those with open findings and the highest privilege first.",
+        "colApplication": "Application",
+        "colPrivilege": "Privilege",
+        "colPublisher": "Publisher",
+        "colOwners": "Owners",
+        "colSignIn": "Last sign-in",
+        "colFindings": "Open findings",
+        "unnamed": "No display name",
+        "resourceApp": "application",
+        "resourceApps": "applications",
+        "notExposed": "Not exposed by this product",
+        "notKnown": "Not known",
+        "notConcluded": "Not concluded",
+        "publisherVerified": "Verified",
+        "publisherUnverified": "Not verified",
+        "ownerCount": "{count, plural, one {# owner} other {# owners}}",
+        "noOwner": "No owner",
+        "noSignIn": "No sign-in recorded",
+        "daysSinceSignIn": "{days, plural, one {# day ago} other {# days ago}}",
+        "noOpenFindings": "None open",
+        "colVendor": "In the vendor’s console",
+        "aboutLink": "What is this?",
+        "manageLink": "Manage / deactivate",
+        "opensInNewTab": "(opens the vendor’s own site in a new tab)",
+        "vendorConsoleNote": "Inflect does not change these applications. “Manage / deactivate” opens an application in its vendor’s own console — Microsoft Entra, Okta or GitHub — where an administrator removes or disables it; the next scan shows the result.",
+        "morePermissions": "and {count} more",
+        "unknownPermissions": "{count, plural, one {# permission} other {# permissions}} the classification does not know: neither high nor low.",
+        "privilege": {
+          "HIGH": "High privilege",
+          "NOT_HIGH": "Not high",
+          "NOT_CONCLUDED": "Not concluded"
+        },
+        "class": {
+          "DIRECTORY": "the directory",
+          "MAIL": "mail",
+          "FILES": "files",
+          "CHAT": "chats",
+          "CALENDAR": "calendars",
+          "WRITE": "a write"
+        },
+        "findingCode": {
+          "INTEGRATION_HIGH_PRIVILEGE_GRANT": "High-privilege grant",
+          "INTEGRATION_UNVERIFIED_PUBLISHER": "Unverified publisher",
+          "INTEGRATION_NO_OWNER": "No owner",
+          "INTEGRATION_UNUSED": "Unused",
+          "INTEGRATION_EMPTY_INVENTORY": "Empty inventory"
+        }
+      },
       "workpaperReviewHeading": "Internal audit’s re-performance of the auditor",
-      "workpaperReviewScope": "Internal audit re-performs {percent}% of the auditor agent’s workpapers. The agreement and disagreement rates count concluded reviews only: an unreviewed, indeterminate or unassigned workpaper is shown beside them and never counted as agreement."
+      "workpaperReviewScope": "Internal audit re-performs {percent}% of the auditor agent’s workpapers. The agreement and disagreement rates count concluded reviews only: an unreviewed, indeterminate or unassigned workpaper is shown beside them and never counted as agreement.",
+      "tabBehaviour": "Behaviour anomalies",
+      "behaviourHeading": "Behaviour anomalies",
+      "behaviourScope": "Every agent-day the nightly fingerprint judged unlike the agent’s own baseline in the last {days} days (since {since}, UTC). Finding at z {finding}; latch threshold at z {latch}. Counts only, never content.",
+      "behaviourUnscored": "The detector is on, but it has not scored any agent in this workspace yet.",
+      "behaviourTruncated": "Only the newest {count} anomalies are shown; there are more in the window.",
+      "behaviourNone": "No anomalies in the window. The detector last scored a day on {day} (UTC)."
     },
     "crumbDashboard": "Dashboard",
     "crumbAdmin": "Admin",
@@ -11660,6 +12089,7 @@
         }
       },
       "approve": "Approve",
+      "approveNeedsKindPermission": "Your permissions do not cover approving this kind of proposal, so Approve is not offered. Somebody who has them can approve it, and you can still reject it.",
       "rationale": "Rationale: ",
       "diff": {
         "createHeading": "Full proposed content",
@@ -11678,7 +12108,30 @@
         "uncomputableTitle": "The changes could not be worked out",
         "reasonTargetMissing": "The record this proposal would change no longer exists, so there is nothing to compare against. Approval is unavailable — reject this proposal.",
         "reasonPayloadUnreadable": "The stored proposal content could not be read as a set of fields, so no change list can be shown. Approval is unavailable — reject this proposal and check the agent that produced it.",
-        "approveBlocked": "Approval is unavailable while the changes cannot be shown."
+        "approveBlocked": "Approval is unavailable while the changes cannot be shown.",
+        "kindNotApprovableHeading": "Not approvable in this version",
+        "kindNotApprovableBadge": "Awaiting an update",
+        "kindNotApprovableTitle": "This kind of proposal cannot be approved yet",
+        "reasonKindNotApprovable": "This version of Inflect can show this kind of proposal but cannot approve it yet. Nothing is wrong with the proposal: you can reject it, or leave it pending until the update is complete.",
+        "approveBlockedKind": "Approval is unavailable in this version."
+      },
+      "processMap": {
+        "heading": "Proposed process map",
+        "counts": "{steps, plural, one {# step} other {# steps}} · {arrows, plural, one {# arrow} other {# arrows}}",
+        "stepsHeading": "Steps",
+        "stepType": {
+          "processStep": "Step",
+          "decision": "Decision"
+        },
+        "arrowsHeading": "Arrows",
+        "arrowTo": "leads to",
+        "arrowLabel": "Label",
+        "noArrows": "No arrows",
+        "noteIsolated": "Step {step} has no arrows.",
+        "noteDecisionExits": "Decision {step} has fewer than two ways out.",
+        "canvasLabel": "Picture of the proposed map, with the steps where approval places them. The numbered list is the full proposal.",
+        "canvasUnavailable": "The picture of this map could not be shown. The numbered list above is the full proposal.",
+        "createsDraft": "Approving creates a new draft map on the Processes page, in Process map mode rather than Automation, with the steps placed as shown. Nothing is created before approval."
       },
       "signatureRecorded": "{recorded} of {required} approvals recorded — a second reviewer must sign",
       "awaitingSecond": "Awaiting a second approver",
@@ -11687,13 +12140,21 @@
         "closed": "Review window closed",
         "closedNotice": "This proposal's review window closed on {date}, so it can no longer be approved or rejected. It leaves this queue when the overnight clean-up marks it expired, and is kept as the record that nobody decided it in time."
       },
+      "decided": {
+        "ACCEPTED": "Approved",
+        "EDITED": "Approved with edits",
+        "REJECTED": "Rejected",
+        "other": "Decided",
+        "notice": "This proposal has already been decided, so it can no longer be approved or rejected."
+      },
       "truncated": "Showing the {shown} most recent pending proposals. More are waiting and are not listed here; the oldest appear as these are decided.",
       "kind": {
         "RISK": "Risk",
         "CONTROL": "Control",
         "POLICY": "Policy",
         "FINDING": "Finding",
-        "EXTERNAL_WRITE": "External write"
+        "EXTERNAL_WRITE": "External write",
+        "PROCESS_MAP": "Process map"
       },
       "field": {
         "title": "Title",
@@ -11753,7 +12214,9 @@
         "toolName": "Tool",
         "advertisedToolName": "Tool name as advertised",
         "arguments": "Arguments",
-        "priorState": "State before the change"
+        "priorState": "State before the change",
+        "nodes": "Steps",
+        "edges": "Arrows"
       },
       "guard": {
         "flaggedBadge": "Guard flagged",
@@ -11769,12 +12232,26 @@
       },
       "fromRun": "From an agent run",
       "fromRunStep": "From step {seq} of an agent run",
+      "runWaits": "A run is waiting for this decision: it asked a person before going on, and deciding this proposal continues it.",
+      "runWaitsLink": "Open the run",
       "composedByYou": "You composed this request, so somebody else approves it. Reject withdraws it.",
       "refused": {
         "composer": "You composed this request, so somebody else approves it.",
         "ownDissent": "You raised this finding proposal by dissenting from a sampled workpaper. Somebody else decides it.",
         "unknownDissent": "This proposal names a workpaper review this workspace does not hold, so nobody can decide it.",
-        "expired": "This proposal's review window has closed, so it can no longer be approved or rejected. It is kept as the record that nobody decided it in time."
+        "expired": "This proposal's review window has closed, so it can no longer be approved or rejected. It is kept as the record that nobody decided it in time.",
+        "processMapNotAvailable": "Process-map proposals cannot be approved yet. You can still reject this one.",
+        "processMapNotEditable": "A process map is approved exactly as proposed. To change it, reject it and propose the corrected map.",
+        "processMapNeedsProcessesEdit": "Approving a process map creates it as you, so it needs permission to edit process maps. Somebody who has it can approve this one.",
+        "processMapUnreadable": "This process map can no longer be read, so it cannot be approved. Reject it.",
+        "findingNeedsCreate": "Approving this finding creates it as you, so it needs permission to create findings. Somebody who has it can approve this one.",
+        "findingNeedsEdit": "Approving this change edits the finding as you, so it needs permission to edit findings. Somebody who has it can approve this one.",
+        "riskNeedsCreate": "Approving this risk creates it as you, so it needs permission to create risks. Somebody who has it can approve this one.",
+        "riskNeedsEdit": "Approving this change edits the risk as you, so it needs permission to edit risks. Somebody who has it can approve this one.",
+        "controlNeedsCreate": "Approving this control creates it as you, so it needs permission to create controls. Somebody who has it can approve this one.",
+        "controlNeedsEdit": "Approving this change edits the control as you, so it needs permission to edit controls. Somebody who has it can approve this one.",
+        "policyNeedsCreate": "Approving this policy creates it as you, so it needs permission to create policies. Somebody who has it can approve this one.",
+        "policyNeedsEdit": "Approving this change edits the policy as you, so it needs permission to edit policies. Somebody who has it can approve this one."
       }
     },
     "runs": {
@@ -11791,6 +12268,7 @@
       "emptyDesc": "Start a workflow above. Each run reads your compliance data, proposes changes for your approval, and produces a summary.",
       "stepMeta": "{steps} steps · ~{tokens} tokens · {date}",
       "resume": "Resume",
+      "openProposal": "Open proposal",
       "abort": "Abort",
       "awaitingApprovalPre": "Paused for review — approve its proposals in the ",
       "proposalsLink": "agent proposals",
@@ -11817,6 +12295,7 @@
           "accepted": "Answer accepted",
           "overlapping": "Ran at the same time as another delegation, so the steps below are claimed by both and these figures do not sum to the run's total.",
           "stepBadge": "via {agents}",
+          "subagentBadge": "Sub-agent: {name}",
           "specialist": "Specialist: {name}"
         },
         "crumbAgents": "Agents",
@@ -11833,6 +12312,21 @@
           "SYNTHESIS": "Synthesis",
           "MODEL_CALL": "Model call",
           "TOOL_CALL": "Tool call"
+        },
+        "compaction": {
+          "label": "Conversation summarised",
+          "sizes": "about {before} tokens before, about {after} after",
+          "notUsed": "about {before} tokens before; the summary was not used"
+        },
+        "deferral": {
+          "waiting": "This run asked a person before going on: it is waiting for a decision on its {kind} proposal.",
+          "deadline": "The decision is due by {deadline}; after that the run stops.",
+          "openProposal": "Open the proposal",
+          "checkpoint": "Deferred to a person",
+          "decidedApproved": "{who} approved the proposal this run waited on, {when}.",
+          "decidedApprovedUnnamed": "The proposal this run waited on was approved, {when}.",
+          "decidedRejected": "{who} rejected the proposal this run waited on, {when}.",
+          "decidedRejectedUnnamed": "The proposal this run waited on was rejected, {when}."
         },
         "metaStatus": "Status",
         "metaDriver": "Engine",
@@ -11945,6 +12439,10 @@
             "hint": "The agent a harness scan found, newest seen first. The run reviews what the scans observed about it."
           }
         }
+      },
+      "profileRun": {
+        "run": "Behaviour v{version}",
+        "testRun": "Behaviour v{version} — Test run"
       }
     },
     "quarantine": {
@@ -12098,6 +12596,9 @@
       "connectionLabel": "Tool server",
       "refresh": "Refresh catalogue",
       "loading": "Reading the server catalogue…",
+      "advertisedCount": "This server advertises {count} tools.",
+      "advertisedCountOne": "This server advertises one tool.",
+      "catalogueTruncated": "Only part of this server's catalogue could be read: at most {max} tools, and only the pages the server returned within our cursor bound. Any tool beyond that is not listed here and cannot be approved.",
       "refusedNames": "{count, plural, one {# tool the server offers is not listed: its name is empty, is longer than {max} characters, or contains a control, line-break or invisible character.} other {# tools the server offers are not listed: their names are empty, are longer than {max} characters, or contain control, line-break or invisible characters.}}",
       "loadFailed": "Could not read the catalogue from this server.",
       "approve": "Approve",
@@ -12288,6 +12789,51 @@
       "openParameterSets": "Open Saved parameters",
       "noTemplatesManagerDesc": "A request is composed from a saved parameter set that leaves fields open. Save one on the Saved parameters page.",
       "noTemplatesNoOpenFieldsDesc": "{count, plural, one {# saved parameter set here leaves} other {# saved parameter sets here leave}} no fields to fill in, so there is nothing to compose. A request needs a set that leaves at least one field open."
+    },
+    "sampleAudit": {
+      "assignedTo": "Asked of {who}",
+      "notAssigned": "Not assigned",
+      "readTheProposal": "Read the approval under review",
+      "rate": {
+        "neverDrawn": "No approval has been drawn for re-review yet, so there is no rate to report.",
+        "notReported": "Disagreement rate not reported: none of the {sampled} approvals drawn has been answered.",
+        "headline": "Disagreement rate {pct}%",
+        "over": "over {answered} answered of {sampled} drawn",
+        "breakdown": "Agreed {concurred} · Disagreed {dissented} · Could not tell {indeterminate} · Waiting for an answer {pending}",
+        "denominatorNote": "The rate is disagreements divided by every answer given, so a “could not tell” lowers it. Approvals still waiting for an answer are counted in neither."
+      },
+      "title": "Retrospective sample audit",
+      "intro": "A keyed random sample of approvals this queue already accepted, drawn so a second person can re-examine them. You cannot answer an approval you signed yourself — that is the whole point of the check.",
+      "empty": "Nothing drawn is waiting for an answer.",
+      "answer": "Answer",
+      "submit": "Record answer",
+      "cancel": "Cancel",
+      "answered": "Answer recorded.",
+      "answerFailed": "The answer could not be recorded.",
+      "outcomeLabel": "Was the approval right?",
+      "codesLabel": "Why not? Choose every reason that applies.",
+      "approvedAt": "Approved {when}",
+      "approvedAtUnknown": "Approval date not recorded",
+      "sampledAt": "Drawn {when}",
+      "outcome": {
+        "CONCURRED": "I agree with the approval",
+        "DISSENTED": "I disagree with the approval",
+        "INDETERMINATE": "I cannot tell"
+      },
+      "code": {
+        "RATIONALE_DOES_NOT_SUPPORT_PAYLOAD": "The rationale does not support what was proposed",
+        "MATERIALLY_INACCURATE": "Materially inaccurate about our actual posture",
+        "DUPLICATE_OF_EXISTING_RECORD": "Duplicates a record that already existed",
+        "WRONG_ENTITY_KIND": "Right content, wrong kind of record",
+        "SHOULD_HAVE_BEEN_EDITED": "Should have been edited before approval",
+        "SHOULD_HAVE_BEEN_REJECTED": "Should not have been approved at all",
+        "OUTSIDE_AGENT_REMIT": "Outside what this agent should ever do"
+      },
+      "refusal": {
+        "NOT_A_WRITER": "You can read this queue but not answer it.",
+        "SELF_REVIEW": "You approved this proposal, so somebody else answers its audit.",
+        "ALREADY_ANSWERED": "Already answered."
+      }
     },
     "skills": {
       "loadFailed": "Could not load the skill corpus.",
@@ -12532,6 +13078,7 @@
         "modelAbsent": "model not reported"
       },
       "shadowBadge": "Shadow",
+      "identityBadge": "Unregistered identity",
       "level": {
         "H0": "H0 · Shadow",
         "H1": "H1 · Registered",
@@ -12546,13 +13093,31 @@
         "UNKNOWN": "Unknown (held to the higher bar)"
       },
       "belowBar": "Below the bar ({bar})",
+      "identityNoBar": "Held to no bar",
       "latestIngestedDiffers": "A scan received later reads this agent at {level}; acceptance follows that reading.",
-      "verdictsUnreadable": "The stored verdicts could not be re-read, so every criterion is shown as not met.",
+      "notJudged": {
+        "badge": "Not judged",
+        "levelUnstated": "No level is stated, so it is not compared with its bar ({bar}).",
+        "levelUnstatedNoBar": "No level is stated.",
+        "reasonUnstated": "no reason given",
+        "code": {
+          "SOURCE_INCOMPLETE": "A source it was found through, {kind}, was not read in full ({reason})",
+          "SOURCE_NOT_LISTED": "It was found through {kind}, which the scan does not list as a source",
+          "VERDICT_SOURCE_INCOMPLETE": "{kind}, which reports on agents other sources find, was not read in full ({reason})",
+          "OTHER_SOURCE_INCOMPLETE": "Another source, {kind}, was not read in full; it does not bear on this agent",
+          "SOURCES_UNREADABLE": "The scan’s stored sources could not be read back, so nothing is known to have been read in full",
+          "VERDICTS_UNREADABLE": "The agent’s stored verdicts could not be read back, so every criterion is shown as not reported",
+          "UNKNOWN": "See the code"
+        }
+      },
       "cell": {
         "EVIDENCED": "Met",
+        "DECLARED": "Met: declared by the operator, not observed",
         "MET_UNEVIDENCED": "Not met: reported met with no evidence",
         "NOT_MET": "Not met",
-        "UNANSWERED": "Not met: not reported"
+        "NOT_MET_DECLARED": "Not met: declared by the operator",
+        "UNANSWERED": "Not met: not reported",
+        "NOT_READABLE": "Not readable: nothing this scan read could report it"
       },
       "cellNoEvidence": "No evidence reference",
       "evidenceCopy": "Copy evidence reference",
@@ -12577,7 +13142,8 @@
           "propose_not_commit": "Writes proposed, not committed",
           "prior_state_reads": "Prior state read before a write",
           "skills_declared": "Skills declared",
-          "delegation_narrows": "Delegation only narrows"
+          "delegation_narrows": "Delegation only narrows",
+          "egress_enforced": "Outbound network access enforced"
         },
         "H4": {
           "ledger_baseline": "Run ledger with a baseline",
@@ -12666,6 +13232,12 @@
       "shadowMayBeIncomplete": "Not every trusted scanner’s latest scan is complete, so this list may be missing shadow agents.",
       "shadowNone": "No shadow agent: every trusted scanner’s latest scan is complete, the oldest of them as of {asOf}.",
       "shadowTruncated": "Only the {count} most recently seen shadow agents are listed.",
+      "identityHeading": "Unregistered identities",
+      "identityIntro": "Automated identities a scan found with no live row in the agent register and no sign that they run a model: not found in agent code, in a tracing system or on a tool server, and listing no tool and no model endpoint. Service accounts, build workflows that hold a credential and directory applications look like this. A scan cannot show that one runs no model. If one is an agent, register it, and it is then scored as one. If it is not, it still needs an owner on record, or the principal retired. They are held to no harness bar.",
+      "identityUnstated": "Not every trusted scanner’s latest scan is complete, so whether unregistered identities exist is unknown. An empty list here is not evidence that there are none.",
+      "identityMayBeIncomplete": "Not every trusted scanner’s latest scan is complete, so this list may be missing identities, and a source that was not read may hold a sign that one of these runs a model.",
+      "identityNone": "No unregistered identity: every trusted scanner’s latest scan is complete, the oldest of them as of {asOf}.",
+      "identityTruncated": "Only the {count} most recently seen unregistered identities are listed.",
       "accept": "Accept",
       "renew": "Renew",
       "acceptModal": {
@@ -12728,8 +13300,11 @@
       "shadowIntakePending": "Registered as {name}. It leaves this list at the next scan that sees it, and its finding closes at the next complete one.",
       "shadowIntakeRetired": "Registered once from its finding, into a register row since retired or deleted. It is not registered again from here.",
       "shadowNoFinding": "No shadow-agent finding to register from.",
+      "identityNoFinding": "No unregistered-identity finding to register from.",
       "registerModal": {
         "title": "Register the shadow agent",
+        "identityTitle": "Register the identity as an agent",
+        "identityNotice": "A scan found no sign that this identity runs a model, and it cannot show that it runs none. Registering it records it as an agent: it gets an accountable owner, and from the next scan it is scored as an agent and held to the harness bar. If it is not an agent, do not register it here: give it an owner where your organisation keeps such identities, or retire it.",
         "description": "Take {agent} into the agent register. This creates a DRAFT register row and a provisional EU AI Act entry that is not yet classified. The agent cannot be activated until that entry is classified.",
         "suggestionTitle": "What the owner suggestion rested on",
         "suggestionSuggested": "A {grade} suggestion named somebody. Whom it named is not shown here.",
@@ -13171,7 +13746,8 @@
         "QUARANTINED": "The request to disable its service principal was refused by the output guard",
         "QUEUED": "Disabling its service principal is queued",
         "REFUSED": "The request to disable its service principal was refused",
-        "FAILED": "The request to disable its service principal failed"
+        "FAILED": "The request to disable its service principal failed",
+        "WOULD_REQUEST_DISABLE": "Its service principal would be disabled; nothing was requested in this dry run"
       },
       "blocked": {
         "ABOVE_CLAMP": "{next} is above the highest mode this check acts at, {clamp}.",
@@ -13280,6 +13856,7 @@
       "emptyCatalogueTitle": "No tools were available to this agent, so nothing was consulted",
       "inputLabel": "Your question",
       "model": "Model",
+      "networkError": "The request could not reach the server. Check your connection and ask again.",
       "noAnswerDescription": "The run finished without producing an answer. The calls it made are listed below.",
       "noAnswerTitle": "No answer was produced",
       "noCalls": "Nothing was consulted, so an answer here is not based on this workspace's records",
@@ -13322,13 +13899,17 @@
       },
       "field": {
         "instructions": "Instructions",
+        "flow": "Drawn flow: the steps, in the order the agent is told to follow them, then every connection",
         "tools": "Tools",
         "skills": "Skills",
         "modelTier": "Model tier",
         "effort": "Effort",
         "maxTurns": "Turn limit",
+        "compaction": "Summarise long conversations",
+        "deferral": "Wait for a person",
         "outputKind": "Output",
-        "triggers": "Allowed triggers"
+        "triggers": "Allowed triggers",
+        "subagents": "Sub-agents: each one's tools, skills, turn limit and every word of its instructions"
       },
       "tier": {
         "balanced": "Balanced",
@@ -13348,6 +13929,15 @@
         "AUTOMATION": "Started by an automation",
         "TEST_RUN": "Test run"
       },
+      "compaction": {
+        "default": "Engine default",
+        "off": "Off",
+        "lower": "At a lower threshold",
+        "atTokens": "At {count} tokens"
+      },
+      "deferral": {
+        "none": "None: every call queues its proposal and the run goes on"
+      },
       "inForce": {
         "heading": "In force",
         "approval": "Version {version}, approved by {who} on {when}.",
@@ -13358,14 +13948,20 @@
       "open": {
         "heading": "Version {version}",
         "writtenBy": "Written by {who} on {when}.",
-        "submit": "Submit for review"
+        "submit": "Submit for review",
+        "retire": "Retire version",
+        "retireInForceNote": "Retiring the version in force clears this profile’s pointer, so the agent runs nothing until another version is approved."
       },
       "review": {
         "diffIntro": "Changes from version {from}, in force now, to version {to}:",
         "hashNote": "Approving approves this text, by its hash:",
+        "flowDiffIntro": "Changes to the drawn flow from version {from}, in force now, to version {to}:",
+        "hashNoteWithFlow": "Approving approves this text and this drawn flow, together, by their hash:",
         "authorCannotDecide": "You wrote this version, so another person must approve or reject it.",
         "approve": "Approve",
-        "reject": "Reject"
+        "reject": "Reject",
+        "subagentsDiffIntro": "Changes to the sub-agents from version {from}, in force now, to version {to}:",
+        "hashNoteWithSubagents": "Approving approves this text and every sub-agent's instructions, together, by their hash:"
       },
       "testRun": {
         "action": "Test run",
@@ -13373,7 +13969,9 @@
           "ENGINE_DOES_NOT_RUN_PROFILES": "This workspace runs agents on the {engine}, which does not run agent profiles. An owner can choose the Tool Runner engine under Admin → AI features → Agent engines.",
           "ENGINE_NOT_IN_FORCE": "This workspace has chosen the Tool Runner engine, but it is not running yet. Admin → AI features → Agent engines shows what it still needs.",
           "AGENT_NOT_READY": "A Test run runs as this agent, so the agent must be active and risk-assessed first.",
-          "TRIGGER_NOT_ALLOWED": "This version does not allow Test runs. Write a version that allows them."
+          "TRIGGER_NOT_ALLOWED": "This version does not allow Test runs. Write a version that allows them.",
+          "FLOW_NOT_RUNNABLE": "This version carries a drawn flow, and no engine runs a drawn flow yet. Write a version without a flow to try it.",
+          "NO_READ_TOOL": "A Test run is read-only, so it is offered no propose tool, and this version names only propose tools. Write a version that names a read tool to try it."
         },
         "engine": {
           "STATIC": "built-in engine",
@@ -13389,7 +13987,8 @@
         "decider": "Decided by",
         "byOn": "{who}, {when}",
         "hash": "Instructions hash",
-        "rejectionReason": "Reason for rejection"
+        "rejectionReason": "Reason for rejection",
+        "subagents": "Sub-agents"
       },
       "editor": {
         "createTitle": "Write the first version",
@@ -13413,13 +14012,18 @@
         "modelTierHint": "Balanced suits most work. Deep is slower and costs more.",
         "effortHint": "How much the model reasons before it answers.",
         "maxTurnsHint": "The most model turns a run may take, from 1 to {max}.",
+        "compactionHint": "When a run's next request would pass the threshold, the model summarises the earlier turns and the run carries on from the summary. The instructions, the skills it activated, refused calls, proposals and the last turn's results are always kept word for word. By default this happens at about {tokens} tokens. A version can turn it off or lower the threshold, never raise it.",
+        "deferralHint": "A call to a tool ticked here waits for a person: the run stops until the proposal it queued is approved or rejected in the proposals queue, then carries on with the decision. Only the version's own propose tools can wait, and a sub-agent cannot use one.",
+        "compactionThresholdLabel": "Threshold, in tokens",
+        "compactionThresholdHint": "From {min} to {max} tokens.",
         "outputKindHint": "Proposals are never applied by the agent. A person decides each one.",
         "triggersHint": "What may start a run of this profile.",
         "cancel": "Cancel",
         "save": "Save draft",
         "saving": "Saving…",
         "saved": "Draft saved.",
-        "failed": "Couldn't save this version."
+        "failed": "Couldn't save this version.",
+        "flowKept": "This version carries a drawn flow of {nodes} steps. The new version keeps it as drawn and takes its tools from it; the flow cannot be changed here."
       },
       "reject": {
         "title": "Reject version {version}?",
@@ -13430,6 +14034,29 @@
       },
       "refusal": {
         "SKILL_CATALOGUE_OVER_BUDGET": "These skills' descriptions total {used} bytes, over the {budget}-byte budget a run can mount, so a run of this version would be refused. Choose fewer skills, or skills with shorter descriptions."
+      },
+      "subagents": {
+        "heading": "Sub-agents",
+        "add": "Sub-agent",
+        "hint": "Up to {max}. Each works only with tools and skills this version has chosen, and cannot delegate further. The agent picks one by name alone, so nothing of a sub-agent's instructions reaches it.",
+        "none": "No sub-agents. The agent does all of its work itself.",
+        "untitled": "Sub-agent {n}",
+        "outside": "This sub-agent names what this version no longer has: {items}. Change it, or the save is refused.",
+        "turnsAbove": "a turn limit above the version's {max}",
+        "name": "Name",
+        "nameHint": "Lowercase letters, digits and underscores, starting with a letter. The agent chooses a sub-agent by this name.",
+        "nameInvalid": "Use 2 to 40 lowercase letters, digits and underscores, starting with a letter.",
+        "toolsHint": "Only tools this version has chosen. A sub-agent can never use more than its agent.",
+        "toolsEmpty": "Choose this version's tools first.",
+        "skillsHint": "Only skills this version has chosen.",
+        "skillsEmpty": "This version mounts no skills.",
+        "maxTurnsHint": "From 1 to this version's own limit, {max}.",
+        "remove": "Remove"
+      },
+      "canvas": {
+        "open": "Open on canvas",
+        "compare": "See the changes on canvas",
+        "compareIntro": "Version {to} drawn against version {from}, in force: each tool, skill and trigger it adds or removes, and the model settings it changes."
       }
     },
     "oversightAccess": {
@@ -13630,7 +14257,8 @@
     "moreEvents": "+{count} more",
     "dayCellAria": "{date} — {count, plural, one {# event} other {# events}}{summary}",
     "dayCellCategorySummaryItem": "{count} {category}",
-    "eventCount": "{count, plural, one {# event} other {# events}}"
+    "eventCount": "{count, plural, one {# event} other {# events}}",
+    "heatmapLegendLabel": "Activity"
   },
   "coverage": {
     "crumbDashboard": "Dashboard",
@@ -13656,8 +14284,10 @@
     "colCriticality": "Criticality",
     "emptyAssets": "All critical assets are covered by controls",
     "emptyAssetsNone": "There are no high or critical assets yet",
+    "emptyAssetsWithheld": "Your role cannot view assets, so they are not listed here.",
     "emptyRisks": "All risks are mitigated by controls",
     "emptyRisksNone": "There are no risks in the register yet",
+    "emptyRisksWithheld": "Your role cannot view risks, so they are not listed here.",
     "uncoveredAssets": "Uncovered Critical Assets",
     "unmappedRisks": "Unmapped Risks",
     "topControls": "Top Controls by Risk Coverage",
@@ -13749,7 +14379,7 @@
     "colSubject": "Subject",
     "colSnapshotRole": "Snapshot role",
     "colLiveRole": "Live role",
-    "colLastActive": "Last active",
+    "colLastSignIn": "Last sign-in",
     "colDecision": "Decision",
     "deleted": "(deleted)",
     "never": "never",
@@ -13838,6 +14468,11 @@
     "agentPackGuardFlags": "{count} guard flag(s)",
     "agentPackBreakerTripped": "breaker tripped",
     "agentPackKills": "{count} kill(s)",
+    "agentPackSpending": "Spending authority on {count} rail(s)",
+    "agentPackSpendingUnreviewed": "{count} not reviewed by a second person",
+    "agentPackGrantsTruncated": "Grant list capped — the pack does not hold every grant",
+    "agentPackTimeBoundedTruncated": "Time-bounded grant list capped — the pack does not hold every one",
+    "agentPackKillsTruncated": "Kill list capped — the pack does not hold every kill",
     "agentOwnerCannotDecide": "You own this agent — another reviewer decides it",
     "agentNarrowingsFirst": "Decide its {count} narrowing(s) first",
     "agentConfirm": "Certify",
@@ -13851,6 +14486,33 @@
     "narrowingRejected": "Kept",
     "narrowingAccept": "Remove grant",
     "narrowingReject": "Keep grant",
+    "agentWithdrawalsFirst": "Decide its {count} spending withdrawal(s) first",
+    "agentNoPaymentAbility": "It can no longer pay: {rail}",
+    "colWithdrawalRail": "Spending authority",
+    "withdrawalRail": {
+      "AGENT_PAY_TOKEN": "Mastercard Agent Pay token",
+      "AP4M": "Agent Pay for Machines",
+      "OTHER": "Other payment rail"
+    },
+    "withdrawalDeclared": "Declared {date}",
+    "colWithdrawalGrounds": "Why",
+    "withdrawalGround": {
+      "EXPIRED_BY_WINDOW_END": "It had expired by the end of the campaign's window",
+      "SUSPENDED_AFTER_KILL": "Still waiting to be suspended after the agent's kill switch fired",
+      "NEVER_REVIEWED": "No second person has reviewed it",
+      "EXPIRES_DURING_CAMPAIGN": "It expires before this campaign ends",
+      "NO_PAYMENT_ABILITY_CONFIRMED": "The reviewer confirmed the agent can no longer pay"
+    },
+    "withdrawalAccepted": "Withdrawn",
+    "withdrawalRejected": "Kept",
+    "withdrawalAccept": "Withdraw",
+    "withdrawalReject": "Keep",
+    "withdrawalResult": {
+      "ENVELOPE_WITHDRAWN": "Withdrawn on the register. The agent's owner has a task to cancel the token with the agent platform.",
+      "ENVELOPE_ALREADY_WITHDRAWN": "It had already been withdrawn on the register. The agent's owner has a task to cancel the token with the agent platform.",
+      "ENVELOPE_REDECLARED": "It was declared again after the pack was prepared, so it was left as it is.",
+      "ENVELOPE_ABSENT": "It is no longer on the register."
+    },
     "colSampleDecision": "Decision",
     "colSampleOutcome": "Second review",
     "sampleOutcome": {
@@ -13873,10 +14535,16 @@
     "agentPacksMissingNotice": "The reviewer packs have not been prepared. Each agent is decided from its pack.",
     "agentPreparing": "Preparing…",
     "agentPreparePacks": "Prepare packs",
+    "agentPacksQueued": "Reviewer packs are queued for preparation. This page updates when they are ready.",
+    "agentPacksPreparingProgress": "Preparing reviewer packs… {done} of {total} agents",
+    "agentPacksPreparationFailed": "Preparing the reviewer packs failed, and nothing was written. Prepare them again.",
+    "agentPacksPreparationUnknown": "Whether the reviewer packs are being prepared could not be read. Reload the page in a moment.",
     "agentEvidenceMatches": "The evidence file matches the campaign's stored rows. SHA-256:",
     "agentEvidenceMismatch": "The evidence file does NOT match the campaign's stored rows. Recomputed SHA-256:",
     "agentNarrowingsTitle": "Proposed narrowings",
     "agentNarrowingsHint": "Each pack proposes removing the grants its agent held for the whole window and never called. Removing a grant takes effect immediately; nothing here can add one.",
+    "agentWithdrawalsTitle": "Proposed spending withdrawals",
+    "agentWithdrawalsHint": "Each pack proposes withdrawing a spending authority that had expired by the end of the window, is still waiting to be suspended after a kill switch, or that no second person has reviewed. Withdrawing takes effect on the register immediately, and the agent's owner gets a task to cancel the token with the agent platform. Nothing here can add or raise a spending authority.",
     "agentSampleTitle": "Second review",
     "agentSampleHint": "These decisions were drawn at close for a second person, who neither made the decision nor owns the agent.",
     "fieldPreparer": "Preparing agent",
@@ -14338,6 +15006,7 @@
       "undo": "Undo",
       "loading": "Loading traceability…",
       "failed": "Failed to load traceability data",
+      "linkFailed": "The link could not be saved.",
       "coverageType": "Coverage type",
       "coverageFull": "Full",
       "coveragePartial": "Partial",
@@ -14361,21 +15030,26 @@
       "emptyRelatedAssets": "No related assets",
       "emptyRelatedAssetsDesc": "None of this policy's controls protect an asset yet.",
       "viaOne": "via {count} control",
-      "viaMany": "via {count} controls"
+      "viaMany": "via {count} controls",
+      "linkFailed": "The control could not be linked."
     },
     "inherited": {
-      "entityAsset": "asset",
-      "entityRisk": "risk",
-      "evidenceNotice": "Evidence is inherited from the controls mapped to this {entity}. Manage it on each control.",
+      "entityAsset": "this asset",
+      "entityRisk": "this risk",
+      "evidenceNotice": "Evidence is inherited from the controls mapped to {entity}. Manage it on each control.",
       "evidenceEmpty": "No inherited evidence",
-      "evidenceEmptyDesc": "No evidence is attached to the controls mapped to this {entity} yet.",
-      "mappingsNotice": "Framework mappings are inherited from the controls mapped to this {entity}. Manage them on each control.",
+      "evidenceEmptyDesc": "No evidence is attached to the controls mapped to {entity} yet.",
+      "mappingsNotice": "Framework mappings are inherited from the controls mapped to {entity}. Manage them on each control.",
       "mappingsEmpty": "No inherited mappings",
-      "mappingsEmptyDesc": "None of the controls mapped to this {entity} are linked to a framework requirement yet.",
-      "testsNotice": "Tests run on the controls mapped to this {entity}. Manage test plans on each control.",
+      "mappingsEmptyDesc": "None of the controls mapped to {entity} are linked to a framework requirement yet.",
+      "testsNotice": "Tests run on the controls mapped to {entity}. Manage test plans on each control.",
       "testsEmpty": "No inherited tests",
-      "testsEmptyDesc": "No test plans exist on the controls mapped to this {entity} yet.",
-      "checksNote": "Automated integration checks are per-control and are not inherited here — view them on each control."
+      "testsEmptyDesc": "No test plans exist on the controls mapped to {entity} yet.",
+      "checksNote": "Automated integration checks are per-control and are not inherited here — view them on each control.",
+      "entityPolicy": "this policy",
+      "evidenceLoadError": "Couldn't load the inherited evidence. Reload the page to try again.",
+      "mappingsLoadError": "Couldn't load the inherited mappings. Reload the page to try again.",
+      "testsLoadError": "Couldn't load the inherited tests. Reload the page to try again."
     },
     "linkedTasks": {
       "empty": "No linked tasks",
@@ -14531,6 +15205,10 @@
       "renewBodySuffix": "state with the same justification + compensating control as this one. The original record is preserved as part of the audit trail. An admin will need to approve the renewal before it takes effect.",
       "renewing": "Renewing…",
       "expiryRequired": "Expiry date is required for approval.",
+      "requestFailed": "The exception could not be requested.",
+      "approveFailed": "The exception could not be approved.",
+      "rejectFailed": "The exception could not be rejected.",
+      "renewFailed": "The exception could not be renewed.",
       "exceptionLabel": "Exception",
       "exceptedUntil": "Excepted until {date}",
       "pickRiskAcceptor": "Select who accepts this risk",
@@ -14706,7 +15384,9 @@
       "cancel": "Cancel",
       "selectedCount": "{count} selected",
       "importCount": "Import {count}",
-      "select": "Select"
+      "select": "Select",
+      "loadMore": "Load more",
+      "morePages": "This folder has more items than are shown."
     },
     "bia": {
       "protects": "Protects",
@@ -14914,6 +15594,9 @@
     "returnToDashboard": "Return to Dashboard"
   },
   "noTenant": {
+    "refreshAccess": "I was just given access — check again",
+    "refreshingAccess": "Checking…",
+    "refreshStale": "Your session was opened before this access was granted, so it is not visible yet. Check again to pick it up without signing out.",
     "title": "No access yet",
     "titleOtherWorkspace": "You don't have access to this workspace",
     "signedInAs": "You are signed in as <b>{email}</b>.",
@@ -14991,6 +15674,8 @@
       "emptyReader": "No widgets yet. An organization owner or admin can add them.",
       "onboardingTitle": "Create a workspace to fill your portfolio",
       "onboardingDesc": "This dashboard rolls up compliance posture — coverage, risks, evidence and maturity — across every workspace in your organization. Create your first workspace; its figures appear after the next daily snapshot, at 05:00 UTC.",
+      "onboardingTitleAskOwner": "No workspaces yet",
+      "onboardingDescAskOwner": "This dashboard rolls up compliance posture across every workspace in your organization. Only an organization owner can create a workspace; ask one to create the first. Its figures appear after the next daily snapshot, at 05:00 UTC.",
       "manageTenants": "Workspaces",
       "deleteWidgetAria": "Delete {name} widget",
       "editWidgetAria": "Edit {name} widget",
@@ -15252,6 +15937,7 @@
       "actionAccessRefused": "Access refused",
       "actionWorkspaceDeleted": "Workspace deleted",
       "actionAgentSwitchesChanged": "Agent features changed",
+      "actionAgentTurnCapsChanged": "Per-turn limits changed",
       "actionOther": "Other event",
       "workspaceRole": {
         "OWNER": "Owner",
@@ -15306,6 +15992,7 @@
       "statusDraft": "Draft",
       "statusSubmitted": "Submitted",
       "statusRejected": "Rejected",
+      "statusNeedsReview": "Needs review",
       "emptyTitle": "No overdue evidence",
       "emptyDesc": "No evidence item awaiting approval in any of this organization's workspaces is past its review date.",
       "loadMore": "Load more evidence",
@@ -15478,6 +16165,65 @@
             "body": "The Tool Runner engine stops being available in every workspace in {org} ({count, plural, one {# workspace} other {# workspaces}}). A workspace that chose it runs its agents on the built-in engine instead, and runs that use an agent profile are refused."
           },
           "confirm": "Turn off"
+        },
+        "turnCaps": {
+          "title": "Per-turn limits",
+          "description": "The most one agent turn may start, for every workspace in this organization. A workspace can set a lower limit for itself, never a higher one. Each change is recorded in the organization's audit log.",
+          "delegationsPerTurn": {
+            "label": "Delegations per turn",
+            "help": "How many sub-agents one turn may hand work to, from 0 to 10. 0 turns delegation off. A delegation is also a tool call, so while one tool call per turn is allowed, this limit only matters at 0."
+          },
+          "toolCallsPerTurn": {
+            "label": "Tool calls per turn",
+            "help": "How many tools one turn of the Tool Runner engine may call, from 1 to 10. A call past the limit is refused and the agent is told why. Calls still run one at a time."
+          },
+          "decrease": "Decrease",
+          "increase": "Increase",
+          "save": "Save",
+          "saved": "Saved. Runs pick up the new limit from their next step.",
+          "confirmLower": {
+            "delegationsPerTurn": {
+              "title": "Lower the delegations limit?"
+            },
+            "toolCallsPerTurn": {
+              "title": "Lower the tool calls limit?"
+            },
+            "body": "The limit goes from {from} to {to} in every workspace in {org} ({count, plural, one {# workspace} other {# workspaces}}), from the next step any run takes. A workspace that set a higher limit keeps its setting, and it applies again if you raise this limit.",
+            "confirm": "Lower limit"
+          }
+        }
+      },
+      "evaluations": {
+        "title": "Evaluations",
+        "description": "Two nightly evaluations test the platform's AI features. They run as GitHub Actions against a throwaway copy of the app built for the run, never against production, and they are switched on and off in the GitHub repository, not here. This card describes them; it does not show whether they are on.",
+        "offByDefault": "Off by default",
+        "shared": {
+          "offByDefault": "Both are off by default: the nightly run happens only while its repository variable is set to true.",
+          "manualRun": "Running the workflow by hand from GitHub always runs it, whatever the variable says.",
+          "key": "Each uses its own dedicated key secret if one is set, and the shared <code>{shared}</code> secret otherwise."
+        },
+        "labels": {
+          "tests": "What it tests",
+          "schedule": "When it runs",
+          "budget": "Spending cap",
+          "switch": "Switch",
+          "key": "API key",
+          "runs": "Runs"
+        },
+        "schedule": "Every night at {time} UTC, while switched on",
+        "switch": "Repository variable <code>{name}</code> set to <code>{value}</code>",
+        "key": "<code>{dedicated}</code>, or <code>{shared}</code> if that is not set",
+        "runsLink": "Open the {workflow} runs on GitHub",
+        "variablesLink": "Open the repository's Actions variables on GitHub",
+        "garak": {
+          "name": "garak — red-team of the assistant",
+          "tests": "Attacks the assistant the way an attacker would reach it — prompt injection, jailbreaks and data leakage — through the product's own endpoint, so the guards around the model are tested together with it.",
+          "budget": "USD {amount} a night: its share of a USD {cap} nightly cap shared with the Ragas evaluation ({decision})."
+        },
+        "inspect": {
+          "name": "Inspect — governed agent runs",
+          "tests": "Runs a fixed set of tasks on the product's own agent engines, Flue and the Tool Runner, and scores each run from the record it left: what it called, what it proposed and how it settled.",
+          "budget": "USD {amount} a night for both engines together ({decision})."
         }
       }
     },
@@ -15528,7 +16274,8 @@
       "selectedEdgeAria": "Selected edge properties",
       "loadingControls": "Loading controls…",
       "pickControl": "Pick a control…",
-      "auditorsHint": "Auditors see the chosen control as a shield pill on the connection."
+      "auditorsHint": "Auditors see the chosen control as a shield pill on the connection.",
+      "openControl": "Open control"
     },
     "ruleBuilder": {
       "editTitle": "Edit rule",
@@ -15641,8 +16388,12 @@
       "webhookSecretRemove": "Remove signing secret",
       "webhookSecretKeep": "Keep signing secret",
       "subflowTargetLabel": "Target sub-flow group",
-      "subflowTargetHint": "The node key of the sub-flow group to invoke.",
-      "subflowTargetPlaceholder": "Sub-flow group id",
+      "subflowTargetHint": "The automation-canvas group to run. Its enabled step with the highest priority starts. A step belongs to the group it sits inside on the canvas.",
+      "subflowTargetPlaceholder": "Choose a sub-flow group",
+      "subflowTargetEmpty": "No sub-flow groups yet. Add a group to an automation canvas first.",
+      "subflowTargetOption": "{map} › {group}",
+      "subflowTargetUnnamed": "Untitled group",
+      "subflowTargetMissing": "Group not found ({key})",
       "ruleDescription": "Description",
       "ruleDescriptionHint": "Optional. Shown on the rule detail sheet. Clear it to remove a description a template set.",
       "ruleDescriptionPlaceholder": "What this rule is for…",
@@ -15658,9 +16409,14 @@
       "agentWorkflowPlaceholder": "Choose a workflow",
       "agentInputMappingLabel": "Input mapping",
       "agentInputMappingHint": "One per line, as inputKey: triggerField. Field names only — never free text.",
-      "agentInputMappingPlaceholder": "riskId: id\nseverity: severity"
+      "agentInputMappingPlaceholder": "riskId: id\nseverity: severity",
+      "detailLoading": "Loading this rule…",
+      "detailLoadFailed": "Couldn't load this rule. Close the builder and open it again before saving."
     },
     "autoInspector": {
+      "triggerChangeTitle": "Change the trigger event?",
+      "triggerChangeFilterRemoved": "The filter for the old trigger will be removed.",
+      "triggerChangeConfirm": "Change trigger",
       "actionNotify": "Notify user",
       "actionCreateTask": "Create task",
       "actionUpdateStatus": "Update status",
@@ -15702,7 +16458,8 @@
         "TRIGGER_NOT_SET": "Choose its trigger event: connect a Trigger step and pick the event.",
         "SCHEDULE_NOT_SET": "Set its schedule in the rule builder.",
         "ACTION_INCOMPLETE": "Complete its action: use Edit action."
-      }
+      },
+      "openAgentOnCanvas": "Open the agent on canvas"
     },
     "diff": {
       "title": "Diff v{x} vs v{y}",
@@ -15774,7 +16531,22 @@
       "paletteAria": "Process palette",
       "tools": "Tools",
       "dragToAdd": "Drag to add a {label} node",
-      "clickToAdd": "Add a {label} step (click, or drag onto the canvas)"
+      "clickToAdd": "Add a {label} step (click, or drag onto the canvas)",
+      "kinds": {
+        "processStep": "Process step",
+        "decision": "Decision",
+        "control": "Control",
+        "risk": "Risk",
+        "asset": "Asset",
+        "external": "External party",
+        "annotation": "Annotation",
+        "group": "Group",
+        "trigger": "Trigger",
+        "condition": "Condition",
+        "action": "Action",
+        "agent": "Agent",
+        "slaGate": "SLA gate"
+      }
     },
     "canvasBase": {
       "emptyState": "Drag a process step from the palette to begin.",
@@ -15812,6 +16584,7 @@
       "empty": "No new suggestions — your enabled rules already cover the obvious gaps.",
       "draftCreated": "Draft created",
       "createDraft": "Create draft",
+      "createFailed": "The draft rule could not be created.",
       "dismiss": "Dismiss",
       "events": {
         "CONTROL_STATUS_CHANGED": "Control Status Changed",
@@ -15931,7 +16704,12 @@
       "failTemplateCreate": "Could not create a map from that template",
       "failModeSwitch": "Could not switch canvas mode",
       "failStatusChange": "Could not change this map’s status",
-      "duplicatePartial": "the copy was created but its contents could not be saved — delete the empty copy or try again"
+      "duplicatePartial": "the copy was created but its contents could not be saved — delete the empty copy or try again",
+      "versionConflictTitle": "Someone else saved this map. Reload to see the latest version.",
+      "versionConflictLostOnReloadAtVersion": "Server version is now v{version}; your edits will be lost on reload.",
+      "versionConflictLostOnReload": "Your edits will be lost on reload.",
+      "versionConflictReload": "Reload",
+      "openAgentFailed": "This step’s agent could not be found. Open the step’s rule to choose one."
     },
     "canvasPalette": {
       "dialogAria": "Canvas command palette",
@@ -16026,7 +16804,29 @@
     "entityTest": "Tests",
     "entityEvidence": "Evidence",
     "entityFramework": "Frameworks",
-    "entityAsset": "Assets"
+    "entityAsset": "Assets",
+    "commands": {
+      "goToDashboard": "Go to Dashboard",
+      "goToControls": "Go to Controls",
+      "goToRisks": "Go to Risks",
+      "goToPolicies": "Go to Policies",
+      "goToEvidence": "Go to Evidence",
+      "goToTasks": "Go to Tasks",
+      "goToCalendar": "Go to Calendar",
+      "goToFrameworks": "Go to Frameworks",
+      "goToVendors": "Go to Vendors",
+      "goToReports": "Go to Reports",
+      "goToAgentRegister": "Go to Agent register",
+      "goToAgentProposals": "Go to Agent proposals",
+      "goToAgentQuarantine": "Go to Agent quarantine",
+      "suspendAgent": "Suspend an agent",
+      "killSwitch": "Kill switch",
+      "goToAdmin": "Go to Admin",
+      "askAssistant": "Ask the assistant",
+      "toggleTheme": "Toggle theme",
+      "signOut": "Sign out"
+    },
+    "searchFailed": "Search failed. Try again in a moment."
   },
   "shortcuts": {
     "title": "Keyboard shortcuts",
@@ -16262,6 +17062,314 @@
         "infraExitReadiness": "Infrastructure Dependency & Exit-Readiness",
         "regulatoryAlignment": "Regulatory Alignment & Certification",
         "sovereignAi": "Sovereign AI"
+      },
+      "bands": {
+        "exposed": "Exposed",
+        "emerging": "Emerging",
+        "managed": "Managed",
+        "sovereignReady": "Sovereign-ready"
+      },
+      "questions": {
+        "ds-1-01": {
+          "text": "Do you know the legal jurisdiction(s) under which each production cloud provider operates?",
+          "options": {
+            "s0": "None",
+            "s1": "Informal",
+            "s2": "Documented per-provider",
+            "s3": "Contractually asserted",
+            "s4": "Continuously monitored"
+          }
+        },
+        "ds-1-02": {
+          "text": "Are any workloads subject to non-EU extraterritorial law (e.g. US CLOUD Act) via the provider's parent company?",
+          "options": {
+            "s0": "Unknown",
+            "s1": "Suspected / unassessed",
+            "s2": "Assessed & accepted",
+            "s3": "Mitigated via EU subsidiary/contract",
+            "s4": "Sovereign-cloud isolated"
+          }
+        },
+        "ds-1-03": {
+          "text": "Have you evaluated a sovereign or EU-only cloud offering (EUCS \"High\", Gaia-X-labelled) for sensitive workloads?",
+          "options": {
+            "s0": "Never",
+            "s1": "Aware",
+            "s2": "Evaluated",
+            "s3": "Piloted",
+            "s4": "In production for sensitive tiers"
+          }
+        },
+        "ds-1-04": {
+          "text": "Is provider concentration risk (single-hyperscaler dependency) tracked as a formal risk?",
+          "options": {
+            "s0": "No",
+            "s1": "Informal",
+            "s2": "On the risk register",
+            "s3": "With a mitigation plan",
+            "s4": "Multi-provider by design"
+          }
+        },
+        "ds-1-05": {
+          "text": "Are encryption keys for cloud-hosted sensitive data held under your sole control (HYOK/BYOK), outside the provider's jurisdiction?",
+          "options": {
+            "s0": "Provider-managed",
+            "s1": "BYOK unassessed",
+            "s2": "BYOK in use",
+            "s3": "HYOK for sensitive tiers",
+            "s4": "HYOK + external KMS under EU control"
+          }
+        },
+        "ds-2-01": {
+          "text": "Do you maintain an inventory of where each category of personal/sensitive data physically resides?",
+          "options": {
+            "s0": "None",
+            "s1": "Partial",
+            "s2": "Complete inventory",
+            "s3": "Mapped to data classification",
+            "s4": "Continuously reconciled"
+          }
+        },
+        "ds-2-02": {
+          "text": "For every cross-border transfer, is a valid GDPR Ch. V mechanism (adequacy, SCCs + TIA) in place?",
+          "options": {
+            "s0": "Unknown",
+            "s1": "Some",
+            "s2": "All documented",
+            "s3": "All with transfer-impact assessments",
+            "s4": "Monitored & re-validated"
+          }
+        },
+        "ds-2-03": {
+          "text": "Can you enforce data-residency constraints technically (region-pinning), not just contractually?",
+          "options": {
+            "s0": "No",
+            "s1": "Contract-only",
+            "s2": "Region-pinned config",
+            "s3": "Enforced + drift alerting",
+            "s4": "Policy-as-code enforced"
+          }
+        },
+        "ds-2-04": {
+          "text": "Have you assessed Data Act (EU 2023/2854) obligations around switching/portability and IoT data access?",
+          "options": {
+            "s0": "Unaware",
+            "s1": "Aware",
+            "s2": "Gap-assessed",
+            "s3": "Remediation planned",
+            "s4": "Compliant"
+          }
+        },
+        "ds-2-05": {
+          "text": "Are data-sharing arrangements with third parties governed under a Data Governance Act-aligned framework?",
+          "options": {
+            "s0": "Ad hoc",
+            "s1": "Contracts only",
+            "s2": "Governed intermediary model",
+            "s3": "With audit trail",
+            "s4": "Fully DGA-aligned"
+          }
+        },
+        "ds-3-01": {
+          "text": "Is your primary identity provider (IdP) subject to EU jurisdiction and control?",
+          "options": {
+            "s0": "Non-EU",
+            "s1": "Unassessed",
+            "s2": "Assessed",
+            "s3": "EU-hosted",
+            "s4": "EU-sovereign IdP"
+          }
+        },
+        "ds-3-02": {
+          "text": "Are you tracking eIDAS 2.0 / EU Digital Identity Wallet readiness for customer or workforce identity?",
+          "options": {
+            "s0": "No",
+            "s1": "Monitoring",
+            "s2": "Gap-assessed",
+            "s3": "Pilot",
+            "s4": "Integrated"
+          }
+        },
+        "ds-3-03": {
+          "text": "Do you retain the ability to authenticate if a foreign IdP becomes unavailable (sanctions, outage)?",
+          "options": {
+            "s0": "No fallback",
+            "s1": "Manual",
+            "s2": "Documented failover",
+            "s3": "Tested failover",
+            "s4": "Active-active EU fallback"
+          }
+        },
+        "ds-3-04": {
+          "text": "Are privileged credentials to sovereignty-sensitive systems held outside foreign-controlled vaults?",
+          "options": {
+            "s0": "No",
+            "s1": "Unassessed",
+            "s2": "Segregated",
+            "s3": "EU-controlled vault",
+            "s4": "Hardware-backed EU control"
+          }
+        },
+        "ds-3-05": {
+          "text": "Is federation with external identity systems assessed for jurisdictional / supply-chain risk?",
+          "options": {
+            "s0": "Never",
+            "s1": "Informal",
+            "s2": "Assessed",
+            "s3": "On risk register",
+            "s4": "Continuously monitored"
+          }
+        },
+        "ds-4-01": {
+          "text": "Do you maintain a documented, tested exit plan for each critical third-party platform?",
+          "options": {
+            "s0": "None",
+            "s1": "Informal",
+            "s2": "Documented",
+            "s3": "Tested",
+            "s4": "Tested + RTO-bounded"
+          }
+        },
+        "ds-4-02": {
+          "text": "Are critical software dependencies assessed for supplier jurisdiction / ownership?",
+          "options": {
+            "s0": "No",
+            "s1": "Partial",
+            "s2": "SBOM-backed",
+            "s3": "With ownership mapping",
+            "s4": "Continuously monitored"
+          }
+        },
+        "ds-4-03": {
+          "text": "Could you re-platform a critical workload off its current provider within your target RTO?",
+          "options": {
+            "s0": "Unknown",
+            "s1": ">Months",
+            "s2": "Weeks",
+            "s3": "Within RTO",
+            "s4": "Portable-by-design"
+          }
+        },
+        "ds-4-04": {
+          "text": "Is open-source / open-standard substitutability a deliberate architecture criterion for new systems?",
+          "options": {
+            "s0": "No",
+            "s1": "Occasional",
+            "s2": "Recommended",
+            "s3": "Mandated for critical",
+            "s4": "Enforced in review"
+          }
+        },
+        "ds-4-05": {
+          "text": "Are ICT third-party concentration and single-points-of-failure tracked (DORA-style register)?",
+          "options": {
+            "s0": "No",
+            "s1": "Informal",
+            "s2": "Register exists",
+            "s3": "Risk-scored",
+            "s4": "Board-reported"
+          }
+        },
+        "ds-5-01": {
+          "text": "Do you know which EU digital regulations (NIS2, DORA, CRA, Data Act, AI Act) apply to you, and your status?",
+          "options": {
+            "s0": "Unknown",
+            "s1": "Partial",
+            "s2": "Mapped",
+            "s3": "Gap-assessed",
+            "s4": "Tracked to closure"
+          }
+        },
+        "ds-5-02": {
+          "text": "Are your cloud/service certifications aligned to EU schemes (EUCS, C5, SecNumCloud) where relevant?",
+          "options": {
+            "s0": "None",
+            "s1": "Aware",
+            "s2": "Targeting",
+            "s3": "In audit",
+            "s4": "Certified"
+          }
+        },
+        "ds-5-03": {
+          "text": "For connected products, have you assessed Cyber Resilience Act secure-by-design obligations?",
+          "options": {
+            "s0": "N/A or unassessed",
+            "s1": "Aware",
+            "s2": "Gap-assessed",
+            "s3": "Remediation planned",
+            "s4": "Compliant"
+          }
+        },
+        "ds-5-04": {
+          "text": "Is regulatory-horizon monitoring in place so new EU obligations are caught before enforcement dates?",
+          "options": {
+            "s0": "Reactive",
+            "s1": "Ad hoc",
+            "s2": "Periodic review",
+            "s3": "Owned function",
+            "s4": "Tooled / continuous"
+          }
+        },
+        "ds-5-05": {
+          "text": "Are sovereignty/residency requirements flowed down to your own suppliers contractually?",
+          "options": {
+            "s0": "No",
+            "s1": "Some",
+            "s2": "Standard clauses",
+            "s3": "Audited",
+            "s4": "Monitored"
+          }
+        },
+        "ds-6-01": {
+          "text": "Do you know the jurisdiction where each production AI model is hosted and trained?",
+          "options": {
+            "s0": "Unknown",
+            "s1": "Partial",
+            "s2": "Documented",
+            "s3": "EU-hosted for sensitive",
+            "s4": "Sovereign-hosted"
+          }
+        },
+        "ds-6-02": {
+          "text": "Is sensitive/personal data sent to AI providers assessed for transfer + jurisdictional exposure?",
+          "options": {
+            "s0": "No",
+            "s1": "Informal",
+            "s2": "Assessed",
+            "s3": "Mitigated",
+            "s4": "EU-only inference"
+          }
+        },
+        "ds-6-03": {
+          "text": "Have you evaluated EU / open-weight models as an alternative to non-EU proprietary APIs for sensitive use?",
+          "options": {
+            "s0": "Never",
+            "s1": "Aware",
+            "s2": "Evaluated",
+            "s3": "Piloted",
+            "s4": "In production for sensitive tiers"
+          }
+        },
+        "ds-6-04": {
+          "text": "Are AI systems classified against AI Act risk tiers, with sovereignty implications noted?",
+          "options": {
+            "s0": "No",
+            "s1": "Started",
+            "s2": "Classified",
+            "s3": "With sovereignty notes",
+            "s4": "Integrated in AI risk register"
+          }
+        },
+        "ds-6-05": {
+          "text": "Can you continue critical AI-dependent operations if a non-EU AI provider becomes unavailable?",
+          "options": {
+            "s0": "No fallback",
+            "s1": "Manual",
+            "s2": "Documented",
+            "s3": "Tested fallback",
+            "s4": "EU-sovereign fallback"
+          }
+        }
       }
     },
     "banner": {
@@ -16382,7 +17490,8 @@
         "FILE": "File",
         "ISSUE": "Issue",
         "READINESS_REPORT": "Readiness Report",
-        "FRAMEWORK_COVERAGE": "Framework Coverage"
+        "FRAMEWORK_COVERAGE": "Framework Coverage",
+        "TEST_RUN": "Test Run"
       },
       "returnChannel": {
         "title": "Send feedback to the team",
@@ -16445,6 +17554,28 @@
         "FROZEN": "Frozen",
         "EXPORTED": "Exported"
       }
+    },
+    "botPage": {
+      "metaTitle": "Inflect vendor monitor",
+      "title": "The Inflect vendor monitor",
+      "intro": "This automated client checks the public security posture of vendors that the organisations using this deployment have chosen to monitor. It reads; it never logs in, submits forms or writes anything.",
+      "identityHeading": "How to recognise it",
+      "userAgentLabel": "Every request carries this User-Agent:",
+      "robotsToken": "Its robots.txt product token is {token}.",
+      "fetchesHeading": "What it fetches",
+      "fetchesRobots": "https://<your domain>/robots.txt, read first. If it disallows the monitor, nothing else on that origin is requested.",
+      "fetchesHomepage": "One GET of your homepage, following at most five redirects, to read its response headers (HSTS, CSP and similar). The page body is never read or stored.",
+      "fetchesBreach": "One query to the public Have I Been Pwned breach catalogue about your domain. Your own site is not contacted for this.",
+      "schedule": "It runs once a day, at about 02:00 UTC, and also whenever an organisation that monitors your domain asks for a fresh check. Each organisation's check is separate, so a domain monitored by several organisations is checked once for each. A check reads robots.txt and then the homepage, retrying a failed request once.",
+      "origin": "Requests come from the servers of the deployment that operates this page. Which organisation monitors a vendor is never disclosed in a request.",
+      "signaturesHeading": "Signed requests",
+      "signaturesOn": "Requests to your site are signed with HTTP Message Signatures under the Web Bot Auth protocol, with an Ed25519 key that belongs to this deployment. The public keys are published at:",
+      "signaturesOff": "This deployment does not sign its requests at present. Recognise the monitor by its User-Agent.",
+      "directoryLabel": "Key directory:",
+      "keyidLabel": "Current key id:",
+      "optOutHeading": "Opting out",
+      "optOutBody": "Add this to your robots.txt. It is read again at the start of every check, so the monitor stops at its next check:",
+      "contact": "To reach the operator of this deployment about the monitor, use the contact details published on this site."
     }
   },
   "billing": {
@@ -16530,7 +17661,16 @@
     "questionPlaceholder": "Which controls are missing evidence?",
     "send": "Ask",
     "cancel": "Stop",
-    "newQuestion": "Ask something else",
+    "questionHint": "Enter sends your question. Shift+Enter starts a new line.",
+    "questionHintTouch": "Tap Ask to send your question. Return starts a new line.",
+    "questionCounter": "{count, number} of {max, number} characters",
+    "questionTooLong": "Questions can be up to {max, number} characters. Shorten this one, or split it into two questions.",
+    "newConversation": "New conversation",
+    "historyTrimmed": "Earlier messages in this conversation are no longer sent with your question.",
+    "stopped": "You stopped this answer.",
+    "connectionClosed": "The connection closed before the assistant answered.",
+    "youAsked": "You asked",
+    "conversationLabel": "This conversation",
     "emptyTitle": "Ask about what you are looking at",
     "emptyDescription": "The assistant can read this tenant's live data — controls, risks, evidence, vendors — and point you at the page that shows it. It can propose an action, which goes to the approval queue for a person to review.",
     "phaseThinking": "Thinking…",
@@ -16551,5 +17691,195 @@
     "proposalQuarantinedDescription": "This did not enter the review queue and nothing was created.",
     "openReviewQueue": "Open the approval queue",
     "shortcutDescription": "Open the assistant"
+  },
+  "agentCanvas": {
+    "openOnCanvas": "Open on canvas",
+    "readOnly": "Read-only",
+    "tabCanvas": "Canvas",
+    "tabElements": "Elements",
+    "legend": "What defines this agent, drawn from its register entry and its profile. A solid line is a relation; a dashed line is a step order the engine may deviate from. Nothing here can be changed.",
+    "instructions": "Profile instructions",
+    "loadingAria": "Loading the agent on the canvas",
+    "versionNotInForce": "Showing version {version} ({status}), which is not the approved version in force.",
+    "forbiddenTitle": "Agent canvas unavailable",
+    "forbiddenMessage": "Opening an agent on the canvas needs the same access as its page in the agent register.",
+    "profileAbsent": {
+      "OFF": "Agent profiles are off for this workspace, so only the register entry is drawn.",
+      "NOT_PERMITTED": "Reading this agent’s profile needs the agent register permission, so only its register entry is drawn.",
+      "NONE": "This agent has no profile version yet, so only its register entry is drawn."
+    },
+    "kind": {
+      "hub": "Agent",
+      "trigger": "Trigger",
+      "tool": "Tool",
+      "skill": "Skill",
+      "output": "Output",
+      "step": "Workflow step",
+      "map": "Process map"
+    },
+    "badge": {
+      "status": "Status {status}",
+      "autonomy": "Autonomy {level}",
+      "unscored": "Unscored: every tool is denied",
+      "ceiling": "Ceiling {ceiling} ({tier})",
+      "policyCard": "Policy card v{version}",
+      "breaker": "Breaker {state}",
+      "killed": "Stopped by a {scope} kill switch",
+      "profileVersion": "Profile v{version} ({status})",
+      "model": "Model {tier}, effort {effort}, up to {turns} turns",
+      "read": "Read",
+      "propose": "Propose",
+      "offered": "Offered to a run",
+      "narrowed": "Narrowed away",
+      "notInProfile": "Granted, not in the profile",
+      "notProbed": "Not checked by this view",
+      "invokes": "Invokes this agent",
+      "tenantSkill": "Workspace skill",
+      "shippedSkill": "Built-in skill",
+      "readOnly": "Read surface only",
+      "step": "{workflow}, step {n} ({kind})"
+    },
+    "reason": {
+      "SCOPE": "Not offered: your access does not reach this tool, and a run you start acts within it.",
+      "AUTONOMY": "Not offered: the tool needs a higher autonomy rung than this agent’s ceiling.",
+      "UNCONVERTIBLE_SCHEMA": "Not offered: the engine cannot describe this tool’s input to the model.",
+      "READ_ONLY_WORKFLOW": "Not offered: this profile answers only, so it gets no propose tools.",
+      "PROFILE_TOOL_NOT_GRANTED": "Not offered: the agent is no longer granted this tool.",
+      "CONNECTION_READ_ONLY": "Not offered: the tool writes and its connection takes no writes.",
+      "RETRIEVER_NOT_EVALUATED": "Not offered: knowledge search is offered only once an evaluation record for this deployment’s retriever passes its floors, and none does yet.",
+      "AGENT_NOT_ACTIVE": "Not offered: the agent is not active, so none of its runs are admitted.",
+      "BEYOND_CEILING": "Unreachable: the tool needs a higher autonomy rung than this agent’s ceiling.",
+      "SKILL_NOT_MOUNTABLE": "Not mounted: no run can mount this skill as it stands.",
+      "VERSION_NOT_RUNNABLE": "Not offered: no run of this version is admitted. Only the approved version in force runs, and a version submitted for review only as a Test run.",
+      "TEST_RUN_READ_ONLY": "Not offered: this version can run only as a Test run, which gets no propose tools.",
+      "EXTERNAL_NOT_PROBED": "Not checked: a run offers an external server’s tool only after a live check of that server’s catalogue, which this view does not make."
+    },
+    "editFlow": "Edit the flow",
+    "diff": {
+      "heading": "Changes from version {from} to version {to}",
+      "none": "This version adds or removes no tool, skill or trigger, and changes no model setting or output.",
+      "unavailable": "These two versions cannot be compared here: you need to be able to read this agent’s profile, and both versions must be this agent’s.",
+      "mark": {
+        "added": "Added in this version",
+        "removed": "Removed in this version",
+        "changed": "Changed in this version"
+      },
+      "item": {
+        "trigger": {
+          "added": "Trigger added: {name}",
+          "removed": "Trigger removed: {name}"
+        },
+        "tool": {
+          "added": "Tool added: {name}",
+          "removed": "Tool removed: {name}"
+        },
+        "skill": {
+          "added": "Skill added: {name}",
+          "removed": "Skill removed: {name}"
+        },
+        "modelTier": {
+          "changed": "Model tier changed: {from} → {to}"
+        },
+        "effort": {
+          "changed": "Effort changed: {from} → {to}"
+        },
+        "maxTurns": {
+          "changed": "Turn limit changed: {from} → {to}"
+        },
+        "outputKind": {
+          "changed": "Output changed: {from} → {to}"
+        }
+      }
+    }
+  },
+  "agentFlow": {
+    "forbiddenTitle": "You cannot edit this agent’s flow",
+    "forbiddenMessage": "Editing an agent’s flow needs the agent register permission.",
+    "crumb": "Flow",
+    "title": "{name}: flow",
+    "noVersionBody": "This agent has no profile version yet. Write the first version on its Behaviour tab; a flow is then drawn on top of it.",
+    "openBehaviour": "Open the agent",
+    "openedVersion": "Version {version} · {status}",
+    "showDiff": "Compare with version {version} in force",
+    "backToEdit": "Back to editing",
+    "save": "Save as a new draft version",
+    "submit": "Submit for approval",
+    "unsaved": "The flow has changes. Saving writes a new draft version, which a second person approves before it runs.",
+    "noChangesBody": "No changes to the flow. Moving a step changes only the layout and writes no version.",
+    "saveFailed": "The flow could not be saved.",
+    "submitFailed": "The version could not be submitted.",
+    "palette": "Add a step",
+    "diffSame": "The flow is the same as the version in force.",
+    "change": {
+      "added": "Step added",
+      "removed": "Step removed",
+      "changed": "Step changed",
+      "edgeAdded": "Connection added",
+      "edgeRemoved": "Connection removed"
+    },
+    "selectStep": "Select a step to edit it.",
+    "advisoryOrder": "Connections are dashed: the engine reads the order as guidance and may deviate. The tools, propose steps and subagents a step names are enforced.",
+    "removeStep": "Remove step",
+    "kind": {
+      "read": "Read",
+      "propose": "Propose",
+      "synthesis": "Answer",
+      "subagent": "Subagent"
+    },
+    "detail": {
+      "noTool": "No tool chosen",
+      "noProfile": "No profile chosen",
+      "synthesis": "Writes the answer"
+    },
+    "field": {
+      "label": "What this step does",
+      "tool": "Tool",
+      "toolHint": "Only tools the agent is granted, of this step’s kind.",
+      "toolPlaceholder": "Choose a tool",
+      "noToolsHint": "The agent is granted no tool of this kind.",
+      "profile": "Profile",
+      "profilePlaceholder": "Choose an approved profile",
+      "noProfilesHint": "No other agent has an approved profile.",
+      "next": "Next steps",
+      "nextPlaceholder": "Choose the steps that follow"
+    },
+    "profileOption": "{name} (version {version})",
+    "diagnostic": {
+      "FLOW_EMPTY": "Add at least one step.",
+      "FLOW_INVALID": "The flow is not one this version of the product can read.",
+      "FLOW_CHECKPOINT_UNENFORCED": "A checkpoint step cannot be drawn yet: no engine stops a run at one.",
+      "FLOW_TOO_MANY_NODES": "A flow has too many steps for one run.",
+      "FLOW_DUPLICATE_KEY": "Two steps share a key.",
+      "FLOW_UNKNOWN_EDGE_END": "A connection names a step the flow does not have.",
+      "FLOW_SELF_EDGE": "A step cannot follow itself.",
+      "FLOW_DUPLICATE_EDGE": "Two connections join the same steps.",
+      "FLOW_CYCLE": "The flow loops back on itself, so it has no order to follow.",
+      "FLOW_TOOL_KIND_MISMATCH": "This tool is not of the step’s kind.",
+      "FLOW_NAMES_NO_TOOL": "A flow uses at least one tool.",
+      "FLOW_LABEL_EMPTY": "Say what this step does.",
+      "FLOW_STEP_NEEDS_TOOL": "Choose the tool this step uses.",
+      "FLOW_STEP_NEEDS_PROFILE": "Choose the profile this step hands work to.",
+      "TOOL_NOT_GRANTED": "The agent is not granted this tool.",
+      "FLOW_SUBAGENT_SELF": "A profile cannot hand work to itself.",
+      "FLOW_SUBAGENT_NOT_APPROVED": "This profile has no approved version in force.",
+      "FLOW_OUTPUT_KIND_CONFLICT": "This version answers only, so a propose step would never run."
+    },
+    "compiled": {
+      "title": "Compiled: what the engine receives",
+      "stale": "This is the saved version. Save the flow to see what its changes would send.",
+      "NOT_FOUND": "There is no saved version to compile.",
+      "UNRUNNABLE": "This version cannot run: its stored content no longer matches the hash its approval pinned, or this build cannot read it.",
+      "refused": {
+        "PROFILE_FLOW_NOT_RUNNABLE": "Version {version} carries a drawn flow, and no engine performs a drawn flow yet, so a run of it is refused. This is the message an engine would be handed once one does.",
+        "PROFILE_ENGINE_CANNOT_RUN_PROFILES": "No engine in this build runs version {version}, so a run of it is refused. This is the message an engine would be handed."
+      },
+      "runAs": {
+        "RUN": "Version {version} is in force; a run receives this message.",
+        "TEST_RUN": "Version {version} is under review; a Test run receives this message.",
+        "NONE": "Version {version} has no run until it is submitted or approved; this is the message it would send."
+      },
+      "readOnly": "The run is offered read tools only.",
+      "offered": "offered"
+    }
   }
 }

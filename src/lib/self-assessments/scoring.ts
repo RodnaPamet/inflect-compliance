@@ -11,7 +11,7 @@
  * The propose-not-commit boundary lives here: this module proposes; it does
  * not commit.
  */
-import type { SelfAssessment, SelfAssessmentDimension } from '@/data/self-assessments/digital-sovereignty';
+import type { SelfAssessment, SelfAssessmentDimension, SovereigntyBandKey } from '@/data/self-assessments/digital-sovereignty';
 import { SOVEREIGNTY_MATURITY_BANDS, SOVEREIGNTY_GAP_THRESHOLD } from '@/data/self-assessments/digital-sovereignty';
 
 /** Answers: questionId → chosen option score (0..4). */
@@ -33,8 +33,11 @@ export interface SelfAssessmentScore {
     overall: number | null;
     /** Overall normalised to 0–100 for the summary badge — null if unanswered. */
     overall100: number | null;
-    /** Maturity band label (badge only — NOT a compliance claim). */
-    band: string | null;
+    /**
+     * Maturity band KEY (badge only — NOT a compliance claim). The UI renders
+     * it through `onboarding.sovereignty.bands.<key>`; it is never English text.
+     */
+    band: SovereigntyBandKey | null;
     /** Dimensions ranked weakest-first (scored only). */
     weakest: DimensionScore[];
     answered: number;
@@ -46,12 +49,12 @@ function mean(nums: number[]): number | null {
     return nums.reduce((a, b) => a + b, 0) / nums.length;
 }
 
-function bandFor(overall: number | null): string | null {
+function bandFor(overall: number | null): SovereigntyBandKey | null {
     if (overall == null) return null;
     for (const b of SOVEREIGNTY_MATURITY_BANDS) {
-        if (overall < b.max) return b.label;
+        if (overall < b.max) return b.key;
     }
-    return SOVEREIGNTY_MATURITY_BANDS[SOVEREIGNTY_MATURITY_BANDS.length - 1].label;
+    return SOVEREIGNTY_MATURITY_BANDS[SOVEREIGNTY_MATURITY_BANDS.length - 1].key;
 }
 
 function scoreDimension(dim: SelfAssessmentDimension, answers: SelfAssessmentAnswers): DimensionScore {

@@ -68,10 +68,12 @@ describe('runVendorMonitoringJob — kill switch', () => {
 });
 
 describe('runVendorMonitoringJob — monitor selection', () => {
-    it('selects only enabled monitors, bounded', async () => {
+    it('selects only enabled monitors in LIVE tenants, bounded', async () => {
         await runVendorMonitoringJob();
         const arg = vendorMonitor.findMany.mock.calls[0][0];
-        expect(arg.where).toEqual({ enabled: true });
+        // `tenant: { deletedAt: null }` — a removed workspace's vendors are not
+        // swept (#5307): no outbound checks, no findings written into it.
+        expect(arg.where).toEqual({ enabled: true, tenant: { deletedAt: null } });
         expect(arg.take).toBe(5000);
         expect(arg.select).toEqual({ tenantId: true, vendorId: true });
     });
@@ -80,6 +82,7 @@ describe('runVendorMonitoringJob — monitor selection', () => {
         await runVendorMonitoringJob({ tenantId: 't-1' });
         expect(vendorMonitor.findMany.mock.calls[0][0].where).toEqual({
             enabled: true,
+            tenant: { deletedAt: null },
             tenantId: 't-1',
         });
     });
@@ -88,6 +91,7 @@ describe('runVendorMonitoringJob — monitor selection', () => {
         await runVendorMonitoringJob({ vendorId: 'v-1' });
         expect(vendorMonitor.findMany.mock.calls[0][0].where).toEqual({
             enabled: true,
+            tenant: { deletedAt: null },
             vendorId: 'v-1',
         });
     });
@@ -96,6 +100,7 @@ describe('runVendorMonitoringJob — monitor selection', () => {
         await runVendorMonitoringJob({ tenantId: 't-1', vendorId: 'v-1' });
         expect(vendorMonitor.findMany.mock.calls[0][0].where).toEqual({
             enabled: true,
+            tenant: { deletedAt: null },
             tenantId: 't-1',
             vendorId: 'v-1',
         });

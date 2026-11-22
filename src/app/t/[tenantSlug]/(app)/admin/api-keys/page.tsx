@@ -17,7 +17,7 @@ import {
     Clock, AlertTriangle, Eye, EyeOff,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/glyphs';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InfoTooltip, Tooltip } from '@/components/ui/tooltip';
@@ -108,12 +108,14 @@ const SCOPE_GROUPS: Record<string, { labelKey: string; scopes: string[] }> = {
     // by a `*` key, which is the hole #2225 closed for assets/personnel.
     access_reviews: { labelKey: 'scopeGroup.access_reviews', scopes: ['access_reviews:read', 'access_reviews:write', 'access_reviews:admin'] },
     identity_reconciliation: { labelKey: 'scopeGroup.identity_reconciliation', scopes: ['identity_reconciliation:read', 'identity_reconciliation:admin'] },
-    // One scope each, and no `:read`: `continuity` / `processes` carry a
-    // single `edit` action in PermissionSet, so SCOPE_ACTION_MAP gives them a
-    // `write` group and nothing else. Listing `continuity:read` here would be
-    // an operator-visible checkbox that validateScopes rejects.
+    // No `:read` for `continuity`: it carries a single `edit` action in
+    // PermissionSet, so SCOPE_ACTION_MAP gives it a `write` group and nothing
+    // else. Listing `continuity:read` here would be an operator-visible
+    // checkbox that validateScopes rejects. `processes:read` does exist
+    // (#5053): an empty group, the resource scope an agent key needs for the
+    // process-map propose tool, granting nothing over REST.
     continuity: { labelKey: 'scopeGroup.continuity', scopes: ['continuity:write'] },
-    processes:  { labelKey: 'scopeGroup.processes',  scopes: ['processes:write'] },
+    processes:  { labelKey: 'scopeGroup.processes',  scopes: ['processes:read', 'processes:write'] },
     vendors:    { labelKey: 'scopeGroup.vendors',    scopes: ['vendors:read', 'vendors:write'] },
     findings:   { labelKey: 'scopeGroup.findings',   scopes: ['findings:read', 'findings:write'] },
     tests:      { labelKey: 'scopeGroup.tests',      scopes: ['tests:read', 'tests:write'] },
@@ -130,10 +132,13 @@ const SCOPE_GROUPS: Record<string, { labelKey: string; scopes: string[] }> = {
     // not something to fold into "can edit tenant settings".
     // `admin:harness_ingest` likewise: the one scope a harness scanner's key
     // needs, offered on its own so the key can be minted with nothing else.
+    // `admin:integrations_ingest` is its twin for the scanner's second report,
+    // the third-party applications a directory has granted access to: its own
+    // scope by owner decision, so a key posts one kind of report and not both.
     // `admin:agent_registry_view` (#3710) too: reading the agent inventory,
     // owner references included, is what an agent reviewing discovered agents
     // needs, and no wildcard carries it — ticking it is the only way to grant it.
-    admin:      { labelKey: 'scopeGroup.admin',      scopes: ['admin:read', 'admin:write', 'admin:external_tools', 'admin:harness_ingest', 'admin:agent_registry_view'] },
+    admin:      { labelKey: 'scopeGroup.admin',      scopes: ['admin:read', 'admin:write', 'admin:external_tools', 'admin:harness_ingest', 'admin:integrations_ingest', 'admin:agent_registry_view'] },
     // The MCP capability markers. They map to NO permissions in
     // SCOPE_ACTION_MAP — each one is an empty action list — because they are
     // checked as capabilities by the MCP boundary rather than granting anything

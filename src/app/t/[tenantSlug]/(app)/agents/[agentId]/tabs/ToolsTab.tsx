@@ -58,7 +58,7 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { ErrorState } from '@/components/ui/error-state';
 import { FormField } from '@/components/ui/form-field';
 import { useToast, useToastWithUndo } from '@/components/ui/hooks';
-import { Plug2 } from '@inflect/ui/components/ui/icons/nucleo';
+import { Plug2 } from '@inflect/ui/components/ui/icons/glyphs';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { SkeletonCard } from '@/components/ui/skeleton';
@@ -103,7 +103,7 @@ interface AgentToolsPayload {
      */
     runtimeProvided?: Array<{
         name: string;
-        appearsWhen: 'always' | 'when-skills-mounted';
+        appearsWhen: 'always' | 'when-skills-mounted' | 'when-subagents-defined';
         boundedBy: string;
     }>;
     /**
@@ -176,7 +176,7 @@ interface StaleNotice {
     verdict: GrantStaleness;
 }
 
-export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools }: ToolsTabProps) {
+export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools, canReadRegistry = true }: ToolsTabProps) {
     const t = useTranslations('admin');
     const apiUrl = useTenantApiUrl();
     const toast = useToast();
@@ -194,11 +194,14 @@ export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools }: To
      * two facts on one panel that nothing joined, and the grants half then read
      * as live authority for a tool that cannot be called at all.
      *
-     * Gated by `admin.agent_registry`, which every mount of this page holds, so
-     * it is fired unconditionally rather than behind `canGrantTools`.
+     * Gated by `admin.agent_registry`. Not every mount holds it (#5313): the
+     * shell opens this tab on the tool-exposure key alone, and a read the
+     * route refuses writes an AUTHZ_DENIED row on every mount and focus. So it
+     * is fired only with `canReadRegistry`; without it the blocked state is
+     * unknown and the grants list says so.
      */
     const { data: manifests, error: manifestError } =
-        useTenantSWR<ToolManifestState[]>(TOOL_MANIFEST_PATH);
+        useTenantSWR<ToolManifestState[]>(canReadRegistry ? TOOL_MANIFEST_PATH : null);
 
     useEffect(() => { void mutate(); }, [refreshToken, mutate]);
 
@@ -646,7 +649,7 @@ export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools }: To
                     not checked, and the grants list must not be allowed to imply
                     the quieter of the two.
                 */}
-                {manifestError && granted.length > 0 && (
+                {(manifestError || !canReadRegistry) && granted.length > 0 && (
                     <p className="max-w-prose text-xs text-content-subtle">
                         {t('agentDetail.tools.blockedUnknown')}
                     </p>
@@ -811,7 +814,9 @@ export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools }: To
                                     <span className="text-content-subtle text-xs">
                                         {rt.appearsWhen === 'always'
                                             ? t('agentDetail.tools.runtimeAlways')
-                                            : t('agentDetail.tools.runtimeWhenSkills')}
+                                            : rt.appearsWhen === 'when-subagents-defined'
+                                              ? t('agentDetail.tools.runtimeWhenSubagents')
+                                              : t('agentDetail.tools.runtimeWhenSkills')}
                                     </span>
                                 </div>
                                 {/* WHY IT IS NOT A HOLE, in the terms the
@@ -826,7 +831,7 @@ export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools }: To
                 </Card>
             )}
 
-            <ToolManifestPins refreshToken={refreshToken} />
+            <ToolManifestPins refreshToken={refreshToken} canRead={canReadRegistry} />
         </div>
     );
 }

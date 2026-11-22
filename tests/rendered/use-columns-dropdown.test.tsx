@@ -128,4 +128,29 @@ describe('useColumnsDropdown', () => {
         // Defaults agree.
         expect(result.current.defaults.actions).toBe(true);
     });
+
+    test('a legacy object-shaped stored value keeps opt-in columns hidden (#5309)', () => {
+        // What a browser from before the gear holds under the same key: a
+        // TanStack VisibilityState object, not an order array.
+        window.localStorage.setItem(
+            'test:col-vis:legacy-object',
+            JSON.stringify({ a: true, b: true }),
+        );
+        const { result } = renderHook(() =>
+            useColumnsDropdown({
+                storageKey: 'test:col-vis:legacy-object',
+                columns: [
+                    { id: 'a', label: 'A' },
+                    { id: 'b', label: 'B' },
+                    { id: 'c', label: 'C', defaultVisible: false },
+                ],
+            }),
+        );
+        expect(result.current.columnVisibility).toEqual({ a: true, b: true, c: false });
+
+        // Toggling another column persists the DEFAULT order with that change,
+        // not an all-visible one.
+        act(() => result.current.setColumnVisibility({ a: false, b: true, c: false }));
+        expect(result.current.columnVisibility).toEqual({ a: false, b: true, c: false });
+    });
 });

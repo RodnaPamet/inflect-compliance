@@ -23,6 +23,12 @@ jest.mock('@/app-layer/usecases/automation-rules', () => ({
 jest.mock('@/app-layer/events/audit', () => ({
     logEvent: (...a: unknown[]) => logEventMock(...a),
 }));
+// Sub-flow membership (#5477) has its own suite and integration test; here
+// only that the sync hands it the rules it linked.
+jest.mock('@/app-layer/services/canvas-subflow-membership', () => ({
+    reconcileSubFlowMembership: (...a: unknown[]) => reconcileMembership(...a),
+}));
+const reconcileMembership = jest.fn().mockResolvedValue([]);
 const assertManage = jest.fn();
 const assertCycle = jest.fn();
 const logEventMock = jest.fn().mockResolvedValue(undefined);
@@ -55,6 +61,7 @@ beforeEach(() => {
     assertManage.mockReset();
     assertCycle.mockReset();
     logEventMock.mockReset().mockResolvedValue(undefined);
+    reconcileMembership.mockReset().mockResolvedValue([]);
     // Default: every claimed ruleId verifies as a real in-tenant rule.
     (AutomationRuleRepository as any).getById.mockImplementation(
         async (_db: unknown, _ctx: unknown, id: string) => ({ id, nextRuleId: null, elseRuleId: null }),
@@ -126,6 +133,72 @@ describe('syncCanvasToRules', () => {
     });
 });
 
+describe('syncCanvasToRules — a deleted edge unlinks (#5116)', () => {
+    const nodes = [
+        { nodeKey: 'a1', nodeType: 'action', label: 'A', dataJson: { ruleId: 'r1' } },
+        { nodeKey: 'a2', nodeType: 'action', label: 'B', dataJson: { ruleId: 'r2' } },
+        { nodeKey: 'a3', nodeType: 'action', label: 'C', dataJson: { ruleId: 'r3' } },
+    ];
+
+    it('clears nextRuleId and elseRuleId when the canvas no longer draws those edges', async () => {
+        // r1 still points at r2 (pass) and r3 (fail) from an earlier save, but
+        // both edges were deleted. The sync only ever SET links, so the rule
+        // kept chaining to steps the canvas showed as disconnected.
+        const db = makeDb(nodes, []);
+        db.automationRule.findMany.mockResolvedValue([
+            { id: 'r1', nextRuleId: 'r2', elseRuleId: 'r3' },
+            { id: 'r2', nextRuleId: null, elseRuleId: null },
+            { id: 'r3', nextRuleId: null, elseRuleId: null },
+        ]);
+
+        await syncCanvasToRules(db, ctx, 'map-1');
+
+        expect(repo.update).toHaveBeenCalledWith(db, ctx, 'r1', {
+            nextRuleId: null,
+            nextRuleDelay: null,
+            elseRuleId: null,
+        });
+        expect(repo.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a link the canvas still draws, and clears only the other branch', async () => {
+        const db = makeDb(nodes, [
+            { sourceKey: 'a1', targetKey: 'a2', edgeKind: 'condition-pass', dataJson: null },
+        ]);
+        db.automationRule.findMany.mockResolvedValue([{ id: 'r1', nextRuleId: 'r2', elseRuleId: 'r3' }]);
+
+        await syncCanvasToRules(db, ctx, 'map-1');
+
+        expect(repo.update).toHaveBeenCalledWith(db, ctx, 'r1', { nextRuleId: 'r2', nextRuleDelay: null });
+        expect(repo.update).toHaveBeenCalledWith(db, ctx, 'r1', { elseRuleId: null });
+        expect(repo.update).not.toHaveBeenCalledWith(db, ctx, 'r1', expect.objectContaining({ nextRuleId: null }));
+    });
+
+    it('leaves a link to a rule that is NOT on this canvas alone — it was set elsewhere', async () => {
+        const db = makeDb(nodes, []);
+        db.automationRule.findMany.mockResolvedValue([{ id: 'r1', nextRuleId: 'r-elsewhere', elseRuleId: null }]);
+
+        await syncCanvasToRules(db, ctx, 'map-1');
+
+        expect(repo.update).not.toHaveBeenCalled();
+    });
+});
+
+describe('syncCanvasToRules — sub-flow membership (#5477)', () => {
+    it('hands the membership pass every linked rule and the prior group keys, and audits what it changed', async () => {
+        const db = makeDb([{ nodeKey: 'a1', nodeType: 'action', label: 'A', dataJson: { ruleId: 'r1' } }], []);
+        reconcileMembership.mockResolvedValue(['r1', 'r-gone']);
+
+        const res = await syncCanvasToRules(db, ctx, 'map-1', { priorGroupKeys: ['g-old'] });
+
+        expect(reconcileMembership).toHaveBeenCalledWith(db, ctx, 'map-1', new Map([['a1', 'r1']]), ['g-old']);
+        expect(res.subFlowMembershipChanged).toBe(2);
+        const audit = logEventMock.mock.calls[0][2];
+        expect(audit.detailsJson).toMatchObject({ subFlowMembershipChanged: 2 });
+        expect(audit.detailsJson.ruleIds).toEqual(['r1', 'r-gone']);
+    });
+});
+
 describe('hydrateCanvasFromRules', () => {
     it('merges live rule status/executionCount/subtitle into action nodes', async () => {
         const db = makeDb([], []);
@@ -184,6 +257,7 @@ describe('syncCanvasToRules — authorization', () => {
         await expect(syncCanvasToRules(db, editorCtx, 'map-1')).resolves.toEqual({
             rulesCreated: 0,
             chainsLinked: 0,
+            subFlowMembershipChanged: 0,
             ruleIdByNodeKey: {},
         });
         expect(assertManage).not.toHaveBeenCalled();

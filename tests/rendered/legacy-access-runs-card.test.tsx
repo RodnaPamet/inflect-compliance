@@ -89,10 +89,17 @@ type Answer = { status: number; body: unknown } | Promise<{ status: number; body
 interface Call { url: string; method: string; body: unknown; contentType: string | null }
 
 let calls: Call[] = [];
-let provider = 'legacy-mcp';
+let provider: string | null | undefined = 'legacy-mcp';
 let standingAnswer: Answer;
 let pullAnswer: Answer;
 let reconcileAnswer: Answer;
+/**
+ * The rows the `executions/latest` double holds. It answers as the server
+ * does: the newest row of the kind asked for, or null. The card is handed no
+ * rows at all (#5313, item 10), so this is the only place a run can come from.
+ */
+let serverRuns: LegacyExecutionRow[] = [];
+let latestAnswer: Answer | null = null;
 const realFetch = global.fetch;
 
 const COMPLETE_STANDING = {
@@ -126,6 +133,8 @@ beforeEach(() => {
     standingAnswer = standing();
     pullAnswer = { status: 202, body: { status: 'queued', jobId: 'job-7' } };
     reconcileAnswer = { status: 202, body: { status: 'queued', jobId: 'job-9' } };
+    serverRuns = [];
+    latestAnswer = null;
     global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         const method = init?.method ?? 'GET';
@@ -140,12 +149,17 @@ beforeEach(() => {
             const { status, body } = await a;
             return { ok: status >= 200 && status < 300, status, json: async () => body };
         };
-        if (url === '/api/t/acme/admin/integrations') {
-            return reply({ status: 200, body: [{ id: 'conn_1', provider }] });
-        }
         if (url.startsWith('/api/t/acme/admin/legacy-access/snapshot')) return reply(standingAnswer);
         if (url === '/api/t/acme/admin/legacy-access/pull') return reply(pullAnswer);
         if (url === '/api/t/acme/admin/legacy-access/reconcile') return reply(reconcileAnswer);
+        if (url.startsWith('/api/t/acme/admin/integrations/conn_1/executions/latest?')) {
+            if (latestAnswer) return reply(latestAnswer);
+            const key = new URL(url, 'https://test.local').searchParams.get('automationKey');
+            const execution = serverRuns
+                .filter((r) => r.automationKey === key)
+                .sort((a, b) => b.executedAt.localeCompare(a.executedAt))[0] ?? null;
+            return reply({ status: 200, body: { connection: { id: 'conn_1' }, execution } });
+        }
         return reply({ status: 404, body: { error: { message: `unexpected ${url}` } } });
     }) as unknown as typeof fetch;
 });
@@ -164,13 +178,13 @@ const run = (over: Partial<LegacyExecutionRow>): LegacyExecutionRow => ({
     ...over,
 });
 
+/** `runs` are what the SERVER holds; the card is given none of them. */
 function renderCard(runs: LegacyExecutionRow[] = [], onReloadRuns = jest.fn()) {
+    serverRuns = runs;
     const view = render(
         <LegacyAccessRunsCard
             connectionId="conn_1"
-            runs={runs}
-            runsLoading={false}
-            runsError={false}
+            provider={provider}
             onReloadRuns={onReloadRuns}
         />,
     );
@@ -179,10 +193,13 @@ function renderCard(runs: LegacyExecutionRow[] = [], onReloadRuns = jest.fn()) {
 
 const posts = () => calls.filter((c) => c.method === 'POST');
 const standingReads = () => calls.filter((c) => c.url.startsWith('/api/t/acme/admin/legacy-access/snapshot'));
+const latestReads = () =>
+    calls.filter((c) => c.url.startsWith('/api/t/acme/admin/integrations/conn_1/executions/latest?'));
 
 async function ready() {
     await waitFor(() => expect(screen.getByTestId('legacy-snapshot-standing')).toBeInTheDocument());
     await waitFor(() => expect(screen.queryByText(EN.standingLoading)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryAllByText(EN.runsLoading)).toHaveLength(0));
 }
 
 const readButton = () => screen.getByRole('button', { name: EN.readButton });
@@ -206,16 +223,19 @@ describe('Read accounts', () => {
         });
     });
 
-    it('says the job started, names it, and says where its result appears; then reloads both reads', async () => {
+    it('says the job started, names it, and says where its result appears; then reloads every read', async () => {
         const { onReloadRuns } = renderCard();
         await ready();
         const readsBefore = standingReads().length;
+        const latestBefore = latestReads().length;
 
         fireEvent.click(readButton());
 
         expect(await screen.findByText(fill(EN.readStarted, { jobId: 'job-7' }))).toBeInTheDocument();
         await waitFor(() => expect(onReloadRuns).toHaveBeenCalledTimes(1));
         expect(standingReads().length).toBe(readsBefore + 1);
+        // The newest pull and the newest match, asked again.
+        expect(latestReads().length).toBe(latestBefore + 2);
     });
 
     it('is held, and holds the other button, while its request is in flight', async () => {
@@ -428,16 +448,28 @@ describe('Last read: every outcome is shown by name', () => {
         expect(within(lastRead()).getByText(EN.pullNoAccounts)).toBeInTheDocument();
     });
 
-    it('reads the NEWEST pull row, not the first, and never a match row', async () => {
+    it('asks the server for the newest run of each kind by name, and shows the pull it names under Last read', async () => {
         renderCard([
-            run({ status: 'PASSED', executedAt: '2026-10-27T08:00:00.000Z' }),
-            run({ automationKey: 'legacy-mcp.reconcile', status: 'ERROR', errorMessage: 'not mine', executedAt: '2026-10-29T08:00:00.000Z' }),
-            run({ status: 'PARTIAL', errorMessage: 'CAP_EXCEEDED', executedAt: '2026-10-28T08:00:00.000Z' }),
+            run({ status: 'PARTIAL', errorMessage: 'CAP_EXCEEDED' }),
+            run({ automationKey: 'legacy-mcp.reconcile', status: 'ERROR', errorMessage: 'not mine' }),
         ]);
         await ready();
+
+        // One request per kind, each naming its kind: the card never picks
+        // runs out of the page's history (#5313, item 10).
+        expect(latestReads().map((c) => new URL(c.url, 'https://test.local').searchParams.get('automationKey')).sort())
+            .toEqual(['legacy-mcp.pull', 'legacy-mcp.reconcile']);
+        expect(latestReads().every((c) => c.method === 'GET')).toBe(true);
         expect(within(lastRead()).getByText('CAP_EXCEEDED')).toBeInTheDocument();
-        expect(within(lastRead()).queryByText(EN.pullRun.PASSED)).not.toBeInTheDocument();
         expect(within(lastRead()).queryByText('not mine')).not.toBeInTheDocument();
+    });
+
+    it('a failed read of the latest runs says so, rather than "not run yet"', async () => {
+        latestAnswer = { status: 500, body: { error: { message: 'boom' } } };
+        renderCard();
+        await ready();
+        expect(within(lastRead()).getByText(EN.runsLoadFailed)).toBeInTheDocument();
+        expect(within(lastRead()).queryByText(EN.notRunYet)).not.toBeInTheDocument();
     });
 
     it('with no run, says so', async () => {
@@ -458,6 +490,16 @@ describe('Last match: every outcome is shown by name', () => {
         expect(within(lastMatch()).getByText(EN.matchRun.PARTIAL)).toBeInTheDocument();
         expect(within(lastMatch()).getByText(code)).toBeInTheDocument();
         expect(within(lastMatch()).getByText(EN.matchReason[code], { exact: false })).toBeInTheDocument();
+    });
+
+    it('#5313 item 10 — the match run the server names is shown, with no history rows handed to the card', async () => {
+        // The case the old card got wrong: the last match run is older than
+        // the page's 50-row history, so it was never in the rows the card
+        // filtered. The card now reads it from `executions/latest`.
+        renderCard([match({ id: 'exec_rec_1', status: 'PASSED', executedAt: '2026-01-02T08:00:00.000Z' })]);
+        await ready();
+        expect(within(lastMatch()).getByText(EN.matchRun.PASSED)).toBeInTheDocument();
+        expect(within(lastMatch()).queryByText(EN.notRunYet)).not.toBeInTheDocument();
     });
 
     it('a run that matched the latest read is shown as matched', async () => {
@@ -486,9 +528,11 @@ describe('scope and copy', () => {
     it('renders nothing, and reads nothing, for a connection that is not a legacy one', async () => {
         provider = 'entra-id';
         const { container } = renderCard();
-        await waitFor(() => expect(calls.some((c) => c.url === '/api/t/acme/admin/integrations')).toBe(true));
-        await waitFor(() => expect(container).toBeEmptyDOMElement());
-        expect(standingReads()).toHaveLength(0);
+        await new Promise((r) => setTimeout(r, 20));
+        expect(container).toBeEmptyDOMElement();
+        // #5313 — the provider is the page's, so the card sends nothing at all:
+        // no standing read, and no download of the connection list to learn it.
+        expect(calls).toEqual([]);
     });
 
     it('every reason code has a sentence in BOTH catalogues', () => {

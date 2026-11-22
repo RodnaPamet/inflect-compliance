@@ -14,6 +14,8 @@ On the [{{ui:nav.assets}}](assets.md) page, open **{{ui:common.ui.viewsMenu}}** 
 
 Every role. The page only reads.
 
+The figures count everything, but the lists name only what your role may view. If your workspace uses custom roles and yours cannot view assets, risks or controls, that list is left empty, with a sentence saying why, and the figures above it still count them.
+
 ## What it is for
 
 Find the gaps in your risk treatment: a critical system nothing protects, or a risk you have recorded but not treated. This is not test coverage: {{ui:coverage.vsTestCoverage}} **{{ui:coverage.testCoverageLink}}**
@@ -36,7 +38,7 @@ Find the gaps in your risk treatment: a critical system nothing protects, or a r
 
 **{{ui:coverage.topControls}}.** The five controls linked to the most risks, each with how many it mitigates.
 
-A figure is green from 80%, amber from 50%, and red below. A figure with nothing to count, such as risks in a workspace that has none, shows a dash and **{{ui:coverage.nothingToCover}}** instead of a red 0%.
+Controls, risks and assets in the trash are left out of every figure and list. A figure is green from 80%, amber from 50%, and red below. A figure with nothing to count, such as risks in a workspace that has none, shows a dash and **{{ui:coverage.nothingToCover}}** instead of a red 0%.
 
 ## What you can do
 
@@ -56,7 +58,8 @@ Click an asset or a risk in either table to open it, and link a control to it th
 | **{{ui:coverage.emptyAssetsNone}}** | The workspace has no active asset of high or critical criticality | Record your critical assets on the assets page |
 | **{{ui:coverage.emptyRisks}}** | Every risk has a control | Nothing to do |
 | **{{ui:coverage.emptyRisksNone}}** | The workspace has no risks yet | Record risks on the risks page |
-| No **{{ui:coverage.topControls}}** | No control is linked to a risk | Link controls on the risks' pages |
+| **{{ui:coverage.emptyAssetsWithheld}}** or **{{ui:coverage.emptyRisksWithheld}}** | Some exist, but your role cannot view them | Ask an Owner or Admin if you need to see them |
+| No **{{ui:coverage.topControls}}** | No control is linked to a risk, or your role cannot view controls | Link controls on the risks' pages |
 
 ## Related
 

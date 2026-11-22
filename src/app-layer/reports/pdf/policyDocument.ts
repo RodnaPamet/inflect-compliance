@@ -23,10 +23,10 @@
 import crypto from 'crypto';
 import { parseDocument } from 'htmlparser2';
 import { textContent } from 'domutils';
-import type { ChildNode, Element } from 'domhandler';
+import type { ChildNode, Element, Text } from 'domhandler';
 import { runInTenantContext } from '@/lib/db-context';
 import type { RequestContext } from '@/app-layer/types';
-import { assertCanRead } from '@/app-layer/policies/common';
+import { assertCanReadPolicies } from '@/app-layer/policies/policy.policies';
 import { logEvent } from '@/app-layer/events/audit';
 import { notFound } from '@/lib/errors/types';
 import { PolicyRepository } from '@/app-layer/repositories/PolicyRepository';
@@ -105,11 +105,22 @@ function parseSections(content: string): ParsedSection[] {
  * Parse an HTML policy body (contentType === 'HTML') into the same ordered
  * `ParsedSection[]` the markdown path produces, so the cover + clickable TOC
  * + per-section page breaks all work unchanged. Headings (`<h1>`–`<h3>`) open
- * sections; block elements (`<p>`, lists, `<blockquote>`, `<table>`) become
- * body paragraphs; `<hr>` page breaks are implicit section boundaries (each
- * section already starts a fresh page). Uses a real HTML parser (htmlparser2 +
- * domutils) — no regex HTML handling.
+ * sections; `<h4>`–`<h6>` and block elements (`<p>`, lists, `<blockquote>`,
+ * `<table>`) become body paragraphs; loose text and inline or unrecognised
+ * elements between blocks become a paragraph of their own, so no text of the
+ * stored policy is left out of the export; `<hr>` page breaks are implicit
+ * section boundaries (each section already starts a fresh page). Uses a real
+ * HTML parser (htmlparser2 + domutils) — no regex HTML handling.
  */
+/** Layout wrappers whose children are walked as if they stood at the top level. */
+const UNWRAPPED_TAGS: ReadonlySet<string> = new Set([
+    'div', 'section', 'article', 'main', 'header', 'footer', 'body', 'html',
+]);
+/** Elements whose text is not policy prose: never appended to a section. */
+const NO_TEXT_TAGS: ReadonlySet<string> = new Set([
+    'head', 'title', 'style', 'script', 'meta', 'link', 'br', 'img',
+]);
+
 export function htmlToSections(html: string): ParsedSection[] {
     const doc = parseDocument(html);
     const sections: ParsedSection[] = [];
@@ -123,30 +134,63 @@ export function htmlToSections(html: string): ParsedSection[] {
         current.body += (current.body ? '\n\n' : '') + t;
     };
 
+    // Text that sits directly between blocks — a bare text node, or an inline
+    // or unrecognised element (`<span>`, `<strong>`, `<section>`'s loose
+    // text) — gathered into ONE paragraph and flushed at the next block, so
+    // `text <b>bold</b> more` stays one line rather than three.
+    let inline = '';
+    const flushInline = () => {
+        appendParagraph(clean(inline));
+        inline = '';
+    };
+
     const walk = (nodes: ChildNode[]) => {
         for (const node of nodes) {
+            if (node.type === 'text') {
+                // Top-level prose used to be SKIPPED (#5305), so it was missing
+                // from the PDF with no sign that anything was left out.
+                inline += (node as Text).data;
+                continue;
+            }
             if (node.type !== 'tag') continue;
             const el = node as Element;
             const tag = el.name.toLowerCase();
             if (/^h[1-3]$/.test(tag)) {
+                flushInline();
                 if (current) sections.push(current);
                 current = { title: clean(textContent(el)) || 'Section', body: '' };
+            } else if (/^h[4-6]$/.test(tag)) {
+                // A sub-clause heading (a Word "Heading 4" pulled from
+                // SharePoint) stays in its section as its own paragraph. It
+                // used to be dropped, so the exported policy silently differed
+                // from the stored one (#5305).
+                flushInline();
+                appendParagraph(clean(textContent(el)));
             } else if (tag === 'ul' || tag === 'ol') {
+                flushInline();
                 const items = el.children
                     .filter((c): c is Element => c.type === 'tag' && c.name.toLowerCase() === 'li')
                     .map((li) => `• ${clean(textContent(li))}`)
                     .filter((s) => s.length > 2);
                 if (items.length) appendParagraph(items.join('\n'));
-            } else if (tag === 'div') {
+            } else if (UNWRAPPED_TAGS.has(tag)) {
+                flushInline();
                 walk(el.children); // unwrap layout wrappers
+                flushInline();
             } else if (tag === 'p' || tag === 'blockquote' || tag === 'table' || tag === 'pre') {
+                flushInline();
                 appendParagraph(clean(textContent(el)));
+            } else if (tag === 'hr') {
+                flushInline();
+            } else if (!NO_TEXT_TAGS.has(tag)) {
+                // Inline or unrecognised: its text joins the running paragraph.
+                inline += textContent(el);
             }
-            // <hr> and inline/other tags: no section text of their own.
         }
     };
 
     walk(doc.children as ChildNode[]);
+    flushInline();
     if (current) sections.push(current);
     if (sections.length === 0) return [{ title: 'Policy', body: '' }];
     return sections;
@@ -157,12 +201,25 @@ export function looksLikeHtml(content: string): boolean {
     return /<\/?(h[1-6]|p|hr|ul|ol|li|div|table|blockquote)\b/i.test(content);
 }
 
+/**
+ * The per-page watermark for a policy export (#5133). A policy that has not
+ * been published (draft, in review, approved but not yet in force) is
+ * stamped DRAFT, so it cannot be mistaken for the live policy. A published
+ * policy, and an archived one (a record of what was in force), carries none.
+ */
+export function policyWatermark(status: string): 'DRAFT' | 'NONE' {
+    return status === 'PUBLISHED' || status === 'ARCHIVED' ? 'NONE' : 'DRAFT';
+}
+
 export async function generatePolicyDocumentPdf(
     ctx: RequestContext,
     policyId: string,
     options?: PolicyPdfOptions,
 ): Promise<PDFKit.PDFDocument> {
-    assertCanRead(ctx);
+    // The policy reads' own gate: the coarse read tier AND the granular
+    // `policies.view` key, which a custom role or an API key's scopes can
+    // withhold while the coarse tier still reads true.
+    assertCanReadPolicies(ctx);
 
     const policy = await runInTenantContext(ctx, async (db) => {
         const p = await PolicyRepository.getById(db, ctx, policyId);
@@ -206,10 +263,11 @@ export async function generatePolicyDocumentPdf(
 
     // `ReportMeta` (shared chrome) carries a smaller surface — feed
     // the same fields so the per-page header/footer aligns with the
-    // cover page. The classification rides on the watermark slot
-    // intentionally (the watermark is the per-page corner stamp;
-    // for a policy, "INTERNAL" / "CONFIDENTIAL" IS the handling
-    // banner we want stamped).
+    // cover page. The watermark says whether this text is in force: it is
+    // DRAFT for a policy not yet published, whatever its classification.
+    // The classification is on the cover and in the footer, not here
+    // (#5133). The watermark slot used to carry it, so every CONFIDENTIAL
+    // or RESTRICTED export was stamped DRAFT and a real draft was not.
     const dataHash = crypto
         .createHash('sha256')
         .update(
@@ -226,10 +284,7 @@ export async function generatePolicyDocumentPdf(
         reportTitle: policy.title,
         reportSubtitle: policy.category || undefined,
         generatedAt: policyMeta.generatedAt,
-        watermark:
-            classification === 'CONFIDENTIAL' || classification === 'RESTRICTED'
-                ? 'DRAFT' // dual-purpose — paints the watermark band
-                : 'NONE',
+        watermark: policyWatermark(policy.status),
         contentHash: dataHash,
     };
 

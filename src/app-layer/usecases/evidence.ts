@@ -4,7 +4,7 @@ import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/commo
 import { assertCanReadEvidence, assertCanEditEvidence, assertCanUploadEvidence } from '../policies/evidence.policies';
 import { logEvent } from '../events/audit';
 import { assertMayChangeEvidenceControlLinks } from './evidence-control-links';
-import { notFound, badRequest, forbidden } from '@/lib/errors/types';
+import { notFound, badRequest, forbidden, conflict } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { cachedListRead, bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import type { EvidenceType, ReviewCadence } from '@prisma/client';
@@ -293,7 +293,7 @@ export async function updateEvidence(ctx: RequestContext, id: string, data: z.in
         // is the server-side half of that gate, because the API is public.
         const existing = await db.evidence.findFirst({
             where: { id, tenantId: ctx.tenantId },
-            select: { type: true, status: true, content: true },
+            select: { type: true, status: true, content: true, ownerUserId: true },
         });
         if (!existing) throw notFound('Evidence not found');
 
@@ -347,7 +347,13 @@ export async function updateEvidence(ctx: RequestContext, id: string, data: z.in
             content !== undefined &&
             content !== existing.content;
 
-        await assertOwnerIsActiveMember(db, ctx, data.ownerUserId);
+        // Only an owner the edit CHANGES is checked (#5164). The edit modal
+        // sends the stored owner back on every save, so re-checking it made
+        // every edit of evidence whose owner had left the workspace fail
+        // until somebody reassigned it.
+        if (data.ownerUserId !== existing.ownerUserId) {
+            await assertOwnerIsActiveMember(db, ctx, data.ownerUserId);
+        }
 
         const evidence = await EvidenceRepository.update(db, ctx, id, {
             title,
@@ -553,7 +559,8 @@ async function assertOwnerIsActiveMember(
         select: { id: true },
     });
     if (!membership) {
-        throw badRequest('INVALID_OWNER', 'The evidence owner must be an active member of this tenant.');
+        // Sentence first, code in details (#5318): the client shows `message`.
+        throw badRequest('The evidence owner must be an active member of this tenant.', { reason: 'INVALID_OWNER' });
     }
 }
 
@@ -647,7 +654,13 @@ export async function reviewEvidence(ctx: RequestContext, id: string, data: { ac
             }
         }
 
-        await EvidenceRepository.update(db, ctx, id, { status: newStatus });
+        // Conditional on the status the state machine judged (#5317): of two
+        // reviews racing on one SUBMITTED row, only one moves it, so the log
+        // never holds both an APPROVED and a REJECTED and the owner is told once.
+        const moved = await EvidenceRepository.transitionStatus(db, ctx, id, evidence.status, newStatus);
+        if (!moved) {
+            throw conflict('This evidence was reviewed by someone else in the meantime. Reload it and try again.');
+        }
         await EvidenceRepository.addReview(db, ctx, id, newStatus, comment);
 
         if (newStatus === 'APPROVED' || newStatus === 'REJECTED') {
@@ -1756,15 +1769,21 @@ export async function bulkApproveEvidence(ctx: RequestContext, evidenceIds: stri
 
         if (toApprove.length > 0) {
             await EvidenceRepository.bulkUpdate(db, ctx, toApprove.map((r) => r.id), { status: 'APPROVED' });
-            // Batch-resolve which owners exist (one findMany) so the loop's
-            // notifications don't turn into an N+1 of per-row user lookups.
+            // Batch-resolve which owners are ACTIVE members of THIS tenant (one
+            // findMany, no per-row N+1) — the same rule the single approve's
+            // notifyEvidenceOwner applies (#5317). An unscoped user lookup
+            // notified an owner who had left, or a foreign id on a legacy row.
             const ownerIds = [
                 ...new Set(toApprove.map((r) => r.ownerUserId).filter((v): v is string => !!v)),
             ];
             const owners = ownerIds.length > 0
-                ? await db.user.findMany({ where: { id: { in: ownerIds } }, select: { id: true } })
+                ? await db.tenantMembership.findMany({
+                    where: { tenantId: ctx.tenantId, userId: { in: ownerIds }, status: 'ACTIVE' },
+                    select: { userId: true },
+                    take: ownerIds.length,
+                })
                 : [];
-            const knownOwnerIds = new Set(owners.map((o) => o.id));
+            const knownOwnerIds = new Set(owners.map((o) => o.userId));
             for (const r of toApprove) {
                 await EvidenceRepository.addReview(db, ctx, r.id, 'APPROVED', 'Bulk approved');
                 await notifyEvidenceOwner(db, ctx, r, 'APPROVED', 'Bulk approved', knownOwnerIds);

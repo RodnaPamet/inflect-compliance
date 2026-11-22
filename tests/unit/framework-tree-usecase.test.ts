@@ -107,7 +107,36 @@ describe('getFrameworkTree', () => {
 describe('reorderFrameworkRequirements', () => {
     beforeEach(() => {
         p.framework.findFirst.mockResolvedValue(FW);
-        p.frameworkRequirement.findMany.mockResolvedValue([{ id: 'r1' }, { id: 'r2' }]);
+        // r1 and r2 share section A.5; r3 is in A.6.
+        p.frameworkRequirement.findMany.mockResolvedValue([
+            { id: 'r1', code: 'A.5.1', section: 'A.5', theme: null, category: null },
+            { id: 'r2', code: 'A.5.2', section: 'A.5', theme: null, category: null },
+        ]);
+    });
+
+    it('refuses a payload that moves a requirement into another section (#5231)', async () => {
+        p.frameworkRequirement.findMany.mockResolvedValueOnce([
+            { id: 'r1', code: 'A.5.1', section: 'A.5', theme: null, category: null },
+            { id: 'r2', code: 'A.5.2', section: 'A.5', theme: null, category: null },
+            { id: 'r3', code: 'A.6.1', section: 'A.6', theme: null, category: null },
+        ]);
+        // r2 dropped into A.6's section.
+        await expect(
+            reorderFrameworkRequirements(ctx, 'ISO27001', [
+                { sectionId: 'sA5', requirementIds: ['r1'] },
+                { sectionId: 'sA6', requirementIds: ['r2', 'r3'] },
+            ]),
+        ).rejects.toMatchObject({ details: { reason: 'REQUIREMENT_SECTION_FIXED' } });
+        expect(tctx.db.frameworkRequirementOrder.upsert).not.toHaveBeenCalled();
+    });
+
+    it('refuses a section split across two payload sections', async () => {
+        await expect(
+            reorderFrameworkRequirements(ctx, 'ISO27001', [
+                { sectionId: 'sA', requirementIds: ['r1'] },
+                { sectionId: 'sB', requirementIds: ['r2'] },
+            ]),
+        ).rejects.toMatchObject({ details: { reason: 'REQUIREMENT_SECTION_FIXED' } });
     });
 
     it('throws notFound when the framework is missing', async () => {

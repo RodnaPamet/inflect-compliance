@@ -12,7 +12,7 @@ import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { CloudCog, Trash2, Copy, Check, AlertTriangle, Clock } from 'lucide-react';
 import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/glyphs';
 import { useCopyToClipboard } from '@/components/ui/hooks';
 import { CopyButton } from '@/components/ui/copy-button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';

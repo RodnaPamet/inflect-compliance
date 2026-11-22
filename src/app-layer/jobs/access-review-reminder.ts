@@ -143,6 +143,13 @@ export async function processAccessReviewReminders(
             status: { in: ['OPEN', 'IN_REVIEW'] },
             deletedAt: null,
             dueAt: { not: null, gte: lower, lte: upper },
+            // THE TENANT MUST STILL EXIST (#5307), as in the overdue
+            // escalation (#3178). `deletedAt: null` above is the REVIEW's; a
+            // tenant soft-delete does not cascade to its reviews, and the
+            // reviewer's ACTIVE membership survives it too, so without this a
+            // removed workspace's reviewer was mailed daily about a campaign in
+            // a workspace they can no longer open.
+            tenant: { deletedAt: null },
             ...(tenantId ? { tenantId } : {}),
         },
         select: {

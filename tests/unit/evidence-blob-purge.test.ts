@@ -19,6 +19,9 @@ const findManyMock = jest.fn();
 const survivorsMock = jest.fn();
 const frFindManyMock = jest.fn();
 const frDeleteManyMock = jest.fn();
+const trustDocsMock = jest.fn();
+const reviewsMock = jest.fn();
+const newerVersionsMock = jest.fn();
 
 jest.mock('@/lib/storage/index', () => ({
     __esModule: true,
@@ -38,9 +41,14 @@ const db = {
             (findManyMock.mock.calls.length === 0 ? findManyMock : survivorsMock)(...a),
     },
     fileRecord: {
-        findMany: (...a: unknown[]) => frFindManyMock(...a),
+        // The version-chain probe asks by `previousFileRecordId`; every other
+        // read is the file lookup.
+        findMany: (a: { where: Record<string, unknown> }) =>
+            ('previousFileRecordId' in a.where ? newerVersionsMock : frFindManyMock)(a),
         deleteMany: (...a: unknown[]) => frDeleteManyMock(...a),
     },
+    trustCenterDocument: { findMany: (...a: unknown[]) => trustDocsMock(...a) },
+    accessReview: { findMany: (...a: unknown[]) => reviewsMock(...a) },
 } as never;
 
 const FILE = { id: 'fr-1', pathKey: 'tenants/t1/evidence/a.pdf', storageProvider: 'local' };
@@ -51,6 +59,9 @@ beforeEach(() => {
     survivorsMock.mockResolvedValue([]);
     deleteMock.mockResolvedValue(undefined);
     frDeleteManyMock.mockResolvedValue({ count: 1 });
+    trustDocsMock.mockResolvedValue([]);
+    reviewsMock.mockResolvedValue([]);
+    newerVersionsMock.mockResolvedValue([]);
 });
 
 describe('purgeEvidenceBlobs', () => {
@@ -69,6 +80,21 @@ describe('purgeEvidenceBlobs', () => {
         // difference between a retention fix and data loss.
         findManyMock.mockResolvedValue([{ id: 'ev-1', fileRecordId: 'fr-1' }]);
         survivorsMock.mockResolvedValue([{ fileRecordId: 'fr-1' }]);
+
+        const out = await purgeEvidenceBlobs(db, ['ev-1']);
+
+        expect(deleteMock).not.toHaveBeenCalled();
+        expect(frDeleteManyMock).not.toHaveBeenCalled();
+        expect(out.retainedForSibling).toBe(1);
+    });
+
+    it.each([
+        ['a Trust Center document serves it', () => trustDocsMock.mockResolvedValue([{ fileRecordId: 'fr-1' }])],
+        ['an access review filed it as evidence', () => reviewsMock.mockResolvedValue([{ evidenceFileRecordId: 'fr-1' }])],
+        ['a newer version names it as its predecessor', () => newerVersionsMock.mockResolvedValue([{ previousFileRecordId: 'fr-1' }])],
+    ])('RETAINS the blob when %s (#5115)', async (_label, arrange) => {
+        findManyMock.mockResolvedValue([{ id: 'ev-1', fileRecordId: 'fr-1' }]);
+        arrange();
 
         const out = await purgeEvidenceBlobs(db, ['ev-1']);
 

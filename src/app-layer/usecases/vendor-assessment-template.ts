@@ -28,7 +28,8 @@
  * ═══════════════════════════════════════════════════════════════════
  *
  *   SAME_KEY_NEW_VERSION:
- *     • New row with key=source.key, version=source.version+1
+ *     • New row with key=source.key, version=(the key's latest version)+1;
+ *       refused while another version of the key is an unpublished draft
  *     • New template's isLatestVersion=true
  *     • Source row's isLatestVersion flips to false
  *     • Sections + questions deep-copied with fresh ids
@@ -56,7 +57,7 @@
 import type { RequestContext } from '../types';
 import { Prisma, type AnswerType } from '@prisma/client';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound, badRequest, ConflictError } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
 import { assertCanManageVendorAssessmentTemplates } from '../policies/vendor.policies';
@@ -651,8 +652,30 @@ export async function cloneTemplate(
             input.mode === 'NEW_KEY'
                 ? canonicaliseKey(input.key!)
                 : source.key;
-        const targetVersion =
-            input.mode === 'NEW_KEY' ? 1 : source.version + 1;
+
+        // The next version is the key's LATEST + 1, not the source's + 1
+        // (#5318): cloning v1 after v2 exists collided on the
+        // (tenantId, key, version) unique and surfaced as a generic
+        // conflict. A key whose latest version is still an unpublished
+        // draft (other than the source itself) already has the draft this
+        // clone would start — a second click on "Make a new draft" — so it
+        // is refused with a pointer to that draft rather than starting a
+        // parallel one and hiding the first behind isLatestVersion=false.
+        let targetVersion = 1;
+        if (input.mode === 'SAME_KEY_NEW_VERSION') {
+            const latest = await db.vendorAssessmentTemplate.findFirst({
+                where: { tenantId: ctx.tenantId, key: source.key },
+                orderBy: { version: 'desc' },
+                select: { id: true, version: true, isPublished: true },
+            });
+            if (latest && !latest.isPublished && latest.id !== source.id) {
+                throw new ConflictError(
+                    `Version ${latest.version} of this template is already a draft. Edit that draft instead of starting another.`,
+                    { reason: 'DRAFT_VERSION_EXISTS', draftTemplateId: latest.id, draftVersion: latest.version },
+                );
+            }
+            targetVersion = Math.max(source.version, latest?.version ?? 0) + 1;
+        }
 
         // For SAME_KEY_NEW_VERSION we flip the previous latest's
         // flag to false so the (tenantId, isLatestVersion=true)
@@ -847,6 +870,22 @@ export async function reorderTemplate(
         if (!template) throw notFound('Template not found');
         assertEditable(template);
 
+        // Every section a question is moved INTO must belong to this template
+        // (#5155). The updates below scope the question by template, but its new
+        // `sectionId` was written as given, so a question could be moved into
+        // another template's section — a published one included.
+        const targetSectionIds = [
+            ...new Set(input.sections.flatMap((s) => (s.questions ?? []).map((q) => q.sectionId))),
+        ];
+        if (targetSectionIds.length > 0) {
+            const owned = await db.vendorAssessmentTemplateSection.count({
+                where: { id: { in: targetSectionIds }, tenantId: ctx.tenantId, templateId },
+            });
+            if (owned !== targetSectionIds.length) {
+                throw badRequest('A question can only be moved into a section of the same template.');
+            }
+        }
+
         // Apply section + question rewrites in a single sweep. Each
         // updateMany scopes to (id, tenantId, templateId) so a
         // tampered sectionId / questionId in the input cannot mutate
@@ -964,15 +1003,16 @@ export async function publishTemplate(
         });
         if (!template) throw notFound('Template not found');
         if (template.isPublished) {
+            // Sentence first, code in details (#5318): the builder shows `message`.
             throw badRequest(
-                'ALREADY_PUBLISHED',
                 `Template "${template.name}" is already published.`,
+                { reason: 'ALREADY_PUBLISHED' },
             );
         }
         if (template._count.questions === 0) {
             throw badRequest(
-                'EMPTY_TEMPLATE',
                 'Cannot publish a template with no questions',
+                { reason: 'EMPTY_TEMPLATE' },
             );
         }
 

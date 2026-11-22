@@ -1,6 +1,15 @@
 /**
  * An MCP server in front of OrangeHRM — the write-capable far end #2861 needs.
  *
+ * ── RETIRED FROM PRODUCTION 2026-11-12 ─────────────────────────────────────
+ *
+ * The OrangeHRM lab overlay that ran this adapter on the production VM was
+ * retired by owner decision on 2026-11-12 and left the repo-canonical deploy
+ * set (capacity budget C1; see
+ * docs/implementation-notes/2026-11-12-capacity-c1.md). The source stays for
+ * the non-production OrangeHRM instance that replaces it, which is an open
+ * item; the retired overlay is in git history.
+ *
  * ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
  *
  * #2861 governs an agent CHANGING a configuration in an external system, and

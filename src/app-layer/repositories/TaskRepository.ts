@@ -7,13 +7,7 @@ import { TERMINAL_TASK_STATUSES, REVIEW_TASK_STATUS, isTerminalStatus } from '..
 import { badRequest } from '@/lib/errors/types';
 import { withDeleted } from '@/lib/soft-delete';
 import { parseEnumListFilter, parseIdListFilter } from '../domain/list-filter';
-
-/**
- * Cap on the Deleted view's flat (uncursored) read. Matches the other
- * deleted-list surfaces — the view is a recovery tool, not a browsable
- * archive, so the most recent page is what matters.
- */
-const DELETED_LIST_CAP = 200;
+import { TASK_DELETED_LIST_CAP as DELETED_LIST_CAP } from '@/lib/list-backfill-cap';
 
 /**
  * The set of valid `TaskSource` enum members, materialised once from
@@ -278,7 +272,11 @@ export class TaskRepository {
             withDeleted({
                 where,
                 orderBy: { deletedAt: 'desc' as const },
-                take: DELETED_LIST_CAP,
+                // One past the cap, so "exactly the cap" and "more than the
+                // cap" read differently and the page can say the list is
+                // incomplete (#5303). It used to read exactly the cap, and the
+                // route reported `truncated: false` whatever came back.
+                take: DELETED_LIST_CAP + 1,
                 // The live list's shape plus the two audit columns the
                 // Deleted view renders. Kept out of `taskListSelect`
                 // itself so the live list doesn't ship two always-null
@@ -290,7 +288,9 @@ export class TaskRepository {
                 },
             }),
         );
-        return TaskRepository.attachLinkedControls(db, ctx, rows);
+        const truncated = rows.length > DELETED_LIST_CAP;
+        const shown = truncated ? rows.slice(0, DELETED_LIST_CAP) : rows;
+        return { rows: await TaskRepository.attachLinkedControls(db, ctx, shown), truncated };
     }
 
     /**
@@ -363,11 +363,15 @@ export class TaskRepository {
 
         // Generic TaskLink path (the control-tab create flow links via
         // TaskLink, not the FK). Indexed by [tenantId, entityType, entityId].
+        // The soft-delete extension filters top-level reads only, never a
+        // nested relation, so a deleted task reached through its link is
+        // filtered here (#5305) — as the direct read above is filtered for it.
         const links = await db.taskLink.findMany({ // guardrail-allow: unbounded -- aggregate count, bounded by the controlIds set
             where: {
                 tenantId: ctx.tenantId,
                 entityType: 'CONTROL' as TaskLinkEntityType,
                 entityId: { in: controlIds },
+                task: { deletedAt: null },
             },
             select: {
                 entityId: true,
@@ -409,11 +413,15 @@ export class TaskRepository {
 
         // entityId → (taskId → status), dedup by task id.
         const perEntity = new Map<string, Map<string, string>>();
+        // A deleted task reached through its link is not counted (#5305): the
+        // soft-delete extension filters top-level reads only, so the column
+        // read 1/0 where the entity's Tasks tab read 0.
         const links = await db.taskLink.findMany({ // guardrail-allow: unbounded -- aggregate count, bounded by the entityIds set
             where: {
                 tenantId: ctx.tenantId,
                 entityType,
                 entityId: { in: entityIds },
+                task: { deletedAt: null },
             },
             select: {
                 entityId: true,
@@ -832,6 +840,10 @@ export class TaskRepository {
         if (isTerminalStatus(status)) {
             updateData.completedAt = new Date();
             if (resolution !== undefined) updateData.resolution = resolution;
+        } else {
+            // A reopened task is no longer complete, as `setStatus` has it
+            // (#5305); the bulk path left the old resolution time in place.
+            updateData.completedAt = null;
         }
         return db.task.updateMany({
             where: { id: { in: taskIds }, tenantId: ctx.tenantId },

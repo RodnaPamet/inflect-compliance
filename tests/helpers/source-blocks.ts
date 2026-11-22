@@ -117,9 +117,117 @@ interface Span {
  * An unterminated comment or literal runs to EOF, which makes the caller
  * throw `unterminated …` rather than return a wrong block.
  */
+/**
+ * How deeply a template may nest before this stops following it. Real code
+ * nests one or two levels; the cap exists so a pathological or truncated file
+ * cannot recurse without bound.
+ */
+const MAX_TEMPLATE_DEPTH = 10;
+
+/**
+ * The index just past the string or template literal opening at `start`.
+ *
+ * Shared by `scanSpans` and `commentsOf`, which each had their own copy of
+ * this loop. Two copies of a scanner is how they come to disagree, and both
+ * copies had the same two defects (#5696):
+ *
+ *   * A template was scanned to the next unescaped backtick with NO
+ *     understanding of `${…}`. An interpolated expression containing another
+ *     template therefore closed the outer one on the INNER backtick, and
+ *     everything after it was scanned in the wrong phase —
+ *     `tests/guards/card-padding-cascade.test.ts` wrote
+ *     `` `rung(s) ${xs.map((r) => `\`${r}\``)} emit no ` `` and its following
+ *     comments reached guards as code.
+ *   * A `'` or `"` string ran to the next matching quote ANYWHERE, or to EOF.
+ *     JavaScript forbids a raw newline in either, so an unterminated one is a
+ *     syntax error — ending the span at the line break bounds any future
+ *     desync of this class to one line. #5545 blanked 6,925 characters of one
+ *     file precisely because nothing stopped the runaway.
+ */
+function literalEnd(src: string, start: number, depth = 0): number {
+    const quote = src[start];
+    let j = start + 1;
+    while (j < src.length) {
+        const c = src[j];
+        if (c === '\\') {
+            j += 2;
+            continue;
+        }
+        if (c === quote) return j + 1;
+        if (quote !== '`' && c === '\n') return j;
+        if (quote === '`' && c === '$' && src[j + 1] === '{') {
+            j = depth < MAX_TEMPLATE_DEPTH ? interpolationEnd(src, j + 1, depth + 1) : j + 2;
+            continue;
+        }
+        j++;
+    }
+    return src.length;
+}
+
+/**
+ * The index just past the `}` closing the `${` whose brace sits at `open`.
+ *
+ * An interpolated expression is CODE: it can carry braces, strings, further
+ * templates, comments and regex literals, and every one of those can hold a
+ * `}` that does not close it. So this consumes each of them rather than
+ * counting braces blindly — the same reason `scanSpans` consumes a regex
+ * instead of skipping its slash (#4658).
+ */
+function interpolationEnd(src: string, open: number, depth: number): number {
+    let brace = 0;
+    let last = -1;
+    let j = open;
+    while (j < src.length) {
+        const c = src[j];
+        if (c === '{') {
+            brace++;
+            last = j;
+            j++;
+            continue;
+        }
+        if (c === '}') {
+            brace--;
+            j++;
+            if (brace === 0) return j;
+            last = j - 1;
+            continue;
+        }
+        if (c === "'" || c === '"' || c === '`') {
+            const end = literalEnd(src, j, depth);
+            last = end - 1;
+            j = end;
+            continue;
+        }
+        if (c === '/' && src[j + 1] === '/') {
+            const nl = src.indexOf('\n', j);
+            j = nl < 0 ? src.length : nl;
+            continue;
+        }
+        if (c === '/' && src[j + 1] === '*') {
+            const close = src.indexOf('*/', j + 2);
+            j = close < 0 ? src.length : close + 2;
+            continue;
+        }
+        if (c === '/' && regexCanStartAt(src, j, last)) {
+            const end = regexEnd(src, j);
+            if (end > 0) {
+                last = end - 1;
+                j = end;
+                continue;
+            }
+        }
+        if (!/\s/.test(c)) last = j;
+        j++;
+    }
+    return src.length;
+}
+
 function scanSpans(src: string): Span[] {
     const spans: Span[] = [];
     let i = 0;
+    // The last offset consumed as CODE. A comment never advances it, which is
+    // what keeps a comment's last character from deciding the next token.
+    let lastCode = -1;
 
     while (i < src.length) {
         const ch = src[i];
@@ -164,30 +272,22 @@ function scanSpans(src: string): Span[] {
         // buys is not masking the regex — it is CONSUMING it, so the quote
         // inside it never reaches the string branch below.
         if (ch === '/') {
-            const end = regexCanStartAt(src, i) ? regexEnd(src, i) : -1;
+            const end = regexCanStartAt(src, i, lastCode) ? regexEnd(src, i) : -1;
             if (end > 0) {
                 spans.push({ start: i, end, kind: 'literal' });
+                lastCode = end - 1;
                 i = end;
                 continue;
             }
         }
         if (ch === "'" || ch === '"' || ch === '`') {
-            let j = i + 1;
-            while (j < src.length) {
-                if (src[j] === '\\') {
-                    j += 2;
-                    continue;
-                }
-                if (src[j] === ch) {
-                    j++;
-                    break;
-                }
-                j++;
-            }
-            spans.push({ start: i, end: j, kind: 'literal' });
-            i = j;
+            const end = literalEnd(src, i);
+            spans.push({ start: i, end, kind: 'literal' });
+            lastCode = end - 1;
+            i = end;
             continue;
         }
+        if (!/\s/.test(ch)) lastCode = i;
         i++;
     }
 
@@ -303,9 +403,20 @@ const REGEX_AFTER_KEYWORD: ReadonlySet<string> = new Set([
  * The `<` rule DOES stand alone: it is the only thing holding
  * `</div> {/* … *\/}`, and disabling it reddens that case by itself.
  */
-function regexCanStartAt(src: string, slash: number): boolean {
+function regexCanStartAt(src: string, slash: number, lastCode = -1): boolean {
     if (src[slash + 1] === '>') return false;
-    let j = slash - 1;
+    // `lastCode` is the offset of the last character the SCANNER consumed as
+    // code. Walking back through raw text instead reads whatever precedes the
+    // slash, COMMENTS INCLUDED — and a trailing line comment then decides
+    // whether the next line opens a regex. In
+    // `src/app-layer/integrations/aws-posture-provider.ts` the line above
+    // `/(aws_session_token|…)["'\s:=]+…/gi` ends `// secret access key
+    // (40-char)`, so this landed on that `)`, concluded "after `)` a slash is
+    // division", declined the regex — and the `"` inside the character class
+    // then opened a string literal that ran to the end of the file. Every
+    // extractor went blind to the back half of it (#5545).
+    let j = lastCode >= 0 ? lastCode : -1;
+    if (lastCode < 0) return true;
     while (j >= 0 && /\s/.test(src[j])) j--;
     if (j < 0) return true;
     const ch = src[j];
@@ -452,6 +563,9 @@ export function commentsOf(src: string): string {
     };
 
     let i = 0;
+    // Same bookkeeping as `scanSpans`, and for the same reason: a comment must
+    // not decide whether the next slash opens a regex (#5545).
+    let lastCode = -1;
     while (i < src.length) {
         const ch = src[i];
         const next = src[i + 1];
@@ -473,28 +587,20 @@ export function commentsOf(src: string): string {
         // Literals are CONSUMED, not inspected: a `//` or `/* … *\/` inside
         // one must never reach the comment branches above.
         if (ch === "'" || ch === '"' || ch === '`') {
-            let j = i + 1;
-            while (j < src.length) {
-                if (src[j] === '\\') {
-                    j += 2;
-                    continue;
-                }
-                if (src[j] === ch) {
-                    j++;
-                    break;
-                }
-                j++;
-            }
-            i = j;
+            const end = literalEnd(src, i);
+            lastCode = end - 1;
+            i = end;
             continue;
         }
-        if (ch === '/' && regexCanStartAt(src, i)) {
+        if (ch === '/' && regexCanStartAt(src, i, lastCode)) {
             const end = regexEnd(src, i);
             if (end > 0) {
+                lastCode = end - 1;
                 i = end;
                 continue;
             }
         }
+        if (!/\s/.test(ch)) lastCode = i;
         i++;
     }
 

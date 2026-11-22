@@ -166,7 +166,7 @@ jest.mock('@/app-layer/jobs/sync-pull', () => ({
 }));
 jest.mock('@/app-layer/jobs/key-rotation', () => ({
     runKeyRotation: jest.fn(async () => ({
-        totalScanned: 0, totalRewritten: 0, tenantId: 't', dekRewrapped: false,
+        totalScanned: 0, totalRewritten: 0, tenantId: 't', dekRewrapped: true,
         dekRewrapError: null, perField: {}, totalErrors: 0, jobRunId: 'j',
     })),
 }));
@@ -222,6 +222,14 @@ jest.mock('@/app-layer/jobs/dau-mau-aggregator', () => ({
 }));
 jest.mock('@/app-layer/jobs/onboarding-abandonment-sweep', () => ({
     runOnboardingAbandonmentSweep: jest.fn(async () => ({ scanned: 0, abandoned: 0, byStep: {} })),
+}));
+jest.mock('@/app-layer/jobs/external-write-dispatch', () => ({
+    runExternalWriteDispatchJob: jest.fn(async () => ({
+        tenants: 0, scanned: 0, applied: 0, refused: 0, indeterminate: 0, inFlight: 0, accepted: 0,
+        reconcile: { scanned: 0, promoted: 0, notYet: 0, unreadable: 0, unverifiable: 0, indeterminate: 0 },
+        expiry: { scanned: 0, confirmedExpired: 0, raised: 0, alreadyRaised: 0, unreadable: 0, raiseFailed: 0 },
+        failedTenantPasses: 0,
+    })),
 }));
 jest.mock('@/app-layer/jobs/incident-notification-deadlines', () => ({
     processIncidentNotificationDeadlines: jest.fn(async () => ({
@@ -507,6 +515,38 @@ describe('executorRegistry.execute — result-passthrough executors (mocked deps
         });
         expect(result.success).toBe(true);
         expect(result.jobName).toBe(name);
+    });
+
+    // #5299 — a sweep that hit errors used to report success, so the job
+    // history read green while a tenant still depended on the old key.
+    it.each([
+        ['key-rotation', '@/app-layer/jobs/key-rotation', 'runKeyRotation'],
+        ['tenant-dek-rotation', '@/app-layer/jobs/tenant-dek-rotation', 'runTenantDekRotation'],
+    ])('%s fails the job when the sweep reports errors', async (name, mod, fn) => {
+        const runner = jest.requireMock(mod)[fn] as jest.Mock;
+        const clean = await runner();
+        runner.mockResolvedValueOnce({ ...clean, totalErrors: 3 });
+        const result = await reg.execute(name, { tenantId: 't1', initiatedByUserId: 'u1' });
+        expect(result.success).toBe(false);
+        expect(result.errorMessage).toMatch(/3/);
+    });
+
+    // #5307 — a fan-out sweep that isolated failures used to report success,
+    // even when EVERY item failed; snapshot and sla-monitor already did not.
+    it.each([
+        ['report-delivery', '@/app-layer/jobs/report-delivery-jobs', 'runReportDelivery', { failed: 2 }],
+        ['external-write-dispatch', '@/app-layer/jobs/external-write-dispatch', 'runExternalWriteDispatchJob', { failedTenantPasses: 2 }],
+    ])('%s fails the job — without a retry — when items failed', async (name, mod, fn, failure) => {
+        const runner = jest.requireMock(mod)[fn] as jest.Mock;
+        const clean = await runner();
+        expect((await reg.execute(name, { tenantId: 't1' })).success).toBe(true);
+
+        runner.mockResolvedValueOnce({ ...clean, ...failure });
+        const result = await reg.execute(name, { tenantId: 't1' });
+        expect(result.success).toBe(false);
+        expect(result.errorMessage).toMatch(/2/);
+        // The sweep already ran every item; the next tick is the retry.
+        expect(result.noRetry).toBe(true);
     });
 });
 

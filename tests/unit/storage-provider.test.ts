@@ -37,7 +37,12 @@ afterAll(async () => {
 // ─── Provider Factory ───
 
 describe('Storage Provider Factory', () => {
-    it('getStorageProvider returns local provider by default', () => {
+    // Named for what it DRIVES, not for the default: the env mock above sets
+    // STORAGE_PROVIDER explicitly, so this case says nothing about the unset
+    // one. It was called "returns local provider by default", which is how the
+    // docblock's wrong default survived (#5616). The real default is covered by
+    // tests/unit/storage-provider-default.test.ts.
+    it('getStorageProvider returns the provider named by an explicit STORAGE_PROVIDER', () => {
         // Reset to force re-creation
         const { getStorageProvider, resetStorageProvider } = require('@/lib/storage/index');
         resetStorageProvider();

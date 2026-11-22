@@ -24,7 +24,7 @@
  * exhibit the bug it exists to help find on the other side.
  */
 import { BILLING_DOCUMENTS, BUSINESS_PARTNERS, SALES_ORDERS, USERS } from './fixtures';
-import { DEFINITIONS_VERSION, TOOL_DEFINITIONS, definitionsHash } from './definitions';
+import { DEFINITIONS_VERSION, TOOL_DEFINITIONS, definitionsHash, type StubToolDefinition } from './definitions';
 
 export interface StubOptions {
     /**
@@ -70,6 +70,36 @@ const toolText = (id: unknown, payload: unknown, isError = false): Response =>
 
 const utcDay = (iso: string): string => iso.slice(0, 10);
 
+/**
+ * Why a tool's arguments are not what its `inputSchema` admits, or null when
+ * they are (#5312). Every property the stub's tools declare is a string;
+ * `required` keys must be present, and `additionalProperties: false` refuses
+ * any other key. Without this a misspelt `soldToParty` or a missing `date_to`
+ * got a confident "no orders" — the answer `fixtures.ts` says the stub exists
+ * to keep apart from "I could not look".
+ */
+function invalidParams(tool: StubToolDefinition, args: unknown): string | null {
+    if (args === null || typeof args !== 'object' || Array.isArray(args)) return 'arguments must be an object';
+    const schema = tool.inputSchema as {
+        properties?: Record<string, unknown>;
+        required?: readonly string[];
+        additionalProperties?: boolean;
+    };
+    const properties = schema.properties ?? {};
+    const given = args as Json;
+    for (const key of Object.keys(given)) {
+        if (!Object.hasOwn(properties, key)) {
+            if (schema.additionalProperties === false) return `unknown argument ${key}`;
+            continue;
+        }
+        if (typeof given[key] !== 'string') return `argument ${key} must be a string`;
+    }
+    for (const key of schema.required ?? []) {
+        if (!Object.hasOwn(given, key)) return `missing required argument ${key}`;
+    }
+    return null;
+}
+
 const inRange = (iso: string, from: unknown, to: unknown): boolean => {
     const day = utcDay(iso);
     return typeof from === 'string' && typeof to === 'string' && day >= from && day <= to;
@@ -108,9 +138,11 @@ function salesOrdersByCreator(args: Json): Json {
 }
 
 function billingExists(args: Json): Json {
-    // HEADER customer, ITEM creator. Reading the creator off the header would
-    // answer about whoever opened the document, which for the fixture row is a
-    // different person — a confident wrong answer rather than an empty one.
+    // HEADER customer, ITEM creator. The fixture document has two items made
+    // by two different users and carries no header creator at all, so an
+    // implementation that took the creator from one place in the document
+    // (the first item, say) answers for one of the two and says a confident
+    // `false` for the other, rather than an empty answer.
     const matches = BILLING_DOCUMENTS.filter(
         (b) =>
             b.sold_to_party === args.sold_to_party &&
@@ -123,17 +155,28 @@ function billingExists(args: Json): Json {
     };
 }
 
+/** The tools a handler built with these options serves: none under `emptyCatalogue`. */
+export function servedTools(options: StubOptions = {}): readonly StubToolDefinition[] {
+    return options.emptyCatalogue ? [] : TOOL_DEFINITIONS;
+}
+
 export function createStubHandler(options: StubOptions = {}) {
-    const tools = options.emptyCatalogue ? [] : TOOL_DEFINITIONS;
+    const tools = servedTools(options);
 
     return async function handle(_url: string, init?: { body?: unknown }): Promise<Response> {
-        let request: Json;
+        let parsed: unknown;
         try {
-            request = JSON.parse(String(init?.body ?? '{}')) as Json;
+            parsed = JSON.parse(String(init?.body ?? '{}'));
         } catch {
             return err(null, -32700, 'parse error');
         }
-        const { id, method, params } = request as { id?: unknown; method?: string; params?: Json };
+        // A body of `null`, a number or an array parses, and is not a request.
+        // Destructuring `null` threw, the handler rejected, and the bound
+        // server died on the unhandled rejection (#5312).
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            return err(null, -32600, 'invalid request');
+        }
+        const { id, method, params } = parsed as { id?: unknown; method?: string; params?: Json };
 
         if (method === 'initialize') {
             // Completes even with an empty catalogue: "nothing to call" is a
@@ -163,9 +206,12 @@ export function createStubHandler(options: StubOptions = {}) {
                 // branch a dead socket never reaches.
                 return toolText(id, { error: 'FAIL_MODE: the stub was started with --fail-mode' }, true);
             }
-            if (!tools.some((t) => t.name === name)) {
+            const tool = tools.find((t) => t.name === name);
+            if (!tool) {
                 return err(id, -32601, `unknown tool ${name}`);
             }
+            const invalid = invalidParams(tool, params?.arguments ?? {});
+            if (invalid !== null) return err(id, -32602, `invalid params: ${invalid}`);
 
             if (name === 'resolve_entities') return toolText(id, resolveEntities(args));
             if (name === 'sales_orders_by_creator') return toolText(id, salesOrdersByCreator(args));

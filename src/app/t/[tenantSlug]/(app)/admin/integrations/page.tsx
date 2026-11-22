@@ -5,7 +5,7 @@
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
 import { formatDate } from '@inflect/ui/lib/format-date';
-import { buildConnectionBody } from '@/lib/integrations/config-form-values';
+import { buildConnectionBody, isConnectionNameCharacterRefusal } from '@/lib/integrations/config-form-values';
 import { LABELLED_CHECKS } from '@/lib/integrations/check-labels';
 import { LABELLED_PROVIDERS } from '@/lib/integrations/provider-labels';
 import { providerFieldTextKey, providerTextKey } from '@/lib/integrations/provider-text';
@@ -18,7 +18,7 @@ import { useOffersAdminApiWrite } from '@/lib/auth/use-offers-admin-api-write';
 import { Trash2, CheckCircle, XCircle, Loader2, Link2, Eye, EyeOff, RefreshCw, Activity, Pencil, KeyRound } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/glyphs';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
@@ -140,6 +140,10 @@ export default function AdminIntegrationsPage() {
     const [formProvider, setFormProvider] = useState('');
     const [authorizing, setAuthorizing] = useState<string | null>(null);
     const [formName, setFormName] = useState('');
+    /** The edited connection's name when the form opened: an unchanged one is not resent (#5317). */
+    const [editingName, setEditingName] = useState<string | undefined>(undefined);
+    /** The server refused the name's characters (#5317) — shown beside the field. */
+    const [nameError, setNameError] = useState<string | undefined>(undefined);
     const [formConfig, setFormConfig] = useState<Record<string, string>>({});
     const [formSecrets, setFormSecrets] = useState<Record<string, string>>({});
     const [showSecrets, setShowSecrets] = useState(false);
@@ -206,6 +210,8 @@ export default function AdminIntegrationsPage() {
         setEditingEnabled(undefined);
         setFormProvider('');
         setFormName('');
+        setEditingName(undefined);
+        setNameError(undefined);
         setFormConfig({});
         setFormSecrets({});
         setShowSecrets(false);
@@ -217,6 +223,8 @@ export default function AdminIntegrationsPage() {
         setEditingEnabled(undefined);
         setFormProvider(providerId);
         setFormName('');
+        setEditingName(undefined);
+        setNameError(undefined);
         setFormConfig({});
         setFormSecrets({});
         setShowSecrets(false);
@@ -296,6 +304,7 @@ export default function AdminIntegrationsPage() {
         }
         setSaving(true);
         setMessage(null);
+        setNameError(undefined);
         try {
             // Both decisions this body encodes — omitting `secrets` unless one
             // was typed, and sending declared booleans as booleans — live in
@@ -311,6 +320,10 @@ export default function AdminIntegrationsPage() {
                 // An edit keeps the connection's enabled state; without it the
                 // server reads the edit as an enable (#4466).
                 editingIsEnabled: editingEnabled,
+                // An unchanged name is not resent: a stored label is left
+                // alone, so editing other fields never trips the name rule
+                // (#5317).
+                editingName,
                 configFields:
                     providers.find(p => p.id === formProvider)?.configSchema.configFields ?? [],
             });
@@ -335,7 +348,13 @@ export default function AdminIntegrationsPage() {
                 // sentence is the whole operator-facing value of a config-time
                 // refusal over a silent dispatcher collapse. Unrouted, the operator
                 // sees a shrug.
-                setMessage({ type: 'error', text: apiErrorMessage(err, t('integrations.saveFailed')) });
+                if (isConnectionNameCharacterRefusal(err)) {
+                    // The name's characters were refused (#5317): said beside
+                    // the field, in our words, not as the server's code.
+                    setNameError(t('integrations.nameInvalidCharacters'));
+                } else {
+                    setMessage({ type: 'error', text: apiErrorMessage(err, t('integrations.saveFailed')) });
+                }
             } else {
                 const data = await res.json();
                 // The response's `warning` is an English sentence from the
@@ -370,13 +389,26 @@ export default function AdminIntegrationsPage() {
         setEditingEnabled(conn.isEnabled);
         setFormProvider(conn.provider);
         setFormName(conn.name);
+        setEditingName(conn.name);
+        setNameError(undefined);
         // `String(v)` is a DOWNGRADE for a stored boolean, and it is safe only
         // because handleSave converts declared boolean fields back on the way
         // out: true -> 'true' -> checkbox ticked -> true. Break that pairing and
         // editing an unrelated field on a working connection silently turns its
         // booleans into strings, which is how a connection that was writing
         // stops writing with nothing to show for it.
-        setFormConfig(Object.fromEntries(Object.entries(conn.configJson ?? {}).map(([k, v]) => [k, v == null ? '' : String(v)])));
+        // A STRUCTURED value (an object or array) is not a form field: it is
+        // written by its own usecase (the legacy column mapping, the username
+        // convention), and `String(v)` turned it into "[object Object]" that
+        // the save then stored over the real one (#5067). It stays out of the
+        // form; the server keeps the stored value either way.
+        setFormConfig(
+            Object.fromEntries(
+                Object.entries(conn.configJson ?? {})
+                    .filter(([, v]) => v === null || typeof v !== 'object')
+                    .map(([k, v]) => [k, v == null ? '' : String(v)]),
+            ),
+        );
         setFormSecrets({});
         setShowSecrets(false);
         setMessage(null);
@@ -488,8 +520,8 @@ export default function AdminIntegrationsPage() {
         internalProviders.every((ip) => connections.some((c) => c.provider === ip.id && c.isEnabled));
 
     /**
-     * The body that turns an existing connection back on: its own name and
-     * stored config, plus `isEnabled: true`. The stored config is sent rather
+     * The body that turns an existing connection back on: its stored config,
+     * plus `isEnabled: true`, and no name (the stored one stays). The stored config is sent rather
      * than omitted so the update's audit row reports the connection's real
      * security flags — an update without `configJson` records none, which reads
      * in the trail as flags having been switched off.
@@ -497,7 +529,9 @@ export default function AdminIntegrationsPage() {
     const enableBody = (conn: ConnectionDTO) => ({
         id: conn.id,
         provider: conn.provider,
-        name: conn.name,
+        // No `name`: an update without one keeps the stored name, and resending
+        // it would refuse the enable of a connection whose stored label the
+        // name rule would no longer accept (#5317).
         ...(conn.configJson ? { configJson: conn.configJson } : {}),
         isEnabled: true,
     });
@@ -1018,11 +1052,11 @@ export default function AdminIntegrationsPage() {
                         </FormField>
 
                         {/* Name */}
-                        <FormField label={t('integrations.connectionName')}>
+                        <FormField label={t('integrations.connectionName')} error={nameError}>
                             <Input
                                 type="text"
                                 value={formName}
-                                onChange={e => setFormName(e.target.value)}
+                                onChange={e => { setFormName(e.target.value); setNameError(undefined); }}
                                 className="w-full"
                                 placeholder={t('integrations.namePlaceholder')}
                                 id="integration-name-input"

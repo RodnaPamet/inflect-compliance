@@ -28,7 +28,8 @@ jest.mock('@/lib/security/encryption', () => ({
     decryptField: (s: string) => s,
 }));
 const mockTx = {
-    externalWriteJournal: { findMany: jest.fn() },
+    // `updateMany` is the visit stamp both passes write (#5259).
+    externalWriteJournal: { findMany: jest.fn(), updateMany: jest.fn(async () => ({ count: 0 })) },
     integrationConnection: { findMany: jest.fn() },
 };
 jest.mock('@/lib/db-context', () => ({
@@ -289,5 +290,23 @@ describe('the reconcile pass promotes on positive evidence only', () => {
             indeterminate: 0,
         });
         expect(mockTx.integrationConnection.findMany).not.toHaveBeenCalled();
+    });
+});
+
+describe('the ACCEPTED reconcile rotates through its population (#5259)', () => {
+    it('reads the least recently visited rows first and stamps every row it read', async () => {
+        // A row whose connection is gone, or whose answer is unverifiable,
+        // stays ACCEPTED; read oldest-first, such rows held the batch for ever.
+        const now = new Date('2026-11-13T05:00:00.000Z');
+        await reconcileAcceptedExternalWrites({ tenantId: T, now });
+
+        expect(mockTx.externalWriteJournal.findMany.mock.calls[0][0].orderBy).toEqual([
+            { lastCheckedAt: { sort: 'asc', nulls: 'first' } },
+            { settledAt: 'asc' },
+        ]);
+        expect(mockTx.externalWriteJournal.updateMany).toHaveBeenCalledWith({
+            where: { tenantId: T, id: { in: ['jrn_1'] } },
+            data: { lastCheckedAt: now },
+        });
     });
 });

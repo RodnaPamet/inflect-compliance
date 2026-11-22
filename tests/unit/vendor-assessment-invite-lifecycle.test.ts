@@ -21,6 +21,8 @@
 
 const mockTx = {
     vendorAssessment: { findFirst: jest.fn(), update: jest.fn() },
+    // The sender's display name for the email (#5318).
+    user: { findUnique: jest.fn() },
 };
 
 jest.mock('@/lib/db-context', () => ({
@@ -88,6 +90,8 @@ beforeEach(() => {
     mockTx.vendorAssessment.update.mockResolvedValue({});
     mockEnqueueEmail.mockReset();
     mockEnqueueEmail.mockResolvedValue({ id: 'outbox-1' });
+    mockTx.user.findUnique.mockReset();
+    mockTx.user.findUnique.mockResolvedValue({ name: 'Dana Sender' });
 });
 
 describe('resendAssessmentInvite', () => {
@@ -124,6 +128,16 @@ describe('resendAssessmentInvite', () => {
         // stored — hash-only persistence is the invariant the send path pins.
         expect(out.externalAccessToken).toEqual(expect.any(String));
         expect(data.externalAccessTokenHash).not.toBe(out.externalAccessToken);
+    });
+
+    it('lifts a revocation, so the link it emails works, and audits that it did (#5154)', async () => {
+        mockTx.vendorAssessment.findFirst.mockResolvedValue(row({ revokedAt: new Date('2026-11-01T00:00:00Z') }));
+        await resendAssessmentInvite(makeCtx(), 'a1');
+        const data = mockTx.vendorAssessment.update.mock.calls[0][0].data;
+        expect(data.revokedAt).toBeNull();
+        expect(data.externalAccessTokenHash).toEqual(expect.any(String));
+        const audit = mockLog.mock.calls.find((c) => (c[2] as { action: string }).action === 'VENDOR_ASSESSMENT_RESENT');
+        expect((audit?.[2] as unknown as { detailsJson: { after: { revocationLifted: boolean } } }).detailsJson.after.revocationLifted).toBe(true);
     });
 
     it('re-stamps sentAt and sentByUserId', async () => {
@@ -198,6 +212,8 @@ describe('resendAssessmentInvite', () => {
             `https://app.example.com/vendor-assessment/a1?t=${out.externalAccessToken}`,
         );
         expect(out.notificationQueued).toBe(true);
+        // The sender by name, not by internal user id (#5318).
+        expect(payload.payload.inviterName).toBe('Dana Sender');
     });
 
     it('reports notificationQueued false when the outbox declines', async () => {

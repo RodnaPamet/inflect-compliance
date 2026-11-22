@@ -101,7 +101,7 @@ export async function authenticateScimRequest(req: NextRequest): Promise<ScimCon
 
     const scimToken = await prisma.tenantScimToken.findUnique({
         where: { tokenHash },
-        include: { tenant: { select: { id: true, slug: true } } },
+        include: { tenant: { select: { id: true, slug: true, deletedAt: true } } },
     });
 
     if (!scimToken) {
@@ -114,6 +114,38 @@ export async function authenticateScimRequest(req: NextRequest): Promise<ScimCon
         recordScimAuth({ outcome: 'failure', reason: 'revoked' });
         logger.warn('SCIM auth failed: token revoked', { component: 'scim', tokenId: scimToken.id });
         throw new ScimAuthError('SCIM token has been revoked', 401);
+    }
+
+    /*
+        A REMOVED TENANT ANSWERS NO CREDENTIAL (#5184).
+
+        `deleteTenantUnderOrg` soft-deletes the tenant, deactivates every
+        membership, bumps `sessionVersion` and disables its integration
+        connections — and did not revoke its SCIM tokens. The holder is the
+        customer's own identity provider, which keeps calling on its schedule,
+        so until the 90-day purge a removed workspace went on serving
+        `GET /api/scim/v2/Users` and — worse — letting `POST` and
+        `PATCH {active: true}` RE-CREATE or RE-ACTIVATE the very
+        `TenantMembership` rows the removal had just set DEACTIVATED. That
+        overwrites the "who had access until when" record the deletion exists to
+        preserve, against a tenant whose own docstring says it becomes
+        "inaccessible immediately, everywhere".
+
+        This mirrors the identical check on the sibling credential path
+        (`api-key-auth.ts`, reason `tenant_deleted`), which documents the same
+        gap for `TenantApiKey`. Checked HERE rather than only at the deletion,
+        because this is the half that holds for a token minted by any future
+        path and for a tenant removed by any future one: the deletion's revoke
+        is the courtesy, this is the invariant.
+    */
+    if (scimToken.tenant?.deletedAt) {
+        recordScimAuth({ outcome: 'failure', reason: 'tenant_deleted' });
+        logger.warn('SCIM auth failed: tenant removed', {
+            component: 'scim',
+            tokenId: scimToken.id,
+            tenantId: scimToken.tenantId,
+        });
+        throw new ScimAuthError('Invalid SCIM token', 401);
     }
 
     // Update lastUsedAt (fire-and-forget, don't block the request)

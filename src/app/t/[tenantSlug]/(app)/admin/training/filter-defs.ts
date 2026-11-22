@@ -1,6 +1,7 @@
 /**
  * Filter configuration for the Training page (PR-6). A static training-status
- * enum filter applied client-side to the SSR rows.
+ * enum filter. The filter bar writes it to the URL, and the server applies it
+ * in SQL over every assignment (#5764 item 6).
  */
 import { createTypedFilterDefs, optionsFromEnum } from '@/components/ui/filter/filter-definitions';
 // FilterDefInput.icon is typed LucideIcon; allowlisted like every *filter-defs.ts.

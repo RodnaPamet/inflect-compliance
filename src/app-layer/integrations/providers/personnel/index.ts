@@ -18,10 +18,11 @@ import type {
     EvidencePayload,
 } from '../../types';
 import { runPersonnelCheck, PERSONNEL_CHECKS, type CheckEmployee, type CheckAccount } from './checks';
+import { INTERNAL_CHECK_READ_TAKE, refusePassOnTruncatedRead, withinCap } from '../internal-check-read-cap';
 
 interface PersonnelDeps {
     /** Injectable data loader for tests (defaults to a tenant-scoped prisma read). */
-    load?: (tenantId: string) => Promise<{ employees: CheckEmployee[]; accounts: CheckAccount[] }>;
+    load?: (tenantId: string) => Promise<{ employees: CheckEmployee[]; accounts: CheckAccount[]; truncated?: boolean }>;
     now?: () => Date;
 }
 
@@ -47,13 +48,15 @@ export class PersonnelProvider implements ScheduledCheckProvider {
         return { valid: true };
     }
 
-    private async load(tenantId: string): Promise<{ employees: CheckEmployee[]; accounts: CheckAccount[] }> {
+    private async load(tenantId: string): Promise<{ employees: CheckEmployee[]; accounts: CheckAccount[]; truncated?: boolean }> {
         if (this.deps.load) return this.deps.load(tenantId);
         const [employees, accounts] = await Promise.all([
-            prisma.employee.findMany({ where: { tenantId }, select: { workEmail: true, status: true, managerEmployeeId: true, startDate: true }, take: 10000 }),
-            prisma.connectedIdentityAccount.findMany({ where: { tenantId }, select: { email: true, status: true, provider: true }, take: 10000 }),
+            prisma.employee.findMany({ where: { tenantId }, select: { workEmail: true, status: true, managerEmployeeId: true, startDate: true }, orderBy: { id: 'asc' }, take: INTERNAL_CHECK_READ_TAKE }),
+            prisma.connectedIdentityAccount.findMany({ where: { tenantId }, select: { email: true, status: true, provider: true }, orderBy: { id: 'asc' }, take: INTERNAL_CHECK_READ_TAKE }),
         ]);
-        return { employees, accounts };
+        const e = withinCap(employees);
+        const a = withinCap(accounts);
+        return { employees: e.rows, accounts: a.rows, truncated: e.truncated || a.truncated };
     }
 
     async runCheck(input: CheckInput): Promise<CheckResult> {
@@ -61,7 +64,11 @@ export class PersonnelProvider implements ScheduledCheckProvider {
         try {
             const data = await this.load(input.tenantId);
             const now = this.deps.now ? this.deps.now() : new Date();
-            const result = runPersonnelCheck(input.parsed.checkType, data, input.connectionConfig, now);
+            const result = refusePassOnTruncatedRead(
+                runPersonnelCheck(input.parsed.checkType, data, input.connectionConfig, now),
+                data.truncated === true,
+                'Personnel',
+            );
             return { ...result, durationMs: Date.now() - start };
         } catch (err) {
             return { status: 'ERROR', summary: 'Personnel check failed to run.', details: {}, durationMs: Date.now() - start, errorMessage: err instanceof Error ? err.message : String(err) };

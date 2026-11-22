@@ -400,9 +400,22 @@ export async function runHrisSync(input: {
     const { conn, executionId } = opened;
 
     const config = (conn.configJson ?? {}) as Record<string, unknown>;
-    const secrets: Record<string, unknown> = conn.secretEncrypted ? (JSON.parse(decryptField(conn.secretEncrypted)) as Record<string, unknown>) : {};
-
-    const resolved = input.provider ?? registry.getProvider(conn.provider);
+    // The RUNNING row is committed, so every way out from here must finalise
+    // it (#5317). A secret that will not decrypt (a botched key rotation) or
+    // parse, or a provider that cannot be resolved, used to throw out of the
+    // usecase and leave the run RUNNING for ever with no message. The message
+    // is fixed text: a JSON.parse error can quote the plaintext it choked on.
+    let secrets: Record<string, unknown>;
+    let resolved: ReturnType<typeof registry.getProvider> | HrisSyncProvider | undefined;
+    try {
+        secrets = conn.secretEncrypted ? (JSON.parse(decryptField(conn.secretEncrypted)) as Record<string, unknown>) : {};
+        resolved = input.provider ?? registry.getProvider(conn.provider);
+    } catch (e) {
+        const msg = 'The connection secret could not be read; re-enter the credentials on the connection';
+        logger.warn('hris.sync_secret_unreadable', { connectionId: conn.id, error: e instanceof Error ? e.name : 'non-Error thrown' });
+        await shortTx((db) => db.integrationExecution.update({ where: { id: executionId }, data: { status: 'ERROR', errorMessage: msg, completedAt: new Date() } }));
+        return { executionId, status: 'ERROR', upserted: 0, managersLinked: 0, managersCleared: 0, roleChanges: 0, recertification: null, errorMessage: msg, noRetry: true };
+    }
     if (!resolved || !isHrisSyncProvider(resolved)) {
         await shortTx((db) => db.integrationExecution.update({ where: { id: executionId }, data: { status: 'ERROR', errorMessage: 'Provider does not support HRIS sync', completedAt: new Date() } }));
         return { executionId, status: 'ERROR', upserted: 0, managersLinked: 0, managersCleared: 0, roleChanges: 0, recertification: null, errorMessage: 'Provider does not support HRIS sync' };
@@ -827,7 +840,12 @@ export async function runHrisSync(input: {
                     await db.integrationExecution.update({
                         where: { id: executionId },
                         data: {
-                            status: 'PASSED',
+                            // PARTIAL, as the result says and as identity-sync
+                            // writes the same case. The row said PASSED, so a
+                            // half-read roster with no departure reconcile read
+                            // as a completed sync on the integrations page and
+                            // passed legacy-reconcile's FRESH-roster gate (#5258).
+                            status: 'PARTIAL',
                             errorMessage: null,
                             resultJson: { upserted, managersLinked, managersCleared, roleChanges, recertification, departed: 0, total: roster.length, partial: true, resuming: true },
                             durationMs: Date.now() - start,

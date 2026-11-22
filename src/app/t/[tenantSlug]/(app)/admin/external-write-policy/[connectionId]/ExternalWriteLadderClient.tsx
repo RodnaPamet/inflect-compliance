@@ -31,9 +31,15 @@
  *    to hesitate at the moment nobody should. The asymmetry is deliberate.
  *
  * 3. **Say when a rung is above what the runtime will honour.** `maxMode` is
- *    `DRY_RUN` because no dispatch reads the rung yet. A control that accepts a
- *    value the system silently ignores is worse than one that refuses — and this
- *    is the rung the server refuses too, so the page and the gate agree.
+ *    the source ceiling `EXTERNAL_MAX_MODE`, which sits at `AUTOMATIC`, the
+ *    ladder's top rung: the dispatch reads the rung, and writes ARE sent at
+ *    `PROPOSE_ONLY` (after a person approves) and at `AUTOMATIC`. So today no
+ *    rung is above the ceiling and the notice does not show. The page shows it
+ *    only when the server reports `honoured.ceilingBelowTopRung`, which becomes
+ *    true the day somebody lowers the ceiling again as a brake; a rung above it
+ *    is then refused by the server too, so the page and the gate agree. A
+ *    control that accepts a value the system silently ignores is worse than one
+ *    that refuses.
  *
  * It offers only the NEXT rung, never a jump, and reads every reason from the
  * server rather than recomputing one. The usecase already enforces the ordering,

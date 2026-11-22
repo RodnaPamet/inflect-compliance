@@ -9,6 +9,7 @@
 import { Prisma, RetentionPolicy } from '@prisma/client';
 import { RequestContext } from '../types';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
+import { assertCanEditEvidence } from '../policies/evidence.policies';
 import { logEvent } from '../events/audit';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { runInTenantContext } from '@/lib/db-context';
@@ -16,8 +17,8 @@ import { notFound } from '@/lib/errors/types';
 import { runEvidenceRetentionSweep } from '../jobs/retention';
 
 /**
- * Update retention settings on an evidence record.
- * ADMIN/EDITOR only.
+ * Update retention settings on an evidence record. Needs the write tier and
+ * `evidence.edit`, like every other edit of the record.
  */
 export async function updateEvidenceRetention(
     ctx: RequestContext,
@@ -29,6 +30,7 @@ export async function updateEvidenceRetention(
     },
 ) {
     assertCanWrite(ctx);
+    assertCanEditEvidence(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const evidence = await db.evidence.findFirst({
@@ -161,6 +163,7 @@ export async function listExpiredEvidence(ctx: RequestContext) {
  */
 export async function archiveEvidence(ctx: RequestContext, evidenceId: string) {
     assertCanWrite(ctx);
+    assertCanEditEvidence(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const evidence = await db.evidence.findFirst({
@@ -216,6 +219,7 @@ function retentionHasLapsed(retentionUntil: Date | string | null, now: Date): bo
  */
 export async function unarchiveEvidence(ctx: RequestContext, evidenceId: string) {
     assertCanWrite(ctx);
+    assertCanEditEvidence(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const evidence = await db.evidence.findFirst({

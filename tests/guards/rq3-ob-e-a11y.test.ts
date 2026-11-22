@@ -67,9 +67,10 @@ describe('RQ3-OB-E — the grid keeps its promise', () => {
     test('RiskMatrixCell exposes the roving-tabindex + arrow-routing contract', () => {
         expect(matrixCell).toMatch(/tabbable\?: boolean/);
         expect(matrixCell).toMatch(/onArrowKey\?: \(/);
-        // tabIndex flips based on `tabbable` only when interactive.
+        // tabIndex flips based on `tabbable` whenever the cell sits in an
+        // interactive grid — empty cells included (#5280).
         expect(matrixCell).toMatch(
-            /tabIndex=\{interactive \? \(tabbable \? 0 : -1\) : -1\}/,
+            /tabIndex=\{navigable \? \(tabbable \? 0 : -1\) : -1\}/,
         );
         // The keyDown handler routes Arrow/Home/End to onArrowKey
         // AFTER Enter/Space (the existing click contract is preserved).

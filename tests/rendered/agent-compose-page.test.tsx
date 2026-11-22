@@ -206,3 +206,20 @@ it('promises a second approver only while the Owner requires one', () => {
     expect(screen.getByText(C.introSelfApproval)).toBeInTheDocument();
     expect(screen.queryByText(C.intro)).toBeNull();
 });
+
+it('sends an integer open field as a number, which is what the server validates (#5216)', async () => {
+    const calls = mockFetch({
+        get: { ok: true, body: { fields: [{ name: 'ticket', kind: 'regex' }, { name: 'days', kind: 'integer', min: 1, max: 30 }] } },
+        post: { ok: true, body: { proposalId: 'cm_abc123', status: 'PENDING', guardVerdict: null } },
+    });
+    render(<ComposeClient templates={TEMPLATES} canWrite />);
+    await choose(C.templatePlaceholder, 'Grant a role');
+    fireEvent.change(await screen.findByLabelText('Ticket'), { target: { value: '007' } });
+    fireEvent.change(screen.getByLabelText('Days'), { target: { value: '14' } });
+    fireEvent.click(screen.getByRole('button', { name: C.submit }));
+    await screen.findByTestId('compose-notice');
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({
+        parameterSetId: 'set-1',
+        openFieldValues: { ticket: '007', days: 14 },
+    });
+});

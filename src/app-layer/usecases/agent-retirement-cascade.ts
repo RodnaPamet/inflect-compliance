@@ -77,6 +77,7 @@ import type { RequestContext } from '../types';
 import { revokeScannerKeysForAgentInTx } from './agent-harness-scanner-keys';
 import { revokePeerInboundCredentialsForAgentInTx } from './a2a-peer-credentials';
 import { withdrawRetiredAgentEvidenceInTx } from './agentic-evidence-emission';
+import { settleRetiredAgentDeferralsInTx } from './workflow-run-deferrals';
 
 /**
  * Apply every effect of retirement, in one transaction the caller holds, and
@@ -152,6 +153,11 @@ export async function applyRetirementCascadeInTx(
         where: pending,
         data: { status: 'EXPIRED' },
     });
+    // ── Runs parked on one of those proposals (Step 2f) ──────────────
+    // Each waited on a proposal just expired, so nobody will decide it: the
+    // run settles FAILED, named, and its deferral SETTLED with the transcript
+    // cleared, in this transaction.
+    const parked = await settleRetiredAgentDeferralsInTx(db, ctx, agentId, now, RETIREMENT_PROPOSAL_ID_CAP);
 
     // ── Policy card: read, never written ─────────────────────────────
     const card = await AgentPolicyCardRepository.findForAgent(db, ctx, agentId);
@@ -210,6 +216,7 @@ export async function applyRetirementCascadeInTx(
             ...boundedIds(evidence.ids, evidence.count, RETIREMENT_ARTEFACT_ID_CAP),
             deferredToSweep: evidence.deferredToSweep,
         },
+        parkedRuns: { count: parked.count, ...boundedIds(parked.ids, parked.count, RETIREMENT_PROPOSAL_ID_CAP) },
     };
 }
 
@@ -366,6 +373,28 @@ export async function writeRetirementAuditRows(
                 proposalIds: effects.proposals.ids,
                 count: effects.proposals.count,
                 idsTruncated: effects.proposals.idsTruncated,
+            },
+        });
+    }
+
+    if (effects.parkedRuns.count > 0) {
+        await logEvent(db, ctx, {
+            action: 'AGENT_RETIREMENT_PARKED_RUNS_SETTLED',
+            entityType: 'RegisteredAgent',
+            entityId: agent.id,
+            detailsJson: {
+                category: 'status_change',
+                entityName: 'WorkflowRun',
+                operation: 'update',
+                reason: 'agent_retired',
+                fromStatus: 'AWAITING_APPROVAL',
+                toStatus: 'FAILED',
+                summary:
+                    `Settled ${effects.parkedRuns.count} run(s) of retired agent ${agent.id} that were waiting ` +
+                    'for a person on a proposal the retirement expired',
+                runIds: effects.parkedRuns.ids,
+                count: effects.parkedRuns.count,
+                idsTruncated: effects.parkedRuns.idsTruncated,
             },
         });
     }

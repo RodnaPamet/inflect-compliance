@@ -3,8 +3,16 @@ import { RiskRepository, RiskFilters, RiskListParams } from '../repositories/Ris
 import { TaskRepository } from '../repositories/TaskRepository';
 import { RiskTemplateRepository } from '../repositories/RiskTemplateRepository';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
+import { assertCanCreateRisk, assertCanUpdateRisk } from '../policies/risk.policies';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound, badRequest, conflict } from '@/lib/errors/types';
+import { readRiskMatrixAxes } from './risk-matrix-axes';
+import {
+    findSoftDeleteBlockers,
+    findBlockedParents,
+    softDeleteBlockedMessage,
+    bulkSoftDeleteBlockedMessage,
+} from '@/lib/soft-delete-blockers';
 import { calculateRiskScore } from '@/lib/risk-scoring';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText, sanitizeUrlText } from '@/lib/security/sanitize';
@@ -221,15 +229,31 @@ export async function createRisk(ctx: RequestContext, data: {
     ownerUserId?: string | null;
     targetDate?: string | null;
     nextReviewAt?: string | null;
+    /**
+     * The template the New Risk form started from, if any (#5313 item 48,
+     * owner decision 2026-11-15). Provenance only: it changes nothing about
+     * the risk, which carries the values the person submitted, and it is
+     * recorded in the creation audit row's `detailsJson` rather than on the
+     * risk (no column, by decision).
+     */
+    templateId?: string | null;
 }) {
-    assertCanWrite(ctx);
+    assertCanCreateRisk(ctx);
+
+    // An id that names no template is refused rather than recorded: the
+    // audit row would otherwise vouch for a provenance that does not exist.
+    const templateId = data.templateId || null;
+    if (templateId && !(await RiskTemplateRepository.getById(templateId))) {
+        throw badRequest('Risk template not found', { reason: 'RISK_TEMPLATE_NOT_FOUND' });
+    }
 
     const created = await runInTenantContext(ctx, async (db) => {
         if (data.ownerUserId) await assertActiveOwner(db, ctx.tenantId, data.ownerUserId);
-        // Tenant lookup is global (Tenant table has no RLS)
-        const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId } });
-        const maxScale = tenant?.maxRiskScale || 5;
-        const inherentScore = calculateRiskScore(data.likelihood ?? 3, data.impact ?? 3, maxScale);
+        // Each axis is bounded by the tenant's own matrix (#5080).
+        const axes = await readRiskMatrixAxes(db, ctx.tenantId);
+        const inherentScore = calculateRiskScore(
+            data.likelihood ?? 3, data.impact ?? 3, axes.likelihoodLevels, axes.impactLevels,
+        );
 
         const risk = await RiskRepository.create(db, ctx, {
             // Epic D.2 — sanitise free-text before persistence.
@@ -274,7 +298,9 @@ export async function createRisk(ctx: RequestContext, data: {
             entityType: 'Risk',
             entityId: risk.id,
             details: `Created risk: ${risk.title} (score: ${inherentScore})`,
-            detailsJson: { category: 'custom', event: 'create' },
+            detailsJson: templateId
+                ? { category: 'custom', event: 'create', templateId }
+                : { category: 'custom', event: 'create' },
         });
 
         return risk;
@@ -311,11 +337,10 @@ export async function createRiskFromTemplate(ctx: RequestContext, templateId: st
     if (!template) throw notFound('Risk template not found');
 
     const created = await runInTenantContext(ctx, async (db) => {
-        const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId } });
-        const maxScale = tenant?.maxRiskScale || 5;
+        const axes = await readRiskMatrixAxes(db, ctx.tenantId);
         const likelihood = overrides.likelihood ?? template.defaultLikelihood;
         const impact = overrides.impact ?? template.defaultImpact;
-        const score = calculateRiskScore(likelihood, impact, maxScale);
+        const score = calculateRiskScore(likelihood, impact, axes.likelihoodLevels, axes.impactLevels);
 
         const risk = await RiskRepository.create(db, ctx, {
             // Epic D.2 — sanitise the merged value (override OR template),
@@ -433,15 +458,28 @@ export async function updateRisk(ctx: RequestContext, id: string, data: {
     /// an array (possibly empty) replaces it (normalized to valid codes).
     linddunCategories?: string[] | null;
 }) {
-    assertCanWrite(ctx);
+    assertCanUpdateRisk(ctx);
 
     const { risk: updated, previousOwnerId } = await runInTenantContext(ctx, async (db) => {
-        // Tenant lookup is global (Tenant table has no RLS)
-        const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId } });
-        const maxScale = tenant?.maxRiskScale || 5;
-        const inherentScore = data.likelihood && data.impact
-            ? calculateRiskScore(data.likelihood, data.impact, maxScale)
-            : undefined;
+        // Each axis is bounded by the tenant's own matrix (#5080).
+        const axes = await readRiskMatrixAxes(db, ctx.tenantId);
+
+        // Capture the prior row: the prior owner (so the assignment
+        // notification only fires on an actual change), and the stored axes
+        // a one-axis edit is scored against.
+        const before = await RiskRepository.getById(db, ctx, id);
+        const previousOwnerId = before?.ownerUserId ?? null;
+
+        // Either axis alone re-scores against the other's STORED value
+        // (#5318). Scoring only when both were sent left `{ likelihood: 5 }`
+        // on a 2x3 risk at score 6 with no ledger event, so the heatmap cell
+        // and the score/band disagreed.
+        const scoredLikelihood = data.likelihood ?? before?.likelihood;
+        const scoredImpact = data.impact ?? before?.impact;
+        const inherentScore =
+            (data.likelihood !== undefined || data.impact !== undefined) && scoredLikelihood && scoredImpact
+                ? calculateRiskScore(scoredLikelihood, scoredImpact, axes.likelihoodLevels, axes.impactLevels)
+                : undefined;
 
         // RQ2-1 — residual decomposition: both-or-neither, derived
         // rollup. An incomplete pair is a caller bug, not a partial
@@ -453,17 +491,14 @@ export async function updateRisk(ctx: RequestContext, id: string, data: {
         }
         const residualScore =
             data.residualLikelihood !== undefined && data.residualImpact !== undefined
-                ? calculateRiskScore(data.residualLikelihood, data.residualImpact, maxScale)
+                ? calculateRiskScore(
+                    data.residualLikelihood, data.residualImpact, axes.likelihoodLevels, axes.impactLevels,
+                )
                 : undefined;
 
         // A newly-supplied owner must be an active member; `undefined` leaves
         // it untouched and ''/null clears it — neither needs the check.
         if (data.ownerUserId) await assertActiveOwner(db, ctx.tenantId, data.ownerUserId);
-
-        // Capture the prior owner so the assignment notification only
-        // fires on an actual change (not on every unrelated risk edit).
-        const before = await RiskRepository.getById(db, ctx, id);
-        const previousOwnerId = before?.ownerUserId ?? null;
 
         const risk = await RiskRepository.update(db, ctx, id, {
             // Epic D.2 — sanitise on update only when the field is
@@ -493,8 +528,13 @@ export async function updateRisk(ctx: RequestContext, id: string, data: {
                 data.ownerUserId === undefined
                     ? undefined
                     : data.ownerUserId || null,
-            targetDate: data.targetDate ? new Date(data.targetDate) : undefined,
-            nextReviewAt: data.nextReviewAt ? new Date(data.nextReviewAt) : undefined,
+            // Three states (#5212): undefined leaves the date alone, and an
+            // explicit null or '' CLEARS it. Collapsing both to undefined
+            // made clearing a review date a silent no-op behind a "saved" toast.
+            targetDate:
+                data.targetDate === undefined ? undefined : data.targetDate ? new Date(data.targetDate) : null,
+            nextReviewAt:
+                data.nextReviewAt === undefined ? undefined : data.nextReviewAt ? new Date(data.nextReviewAt) : null,
             // P2 — undefined leaves the LINDDUN classification untouched; an
             // array (incl. empty) replaces it with the normalized valid codes.
             linddunCategories:
@@ -518,8 +558,8 @@ export async function updateRisk(ctx: RequestContext, id: string, data: {
             await recordScoreEvent(db, ctx.tenantId, {
                 riskId: id,
                 kind: 'INHERENT',
-                likelihood: data.likelihood as number,
-                impact: data.impact as number,
+                likelihood: scoredLikelihood as number,
+                impact: scoredImpact as number,
                 score: inherentScore,
                 source: 'USER',
                 justification: data.scoreJustification ?? null,
@@ -779,9 +819,15 @@ export async function updateRiskFair(ctx: RequestContext, id: string, input: Ris
 /** Bulk soft-delete risks selected in the table action bar. */
 export async function bulkDeleteRisk(ctx: RequestContext, riskIds: string[]) {
     assertCanAdmin(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const result = await runInTenantContext(ctx, async (db) => {
         const rows = await RiskRepository.listByIds(db, ctx, riskIds);
         if (rows.length === 0) return { deleted: 0 };
+        // #5083: a treatment plan holds a risk down at the 90-day purge. One
+        // query per blocking edge, not per risk.
+        const blocked = await findBlockedParents(db, 'Risk', rows.map((r) => r.id));
+        if (blocked.size > 0) {
+            throw conflict(bulkSoftDeleteBlockedMessage('risks', blocked));
+        }
         await db.risk.deleteMany({ where: { id: { in: rows.map((r) => r.id) }, tenantId: ctx.tenantId } });
         for (const r of rows) {
             await logEvent(db, ctx, {
@@ -794,12 +840,22 @@ export async function bulkDeleteRisk(ctx: RequestContext, riskIds: string[]) {
         }
         return { deleted: rows.length };
     });
+    // As deleteRisk does (#5318): without it the list re-fetch is served from
+    // the 60 s list cache and the deleted risks still appear.
+    if (result.deleted > 0) await bumpEntityCacheVersion(ctx, 'risk');
+    return result;
 }
 
 export async function deleteRisk(ctx: RequestContext, id: string) {
     assertCanAdmin(ctx);
 
     const result = await runInTenantContext(ctx, async (db) => {
+        // #5083: refused BEFORE the soft delete, so the row never reaches the
+        // purge in a state that would abort it.
+        const blockers = await findSoftDeleteBlockers(db, 'Risk', id);
+        if (blockers.length > 0) {
+            throw conflict(softDeleteBlockedMessage('risk', blockers));
+        }
         const deleted = await RiskRepository.delete(db, ctx, id);
         if (!deleted) throw notFound('Risk not found');
 

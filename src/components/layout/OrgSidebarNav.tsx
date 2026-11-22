@@ -14,7 +14,7 @@ import {
     TriangleWarning,
     UserArrowRight,
     Users,
-} from '@inflect/ui/components/ui/icons/nucleo';
+} from '@inflect/ui/components/ui/icons/glyphs';
 import { useOrgContext, useOrgHref, useOrgPermissions } from '@/lib/org-context-provider';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -50,7 +50,7 @@ import { NavSection } from './nav-section';
 interface OrgNavItemDef {
     href: string;
     label: string;
-    /** Lucide OR Nucleo — see the `NavGlyph` note on `NavItemProps.icon`. */
+    /** A lucide component or a local glyph — see the `NavGlyph` note on `NavItemProps.icon`. */
     icon: NavGlyph;
     requiresDrillDown?: boolean;
     requiresManageMembers?: boolean;
@@ -169,7 +169,9 @@ export function OrgSidebarContent({ user, onLogout, onNavClick, onToggleCollapse
     const org = useOrgContext();
     const sections = useOrgNavSections();
     const collapsed = useSidebarCollapsed();
-    const t = useTranslations('org');
+    const tOrg = useTranslations('org');
+    // The org role by its label, as the switcher shows it (#5309).
+    const tOrgRoles = useTranslations('orgRoles');
 
     return (
         <div className="flex flex-col h-full">
@@ -187,13 +189,14 @@ export function OrgSidebarContent({ user, onLogout, onNavClick, onToggleCollapse
                     <OrgSwitcher
                         orgSlug={org.orgSlug}
                         orgName={org.orgName}
+                        orgRole={org.role}
                         currentKind="org"
                     />
                 )}
             </div>
 
             {/* Nav */}
-            <nav className="flex-1 p-2 overflow-y-auto" aria-label={t('nav.ariaLabel')}>
+            <nav className="flex-1 p-2 overflow-y-auto" aria-label={tOrg('nav.ariaLabel')}>
                 {sections.map((section, idx) => (
                     <NavSection
                         key={idx}
@@ -230,7 +233,7 @@ export function OrgSidebarContent({ user, onLogout, onNavClick, onToggleCollapse
                     <button
                         type="button"
                         onClick={onToggleCollapse}
-                        aria-label={collapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
+                        aria-label={collapsed ? tOrg('nav.expandSidebar') : tOrg('nav.collapseSidebar')}
                         aria-pressed={collapsed}
                         data-testid="sidebar-collapse-toggle"
                         className={cn(
@@ -242,11 +245,10 @@ export function OrgSidebarContent({ user, onLogout, onNavClick, onToggleCollapse
                             Direction is not carried by the icon — it is
                             `aria-hidden`; the button's `aria-label`
                             (expand/collapse) and `aria-pressed` carry the state
-                            for assistive tech. Nucleo ships no matched
-                            close/open pair, and inventing a mirrored one would
-                            diverge from the sibling surface for no gain. */}
+                            for assistive tech. One glyph keeps this in step
+                            with the sibling surface. */}
                         <Menu3 className="h-4 w-4 shrink-0" aria-hidden="true" />
-                        {!collapsed && <span className="flex-1 text-left">{t('nav.collapse')}</span>}
+                        {!collapsed && <span className="flex-1 text-left">{tOrg('nav.collapse')}</span>}
                     </button>
                 </div>
             )}
@@ -263,15 +265,17 @@ export function OrgSidebarContent({ user, onLogout, onNavClick, onToggleCollapse
                         {/* GAP-CI-77: see SidebarNav for the same fix
                             rationale — brand orange on cream is below AA for
                             small text. */}
-                        <p className="text-xs text-content-muted">{org.role}</p>
+                        <p className="text-xs text-content-muted">
+                            {tOrgRoles.has?.(org.role) ? tOrgRoles(org.role) : org.role}
+                        </p>
                     </div>
                 )}
                 {collapsed ? (
-                    <Tooltip content={t('common.signOut')} side="right">
+                    <Tooltip content={tOrg('common.signOut')} side="right">
                         <button
                             type="button"
                             onClick={onLogout}
-                            aria-label={t('common.signOut')}
+                            aria-label={tOrg('common.signOut')}
                             data-testid="org-nav-logout"
                             className="icon-btn icon-btn-sm mx-auto flex"
                         >
@@ -287,7 +291,7 @@ export function OrgSidebarContent({ user, onLogout, onNavClick, onToggleCollapse
                         data-testid="org-nav-logout"
                     >
                         <UserArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
-                        {t('common.signOut')}
+                        {tOrg('common.signOut')}
                     </Button>
                 )}
             </div>

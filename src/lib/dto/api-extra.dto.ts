@@ -130,3 +130,21 @@ export const SharedAuditPackResponseSchema = z.object({
 }).passthrough().openapi('SharedAuditPackResponse', {
     description: 'Public, share-token-scoped read view of a frozen audit pack. No authentication — the opaque token in the path is the capability.',
 });
+
+/**
+ * `POST /api/auth/register`'s success body, as the route returns it (#5132).
+ * `tenant` is null for an account-only registration that a pending
+ * invitation will attach to its workspace at sign-in.
+ */
+export const AuthRegisterResponseSchema = z.object({
+    user: z.object({
+        id: z.string(),
+        email: z.string(),
+        name: z.string().nullable(),
+        role: z.string().nullable(),
+    }),
+    tenant: z.object({ id: z.string(), name: z.string(), slug: z.string() }).nullable(),
+    emailVerificationRequired: z.boolean(),
+}).passthrough().openapi('AuthRegisterResponse', {
+    description: 'The account created, the workspace created with it (null for an account-only registration that an invitation will attach), and whether the email must be verified before sign-in.',
+});

@@ -62,12 +62,13 @@ import { Card } from '@/components/ui/card';
 import { CopyText } from '@/components/ui/copy-text';
 import { ErrorState } from '@/components/ui/error-state';
 import { useToast } from '@/components/ui/hooks';
-import { ShieldKeyhole } from '@inflect/ui/components/ui/icons/nucleo';
+import { ShieldKeyhole } from '@inflect/ui/components/ui/icons/glyphs';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
+import type { ToolManifestStatus as ServerToolManifestStatus } from '@/lib/mcp/tool-manifest';
 
 /**
  * Exported so `ToolsTab` can read the SAME SWR cache entry rather than
@@ -76,12 +77,11 @@ import { Heading } from '@/components/ui/typography';
  */
 export const TOOL_MANIFEST_PATH = '/admin/agents/tool-manifests';
 
-type ToolManifestStatus =
-    | 'APPROVED'
-    | 'UNPINNED'
-    | 'DESCRIPTION_CHANGED'
-    | 'SCHEMA_CHANGED'
-    | 'DEFINITION_CHANGED';
+// The server's own union, not a local copy (#5313): the copy lacked
+// `ANNOTATIONS_CHANGED`, so a row the server reports in that state showed a raw
+// message key and no badge colour. With the server's type, the two Records
+// below fail `tsc` until a new status has an order and a variant.
+type ToolManifestStatus = ServerToolManifestStatus;
 
 /** One row of `GET /admin/agents/tool-manifests`, which returns a BARE ARRAY. */
 export interface ToolManifestState {
@@ -127,14 +127,17 @@ const STATUS_ORDER: Record<ToolManifestStatus, number> = {
     DESCRIPTION_CHANGED: 0,
     DEFINITION_CHANGED: 1,
     SCHEMA_CHANGED: 2,
-    UNPINNED: 3,
-    APPROVED: 4,
+    ANNOTATIONS_CHANGED: 3,
+    UNPINNED: 4,
+    APPROVED: 5,
 };
 
 const STATUS_VARIANT: Record<ToolManifestStatus, StatusBadgeVariant> = {
     DESCRIPTION_CHANGED: 'error',
     DEFINITION_CHANGED: 'error',
     SCHEMA_CHANGED: 'warning',
+    // As the external-tools page shows it.
+    ANNOTATIONS_CHANGED: 'warning',
     UNPINNED: 'neutral',
     APPROVED: 'success',
 };
@@ -176,6 +179,14 @@ function movedHalves(row: ToolManifestState) {
 export interface ToolManifestPinsProps {
     /** Bridged to SWR the same way every tab bridges it. */
     refreshToken?: number;
+    /**
+     * Holds `admin.agent_registry`, the key the pin route takes (#5313). The
+     * Tools tab is also opened on the tool-exposure key alone; without the
+     * register key the section sends no request (each would be refused and
+     * write an AUTHZ_DENIED row) and says the pins are not visible. Defaults
+     * to true for a caller that predates it.
+     */
+    canRead?: boolean;
 }
 
 /**
@@ -183,15 +194,15 @@ export interface ToolManifestPinsProps {
  * on one tab re-reads the others, and an approval here changes nothing any
  * other tab renders — it moves a tenant-wide pin, not this agent's record.
  */
-export function ToolManifestPins({ refreshToken }: ToolManifestPinsProps) {
+export function ToolManifestPins({ refreshToken, canRead = true }: ToolManifestPinsProps) {
     const t = useTranslations('admin');
     const apiUrl = useTenantApiUrl();
     const toast = useToast();
 
     const { data, error, isLoading, mutate } =
-        useTenantSWR<ToolManifestState[]>(TOOL_MANIFEST_PATH);
+        useTenantSWR<ToolManifestState[]>(canRead ? TOOL_MANIFEST_PATH : null);
 
-    useEffect(() => { void mutate(); }, [refreshToken, mutate]);
+    useEffect(() => { if (canRead) void mutate(); }, [refreshToken, canRead, mutate]);
 
     const [pending, setPending] = useState<string | null>(null);
     const [writeError, setWriteError] = useState<string | null>(null);
@@ -400,6 +411,16 @@ export function ToolManifestPins({ refreshToken }: ToolManifestPinsProps) {
     }
 
     function body() {
+        if (!canRead) {
+            return (
+                <InlineNotice
+                    variant="info"
+                    title={t('agentDetail.tools.manifests.forbiddenTitle')}
+                >
+                    {t('agentDetail.tools.manifests.forbiddenBody')}
+                </InlineNotice>
+            );
+        }
         if (error) {
             const status = error instanceof ApiClientError ? error.status : 0;
             if (status === 403) {

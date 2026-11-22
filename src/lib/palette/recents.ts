@@ -26,7 +26,7 @@
  *     search auto-extends recents without a separate touch.
  */
 
-import type { SearchHit, SearchHitType } from '@/lib/search/types';
+import { SEARCH_TYPE_DEFAULTS, type SearchHit, type SearchHitType } from '@/lib/search/types';
 import { uiStorageKey } from '@/lib/ui-storage';
 
 // ─── Public types ─────────────────────────────────────────────────────
@@ -120,21 +120,17 @@ export function serializeRecents(items: ReadonlyArray<RecentItem>): RecentsBlob 
     return { version: 1, items: items.slice(0, MAX_RECENTS) };
 }
 
-const VALID_TYPES: ReadonlySet<SearchHitType> = new Set([
-    'control',
-    'risk',
-    'policy',
-    'evidence',
-    'framework',
-]);
+// Derived from the search contract's own table, never listed by hand: a
+// hand-kept copy named five of the eight searchable kinds, so an asset, task
+// or test opened from the palette was stored and then dropped on every load
+// (#5316).
+const VALID_TYPES: ReadonlySet<SearchHitType> = new Set(
+    Object.keys(SEARCH_TYPE_DEFAULTS) as SearchHitType[],
+);
 
-const VALID_ICONS: ReadonlySet<SearchHit['iconKey']> = new Set([
-    'shield-check',
-    'alert-triangle',
-    'file-text',
-    'paperclip',
-    'layers',
-]);
+const VALID_ICONS: ReadonlySet<SearchHit['iconKey']> = new Set(
+    Object.values(SEARCH_TYPE_DEFAULTS).map((d) => d.iconKey),
+);
 
 function isValidItem(value: unknown): value is RecentItem {
     if (!value || typeof value !== 'object') return false;

@@ -30,6 +30,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { readA2aBody } from '@/lib/agentic/a2a/body';
 import { issueHostConsumerToken } from '@/app-layer/usecases/a2a-host-consumer-token';
 
 const JSON_HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-store' } as const;
@@ -37,7 +38,16 @@ const JSON_HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-
 /** 8 KiB. A token request is a handful of short fields; anything larger is not one. */
 const MAX_BODY_BYTES = 8 * 1024;
 
-function credentialsFromBasic(authorization: string | null): { id: string; secret: string } | null {
+/**
+ * What an `Authorization` header says about the client: nothing (absent, or
+ * not Basic, or no colon — the body may still carry the credentials), the
+ * credentials, or `MALFORMED` when it is a Basic header whose id or secret is
+ * not valid form-urlencoding. A stray `%` makes `decodeURIComponent` throw,
+ * and that throw used to escape as a 500 (#5376).
+ */
+function credentialsFromBasic(
+    authorization: string | null,
+): { id: string; secret: string } | 'MALFORMED' | null {
     if (!authorization) return null;
     const m = /^Basic\s+(.+)$/i.exec(authorization.trim());
     if (!m) return null;
@@ -51,25 +61,40 @@ function credentialsFromBasic(authorization: string | null): { id: string; secre
     // joined, so a secret containing ':' round-trips. Split on the FIRST colon.
     const at = decoded.indexOf(':');
     if (at < 0) return null;
-    return {
-        id: decodeURIComponent(decoded.slice(0, at)),
-        secret: decodeURIComponent(decoded.slice(at + 1)),
-    };
+    try {
+        return {
+            id: decodeURIComponent(decoded.slice(0, at)),
+            secret: decodeURIComponent(decoded.slice(at + 1)),
+        };
+    } catch {
+        return 'MALFORMED';
+    }
 }
 
 export const POST = withApiErrorHandling(
     async (req: NextRequest, { params }: { params: Promise<{ tenantSlug: string }> }) => {
         const { tenantSlug } = await params;
 
-        const raw = await req.text();
-        if (Buffer.byteLength(raw, 'utf8') > MAX_BODY_BYTES) {
+        // Capped while it is read, not measured after: `req.text()` would
+        // buffer whatever the caller sent before the cap could refuse it.
+        const read = await readA2aBody(req, MAX_BODY_BYTES);
+        if (!read.ok) {
             return new NextResponse(JSON.stringify({ error: 'invalid_request' }), {
                 status: 413,
                 headers: { ...JSON_HEADERS },
             });
         }
-        const form = new URLSearchParams(raw);
+        const form = new URLSearchParams(read.body);
         const basic = credentialsFromBasic(req.headers.get('authorization'));
+        if (basic === 'MALFORMED') {
+            // RFC 6749 §5.2: a client that authenticated through the
+            // Authorization header and failed gets a 401. Same one shape as
+            // every other refusal; nothing of what was presented is echoed.
+            return new NextResponse(JSON.stringify({ error: 'invalid_client' }), {
+                status: 401,
+                headers: { ...JSON_HEADERS },
+            });
+        }
 
         const result = await issueHostConsumerToken({
             tenantSlug,

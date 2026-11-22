@@ -50,7 +50,7 @@ import { seedDefaultOrgDashboard } from './org-dashboard-presets';
 
 // ─── Permission helpers ────────────────────────────────────────────────
 
-function assertCanReadOrgWidgets(ctx: OrgContext): void {
+export function assertCanReadOrgWidgets(ctx: OrgContext): void {
     if (!ctx.permissions.canViewPortfolio) {
         throw forbidden(
             'You do not have permission to view dashboard widgets for this organization',

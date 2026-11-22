@@ -41,7 +41,25 @@ import type {
 import type { RequestContext } from '../../../types';
 import { verifyGitHubSignature } from '../../webhook-crypto';
 import { logger } from '@/lib/observability/logger';
-import { resilientFetch } from '../../http-resilience';
+import { IntegrationTerminalError, resilientFetch } from '../../http-resilience';
+
+/**
+ * `fetchImpl`, with a terminal HTTP status handed back as a response.
+ *
+ * The default `resilientFetch` THROWS on 401/403/404 (it refuses to retry
+ * them), so every `response.status === 404` branch below was unreachable: a
+ * branch with no classic protection became an exception, and the check
+ * reported ERROR instead of FAILED (#5094). The status is what these callers
+ * decide on, so it is given back to them.
+ */
+async function fetchKeepingStatus(fetchImpl: FetchFn, url: string, init: RequestInit): Promise<Response> {
+    try {
+        return await fetchImpl(url, init);
+    } catch (err) {
+        if (err instanceof IntegrationTerminalError) return new Response(null, { status: err.status });
+        throw err;
+    }
+}
 
 // ─── GitHub API Types ────────────────────────────────────────────────
 
@@ -150,7 +168,7 @@ export async function fetchBranchRules(
 ): Promise<{ rules: GitHubBranchRule[] | null; status: number; error?: string }> {
     const url = `https://api.github.com/repos/${owner}/${repo}/rules/branches/${branch}`;
     try {
-        const response = await fetchImpl(url, {
+        const response = await fetchKeepingStatus(fetchImpl, url, {
             headers: {
                 'Authorization': `Bearer ${token}`,
                 'Accept': 'application/vnd.github.v3+json',
@@ -183,7 +201,7 @@ export async function fetchBranchProtection(
     const url = `https://api.github.com/repos/${owner}/${repo}/branches/${branch}/protection`;
 
     try {
-        const response = await fetchImpl(url, {
+        const response = await fetchKeepingStatus(fetchImpl, url, {
             headers: {
                 'Authorization': `Bearer ${token}`,
                 'Accept': 'application/vnd.github.v3+json',
@@ -519,7 +537,8 @@ export class GitHubProvider implements ScheduledCheckProvider, WebhookEventProvi
 
         // Test API access by fetching repo info
         try {
-            const response = await this.fetchImpl(
+            const response = await fetchKeepingStatus(
+                this.fetchImpl,
                 `https://api.github.com/repos/${owner}/${repo}`,
                 {
                     headers: {

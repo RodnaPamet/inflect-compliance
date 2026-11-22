@@ -5,12 +5,14 @@
  * `usecases/agent-profiles.ts`, because a client component does not import a
  * usecase module.
  */
+import type { AgentFlow } from '@/lib/agentic/agent-flow';
 import type {
     ProfileEffort,
     ProfileModelTier,
     ProfileOutputKind,
     ProfileSkillOption,
     ProfileSkillRef,
+    ProfileSubagent,
     ProfileTrigger,
 } from '@/lib/agentic/agent-profile';
 
@@ -28,10 +30,32 @@ export interface ProfileVersionView {
     instructions: string;
     instructionsHash: string;
     toolNames: string[];
+    /**
+     * The drawn flow (Phase 1 of `docs/ai-architecture/langflow.md`), or null.
+     * The content hash the approver sends covers it, so the tab renders it and
+     * diffs it beside the instructions.
+     */
+    flow: AgentFlow | null;
+    /**
+     * The inline sub-agents (Step 2e), in name order, instructions included, or
+     * `[]` for a version with none. The content hash covers them, so the tab
+     * renders and diffs them beside the instructions.
+     */
+    subagents: ProfileSubagent[];
     skillRefs: ProfileSkillRef[];
     modelTier: ProfileModelTier;
     effort: ProfileEffort;
     maxTurns: number;
+    /**
+     * The version's compaction threshold (Step 2g): null takes the engine's,
+     * 0 turns compaction off, any other number lowers it.
+     */
+    compactionThresholdTokens: number | null;
+    /**
+     * The propose tools whose calls wait for a person (Step 2f). Absent reads
+     * as none, for a view built before the field existed.
+     */
+    deferredToolNames?: string[];
     outputKind: ProfileOutputKind;
     allowedTriggers: ProfileTrigger[];
     author: ProfilePerson;
@@ -59,6 +83,12 @@ export interface ProfileView {
         maxTurns: number;
         rejectionReasonMaxChars: number;
         skillCatalogueBudgetBytes: number;
+        /** What a version's compaction threshold may be (Step 2g). */
+        compactionThreshold: {
+            min: number;
+            maxByTier: Record<ProfileModelTier, number>;
+            engineDefaultByTier: Record<ProfileModelTier, number>;
+        };
     };
 }
 

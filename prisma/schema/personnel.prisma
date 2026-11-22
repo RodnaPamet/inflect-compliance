@@ -212,6 +212,9 @@ model TrainingAssignment {
   // Compliance-calendar training loader: tenant-scoped range scan on the
   // due date, ordered ascending so a capped page keeps the nearest.
   @@index([tenantId, dueAt])
+  // The Training list's paged read (#5764 item 6): tenant scope, newest first
+  // by (createdAt, id), the cursor order in docs/pagination.md.
+  @@index([tenantId, createdAt])
 }
 
 /// A background check for an employee (PR-6). `resultSummary` is encrypted at

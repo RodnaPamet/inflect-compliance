@@ -247,7 +247,7 @@ export function SandboxRuntimeClient({
                     channel.key,
                     t(`sandboxRuntime.channel.${channel.key}.name`),
                     t(`sandboxRuntime.channel.${channel.key}.description`),
-                    displayForChannel(channel.key, declaration),
+                    displayForChannel(channel.key, declaration, view.probeOutcome),
                     <dl className="space-y-tight text-sm">
                         <div className="flex gap-tight">
                             <dt className="text-content-muted">

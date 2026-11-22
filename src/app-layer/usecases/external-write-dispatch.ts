@@ -104,6 +104,30 @@ import { sendA2aJournalRow, type A2aNetworkOptions } from './a2a-outbound';
 const DISPATCH_BATCH_LIMIT = 50;
 
 /**
+ * How long a CLAIMED row may stay `PENDING` before this pass gives up on it
+ * (#5256).
+ *
+ * A row is claimed immediately before `callTool` and settled immediately
+ * after, so a claim that is still standing an hour later means the pass that
+ * took it died in between — and nobody can say whether the far end applied the
+ * write. Such a row is settled INDETERMINATE and NEVER re-sent, which is the
+ * same call the `catch` arm around `callTool` already makes for the same
+ * reason: `FAILED` is a positive claim that the far end changed nothing.
+ *
+ * Sixty minutes, owner decision 2026-11-13, and the number is chosen to be
+ * comfortably longer than any plausible pass rather than tight. The failure
+ * mode of being too SHORT is taking a row away from a pass that is still
+ * legitimately working on it: the steal settles the row INDETERMINATE while
+ * the live pass's own `settleWrite` — conditioned on `outcome: 'PENDING'` —
+ * then no-ops, so a successful write is reported as unknown. That is
+ * fail-safe, never a double-send, but it is a false alarm a human has to
+ * clear, and the finding's own Case 1 is a pass that already exceeds ten
+ * minutes. Being too LONG only delays an operator learning about a dead
+ * worker, which the PENDING sweep surfaces anyway.
+ */
+const STALE_CLAIM_MS = 60 * 60 * 1000;
+
+/**
  * Tools whose far end ACCEPTS a request and delivers it LATER (#3324).
  *
  * ═══ WHY A DECLARATION HERE, NOT A HINT FROM THE TOOL ═══
@@ -237,6 +261,15 @@ export interface ExternalWriteDispatchResult {
     /** Sent, and we do not know what happened. Needs a human. */
     indeterminate: number;
     /**
+     * Rows another pass currently holds, skipped untouched (#5256).
+     *
+     * Counted, because a pass that skipped every row it read would otherwise
+     * report scanned-but-nothing-done and read as a pass that failed silently.
+     * It is not a problem on its own: it is what overlapping passes are
+     * SUPPOSED to look like now.
+     */
+    inFlight: number;
+    /**
      * Sent, and the far end ACCEPTED it for later delivery (#3324).
      *
      * Counted apart from `applied` because it is a different claim. An
@@ -340,6 +373,7 @@ export async function runExternalWriteDispatch(input: {
         applied: 0,
         refused: 0,
         indeterminate: 0,
+        inFlight: 0,
         accepted: 0,
     };
     if (due.length === 0) return result;
@@ -356,6 +390,39 @@ export async function runExternalWriteDispatch(input: {
                 reason: detail,
             });
         };
+
+        // ── ANOTHER PASS MAY ALREADY OWN THIS ROW (#5256) ───────────────────
+        //
+        // Asked FIRST, before any check, decrypt or network call, because all
+        // of that is wasted work on a row this pass must not send.
+        if (row.claimedAt) {
+            if (Date.now() - row.claimedAt.getTime() < STALE_CLAIM_MS) {
+                // A live pass holds it. Left completely alone — not settled,
+                // not re-stamped — so its owner can finish and settle it.
+                result.inFlight += 1;
+                continue;
+            }
+            // The pass that claimed it is gone. The claim is taken immediately
+            // before `callTool`, so the write may well have reached the far end
+            // and taken effect: INDETERMINATE, and never sent a second time.
+            await settleWrite(
+                ctx,
+                row.id,
+                'INDETERMINATE',
+                'A dispatch pass claimed this write and never settled it, so it may have reached '
+                    + 'the far end and taken effect. It is NOT re-sent. Confirm against the paired '
+                    + 'prior-state read before treating it as unsent.',
+            );
+            result.indeterminate += 1;
+            logger.warn('external write claim went stale; settled INDETERMINATE, not re-sent', {
+                component: 'external-write-dispatch',
+                tenantId: input.tenantId,
+                journalId: row.id,
+                tool: row.toolName,
+                claimAgeMs: Date.now() - row.claimedAt.getTime(),
+            });
+            continue;
+        }
 
         if (!row.connectionId) {
             await refuse('The connection was deleted after this write was approved.');
@@ -520,6 +587,38 @@ export async function runExternalWriteDispatch(input: {
             }
         }
 
+        // ── CLAIM, THEN SEND (#5256) ────────────────────────────────────────
+        //
+        // As late as it can possibly be: the rung re-check, the prior-state
+        // read, the drift and bound checks and the tool's own precondition all
+        // ran above, and each of them leaves the row UNCLAIMED and freely
+        // retryable. So a standing claim means a send was imminent or happened,
+        // which is the only state that needs care.
+        //
+        // The `updateMany` is the whole mechanism. Conditioned on the row still
+        // being PENDING and still unclaimed, so of two overlapping passes
+        // exactly one comes back with count 1; the other gets 0 and sends
+        // nothing. This is the single statement that makes a double-send
+        // unrepresentable rather than unlikely.
+        const claim = await runInTenantContext(ctx, (db) =>
+            db.externalWriteJournal.updateMany({
+                where: { id: row.id, tenantId: input.tenantId, outcome: 'PENDING', claimedAt: null },
+                data: { claimedAt: new Date() },
+            }),
+        );
+        if (claim.count === 0) {
+            // Lost the race, or the row was settled by someone else while the
+            // checks above were running. Either way it is not ours to send.
+            result.inFlight += 1;
+            logger.info('external write already claimed by another pass; not sent', {
+                component: 'external-write-dispatch',
+                tenantId: input.tenantId,
+                journalId: row.id,
+                tool: row.toolName,
+            });
+            continue;
+        }
+
         let sent: unknown;
         try {
             sent = await callTool(transport, row.advertisedToolName, args);
@@ -598,6 +697,7 @@ export async function runExternalWriteDispatch(input: {
         applied: result.applied,
         refused: result.refused,
         indeterminate: result.indeterminate,
+        inFlight: result.inFlight,
     });
     return result;
 }

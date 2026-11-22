@@ -50,6 +50,9 @@ import { getTenantContextTool } from './context-tools';
 import { getDiscoveredAgentTool, getHarnessRegisterTool } from './harness-tools';
 import { getAgentRecertificationEvidenceTool } from './access-review-tools';
 import { listAuditWorkpapersTool } from './audit-tools';
+import { searchKnowledgeTool } from './knowledge-tools';
+import { canSee } from '../tool-visibility';
+import { readToolMounted } from '../mount-gated-tools';
 
 /**
  * The registered read tools — the full tenant-inspection suite. Each is a thin
@@ -74,6 +77,7 @@ export const READ_TOOLS = [
     getHarnessRegisterTool,
     getAgentRecertificationEvidenceTool,
     listAuditWorkpapersTool,
+    searchKnowledgeTool,
 ] as unknown as ReadonlyArray<McpReadTool<unknown>>;
 
 /**
@@ -141,26 +145,12 @@ export function loadableReadTools(inv: McpInvocation): ReadonlyArray<McpReadTool
  * identically.
  */
 function allReadTools(inv: McpInvocation): ReadonlyArray<McpReadTool<unknown>> {
-    if (inv.externalTools.length === 0) return READ_TOOLS;
-    return [...READ_TOOLS, ...(inv.externalTools as ReadonlyArray<McpReadTool<unknown>>)];
+    const mounted = READ_TOOLS.filter((t) => readToolMounted(t.name));
+    if (inv.externalTools.length === 0) return mounted;
+    return [...mounted, ...(inv.externalTools as ReadonlyArray<McpReadTool<unknown>>)];
 }
 
-/**
- * Advertising-time permission probe. Deliberately NOT the enforcement — it
- * writes no audit row and throws nothing, because a tool being absent from a
- * catalogue is not a denied access attempt. `authorizeToolCall` is the decision.
- */
-function canSee(inv: McpInvocation, keys: readonly string[] | undefined): boolean {
-    if (!keys || keys.length === 0) return true;
-    const perms = inv.ctx.appPermissions as unknown as Record<
-        string,
-        Record<string, boolean> | undefined
-    >;
-    return keys.every((k) => {
-        const [domain, action] = k.split('.');
-        return perms[domain]?.[action] === true;
-    });
-}
+
 
 export class McpToolNotFoundError extends Error {
     readonly rpcCode = RpcErrorCode.MethodNotFound;

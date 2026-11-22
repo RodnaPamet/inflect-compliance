@@ -1,14 +1,17 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: ghcr.io/rodnapamet/postgres-pgvector:16-alpine
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: inflect_compliance
-    # Postgres is only directly accessible on port 5434 (for migrations).
+    # Postgres is only directly accessible on port 5436 (for migrations).
     # Application traffic goes through PgBouncer on port 5433.
+    # Not 5434: that is the test stack's port (docker-compose.test.yml), and
+    # this one moved off it so both stacks can run at once (#5308, owner
+    # decision 2026-11-14). Staging uses 5435.
     ports:
-      - '5434:5432'
+      - '5436:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./prisma/init-roles.sh:/docker-entrypoint-initdb.d/01-init-roles.sh:ro

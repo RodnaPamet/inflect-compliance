@@ -90,6 +90,9 @@ model ProcessMap {
   nodes     ProcessNode[]
   edges     ProcessEdge[]
   snapshots ProcessMapSnapshot[]
+  nodeControls ProcessNodeControl[]
+  nodeRisks    ProcessNodeRisk[]
+  nodeAssets   ProcessNodeAsset[]
 
   @@unique([id, tenantId])
   @@index([tenantId, deletedAt])
@@ -186,6 +189,12 @@ model ProcessNode {
   processMap             ProcessMap               @relation(fields: [processMapId, tenantId], references: [id, tenantId], onDelete: Cascade)
   /// Business Impact Analyses attached to this node — the BIA lives in
   /// the Internal Audit area (not the canvas); this is the link back.
+  /// The Control a `control` node stands for (one per node), if linked.
+  control                ProcessNodeControl?
+  /// The Risk a `risk` node stands for (one per node), if linked.
+  risk                   ProcessNodeRisk?
+  /// The Asset an `asset` node stands for (one per node), if linked.
+  asset                  ProcessNodeAsset?
 
   @@unique([processMapId, nodeKey])
   @@index([tenantId, processMapId])
@@ -229,6 +238,93 @@ model ProcessEdge {
   @@unique([processMapId, edgeKey])
   @@unique([id, tenantId])
   @@index([tenantId, processMapId])
+}
+
+/// The Control record a `control` node stands for.
+///
+/// At most one row per node (`@@unique([nodeId, tenantId])`): a control node
+/// says "this step is gated by X". It replaces the untyped
+/// `ProcessNode.dataJson.linkedEntityId`, which had no foreign key, was checked
+/// against no tenant at save, and was read as JSON.
+///
+/// Rebuilt from the save payload on every save, like `ProcessEdgeControl`:
+/// `replaceGraph` deletes the map's rows and writes one per node that carries a
+/// `controlId`, in the same transaction that upserts the nodes. So a redrawn
+/// node (a new row) gets its link back from the payload, and the composite
+/// `(nodeId, tenantId)` / `(controlId, tenantId)` keys make a cross-tenant
+/// reference unrepresentable rather than filtered.
+///
+/// Nothing about the control is copied here. The canvas reads the control's
+/// name, status and test date live, so a renamed control never shows its old
+/// name on a map.
+model ProcessNodeControl {
+  id           String   @id @default(cuid())
+  tenantId     String
+  // Denormalised from the node, so RLS scopes the table on the same column
+  // shape as its siblings and "all node controls in map X" is one indexed read.
+  processMapId String
+  nodeId       String
+  controlId    String
+  createdAt    DateTime @default(now())
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id])
+  processMap ProcessMap  @relation(fields: [processMapId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  node       ProcessNode @relation(fields: [nodeId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  control    Control     @relation(fields: [controlId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  // One control per node. `nodeId` is a cuid, so this is "unique per node";
+  // the composite is what Prisma needs to make the relation one-to-one.
+  @@unique([nodeId, tenantId])
+  @@index([tenantId, processMapId])
+  @@index([tenantId, controlId])
+}
+
+/// The Risk record a `risk` node stands for: the sibling of
+/// `ProcessNodeControl`, with the same shape and the same rules. At most one row
+/// per node, rebuilt from the save payload by `replaceGraph` in the transaction
+/// that upserts the nodes, and nothing about the risk is copied here: the
+/// canvas reads its facts live. It replaces `ProcessNode.dataJson.linkedEntityId`
+/// for `risk` nodes.
+model ProcessNodeRisk {
+  id           String   @id @default(cuid())
+  tenantId     String
+  processMapId String
+  nodeId       String
+  riskId       String
+  createdAt    DateTime @default(now())
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id])
+  processMap ProcessMap  @relation(fields: [processMapId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  node       ProcessNode @relation(fields: [nodeId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  risk       Risk        @relation(fields: [riskId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([nodeId, tenantId])
+  @@index([tenantId, processMapId])
+  @@index([tenantId, riskId])
+}
+
+/// The Asset record an `asset` node stands for: the sibling of
+/// `ProcessNodeControl`, with the same shape and the same rules. At most one row
+/// per node, rebuilt from the save payload by `replaceGraph` in the transaction
+/// that upserts the nodes, and nothing about the asset is copied here: the
+/// canvas reads its facts live. It replaces `ProcessNode.dataJson.linkedEntityId`
+/// for `asset` nodes.
+model ProcessNodeAsset {
+  id           String   @id @default(cuid())
+  tenantId     String
+  processMapId String
+  nodeId       String
+  assetId      String
+  createdAt    DateTime @default(now())
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id])
+  processMap ProcessMap  @relation(fields: [processMapId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  node       ProcessNode @relation(fields: [nodeId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  asset      Asset       @relation(fields: [assetId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([nodeId, tenantId])
+  @@index([tenantId, processMapId])
+  @@index([tenantId, assetId])
 }
 
 model ProcessEdgeControl {

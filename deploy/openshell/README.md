@@ -260,10 +260,26 @@ verification is configured and no OIDC issuer is present", which is exactly
 this host. Writing an invented issuer here would produce a gateway that starts
 and validates nothing.
 
-The worker obtains a token by the OAuth2 **client-credentials** grant and sends
-it as a bearer token; the gateway validates it against the issuer's JWKS and
-refreshes that key set on the TTL above. Renewal is therefore a property of the
-grant and the TTL, not of a long-lived secret on the app VM.
+**If that pair were ever set**, the bearer path works like this: a client obtains
+a token by the OAuth2 **client-credentials** grant and sends it as a bearer token;
+the gateway validates it against the issuer's JWKS and refreshes that key set on
+the TTL above. Renewal would then be a property of the grant and the TTL rather
+than of a long-lived secret on the app VM — which is the argument for setting it
+up when an identity provider exists.
+
+It is NOT how this deployment authenticates today. The paragraph above says the
+OIDC pair is commented out and the client does not exist; this one describes the
+mechanism it would enable, in case somebody reads the two in isolation and
+concludes a bearer path is live. It is not, and `src/lib/agentic/openshell/
+grpc-transport.ts` says the same from the client side: no token can be minted, so
+mTLS — authorised by ROLE, with scopes unenforced — is the only live path.
+
+That matters beyond documentation. The proto annotates provider RPCs with scopes
+(`provider:write` for `CreateProvider` and `DeleteProvider`), and on a bearer path
+those could be granted. With no bearer path live, they cannot: an `OU=operator`
+certificate is the only way to reach them, and that certificate is deliberately
+absent. So provisioning a gateway provider is a CERTIFICATE decision, not a
+scope-grant one (#5476).
 
 `OPENSHELL_ENABLE_OPERATOR_AUTH=false` is set explicitly, though it is also the
 default, so that the default moving does not change this deployment. Operator
@@ -485,6 +501,97 @@ because a version this product already knows is not an observation.
 **Unreachable is the normal case.** The VM is stopped most of the time by
 design — the cap is a runtime budget — so the page will usually say "did not
 answer", and that is the honest reading rather than an alarm.
+
+## Provisioning a posture collector's credential provider — #5476
+
+Sandboxed cloud-posture collection runs powerpipe in a sandbox and reads its
+credential from an **attached gateway provider and from nothing else** (the exec
+passes no environment, deliberately: an env var is readable by the third-party
+binary being confined, and it lands in a core dump and in `/proc/<pid>/environ`).
+
+**One provider per `(tenant, connection)`, and the operator creates each one.**
+Writing a provider's credential needs gateway-wide mTLS with `OU=operator`, and
+that certificate is absent from both VMs on purpose — see "Inbound
+authentication" above. The app's identity is `CN=openshell-client,
+OU=openshell-user`, which reaches `AttachSandboxProvider`, `ExecSandbox` and
+`GetSandboxProviderStatus` and none of the operator surface. So the division is
+fixed by the certificates rather than by convention: **the operator provisions,
+the product attaches.**
+
+Until a connection's provider exists, its collection refuses by name
+(`SANDBOX_PROVIDER_NOT_TENANT_SCOPED`, #5251/#5475) rather than attaching
+somebody else's credential. That refusal is the designed state, not a fault.
+
+### The steps
+
+1. **Read the expected names.** Dispatch the `VM check` workflow with
+   `posture-provider-names`. It prints one row per posture connection:
+
+   ```
+   | connection | enabled | expected provider |
+   | --- | --- | --- |
+   | clz1… | t | inflect-posture-<32 hex> |
+   ```
+
+   The names are derived from `(tenantId, connectionId)` and never move, so this
+   list is stable: a connection provisioned once stays provisioned. No tenant
+   identifier is printed — the run log is public.
+
+2. **Create each provider**, from the machine that holds the operator
+   certificate, with that connection's own cloud credential and a refresh
+   strategy. The credential never crosses the product's interface; it is
+   configured here exactly as the signing key is.
+
+3. **Turn the platform switch on** (`SANDBOX_EXECUTION_ENABLED=1`). With the
+   switch off, `collectorExecForDeploy()` returns `null` and collection stays on
+   the on-host path unchanged.
+
+### Reading a refusal
+
+| reported failure | what it means | what to do |
+| --- | --- | --- |
+| `SANDBOX_PROVIDER_NOT_TENANT_SCOPED` | no provider name for this connection | step 1, then step 2 |
+| `SANDBOX_PROVIDER_NOT_READY` | the provider exists; the gateway says its credential is not installed | read the state in the message — a withheld or failed credential is step 2 again, `PENDING` is propagation |
+| `SANDBOX_UNREACHABLE` | the gateway did not answer | the VM is stopped most of the time by design; check it is up |
+
+The middle row is the one worth knowing about: an attach is a **persisted
+intent**, not an installed credential, so the collector waits for the gateway's
+own readiness observation before it runs anything (#5739). A credential problem
+therefore reports as a credential problem rather than as an outage.
+
+### When a provider is out of date, or orphaned — #5476
+
+The product cannot write a provider, so it cannot keep one current either. The
+two ways that matters are reported differently, and deliberately:
+
+**A rotated credential raises a finding.** Changing a posture connection's
+credential in the product leaves the gateway holding the previous one, under the
+same name, so every later scan benchmarks an account the tenant no longer has on
+record. That raises one MEDIUM finding against the connection, assigned to its
+accountable owner, naming the provider to re-provision.
+
+**Nothing closes that finding automatically, and that is a decision** (owner,
+2026-11-16). The readiness observation says `credentials_installed`, never WHICH
+credential, so there is no evidence the product could close on — a close on the
+next successful scan would close on the old credential working perfectly well.
+Re-provision, then close it by hand. One open finding per connection: a second
+rotation while it is open adds nothing, because the fact is the same fact.
+
+**An orphaned provider is found by DIFFING, not by a finding.** When a connection
+is deleted, or its tenant purged, a finding would go with it — there is nobody
+left to read it. Instead, dispatch `posture-provider-names`: it lists the expected
+provider for every posture connection that exists. **A provider on the gateway
+that is not in that output belongs to no connection and can be removed.** That is
+the only direction that works, because the list is derived from live rows and an
+orphan is by definition absent from it.
+
+### Adding a posture provider kind
+
+A fourth cloud posture provider widens `POSTURE_CONNECTION_PROVIDERS` in
+`src/app-layer/integrations/cloud-posture/provider-name.ts`, which is what the
+`posture-provider-names` check reads. A kind added without it gets a name nobody
+was told to provision, and every one of its scans refuses — so the test over that
+list is an exact equality rather than a floor.
 
 ## The VM, and the 5 USD/month cap it runs under
 

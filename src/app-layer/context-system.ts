@@ -70,6 +70,10 @@ import {
     tenantSystemUserId,
 } from '@/lib/tenant-system-user';
 import { RequestContext } from './types';
+import {
+    agentKeyJobRefusal,
+    type AgentKeyRestRefusal,
+} from '@/lib/agentic/agent-key-rest-gate';
 
 /**
  * The `userId` written on rows a background job creates.
@@ -564,9 +568,10 @@ export async function borrowedJobActor(input: {
  * Resolve the context for a job that does what one named member asked for:
  * the initiator of an evidence import, the actor of a SharePoint sync.
  *
- * Returns `null` when that member has no ACTIVE membership in the tenant. That
- * is a REFUSAL, exactly as for `resolveMemberContext`: the caller stops, and
- * never falls back to a system context.
+ * Returns `null` when that member has no ACTIVE membership in the tenant, or the
+ * tenant is soft-deleted. That is a REFUSAL, exactly as for
+ * `resolveMemberContext`: the caller stops, and never falls back to a system
+ * context.
  *
  * Differs from `resolveMemberContext` only in what these jobs always carried:
  * the caller's own `requestId`, and no `tenantSlug`.
@@ -577,7 +582,17 @@ export async function resolveInitiatorContext(input: {
     requestId: string;
 }): Promise<RequestContext | null> {
     const membership = await prisma.tenantMembership.findFirst({
-        where: { userId: input.userId, tenantId: input.tenantId, status: 'ACTIVE' },
+        // A soft-deleted tenant refuses too (#5305). Its memberships are left
+        // in place by the delete, so without this a job a member queued from
+        // a session before the delete wrote into a tenant that is meant to be
+        // inaccessible everywhere — while the same job queued with an API key
+        // was refused `tenant_deleted` by `resolveApiKeyForJob`.
+        where: {
+            userId: input.userId,
+            tenantId: input.tenantId,
+            status: 'ACTIVE',
+            tenant: { deletedAt: null },
+        },
         select: {
             role: true,
             customRole: { select: { baseRole: true, permissionsJson: true } },
@@ -600,7 +615,12 @@ export async function resolveInitiatorContext(input: {
  * (`other_user`), or that user having no ACTIVE membership
  * (`initiator_not_a_member`).
  */
-export type KeyInitiatorRefusal = ApiKeyJobRefusal | 'other_user' | 'initiator_not_a_member';
+export type KeyInitiatorRefusal =
+    | ApiKeyJobRefusal
+    | 'other_user'
+    | 'initiator_not_a_member'
+    /** The key is live but its AGENT is killed or not ACTIVE (#5189). */
+    | AgentKeyRestRefusal;
 
 /**
  * The context for a job that a request made with an API KEY queued (#4369).
@@ -638,12 +658,37 @@ export async function resolveKeyInitiatorContext(input: {
     userId: string;
     apiKeyId: string;
     requestId: string;
+    /**
+     * The job's own name, for the `AUTHZ_DENIED` row an agent refusal writes
+     * (#5189). Optional so existing callers keep compiling; a caller that omits
+     * it loses only the surface label on the denial, never the refusal.
+     */
+    jobName?: string;
 }): Promise<{ ok: true; ctx: RequestContext } | { ok: false; reason: KeyInitiatorRefusal }> {
     const key = await resolveApiKeyForJob({ apiKeyId: input.apiKeyId, tenantId: input.tenantId });
     if (!key.valid) return { ok: false, reason: key.reason };
     // The key speaks for the user who created it, and the route names that
     // user as the initiator. A payload naming somebody else is not this key's.
     if (key.ctx.userId !== input.userId) return { ok: false, reason: 'other_user' };
+
+    /*
+        AND THE AGENT BEHIND IT, IF ANY (#5189).
+
+        The re-read above is `resolveApiKeyForJob`, which checks revoked,
+        expired and tenant_deleted — nothing about the agent. So a kill engaged
+        (or the agent suspended) while this job sat in the queue did not stop
+        it: the import wrote evidence and linked controls for a stopped agent,
+        while the same key at REST got a 403 that moment. The docstring above
+        promises "key now", and the agent's kill state is part of now.
+
+        Reuses the REST gate's own read, so the two surfaces cannot disagree
+        about which switches count, and writes the `AUTHZ_DENIED` row the job
+        path never wrote.
+    */
+    if (key.ctx.agentId) {
+        const refusal = await agentKeyJobRefusal(key.ctx, input.jobName ?? 'job');
+        if (refusal) return { ok: false, reason: refusal };
+    }
 
     const member = await resolveInitiatorContext({
         tenantId: input.tenantId,

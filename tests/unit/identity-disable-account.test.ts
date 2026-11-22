@@ -9,6 +9,8 @@
  * Every test drives an injected fake writer. There is no module-level default
  * that reaches a real directory, so no test can acquire one by forgetting.
  */
+import { withSkipDuplicates } from '../helpers/outbox-double';
+
 const db = {
     tenantSecuritySettings: { findUnique: jest.fn() },
     identityWriteJournal: { create: jest.fn(), updateMany: jest.fn(), findFirst: jest.fn() },
@@ -20,7 +22,7 @@ const db = {
     tenantNotificationSettings: { findUnique: jest.fn() },
     tenantMembership: { findMany: jest.fn() },
     tenant: { findUnique: jest.fn() },
-    notificationOutbox: { create: jest.fn() },
+    notificationOutbox: withSkipDuplicates(jest.fn()),
 };
 
 jest.mock('@/lib/db-context', () => ({
@@ -112,6 +114,7 @@ import {
     disableAccount,
     disableAccountsForLeaver,
     findLeaverCandidates,
+    MAX_LEAVER_CANDIDATES,
     type DirectoryWriter,
 } from '@/app-layer/usecases/identity-disable-account';
 import { MAX_DISABLES_PER_RUN } from '@/app-layer/usecases/identity-write-breaker';
@@ -1423,8 +1426,37 @@ describe('candidate selection demands FRESH link evidence', () => {
         expect(typeof q.take).toBe('number');
     });
 
+    it('reads the newest departures first, one past the cap, and says when it was cut (#5142)', async () => {
+        const row = (i: number) => ({
+            id: `l${i}`,
+            connectedAccount: {
+                externalUserId: `x${i}`,
+                email: null,
+                isProtected: false,
+                status: 'ACTIVE',
+                onPremisesSyncEnabled: null,
+                onPremStateObservedAt: null,
+                connection: { isEnabled: true },
+            },
+        });
+        db.identityAccountLink.findMany.mockResolvedValue(
+            Array.from({ length: MAX_LEAVER_CANDIDATES + 1 }, (_, i) => row(i)),
+        );
+
+        const r = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
+
+        const q = db.identityAccountLink.findMany.mock.calls[0][0];
+        expect(q.orderBy[0]).toEqual({ employee: { endDate: { sort: 'desc', nulls: 'first' } } });
+        expect(q.take).toBe(MAX_LEAVER_CANDIDATES + 1);
+        expect(r.truncated).toBe(true);
+        expect(r.candidates).toHaveLength(MAX_LEAVER_CANDIDATES);
+
+        db.identityAccountLink.findMany.mockResolvedValue([row(0)]);
+        expect((await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'))).truncated).toBe(false);
+    });
+
     it('no employees means no query at all', async () => {
-        expect(await findLeaverCandidates(ctx, 'entra-id', [], new Date())).toEqual([]);
+        expect(await findLeaverCandidates(ctx, 'entra-id', [], new Date())).toEqual({ candidates: [], truncated: false });
         expect(db.identityAccountLink.findMany).not.toHaveBeenCalled();
     });
 
@@ -1459,7 +1491,7 @@ describe('candidate selection demands FRESH link evidence', () => {
                 },
             },
         ]);
-        const out = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
+        const { candidates: out } = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
         expect(out).toEqual([
             {
                 linkId: 'l1',
@@ -1497,7 +1529,7 @@ describe('candidate selection demands FRESH link evidence', () => {
                 },
             },
         ]);
-        const out = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
+        const { candidates: out } = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
         expect(out[0].onPremStateObservedAt).toBeNull();
     });
 
@@ -1531,7 +1563,7 @@ describe('candidate selection demands FRESH link evidence', () => {
             { id: 'l3', connectedAccount: account({ status: 'DEPROVISIONED' }) },
         ]);
 
-        const out = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
+        const { candidates: out } = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
 
         expect(out.map((c) => c.lastObservedEnabled)).toEqual([true, false, false]);
         // Still three CANDIDATES. The count is the only thing the state changes.
@@ -1628,7 +1660,7 @@ describe('candidate selection demands FRESH link evidence', () => {
             { id: 'l3', connectedAccount: account({}) },
         ]);
 
-        const out = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
+        const { candidates: out } = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
 
         expect(out.map((c) => c.connectionEnabled)).toEqual([true, false, false]);
         // Still three CANDIDATES, for the same reason the account-state case
@@ -2117,6 +2149,28 @@ describe('a refusal reconciles a stranded write instead of freezing it', () => {
         expect(db.identityWriteJournal.updateMany).toHaveBeenCalled();
         // The refusal is still a refusal: nothing was written to the directory.
         expect(w.disabled).toEqual([]);
+    });
+
+    it('audits a reconciling refusal as RECONCILED with no write attempted by this pass (#5317)', async () => {
+        withStrandedRow();
+        setMode('AUTOMATIC');
+        const w = fakeWriter({ readState: async () => disabledInDirectory() });
+        const r = await disableAccountsForLeaver(ctx, w, {
+            candidates: [input({ linkId: 'link-p', isProtected: true })],
+            population: 500,
+        });
+
+        expect(r.results[0].outcome).toBe('REFUSED_PROTECTED');
+        expect(w.disabled).toEqual([]);
+        expect(appendAudit).toHaveBeenCalledTimes(1);
+        const row = appendAudit.mock.calls[0][0];
+        expect(row.action).toBe('IDENTITY_ACCOUNT_DISABLE_RECONCILED');
+        expect(row.detailsJson).toMatchObject({
+            outcome: 'REFUSED_PROTECTED',
+            writeAttempted: false,
+            reconciledEarlierWrite: true,
+            journalId: 'journal-1',
+        });
     });
 
     it('settles the row when LEAVER WRITES ARE OFF and the account is disabled', async () => {

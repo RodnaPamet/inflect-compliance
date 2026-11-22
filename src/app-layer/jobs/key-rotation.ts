@@ -71,6 +71,11 @@ import {
 } from '@/lib/security/tenant-keys';
 import { clearTenantDekCache } from '@/lib/security/tenant-key-manager';
 import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
+import {
+    PII_ENCRYPTED_COLUMNS,
+    PII_GLOBAL_MODELS,
+    PII_TENANT_SCOPED_MODELS,
+} from '@/lib/security/pii-middleware';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -176,8 +181,18 @@ async function rewrapTenantDek(tenantId: string): Promise<{
 
 // ─── v1 ciphertext re-encrypt ───────────────────────────────────────
 
+/** The sweep's page size. Named once so the two sweeps cannot disagree. */
+const DEFAULT_BATCH_SIZE = 500;
+
 async function rewriteV1Field(
-    tenantId: string,
+    /**
+     * NULL sweeps the whole table — the global PII models (#5070), which carry
+     * no `tenantId` and which the per-tenant job's own guard skips. Everything
+     * below this point is already tenant-agnostic: only the SELECT ever named
+     * a tenant, and the conditional UPDATE keys on the row id and the value it
+     * read.
+     */
+    tenantId: string | null,
     model: string,
     field: string,
     batchSize: number,
@@ -196,22 +211,49 @@ async function rewriteV1Field(
     // Read raw SQL — bypass the encryption middleware so we see the
     // actual v1 ciphertext (not a decrypted plaintext from the
     // middleware's read path).
-    const selectSql = `
+    //
+    // Keyset pagination on `id` is mandatory (#5099): a rewritten row is
+    // STILL `v1:` (now under the new primary KEK), so the prefix cannot
+    // mark progress, and re-reading from the top returned the same first
+    // batch for ever once a field held `batchSize` rows. The cursor also
+    // moves past a row that failed, so a batch of undecryptable rows
+    // cannot loop either.
+    //
+    // The predicate and the bind list are built TOGETHER. Two edits that have
+    // to agree about `$1` are two edits that eventually disagree, and the
+    // failure would be a silent one: a mis-numbered bind either throws or,
+    // worse, filters on the wrong value and reports `scanned: 0` as success.
+    const scoped = tenantId !== null;
+    const selectSql = scoped
+        ? `
         SELECT id, "${field}" AS value
         FROM "${model}"
         WHERE "tenantId" = $1
           AND "${field}" IS NOT NULL
           AND "${field}" LIKE 'v1:%'
+          AND ($3::text IS NULL OR id > $3)
         ORDER BY id
         LIMIT $2
+    `
+        : `
+        SELECT id, "${field}" AS value
+        FROM "${model}"
+        WHERE "${field}" IS NOT NULL
+          AND "${field}" LIKE 'v1:%'
+          AND ($2::text IS NULL OR id > $2)
+        ORDER BY id
+        LIMIT $1
     `;
+    const bindsFor = (lastId: string | null): unknown[] =>
+        scoped ? [tenantId, batchSize, lastId] : [batchSize, lastId];
+    let lastId: string | null = null;
 
     while (true) {
         let rows: Array<{ id: string; value: string }>;
         try {
             rows = await prisma.$queryRawUnsafe<
                 Array<{ id: string; value: string }>
-            >(selectSql, tenantId, batchSize);
+            >(selectSql, ...bindsFor(lastId));
         } catch (err) {
             logger.error('key-rotation.select_failed', {
                 component: 'key-rotation',
@@ -263,12 +305,18 @@ async function rewriteV1Field(
             }
 
             try {
-                await prisma.$executeRawUnsafe(
-                    `UPDATE "${model}" SET "${field}" = $1 WHERE id = $2`,
+                // Conditional on the value read: a user edit that landed
+                // after the SELECT is newer than our plaintext and must
+                // not be overwritten with it (#5109). A row that moved on
+                // was written by the middleware under the current key, so
+                // it needs nothing from this sweep.
+                const updated = await prisma.$executeRawUnsafe(
+                    `UPDATE "${model}" SET "${field}" = $1 WHERE id = $2 AND "${field}" = $3`,
                     fresh,
                     row.id,
+                    row.value,
                 );
-                out.rewritten++;
+                if (updated > 0) out.rewritten++;
             } catch (err) {
                 out.errors++;
                 logger.error('key-rotation.update_failed', {
@@ -282,6 +330,7 @@ async function rewriteV1Field(
             }
         }
 
+        lastId = rows[rows.length - 1].id;
         if (rows.length < batchSize) break;
     }
 
@@ -306,7 +355,7 @@ export async function runKeyRotation(
         async () => {
             const jobRunId = crypto.randomUUID();
             const started = Date.now();
-            const batchSize = Math.max(1, options.batchSize ?? 500);
+            const batchSize = Math.max(1, options.batchSize ?? DEFAULT_BATCH_SIZE);
 
             // ── The grant that authorised this must still hold ──────────────
             //
@@ -370,7 +419,33 @@ export async function runKeyRotation(
             let totalRewritten = 0;
             let totalErrors = dekOutcome.ok ? 0 : 1;
 
-            for (const [model, fields] of Object.entries(ENCRYPTED_FIELDS)) {
+            // ── THE PII COLUMNS, WHICH THIS SWEEP USED TO SKIP (#5070) ──
+            //
+            // `pii-middleware` writes its own `*Encrypted` columns with v1
+            // `encryptField`, and they are NOT in `ENCRYPTED_FIELDS`, so this
+            // loop never saw them and no other job rewrites them
+            // (`scripts/backfill-encryption.ts` skips anything already
+            // encrypted). The runbook then says to remove
+            // `DATA_ENCRYPTION_KEY_PREVIOUS` once the job reports zero v1
+            // rows — a report that was true of the manifest and false of the
+            // database — after which `decryptOnRead` nulls every mapped PII
+            // field and only the archived old key can recover it.
+            //
+            // Only the TENANT-SCOPED models can be done here. `User` and
+            // `Account` carry no `tenantId`, and the guard below would skip
+            // them anyway; they are the global sweep's job
+            // (`scripts/rotate-global-pii.ts`), and the runbook pairs the two.
+            //
+            // The ciphertext column only: a lookup hash is an index keyed on
+            // LOOKUP_HASH_KEY (#5071) and must not move during a rotation.
+            const rotatable: Array<[string, readonly string[]]> = [
+                ...Object.entries(ENCRYPTED_FIELDS),
+                ...PII_TENANT_SCOPED_MODELS.map(
+                    (m) => [m, PII_ENCRYPTED_COLUMNS[m] ?? []] as [string, readonly string[]],
+                ),
+            ];
+
+            for (const [model, fields] of rotatable) {
                 // Probe — does this model have a tenantId column? We
                 // infer from the Prisma model by attempting a small
                 // COUNT(*). Cheaper than walking DMMF; the probe
@@ -414,7 +489,7 @@ export async function runKeyRotation(
                 requestId: options.requestId ?? null,
             });
 
-            logger.info('key-rotation.complete', {
+            (totalErrors > 0 ? logger.error : logger.info)('key-rotation.complete', {
                 component: 'key-rotation',
                 tenantId: options.tenantId,
                 jobRunId,
@@ -456,23 +531,79 @@ async function modelHasTenantIdColumn(model: string): Promise<boolean> {
         _modelHasTenantIdCache.set(model, true);
         return true;
     } catch (err) {
-        // UndefinedColumn — no tenantId on this model.
-        const isColumnMissing =
-            err instanceof Prisma.PrismaClientKnownRequestError ||
-            (err instanceof Error && /column.*does not exist/i.test(err.message));
-        _modelHasTenantIdCache.set(model, false);
-        if (!isColumnMissing) {
-            logger.warn('key-rotation.model_probe_failed', {
-                component: 'key-rotation',
-                model,
-                error: err instanceof Error ? err.message : String(err),
-            });
+        // ONLY Postgres' undefined_column (42703) means "this model has no
+        // tenantId". Any other failure — a dropped connection, a pool or
+        // statement timeout — is thrown, never cached as false: a model
+        // skipped on a transient error contributed no errors to the sweep,
+        // so the run reported clean while that model's rows were never
+        // touched (#5108).
+        if (isUndefinedColumnError(err)) {
+            _modelHasTenantIdCache.set(model, false);
+            return false;
         }
-        return false;
+        logger.error('key-rotation.model_probe_failed', {
+            component: 'key-rotation',
+            model,
+            error: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
     }
 }
 
+function isUndefinedColumnError(err: unknown): boolean {
+    if (err instanceof Prisma.PrismaClientKnownRequestError) {
+        const meta = err.meta as { code?: unknown } | undefined;
+        if (meta?.code === '42703') return true;
+    }
+    return err instanceof Error && /column "?tenantId"? does not exist/i.test(err.message);
+}
+
 /** @internal — expose for tests that need to reset cross-run state. */
+/**
+ * Re-encrypt the GLOBAL PII columns under the current primary KEK — #5070.
+ *
+ * `User` and `Account` carry no `tenantId`, so the per-tenant job cannot touch
+ * them: its loop skips any model without that column, deliberately, because a
+ * per-tenant sweep over a global table would either run N times or race with
+ * itself. They are swept ONCE, by `scripts/rotate-global-pii.ts`, and the
+ * rotation runbook pairs the two steps — the per-tenant job's "zero v1 rows"
+ * report says nothing about these tables, which is exactly how #5070 stayed
+ * invisible.
+ *
+ * Idempotent: it selects only `v1:%` rows and the UPDATE is conditional on the
+ * value it read, so a second run rewrites nothing a concurrent writer has
+ * already moved on. Safe to re-run after a partial failure.
+ */
+export async function rotateGlobalPiiColumns(
+    batchSize = DEFAULT_BATCH_SIZE,
+): Promise<{ perField: KeyRotationPerFieldResult[]; scanned: number; rewritten: number; errors: number }> {
+    const perField: KeyRotationPerFieldResult[] = [];
+    let scanned = 0;
+    let rewritten = 0;
+    let errors = 0;
+
+    for (const model of PII_GLOBAL_MODELS) {
+        for (const field of PII_ENCRYPTED_COLUMNS[model] ?? []) {
+            // `null` tenant: the whole table.
+            const result = await rewriteV1Field(null, model, field, batchSize);
+            perField.push(result);
+            scanned += result.scanned;
+            rewritten += result.rewritten;
+            errors += result.errors;
+        }
+    }
+
+    logger.info('key-rotation.global_pii_swept', {
+        component: 'key-rotation',
+        models: PII_GLOBAL_MODELS.length,
+        scanned,
+        rewritten,
+        errors,
+    });
+
+    return { perField, scanned, rewritten, errors };
+}
+
 export function _resetKeyRotationForTests(): void {
     _modelHasTenantIdCache.clear();
 }

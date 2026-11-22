@@ -124,6 +124,7 @@ function mount(bulkPermissions: Props['bulkPermissions']) {
                     permissions={{ canRead: true, canWrite: true, canAdmin: true, canAudit: false, canExport: true }}
                     bulkPermissions={bulkPermissions}
                     canCreate
+                    canLinkControls
                     translations={translations}
                 />
             </TooltipProvider>

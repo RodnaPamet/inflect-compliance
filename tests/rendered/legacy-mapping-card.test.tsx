@@ -148,7 +148,7 @@ beforeEach(() => {
 });
 
 async function readColumns() {
-    render(<LegacyAccessMappingCard connectionId="conn_1" />);
+    render(<LegacyAccessMappingCard connectionId="conn_1" provider="legacy-mcp" />);
     fireEvent.click(screen.getByText('profileButton'));
     await waitFor(() => expect(screen.getByTestId('legacy-mapping-table')).toBeInTheDocument());
 }
@@ -202,7 +202,10 @@ describe('nothing is saved without an explicit save', () => {
         // And the profile call itself is a POST, which is deliberate — it dials a
         // customer-hosted server — so "no writes" is asserted on the MAPPING
         // endpoint rather than on the method alone.
-        expect(calls.filter((c) => c.url.includes('/admin/legacy-access/mapping'))).toEqual([]);
+        // A GET of the saved mapping is a read (#5214); no other method is.
+        expect(
+            calls.filter((c) => c.url.includes('/admin/legacy-access/mapping') && c.method !== 'GET'),
+        ).toEqual([]);
     });
 
     it('pressing save writes the mapping once, with the confirmed columns', async () => {
@@ -214,21 +217,70 @@ describe('nothing is saved without an explicit save', () => {
     });
 });
 
-describe('a non-legacy connection renders nothing', () => {
-    it('shows no mapping section for another provider', async () => {
-        global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+describe('the saved mapping is the starting point, not the suggestions (#5214)', () => {
+    it('a save after reading the columns keeps what was confirmed', async () => {
+        let putBody: Record<string, unknown> | null = null;
+        global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
             const url = String(input);
-            if (url.includes('/admin/integrations')) {
+            const method = init?.method ?? 'GET';
+            if (url.includes('/admin/legacy-access/profile')) return { ok: true, status: 200, json: async () => PROFILE };
+            if (url.includes('/admin/legacy-access/mapping') && method === 'GET') {
+                // Confirmed earlier: EMAIL_ADDR is the USERNAME here, whatever
+                // the suggester thinks of its email share.
                 return {
                     ok: true, status: 200,
-                    json: async () => [{ id: 'conn_1', provider: 'entra-id' }],
+                    json: async () => ({
+                        mapping: {
+                            version: 3,
+                            fields: { accountKey: 'LOGIN_NAME', username: 'EMAIL_ADDR' },
+                            entitlements: { kind: 'none' },
+                        },
+                    }),
                 };
+            }
+            if (url.includes('/admin/legacy-access/mapping')) {
+                putBody = JSON.parse(String(init?.body));
+                return { ok: true, status: 200, json: async () => ({ mapping: { version: 4 } }) };
+            }
+            if (url.includes('/admin/integrations')) {
+                return { ok: true, status: 200, json: async () => [{ id: 'conn_1', provider: 'legacy-mcp' }] };
             }
             return { ok: true, status: 200, json: async () => ({}) };
         }) as unknown as typeof fetch;
 
-        render(<LegacyAccessMappingCard connectionId="conn_1" />);
-        await waitFor(() => expect(screen.queryByText('profileButton')).not.toBeInTheDocument());
+        await readColumns();
+        fireEvent.click(screen.getByText('saveButton'));
+        await waitFor(() => expect(putBody).not.toBeNull());
+
+        const fields = (putBody as unknown as { fields: Record<string, string> }).fields;
+        expect(fields.username).toBe('EMAIL_ADDR');
+        expect(fields.email).toBeUndefined();
+        expect(fields.accountKey).toBe('LOGIN_NAME');
+    });
+});
+
+describe('a non-legacy connection renders nothing', () => {
+    it('shows no mapping section for another provider', () => {
+        render(<LegacyAccessMappingCard connectionId="conn_1" provider="entra-id" />);
+        expect(screen.queryByText('profileButton')).not.toBeInTheDocument();
+    });
+
+    // #5313 — the provider comes from the page's own read of the connection;
+    // the card no longer downloads the admin.manage connection list (which
+    // wrote an AUTHZ_DENIED row per visit for a member without that key), and
+    // a failed read no longer puts the card on an Okta or Entra page.
+    it('sends no request of its own to learn the provider', () => {
+        render(<LegacyAccessMappingCard connectionId="conn_1" provider="legacy-mcp" />);
+        expect(screen.getByText('profileButton')).toBeInTheDocument();
+        expect(calls.filter((c) => c.url.includes('/admin/integrations'))).toEqual([]);
+    });
+
+    it('renders nothing while the provider is unknown or the read failed', () => {
+        const { unmount } = render(<LegacyAccessMappingCard connectionId="conn_1" provider={undefined} />);
+        expect(screen.queryByText('profileButton')).not.toBeInTheDocument();
+        unmount();
+        render(<LegacyAccessMappingCard connectionId="conn_1" provider={null} />);
+        expect(screen.queryByText('profileButton')).not.toBeInTheDocument();
     });
 });
 

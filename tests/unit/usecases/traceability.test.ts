@@ -51,7 +51,9 @@ jest.mock('@/app-layer/repositories/TraceabilityRepository', () => ({
 jest.mock('@/app-layer/repositories/ProcessMapRepository', () => ({
     ProcessMapRepository: {
         listMapsByControl: jest.fn().mockResolvedValue([]),
-        listMapsByLinkedEntity: jest.fn().mockResolvedValue([]),
+        listMapsByRiskNode: jest.fn().mockResolvedValue([]),
+        listMapsByAssetNode: jest.fn().mockResolvedValue([]),
+        listMapsByControlNode: jest.fn().mockResolvedValue([]),
     },
 }));
 
@@ -231,7 +233,7 @@ describe('coverageSummary — divide-by-zero guards', () => {
             controlAsset: { findMany: jest.fn().mockResolvedValue([]) },
             // PR-D — process-coverage inputs (empty by default).
             processEdgeControl: { findMany: jest.fn().mockResolvedValue([]) },
-            processNode: { findMany: jest.fn().mockResolvedValue([]) },
+            processNodeControl: { findMany: jest.fn().mockResolvedValue([]) },
         };
     }
 

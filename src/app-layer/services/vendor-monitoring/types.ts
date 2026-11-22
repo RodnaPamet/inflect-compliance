@@ -36,8 +36,42 @@ export interface BreachProvider {
     check(domain: string): Promise<BreachSignal>;
 }
 
+/**
+ * What one TLS-grade fetch came to. Recorded on the monitor, never folded
+ * into the grade: a fetch that did not grade leaves the last grade in place,
+ * and this is what says the grade is now stale and why.
+ *
+ *   GRADED      — a 2xx homepage answered; its headers were graded.
+ *   REFUSED     — the site answered and declined: any 4xx (403 above all, a
+ *                 429 that outlasted the retry) or a recognised bot-challenge
+ *                 response, whatever its status.
+ *   UNREACHABLE — no answer to grade: a network failure, a timeout, a name
+ *                 that did not resolve, a 5xx that outlasted the retry, or a
+ *                 redirect chain that never reached a page.
+ *   BLOCKED     — nothing was requested, or a hop was not followed: the domain
+ *                 is not a bare host name, or the SSRF guard refused it or a
+ *                 redirect target. The vendor record needs correcting, not
+ *                 the vendor's site.
+ */
+export const TLS_FETCH_OUTCOMES = ['GRADED', 'REFUSED', 'UNREACHABLE', 'BLOCKED'] as const;
+export type TlsFetchOutcome = (typeof TLS_FETCH_OUTCOMES)[number];
+
+/**
+ * Why a REFUSED fetch was refused, when the site said so in policy rather than
+ * at its door: `ROBOTS` — its robots.txt disallows the monitor's product token,
+ * so the homepage was never requested (Web Bot Auth Phase 2, D-L1-6).
+ */
+export const TLS_REFUSAL_REASONS = ['ROBOTS'] as const;
+export type TlsRefusalReason = (typeof TLS_REFUSAL_REASONS)[number];
+
 export interface TlsSignal {
     source: string;
+    /** What the fetch came to. `grade` is non-null exactly when this is GRADED. */
+    outcome: TlsFetchOutcome;
+    /** Set only on a REFUSED outcome whose reason is the site's stated policy. */
+    refusalReason?: TlsRefusalReason;
+    /** Whether the provider's requests carried the deployment's Web Bot Auth signature. */
+    signed?: boolean;
     /** Letter grade A..F, or null when the domain couldn't be graded. */
     grade: string | null;
     /** ISO timestamp of the grade. */

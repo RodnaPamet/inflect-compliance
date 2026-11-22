@@ -46,6 +46,29 @@ type Tab = 'OIDC' | 'SAML';
 // Hoisted to module scope to satisfy react-hooks/static-components.
 // Was previously declared inside `SsoAdminPage` and closed over
 // `existingProvider`; now takes it as a prop.
+/**
+ * The config keys each form renders. A save sends back every OTHER key of the
+ * stored config unchanged (#5313): a key the form cannot show — an OIDC
+ * `discoveryUrl` set through the API, say — was silently dropped from the
+ * body, which the server read as a change to whom the provider trusts. An
+ * ADMIN was refused every save naming a field the form never showed, and an
+ * OWNER's save removed the key and every identity link to the provider.
+ * `_jit` is the server's own; it keeps the JIT settings a save leaves out.
+ */
+const RENDERED_CONFIG_KEYS: Record<'OIDC' | 'SAML', readonly string[]> = {
+    OIDC: ['issuer', 'clientId', 'clientSecret', 'scopes'],
+    SAML: ['entityId', 'ssoUrl', 'certificate', 'nameIdFormat'],
+};
+
+function unrenderedConfig(
+    type: 'OIDC' | 'SAML',
+    stored: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+    if (!stored) return {};
+    const rendered = new Set([...RENDERED_CONFIG_KEYS[type], '_jit']);
+    return Object.fromEntries(Object.entries(stored).filter(([k]) => !rendered.has(k)));
+}
+
 function ProviderStatusBadge({ existingProvider }: { existingProvider: SsoProvider | null | undefined }) {
     const t = useTranslations('admin');
     if (!existingProvider) {
@@ -192,8 +215,10 @@ export default function SsoAdminPage() {
             .map((d) => d.trim().toLowerCase())
             .filter(Boolean);
 
+        const kept = unrenderedConfig(tab, existingProvider?.configJson);
         const config = tab === 'OIDC'
             ? {
+                ...kept,
                 issuer: oidcIssuer,
                 clientId: oidcClientId,
                 // Sent as shown: the mask, if untouched, tells the server to
@@ -202,6 +227,7 @@ export default function SsoAdminPage() {
                 scopes: oidcScopes.split(/\s+/).filter(Boolean),
             }
             : {
+                ...kept,
                 entityId: samlEntityId,
                 ssoUrl: samlSsoUrl,
                 certificate: samlCertificate,

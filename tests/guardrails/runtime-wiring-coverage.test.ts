@@ -59,6 +59,12 @@ const ON_DEMAND_JOBS: Readonly<Record<string, string>> = {
         + 'dials a customer-hosted MCP server, pages until it has the whole table, and '
         + 'writes thousands of rows, so an HTTP timeout must not be what decides whether '
         + 'a snapshot is complete.',
+    // #5317. Deliberately NOT scheduled: the unit is one person pressing
+    // Prepare on one campaign. Enqueued only for a campaign too large to
+    // prepare inside the request (`SYNC_PACK_RUN_LIMIT`).
+    'agent-recert-packs-prepare': 'Dispatched by requestAgentReviewPacks in '
+        + 'app-layer/usecases/access-review-agent.ts, behind POST /api/t/:slug/access-reviews/:id/agent-packs, '
+        + 'one job per campaign with a fixed id.',
     'agent-run-execute': 'Enqueued by startWorkflowRun AND by resumeWorkflowRun when the resolved driver is flue. '
         + 'A reasoning loop decides for itself how many tools to call and how long to keep '
         + 'going, so it belongs in the worker rather than a web request; the static engine, '
@@ -125,6 +131,14 @@ const ON_DEMAND_JOBS: Readonly<Record<string, string>> = {
     // run against one tenant at a time — a cron would turn a backlog into
     // recurring load on both storage and the scanner.
     'av-rescan': 'operator-triggered one-off rescan of PENDING FileRecords',
+    // Vector store Phase 2.1. Deliberately NOT scheduled: the unit is one
+    // source row whose text changed, so the job is queued by that row's write
+    // path after it commits. A clock would re-read every source to find the
+    // few that moved; a rebuild of a whole tenant is scripts/knowledge-reindex.
+    'knowledge-index': 'dispatched by enqueueKnowledgeIndex (app-layer/jobs/knowledge-index-enqueue.ts), the '
+        + 'job\'s only enqueue site, which a source\'s write path calls after its transaction '
+        + 'commits (an approved PolicyVersion: decidePolicyApproval, and a policy\'s soft delete '
+        + 'and restore); it enqueues nothing while the vector store or the embedding route is off.',
 };
 
 function registeredExecutorJobs(): string[] {

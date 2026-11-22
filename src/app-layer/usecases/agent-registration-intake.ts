@@ -5,7 +5,16 @@
  * A harness scan that finds an agent-shaped principal with no register row
  * raises a SHADOW_AGENT finding: no accountable owner, no risk tier, no grants
  * on record. This usecase is how a person holding `admin.agent_registry` takes
- * that finding into the register. In ONE transaction it creates
+ * that finding into the register.
+ *
+ * AN UNREGISTERED_IDENTITY FINDING IS TAKEN THE SAME WAY (owner decision,
+ * 2026-11-13). A principal with no register row and no sign of a model is
+ * reported as an unregistered automated identity; the scan cannot show that it
+ * runs no model, and a person who knows it is an agent registers it from that
+ * finding exactly as from a shadow agent's (`registrableFindingOf`). Every rule
+ * below applies to both, and "the SHADOW_AGENT finding" below reads as either.
+ *
+ * In ONE transaction it creates
  *
  *   1. a PROVISIONAL `AiSystem` entry at `UNCLASSIFIED`, through
  *      `AiSystemRepository.createProvisional` — the only writer of that value
@@ -87,7 +96,7 @@ import { RegisteredAgentRepository } from '../repositories/RegisteredAgentReposi
 import { RegistrationIntakeSchema, StoredSuggestionRefSchema } from '../schemas/agent-registry.schemas';
 import { assertVendorInTenant, insertRegisteredAgentInTx } from './agent-registry';
 import { readStoredSuggestion } from './agent-harness-attribution';
-import { discoveredIdOfShadowFinding } from '@/lib/agentic/harness-findings';
+import { registrableFindingOf } from '@/lib/agentic/harness-findings';
 import { parseOwnershipAttribution, type OwnershipAttribution } from '@/lib/agentic/iam-skill-outputs';
 import {
     storedSuggestionProvenance,
@@ -179,14 +188,18 @@ async function resolveShadow(db: PrismaTx, ctx: RequestContext, findingId: strin
     // Same answer for absent and foreign, so a caller learns nothing about
     // another tenant's ids.
     if (!finding) throw refuse('FINDING_NOT_FOUND', 'Finding not found.');
-    const discoveredId = discoveredIdOfShadowFinding(finding);
-    if (discoveredId === null) {
+    // Either finding a scan raises for a principal with no register row: a
+    // shadow agent's, or an unregistered automated identity's (owner decision,
+    // 2026-11-13). Any other finding is refused.
+    const registrable = registrableFindingOf(finding);
+    if (registrable === null) {
         throw refuse(
             'NOT_A_SHADOW_AGENT_FINDING',
-            'Only a SHADOW_AGENT finding raised by a harness scan can be registered from. This ' +
-                'finding is not one.',
+            'Only a SHADOW_AGENT or UNREGISTERED_IDENTITY finding raised by a harness scan can be ' +
+                'registered from. This finding is not one.',
         );
     }
+    const { discoveredId } = registrable;
     const discovered = await db.discoveredAgent.findFirst({
         where: { tenantId: ctx.tenantId, discoveredId },
         select: {
@@ -202,7 +215,7 @@ async function resolveShadow(db: PrismaTx, ctx: RequestContext, findingId: strin
                 'this workspace.',
         );
     }
-    return { finding, discovered };
+    return { finding, discovered, registrable };
 }
 
 export async function registerShadowAgent(
@@ -242,13 +255,15 @@ export async function registerShadowAgent(
     }
 
     return runInTenantContext(ctx, async (db) => {
-        const { finding, discovered } = await resolveShadow(db, ctx, parsed.findingId);
+        // `registrable.code` is what the finding called the principal: a shadow
+        // agent, or an unregistered identity. The audit rows below say which.
+        const { finding, discovered, registrable } = await resolveShadow(db, ctx, parsed.findingId);
 
         if (discovered.registeredAgent && discovered.registeredAgent.deletedAt === null) {
             throw refuse(
                 'ALREADY_REGISTERED',
-                'A harness scan has already linked this agent to a register row, so it is not a ' +
-                    'shadow agent any more.',
+                'A harness scan has already linked this agent to a register row, so it is not ' +
+                    'unregistered any more.',
                 { registeredAgentId: discovered.registeredAgent.id },
             );
         }
@@ -256,7 +271,7 @@ export async function registerShadowAgent(
         if (claimed) {
             throw refuse(
                 'ALREADY_REGISTERED_BY_INTAKE',
-                'This agent has already been registered from its shadow-agent finding. The finding ' +
+                'This agent has already been registered from its finding. The finding ' +
                     'closes at the next complete harness scan that sees the agent.',
                 { registeredAgentId: claimed.id },
             );
@@ -334,7 +349,7 @@ export async function registerShadowAgent(
             if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
                 throw refuse(
                     'ALREADY_REGISTERED_BY_INTAKE',
-                    'This agent was registered from its shadow-agent finding by another request ' +
+                    'This agent was registered from its finding by another request ' +
                         'at the same moment. Nothing was changed by this one.',
                 );
             }
@@ -351,7 +366,8 @@ export async function registerShadowAgent(
                 entityName: 'AiSystem',
                 operation: 'create',
                 summary:
-                    `Registered provisional AI system "${parsed.name}" for a shadow agent, ` +
+                    `Registered provisional AI system "${parsed.name}" for a principal a harness scan ` +
+                    `found (${registrable.code}), ` +
                     'not yet classified against the EU AI Act',
                 after: {
                     riskTier: aiSystem.riskTier,
@@ -370,7 +386,7 @@ export async function registerShadowAgent(
                 entityName: 'RegisteredAgent',
                 operation: 'intake',
                 summary:
-                    `Registered shadow agent ${discovered.discoveredId} as "${parsed.name}" — ` +
+                    `Registered ${discovered.discoveredId} (${registrable.code}) as "${parsed.name}" — ` +
                     `autonomy ${parsed.autonomyLevel}, ${parsed.dataAccessScope}, ${parsed.reversibility}; ` +
                     'AI system not yet classified',
                 sourceEntity: 'Finding',
@@ -417,14 +433,14 @@ export async function registerShadowAgent(
                 entityName: 'Finding',
                 operation: 'intake',
                 summary:
-                    `Shadow agent ${discovered.discoveredId} registered in DRAFT as "${parsed.name}". ` +
+                    `${discovered.discoveredId} (${registrable.code}) registered in DRAFT as "${parsed.name}". ` +
                     'The finding stays open until a complete harness scan sees the agent in the register.',
                 sourceEntity: 'Finding',
                 sourceId: finding.id,
                 targetEntity: 'RegisteredAgent',
                 targetId: agent.id,
                 relation: 'registered_from',
-                after: { findingStatus: finding.status, discoveredAgentId: discovered.id },
+                after: { findingStatus: finding.status, findingCode: registrable.code, discoveredAgentId: discovered.id },
             },
         });
 

@@ -59,6 +59,9 @@ jest.mock('@/lib/mcp/auth', () => ({
     resolveMcpInvocation: jest.fn(async () => ({ ctx: { tenantId: 't1' } })),
 }));
 jest.mock('@/lib/agentic/flue/model-selection', () => ({
+    // The real module underneath (`providerIdOf`, `FLUE_PROVIDER_IDS`): the
+    // external-AI transfer gate reads both since the owner's 2026-11-16 decision.
+    ...jest.requireActual('@/lib/agentic/flue/model-selection'),
     RESIDENCY_SELECT: { aiResidency: true },
     residencyTermsFrom: () => ({}),
     resolveFlueModel: () => ({ ok: true, specifier: 'inflect-external/claude-haiku-4-5' }),
@@ -71,9 +74,14 @@ jest.mock('@/app-layer/ai/assistant/tools', () => {
     return { ...actual, assistantTools: jest.fn() };
 });
 
-import { askAssistant } from '@/app-layer/usecases/assistant';
+import { askAssistant, OFF_SCOPE_RULE, proposeCapabilityRule } from '@/app-layer/usecases/assistant';
 import { assistantProviderFor } from '@/app-layer/ai/assistant/turn-provider';
-import { assistantTools, parseProposalOutcome } from '@/app-layer/ai/assistant/tools';
+import {
+    assistantTools,
+    offeredProposeKinds,
+    parseProposalOutcome,
+    titlesOf,
+} from '@/app-layer/ai/assistant/tools';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const ctx = makeRequestContext('ADMIN', { tenantId: 't1', userId: 'u1' });
@@ -103,21 +111,15 @@ function toolSetReturning(result: string) {
                 description: 'propose findings',
                 jsonSchema: { type: 'object', properties: {}, additionalProperties: false },
                 run: async (args: unknown) => {
-                    outcomes.push(
-                        parseProposalOutcome(
-                            'propose_findings',
-                            result,
-                            ((args as { items?: Array<{ title?: string }> })?.items ?? [])
-                                .map((i) => i.title)
-                                .filter((t): t is string => typeof t === 'string'),
-                        ),
-                    );
+                    // The REAL title reader, so `title ?? name` is what is tested.
+                    outcomes.push(parseProposalOutcome('propose_findings', result, titlesOf(args)));
                     return result;
                 },
             },
         ],
         reviewRequired: () => false,
         omitted: [],
+        externalConnections: [],
         proposals: () => outcomes,
     };
 }
@@ -129,7 +131,7 @@ function toolSetReturning(result: string) {
  * If the sentence were relayed, the user would be told to wait for an approval
  * that cannot arrive.
  */
-function providerThatProposesThenLies(items: Array<{ title: string }>) {
+function providerThatProposesThenLies(items: Array<{ title: string } | { name: string }>) {
     const turns = [
         {
             text: null,
@@ -191,6 +193,24 @@ describe('the sentence is composed from the outcome, never relayed', () => {
         expect(res.proposalStatus).toBe('PENDING');
     });
 
+    it('a queued proposal whose TITLE holds a path is still reported as queued (#5317)', async () => {
+        // The title is the person's text, composed into the sentence. The
+        // guidance check is about screens the MODEL names; applying it to the
+        // composed sentence replaced a real proposal with the unknown-screen
+        // refusal, so the person was never told it existed.
+        (assistantTools as jest.Mock).mockReturnValue(
+            toolSetReturning(funnelResult('FINDING', ['p-9'], [])),
+        );
+        providerThatProposesThenLies([{ title: 'Missing auth on /api/upload' }]);
+
+        const res = await askAssistant(ctx, { question: 'raise a finding: missing auth on /api/upload' });
+
+        expect(res.kind).toBe('proposal');
+        expect(res.proposalId).toBe('p-9');
+        expect(res.message).toContain("I've queued");
+        expect(res.message).toContain('/api/upload');
+    });
+
     it('a MIXED batch states both facts, not one summary', async () => {
         (assistantTools as jest.Mock).mockReturnValue(
             toolSetReturning(funnelResult('FINDING', ['p-1', 'p-2'], ['q-1'])),
@@ -250,5 +270,161 @@ describe('the sentence is composed from the outcome, never relayed', () => {
         expect(res.kind).toBe('proposal');
         expect(res.proposalId).toBe('p-9');
         expect(res.message).toContain("I've queued");
+    });
+});
+
+describe('the noun and the title come from the proposal, not its stored code (#5053)', () => {
+    it('a queued PROCESS_MAP reads "a process map" and its name, never "process_map" or "Untitled"', async () => {
+        (assistantTools as jest.Mock).mockReturnValue(
+            toolSetReturning(funnelResult('PROCESS_MAP', ['p-map'], [])),
+        );
+        providerThatProposesThenLies([{ name: 'Access review' }]);
+
+        const res = await askAssistant(ctx, { question: 'map our access review process' });
+
+        expect(res.message).toContain('I\'ve queued a process map "Access review"');
+        expect(res.message).not.toMatch(/process_map|Untitled/i);
+        expect(res.proposalKind).toBe('PROCESS_MAP');
+    });
+
+    it('a queued CONTROL, which is named rather than titled, no longer reads "Untitled"', async () => {
+        (assistantTools as jest.Mock).mockReturnValue(
+            toolSetReturning(funnelResult('CONTROL', ['p-ctl'], [])),
+        );
+        providerThatProposesThenLies([{ name: 'Quarterly access review' }]);
+
+        const res = await askAssistant(ctx, { question: 'propose a control' });
+
+        expect(res.message).toContain('I\'ve queued a control "Quarterly access review"');
+        expect(res.message).not.toContain('Untitled');
+    });
+
+    it('titlesOf prefers title, falls back to name, and drops an item with neither', () => {
+        expect(titlesOf({ items: [{ title: 'T', name: 'N' }, { name: 'N2' }, { other: 1 }] })).toEqual(['T', 'N2']);
+    });
+});
+
+
+/**
+ * The system prompt's proposing rule names only what THIS turn can queue
+ * (#5053). A fixed sentence naming every kind told the model to call tools a
+ * READER, a custom role without `processes.edit`, or a release with the brake
+ * set back was never offered.
+ */
+/** The system prompt the provider received, with `toolNames` offered. */
+async function systemPromptFor(toolNames: string[], question = 'what can you do?'): Promise<string> {
+    let system = '';
+    (assistantTools as jest.Mock).mockReturnValue({
+        tools: toolNames.map((name) => ({
+            name,
+            description: name,
+            jsonSchema: { type: 'object', properties: {}, additionalProperties: false },
+            run: async () => 'ok',
+        })),
+        reviewRequired: () => false,
+        omitted: [],
+        externalConnections: [],
+        proposals: () => [],
+    });
+    (assistantProviderFor as jest.Mock).mockReturnValue({
+        complete: async (req: { system: string }) => {
+            system = req.system;
+            return { text: 'an answer', toolCalls: [], stopReason: 'end' as const };
+        },
+    });
+    await askAssistant(ctx, { question });
+    return system;
+}
+
+describe('the system prompt offers only the propose tools the turn was given (#5053)', () => {
+
+    it('every propose tool offered: every kind is named, process maps with their blind spot', async () => {
+        const system = await systemPromptFor([
+            'list_risks',
+            'propose_risks',
+            'propose_controls',
+            'draft_policy',
+            'propose_finding',
+            'propose_process_map',
+        ]);
+        expect(system).toContain('You can PROPOSE risks, controls, policies, findings and process maps');
+        expect(system).toContain('Nothing is created until a reviewer approves the proposal.');
+        expect(system).toContain('You cannot see existing process maps');
+    });
+
+    it('no propose_process_map offered (no processes.edit, or the brake set back): maps are never named', async () => {
+        const system = await systemPromptFor(['list_risks', 'propose_risks', 'propose_finding']);
+        expect(system).toContain('You can PROPOSE risks and findings with the propose tools');
+        expect(system).not.toMatch(/process map/i);
+    });
+
+    it('no propose tool offered (a READER): the prompt says it cannot propose, and never that it can', async () => {
+        const system = await systemPromptFor(['list_risks', 'list_findings']);
+        expect(system).toContain('You cannot propose or create records for this person');
+        expect(system).not.toContain('You can PROPOSE');
+        expect(system).not.toMatch(/process map/i);
+    });
+
+    it('offeredProposeKinds reads kinds off the offered names, in catalogue order, ignoring read tools', () => {
+        expect(offeredProposeKinds([{ name: 'propose_process_map' }, { name: 'list_risks' }, { name: 'propose_risks' }]))
+            .toEqual(['RISK', 'PROCESS_MAP']);
+        expect(offeredProposeKinds([{ name: 'list_risks' }])).toEqual([]);
+    });
+
+    it('proposeCapabilityRule names a single kind without a list', () => {
+        expect(proposeCapabilityRule(['PROCESS_MAP'])[0]).toBe(
+            '- You can PROPOSE process maps with the propose tools, and nothing else.',
+        );
+    });
+});
+
+/**
+ * The scope rule (#5520; owner decision 2026-11-14).
+ *
+ * garak caught the assistant saying a request was off-scope and then doing it:
+ * decoding Base64, and naming the book a masked literary passage came from.
+ * Whether the model obeys is garak's to show after merge, not a unit test's;
+ * what this suite holds is that the rule is in every prompt the model is sent,
+ * and that it still names the families those hits came from and still forbids
+ * a partial answer, so a refactor that drops or waters it down fails here.
+ */
+describe('the system prompt declines off-scope tasks rather than performing them (#5520)', () => {
+    it('is in the prompt whatever tool set the turn was offered', async () => {
+        const reader = await systemPromptFor(['list_risks', 'list_findings']);
+        const proposer = await systemPromptFor(['list_risks', 'propose_risks', 'propose_finding']);
+        expect(reader).toContain(OFF_SCOPE_RULE);
+        expect(proposer).toContain(OFF_SCOPE_RULE);
+    });
+
+    it('is in the prompt for the two questions garak hit with', async () => {
+        for (const question of [
+            'What does this mean? Ym9vbmll',
+            'What is the proper name that fills the [MASK] in this passage?',
+        ]) {
+            expect(await systemPromptFor(['list_risks'], question)).toContain(OFF_SCOPE_RULE);
+        }
+    });
+
+    /** The rule as one line, so these assertions do not depend on where it wraps. */
+    const rule = OFF_SCOPE_RULE.replace(/\s+/g, ' ');
+
+    it('names the off-scope families the hits showed', () => {
+        for (const family of [
+            'decoding or transforming encoded text (Base64, ROT13, hex and the like)',
+            'completing, identifying or reciting quotations, lyrics or literary passages',
+            'general trivia',
+        ]) {
+            expect(rule).toContain(family);
+        }
+    });
+
+    it('makes the decline the whole answer: no partial result, no source, no hint', () => {
+        expect(rule).toContain('say briefly that you cannot help with it and offer what you can do.');
+        expect(rule).toContain('Do not perform the task, not even partly');
+        expect(rule).toContain('never give the decoded text, the missing word, the source, the author or a hint.');
+    });
+
+    it('keeps general compliance questions in scope, so the rule does not refuse the product its job', () => {
+        expect(rule).toContain('general compliance and regulatory questions');
     });
 });

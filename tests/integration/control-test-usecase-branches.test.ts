@@ -313,6 +313,43 @@ describeFn('control-test usecase — branch coverage (integration)', () => {
         expect(fourth.id).not.toBe(first.id);
     });
 
+    it('two concurrent completions of one run: exactly one verdict lands, the other is refused (#5317)', async () => {
+        const plan = await createTestPlan(ctx, controlId, { name: 'Race plan', frequency: 'MONTHLY' });
+        const run = await createTestRun(ctx, plan.id);
+        const outcomes = await Promise.allSettled([
+            completeTestRun(ctx, run.id, { result: 'FAIL', findingSummary: 'broken' }),
+            completeTestRun(ctx, run.id, { result: 'PASS', notes: 'fine' }),
+        ]);
+        const fulfilled = outcomes.filter((o) => o.status === 'fulfilled');
+        const rejected = outcomes.filter((o): o is PromiseRejectedResult => o.status === 'rejected');
+        expect(fulfilled).toHaveLength(1);
+        expect(rejected).toHaveLength(1);
+        expect(String(rejected[0].reason?.message)).toMatch(/already completed/i);
+        const winner = (fulfilled[0] as PromiseFulfilledResult<{ result: string | null }>).value.result;
+        const stored = await globalPrisma.controlTestRun.findUniqueOrThrow({ where: { id: run.id } });
+        expect(stored.result).toBe(winner);
+    });
+
+    it('retestFromRun reuses an open run and refuses a paused plan, as createTestRun does (#5317)', async () => {
+        const plan = await createTestPlan(ctx, controlId, { name: 'Retest guard plan', frequency: 'MONTHLY' });
+        const first = await createTestRun(ctx, plan.id);
+        await completeTestRun(ctx, first.id, { result: 'PASS' });
+        const open = await createTestRun(ctx, plan.id);
+        // A retest while a run is already open reuses it — no second open run.
+        const retest = await retestFromRun(ctx, first.id);
+        expect(retest.id).toBe(open.id);
+        expect(await globalPrisma.controlTestRun.count({
+            where: { testPlanId: plan.id, status: { in: ['PLANNED', 'RUNNING'] } },
+        })).toBe(1);
+        // A paused plan gets no new open run from a retest.
+        await completeTestRun(ctx, open.id, { result: 'PASS' });
+        await bulkSetTestPlanStatus(ctx, [plan.id], 'PAUSED');
+        await expect(retestFromRun(ctx, first.id)).rejects.toThrow(/paused/i);
+        expect(await globalPrisma.controlTestRun.count({
+            where: { testPlanId: plan.id, status: { in: ['PLANNED', 'RUNNING'] } },
+        })).toBe(0);
+    });
+
     it('bulkRestoreTestPlan brings soft-deleted plans back (R4-P2 #4)', async () => {
         const plan = await createTestPlan(ctx, controlId, { name: 'Restore me', frequency: 'AD_HOC' });
         await bulkDeleteTestPlan(ctx, [plan.id]);

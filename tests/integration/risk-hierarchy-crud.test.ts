@@ -8,7 +8,7 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
-import { createNode, deleteNode, linkRisk, aggregateByHierarchy, getTreemapData } from '@/app-layer/usecases/risk-hierarchy';
+import { createNode, updateNode, deleteNode, linkRisk, aggregateByHierarchy, getTreemapData } from '@/app-layer/usecases/risk-hierarchy';
 import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
@@ -63,6 +63,20 @@ describeFn('RQ-5 — hierarchy CRUD + aggregation (integration)', () => {
 
         const treemap = await getTreemapData(ctx, 'GEOGRAPHY');
         expect(treemap.find((n) => n.nodeId === parent.id)!.totalAle).toBe(150_000);
+    });
+
+    it('refuses to move a node under its own descendant (#5318)', async () => {
+        const a = await createNode(ctx, { name: 'Cycle A', type: 'CYCLE_TEST' });
+        const b = await createNode(ctx, { name: 'Cycle B', type: 'CYCLE_TEST', parentId: a.id });
+        const c = await createNode(ctx, { name: 'Cycle C', type: 'CYCLE_TEST', parentId: b.id });
+        await expect(updateNode(ctx, a.id, { parentId: c.id })).rejects.toThrow(/descendant/i);
+        await expect(updateNode(ctx, a.id, { parentId: b.id })).rejects.toThrow(/descendant/i);
+        const stored = await globalPrisma.riskHierarchyNode.findUniqueOrThrow({ where: { id: a.id } });
+        expect(stored.parentId).toBeNull();
+        // A legal move still goes through.
+        await updateNode(ctx, c.id, { parentId: a.id });
+        const roots = await getTreemapData(ctx, 'CYCLE_TEST');
+        expect(roots.map((r) => r.nodeId)).toEqual([a.id]);
     });
 
     it('deleting a node cascades to its RiskHierarchyLink rows', async () => {

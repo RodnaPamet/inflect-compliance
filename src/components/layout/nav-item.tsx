@@ -149,13 +149,10 @@ export interface NavItemProps {
      * Glyph component, rendered at 18×18.
      *
      * `NavGlyph`, not `LucideIcon`, since AGENTIC UI 1/4: the sidebar's Agent
-     * entry uses Nucleo `Robot`, which is a plain
+     * entry uses the local glyph `Robot`, which is a plain
      * `(props: SVGProps<SVGSVGElement>) => Element` function and is NOT
-     * assignable to lucide's `ForwardRefExoticComponent`. Nucleo is the
-     * canonical icon family in this codebase — the sidebar's lucide imports
-     * are on `LEGACY_LUCIDE_USERS` in `no-lucide.test.ts` as a migration TODO
-     * — so the prop type had to stop forbidding the family everything is
-     * migrating TO. Every existing lucide caller still satisfies it.
+     * assignable to lucide's `ForwardRefExoticComponent`. Every lucide caller
+     * still satisfies it.
      */
     icon: NavGlyph;
     /** Visible label. Truncates on overflow. */

@@ -17,6 +17,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 const SCRIPT = path.resolve(__dirname, '../../../scripts/detect-secrets.sh');
+const REPO_ROOT = path.resolve(__dirname, '../../..');
 
 let tmpDir: string;
 
@@ -36,6 +37,28 @@ function fixture(name: string, body: string): string {
 
 function run(...files: string[]) {
     return runWithEnv({}, ...files);
+}
+
+/**
+ * Run with a working directory and REPO-RELATIVE paths — which is what the
+ * scanner is actually given in production: `git diff --cached --name-only`
+ * emits repo-relative paths, and lint-staged passes them through.
+ *
+ * The absolute-path form below is convenient for pattern cases and wrong for
+ * path-skip cases, because a skip anchored at the repository root (#5631)
+ * cannot match `/tmp/inflect-secret-scan-xxxx/...`.
+ */
+function runIn(cwd: string, ...files: string[]) {
+    const result = spawnSync('bash', [SCRIPT, ...files], {
+        cwd,
+        encoding: 'utf8',
+        env: { ...process.env, NO_COLOR: '1' },
+    });
+    return {
+        status: result.status ?? -1,
+        stdout: result.stdout ?? '',
+        stderr: result.stderr ?? '',
+    };
 }
 
 function runWithEnv(env: Readonly<Record<string, string>>, ...files: string[]) {
@@ -241,18 +264,72 @@ describe('detect-secrets — allowlist + path skips', () => {
         expect(r.status).toBe(0);
     });
 
-    it('skips path-allowlisted directories by name', () => {
-        // Build the structure inside the temp dir so nothing else matches.
+    it('skips the path-allowlisted fixture directory, at the repo root', () => {
+        // Driven with cwd + a RELATIVE path, which is the shape the hook gets
+        // from `git diff --cached --name-only`. It used to pass an absolute
+        // tmpdir path and rely on the skip matching mid-path — the behaviour
+        // #5631 removed, because that same mid-path match made `coverage/`
+        // skip five source files.
         const dir = path.join(tmpDir, 'tests', 'fixtures', 'secrets');
         fs.mkdirSync(dir, { recursive: true });
-        const f = path.join(dir, 'token.txt');
         fs.writeFileSync(
-            f,
+            path.join(dir, 'token.txt'),
             `ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789`,
         );
-        const r = run(f);
-        // Path skip uses substring match on `tests/fixtures/secrets/`.
+        const r = runIn(tmpDir, 'tests/fixtures/secrets/token.txt');
         expect(r.status).toBe(0);
+    });
+
+    it('does NOT skip a fixture directory of the same name nested deeper (#5631)', () => {
+        // The anchoring property, from the side that matters: an exemption is
+        // for ONE known location, not for every directory that happens to be
+        // named like it. Without this the fix above is only a rename.
+        const dir = path.join(tmpDir, 'src', 'feature', 'tests', 'fixtures', 'secrets');
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(
+            path.join(dir, 'token.txt'),
+            `ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789`,
+        );
+        const r = runIn(tmpDir, 'src/feature/tests/fixtures/secrets/token.txt');
+        expect(r.status).toBe(1);
+    });
+
+    it('still skips a NESTED lockfile, which is any-depth by design (#5631)', () => {
+        // The other half of the split: these names recur legitimately, so they
+        // stay matched at any depth. `site/package-lock.json` is a real path.
+        const dir = path.join(tmpDir, 'site');
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(
+            path.join(dir, 'package-lock.json'),
+            `{"token":"ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"}`,
+        );
+        const r = runIn(tmpDir, 'site/package-lock.json');
+        expect(r.status).toBe(0);
+    });
+
+    it('gives the SAME verdict for an absolute path as for the repo-relative one', () => {
+        // The two invocation shapes, which disagree in production: lint-staged's
+        // `"*"` task passes ABSOLUTE paths, while the script's own listing
+        // (`git diff --cached --name-only`) is relative. Anchoring the skips
+        // (#5631) without normalising broke the absolute form, and the first
+        // thing it stopped skipping was THIS file — the pre-commit hook flagged
+        // its own deliberate fixtures and refused the commit. That is how it was
+        // found, and this is the assertion that would have found it first.
+        const rel = 'tests/unit/security/detect-secrets.test.ts';
+        expect(fs.existsSync(path.join(REPO_ROOT, rel))).toBe(true);
+        expect(runIn(REPO_ROOT, rel).status).toBe(0);
+        expect(run(path.join(REPO_ROOT, rel)).status).toBe(0);
+    });
+
+    it('scans a source file under a directory named coverage — the #5631 defect', () => {
+        const dir = path.join(tmpDir, 'src', 'app', 'coverage');
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(
+            path.join(dir, 'route.ts'),
+            `const T = "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789";`,
+        );
+        const r = runIn(tmpDir, 'src/app/coverage/route.ts');
+        expect(r.status).toBe(1);
     });
 
     it('produces actionable guidance when a real secret is found', () => {

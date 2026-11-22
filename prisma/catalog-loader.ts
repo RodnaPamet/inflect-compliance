@@ -42,6 +42,12 @@
  *       defaultFrequency: QUARTERLY  # ControlFrequency enum, default QUARTERLY
  *       requirementCodes: [A.5.1]    # codes — resolved to FrameworkRequirement IDs
  *
+ *   outOfScopeRequirements:        # optional: requirements this file
+ *     - code: V2.6.1               # no longer declares. An existing row
+ *       category: L2               # is re-categorised and unlinked from
+ *       unlinkTemplateCodes: [ASVS-V2]   # the named templates; see
+ *       reason: ...                # CatalogOutOfScopeRequirementSchema.
+ *
  *   pack:                          # optional, single pack per file
  *     key: ISO27001_2022_BASE      # PK against `FrameworkPack.key`
  *     name: ...
@@ -251,11 +257,47 @@ export const CatalogPackSchema = z.object({
     templateCodes: z.array(z.string().min(1)).optional(),
 });
 
+/**
+ * A requirement this file USED to declare and no longer does, because it has
+ * left the catalogue's scope — today, an ASVS requirement whose verification
+ * level was corrected from L1 to L2, which takes it out of the L1 pack (#5316).
+ *
+ * The applier only ever adds rows and links, so dropping a requirement from
+ * `requirements` and from a template's `requirementCodes` changes nothing in a
+ * database that already holds it: the row keeps its old `category` and stays
+ * linked to the templates, and every later install of the pack still reaches
+ * it. This entry is how the file says so. On every apply, IF the row exists:
+ *
+ *   • its `category` is set to `category`;
+ *   • its links to the templates in `unlinkTemplateCodes` are removed.
+ *
+ * Nothing else. The requirement row stays, so a tenant's own control linked to
+ * it, and that control's tasks and evidence, are untouched — tenant links live
+ * in `ControlRequirementLink`, which this never reads. A link from any template
+ * the entry does not name stays too: a template link carries no record of who
+ * wrote it, so the file names exactly which ones it retracts rather than
+ * pruning everything it does not declare.
+ *
+ * On a database that never held the row (a fresh install) it does nothing:
+ * the file does not create it.
+ */
+export const CatalogOutOfScopeRequirementSchema = z.object({
+    code: z.string().min(1),
+    /** The category the existing row is moved to, e.g. "L2". */
+    category: z.string().min(1),
+    /** Templates in THIS file whose link to the requirement is removed. */
+    unlinkTemplateCodes: z.array(z.string().min(1)).min(1),
+    /** Why it left — read by people, not by the applier. */
+    reason: z.string().min(1),
+});
+
 export const CatalogFileSchema = z
     .object({
         framework: CatalogFrameworkSchema,
         requirements: z.array(CatalogRequirementSchema).min(1),
         templates: z.array(CatalogTemplateSchema).default([]),
+        /** See `CatalogOutOfScopeRequirementSchema`. */
+        outOfScopeRequirements: z.array(CatalogOutOfScopeRequirementSchema).default([]),
         pack: CatalogPackSchema.optional(),
         /**
          * Several packs over this one framework. Each must name its templates:
@@ -290,6 +332,7 @@ export type CatalogFramework = z.infer<typeof CatalogFrameworkSchema>;
 export type CatalogRequirement = z.infer<typeof CatalogRequirementSchema>;
 export type CatalogTemplate = z.infer<typeof CatalogTemplateSchema>;
 export type CatalogPack = z.infer<typeof CatalogPackSchema>;
+export type CatalogOutOfScopeRequirement = z.infer<typeof CatalogOutOfScopeRequirementSchema>;
 
 /**
  * Every pack a catalog file declares, whichever of `pack` / `packs` it uses.
@@ -421,6 +464,40 @@ export function assertCatalogConsistency(file: CatalogFile, sourcePath: string):
             }
         });
     }
+
+    // An out-of-scope requirement is one the file no longer declares, and it
+    // retracts links only from this file's own templates — which therefore must
+    // not still declare it, or the next apply would put the link straight back.
+    const outOfScope = new Set<string>();
+    file.outOfScopeRequirements.forEach((o, i) => {
+        if (outOfScope.has(o.code)) {
+            issues.push({
+                path: `outOfScopeRequirements[${i}].code`,
+                message: `requirement code '${o.code}' is declared out of scope twice`,
+            });
+        }
+        outOfScope.add(o.code);
+        if (requirementCodes.has(o.code)) {
+            issues.push({
+                path: `outOfScopeRequirements[${i}].code`,
+                message: `requirement code '${o.code}' is still in requirements[*].code`,
+            });
+        }
+        o.unlinkTemplateCodes.forEach((tc, j) => {
+            const template = file.templates.find((t) => t.code === tc);
+            if (!template) {
+                issues.push({
+                    path: `outOfScopeRequirements[${i}].unlinkTemplateCodes[${j}]`,
+                    message: `template code '${tc}' not found in templates[*].code`,
+                });
+            } else if (template.requirementCodes.includes(o.code)) {
+                issues.push({
+                    path: `outOfScopeRequirements[${i}].unlinkTemplateCodes[${j}]`,
+                    message: `template '${tc}' still declares requirement '${o.code}'`,
+                });
+            }
+        });
+    });
 
     if (issues.length > 0) {
         throw new CatalogValidationError(sourcePath, issues);

@@ -12,9 +12,10 @@
  * Plan check: PDF exports require `PDF_EXPORTS` (TRIAL+). Match the
  * surface of `/api/t/.../reports/pdf/generate`.
  *
- * Auth: `assertCanRead` inside `generatePolicyDocumentPdf` — the
- * policy detail page is read-gated, so anyone who can view a
- * policy can export it.
+ * Auth: `requirePermission('policies.view')`, the key the policy list
+ * and detail reads take, so anyone who can view a policy can export it
+ * and nobody else can, and a refusal writes an `AUTHZ_DENIED` row.
+ * `generatePolicyDocumentPdf` asserts the same key for other callers.
  *
  * Audit logging lives inside the usecase (`generatePolicyDocumentPdf`
  * writes a `POLICY_EXPORTED` audit-log entry once the PDF builds
@@ -28,8 +29,8 @@
  *   per-page footer suffix.
  */
 import { NextRequest } from 'next/server';
-import { getTenantCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { generatePolicyDocumentPdf } from '@/app-layer/reports/pdf/policyDocument';
 import type { PolicyClassification } from '@/lib/pdf/policyLayout';
 import { FEATURES } from '@/lib/entitlements';
@@ -67,13 +68,7 @@ function parseClassification(raw: string | null): PolicyClassification {
 }
 
 export const GET = withApiErrorHandling(
-    async (
-        req: NextRequest,
-        { params: paramsPromise }: { params: Promise<{ tenantSlug: string; id: string }> },
-    ) => {
-        const params = await paramsPromise;
-        const ctx = await getTenantCtx(params, req);
-
+    requirePermission<{ tenantSlug: string; id: string }>('policies.view', async (req: NextRequest, { params }, ctx) => {
         await requireFeature(ctx.tenantId, FEATURES.PDF_EXPORTS);
 
         const url = new URL(req.url);
@@ -106,5 +101,5 @@ export const GET = withApiErrorHandling(
                 'Cache-Control': 'no-store',
             },
         });
-    },
+    }),
 );

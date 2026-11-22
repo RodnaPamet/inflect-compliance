@@ -169,7 +169,9 @@ fi
 
 # ── triage detail, only when there is something to triage ───────────────────
 #
-# journald, not the metric. Carries tenant and provider so an operator knows
+# journald, not the metric. Grouped in a subquery (#5235): `GROUP BY 1, 2`
+# over one concatenated output column was invalid SQL and printed nothing.
+# Carries tenant and provider so an operator knows
 # where to look without opening psql, and the oldest `attemptedAt` so they can
 # see whether the backlog is ageing or was just created. `linkId` is the safe
 # handle the product itself logs; `externalUserId` and `detail` are deliberately
@@ -179,11 +181,13 @@ if [ "$COUNT" -gt 0 ]; then
     echo "UNSETTLED identity writes: $COUNT stranded row(s) older than $STALE_INTERVAL" >&2
     docker exec -i "$PG_CONTAINER" \
         sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA -f -' >&2 2>&1 <<SQL
-SELECT "tenantId" || ' ' || provider || ' n=' || count(*) || ' oldest=' || min("attemptedAt")
-  FROM "IdentityWriteJournal"
- WHERE outcome IN ('PENDING','INDETERMINATE')
-   AND "attemptedAt" < now() - interval '$STALE_INTERVAL'
- GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 50;
+SELECT "tenantId" || ' ' || provider || ' n=' || n || ' oldest=' || oldest
+  FROM (SELECT "tenantId", provider, count(*) AS n, min("attemptedAt") AS oldest
+          FROM "IdentityWriteJournal"
+         WHERE outcome IN ('PENDING','INDETERMINATE')
+           AND "attemptedAt" < now() - interval '$STALE_INTERVAL'
+         GROUP BY 1, 2) unsettled
+ ORDER BY n DESC LIMIT 50;
 SQL
 fi
 

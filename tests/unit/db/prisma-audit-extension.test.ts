@@ -108,6 +108,8 @@ interface AuditEntry {
         changedFieldsAreDiffed?: boolean;
         /** Present only when they were compared. */
         before?: Record<string, unknown>;
+        /** Epic B fields the write NAMED but this layer cannot compare (#5292). */
+        undiffableFields?: string[];
     } | null;
     detailsJson: Record<string, unknown>;
 }
@@ -696,5 +698,75 @@ describe('audit extension — with a prior-state reader in the context', () => {
         });
 
         expect(seen).toStrictEqual([]);
+    });
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// Epic B encrypted fields, through the REAL extension (#5292)
+//
+// The unit tests over `buildDiffJson` pin the function. They cannot pin the
+// CALL SITE: the narrowing only happens when the extension passes `model`, and
+// a change that drops that argument leaves every one of them green while the
+// plaintext goes back into `AuditLog.diffJson`. These drive the registered
+// handler instead, so the row that would be WRITTEN is what gets asserted.
+// ══════════════════════════════════════════════════════════════════════
+
+describe('audit extension — an encrypted field never reaches the written row (#5292)', () => {
+    const PRIOR_PLAINTEXT = 'the old plaintext treatment note';
+
+    async function updateARisk(): Promise<void> {
+        // The prior row arrives DECRYPTED: the reader goes through the fully
+        // extended client, where `findFirst` is on the decrypting list.
+        auditContext.readPriorState = async (): Promise<Record<string, unknown>> => ({
+            treatmentNotes: PRIOR_PLAINTEXT,
+            title: 'Before',
+        });
+        await op('update')({
+            model: 'Risk',
+            operation: 'update',
+            // The payload reaches this extension as CIPHERTEXT — it is innermost.
+            args: { where: { id: 'r1' }, data: { treatmentNotes: 'v2:CIPHERTEXT==', title: 'After' } },
+            query: async (): Promise<unknown> => ({
+                id: 'r1', treatmentNotes: 'v2:CIPHERTEXT==', title: 'After',
+            }),
+        });
+    }
+
+    it('writes no plaintext prior value anywhere in the row', async () => {
+        await updateARisk();
+        expect(JSON.stringify(soleAuditEntry())).not.toContain(PRIOR_PLAINTEXT);
+    });
+
+    it('does not claim the encrypted field changed, and still names the ones that did', async () => {
+        await updateARisk();
+        const diff = soleAuditEntry().diffJson;
+        expect(diff?.changedFields).toStrictEqual(['title']);
+        expect(diff?.undiffableFields).toStrictEqual(['treatmentNotes']);
+    });
+
+    it('keeps the encrypted field out of before AND after', async () => {
+        await updateARisk();
+        const diff = soleAuditEntry().diffJson;
+        expect(diff?.before?.treatmentNotes).toBeUndefined();
+        expect(diff?.after?.treatmentNotes).toBeUndefined();
+        // The non-encrypted neighbour is untouched — the narrowing is not a blanket.
+        expect(diff?.before?.title).toBe('Before');
+        expect(diff?.after?.title).toBe('After');
+    });
+
+    it('a model with no manifest entry is unaffected — the positive control', async () => {
+        auditContext.readPriorState = async (): Promise<Record<string, unknown>> => ({
+            department: 'Sales',
+        });
+        await op('update')({
+            model: 'Employee',
+            operation: 'update',
+            args: { where: { id: 'e1' }, data: { department: 'Eng' } },
+            query: async (): Promise<unknown> => ({ id: 'e1', department: 'Eng' }),
+        });
+        const diff = soleAuditEntry().diffJson;
+        expect(diff?.changedFields).toStrictEqual(['department']);
+        expect(diff?.before?.department).toBe('Sales');
+        expect(diff?.undiffableFields).toBeUndefined();
     });
 });

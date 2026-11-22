@@ -92,8 +92,11 @@ const ESM_TRANSFORM_ALLOW_LIST =
 // installed 30.4.2 — `globalConfig.coverageThreshold` is `undefined`).
 //
 // Enforcement is `scripts/check-merged-coverage.ts`, run once over the
-// four merged shard artifacts by the `Coverage (≥60%)` CI job. The
-// shards pass no threshold flag at all. Writing the values here gives
+// merged coverage artifacts by the `Coverage (≥60%)` CI job — one per
+// `Test` shard, plus `Ratchets` and `Flue`. How many it expects is the
+// trailing argument to that script in .github/workflows/ci.yml; read it
+// there, since a number restated here goes stale (this said "four").
+// The shards pass no threshold flag at all. Writing the values here gives
 // `npm run test:coverage` the documented numbers in its summary; they
 // do not fail that run.
 const coverageThresholds = require('./jest.thresholds.json');
@@ -116,10 +119,11 @@ const coverageThresholds = require('./jest.thresholds.json');
 // node project as documentation, and `npx jest --showConfig` reports
 // `globalConfig.coverageThreshold === undefined` as a result — so Jest
 // enforces nothing and `scripts/check-merged-coverage.ts` is the gate.
-// That is intentional: the CI shards each hold a quarter of the data,
-// so a per-shard threshold would compare a quarter of the coverage
-// against floors calibrated on all of it. The floors are checked once,
-// on the merged total. `tests/guards/coverage-config-resolution.test.ts`
+// That is intentional: each CI coverage artifact holds only a slice of
+// the suite (one Test shard, or the Ratchets or Flue job), so a
+// per-shard threshold would compare a fraction of the coverage against
+// floors calibrated on all of it. The floors are checked once, on the
+// merged total. `tests/guards/coverage-config-resolution.test.ts`
 // pins all three placements.
 //
 // The scope itself is below, and the top-level `collectCoverageFrom` in
@@ -303,9 +307,14 @@ const nodeProject = {
     // targets, and the staged ratchet plan. The numbers below /
     // in `jest.thresholds.json` are the CURRENT FLOOR on that path.
     //
-    // These thresholds DO enforce — they live on the node project, not
-    // at the top-level config (where jest silently ignores them in
-    // multi-project mode).
+    // These thresholds do NOT enforce here. On a project block Jest
+    // never reaches them (`globalConfig.coverageThreshold` stays
+    // undefined — see "Coverage scope" above), so `npx jest --coverage`
+    // exits 0 whatever the observed coverage. They are documentation
+    // only. The floors in `jest.thresholds.json` are enforced by
+    // `scripts/check-merged-coverage.ts` over the merged artifacts, in
+    // the `Coverage (≥60%)` CI job — that job, not a local run, is the
+    // gate (GAP-15).
     //
     //  Why this is a ratchet, not a target.
     //  The thresholds below are the CURRENT FLOOR, not aspirational

@@ -41,6 +41,8 @@
  *     `tests/guards/flue-provider-is-never-set-per-run.test.ts` fails any call
  *     to that setter anywhere under `src/`.
  */
+import type { AssistantHistoryTurn } from './limits';
+
 /**
  * How a turn ended.
  *
@@ -54,6 +56,16 @@ export type LoopOutcome =
     | 'halted-iterations'
     | 'halted-tool-calls'
     | 'halted-wall-clock'
+    /**
+     * The model's reply hit the provider's output-token ceiling and was cut.
+     *
+     * Its own outcome rather than `halted-iterations`, which it used to be
+     * reported as: a turn cut on its FIRST round trip told the person "I
+     * stopped after 6 reasoning steps" when it took one, and the stream's
+     * `halt` event and the logs attributed an output truncation to the
+     * iteration cap (#5305).
+     */
+    | 'halted-output-limit'
     | 'halted-provider-unavailable'
     /**
      * A tool tripped the REVIEW guard, so the turn stops here.
@@ -134,6 +146,16 @@ export interface ProviderRequest {
     readonly specifier: string;
     readonly system: string;
     readonly question: string;
+    /**
+     * Earlier exchanges in this CONVERSATION, oldest first (#5054). Sent before
+     * the question as plain user and assistant messages.
+     *
+     * Not to be confused with {@link ProviderRequest.history}, which is the
+     * round trips WITHIN this turn. These came from the browser and have
+     * passed the input guard; they carry no tool results and no ids. Optional
+     * so a request built by hand without them is the request it always was.
+     */
+    readonly priorTurns?: readonly AssistantHistoryTurn[];
     readonly history: ReadonlyArray<
         | {
               readonly role: 'assistant';
@@ -193,9 +215,15 @@ export function haltNotice(outcome: LoopOutcome, bounds: LoopBounds): string | n
         case 'halted-iterations':
             return `I stopped after ${bounds.iterations} reasoning steps, so this answer may be incomplete. Ask a narrower question to get a full one.`;
         case 'halted-tool-calls':
-            return `I stopped after ${bounds.toolCalls} data lookups in this conversation, so this answer may be incomplete. Start a new conversation to reset that budget.`;
+            // PER QUESTION, and said so (#5054). The count lives in one
+            // `runAssistantLoop` call, so the next question in the SAME
+            // conversation has a fresh budget; telling the person to start a
+            // new conversation would have them discard its history for nothing.
+            return `I stopped after ${bounds.toolCalls} data lookups for this question, so this answer may be incomplete. The limit applies to each question: ask a narrower follow-up to continue.`;
         case 'halted-wall-clock':
             return `I stopped after ${Math.round(bounds.wallClockMs / 1000)} seconds, so this answer may be incomplete.`;
+        case 'halted-output-limit':
+            return 'My reply reached its length limit and was cut off, so this answer may be incomplete. Ask a narrower question to get a full one.';
         case 'halted-provider-unavailable':
             return 'The language model was unavailable, so I could not answer this. Your data was not read and nothing was created.';
         case 'halted-guard-review':
@@ -251,6 +279,8 @@ export interface RunLoopOptions {
     readonly specifier: string;
     readonly system: string;
     readonly question: string;
+    /** Earlier exchanges, already guarded. Sent unchanged on EVERY round trip. See {@link ProviderRequest.priorTurns}. */
+    readonly priorTurns?: readonly AssistantHistoryTurn[];
     readonly tools: readonly LoopTool[];
     readonly bounds?: LoopBounds;
     readonly signal?: AbortSignal;
@@ -335,6 +365,7 @@ export async function runAssistantLoop(opts: RunLoopOptions): Promise<LoopResult
     const byName = new Map(opts.tools.map((t) => [t.name, t]));
     const specs = opts.tools.map((t) => ({ name: t.name, description: t.description, jsonSchema: t.jsonSchema }));
 
+    const priorTurns = opts.priorTurns ?? [];
     const history: Array<ProviderRequest['history'][number]> = [];
     const calls: LoopToolCall[] = [];
     let tokensIn: number | null = null;
@@ -361,25 +392,70 @@ export async function runAssistantLoop(opts: RunLoopOptions): Promise<LoopResult
         };
     };
 
+    /**
+     * A signal for ONE model call or tool call that also aborts when the turn's
+     * wall-clock budget runs out (#5305).
+     *
+     * The bound used to be checked only BETWEEN steps, so a model call started
+     * at 59 s that took 40 s, followed by a tool, ran the turn past 100 s —
+     * holding a stream slot the shutdown budget assumes is freed at 60 s — and
+     * then told the person "I stopped after 60 seconds". Deriving each call's
+     * signal from what is left of the budget makes the bound hold during a
+     * call too. The caller's own `signal` (a disconnect) still aborts it.
+     *
+     * A timer rather than `AbortSignal.timeout`, and `timedOut` read rather
+     * than the abort reason, so the loop can tell its own budget from a
+     * disconnect and report the halt for what it was.
+     */
+    const callBudget = (): { signal: AbortSignal; timedOut: () => boolean; done: () => void } => {
+        const remaining = Math.max(0, bounds.wallClockMs - (now() - startedAt));
+        const controller = new AbortController();
+        let expired = false;
+        const timer = setTimeout(() => {
+            expired = true;
+            controller.abort();
+        }, remaining);
+        const onAbort = (): void => controller.abort();
+        if (opts.signal?.aborted) controller.abort();
+        else opts.signal?.addEventListener('abort', onAbort, { once: true });
+        return {
+            signal: controller.signal,
+            timedOut: () => expired,
+            done: () => {
+                clearTimeout(timer);
+                opts.signal?.removeEventListener('abort', onAbort);
+            },
+        };
+    };
+
     for (;;) {
         if (iterations >= bounds.iterations) return finish('halted-iterations');
         if (now() - startedAt >= bounds.wallClockMs) return finish('halted-wall-clock');
 
         iterations += 1;
         let turn: ProviderTurn;
+        const modelBudget = callBudget();
         try {
             turn = await opts.provider.complete({
                 specifier: opts.specifier,
                 system: opts.system,
                 question: opts.question,
+                // The same array every round trip: the prefix a replayed
+                // thinking block depends on must not move (#4153).
+                priorTurns,
                 history,
                 tools: specs,
-                signal: opts.signal,
+                signal: modelBudget.signal,
             });
         } catch {
+            // The turn's own budget ran out mid-call: that is the wall-clock
+            // halt, not an unavailable model.
+            if (modelBudget.timedOut()) return finish('halted-wall-clock');
             // Degrade, do not throw at the user. Nothing is said about the
             // tenant's posture, because nothing was read.
             return finish('halted-provider-unavailable');
+        } finally {
+            modelBudget.done();
         }
 
         if (turn.usage !== undefined) {
@@ -396,7 +472,7 @@ export async function runAssistantLoop(opts: RunLoopOptions): Promise<LoopResult
         if (turn.toolCalls.length === 0) {
             // `max_tokens` is a stop the user must know about for the same
             // reason a cap is: the reply is cut, not complete.
-            return finish(turn.stopReason === 'max_tokens' ? 'halted-iterations' : 'answered');
+            return finish(turn.stopReason === 'max_tokens' ? 'halted-output-limit' : 'answered');
         }
 
         // APPEND-ONLY. The provider's part rides along untouched and only when
@@ -442,8 +518,9 @@ export async function runAssistantLoop(opts: RunLoopOptions): Promise<LoopResult
 
             let bounded: { content: string; bytes: number; truncated: boolean };
             let ok = true;
+            const toolBudget = callBudget();
             try {
-                const raw = await tool.run(call.args, opts.signal);
+                const raw = await tool.run(call.args, toolBudget.signal);
                 bounded = boundResult(raw, bounds.resultBytes);
             } catch (err) {
                 ok = false;
@@ -452,6 +529,8 @@ export async function runAssistantLoop(opts: RunLoopOptions): Promise<LoopResult
                 // does not compose a posture claim of its own.
                 const reason = err instanceof Error ? err.message : String(err);
                 bounded = boundResult(`ERROR: this data could not be read: ${reason}`, bounds.resultBytes);
+            } finally {
+                toolBudget.done();
             }
 
             history.push({ role: 'tool', id: call.id, name: call.name, content: bounded.content });
@@ -461,6 +540,9 @@ export async function runAssistantLoop(opts: RunLoopOptions): Promise<LoopResult
             // AFTER recording, so the trail shows the call that tripped it, and
             // BEFORE the next dispatch, so nothing runs past the trip.
             if (opts.guardTripped?.() === true) return finish('halted-guard-review');
+            // The budget ran out DURING this call: stop here rather than hand
+            // the model a timeout to reason about past the bound.
+            if (toolBudget.timedOut()) return finish('halted-wall-clock');
         }
     }
 }

@@ -27,7 +27,8 @@ export const PUT = withApiErrorHandling(
             const saved = await saveAiGovAnswer(ctx, {
                 questionId,
                 answer: body.answer,
-                note: body.note ?? null,
+                // Absent leaves the stored note; null clears it (#5128).
+                note: body.note,
             });
             return jsonResponse({ id: saved.id, questionId, answer: saved.answer });
         },

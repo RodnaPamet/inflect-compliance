@@ -12,7 +12,7 @@
 
 const mockDb = {
     risk: { findFirst: jest.fn(), update: jest.fn() },
-    tenant: { findUnique: jest.fn() },
+    riskMatrixConfig: { findUnique: jest.fn() },
     controlTestRun: { groupBy: jest.fn() },
 } as any;
 
@@ -42,7 +42,7 @@ import { makeRequestContext } from '../helpers/make-context';
 
 beforeEach(() => {
     jest.clearAllMocks();
-    (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1', maxRiskScale: 5 });
+    (mockDb.riskMatrixConfig.findUnique as jest.Mock).mockResolvedValue(null);
     (mockDb.controlTestRun.groupBy as jest.Mock).mockResolvedValue([]);
 });
 

@@ -139,6 +139,70 @@ describeFn('library-importer service (real DB, synthetic library)', () => {
         expect(result.requirementsDeprecated).toBe(0);
     });
 
+    it('a code the library drops and later re-adds is revived, not created twice (#5113)', async () => {
+        // A.2 was deprecated by the hash-v2 import above. Re-adding it used to
+        // `create` a second (frameworkId, code) row and fail on the unique key,
+        // every sync.
+        const fw = await prisma.framework.findFirstOrThrow({ where: { key: KEY } });
+        const before = await prisma.frameworkRequirement.findFirstOrThrow({ where: { frameworkId: fw.id, code: 'A.2' } });
+        expect(before.deprecatedAt).not.toBeNull();
+
+        const result = await importLibrary(
+            prisma,
+            makeLib({
+                contentHash: 'hash-v4',
+                nodes: [
+                    { refId: 'A.1', name: 'Req One', category: 'Cat', assessable: true },
+                    { refId: 'A.2', name: 'Req Two, again', category: 'Cat', assessable: true },
+                    { refId: 'A.3', name: 'Req Three', category: 'Cat', assessable: true },
+                ],
+            }),
+        );
+
+        expect(result.action).toBe('updated');
+        const after = await prisma.frameworkRequirement.findFirstOrThrow({ where: { frameworkId: fw.id, code: 'A.2' } });
+        expect(after.id).toBe(before.id);
+        expect(after.deprecatedAt).toBeNull();
+        expect(after.title).toBe('Req Two, again');
+        expect((await prisma.framework.findFirstOrThrow({ where: { key: KEY } })).contentHash).toBe('hash-v4');
+    });
+
+    it('an import that fails half way leaves the old hash, so the next sync repairs it (#5113)', async () => {
+        // A client whose requirement writes fail, as a crash or a dropped
+        // connection would make them.
+        const failing = new Proxy(prisma, {
+            get(target, prop, receiver) {
+                const value = Reflect.get(target, prop, receiver);
+                if (prop !== 'frameworkRequirement') return value;
+                return new Proxy(value as object, {
+                    get(delegate, method, r) {
+                        if (method === 'upsert' || method === 'create' || method === 'update') {
+                            return () => Promise.reject(new Error('connection lost'));
+                        }
+                        return Reflect.get(delegate, method, r);
+                    },
+                });
+            },
+        }) as typeof prisma;
+        const v5 = makeLib({
+            contentHash: 'hash-v5',
+            nodes: [
+                { refId: 'A.1', name: 'Req One', category: 'Cat', assessable: true },
+                { refId: 'A.4', name: 'Req Four', category: 'Cat', assessable: true },
+            ],
+        });
+
+        await expect(importLibrary(failing, v5)).rejects.toThrow('connection lost');
+        expect((await prisma.framework.findFirstOrThrow({ where: { key: KEY } })).contentHash).toBe('hash-v4');
+
+        // The next sync does the work instead of skipping it.
+        const retry = await importLibrary(prisma, v5);
+        expect(retry.action).toBe('updated');
+        const fw = await prisma.framework.findFirstOrThrow({ where: { key: KEY } });
+        expect(fw.contentHash).toBe('hash-v5');
+        expect(await prisma.frameworkRequirement.count({ where: { frameworkId: fw.id, code: 'A.4', deprecatedAt: null } })).toBe(1);
+    });
+
     it('mapKindToPrisma falls back to ISO_STANDARD for an unknown kind', async () => {
         const lib = makeLib({ kind: 'TOTALLY_UNKNOWN' });
         // fresh key so it inserts

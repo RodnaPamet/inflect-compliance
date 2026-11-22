@@ -84,20 +84,6 @@ const RICH_TEXT_COVERAGE: Readonly<
         usecases: ['src/app-layer/usecases/identity-account-protection.ts'],
         sanitizer: 'sanitizePlainText',
     },
-    // `rejectionReason` and `fulfilmentNotes` on a GDPR data-subject request.
-    // Operator-authored narrative about an identified person, written through
-    // `sanitizeOptional` in `dsar-register.ts` — a three-state preserving
-    // wrapper (undefined = leave, null = clear) over `sanitizePlainText`.
-    //
-    // This model reached the manifest only when it was listed for RLS: it is
-    // deliberately USER-scoped with no `tenantId`, and both the encryption
-    // coverage guard and this one scan tenant-scoped models, so its columns sat
-    // outside every denominator at once. The sanitising was already correct —
-    // what was missing was the model's membership in the lists that check.
-    DataSubjectRequest: {
-        usecases: ['src/app-layer/usecases/dsar-register.ts'],
-        sanitizer: 'sanitizePlainText',
-    },
     // `detail` is mixed provenance: a provider rejection message is machine
     // -generated, but a REVERTED reason is written by a person, and the row is
     // read back by an operator surface and an auditor export. Sanitised in
@@ -136,7 +122,10 @@ const RICH_TEXT_COVERAGE: Readonly<
     // An agent profile's instructions (#4143): what a tenant tells its agent,
     // and the operator's block in every prompt the profile runs under.
     // Sanitised at the single write seam before they are scanned, hashed and
-    // encrypted, so the pinned hash is over the text that is stored.
+    // encrypted, so the pinned hash is over the text that is stored. A drawn
+    // flow's labels (`flowJson`, Phase 1 of the agent-flow canvas) pass the
+    // same `sanitizePlainText` in `prepareFlow` before the flow is checked
+    // again, serialised and hashed.
     AgentProfileVersion: { usecases: ['src/app-layer/usecases/agent-profiles.ts'], sanitizer: 'sanitizePlainText' },
     // The kill switch's `reason` / `liftReason` — operator free text written
     // during an incident, sanitised at the single write seam (`requireReason`)
@@ -250,6 +239,14 @@ const RICH_TEXT_COVERAGE: Readonly<
  * text — sanitisation does not apply. Each carries a written reason.
  */
 const NON_RICH_TEXT_MODELS: Readonly<Record<string, string>> = {
+    AuditPackItem:
+        'snapshotJson is a machine-built JSON string (#5150) — `JSON.stringify` '
+        + 'of a frozen row, never typed by a person and never rendered as markup. '
+        + 'Its free-text CONTENT is sanitised at the source: the test-run notes '
+        + 'and finding summary it copies are sanitised when the run is recorded, '
+        + 'and sanitising the serialised JSON here would corrupt it. Encrypted so '
+        + 'the copy is not plaintext at rest, which is a confidentiality concern '
+        + 'rather than a rendering one.',
     HostConsumerMessage:
         'body is the EXACT JSON-RPC request bytes a host sent (#3861), kept ' +
         'so the stored body can be proved to be the one that arrived. ' +
@@ -286,6 +283,19 @@ const NON_RICH_TEXT_MODELS: Readonly<Record<string, string>> = {
         'break the very signature the row exists to prove; it is never rendered ' +
         '(the receipt list returns statements and signatures, no body), and the ' +
         'task text that reaches a run is labelled third-party and scanned there.',
+    WorkflowRunDeferral:
+        'transcriptJson holds the EXACT API bytes of the conversation a Tool ' +
+        'Runner run resumes from after a deferral (Step 2f, #5530). It is never ' +
+        'rendered, never returned by any route, and cleared when the run resumes ' +
+        'or settles; sanitising it would change the bytes a thinking block\'s ' +
+        'signature binds, so the API would refuse the resumed conversation.',
+    KnowledgeChunk:
+        'text is a CHUNK of a source row\'s text (vector store Phase 1.4), cut ' +
+        'by the index pipeline from a field that is sanitised at its own write ' +
+        'path (a policy version\'s content, a control description). Nobody types ' +
+        'it: it is derived, and re-sanitising a chunk would make its contentHash ' +
+        'disagree with the source it was cut from. It reaches a reader as plain ' +
+        'text and a model only through the guarded query path (Phase 3).',
     WorkflowStep:
         'inputJson/outputJson are per-step tool payloads (engine-internal), same ' +
         'reasoning as WorkflowRun — derived from already-sanitised reads + engine ' +

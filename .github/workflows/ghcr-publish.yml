@@ -155,8 +155,13 @@ jobs:
               uses: docker/metadata-action@v6
               with:
                   images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+                  # `:latest` only from main (#5084). The workflow can be
+                  # dispatched from any branch, and Watchtower rolls whatever
+                  # `:latest` names onto production, so a dispatch from an
+                  # unmerged branch shipped unreviewed code. Elsewhere only the
+                  # immutable `:sha-<short>` is pushed, which nothing deploys.
                   tags: |
-                      type=raw,value=latest
+                      type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
                       type=sha,prefix=sha-,format=short
                   # Lowercase is required by GHCR — metadata-action handles it
                   # via the default `image` normalisation.

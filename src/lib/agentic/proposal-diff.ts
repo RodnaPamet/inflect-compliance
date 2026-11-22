@@ -33,6 +33,10 @@
  *   PAYLOAD_UNREADABLE - the stored payload is not a JSON object, so there are
  *                        no fields to compare. NOT reviewable.
  *
+ * A sixth status, `KIND_NOT_APPROVABLE`, is never produced here: it is the
+ * rollout brake's (`withheldProposalDiff` in `proposal-kind-rollout.ts`), for a
+ * kind this release reads but does not approve. NOT reviewable.
+ *
  * `NO_CHANGES` and the two refusals are the pair that must not be confused.
  * They are different renderings, different tones, and - the load-bearing part -
  * different answers from `isDiffReviewable`, so the approve control is present

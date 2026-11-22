@@ -385,6 +385,7 @@ describe('closeAccessReview — the evidence PDF carries the justifications', ()
     it('passes each decision’s notes and decided-at to the PDF, and attaches it conditionally', async () => {
         const decisions = [storedDecision('d-1', 'CONFIRM', 'Needs it for payroll'), storedDecision('d-2', 'REVOKE', 'Left in June')];
         const db = {
+            $executeRawUnsafe: jest.fn().mockResolvedValue(0),
             accessReview: {
                 findFirst: jest.fn().mockResolvedValue({
                     id: 'ar-1',

@@ -22,7 +22,7 @@ Record, question by question, how far your organisation meets NIS2's security me
 
 The page heading and how many questions you have answered, with a progress bar. Then the questions, grouped by domain. Each question shows its criticality, who in the organisation can best answer it, and the questions it builds on, if any.
 
-The questions and domain names are those of the published question set, in English.
+The questions and domain names are those of the published question set. They show in Bulgarian when that is your language, and in English otherwise, as on the [NIS2 readiness](nis2-readiness.md) page. The regulator's wording, behind the information icon beside each question, has no Bulgarian translation and shows in English.
 
 ## What you can do
 

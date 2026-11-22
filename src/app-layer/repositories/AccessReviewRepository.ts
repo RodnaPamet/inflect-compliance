@@ -175,36 +175,6 @@ export class AccessReviewRepository {
         });
     }
 
-    /**
-     * Map subject userId → most recent UserSession.lastActiveAt for
-     * this tenant. Returns the empty map when no sessions exist.
-     * Used by the review page to surface "last activity date" without
-     * a per-user round-trip from the client.
-     */
-    static async getLastActivityByUser(
-        db: PrismaTx,
-        ctx: RequestContext,
-        userIds: readonly string[],
-    ): Promise<Record<string, Date>> {
-        if (userIds.length === 0) return {};
-        const rows = await db.userSession.groupBy({
-            by: ['userId'],
-            where: {
-                tenantId: ctx.tenantId,
-                userId: { in: [...userIds] },
-                revokedAt: null,
-            },
-            _max: { lastActiveAt: true },
-        });
-        const map: Record<string, Date> = {};
-        for (const r of rows) {
-            if (r._max.lastActiveAt) {
-                map[r.userId] = r._max.lastActiveAt;
-            }
-        }
-        return map;
-    }
-
     static async create(
         db: PrismaTx,
         ctx: RequestContext,

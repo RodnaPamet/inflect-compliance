@@ -1,19 +1,16 @@
-import { NextRequest } from 'next/server';
-import { getTenantCtx } from '@/app-layer/context';
 import { linkControlToRisk } from '@/app-layer/usecases/risk';
-import { parseBody } from '@/lib/validation';
+import { parseJsonBody } from '@/lib/validation/route';
 import { LinkRiskControlSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { badRequest } from '@/lib/errors/types';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 
-// Map a control to a risk
-export const POST = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; id: string }> }) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    const { data: body, error } = await parseBody(req, LinkRiskControlSchema);
-    if (error) throw badRequest('Invalid Request Body', error);
-
-    const rc = await linkControlToRisk(ctx, params.id, body.controlId);
-    return jsonResponse(rc, { status: 201 });
-});
+// Map a control to a risk. `controls.edit`, the key its twin
+// POST /controls/:controlId/risks takes: both write the same mapping.
+export const POST = withApiErrorHandling(
+    requirePermission<{ tenantSlug: string; id: string }>('controls.edit', async (req, { params }, ctx) => {
+        const body = await parseJsonBody(req, LinkRiskControlSchema);
+        const rc = await linkControlToRisk(ctx, params.id, body.controlId);
+        return jsonResponse(rc, { status: 201 });
+    }),
+);

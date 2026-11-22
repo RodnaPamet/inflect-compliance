@@ -95,3 +95,44 @@ describe('CodeQL query-suite pinning', () => {
         expect(nameMatch![1]).toContain('security-and-quality');
     });
 });
+
+/**
+ * Every workspace package is in the scan (#5086).
+ *
+ * `paths:` listed `src`, `tests` and `scripts`, so nothing under `packages/`
+ * was analysed: the agent-harness scanner (which ran in a client's estate
+ * with a signing key, and was removed on 2026-11-15, scanent #26) and the
+ * shared UI package carried no alerts because they were never read, and the
+ * merge-queue SAST gate passed them. The population is the package directories
+ * on disk, not a list kept here. Two remain (`sap-mcp-stub`, `ui`), and the
+ * positive control's floor is that count: it proves the directory read finds
+ * packages, and a lower floor would let it pass on one that found half.
+ */
+describe('CodeQL scans every workspace package (#5086)', () => {
+    const scanned = (): string[] => {
+        const src = fs.readFileSync(CONFIG_PATH, 'utf8');
+        const block = /^paths:\n((?:[ \t]+(?:-.*|#.*)\n)+)/m.exec(src)?.[1] ?? '';
+        return block
+            .split('\n')
+            .map((l) => /^\s+-\s+"?([^"#\s]+)"?/.exec(l)?.[1])
+            .filter((p): p is string => Boolean(p));
+    };
+    const packages = (): string[] => {
+        const root = path.resolve(__dirname, '../..');
+        return fs
+            .readdirSync(path.join(root, 'packages'), { withFileTypes: true })
+            .filter((d) => d.isDirectory() && fs.existsSync(path.join(root, 'packages', d.name, 'package.json')))
+            .map((d) => `packages/${d.name}`);
+    };
+
+    it('reads the paths block and finds the packages (positive control)', () => {
+        expect(scanned()).toEqual(expect.arrayContaining(['src', 'tests', 'scripts']));
+        expect(packages().length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('every package directory sits under a scanned path', () => {
+        const paths = scanned();
+        const unscanned = packages().filter((pkg) => !paths.some((p) => pkg === p || pkg.startsWith(`${p}/`)));
+        expect(unscanned).toEqual([]);
+    });
+});

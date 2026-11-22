@@ -107,10 +107,10 @@ afterEach(() => {
     delete (global as unknown as { fetch?: unknown }).fetch;
 });
 
-function mount() {
+function mount(ctx: typeof TENANT_CTX = TENANT_CTX) {
     return render(
         <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0, shouldRetryOnError: false }}>
-            <TenantProvider value={TENANT_CTX}>
+            <TenantProvider value={ctx}>
                 <TooltipProvider>
                     <CalendarClient tenantSlug="acme-corp" />
                 </TooltipProvider>
@@ -187,6 +187,36 @@ describe('calendar — refusals say why (#4628)', () => {
     });
 });
 
+describe('calendar — task actions follow the server (#5127)', () => {
+    it('a custom role with the task keys but no write tier is offered no task action', async () => {
+        const day = '2026-11-10';
+        currentSearch = 'month=2026-11';
+        route = () => ({
+            ok: true, status: 200,
+            json: async () => respond([{
+                id: 'ev-t1', date: `${day}T09:00:00.000Z`, title: 'Rotate keys', type: 'task-due',
+                category: 'task', status: 'upcoming', entityType: 'TASK', entityId: 't-1',
+                href: '/tasks/t-1', source: 'task', ownerUserId: 'user-1',
+            }]),
+        });
+        // A READER-based custom role granted tasks.edit and tasks.create: the
+        // task writes also ask the coarse write tier, which it does not hold.
+        const reader = getPermissionsForRole('READER');
+        const ctx = {
+            ...TENANT_CTX,
+            role: 'READER' as const,
+            permissions: { canRead: true, canWrite: false, canAdmin: false, canAudit: false, canExport: false },
+            appPermissions: { ...reader, tasks: { ...reader.tasks, edit: true, create: true } },
+        } as unknown as typeof TENANT_CTX;
+        const { container, findAllByText, queryByText } = mount(ctx);
+        await waitFor(() => expect(container.querySelector(`[data-ymd="${day}"]`)).toBeTruthy());
+        await act(async () => { fireEvent.click(container.querySelector(`[data-ymd="${day}"]`) as Element); });
+        expect((await findAllByText('Rotate keys')).length).toBeGreaterThan(1);
+        expect(queryByText('Complete')).toBeNull();
+        expect(queryByText('Reschedule')).toBeNull();
+    });
+});
+
 describe('calendar — the Timeline view (#4628)', () => {
     it('does not ask the reader to click a day the timeline has no way to select', async () => {
         currentSearch = 'view=gantt';
@@ -195,5 +225,24 @@ describe('calendar — the Timeline view (#4628)', () => {
         const panel = container.querySelector('#calendar-side-panel')!.textContent ?? '';
         expect(panel).toContain('The timeline has no days to click.');
         expect(panel).not.toContain('Click a day to see events on that date.');
+    });
+});
+
+describe('calendar — the month view asks for every day its grid shows (#5313)', () => {
+    it('covers fourteen trailing days, not seven', async () => {
+        // February 2021 starts on a Monday (the grid's first weekday) and has
+        // 28 days, so the six-row grid ends on 14 March.
+        currentSearch = 'month=2021-02';
+        mount();
+        await waitFor(() =>
+            expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/calendar?'))).toBe(true),
+        );
+        const monthCall = fetchMock.mock.calls
+            .map(([u]) => String(u))
+            .find((u) => u.includes('/calendar?') && toParam(u) < Date.UTC(2021, 5, 1));
+        expect(monthCall).toBeDefined();
+        const params = new URL(monthCall as string, 'http://x').searchParams;
+        expect(new Date(params.get('from') as string).toISOString()).toBe('2021-02-01T00:00:00.000Z');
+        expect(new Date(params.get('to') as string).getTime()).toBeGreaterThanOrEqual(Date.UTC(2021, 2, 14, 23, 59));
     });
 });

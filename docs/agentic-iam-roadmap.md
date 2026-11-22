@@ -66,7 +66,8 @@ from a client environment. `inflect-agent-harness/2` (#3754, owner decisions
 window on each tool (stored with the tool) and the model endpoints it calls
 (stored on the agent's scan item since #3759, and shown on the harness matrix).
 `inflect-agent-harness/3` (#3785, owner decision 2026-10-19) is `/2` plus one
-source kind, `gcp-sa`, and is what the reference scanner emits; the ingest
+source kind, `gcp-sa`, and is what the reference scanner emitted (the in-repo
+scanner, removed by scanent #26; scanent's scanner emits `/4`); the ingest
 accepts both, each against its own schema, so a `/2` report naming `gcp-sa` is
 refused. The
 schemas are `src/lib/agentic/harness-contract.ts` and the executable reference
@@ -111,6 +112,14 @@ signature (decision 9).
 
 ### The reference scanner and client estates
 
+> **Removed by scanent #26 (2026-11-15).** The in-repo scanner this section
+> describes, `packages/agent-harness-scanner`, its container and its `Scanner
+> image` CI job and workflow were deleted: the scanner is the standalone scanent
+> product ([RodnaPamet/scanent](https://github.com/RodnaPamet/scanent)), which
+> carries every source and rule below. The section records what step `4a` and
+> #3686 built; the client estates, the ingest and the VM overlay it names are
+> unchanged.
+
 Step `4a` (#3678) built the scanner the ingest was waiting for, as the owner
 decided on 2026-10-18: `packages/agent-harness-scanner`, a CLI that reads an
 estate's sources, signs an `inflect-agent-harness` report (`/3` since #3785) with a key the
@@ -141,13 +150,16 @@ replace a `code` agent's `<key>:*` placeholder for the same URL (owner decisions
 register through `get_harness_register` with the ingest key: each live agent,
 with its owner, its own API keys by reference and the H1 and H2 verdicts the
 register can evidence, and each principal a person confirmed as an agent. It is
-the only source whose `registeredAgentId` reaches a report. The scanner runs as
-a container a client builds from this repository
+the only source whose `registeredAgentId` reaches a report. The scanner ran as
+a container a client built from this repository
 (`packages/agent-harness-scanner/Dockerfile`, #3686): built, smoke-tested and
-scanned by Trivy in CI on every pull request (owner decision, 2026-10-19).
-Inflect's own estate runs a copy published by digest to the repository's
+scanned by Trivy in CI on every pull request (owner decision, 2026-10-19), until
+scanent #26 removed it; a client now runs scanent's signed image.
+Inflect's own estate ran a copy published by digest to the repository's
 private GHCR package, by the dispatch-only `Scanner image` workflow, which
-smoke-tests and scans before it pushes (owner decision, 2026-10-20). On the
+smoke-tests and scans before it pushes (owner decision, 2026-10-20). Since
+scanent #26 it runs scanent's public image (`ghcr.io/rodnapamet/scanent`,
+pinned by digest and signed by scanent's release workflow) instead. On the
 production VM it runs from the opt-in Compose overlay
 `deploy/docker-compose.harness-scanner.yml`, beside a configuration template for
 the pilot estate (`deploy/harness-scanner/`). It runs read-only, as a non-root
@@ -662,7 +674,9 @@ holds the census.
 
 ### Registration intake from a shadow-agent finding
 
-A person holding `admin.agent_registry` takes a `SHADOW_AGENT` finding into the
+A person holding `admin.agent_registry` takes a `SHADOW_AGENT` finding (or an
+`UNREGISTERED_IDENTITY` one, which registers the same way; see
+[`docs/agent-harness-contract.md`](agent-harness-contract.md#transport)) into the
 register with `POST /api/t/:slug/admin/agents/intake` (a literal
 `requirePermission('admin.agent_registry')`; `registerShadowAgent` in
 `src/app-layer/usecases/agent-registration-intake.ts`). One transaction creates
@@ -761,11 +775,15 @@ reads. A tenant with a single agent can run a campaign.
 
 Each pack is prepared by the `agent-recertification-pack` workflow, a static
 run of one READ step on the `get_agent_recertification_evidence` read tool and
-one pure SYNTHESIS step, one run per 20 agents. The pack holds the
-agent's grants with grantor and date, which granted tools it called in the 90
+one pure SYNTHESIS step, one run per two agents (`PACK_PAGE_SIZE`: the worst
+page, every section at its cap, must fit a run's 256 KiB context with 10% to
+spare, #5317). A campaign of more than five runs is prepared by the
+`agent-recert-packs-prepare` job rather than inside the request, as the person
+who asked, re-read when the job runs; a refusal then fails the job and writes one `ACCESS_REVIEW_AGENT_PACKS_REFUSED` audit row, and the campaign page shows the progress or the refusal. The pack holds the
+agent's grants (at most 100, a tool's name cut at 64 characters and flagged) with grantor and date, which granted tools it called in the 90
 days before the campaign, its proposals and their outcomes per grant, its card
-versions since its last closed campaign, its time-bounded grants and whether
-each expired on time, guard flags, breaker trips, kill engagements and its
+versions since its last closed campaign, its time-bounded grants (a connection
+name cut at 64 characters and flagged) and whether each expired on time, guard flags, breaker trips, kill engagements and its
 harness level and drift, with a `sha256:` hash of the sections, the run that
 read them and the agent whose run it was. Packs are readable by the campaign's reviewer and by holders of
 `admin.agent_registry`, as the subjects are.
@@ -1228,7 +1246,8 @@ environment enumerates agent-shaped principals (IdP registrations and service
 principals, secrets inventories, MCP servers, runtimes, CI/CD, the Inflect
 register), scores each on the ladder and returns a signed report. Inflect
 verifies and ingests it, reconciles it against the register, and raises
-SHADOW_AGENT, UNPINNED_WRITE_TOOL, LEVEL_DROP and HARNESS_SHORTFALL findings. The
+SHADOW_AGENT, UNREGISTERED_IDENTITY, UNPINNED_WRITE_TOOL, LEVEL_DROP and
+HARNESS_SHORTFALL findings. The
 scanner never calls a tool, never records content, never moves a secret, and
 never claims completeness it did not establish.
 
@@ -1774,7 +1793,7 @@ What this means for Phase 1:
 - **Three of the scanner's four sources are in the pilot.** The scanner reads
   `entra-sp`, one vault, `mcp` and `inflect-register`: #3686 adds the first,
   the third and the fourth to `packages/agent-harness-scanner` with its
-  container, and the vault reader is #3678's Azure Key Vault reader (owner
+  container (removed by scanent #26, which carries them), and the vault reader is #3678's Azure Key Vault reader (owner
   decision, 2026-10-19, which dropped #3686's own vault item). Inflect has
   no vault, so the recommendation on #3664 that the pilot sit on Entra with a
   vault and an internal MCP server is met for Entra and MCP and not for the

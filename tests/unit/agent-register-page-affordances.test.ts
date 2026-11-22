@@ -23,6 +23,8 @@ const getTenantCtxMock = jest.fn();
 const authMock = jest.fn();
 const listRegisteredAgentsMock = jest.fn();
 const listVendorsMock = jest.fn();
+const getVendorMock = jest.fn();
+let agentVendorId: string | null = null;
 
 jest.mock('next-intl/server', () => ({
     getTranslations: async () => (key: string) => key,
@@ -62,7 +64,7 @@ jest.mock('@/app-layer/usecases/agent-registry', () => ({
         description: null,
         modelRef: null,
         ownerUserId: 'user-1',
-        vendorId: null,
+        vendorId: agentVendorId,
         registrationEnforced: true,
     }),
 }));
@@ -74,9 +76,15 @@ jest.mock('@/app-layer/usecases/tenant-admin', () => ({
 }));
 jest.mock('@/app-layer/usecases/vendor', () => ({
     listVendors: (...a: unknown[]) => listVendorsMock(...a),
+    getVendor: (...a: unknown[]) => getVendorMock(...a),
 }));
 jest.mock('@/app-layer/usecases/agent-profiles', () => ({
     agentProfilesOn: () => false,
+}));
+// The page asks whether to offer "Open on canvas" (Phase 2 of
+// docs/ai-architecture/langflow.md); this file is about the register writes.
+jest.mock('@/app-layer/usecases/process-canvas-module', () => ({
+    isProcessCanvasEnabled: async () => false,
 }));
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/AgentsClient', () => ({
     AgentsClient: () => null,
@@ -105,7 +113,10 @@ interface DetailProps {
         canManageRegistry: boolean;
         canCloseBreaker: boolean;
         canReadKillHistory?: boolean;
+        canKill?: boolean;
+        canReadRegistry?: boolean;
     };
+    vendors?: Array<{ id: string; name: string }> | null;
 }
 
 /** A session holding one membership in `acme`, with this built-in role. */
@@ -160,6 +171,7 @@ beforeEach(() => {
     jest.clearAllMocks();
     listRegisteredAgentsMock.mockResolvedValue([]);
     listVendorsMock.mockResolvedValue([]);
+    agentVendorId = null;
 });
 
 describe('per built-in role', () => {
@@ -211,6 +223,27 @@ describe('per built-in role', () => {
         const props = await registerProps();
         expect(props.canWrite).toBe(false);
         expect(props.canSetCapacity).toBe(false);
+    });
+});
+
+describe('the kill switch is offered as its routes take it (#5153)', () => {
+    it('the kill-switch key on an Editor membership: not offered, because the edge refuses the route', async () => {
+        const ctx = makeRequestContext('EDITOR');
+        signedInAs('EDITOR', {
+            ...ctx,
+            appPermissions: {
+                ...ctx.appPermissions,
+                admin: { ...ctx.appPermissions.admin, agent_kill_switch: true, agent_registry_view: true },
+            },
+        });
+        const perms = await detailPerms();
+        expect(perms.canKill).toBe(false);
+        expect(perms.canReadKillHistory).toBe(false);
+    });
+
+    it('AI admin: offered, since the edge admits it to the agent paths', async () => {
+        signedInAs('AI_ADMIN', makeRequestContext('AI_ADMIN'));
+        expect((await detailPerms()).canKill).toBe(true);
     });
 });
 
@@ -279,5 +312,62 @@ describe('the 200-agent page', () => {
         const props = await registerProps();
         expect(props.initialRows).toHaveLength(200);
         expect(props.truncated).toBe(false);
+    });
+});
+
+// #5313 — the register-key tabs read routes the edge admits only to an OWNER,
+// ADMIN or AI_ADMIN membership; a custom role granting the key elsewhere was
+// offered the tabs and refused every read.
+describe('the register-key tabs are offered as the edge admits their reads', () => {
+    it('the register key on an Editor membership: tabs not offered', async () => {
+        signedInAs('EDITOR', customRoleWithRegisterKey('EDITOR'));
+        expect((await detailPerms()).canReadRegistry).toBe(false);
+    });
+
+    it('the register key on an Auditor membership: tabs not offered', async () => {
+        signedInAs('AUDITOR', customRoleWithRegisterKey('AUDITOR'));
+        expect((await detailPerms()).canReadRegistry).toBe(false);
+    });
+
+    it('Admin and AI admin: tabs offered', async () => {
+        signedInAs('ADMIN', makeRequestContext('ADMIN'));
+        expect((await detailPerms()).canReadRegistry).toBe(true);
+        signedInAs('AI_ADMIN', makeRequestContext('AI_ADMIN'));
+        expect((await detailPerms()).canReadRegistry).toBe(true);
+    });
+});
+
+// #5313 — the supplier picker never shows a blank over a supplier it could not
+// read, and a failed list is null (a disabled field), not an empty one.
+describe('the amend form\'s supplier list', () => {
+    async function detailVendors() {
+        const el = await detailPage();
+        expect(el.type).toBe(AgentDetailClient);
+        return (el.props as DetailProps).vendors;
+    }
+
+    it('a vendor read that fails is null, not an empty list', async () => {
+        signedInAs('ADMIN', makeRequestContext('ADMIN'));
+        listVendorsMock.mockRejectedValue(new Error('No read access'));
+        expect(await detailVendors()).toBeNull();
+    });
+
+    it("the agent's own supplier past the 200-row page is read by id and offered first", async () => {
+        signedInAs('ADMIN', makeRequestContext('ADMIN'));
+        agentVendorId = 'vendor-far';
+        listVendorsMock.mockResolvedValue([{ id: 'vendor-1', name: 'Alpha' }]);
+        getVendorMock.mockResolvedValue({ id: 'vendor-far', name: 'Zeta' });
+        expect(await detailVendors()).toEqual([
+            { id: 'vendor-far', name: 'Zeta' },
+            { id: 'vendor-1', name: 'Alpha' },
+        ]);
+    });
+
+    it("an agent supplier that cannot be read by id disables the field", async () => {
+        signedInAs('ADMIN', makeRequestContext('ADMIN'));
+        agentVendorId = 'vendor-far';
+        listVendorsMock.mockResolvedValue([{ id: 'vendor-1', name: 'Alpha' }]);
+        getVendorMock.mockRejectedValue(new Error('gone'));
+        expect(await detailVendors()).toBeNull();
     });
 });

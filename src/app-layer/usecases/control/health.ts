@@ -27,6 +27,8 @@ export interface ControlHealthDTO {
     verdict: ControlHealthVerdict;
     status: string;
     applicability: string;
+    /** Null while never assessed — the third display state (#5313). */
+    applicabilityDecidedAt: string | null;
     lastTested: string | null;
     latestTestResult: string | null; // PASS | FAIL | INCONCLUSIVE
     latestTestAt: string | null;
@@ -64,11 +66,11 @@ export async function getControlHealth(
     const core = await runInTenantContext(ctx, async (db) => {
         const control = await db.control.findFirst({
             where: { id: controlId, OR: [{ tenantId: ctx.tenantId }, { tenantId: null }] },
-            select: { id: true, status: true, applicability: true, lastTested: true, nextDueAt: true },
+            select: { id: true, status: true, applicability: true, applicabilityDecidedAt: true, lastTested: true, nextDueAt: true },
         });
         if (!control) return null;
 
-        const [latestTest, effMap, links, openExceptions, latestEvidence] = await Promise.all([
+        const [latestTest, effMap, links, openExceptions, latestLegacyEvidence, latestEvidenceLink] = await Promise.all([
             // Latest completed manual test run (result + when).
             db.controlTestRun.findFirst({
                 where: { tenantId: ctx.tenantId, controlId, status: 'COMPLETED', result: { not: null } },
@@ -86,13 +88,24 @@ export async function getControlHealth(
             }),
             // Active accepted exceptions — a health degrader.
             db.controlException.count({ where: { tenantId: ctx.tenantId, controlId, status: 'APPROVED' } }),
-            // Freshness — the most-recently-attached evidence.
+            // Freshness — the most-recently-attached evidence, from BOTH link
+            // tables (#5266). Evidence attached through the evidence page
+            // lands in EvidenceControlLink; reading only the legacy
+            // ControlEvidenceLink called a control with fresh evidence stale.
             db.controlEvidenceLink.findFirst({
                 where: { tenantId: ctx.tenantId, controlId },
                 orderBy: { createdAt: 'desc' },
                 select: { createdAt: true },
             }),
+            db.evidenceControlLink.findFirst({
+                where: { tenantId: ctx.tenantId, controlId, evidence: { deletedAt: null } },
+                orderBy: { createdAt: 'desc' },
+                select: { createdAt: true },
+            }),
         ]);
+        const latestEvidence = [latestLegacyEvidence, latestEvidenceLink]
+            .filter((l): l is { createdAt: Date } => l !== null)
+            .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0] ?? null;
 
         return { control, latestTest, eff: effMap.get(controlId)!, links, openExceptions, latestEvidence };
     });
@@ -124,6 +137,7 @@ export async function getControlHealth(
         verdict,
         status: control.status,
         applicability: control.applicability,
+        applicabilityDecidedAt: control.applicabilityDecidedAt ? control.applicabilityDecidedAt.toISOString() : null,
         lastTested: control.lastTested ? control.lastTested.toISOString() : null,
         latestTestResult: latestTest?.result ?? null,
         latestTestAt: latestTest?.executedAt ? latestTest.executedAt.toISOString() : null,

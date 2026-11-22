@@ -77,6 +77,31 @@ jobs:
             const LABELS = ['ci', 'automated'];
 
             const { owner, repo } = context.repo;
+
+            // ── ONLY THE NEWEST VERDICT SPEAKS (#5085) ──
+            //
+            // Runs finish out of order: a long run for an older commit can
+            // complete after a short one for a newer commit, and it used to
+            // close or reopen the issue from stale evidence. A run is ignored
+            // when a run of this workflow for a LATER push to main has already
+            // reached a verdict. Not "the branch HEAD": HEAD is often a
+            // `[skip ci]` release commit or a docs-only push with no CI run,
+            // which would silence every real result.
+            const recent = await github.rest.actions.listWorkflowRuns({
+              owner, repo, workflow_id: run.workflow_id, branch: 'main', event: run.event, per_page: 30,
+            });
+            const supersededBy = recent.data.workflow_runs.find(
+              (r) =>
+                r.id !== run.id &&
+                r.run_number > run.run_number &&
+                r.status === 'completed' &&
+                !['cancelled', 'skipped'].includes(r.conclusion),
+            );
+            if (supersededBy) {
+              core.info(`Run ${run.id} is superseded by run ${supersededBy.id} on ${supersededBy.head_sha.slice(0, 8)}; leaving the notice as it is.`);
+              return;
+            }
+
             const open = await github.paginate(github.rest.issues.listForRepo, {
               owner, repo, state: 'open', labels: 'ci',
             });

@@ -26,3 +26,4 @@ export {
     type StepGuardObservation,
 } from './review-latch';
 export { runGuardedTool } from './run-guarded-tool';
+export { guardDelegateAnswer } from './delegate-answer';

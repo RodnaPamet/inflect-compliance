@@ -82,7 +82,7 @@ import { callTool } from '@/app-layer/integrations/mcp/client';
 import { authorizationFor } from '@/app-layer/integrations/mcp/token';
 import { parseExternalToolName } from '@/lib/mcp/external-tool-name';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
-import { buildSystemContext } from '@/app-layer/context-system';
+import { buildSystemContext, buildTenantSystemJobContext } from '@/app-layer/context-system';
 import { runInTenantContext } from '@/lib/db-context';
 import {
     SERVICE_PRINCIPAL_DISABLE_TOOL,
@@ -472,16 +472,18 @@ export async function reconcileAcceptedExternalWrites(input: {
     });
     const take = input.limit ?? RECONCILE_BATCH_LIMIT;
 
-    // Oldest first: if a tenant holds more accepted rows than one batch, the
-    // ones that have been waiting longest are the ones an operator is most
-    // likely to be looking at.
+    // Least recently visited first, then oldest (#5259). Ordered by age
+    // alone, rows that never progress (a deleted connection, an unverifiable
+    // answer) held the same batch every pass and newer writes were never read.
+    // Every row read is stamped at once, so the next pass reads the next ones.
     const due = await runInTenantContext(ctx, (db) =>
         db.externalWriteJournal.findMany({
             where: { tenantId: input.tenantId, outcome: 'ACCEPTED' },
-            orderBy: { settledAt: 'asc' },
+            orderBy: [{ lastCheckedAt: { sort: 'asc', nulls: 'first' } }, { settledAt: 'asc' }],
             take,
         }),
     );
+    await stampVisited(ctx, due, input.now ?? new Date());
 
     const result: ExternalWriteReconcileResult = {
         scanned: due.length,
@@ -676,6 +678,27 @@ export interface GrantExpiryResult {
     alreadyRaised: number;
     /** Could not ask, or could not interpret the answer. Retried next pass. */
     unreadable: number;
+    /** STILL LIVE past the end date, and raising the task failed. Retried next pass. */
+    raiseFailed: number;
+}
+
+/**
+ * Record that a pass visited these rows (#5259), so the next pass's batch
+ * starts behind them. A visit, not an outcome: nothing else about the row
+ * changes.
+ */
+async function stampVisited(
+    ctx: RequestContext,
+    rows: readonly { id: string }[],
+    now: Date,
+): Promise<void> {
+    if (rows.length === 0) return;
+    await runInTenantContext(ctx, (db) =>
+        db.externalWriteJournal.updateMany({
+            where: { tenantId: ctx.tenantId, id: { in: rows.map((r) => r.id) } },
+            data: { lastCheckedAt: now },
+        }),
+    );
 }
 
 /**
@@ -816,12 +839,15 @@ export async function verifyGrantExpiry(input: {
                 advertisedToolName: { in: [...GRANT_EXPIRY_ARGS.keys()] },
                 expiryVerifiedAt: null,
             },
-            // Oldest end dates first, which is the order of how long something
-            // may have been live past its window.
-            orderBy: { attemptedAt: 'asc' },
+            // Least recently visited first, then oldest write (#5259). The end
+            // date lives in the arguments, so SQL cannot order by it; ordered
+            // by age alone, rows not yet due, unreadable or already escalated
+            // held the batch every pass and later grants were never checked.
+            orderBy: [{ lastCheckedAt: { sort: 'asc', nulls: 'first' } }, { attemptedAt: 'asc' }],
             take,
         }),
     );
+    await stampVisited(ctx, candidates, now);
 
     const result: GrantExpiryResult = {
         scanned: 0,
@@ -829,7 +855,9 @@ export async function verifyGrantExpiry(input: {
         raised: 0,
         alreadyRaised: 0,
         unreadable: 0,
+        raiseFailed: 0,
     };
+    let taskCtx: RequestContext | null = null;
 
     const connectionIds = [
         ...new Set(candidates.map((r) => r.connectionId).filter((id): id is string => !!id)),
@@ -908,8 +936,27 @@ export async function verifyGrantExpiry(input: {
             result.alreadyRaised += 1;
             continue;
         }
-        await raiseGrantOutlivedWindow(ctx, row, endDateTime, now);
-        result.raised += 1;
+        // The task is written as the tenant's SYSTEM user (#5255). Its
+        // `createdByUserId` is a NOT NULL User key, and the pass's own context
+        // names `system`, which is no User, so every escalation failed and
+        // took the rest of the pass with it. One row's failure is now that
+        // row's: it stays unescalated and is asked again next pass.
+        try {
+            taskCtx ??= await buildTenantSystemJobContext({
+                tenantId: input.tenantId,
+                job: 'external-write-expiry',
+                requestId: ctx.requestId,
+            });
+            await raiseGrantOutlivedWindow(taskCtx, row, endDateTime, now);
+            result.raised += 1;
+        } catch (err) {
+            result.raiseFailed += 1;
+            logger.error('grant outlived its window but the task could not be raised', {
+                component: 'usecase',
+                journalId: row.id,
+                error: err instanceof Error ? err.message : 'unknown',
+            });
+        }
     }
 
     return result;

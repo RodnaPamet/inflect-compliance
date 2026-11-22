@@ -19,10 +19,12 @@ import type {
     ProfileModelTier,
     ProfileOutputKind,
     ProfileSkillRef,
+    ProfileSubagent,
     ProfileTrigger,
 } from './agent-profile';
 import type { AgentDriver } from './agent-driver';
 import type { ApprovalWindow } from './approval-window';
+import type { CompiledFlow } from './agent-flow';
 
 /** Accumulated run state. `outputs` is keyed by each step's `label`. */
 export interface WorkflowContext {
@@ -137,8 +139,11 @@ export interface WorkflowDefinition {
      * disagreement resolves to `static`. A workflow definition is a piece of
      * configuration, so it must not be able to widen its own authority.
      *
-     * `tool-runner` is a request no build can grant yet (Step 2b): its
-     * `DRIVER_IMPLEMENTED` flag is false.
+     * `tool-runner` is grantable since Step 2c (#4150): its
+     * `DRIVER_IMPLEMENTED` flag is true, so a run that asks for it gets it
+     * when `AGENT_DRIVER_TOOL_RUNNER` (or the organization's choice, while the
+     * switch is unset) makes the engine available and the tenant chose
+     * TOOL_RUNNER. Today an agent profile's definition is what asks for it.
      */
     driver?: AgentDriver;
 
@@ -190,6 +195,21 @@ export interface WorkflowDefinition {
      * and `access-posture` want — they read no `ctx.input` key at all.
      */
     requiredInput?: readonly string[];
+
+    /**
+     * REFUSE A PRESENT BUT MALFORMED INPUT AT ADMISSION (#5182).
+     *
+     * `requiredInput` says a key is there and non-blank; this says its VALUE is
+     * one the workflow can read. Asked by `assertRequiredInputPresent` right
+     * after the presence check, so a malformed input is refused before the run
+     * row exists, on every engine. Without it a reasoning engine — which never
+     * walks the synthesis that would have noticed — reasons over text the
+     * workflow's own reader would have refused.
+     *
+     * Returns `null` for an input it accepts, otherwise the refusal sentence the
+     * caller is shown. Called only once every `requiredInput` key is present.
+     */
+    validateInput?: (input: Readonly<Record<string, unknown>>) => string | null;
 
     /**
      * THIS WORKFLOW PROPOSES NOTHING (#3749), by construction rather than by
@@ -277,6 +297,40 @@ export interface ProfileRunSpec {
     readonly maxTurns: number;
     readonly outputKind: ProfileOutputKind;
     readonly allowedTriggers: readonly ProfileTrigger[];
+    /**
+     * The version's drawn flow, compiled (Phase 1 of
+     * `docs/ai-architecture/langflow.md`), or ABSENT for a version with none.
+     * A specification the run message lists in order, never a walk: the
+     * model may deviate from the order, and the tools it may call are
+     * `toolNames` (which, with a flow, IS the flow's tools) intersected with
+     * the grants, whatever the order says.
+     */
+    readonly flow?: CompiledFlow;
+    /**
+     * The version's inline sub-agents (Step 2e of
+     * `docs/claude-tool-runner-design.md`), read back strictly by the
+     * resolver, or ABSENT for a version with none. Each one's tools and skills
+     * are subsets of this spec's own, and only an engine whose `runsSubagents`
+     * entry is true is admitted to run a version that has any.
+     */
+    readonly subagents?: readonly ProfileSubagent[];
+    /**
+     * The version's compaction threshold (Step 2g of
+     * `docs/claude-tool-runner-design.md`): ABSENT takes the engine's
+     * threshold, `0` turns compaction off, and any other value can only lower
+     * the engine's (the lowest of the three wins). Not in the content hash: an
+     * older worker that does not read it does not compact, today's behaviour.
+     */
+    readonly compactionThresholdTokens?: number;
+    /**
+     * The propose tools whose calls WAIT FOR A PERSON (Step 2f of
+     * `docs/claude-tool-runner-design.md`): a sorted subset of `toolNames`,
+     * each a propose tool, never named by a sub-agent. ABSENT for a version
+     * that defers nothing. Only an engine whose `runsDeferrals` entry is true
+     * is admitted to run a version that names any, so a version is never run
+     * as though it had none.
+     */
+    readonly deferredToolNames?: readonly string[];
 }
 
 /**

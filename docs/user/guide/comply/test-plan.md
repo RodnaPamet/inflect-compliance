@@ -37,7 +37,7 @@ Use the page to keep one control's testing on track: read what the test involves
 
 **The header.** The plan's name, its status (**{{ui:controlTests.planStatus.ACTIVE}}**, **{{ui:controlTests.planStatus.PAUSED}}** or **{{ui:controlTests.planStatus.ARCHIVED}}**), its frequency, whether it is **{{ui:controlTests.method.MANUAL}}** or **{{ui:controlTests.method.AUTOMATED}}**, and when it is next due, in red when that date has passed. The due date is the earlier of the plan's frequency date and its next scheduled run.
 
-**{{ui:panels.schedule.title}}.** The cadence on which runs are created, and the date of the next one. {{ui:panels.schedule.instantiationNote}} The times are in your browser's time zone.
+**{{ui:panels.schedule.title}}.** The cadence on which runs are created, and the date of the next one. {{ui:panels.schedule.instantiationNote}} The times are in the plan's own time zone, which the section names. A plan scheduled for the first time takes the time zone of the browser that schedules it, and keeps it afterwards: changing the cadence later does not move the plan to your time zone.
 
 **The cards.** **{{ui:controls.testPlan.totalRuns}}**, **{{ui:controls.testPlan.passed}}**, **{{ui:controls.testPlan.failed}}** and **{{ui:controls.testPlan.steps}}**.
 

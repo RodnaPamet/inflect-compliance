@@ -290,10 +290,13 @@ describe('the denominator is actually emitted (#3547)', () => {
     });
 
     it('logs the route and nothing identifying', () => {
-        // One field. A tenant slug, user id or IP here would turn an access
-        // log into a PII store, and the route label is already collapsed to
-        // fixed cardinality.
-        expect(source).toContain('{ route: documentRoute }');
+        // The route, and the request id — which identifies a request, not a
+        // person, and without which production's log filter drops the line
+        // (#5131). A tenant slug, user id or IP here would turn an access log
+        // into a PII store, and the route label is already collapsed to fixed
+        // cardinality.
+        expect(source).toContain('{ route: documentRoute, requestId }');
+        expect(source).toContain('{ route: softNavRoute, requestId }');
     });
 
     it('calls softNavigationRoute and logs its result too (#4195)', () => {

@@ -24,8 +24,8 @@ describe('VR-7 — sub-flow nesting', () => {
     it('the subflow dispatcher job + registration exist', () => {
         expect(exists('src/app-layer/jobs/subflow-dispatcher.ts')).toBe(true);
         const job = read('src/app-layer/jobs/subflow-dispatcher.ts');
-        expect(job).toMatch(/parentExecutionId/);
-        expect(job).toMatch(/triggeredBy: 'subflow'/);
+        // The child execution carries the invoking execution as its parent.
+        expect(job).toMatch(/triggeredBy: 'subflow',\s*parentExecutionId,/);
         // registered + tenant-scoped
         const reg = read('src/app-layer/jobs/executor-registry.ts');
         expect(reg).toMatch(/'subflow-dispatch'/);

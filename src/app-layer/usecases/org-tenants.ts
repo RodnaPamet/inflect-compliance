@@ -332,7 +332,34 @@ export async function deleteTenantUnderOrg(
         });
 
         /*
-            FOURTH: the audit entry, and it is the reason this is one
+            FOURTH: revoke the SCIM tokens (#5184).
+
+            The same reasoning as the connections above, for the other machine
+            credential. The holder is the customer's identity provider, which
+            keeps pushing on its own schedule: a live token let a removed
+            workspace go on serving `GET /api/scim/v2/Users`, and let `POST` /
+            `PATCH {active: true}` RE-ACTIVATE the memberships the step above
+            just deactivated — overwriting the access record this removal exists
+            to preserve.
+
+            `authenticateScimRequest` now refuses a deleted tenant outright, so
+            this is defence in depth rather than the only barrier. It is still
+            worth doing: it makes the credential's state match reality for
+            anybody reading the token list, and the count below puts "what was
+            live when the workspace was removed" on the audit trail, which is
+            the question this transaction exists to answer.
+
+            Only unrevoked rows are touched, so the count says what was live —
+            and an already-revoked token keeps its original `revokedAt` rather
+            than having its history rewritten by this one.
+        */
+        const revokedScimTokens = await tx.tenantScimToken.updateMany({
+            where: { tenantId: tenant.id, revokedAt: null },
+            data: { revokedAt },
+        });
+
+        /*
+            FIFTH: the audit entry, and it is the reason this is one
             transaction rather than a batch (#3173).
 
             Removing a tenant takes an entire customer's workspace off every
@@ -391,6 +418,7 @@ export async function deleteTenantUnderOrg(
                 // `logger.info` line below has always carried.
                 revokedMemberships: revokedMemberships.count,
                 disabledConnections: disabledConnections.count,
+                revokedScimTokens: revokedScimTokens.count,
             },
             requestId: ctx.requestId,
         });

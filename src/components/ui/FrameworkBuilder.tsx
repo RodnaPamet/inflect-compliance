@@ -12,8 +12,10 @@
  * scoped tightly to MVP:
  *
  *   ✓ Reorder requirements within a section
- *   ✓ Reorder requirements across sections
  *   ✓ Reorder sections themselves
+ *   ✗ No moving a requirement into another section — its section is
+ *     derived from the framework, and the saved order cannot change it
+ *     (#5231; refused in `moveRequirement` and by the server)
  *   ✓ Save / discard with optimistic local state
  *   ✗ No add / edit / delete  (deferred to a phase-3 builder)
  *   ✗ No section rename       (deferred — section labels are
@@ -131,6 +133,10 @@ export function FrameworkBuilder({
         sectionId: string,
         requirementId: string,
     ) => {
+        // The row sits inside its draggable section card: let the dragstart
+        // reach the card and the drag carries a SECTION payload too, which a
+        // section drop zone accepts — moving the whole section (#5309).
+        e.stopPropagation();
         e.dataTransfer.setData(
             DRAG_TYPE_REQUIREMENT,
             JSON.stringify({ sectionId, requirementId }),

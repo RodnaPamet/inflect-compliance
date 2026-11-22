@@ -155,9 +155,14 @@ export async function enqueueEmail(
     // Compute dedupe key
     const dedupeKey = buildDedupeKey(tenantId, type, toEmail, entityId);
 
-    try {
-        const record = await db.notificationOutbox.create({
-            data: {
+    // ON CONFLICT DO NOTHING, never a caught P2002 (#5061). Callers pass
+    // their interactive transaction, and a statement that fails inside one
+    // aborts it in Postgres: the duplicate was swallowed here, then the
+    // caller's next statement, or its commit, failed with 25P02 and rolled
+    // back the assignment or approval request the email was about.
+    const { count } = await db.notificationOutbox.createMany({
+        data: [
+            {
                 tenantId,
                 type,
                 toEmail,
@@ -167,23 +172,23 @@ export async function enqueueEmail(
                 dedupeKey,
                 ...(sendAfter ? { sendAfter } : {}),
             },
-        });
-
+        ],
+        skipDuplicates: true,
+    });
+    if (count === 0) {
         if (requestId) {
-            logger.debug('notification enqueued', { component: 'notifications', type });
+            logger.debug('notification skipped — duplicate', { component: 'notifications', type });
         }
-
-        return { id: record.id, dedupeKey };
-    } catch (error: unknown) {
-        // Prisma P2002 = unique constraint violation → duplicate, skip silently
-        if (isPrismaUniqueConstraintError(error)) {
-            if (requestId) {
-                logger.debug('notification skipped — duplicate', { component: 'notifications', type });
-            }
-            return null;
-        }
-        throw error;
+        return null;
     }
+    const record = await db.notificationOutbox.findUnique({
+        where: { dedupeKey },
+        select: { id: true },
+    });
+    if (requestId) {
+        logger.debug('notification enqueued', { component: 'notifications', type });
+    }
+    return record ? { id: record.id, dedupeKey } : null;
 }
 
 /**
@@ -273,9 +278,4 @@ function buildEmailContent(
         default:
             throw new Error(`Unknown notification type: ${type}`);
     }
-}
-
-function isPrismaUniqueConstraintError(error: unknown): boolean {
-    const e = error as { code?: unknown; message?: unknown } | null | undefined;
-    return e?.code === 'P2002' || (typeof e?.message === 'string' && e.message.includes('Unique constraint'));
 }

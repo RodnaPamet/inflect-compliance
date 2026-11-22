@@ -140,6 +140,7 @@ function createMockDb(options: {
             }),
         },
         requirementMappingSet: {
+            update: jest.fn().mockResolvedValue({}),
             findUnique: jest.fn().mockResolvedValue(existingSet ? {
                 ...existingSet,
                 sourceFramework: { id: sourceFramework?.id, key: sourceFramework?.key, name: 'Source' },
@@ -315,6 +316,18 @@ describe('MappingSet Importer', () => {
                     },
                 }),
             );
+        });
+
+        it('stores the content hash only after every entry resolved (#5114)', async () => {
+            const stored = parseMappingSetString(VALID_YAML);
+            const hash = computeMappingSetHash(stored);
+            const db = createMockDb();
+
+            await importMappingSet(db, stored, hash);
+
+            // Cleared at the upsert, then written once the import came out clean.
+            expect(db.requirementMappingSet.upsert.mock.calls[0][0].update.contentHash).toBeNull();
+            expect(db.requirementMappingSet.update).toHaveBeenCalledWith({ where: { id: 'ms-new' }, data: { contentHash: hash } });
         });
 
         it('upserts each mapping entry with correct data', async () => {
@@ -503,6 +516,10 @@ describe('MappingSet Importer', () => {
             expect(result.errors[0].sourceRef).toBe('A.5.2');
             expect(result.errors[0].message).toContain('Source requirement "A.5.2" not found');
             expect(result.created).toBe(2); // Only 2 of 3 succeeded
+            // The hash is NOT stored (#5114), so the next sync imports the
+            // set again rather than skipping it with A.5.2 never mapped.
+            expect(db.requirementMappingSet.upsert.mock.calls[0][0].update.contentHash).toBeNull();
+            expect(db.requirementMappingSet.update).not.toHaveBeenCalled();
         });
 
         it('records errors for unresolved target requirement refs', async () => {

@@ -1,0 +1,14 @@
+{
+    "decision": "D-EV-1 and D-EV-2 (owner, 2026-11-11): one nightly CI cap on the dedicated CI key, shared by garak and Ragas; it was USD 5 with a USD 2.50 each SPLIT (D-EV-11, owner, 2026-11-12). Amended by the owner on 2026-11-17: the cap is USD 6.50, garak keeps USD 2.50 and Ragas holds USD 4.00, because the Ragas share now also pays for the product's answers, written by the assistant's production model. A share lists the MODELS it may spend on, each priced from prices.json; the proxy refuses any model its share does not list. garak spends on Haiku alone; Ragas on its Haiku judge and the assistant's model. A share moves only by an edit here, which the guard re-checks: the shares never sum above the cap, and the cap is never above USD 6.50.",
+    "nightlyCapUsd": 6.5,
+    "shares": {
+        "garak": {
+            "usd": 2.5,
+            "models": ["claude-haiku-4-5"]
+        },
+        "ragas": {
+            "usd": 4,
+            "models": ["claude-haiku-4-5", "claude-sonnet-5-5"]
+        }
+    }
+}

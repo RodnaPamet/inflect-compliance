@@ -107,6 +107,9 @@ export function renderTable(
                         width: col.width - o.rowPadding * 2,
                         align: col.align || 'left',
                         lineBreak: true,
+                        // Draw no more than was measured (see drawRowCells).
+                        height: totalHeight - o.rowPadding * 2,
+                        ellipsis: true,
                     });
             }
             cellX += col.width;
@@ -160,7 +163,7 @@ function drawRowCells(
     texts: string[],
     x0: number,
     y: number,
-    _rowHeight: number,
+    rowHeight: number,
     o: Required<TableRenderOptions>,
 ): void {
     let cellX = x0;
@@ -173,6 +176,12 @@ function drawRowCells(
             width: col.width - o.rowPadding * 2,
             align: col.align || 'left',
             lineBreak: true,
+            // The text box is the row the layout measured and reserved. A
+            // cell longer than the cap used to be drawn in full past the row
+            // border, over the next rows and across a PDFKit auto page
+            // break (#5316); the cap now clips it, with an ellipsis.
+            height: rowHeight - o.rowPadding * 2,
+            ellipsis: true,
         });
 
         cellX += col.width;
@@ -194,7 +203,19 @@ function measureRowHeight(
         if (h > maxH) maxH = h;
     }
 
-    return Math.min(maxH, 120); // cap row height to avoid oversized rows
+    return Math.min(maxH, maxRowHeight(o));
+}
+
+/**
+ * The tallest a row may be: what fits on a fresh page below the repeated
+ * header. A row is never taller than a page, so the page-break check before
+ * it always leaves it room; only text longer than a whole page is clipped.
+ * (A fixed 120pt cap clipped nothing — the text was drawn in full anyway and
+ * overprinted the rows below it.)
+ */
+function maxRowHeight(o: Required<TableRenderOptions>): number {
+    const headerHeight = o.fontSize + o.rowPadding * 2 + 4;
+    return SAFE_BOTTOM_Y - (MARGINS.top + 20) - headerHeight;
 }
 
 /**

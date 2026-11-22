@@ -20,8 +20,10 @@
  *   - execution row writes (AutomationExecutionRepository is the
  *     writer; the dispatcher decides when to invoke it)
  *
- * The bus is a module-level singleton. Tests use `resetAutomationBus()`
- * between runs; production code should never need to reset it.
+ * The bus is a process-wide singleton held on `globalThis` (see
+ * `getAutomationBus` for why not a module-level one). Tests use
+ * `resetAutomationBus()` between runs; production code should never need
+ * to reset it.
  */
 
 import { log } from '@/lib/observability';
@@ -103,6 +105,26 @@ function createAutomationBus(): AutomationBus {
                 tenantId: ctx.tenantId,
                 actorUserId: input.actorUserId ?? ctx.userId ?? null,
                 emittedAt: new Date(),
+                // THE RECURSION DEPTH RIDES `data`, and like `tenantId` it comes
+                // from ctx rather than from the caller (#5716). An event a run's
+                // effects cause is one lap of a possible agent -> rule -> agent
+                // cycle; `invokeAgent` reads this number off the event to enqueue
+                // one higher, and `MAX_AGENT_INVOKE_DEPTH` could not trip while
+                // nothing wrote it.
+                //
+                // IN `data` RATHER THAN A TYPED FIELD OF ITS OWN, matching
+                // `__subflowDepth`. `data` is the thing that flows: the queue
+                // payload, the rehydrate, both `ActionEvent` sites and
+                // `invokeSubflow`'s forward all pass it through wholesale, so a
+                // cycle that laps through a SUB-FLOW carries the depth with no
+                // hop having to remember to. A typed field would need seven
+                // explicit hand-offs, and missing one is a silent hole.
+                //
+                // Absent for every context no rule invoked, so an ordinary
+                // event's `data` is untouched.
+                ...(ctx.agentInvokeDepth === undefined
+                    ? {}
+                    : { data: { ...input.data, __agentInvokeDepth: ctx.agentInvokeDepth } }),
             } as AutomationDomainEvent;
 
             log('debug', 'automation-bus.emit', {
@@ -158,13 +180,34 @@ function createAutomationBus(): AutomationBus {
     };
 }
 
-// ─── Module-level singleton ────────────────────────────────────────────
+// ─── Process-wide singleton ────────────────────────────────────────────
+//
+// ON `globalThis`, NOT in a module-level `let`. Next.js bundles
+// `instrumentation.ts` and the route handlers into DIFFERENT module
+// instances of this file, so a module-level singleton gave the startup hook
+// (which installs the BullMQ dispatcher) one bus and every route handler
+// another, whose dispatcher was still the no-op default. Every automation
+// event emitted from a web request — a task created on the Tasks page, a
+// risk created through the API — was handed to that no-op and enqueued
+// nothing: no `AutomationExecution` row, no rule ever fired. The worker was
+// unaffected (esbuild bundles it as one graph). Found by the Inspect harness,
+// whose Tool Runner samples start from a TASK_CREATED rule and waited for an
+// execution that never came (run 43429583015). Same defect, same cause, as the
+// provider registry (docs/implementation-notes/2026-07-08-provider-registry-request-path-fix.md);
+// `globalThis` is the process, which both instances share, as the BullMQ
+// queue in `jobs/queue.ts` already relies on.
+//
+// A Jest test file runs in its own global, so tests stay isolated.
 
-let busSingleton: AutomationBus | null = null;
+const globalForBus = globalThis as unknown as {
+    __inflectAutomationBus?: AutomationBus;
+};
 
 export function getAutomationBus(): AutomationBus {
-    if (!busSingleton) busSingleton = createAutomationBus();
-    return busSingleton;
+    if (!globalForBus.__inflectAutomationBus) {
+        globalForBus.__inflectAutomationBus = createAutomationBus();
+    }
+    return globalForBus.__inflectAutomationBus;
 }
 
 /**
@@ -173,7 +216,7 @@ export function getAutomationBus(): AutomationBus {
  * "resetting" at runtime would drop legitimate subscribers.
  */
 export function resetAutomationBus(): void {
-    if (busSingleton) busSingleton.reset();
+    globalForBus.__inflectAutomationBus?.reset();
 }
 
 /**

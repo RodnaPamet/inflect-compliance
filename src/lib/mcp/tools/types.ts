@@ -68,10 +68,10 @@ export interface McpToolAuthorization {
     keys?: readonly PermissionKey[];
     /**
      * The shared `assertCanRead` / `assertCanWrite` policy the equivalent human
-     * route's usecase applies, for a domain `PermissionSet` has no key for.
-     * Findings are the live example: the human `POST /findings` gate is
-     * `assertCanWrite`, and there is no `findings.*` key to name instead.
-     * Applied IN ADDITION to `keys` when both are present.
+     * route's usecase applies, for a domain `PermissionSet` has no key for, or
+     * behind the key where the usecase still asserts the coarse tier
+     * (`list_findings`: `findings.view` at the route, `assertCanRead` in
+     * `listFindings`). Applied IN ADDITION to `keys` when both are present.
      */
     policy?: 'read' | 'write';
     basis: McpAuthorizationBasis;
@@ -129,8 +129,14 @@ export interface McpRowRedactionRule {
      * entity kinds with no domain of their own (memberships, settings), and
      * dropping everything unrecognised would empty the feed rather than filter
      * it. Rows that DO name a governed domain must map to its key.
+     *
+     * An ARRAY means "any one of these" (#5384): a domain whose read is a
+     * disjunction — the agent inventory is the view key OR the register key
+     * (`mayReadAgentInventory`) — cannot be expressed as one key without
+     * refusing half its readers or admitting a wider set. An empty array is
+     * held by nobody, so it drops the row.
      */
-    keyOf: (row: unknown) => PermissionKey | null;
+    keyOf: (row: unknown) => PermissionKey | readonly PermissionKey[] | null;
 }
 
 /**

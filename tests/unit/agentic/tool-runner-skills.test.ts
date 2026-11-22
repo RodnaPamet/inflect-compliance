@@ -47,7 +47,7 @@ import {
     TOOL_RUNNER_SUPPLIED_TOOLS,
     toolRunnerSuppliedToolNamesFor,
 } from '@/lib/agentic/tool-runner/supplied-tools';
-import { SerialQueue, type RunStop, type ToolRunBinding } from '@/lib/agentic/tool-runner/tools';
+import { SerialQueue, TurnCallCounter, type RunStop, type ToolRunBinding } from '@/lib/agentic/tool-runner/tools';
 
 const DOC: ResolvedSkillDocument = {
     name: 'acme-joiner-review',
@@ -64,24 +64,32 @@ const pinOf = (doc: ResolvedSkillDocument): MountedSkillPin => ({
 const MOUNTED: RunSkills = { documents: [DOC], pins: [pinOf(DOC)] };
 
 /** A binding whose stop and step cap the test sets. */
-function bindingFor(opts: { stopped?: RunStop | null; stepHalt?: RunCapHalt | null } = {}) {
+function bindingFor(opts: { stopped?: RunStop | null; stepHalt?: RunCapHalt | null; toolCallsPerTurn?: number } = {}) {
     let seq = 0;
+    // One turn throughout: the cap is the turn's (#4594), one by default.
+    const turnCalls = new TurnCallCounter(opts.toolCallsPerTurn ?? 1);
     const halts: RunCapHalt[] = [];
     const binding: ToolRunBinding = {
         ctx: { tenantId: 't-1', requestId: 'r-1' } as unknown as RequestContext,
         runId: 'run-1',
         budget: { charge: () => opts.stepHalt ?? null, used: () => 0 } as unknown as ToolRunBinding['budget'],
+        subagent: null,
         nextSeq: () => seq++,
+        peekSeq: () => seq,
         stopped: () => opts.stopped ?? null,
         stopAtCap: (halt) => {
             halts.push(halt);
         },
         checkKill: async () => false,
+        checkBreaker: async () => false,
         takeVerdict: () => undefined,
         noteOrigin: () => undefined,
         originOf: () => undefined,
         forgetOrigin: () => undefined,
         onFailure: () => undefined,
+        admitToolCall: () => turnCalls.admit('parent', 1),
+        deferredTools: new Set<string>(),
+        latchDeferral: () => undefined,
     };
     return { binding, halts };
 }
@@ -157,6 +165,29 @@ describe('activation', () => {
         expect(mockSteps).toEqual([]);
     });
 
+    it('an activation is a tool call of its turn: past the turn\'s cap it is refused, named, and returns no text (#4594)', async () => {
+        const { binding } = bindingFor({ toolCallsPerTurn: 1 });
+        const tool = activateSkillTool(binding, MOUNTED, new SerialQueue());
+        if (!tool) throw new Error('expected a tool');
+        // The first activation of the turn is admitted (the positive control).
+        await expect(tool.run({ name: DOC.name })).resolves.toContain(DOC.instructions);
+        // The second, in the same turn, is past a cap of one.
+        await expect(tool.run({ name: DOC.name })).rejects.toThrow(
+            /^tool_calls_per_turn_exceeded: this turn has already made 1 tool call, .*\(1\)/,
+        );
+        expect(mockSteps).toHaveLength(2);
+        expect(mockSteps[1]).toEqual({
+            seq: 1,
+            kind: 'TOOL_CALL',
+            rec: {
+                toolCalled: 'activate_skill',
+                status: 'FAILED',
+                label: 'activate_skill',
+                output: { refused: 'TOOL_CALLS_PER_TURN_EXCEEDED', cap: 1, madeThisTurn: 1 },
+            },
+        });
+    });
+
     it('is offered only to a run that mounted a skill', () => {
         const { binding } = bindingFor();
         expect(activateSkillTool(binding, { documents: [], pins: [] }, new SerialQueue())).toBeNull();
@@ -206,13 +237,17 @@ describe('reported to the register as engine-supplied', () => {
         const added = activateSkillTool(binding, MOUNTED, new SerialQueue());
         expect(toolRunnerSuppliedToolNamesFor({ skillsMounted: true })).toEqual([added!.name]);
         expect(toolRunnerSuppliedToolNamesFor({ skillsMounted: false })).toEqual([]);
-        expect(TOOL_RUNNER_SUPPLIED_TOOLS.map((t) => t.appearsWhen)).toEqual(['when-skills-mounted']);
+        // `delegate` (Step 2e) only when the version defines sub-agents.
+        expect(toolRunnerSuppliedToolNamesFor({ skillsMounted: false, subagentsDefined: true })).toEqual(['delegate']);
+        expect(toolRunnerSuppliedToolNamesFor({ skillsMounted: true, subagentsDefined: true })).toEqual([added!.name, 'delegate']);
+        expect(TOOL_RUNNER_SUPPLIED_TOOLS.map((t) => t.appearsWhen)).toEqual(['when-skills-mounted', 'when-subagents-defined']);
     });
 
     it('the exposure report carries activate_skill as supplied by both engines, beside Flue\'s own task', () => {
         const rows = engineSuppliedTools();
         const byName = new Map(rows.map((r) => [r.name, r]));
-        expect(rows.map((r) => r.name).sort()).toEqual(['activate_skill', 'task']);
+        expect(rows.map((r) => r.name).sort()).toEqual(['activate_skill', 'delegate', 'task']);
+        expect(byName.get('delegate')).toMatchObject({ appearsWhen: 'when-subagents-defined', engines: ['tool-runner'] });
         expect(byName.get('activate_skill')).toMatchObject({
             appearsWhen: 'when-skills-mounted',
             engines: ['flue', 'tool-runner'],

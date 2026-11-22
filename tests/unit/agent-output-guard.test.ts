@@ -65,6 +65,9 @@ jest.mock('@/lib/audit', () => ({
 jest.mock('@/app-layer/ai/decision-log', () => ({
     logAiDecision: (...a: unknown[]) =>
         logAiDecision(a[0], a[1], a[2] as Record<string, unknown>),
+    // The approval's Art 14 stamp is keyed by the proposal id and runs for
+    // every approval, digest or not (#5191).
+    recordDecisionOutcomeForProposal: jest.fn(async () => 1),
 }));
 jest.mock('@/lib/observability/logger', () => ({
     logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn() },

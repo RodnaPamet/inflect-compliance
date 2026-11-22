@@ -36,9 +36,12 @@ const SEVERITY_OPTS = [
     { value: 'CRITICAL', label: 'Critical' },
 ] as const;
 
+// Every `RiskStatus` (#5316): without MITIGATED no rule could trigger on a
+// risk becoming Mitigated, though an UPDATE_STATUS action can set it.
 const RISK_STATUS_OPTS = [
     { value: 'OPEN', label: 'Open' },
     { value: 'MITIGATING', label: 'Mitigating' },
+    { value: 'MITIGATED', label: 'Mitigated' },
     { value: 'ACCEPTED', label: 'Accepted' },
     { value: 'CLOSED', label: 'Closed' },
 ] as const;

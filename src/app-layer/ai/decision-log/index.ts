@@ -15,6 +15,7 @@ import type { PrismaTx } from '@/lib/db-context';
 import type { RequestContext } from '@/app-layer/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { recordAiDecisionLogged, recordAiDecisionOutcome } from '@/lib/observability/metrics';
+import { logger } from '@/lib/observability/logger';
 
 /**
  * Bounded output-summary length — never store large/raw content.
@@ -128,6 +129,15 @@ export interface LogAiDecisionInput {
      * somebody deliberately granted.
      */
     humanOutcome?: AiDecisionAutonomousStamp;
+    /**
+     * The `AgentProposal` this row records — `createAgentProposal` only.
+     *
+     * Written at insert and frozen by the immutability trigger. It is what the
+     * proposal path's Art 14 stamp keys on (`recordDecisionOutcomeForProposal`):
+     * the input digest is a function of CONTENT, and two proposals with the same
+     * content share it, so it cannot say which of them a decision was about.
+     */
+    agentProposalId?: string | null;
 }
 
 /**
@@ -170,6 +180,7 @@ export async function logAiDecision(
             // is what attributes the decision to ONE agent's evidence (#3700),
             // and the append-only trigger keeps it from being re-attributed.
             agentId: ctx.agentId ?? null,
+            agentProposalId: input.agentProposalId ?? null,
         },
         select: { id: true },
     });
@@ -261,40 +272,132 @@ export async function recordRunsDecisionsUnreviewed(
 }
 
 /**
- * The same Art 14 stamp, keyed by the INPUT DIGEST instead of a session.
- *
- * ── WHY A SECOND KEY EXISTS ─────────────────────────────────────────────────
- *
- * `sessionRef` is the right join for the suggestion features, which generate a
- * session and carry its id. The AGENTIC path has no session: `createAgentProposal`
- * writes `sessionRef: input.proposedBySessionRef ?? null`, and that input is
- * optional, so for an ordinary agent proposal the key is NULL. Stamping by
- * session there matches nothing — `updateMany` reports `count: 0`, no error is
- * raised, and the loop looks closed while every agentic decision stays PENDING
- * for ever. A silent zero is the worst available outcome for a record-keeping
- * control, so it is not the key this path uses.
- *
- * `inputDigest` IS always present on that path. `createAgentProposal` hashes the
- * same object into both records — `AiDecisionLog.inputDigest` and
- * `AgentProposal.guardInputDigest` are the same `sha256:<hex>` string, which the
- * proposal usecase already documents as the join that "proves the same content
- * was guarded". This function is that join, used for the purpose it was written
- * for.
- *
- * Identical semantics otherwise: one-way, PENDING rows only, enforced by the
- * same database trigger, and the count is returned so a caller can assert it
- * rather than assume it.
+ * The `feature` every proposal's Art 12 row is written under by
+ * `createAgentProposal`, read back by the legacy arm of the proposal stamp
+ * below. `tests/integration/agent-proposal-decision-stamp-per-proposal.test.ts`
+ * holds the row the real usecase writes to this value.
  */
-export async function recordDecisionOutcomeForDigest(
+export const AGENT_PROPOSAL_DECISION_FEATURE = 'agent-proposal';
+
+/** Which proposal a human decided — the Art 14 stamp's subject on the proposal path. */
+export interface ProposalDecisionRef {
+    /** `AgentProposal.id`. The key: the row `createAgentProposal` wrote names it. */
+    readonly proposalId: string;
+    /**
+     * `AgentProposal.guardInputDigest`. Read ONLY for a proposal whose row was
+     * written before the id was recorded (migration 20261114120000), and even
+     * then only when it is unambiguous — see the legacy arm below.
+     */
+    readonly inputDigest: string | null;
+}
+
+/**
+ * The Art 14 stamp for ONE agent proposal: the row that proposal's creation
+ * wrote, and no other (#5191).
+ *
+ * ── WHY NOT THE DIGEST ──────────────────────────────────────────────────────
+ *
+ * This was `recordDecisionOutcomeForDigest`, keyed by `(tenantId, inputDigest)`.
+ * The digest is `computeProposalDigest({ kind, payload, rationale })` — a pure
+ * function of CONTENT — and `createAgentProposal` does not de-duplicate, so two
+ * PENDING proposals with identical content share it. Approving the first
+ * stamped BOTH rows ACCEPTED; rejecting the second then matched nothing, and
+ * the register recorded ACCEPTED for a decision a human REJECTED. A content
+ * fingerprint answers "was this the same content", never "was this the same
+ * decision". (The session key is no better: `sessionRef` on this path is the
+ * optional `proposedBySessionRef`, shared by every proposal a session raised.)
+ *
+ * So the row carries the proposal's id (`AiDecisionLog.agentProposalId`,
+ * written at insert, frozen by the immutability trigger, unique per tenant),
+ * and the stamp keys on that. It moves at most ONE row on every path.
+ *
+ * ── LEGACY ROWS ─────────────────────────────────────────────────────────────
+ *
+ * A proposal created before the column existed has a row with no id on it.
+ * For that proposal, and only when NO row names it, the digest is consulted —
+ * restricted to proposal rows that name no proposal — and the stamp lands only
+ * when EXACTLY ONE pending row matches. Two is the ambiguity above, and
+ * guessing would write one reviewer's decision onto somebody else's record, so
+ * it stamps none and says so. Stamping nothing leaves a row honestly PENDING;
+ * stamping the wrong one makes it falsely decided.
+ *
+ * ── NEVER SILENT ────────────────────────────────────────────────────────────
+ *
+ * Every path that stamps nothing logs a warning naming why. Returns the number
+ * of rows stamped (0 or 1); one-way, PENDING rows only, as the trigger holds.
+ */
+export async function recordDecisionOutcomeForProposal(
     db: PrismaTx,
     ctx: RequestContext,
-    inputDigest: string,
+    ref: ProposalDecisionRef,
     outcome: AiDecisionOutcome,
 ): Promise<number> {
-    const res = await db.aiDecisionLog.updateMany({
-        where: { tenantId: ctx.tenantId, inputDigest, humanOutcome: 'PENDING' },
+    const own = await db.aiDecisionLog.updateMany({
+        where: { tenantId: ctx.tenantId, agentProposalId: ref.proposalId, humanOutcome: 'PENDING' },
         data: { humanOutcome: outcome },
     });
-    if (res.count > 0) recordAiDecisionOutcome({ outcome });
-    return res.count;
+    if (own.count > 0) {
+        recordAiDecisionOutcome({ outcome });
+        return own.count;
+    }
+
+    // Ids, a fixed reason token and counts only — nothing of the proposal's
+    // content, which the digest exists to keep out of every record.
+    // Every field is a MEMBER read, never a bare local: a bare identifier at a
+    // sink is a name `local/no-raw-prompt-logging` cannot resolve.
+    const stamped = { outcome };
+    const warn = (detail: { reason: string; recordedOutcome?: string; pendingRowsForDigest?: number }) =>
+        logger.warn('ai-decision-log: proposal decision not stamped', {
+            component: 'ai-decision-log',
+            tenantId: ctx.tenantId,
+            proposalId: ref.proposalId,
+            outcome: stamped.outcome,
+            reason: detail.reason,
+            recordedOutcome: detail.recordedOutcome ?? null,
+            pendingRowsForDigest: detail.pendingRowsForDigest ?? null,
+        });
+
+    // The proposal HAS its row, and it is no longer PENDING: a decision is
+    // already recorded on it, and the record is one-way.
+    const linked = await db.aiDecisionLog.findFirst({
+        where: { tenantId: ctx.tenantId, agentProposalId: ref.proposalId },
+        select: { humanOutcome: true },
+    });
+    if (linked) {
+        warn({ reason: 'ALREADY_RECORDED', recordedOutcome: linked.humanOutcome });
+        return 0;
+    }
+
+    // No row names this proposal: a legacy row, or none was written.
+    if (!ref.inputDigest) {
+        warn({ reason: 'NO_DECISION_ROW' });
+        return 0;
+    }
+    const candidates = await db.aiDecisionLog.findMany({
+        where: {
+            tenantId: ctx.tenantId,
+            inputDigest: ref.inputDigest,
+            feature: AGENT_PROPOSAL_DECISION_FEATURE,
+            agentProposalId: null,
+            humanOutcome: 'PENDING',
+        },
+        select: { id: true },
+        // One past the only count that is safe to act on, so "more than one"
+        // is a fact held rather than one a cap hides.
+        take: 2,
+    });
+    if (candidates.length !== 1) {
+        warn({
+            reason: candidates.length === 0 ? 'NO_DECISION_ROW' : 'LEGACY_DIGEST_AMBIGUOUS',
+            pendingRowsForDigest: candidates.length,
+        });
+        return 0;
+    }
+    const legacy = await db.aiDecisionLog.updateMany({
+        where: { tenantId: ctx.tenantId, id: candidates[0].id, humanOutcome: 'PENDING' },
+        data: { humanOutcome: outcome },
+    });
+    if (legacy.count > 0) recordAiDecisionOutcome({ outcome });
+    else warn({ reason: 'NO_DECISION_ROW' });
+    return legacy.count;
 }

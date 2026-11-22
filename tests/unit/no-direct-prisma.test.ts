@@ -139,6 +139,11 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // Read gated by canViewPortfolio, set by canManageAgentSwitches
         // (ORG_ADMIN), audited via ORG_AGENT_SWITCHES_CHANGED.
         'org-agent-switches.ts',
+        // #4594 — the organization's two per-turn ceilings, columns on the
+        // same org-scoped Organization row; same shape as the switches. Read
+        // gated by canViewPortfolio, set by canManageAgentSwitches (ORG_ADMIN),
+        // audited via ORG_AGENT_TURN_CAPS_CHANGED.
+        'org-agent-turn-caps.ts',
         // ORG_INITIATIVES — org-scoped programme tracking; global prisma for
         // initiatives/links + withTenantDb for cross-tenant progress rollup.
         'org-security-initiative.ts',

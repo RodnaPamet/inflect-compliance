@@ -71,6 +71,7 @@
  */
 
 import type { LucideIcon } from 'lucide-react';
+import type { AgentViewNodeKind } from '@/lib/processes/agent-view/agent-canvas-graph';
 import {
     Box,
     FileText,
@@ -87,7 +88,13 @@ import {
     Timer,
     // #3471 — the INVOKE_AGENT leaf.
     Bot,
+    // langflow.md Phase 3 — the agent-flow kinds.
+    Search,
+    Send,
+    Sparkles,
+    GitFork,
 } from 'lucide-react';
+import type { FlowNodeKind } from '@/lib/agentic/agent-flow';
 
 export type ProcessNodeKind =
     | 'processStep'
@@ -263,7 +270,7 @@ export const NODE_TAXONOMY: Record<ProcessNodeKind, NodeTypeMeta> = {
         id: 'control',
         label: 'Control',
         description:
-            'A governance / control element. Canonically edge-mounted (R26-PR-D); the node kind remains for legacy maps.',
+            'A control that gates one step in place, linked to its Control record. Controls on a connection between two steps stay edge-mounted (R26-PR-D).',
         icon: ShieldCheck,
         accent: 'brand-secondary',
         shape: 'rect',
@@ -398,24 +405,29 @@ export const NODE_TAXONOMY: Record<ProcessNodeKind, NodeTypeMeta> = {
 /**
  * Ordered taxonomy — drives the palette's left-to-right layout.
  *
- * R26-PR-D dropped `control` from this list. Controls are now
- * canonically edge-mounted (drag onto a connection between two
- * steps), not standalone nodes hanging in space. The taxonomy
- * entry stays in `NODE_TAXONOMY` so legacy map data carrying
- * `nodeType: 'control'` still rehydrates correctly, but the
- * palette never offers it as a primary affordance. Controls are
- * attached to an edge via the inspector's Control picker (PR-D
- * retired the ephemeral on-edge "Add control" stamp), which
- * persists them to `data.controls`.
+ * `control` is back in the palette (owner decision, 2026-11-19), after
+ * R26-PR-D had dropped it. The two placements answer different questions and
+ * both stay:
  *
- * Order otherwise: flow primitives (step + decision) first; then
- * the three context kinds (risk + asset + external); then the
- * annotation last. Reading left to right, the palette communicates
- * "build the flow → layer the context → leave a note".
+ *   - a control ON A CONNECTION gates the hand-off between two steps
+ *     (`ProcessEdgeControl`, attached through the edge inspector's picker);
+ *   - a control NODE gates one step in place ("this step is gated by X"),
+ *     linked to exactly one Control record (`ProcessNodeControl`) through the
+ *     node inspector's picker, and shows that control's live status.
+ *
+ * What PR-D objected to was a control-shaped label with no link behind it. A
+ * control node now has a real foreign key, and an unlinked one is drawn dashed
+ * as an unfinished draft.
+ *
+ * Order otherwise: flow primitives (step + decision) first; then the control
+ * and the three context kinds (risk + asset + external); then the annotation
+ * last. Reading left to right, the palette communicates "build the flow →
+ * gate and layer the context → leave a note".
  */
 export const NODE_TAXONOMY_ORDER: ProcessNodeKind[] = [
     'processStep',
     'decision',
+    'control',
     'risk',
     'asset',
     'external',
@@ -501,4 +513,42 @@ export const NODE_ACCENT_ICON_TONE: Record<NodeAccent, string> = {
     success: 'text-[color:var(--content-success)]',
     neutral: 'text-content-muted',
     subtle: 'text-content-subtle',
+};
+
+/**
+ * THE AGENT VIEW'S NODE KINDS (Phase 2 of `docs/ai-architecture/langflow.md`).
+ *
+ * A separate record, not new members of `ProcessNodeKind`. An agent view is a
+ * read-only projection that stores nothing, so its kinds are never persisted in
+ * `ProcessNode.nodeType`, never offered by a palette and never taken by the
+ * process-map serializer. Joining the process union would have put seven kinds
+ * a map must never hold into every `Record<ProcessNodeKind, …>` the palette,
+ * inspector and serializer key on.
+ *
+ * Same visual language as the process kinds (an accent and an icon from the
+ * tables above), so an agent opened from a map's `agent` node reads as the same
+ * canvas.
+ */
+export const AGENT_VIEW_NODE_TAXONOMY: Record<AgentViewNodeKind, { icon: LucideIcon; accent: NodeAccent }> = {
+    hub: { icon: Bot, accent: 'brand-secondary' },
+    trigger: { icon: Zap, accent: 'neutral' },
+    tool: { icon: Play, accent: 'brand' },
+    skill: { icon: FileText, accent: 'success' },
+    output: { icon: StickyNote, accent: 'neutral' },
+    step: { icon: Box, accent: 'brand' },
+    map: { icon: GroupIcon, accent: 'subtle' },
+};
+
+/**
+ * THE AGENT-FLOW EDITOR'S NODE KINDS (Phase 3 of
+ * `docs/ai-architecture/langflow.md`): the four kinds a flow may hold and the
+ * palette offers, and no checkpoint (D-L2-2). A record of their own for the
+ * reason the agent-view kinds have one: a flow step is stored in a profile
+ * version's `flowJson`, never in `ProcessNode.nodeType`.
+ */
+export const AGENT_FLOW_NODE_TAXONOMY: Record<FlowNodeKind, { icon: LucideIcon; accent: NodeAccent }> = {
+    read: { icon: Search, accent: 'brand' },
+    propose: { icon: Send, accent: 'warning' },
+    synthesis: { icon: Sparkles, accent: 'success' },
+    subagent: { icon: GitFork, accent: 'brand-secondary' },
 };

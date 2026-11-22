@@ -128,6 +128,20 @@ describe('which status a verdict settles to', () => {
         await haltRunAtGuard(ctx, 'run-5', 'QUARANTINED', []);
         expect(dataOf(0).errorMessage).toContain('no rule ids recorded');
     });
+
+    it('the message names the engine that walked the run (#5372)', async () => {
+        // A Tool Runner run settled at the guard must not say "flue": the
+        // operator reading it would look for the wrong engine's configuration.
+        await haltRunAtGuard(ctx, 'run-6', 'QUARANTINED', ['egress.secret'], 'tool_runner');
+        await haltRunAtGuard(ctx, 'run-7', 'FLAGGED', ['injection.instruction'], 'tool_runner');
+        // The default stays Flue's, so its existing callers are unchanged.
+        await haltRunAtGuard(ctx, 'run-8', 'QUARANTINED', ['egress.secret']);
+        expect([0, 1, 2].map((i) => String(dataOf(i).errorMessage).split(':')[0])).toEqual([
+            'tool_runner_run_guard_blocked',
+            'tool_runner_run_guard_flagged',
+            'flue_run_guard_blocked',
+        ]);
+    });
 });
 
 describe('the breaker can count a block that produced no proposal', () => {

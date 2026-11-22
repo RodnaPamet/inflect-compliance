@@ -46,6 +46,10 @@ describe('a run that may start', () => {
             ok: true,
             residency: 'EXTERNAL',
             modelSpecifier: 'inflect-external/claude-sonnet-5-5',
+            // No worker model configured: the worker is the supervisor's
+            // model, and the plan says it fell back (D-L3-1).
+            workerModelSpecifier: 'inflect-external/claude-sonnet-5-5',
+            workerBasis: 'worker_fallback',
         });
     });
 
@@ -58,6 +62,10 @@ describe('a run that may start', () => {
             ok: true,
             residency: 'LOCAL_ONLY',
             modelSpecifier: 'inflect-local/llama-3.1-70b',
+            // No worker model configured: the worker is the supervisor's
+            // model, and the plan says it fell back (D-L3-1).
+            workerModelSpecifier: 'inflect-local/llama-3.1-70b',
+            workerBasis: 'worker_fallback',
         });
         expect(out.ok && out.modelSpecifier.startsWith('inflect-external')).toBe(false);
     });
