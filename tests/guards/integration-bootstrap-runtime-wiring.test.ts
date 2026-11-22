@@ -66,6 +66,10 @@ const EXPECTED_PROVIDER_IDS = [
     // write ladder and its credential live on a connection like every other
     // external write's, so `upsertIntegrationConnection` must know it.
     'a2a-peer',
+    // Step 5a of docs/claude-managed-agents-design.md: the customer's own
+    // Anthropic workspace. Registered only behind AGENT_MANAGED_AGENTS, which
+    // jest.setup.js turns on so this census sees what an operator can register.
+    'anthropic-workspace',
 ].sort();
 
 describe('integration provider fleet — runtime wiring', () => {

@@ -649,6 +649,14 @@ export const env = createEnv({
         // this says, and a named tenant stays open past `AGENT_PROFILES=0`.
         // Read through `agentProfilesDecisionFor`.
         AGENT_PROFILES_TENANTS: z.string().optional(),
+        // MANAGED AGENTS IN THE CUSTOMER'S OWN ANTHROPIC WORKSPACE (Step 5a of
+        // docs/claude-managed-agents-design.md) — opt-in. With it unset the
+        // `anthropic-workspace` integration provider is not registered, so no
+        // connection to a customer's workspace can be saved or tested and the
+        // integrations page shows no card for one. '1'/'true' on, anything else
+        // off, for the reason AGENT_DRIVER_FLUE above carries. Read through
+        // `managedAgentsEnabled` (src/lib/agentic/managed-agents-switch.ts).
+        AGENT_MANAGED_AGENTS: z.string().optional(),
         // AUTOMATION RULES FROM WEB EVENTS (owner decision 2026-11-13) — opt-in.
         // Until #5541 no automation event emitted in the web process ever
         // reached the queue, so no rule fired from a task, risk or control
@@ -1006,6 +1014,7 @@ export const env = createEnv({
         AGENT_INTERACTIVE_RUNS: process.env.AGENT_INTERACTIVE_RUNS,
         AGENT_PROFILES: process.env.AGENT_PROFILES,
         AGENT_PROFILES_TENANTS: process.env.AGENT_PROFILES_TENANTS,
+        AGENT_MANAGED_AGENTS: process.env.AGENT_MANAGED_AGENTS,
         AUTOMATION_WEB_EVENTS_ENABLED: process.env.AUTOMATION_WEB_EVENTS_ENABLED,
         EVALS_CARD_HIDDEN_ORG_SLUGS: process.env.EVALS_CARD_HIDDEN_ORG_SLUGS,
         AGENT_FLUE_MODEL: process.env.AGENT_FLUE_MODEL,

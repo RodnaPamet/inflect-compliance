@@ -43,6 +43,7 @@ let _joinerPassOutcome: Counter | null = null;
 let _leaverNotification: Counter | null = null;
 let _scannerFindingsTruncated: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
 let _harnessScan: Counter | null = null;
+let _anthropicWorkspaceValidation: Counter | null = null;
 let _thirdPartyAppScan: Counter | null = null;
 let _deviceReport: Counter | null = null;
 let _aiGeneration: Counter | null = null;
@@ -392,6 +393,26 @@ export function recordHarnessScanOutcome(attrs:
     _harnessScan.add(1, attrs.outcome === 'ingested'
         ? { outcome: attrs.outcome, complete: String(attrs.complete), empty: String(attrs.empty) }
         : { outcome: attrs.outcome, reason: attrs.reason });
+}
+
+/**
+ * One Test of an `anthropic-workspace` connection (Step 5a of
+ * docs/claude-managed-agents-design.md), by how it ended.
+ *
+ * The outcome is the provider's own closed vocabulary (`valid`, `key_invalid`,
+ * `key_not_workspace_scoped`, `wrong_workspace`, `workspace_unconfirmed`,
+ * `unreachable`, …), so "the key works" and "Anthropic could not be reached"
+ * and "the key belongs to another workspace" are three lines on a dashboard
+ * rather than one red light. No tenant, workspace or key in any label.
+ */
+export function recordAnthropicWorkspaceValidation(attrs: { outcome: string }): void {
+    if (!_anthropicWorkspaceValidation) {
+        _anthropicWorkspaceValidation = getMeter().createCounter('agent_workspace.validation.outcome', {
+            description: 'Anthropic workspace connection tests by outcome',
+            unit: '1',
+        });
+    }
+    _anthropicWorkspaceValidation.add(1, { outcome: attrs.outcome });
 }
 
 /**

@@ -6886,6 +6886,42 @@
       },
       "healthLoading": "Loading SharePoint sync health…"
     },
+    "anthropicWorkspace": {
+      "title": "Anthropic workspace",
+      "intro": "Connect your own Anthropic workspace so that Inflect can run agents that need a sandbox there. Anthropic acts as your processor, at your direction. Connecting stores a key and creates nothing in the workspace.",
+      "createsHeading": "What Inflect will create in the workspace",
+      "createsAgents": "Agents: one for each agent profile you approve to run there.",
+      "createsEnvironment": "One environment, which those agents' sessions run in.",
+      "createsSessions": "Sessions: one for each run.",
+      "sessionsDeleted": "Inflect deletes each session when its run ends, unless you tick \"Keep sessions in my workspace\".",
+      "keptStillDeleted": "A kept session is still deleted by Inflect when your Inflect workspace is purged, when this connection is removed, and when a data-subject erasure request is carried out.",
+      "workspaceId": "Workspace ID",
+      "workspaceIdHelp": "From the Anthropic Console. It looks like wrkspc_…",
+      "workspaceIdPlaceholder": "wrkspc_…",
+      "apiKey": "API key",
+      "apiKeyHelp": "Create it inside the workspace. It is encrypted and never shown again.",
+      "keepSessions": "Keep sessions in my workspace",
+      "keepSessionsHelp": "Off by default. A kept session stays in your workspace after its run, until you delete it or Inflect deletes it in one of the cases above.",
+      "connect": "Connect",
+      "connecting": "Connecting…",
+      "connectionName": "Anthropic workspace",
+      "fieldsRequired": "Enter the workspace ID and the API key.",
+      "connectFailed": "The workspace could not be connected.",
+      "connected": "Anthropic workspace connected. Test it to check the key.",
+      "test": "Test",
+      "testOk": "The key works for this workspace. Nothing was created in it.",
+      "testFailed": "Test failed: {error}",
+      "testFailedUnknown": "The test could not be run.",
+      "saved": "Saved.",
+      "saveFailed": "The change could not be saved.",
+      "disable": "Disable",
+      "enable": "Enable",
+      "workspaceLabel": "Workspace {id}",
+      "statusOk": "Tested",
+      "statusError": "Test failed",
+      "statusUntested": "Not tested",
+      "statusDisabled": "Disabled"
+    },
     "integrations": {
       "title": "Integrations",
       "loadFailed": "Failed to load integrations",
@@ -6931,6 +6967,7 @@
         "servicenow": "ServiceNow",
         "mcp-server": "External tool server",
         "a2a-peer": "A2A peer agent (outbound)",
+        "anthropic-workspace": "Anthropic workspace",
         "sharepoint": "Microsoft SharePoint"
       },
       "providerText": {
@@ -7331,6 +7368,28 @@
             "authorization": {
               "label": "Authorization header",
               "description": "The credential the peer issued this workspace, sent verbatim as the Authorization header. Leave blank for a peer that relies on signatures alone."
+            }
+          }
+        },
+        "anthropic-workspace": {
+          "description": "Your own Anthropic workspace, where Inflect will run agents that need a sandbox. Anthropic acts as your processor, at your direction. Connecting it stores a key and creates nothing in the workspace.",
+          "setupGuide": "Create an API key inside the Anthropic workspace you want Inflect to use, and copy the workspace ID (wrkspc_…) from the Anthropic Console. Testing the connection lists at most one agent in that workspace and changes nothing. The key is encrypted at rest and is never shown again.",
+          "fields": {
+            "workspaceId": {
+              "label": "Workspace ID",
+              "description": "The ID of your Anthropic workspace, from the Anthropic Console."
+            },
+            "keepSessions": {
+              "label": "Keep sessions in my workspace",
+              "description": "Off by default: each session is deleted when its run ends. A kept session is still deleted when the workspace is purged, when this connection is removed, and on a data-subject erasure request."
+            },
+            "apiHost": {
+              "label": "API host",
+              "description": "Fixed to api.anthropic.com. No other host is accepted."
+            },
+            "apiKey": {
+              "label": "API key",
+              "description": "An API key created inside the workspace. It is encrypted at rest and is never returned by the API, shown in a message or written to a log line."
             }
           }
         }

@@ -103,7 +103,23 @@ puts at Anthropic:
   evidence", Phase 3).
 - **The tenant purge and DSAR flows reach only Inflect's own database.** No
   provider today holds tenant content that a purge would need to delete
-  remotely.
+  remotely; the `anthropic-workspace` connection holds a key, and nothing has
+  been created with it.
+- **A customer can connect its own Anthropic workspace (Step 5a, #4164),
+  behind the opt-in `AGENT_MANAGED_AGENTS` switch.** The `anthropic-workspace`
+  provider (`src/app-layer/integrations/providers/anthropic-workspace/`) stores
+  the workspace ID and keep-sessions choice in the connection's config and the
+  API key encrypted as every connection secret. The host is fixed: `apiHost` is a
+  `vendorOrigin` rule naming `api.anthropic.com` alone, no surface offers it for
+  typing, and a configuration naming another host is refused at save and before
+  any Test request. Test sends one `GET /v1/agents?limit=1` with the
+  `anthropic-workspace-id` header, so an organisation-level key works too, and
+  passes only when the response names the configured workspace. It creates
+  nothing in the workspace and never calls `markAuthFailure`. The Admin →
+  Integrations card says what Inflect will create there and offers "Keep sessions
+  in my workspace", off by default (decision 4). With the switch unset the
+  provider is not registered and the card does not render. Nothing runs in the
+  workspace yet: no agent, environment or session is created until Steps 5b–5d.
 
 ## What Managed Agents is, as documented on 2026-10-24
 
@@ -419,6 +435,10 @@ in an Anthropic workspace the customer connects. Inflect's tools stay host-side
 as custom tools, so every call still goes through the funnel.
 
 #### Step 5a — The `anthropic-workspace` integration provider
+
+Built for #4164; the Current state section above describes the result, and
+`docs/implementation-notes/2026-11-22-step-5a-anthropic-workspace.md` the
+decisions.
 
 **Goal.** A customer can connect their own Anthropic workspace to Inflect, with a
 workspace-scoped key Inflect stores encrypted and can test without changing

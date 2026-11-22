@@ -36,6 +36,7 @@
  */
 import { badRequest } from '@/lib/errors/types';
 import {
+    ANTHROPIC_API_HOSTS,
     assertAllowedHost,
     OKTA_HOSTS,
     ORANGEHRM_HOSTS,
@@ -106,6 +107,13 @@ const ORIGIN_KINDS = new Set<ConfigFieldRule['kind']>([
     'publicOrigin',
     'peerReference',
 ]);
+
+/**
+ * An Anthropic workspace ID: `wrkspc_` and the id's own letters and digits.
+ * Exported so the provider re-checks the same shape at use time, for a Test
+ * whose configuration was never saved.
+ */
+export const ANTHROPIC_WORKSPACE_ID_SHAPE = /^wrkspc_[A-Za-z0-9]{1,128}$/;
 
 /**
  * ServiceNow encoded queries are evaluated SERVER-SIDE with the integration
@@ -414,6 +422,30 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
         // `refreshToken` are `secretFields` on the descriptor and must never
         // gain a rule here — a credential in `configJson` is returned by the
         // admin API, and the classification guard fails CI if one appears.
+    },
+    // Step 5a of docs/claude-managed-agents-design.md: the customer's own
+    // Anthropic workspace. `apiKey` is a secretField and has no rule here.
+    'anthropic-workspace': {
+        // THE HOST, and the reason this provider has a host field at all. No
+        // surface offers it for typing: the card never sends it, and the
+        // provider dials `api.anthropic.com` when it is absent. It is declared
+        // so that a configuration naming ANY other host is refused at save with
+        // the vendor's own sentence rather than accepted, and so that it is an
+        // origin field: `redirectsStoredCredential` would refuse a change that
+        // kept the stored key, were the allowlist ever to name a second host.
+        apiHost: { kind: 'vendorOrigin', allow: ANTHROPIC_API_HOSTS },
+        // Not a secret (it is printed in the customer's Console), but it IS sent
+        // as the `anthropic-workspace-id` header on every request, so its shape
+        // is held here: a value carrying anything but the id's own characters
+        // never reaches a header.
+        workspaceId: {
+            kind: 'boundedQuery',
+            check: (v) => (ANTHROPIC_WORKSPACE_ID_SHAPE.test(v.trim()) ? null : 'must be a workspace ID (wrkspc_…)'),
+        },
+        // Decision 4 (owner, 2026-10-30): whether a run's session is kept in the
+        // customer's workspace after it settles. Off unless ticked. Inert in
+        // reach: it names no host and carries no query.
+        keepSessions: { kind: 'inert' },
     },
     'a2a-peer': {
         // WHICH peer the connection sends to (#3679). An origin kind: see

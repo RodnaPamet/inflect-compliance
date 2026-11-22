@@ -106,6 +106,24 @@ describe('EntityDetailLayout — tabs', () => {
         expect(tabs[2].getAttribute('aria-selected')).toBe('false');
     });
 
+    it('draws the tab bar as one shaded, outlined band with no dividers between tabs', () => {
+        renderWithTabs('overview');
+        const bar = screen.getByTestId('entity-detail-tabs');
+        // Shaded (warm in light, cool blue in dark, via --bg-tab-bar) so the
+        // active tab's brand underline reads against it, and outlined at the
+        // strong tone so the bar's edge is visible.
+        expect(bar.className).toContain('bg-[var(--bg-tab-bar)]');
+        expect(bar.className).toContain('border-border-strong');
+        expect(bar.className).toMatch(/(^|\s)border(\s|$)/);
+        // No tab draws a side or top rule: the only line a tab carries is the
+        // bottom underline, and only the active one colours it.
+        for (const tab of screen.getAllByRole('tab')) {
+            expect(tab.className).not.toMatch(/(^|\s)border-(l|r|x|t)(-|\s|$)/);
+            expect(tab.className).not.toMatch(/divide-/);
+        }
+        expect(bar.className).not.toMatch(/divide-/);
+    });
+
     it('renders count badge on tabs that have one', () => {
         renderWithTabs('overview');
         // Tasks tab (3 count) shows "(3)" suffix; Overview tab does not.

@@ -803,7 +803,7 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1120;
 // to the execution row's lineage write — see the ambiguous baseline. Measured.
 // 154 -> 153 on 2026-11-19: the same p5a narrowing, whose `createdAt` needle
 // had sat at eight positions in processes.prisma. Measured.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 153;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 152;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise

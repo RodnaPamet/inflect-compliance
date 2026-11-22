@@ -105,9 +105,14 @@ export function assertAllowedHost(raw: string, allow: HostAllowlist): string {
         // domain" is what the obvious wording produces, and an error message a
         // customer sees while being told their credentials were withheld is
         // the wrong place to look sloppy.
+        // An allowlist with no suffixes names exact hosts only (Anthropic's is
+        // one name), and "a host under ." would be no help to anybody.
+        const expected = allow.suffixes.length > 0
+            ? `a host under ${allow.suffixes.join(' or ')}`
+            : allow.exact.join(' or ');
         throw new Error(
             `Refusing to send ${allow.label} credentials to "${hostname}": not a recognised ${allow.label} host. ` +
-                `Expected a host under ${allow.suffixes.join(' or ')}.`,
+                `Expected ${expected}.`,
         );
     }
     return hostname;
@@ -254,4 +259,21 @@ export const ORANGEHRM_HOSTS: HostAllowlist = {
         // serves, and widens nothing.
         'orangehrm-lab.34-140-180-255.sslip.io',
     ],
+};
+
+/**
+ * The Anthropic API, for the `anthropic-workspace` connection (Step 5a of
+ * docs/claude-managed-agents-design.md) — ONE exact name and no suffix.
+ *
+ * The customer's own Anthropic workspace is addressed by the workspace id the
+ * connection stores and the key it holds, never by a host: every workspace in
+ * every organisation is served from this one name. So there is nothing for a
+ * tenant to choose, and a suffix would only admit names Anthropic has not
+ * told anybody it serves. `api.anthropic.com.evil.tld` and
+ * `evil-api.anthropic.com` are both refused, because neither IS this name.
+ */
+export const ANTHROPIC_API_HOSTS: HostAllowlist = {
+    label: 'Anthropic',
+    suffixes: [],
+    exact: ['api.anthropic.com'],
 };
