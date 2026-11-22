@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 
 import { getTenantCtx } from '@/app-layer/context';
-import { getPeerAgent } from '@/app-layer/usecases/peer-agents';
+import { getPeerAgent, listPeerOutboundConnections } from '@/app-layer/usecases/peer-agents';
 import { getPeerInboundCredential } from '@/app-layer/usecases/a2a-peer-credentials';
 import { listPeerKills } from '@/app-layer/usecases/a2a-peer-kill';
 import { listPeerMessages } from '@/app-layer/usecases/a2a-messages';
@@ -26,6 +26,7 @@ export const dynamic = 'force-dynamic';
  *   its inbound credential (live and revoked)     `admin.agent_registry`
  *   its signed receipts, re-verified              `admin.agent_registry`
  *   its kill history and the toggle               `admin.agent_kill_switch`
+ *   the connections that send to it, and their rung  `admin.agent_registry`
  *
  * The kill read is made only for a holder of the kill key — the same rule
  * its route applies — and the tab says why it is empty for anybody else.
@@ -61,12 +62,13 @@ export default async function PeerDetailPage({
         throw err;
     }
     const canKill = Boolean(admin.agent_kill_switch);
-    const [credential, messagesRead, kills, agentsRead, members] = await Promise.all([
+    const [credential, messagesRead, kills, agentsRead, members, outbound] = await Promise.all([
         getPeerInboundCredential(ctx, peer.id),
         listPeerMessages(ctx, peer.id, { take: MESSAGE_CAP + 1 }),
         canKill ? listPeerKills(ctx, peer.id) : Promise.resolve(null),
         listRegisteredAgents(ctx, { take: AGENT_CAP + 1 }),
         listAssignableUsers(ctx).catch(() => null),
+        listPeerOutboundConnections(ctx, peer.id),
     ]);
     const messages = messagesRead.slice(0, MESSAGE_CAP);
     const agents = agentsRead.slice(0, AGENT_CAP);
@@ -138,6 +140,7 @@ export default async function PeerDetailPage({
             .map((a) => ({ id: a.id, name: a.name })),
         agentsCapped: agentsRead.length > AGENT_CAP ? AGENT_CAP : null,
         workflows: listWorkflowDefinitions().map((w) => ({ key: w.key, name: w.name })),
+        outbound,
         owners:
             members === null
                 ? null

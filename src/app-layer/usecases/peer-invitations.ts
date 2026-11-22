@@ -647,7 +647,8 @@ export async function acceptPeerInvitationAtInviter(
             opts,
         );
         const ourToken = await issueFreshToken(ctx, peerId, invitation.receivingAgentId, invitation.workflowKeys);
-        await storeOutboundConnection(ctx, peerId, name, acceptorCardUrl, body.data.token);
+        // The card's own name: the connection label adds the address itself.
+        await storeOutboundConnection(ctx, peerId, cardName, acceptorCardUrl, body.data.token);
 
         // Claim the invitation last, and only from PENDING, so a second
         // acceptance racing this one cannot also succeed.

@@ -31,7 +31,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -116,6 +116,11 @@ export interface PeerDetail {
     workflows: { key: string; name: string }[];
     /** Members who may own the peer; `null` when they could not be read. */
     owners?: { id: string; label: string }[] | null;
+    /**
+     * The outbound connections that send to this peer, each with its rung on
+     * the external write ladder (#3752). Optional for a caller that predates it.
+     */
+    outbound?: { id: string; name: string; isEnabled: boolean; mode: 'DISABLED' | 'DRY_RUN' | 'PROPOSE_ONLY' | 'AUTOMATIC' }[];
 }
 
 /** A message's kind and JSON-RPC method, in words (#4902). */
@@ -316,6 +321,7 @@ function OverviewTab({ detail, canManage, tenantSlug }: { detail: PeerDetail; ca
                 </dl>
             </Card>
             <PeerCardReview peerId={peer.id} retired={peer.status === 'RETIRED'} canManage={canManage} />
+            {detail.outbound && <OutboundCard outbound={detail.outbound} tenantSlug={tenantSlug} />}
             <Card className="space-y-default" data-testid="peer-risk-tier">
                 <FormField label={t('peers.detail.riskTierLabel')} description={t('peers.detail.riskTierHint')}>
                     <Combobox
@@ -613,6 +619,52 @@ function PeerDetailsCard({ detail, canManage, tenantSlug }: { detail: PeerDetail
                 cancelLabel={t('peers.cardReview.cancel')}
                 onConfirm={retire}
             />
+        </Card>
+    );
+}
+
+/**
+ * Sending to this peer (#3752): the connections that carry this workspace's
+ * tasks to it, each with its rung and a link to the write policy that sets it.
+ * That policy page is otherwise reached only from External tools, which lists
+ * tool servers and never an A2A connection, so without this link the rung could
+ * be set only by typing its address. The page behind the link carries its own
+ * owner gate, so the link is shown to every reader, as it is on External tools.
+ */
+function OutboundCard({ outbound, tenantSlug }: { outbound: NonNullable<PeerDetail['outbound']>; tenantSlug: string }) {
+    const t = useTranslations('agents');
+    return (
+        <Card className="space-y-default" data-testid="peer-outbound">
+            <Heading level={2}>{t('peers.outbound.title')}</Heading>
+            <p className="text-sm text-content-muted">{t('peers.outbound.description')}</p>
+            {outbound.length === 0 ? (
+                <p className="text-sm text-content-muted" data-testid="peer-outbound-none">
+                    {t('peers.outbound.none')}
+                </p>
+            ) : (
+                <ul className="space-y-default">
+                    {outbound.map((c) => (
+                        <li key={c.id} className="flex flex-wrap items-center gap-compact" data-testid={`peer-outbound-${c.id}`}>
+                            <span className="text-sm text-content-default">{c.name}</span>
+                            <StatusBadge variant={c.mode === 'DISABLED' ? 'neutral' : 'info'} size="sm">
+                                {t(`peers.outbound.mode.${c.mode}`)}
+                            </StatusBadge>
+                            {!c.isEnabled && (
+                                <StatusBadge variant="warning" size="sm">
+                                    {t('peers.outbound.connectionDisabled')}
+                                </StatusBadge>
+                            )}
+                            <Link
+                                href={`/t/${tenantSlug}/admin/external-write-policy/${c.id}`}
+                                id={`peer-outbound-policy-${c.id}`}
+                                className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+                            >
+                                {t('peers.outbound.policyLink')}
+                            </Link>
+                        </li>
+                    ))}
+                </ul>
+            )}
         </Card>
     );
 }

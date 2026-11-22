@@ -46,6 +46,8 @@ import { recordPeerCardCheck } from '@/lib/observability/integration-metrics';
 import { recentAgentCard, type RecentCardOptions } from '@/lib/agentic/a2a/card-cache';
 import { cardSigningKey } from '@/lib/agentic/a2a/own-card';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { coerceStoredMode, type ExternalWriteMode } from '@/lib/integrations/external-write-ladder';
+import { A2A_PEER_PROVIDER_ID } from '@/app-layer/integrations/providers/a2a-peer-provider';
 
 const RISK_TIERS = ['LOW', 'MODERATE', 'HIGH', 'CRITICAL'] as const;
 const PEER_STATUSES = ['ACTIVE', 'SUSPENDED', 'RETIRED'] as const;
@@ -268,6 +270,30 @@ export async function getPeerAgent(ctx: RequestContext, peerId: string) {
     );
     if (!peer) throw notFound('Peer agent not found');
     return peer;
+}
+
+/**
+ * The outbound connections that send to one peer, with each one's rung on the
+ * external write ladder (#3752). Read so the peer's page can link to the write
+ * policy that governs sending to it: that page is otherwise reached only from
+ * External tools, which lists tool servers and never an A2A connection.
+ * Read-only, under the register key every peer read takes. The rung is
+ * coerced at the read boundary, as `getExternalWritePolicy` coerces it.
+ */
+export async function listPeerOutboundConnections(
+    ctx: RequestContext,
+    peerId: string,
+): Promise<{ id: string; name: string; isEnabled: boolean; mode: ExternalWriteMode }[]> {
+    assertMayManagePeers(ctx);
+    const rows = await runInTenantContext(ctx, (db) =>
+        db.integrationConnection.findMany({
+            where: { tenantId: ctx.tenantId, provider: A2A_PEER_PROVIDER_ID, configJson: { path: ['peerId'], equals: peerId } },
+            select: { id: true, name: true, isEnabled: true, externalWriteMode: true },
+            orderBy: { createdAt: 'asc' },
+            take: 20,
+        }),
+    );
+    return rows.map((r) => ({ id: r.id, name: r.name, isEnabled: r.isEnabled, mode: coerceStoredMode(r.externalWriteMode) }));
 }
 
 export async function updatePeerAgent(ctx: RequestContext, peerId: string, input: z.infer<typeof UpdatePeerAgentSchema>) {
