@@ -275,6 +275,7 @@ function cardPayload(
         riskTier?: string | null;
         dataAccessScope?: PolicyDataScope;
         withheld?: WithheldTool[] | null;
+        permittableExternalTools?: Array<{ name: string; label: string }> | null;
     } = {},
 ) {
     const versions = overrides.versions ?? [V3, V2, V1];
@@ -295,6 +296,7 @@ function cardPayload(
         dataAccessScope: overrides.dataAccessScope ?? ('WRITE_TENANT_DATA' as PolicyDataScope),
         versions,
         withheld: overrides.withheld === undefined ? [] : overrides.withheld,
+        permittableExternalTools: overrides.permittableExternalTools ?? null,
         assessmentRequired: false as const,
     };
 }
@@ -1210,5 +1212,44 @@ describe('every reason a refusal can carry has copy', () => {
         for (const reason of ['MULTI_DIMENSION_WIDEN', 'MULTI_RUNG_WIDEN']) {
             expect(nested('ladderRefusal', reason)).not.toHaveLength(0);
         }
+    });
+});
+
+describe("the agent's granted external tools can be permitted (#3752)", () => {
+    // Until 2026-11-22 the editor offered only the built-in catalogue and the
+    // server refused any other name, so no card could permit an external tool
+    // and no agent with a card could call one (found in the A2A pilot).
+    const SEND = 'mcp__conn-1__a2a_send_task';
+    const SEND_LABEL = 'A2A → Peer (app.example/peer): a2a_send_task';
+    const EGRESS: VersionRow = { ...V3, maxDataScope: 'EXTERNAL_EGRESS' };
+
+    it('lists a granted external tool under its connection label, and a card that can reach it can permit it', () => {
+        renderTab(
+            cardPayload({
+                versions: [EGRESS, V2, V1],
+                dataAccessScope: 'EXTERNAL_EGRESS',
+                permittableExternalTools: [{ name: SEND, label: SEND_LABEL }],
+            }),
+        );
+        openEditor();
+        expect(screen.getByText(SEND_LABEL)).toBeInTheDocument();
+        expect(box(`agent-policy-card-tool-${SEND}`)).toBeEnabled();
+        fireEvent.click(box(`agent-policy-card-tool-${SEND}`));
+        expect(box(`agent-policy-card-tool-${SEND}`)).toBeChecked();
+        expect(box('agent-policy-card-save-btn')).toBeEnabled();
+    });
+
+    it("is not offered while the card's own data ceiling refuses it", () => {
+        renderTab(cardPayload({ permittableExternalTools: [{ name: SEND, label: SEND_LABEL }] }));
+        openEditor();
+        // v3 stops at READ_TENANT_DATA; an external tool reaches EXTERNAL_EGRESS.
+        expect(withholdingReasonForTool(SEND, V3)?.reason).toBe('DATA_SCOPE_ABOVE_CARD');
+        expect(box(`agent-policy-card-tool-${SEND}`)).toBeDisabled();
+    });
+
+    it('offers no external section when the agent holds no external grant', () => {
+        renderTab(cardPayload());
+        openEditor();
+        expect(screen.queryByText(s('externalToolsHeading'))).not.toBeInTheDocument();
     });
 });

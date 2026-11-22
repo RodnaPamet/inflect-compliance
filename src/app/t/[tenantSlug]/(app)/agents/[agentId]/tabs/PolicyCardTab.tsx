@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 // A TYPE import, which is erased — the same allowance `policy-card.ts` makes
 // for the enum it keeps its own ladder in step with. No Prisma VALUE crosses
@@ -52,6 +52,7 @@ import {
     type WithheldTool,
 } from '@/lib/agentic/policy-card-evaluation';
 import { MCP_TOOL_NAMES } from '@/lib/mcp/tool-catalogue';
+import { isExternalToolName } from '@/lib/mcp/external-tool-name';
 
 import type { PolicyCardTabProps } from './types';
 
@@ -196,7 +197,19 @@ interface CardPayload extends AgentCeilings {
      * read. That state has its own error panel.
      */
     withheld: WithheldTool[] | null;
+    /**
+     * The agent's granted EXTERNAL tools (a tool server's tools, A2A sends),
+     * each with its connection's name, which the editor offers beside the
+     * built-in catalogue. NULL for a caller who may not edit the card.
+     */
+    permittableExternalTools?: ExternalToolOption[] | null;
     assessmentRequired: false;
+}
+
+/** One granted external tool the editor can offer. */
+interface ExternalToolOption {
+    name: string;
+    label: string;
 }
 
 type PolicyCardPayload = NoCardPayload | CardPayload;
@@ -500,6 +513,7 @@ export function PolicyCardTab({
                     liveCard={toCardValue(data.card.inForce)}
                     riskTier={data.riskTier}
                     declaredScope={data.dataAccessScope}
+                    externalTools={data.permittableExternalTools ?? []}
                     onSave={save}
                     onClose={() => setEditing(false)}
                 />
@@ -1075,6 +1089,7 @@ function PolicyCardEditor({
     liveVersion,
     riskTier,
     declaredScope,
+    externalTools,
     onSave,
     onClose,
 }: {
@@ -1090,6 +1105,12 @@ function PolicyCardEditor({
      */
     riskTier: AgentRiskTier | null;
     declaredScope: PolicyDataScope;
+    /**
+     * The agent's granted external tools. The build's static catalogue cannot
+     * name them, so without these no card could permit one, and no agent with
+     * a card could call one (#3752).
+     */
+    externalTools: readonly ExternalToolOption[];
     onSave: (expectedVersion: number, card: AgentPolicyCardValue) => Promise<SaveOutcome>;
     onClose: () => void;
 }) {
@@ -1210,10 +1231,23 @@ function PolicyCardEditor({
         [draft],
     );
 
+    // Built-in tools, plus any non-external name the card already permits.
     const catalogue = useMemo(
-        () => Array.from(new Set([...MCP_TOOL_NAMES, ...base.permittedTools])).sort(),
+        () =>
+            Array.from(
+                new Set([...MCP_TOOL_NAMES, ...base.permittedTools.filter((n) => !isExternalToolName(n))]),
+            ).sort(),
         [base.permittedTools],
     );
+    // The agent's granted external tools, plus any the card already permits
+    // whose grant has gone (shown under its bare name so it can be dropped).
+    const externalCatalogue = useMemo<ExternalToolOption[]>(() => {
+        const offered = new Map(externalTools.map((tool) => [tool.name, tool]));
+        for (const name of base.permittedTools) {
+            if (isExternalToolName(name) && !offered.has(name)) offered.set(name, { name, label: name });
+        }
+        return [...offered.values()];
+    }, [externalTools, base.permittedTools]);
 
     const triggersDropped = base.escalationTriggers.filter(
         (rule) => !draft.escalationTriggers.includes(rule),
@@ -1244,6 +1278,35 @@ function PolicyCardEditor({
                 ? [...current.permittedTools, tool]
                 : current.permittedTools.filter((name) => name !== tool),
         }));
+    };
+
+    /**
+     * One tool's checkbox, built-in or external alike. The label WRAPS the
+     * control rather than pointing at it with `htmlFor`: doing both makes a
+     * click on the box itself ambiguous, and the implicit association is what
+     * the radio groups use.
+     */
+    const renderTool = (tool: string, caption: ReactNode) => {
+        const checked = draft.permittedTools.includes(tool);
+        const unreachable = !checked && withholdingReasonForTool(tool, draft) !== null;
+        return (
+            <label
+                key={tool}
+                className="flex cursor-pointer items-center gap-tight text-sm text-content-default"
+            >
+                <Checkbox
+                    id={`agent-policy-card-tool-${tool}`}
+                    size="sm"
+                    checked={checked}
+                    // Any number of tools within the draft's ceilings is one
+                    // rung (#5046). A tool those ceilings refuse is offered to
+                    // nobody: the usecase would reject the whole card by name.
+                    disabled={!checked && (unreachable || widenLockedFor('permittedTools'))}
+                    onCheckedChange={(next) => toggleTool(tool, next === true)}
+                />
+                {caption}
+            </label>
+        );
     };
 
     const toggleTrigger = (rule: PolicyCardRule, next: boolean) => {
@@ -1482,44 +1545,32 @@ function PolicyCardEditor({
                         <p className="text-xs text-content-muted">
                             {t('agentDetail.policyCard.toolsHint')}
                         </p>
-                        {/* The label WRAPS the control rather than pointing at
-                            it with `htmlFor`: doing both makes a click on the
-                            box itself ambiguous, and the implicit association
-                            is what the radio groups above already use. */}
                         <div className="grid gap-tight sm:grid-cols-2">
-                            {catalogue.map((tool) => {
-                                const checked = draft.permittedTools.includes(tool);
-                                const unreachable =
-                                    !checked && withholdingReasonForTool(tool, draft) !== null;
-                                return (
-                                    <label
-                                        key={tool}
-                                        className="flex cursor-pointer items-center gap-tight text-sm text-content-default"
-                                    >
-                                        <Checkbox
-                                            id={`agent-policy-card-tool-${tool}`}
-                                            size="sm"
-                                            checked={checked}
-                                            // Any number of tools within the
-                                            // draft's ceilings is one rung
-                                            // (#5046). A tool those ceilings
-                                            // refuse is offered to nobody: the
-                                            // usecase would reject the whole
-                                            // card by name.
-                                            disabled={
-                                                !checked &&
-                                                (unreachable ||
-                                                    widenLockedFor('permittedTools'))
-                                            }
-                                            onCheckedChange={(next) =>
-                                                toggleTool(tool, next === true)
-                                            }
-                                        />
-                                        <span className="font-mono text-xs">{tool}</span>
-                                    </label>
-                                );
-                            })}
+                            {catalogue.map((tool) => renderTool(tool, <span className="font-mono text-xs">{tool}</span>))}
                         </div>
+                        {externalCatalogue.length > 0 && (
+                            <div className="space-y-tight pt-tight">
+                                <p className="text-xs font-medium text-content-default">
+                                    {t('agentDetail.policyCard.externalToolsHeading')}
+                                </p>
+                                <p className="text-xs text-content-muted">
+                                    {t('agentDetail.policyCard.externalToolsHint')}
+                                </p>
+                                <div className="grid gap-tight">
+                                    {externalCatalogue.map((tool) =>
+                                        renderTool(
+                                            tool.name,
+                                            <span className="flex flex-col">
+                                                <span className="text-xs">{tool.label}</span>
+                                                <span className="font-mono text-xs text-content-muted">
+                                                    {tool.name}
+                                                </span>
+                                            </span>,
+                                        ),
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div className="space-y-tight">

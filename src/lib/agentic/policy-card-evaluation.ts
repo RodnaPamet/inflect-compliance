@@ -40,6 +40,7 @@ import type { AgentDataAccessScope, AgentRiskTier } from '@prisma/client';
 
 import { isKnownMcpTool, mcpToolCapabilityClass } from '@/lib/mcp/tool-catalogue';
 import { baseDataScopeForTool } from '@/lib/mcp/tool-data-scope';
+import { parseExternalToolName } from '@/lib/mcp/external-tool-name';
 
 import { AUTONOMY_REQUIRED_BY_CAPABILITY, DENY_CEILING } from './autonomy-ceiling';
 import { defaultPolicyCardForRiskTier } from './risk-tier-consequences';
@@ -305,7 +306,18 @@ export function withholdingReasonForTool(
     toolName: string,
     ceilings: CardCeilings,
 ): WithheldTool | null {
-    if (!isKnownMcpTool(toolName)) {
+    // An EXTERNAL tool (`mcp__<connectionId>__<tool>`: a tool server's tool or
+    // an A2A send) is in the catalogue of the run that is granted it, not in
+    // this build's static list, and the boundary holds it to the card like any
+    // other (`evaluateCardReach`). Until 2026-11-22 this said NOT_IN_CATALOGUE
+    // for every one of them, so no card could permit one and no agent with a
+    // card could call one (found in the A2A pilot, #3752). It is judged by the
+    // same two ceilings: rung 2, which `external-tools.ts` declares and
+    // `mcpToolCapabilityClass` answers for a name it does not list, and
+    // `EXTERNAL_EGRESS`, which `baseDataScopeForTool` answers for any external
+    // name. Whether THIS agent holds the grant is the card writer's question
+    // (`updateAgentPolicyCard`), not this predicate's.
+    if (!isKnownMcpTool(toolName) && parseExternalToolName(toolName) === null) {
         return {
             toolName,
             reason: 'NOT_IN_CATALOGUE',
