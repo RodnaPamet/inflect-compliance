@@ -3,7 +3,7 @@
 /**
  * Behavioural (Tier-2) test — icon-as-child renders on the SAME ROW.
  *
- * Buttons that pass an icon as a CHILD (e.g. login's brand `<svg>`, or
+ * Buttons that pass an icon as a CHILD (e.g. a brand `<svg>`, or
  * `<Button><Mail/>Invite by email</Button>`) used to stack the icon
  * ABOVE the text: the icon lands in the label div, and Tailwind's
  * preflight makes `svg { display: block }`, so the block svg took its
