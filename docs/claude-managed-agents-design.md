@@ -94,6 +94,13 @@ puts at Anthropic:
   `src/app/api/integrations/webhooks/[provider]/route.ts`. The route reads the
   raw body, resolves the tenant from the `IntegrationConnection` (never from the
   caller) and verifies the signature before it processes anything.
+- **Shape MA-B is offered but has not been exercised.** The connect wizard's
+  Managed Agent tab (Step 3a) shows the Console configuration that points a
+  Console-built agent at `/api/mcp` with a bound key. No Console-built Managed
+  Agent has connected yet: Step 3H recorded its absence (owner decision,
+  2026-11-22), while an Agent SDK program on the same wizard path did connect and
+  was held to its grants (`docs/claude-agent-sdk-design.md`, "Operational
+  evidence", Phase 3).
 - **The tenant purge and DSAR flows reach only Inflect's own database.** No
   provider today holds tenant content that a purge would need to delete
   remotely.
