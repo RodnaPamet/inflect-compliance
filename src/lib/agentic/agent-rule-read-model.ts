@@ -8,13 +8,15 @@
 /** What one scan concluded about the surface as a whole. Never "clean" of a read of nothing. */
 export type AgentRuleOutcome = 'FINDINGS' | 'NO_FINDING_ON_A_COMPLETE_READ' | 'NOTHING_READ' | 'NOT_CONCLUDED';
 
-export interface AgentRuleServerView {
-    /** `mcp:<server URL>`, or `mcp:sha256-<32 hex>`. */
+/** One place the scan read: an MCP server or a code root. */
+export interface AgentRuleOriginView {
+    /** `mcp:<server URL>` or `code:<root label>`, or `<family>:sha256-<32 hex>`. */
     readonly ref: string;
     readonly status: 'COMPLETE' | 'INCOMPLETE';
     /** The contract's reason when INCOMPLETE; null when COMPLETE. */
     readonly reason: string | null;
-    readonly tools: number;
+    /** Subjects read there: tool definitions on a server, skills and scripts under a root. */
+    readonly subjects: number;
 }
 
 /** One open finding the scanner raised, as its latest scan listed it. */
@@ -24,11 +26,12 @@ export interface AgentRuleFindingView {
     readonly ruleId: string;
     /** `HIGH` | `MEDIUM` | `LOW`, the Finding's own (a reported `INFO` is stored `LOW`). */
     readonly severity: string;
-    readonly serverRef: string;
+    /** Where it was read: one of the scan's origins. */
+    readonly originRef: string;
     readonly subjectRef: string;
-    /** `mcp-tool:<subject>#<field>`. */
+    /** `<kind>:<subject>#<field>`: `mcp-tool`, `skill` or `skill-file`. */
     readonly locator: string;
-    /** The field the rule fired on: `description` or `inputSchema`. */
+    /** The field the rule fired on: `description` or `inputSchema` of a tool, `frontMatter` or `instructions` of a skill, `content` of a script. */
     readonly field: string;
 }
 
@@ -49,7 +52,7 @@ export interface AgentRuleSection {
     readonly scannerAgentId: string;
     readonly scannerName: string | null;
     readonly scan: AgentRuleScanView;
-    readonly servers: readonly AgentRuleServerView[];
+    readonly origins: readonly AgentRuleOriginView[];
     /** The scanner's open agent-rule findings, most severe first. */
     readonly findings: readonly AgentRuleFindingView[];
     /** More open findings than the tab lists. */

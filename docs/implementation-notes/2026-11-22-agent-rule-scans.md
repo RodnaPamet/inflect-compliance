@@ -3,10 +3,11 @@
 ## Design
 
 The scanner's third signed report reaches Inflect. scanent's agent scanner runs
-static rules (re-authored from Cisco AI Defense's mcp-scanner and the Agent
-Threat Rules) over each MCP tool definition its `mcp` source reads, and signs
-what fired into `scanent-agent-rules/1`, with the key and scan id of its agent
-report. It posts it to a route of its own with a key of its own.
+static rules (re-authored from Cisco AI Defense's MCP and skill scanners and the
+Agent Threat Rules) over each MCP tool definition its `mcp` source reads and
+each agent skill its `code` source reads (a `SKILL.md` and the scripts beside
+it), and signs what fired into `scanent-agent-rules/1`, with the key and scan id
+of its agent report. It posts it to a route of its own with a key of its own.
 
 ```
 scanner ──POST agent-rule-scans (key: admin:agent_rules_ingest)──▶ route
@@ -19,13 +20,14 @@ scanner ──POST agent-rule-scans (key: admin:agent_rules_ingest)──▶ rou
 
 It is the third-party application ingest's twin, step for step. What differs:
 
-- **What a scan closes.** The report lists each MCP server it read
-  (`servers[]`, COMPLETE or INCOMPLETE, with its tool count), and each finding
-  names its server. A finding is resolved only when the SAME scanner's later
-  scan read that server in full and the rule did not fire again. The server of
-  a stored finding comes from the items of earlier scans: a reference
-  (`agent-rule:<ruleId>@<locator>@<scannerAgentId>`) names one field of one tool
-  on one server, so every item of it carries the same `serverRef`, and a
+- **What a scan closes.** The report lists each origin it read (`origins[]`:
+  an MCP server `mcp:<URL>` or a code root `code:<label>`, COMPLETE or
+  INCOMPLETE, with its subject count), and each finding names its origin. A
+  finding is resolved only when the SAME scanner's later scan read that origin
+  in full and the rule did not fire again. The origin of a stored finding comes
+  from the items of earlier scans: a reference
+  (`agent-rule:<ruleId>@<locator>@<scannerAgentId>`) names one field of one
+  subject at one origin, so every item of it carries the same `originRef`, and a
   `groupBy` over the candidates gives it without a per-finding read.
 - **One finding per rule and field.** A report listing the same one twice
   raises it once; the item's `(tenantId, scanId, sourceRef)` unique holds it.
@@ -61,3 +63,9 @@ It is the third-party application ingest's twin, step for step. What differs:
 - **Built against an unreleased contract.** The package version that carries
   `agent-rules-*` is scanent 0.17.0, held for a patched base image; this
   change merges only once that release exists and `package.json` points at it.
+- **Origins, not servers.** The contract named the closing unit `servers[]`
+  until scanent's skill rules (V4) needed a second family; it was renamed to
+  `origins[]` before 0.17.0 shipped, and this change's columns
+  (`originsJson`, `originRef`) were renamed with it before the migration ran
+  anywhere. A skill finding gets its own title (`CODE_TITLE`) and says to open
+  the skill, not a server.

@@ -1,16 +1,17 @@
 -- Agent-surface rules scans: the ingest of the scanner's third signed report,
 -- `scanent-agent-rules/1` — what static rules found written into the MCP tool
--- definitions a scanner read. Verified by the contract package against the
+-- definitions and the agent skills a scanner read. Verified by the contract package against the
 -- tenant's trusted scanner keys (the keys that sign harness reports), planned
 -- by its planner, and written by `usecases/agent-rule-scans.ts`, the only
 -- writer of these tables:
 --
---   AgentRuleScan      one verified, ingested report, with the servers it read
---   AgentRuleScanItem  one finding in one scan: which server it was read from,
+--   AgentRuleScan      one verified, ingested report, with the origins it read
+--   AgentRuleScanItem  one finding in one scan: which origin it was read from,
 --                      which is how a later scan knows what it may close
 --
--- Identifiers only: rule ids, codes, MCP server and tool references, locators.
--- The report carries no text of a tool's definition, and this ingest keeps none.
+-- Identifiers only: rule ids, codes, MCP server and tool references, code root
+-- labels and skill paths, locators. The report carries no text of a tool's
+-- definition, a skill or a script, and this ingest keeps none.
 --
 -- Both are tenant-scoped and carry the canonical RLS triple. Nothing is
 -- backfilled: there is nothing to backfill.
@@ -29,7 +30,7 @@ CREATE TABLE "AgentRuleScan" (
     "complete" BOOLEAN NOT NULL,
     "outcome" TEXT NOT NULL,
     "populationJson" JSONB NOT NULL,
-    "serversJson" JSONB NOT NULL,
+    "originsJson" JSONB NOT NULL,
     "subjects" INTEGER NOT NULL,
     "flagged" INTEGER NOT NULL,
     "findingCount" INTEGER NOT NULL,
@@ -44,7 +45,7 @@ CREATE TABLE "AgentRuleScanItem" (
     "tenantId" TEXT NOT NULL,
     "scanId" TEXT NOT NULL,
     "sourceRef" TEXT NOT NULL,
-    "serverRef" TEXT NOT NULL,
+    "originRef" TEXT NOT NULL,
     "code" TEXT NOT NULL,
     "ruleId" TEXT NOT NULL,
     "severity" TEXT NOT NULL,

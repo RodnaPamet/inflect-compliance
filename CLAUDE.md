@@ -2068,8 +2068,9 @@ are easy to undo:
 
 **The agent-surface rules ingest** (`usecases/agent-rule-scans.ts`) is the
 same ingest for the scanner's third signed report, `scanent-agent-rules/1`:
-what static rules (re-authored from Cisco AI Defense's mcp-scanner and the
-Agent Threat Rules) found written into the MCP tool definitions a scanner read.
+what static rules (re-authored from Cisco AI Defense's MCP and skill scanners
+and the Agent Threat Rules) found written into the MCP tool definitions and the
+agent skills (each `SKILL.md` and the scripts beside it) a scanner read.
 It is the only writer of `AgentRuleScan` and `AgentRuleScanItem` (the
 single-write-seam guard holds them); its results are the Agent surface tab on
 `/agents/reports` (`getAgentRuleInventory`). Rules that are easy to undo:
@@ -2077,22 +2078,25 @@ single-write-seam guard holds them); its results are the Agent surface tab on
 - **Its own key, `admin.agent_rules_ingest`** (scope `admin:agent_rules_ingest`;
   owner decision 3 of `scanent`'s agent-surface rules design), held and
   classified exactly as `integrations_ingest`, side-door list included.
-- **A finding closes only on positive evidence about its SERVER** (owner
-  decision, 2026-11-22): a later scan by the SAME scanner read that finding's
-  MCP server in full (`serversReadInFull`) and the rule did not fire again. A
-  server absent from a scan or read in part closes nothing. The server of a
-  stored finding is read from `AgentRuleScanItem.serverRef` (one reference names
-  one tool's field on one server, so every item of it names the same server),
-  and the finding's reference ends `@<scannerAgentId>`, so one scanner never
-  closes another's. Do not "simplify" to closing on any complete scan: a tool
-  nobody read is not concluded clean.
+- **A finding closes only on positive evidence about its ORIGIN** (owner
+  decision, 2026-11-22): a later scan by the SAME scanner read the place it was
+  found — an MCP server (`mcp:<URL>`) or a code root (`code:<label>`) — in full
+  (`originsReadInFull`) and the rule did not fire again. An origin absent from a
+  scan or read in part closes nothing. The origin of a stored finding is read
+  from `AgentRuleScanItem.originRef` (one reference names one field of one
+  subject at one origin, so every item of it names the same origin), and the
+  finding's reference ends `@<scannerAgentId>`, so one scanner never closes
+  another's. Do not "simplify" to closing on any complete scan: a tool or a
+  skill nobody read is not concluded clean.
 - **Zero is never clean.** The planner's `NOTHING_READ` (a complete read of no
-  tool) is stored as the scan's `outcome` and shown as an alert, never as
-  "no rule fired".
+  tool and no skill) is stored as the scan's `outcome` and shown as an alert,
+  never as "no rule fired".
 - **A finding is a suggestion, and carries no text.** It is an `OBSERVATION`,
   its severity is the report's (at most HIGH; `INFO` stored `LOW`, which
   `FindingSeverity` has), and its title and description are built from the code
-  table and identifiers alone: the report carries no text of a definition.
+  table and identifiers alone: the report carries no text of a definition, a
+  skill or a script. A new contract code needs a title in `CODE_TITLE`, or the
+  usecase does not compile.
 
 **The stale-estate alert** (`usecases/agent-harness-estate-staleness.ts`, a
 daily job since #3741) judges each estate with `computeEstateHealth` and nothing

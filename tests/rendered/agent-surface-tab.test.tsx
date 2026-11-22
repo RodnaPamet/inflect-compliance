@@ -8,7 +8,7 @@
  *      an alert; a read in part says its reason; "no rule fired" appears only
  *      for a complete read that held tools.
  *   3. THE FINDINGS SAY WHERE, NEVER WHAT. Each open finding shows its code,
- *      rule, tool and field, beside the servers the scan read; there is no
+ *      rule, tool and field, beside the origins the scan read; there is no
  *      text of a definition to show.
  *
  * Every absence is asserted beside something present from the same render.
@@ -84,9 +84,9 @@ function section(over: Partial<AgentRuleSection> = {}, scan: Partial<AgentRuleSe
             incompleteReason: null,
             ...scan,
         },
-        servers: [
-            { ref: CRM, status: 'COMPLETE', reason: null, tools: 3 },
-            { ref: TICKETS, status: 'COMPLETE', reason: null, tools: 1 },
+        origins: [
+            { ref: CRM, status: 'COMPLETE', reason: null, subjects: 3 },
+            { ref: TICKETS, status: 'COMPLETE', reason: null, subjects: 1 },
         ],
         findings: [
             {
@@ -94,7 +94,7 @@ function section(over: Partial<AgentRuleSection> = {}, scan: Partial<AgentRuleSe
                 code: 'MCP_PROMPT_INJECTION',
                 ruleId: 'cisco-mcp:instruction-override',
                 severity: 'HIGH',
-                serverRef: CRM,
+                originRef: CRM,
                 subjectRef: `${CRM}:tool:lookup_account`,
                 locator: `mcp-tool:${CRM}:tool:lookup_account#description`,
                 field: 'description',
@@ -131,7 +131,7 @@ describe('2. clean is said only of a complete read of something', () => {
     });
 
     it('a read of nothing is an alert, never clean', () => {
-        render(<AgentSurfaceTab view={view({ sections: [section({ servers: [], findings: [] }, { outcome: 'NOTHING_READ', subjects: 0, flagged: 0, findingCount: 0 })] })} />);
+        render(<AgentSurfaceTab view={view({ sections: [section({ origins: [], findings: [] }, { outcome: 'NOTHING_READ', subjects: 0, flagged: 0, findingCount: 0 })] })} />);
         expect(screen.getByTestId('agent-surface-state-scan-1')).toHaveTextContent('Nothing was read');
         expect(screen.getByTestId('agent-surface-nothing-read-scan-1')).toBeInTheDocument();
         expect(screen.queryByText('No rule fired on a complete read')).not.toBeInTheDocument();
@@ -143,7 +143,7 @@ describe('2. clean is said only of a complete read of something', () => {
                 view={view({
                     sections: [
                         section(
-                            { servers: [{ ref: CRM, status: 'INCOMPLETE', reason: 'AUTH_FAILED', tools: 0 }], findings: [] },
+                            { origins: [{ ref: CRM, status: 'INCOMPLETE', reason: 'AUTH_FAILED', subjects: 0 }], findings: [] },
                             { outcome: 'NOT_CONCLUDED', complete: false, incompleteReason: 'AUTH_FAILED', flagged: 0, findingCount: 0 },
                         ),
                     ],
@@ -152,19 +152,54 @@ describe('2. clean is said only of a complete read of something', () => {
         );
         expect(screen.getByTestId('agent-surface-state-scan-1')).toHaveTextContent('Not concluded');
         expect(screen.getByTestId('agent-surface-incomplete-scan-1')).toBeInTheDocument();
-        expect(screen.getByTestId(`agent-surface-server-${CRM}`)).toHaveTextContent('read in part');
+        expect(screen.getByTestId(`agent-surface-origin-${CRM}`)).toHaveTextContent('read in part');
     });
 });
 
 describe('3. the findings say where, never what', () => {
-    it('shows the code, rule, tool and field of each open finding, beside the servers read', () => {
+    it('shows the code, rule, tool and field of each open finding, beside the origins read', () => {
         render(<AgentSurfaceTab view={view()} />);
         const table = screen.getByTestId('agent-surface-findings-scan-1');
         expect(within(table).getByText('Possible prompt injection')).toBeInTheDocument();
         expect(within(table).getByText('cisco-mcp:instruction-override')).toBeInTheDocument();
         expect(screen.getByTestId('agent-surface-where-f1')).toHaveTextContent(`${CRM}:tool:lookup_account`);
         expect(screen.getByTestId('agent-surface-where-f1')).toHaveTextContent('description');
-        expect(screen.getByTestId(`agent-surface-server-${TICKETS}`)).toHaveTextContent('read in full');
+        expect(screen.getByTestId(`agent-surface-origin-${TICKETS}`)).toHaveTextContent('read in full');
         expect(screen.queryByTestId('agent-surface-no-open-scan-1')).not.toBeInTheDocument();
+    });
+});
+
+describe('4. a skill read from a code folder', () => {
+    it('names the code folder as a place read, and the skill finding by its own code', () => {
+        const REPO = 'code:support-repo';
+        const skill = `${REPO}/skills/report/SKILL.md`;
+        render(
+            <AgentSurfaceTab
+                view={view({
+                    sections: [
+                        section({
+                            origins: [{ ref: REPO, status: 'COMPLETE', reason: null, subjects: 2 }],
+                            findings: [
+                                {
+                                    findingId: 'f2',
+                                    code: 'SKILL_PROMPT_INJECTION',
+                                    ruleId: 'cisco-skill:ignore-instructions',
+                                    severity: 'HIGH',
+                                    originRef: REPO,
+                                    subjectRef: skill,
+                                    locator: `skill:${skill}#instructions`,
+                                    field: 'instructions',
+                                },
+                            ],
+                        }),
+                    ],
+                })}
+            />,
+        );
+        expect(screen.getByTestId(`agent-surface-origin-${REPO}`)).toHaveTextContent('code folder, read in full');
+        const table = screen.getByTestId('agent-surface-findings-scan-1');
+        expect(within(table).getByText('Possible prompt injection in a skill')).toBeInTheDocument();
+        expect(screen.getByTestId('agent-surface-where-f2')).toHaveTextContent(skill);
+        expect(screen.getByTestId('agent-surface-where-f2')).toHaveTextContent('instructions');
     });
 });

@@ -20,7 +20,7 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { createFakeScanner, validV3ReportBody, type FakeScanner } from '../helpers/agent-harness-fake-scanner';
-import { agentRulesBody, complete, CRM, partial, ruleFinding, TICKETS } from '../helpers/agent-rule-fake-report';
+import { agentRulesBody, complete, CRM, partial, REPO, ruleFinding, skillFinding, TICKETS } from '../helpers/agent-rule-fake-report';
 import { createRegisteredAgent } from '@/app-layer/usecases/agent-registry';
 import { addHarnessScannerKey } from '@/app-layer/usecases/agent-harness-scanner-keys';
 import {
@@ -160,7 +160,7 @@ describe('2. a verified report is stored as planned, and a replay is a conflict'
         const scan = await prisma.agentRuleScan.findFirstOrThrow({ where: { tenantId: T1, scanRef: 'scan-1' } });
         const { id: _id, createdAt: _c, ...copy } = scan;
         await expect(
-            prisma.agentRuleScan.create({ data: { ...copy, populationJson: copy.populationJson as object, serversJson: copy.serversJson as object } }),
+            prisma.agentRuleScan.create({ data: { ...copy, populationJson: copy.populationJson as object, originsJson: copy.originsJson as object } }),
         ).rejects.toThrow();
     });
 });
@@ -173,6 +173,20 @@ describe('3. what a scan closes', () => {
         expect(fully.findingsResolved).toBe(1);
         const finding = await prisma.finding.findFirstOrThrow({ where: { tenantId: T1, sourceKind: AGENT_RULE_FINDING_SOURCE_KIND } });
         expect(finding.status).toBe('CLOSED');
+    });
+
+    it('a skill finding is stored against its code root, and only that root read in full closes it', async () => {
+        const scanner = seeded[T1].scannerAgentId;
+        const skill = skillFinding(REPO, 'skills/report/SKILL.md');
+        await ingest(T1, agentRulesBody(scanner, 'scan-4', [complete(CRM, 3), complete(REPO, 2)], [skill]));
+        const item = await prisma.agentRuleScanItem.findFirstOrThrow({ where: { tenantId: T1, locator: skill.locator } });
+        expect(item.originRef).toBe(REPO);
+        const onlyServer = await ingest(T1, agentRulesBody(scanner, 'scan-5', [complete(CRM, 3)], []));
+        expect(onlyServer.findingsResolved).toBe(0);
+        const root = await ingest(T1, agentRulesBody(scanner, 'scan-6', [complete(CRM, 3), complete(REPO, 2)], []));
+        expect(root.findingsResolved).toBe(1);
+        const finding = await prisma.finding.findFirstOrThrow({ where: { tenantId: T1, sourceRef: { startsWith: 'agent-rule:cisco-skill:' } } });
+        expect(finding).toMatchObject({ status: 'CLOSED', title: 'Possible prompt injection in an agent skill' });
     });
 });
 
@@ -219,7 +233,7 @@ describe('5. RLS on both tables', () => {
                         tenantId: T1,
                         scanId: scan.id,
                         sourceRef: 'agent-rule:x@y@z',
-                        serverRef: CRM,
+                        originRef: CRM,
                         code: 'MCP_PROMPT_INJECTION',
                         ruleId: 'cisco-mcp:instruction-override',
                         severity: 'HIGH',

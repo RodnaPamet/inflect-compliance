@@ -5,7 +5,7 @@
  *   1. EACH REFUSAL WRITES NOTHING: the key, an untrusted signer, a tampered
  *      body, another contract's report, a secret, a scanner that names another
  *      agent, a credential bound to another agent, a replay.
- *   2. THE PLAN BECOMES THE ROWS: one scan with its servers and outcome, one
+ *   2. THE PLAN BECOMES THE ROWS: one scan with its origins and outcome, one
  *      item per finding, and one OBSERVATION finding per rule and field, with
  *      no text of the definition.
  *   3. WHAT A SCAN CLOSES (owner decision, 2026-11-22): a finding closes only
@@ -13,7 +13,7 @@
  *      fire again. A server read in part, a server absent from the scan, and
  *      another scanner's scan close nothing; a closed finding raised again is
  *      reopened.
- *   4. THE TAB'S READ: the latest scan per scanner, its servers, and the
+ *   4. THE TAB'S READ: the latest scan per scanner, its origins, and the
  *      scanner's open findings; a read of nothing is NOTHING_READ, never clean.
  *
  * The real database, RLS and the replay's unique index are the integration
@@ -44,7 +44,7 @@ import { agentRuleFindingRef } from '@rodnapamet/scanent-contract/agent-rules-fi
 import { makeRequestContext } from '../helpers/make-context';
 import { createFakeScanner, validV3ReportBody } from '../helpers/agent-harness-fake-scanner';
 import { integrationsBody } from '../helpers/third-party-app-fake-report';
-import { agentRulesBody, complete, CRM, partial, ruleFinding, TICKETS } from '../helpers/agent-rule-fake-report';
+import { agentRulesBody, complete, CRM, partial, REPO, ruleFinding, skillFinding, TICKETS } from '../helpers/agent-rule-fake-report';
 
 // ─── A store just wide enough for the usecase ──────────────────────────────
 
@@ -199,13 +199,13 @@ describe('1. each refusal writes nothing', () => {
 });
 
 describe('2. the plan becomes the rows', () => {
-    it('one scan with its servers and outcome, one item and one OBSERVATION per rule and field, no text', async () => {
+    it('one scan with its origins and outcome, one item and one OBSERVATION per rule and field, no text', async () => {
         const f = ruleFinding(CRM, 'lookup_account');
         const result = await ingest(agentRulesBody(SCANNER, 's1', [complete(CRM, 3), complete(TICKETS, 1)], [f]));
         expect(result).toMatchObject({ scanRef: 's1', complete: true, findingCount: 1, findingsOpened: 1, findingsReopened: 0, findingsResolved: 0 });
         expect(store.tables.scans[0]).toMatchObject({ outcome: 'FINDINGS', subjects: 4, flagged: 1, findingCount: 1, complete: true });
-        expect(store.tables.scans[0].serversJson).toEqual([complete(CRM, 3), complete(TICKETS, 1)]);
-        expect(store.tables.items).toEqual([expect.objectContaining({ sourceRef: refOf(f), serverRef: CRM, code: 'MCP_PROMPT_INJECTION', locator: f.locator })]);
+        expect(store.tables.scans[0].originsJson).toEqual([complete(CRM, 3), complete(TICKETS, 1)]);
+        expect(store.tables.items).toEqual([expect.objectContaining({ sourceRef: refOf(f), originRef: CRM, code: 'MCP_PROMPT_INJECTION', locator: f.locator })]);
         const finding = store.tables.findings[0];
         expect(finding).toMatchObject({ sourceKind: AGENT_RULE_FINDING_SOURCE_KIND, sourceRef: refOf(f), type: 'OBSERVATION', severity: 'HIGH', status: 'OPEN' });
         expect(finding.title).toBe('Possible prompt injection in an MCP tool definition');
@@ -262,6 +262,30 @@ describe('3. what a scan closes', () => {
         expect(statusOf(refOf(f))).toBe('OPEN');
     });
 
+    it('a skill finding closes only on its own code root read in full, never on an MCP-only scan', async () => {
+        const skill = skillFinding(REPO, 'skills/report/SKILL.md');
+        await ingest(agentRulesBody(SCANNER, 's1', [complete(CRM, 3), complete(REPO, 2)], [skill]));
+        expect(statusOf(refOf(skill))).toBe('OPEN');
+        // A scan that read the server but not the root says nothing about the skill.
+        expect((await ingest(agentRulesBody(SCANNER, 's2', [complete(CRM, 3)], []))).findingsResolved).toBe(0);
+        // The root read in part closes nothing either.
+        expect((await ingest(agentRulesBody(SCANNER, 's3', [complete(CRM, 3), partial(REPO, 1, 'TIME_BOX')], []))).findingsResolved).toBe(0);
+        expect(statusOf(refOf(skill))).toBe('OPEN');
+        // The root read in full, with the rule silent: closed.
+        expect((await ingest(agentRulesBody(SCANNER, 's4', [complete(CRM, 3), complete(REPO, 2)], []))).findingsResolved).toBe(1);
+        expect(statusOf(refOf(skill))).toBe('CLOSED');
+    });
+
+    it('a skill finding is titled for a skill, and says to open the skill', async () => {
+        const skill = skillFinding(REPO, 'skills/report/SKILL.md');
+        await ingest(agentRulesBody(SCANNER, 's1', [complete(REPO, 2)], [skill]));
+        const finding = store.tables.findings.find((x) => x.sourceRef === refOf(skill));
+        expect(finding?.title).toBe('Possible prompt injection in an agent skill');
+        expect(finding?.description).toContain("open the skill's SKILL.md");
+        expect(finding?.description).toContain(`read from ${REPO}`);
+        expect(store.tables.items).toEqual([expect.objectContaining({ originRef: REPO, locator: skill.locator })]);
+    });
+
     it('the same rule on the same field, listed twice, is one finding and one item', async () => {
         const result = await ingest(agentRulesBody(SCANNER, 's1', [complete(CRM, 3)], [f, f]));
         expect(result.findingCount).toBe(1);
@@ -271,7 +295,7 @@ describe('3. what a scan closes', () => {
 });
 
 describe('4. the tab\'s read', () => {
-    it('each scanner\'s latest scan, its servers, and its open findings; a scanner with a key and no scan is named', async () => {
+    it('each scanner\'s latest scan, its origins, and its open findings; a scanner with a key and no scan is named', async () => {
         trust(OTHER, otherScanner.publicKeyHex);
         const f = ruleFinding(CRM, 'lookup_account');
         const g = ruleFinding(TICKETS, 'close_ticket', { code: 'MCP_TOOL_POISONING', ruleId: 'cisco-mcp:also-does', severity: 'MEDIUM' });
@@ -280,9 +304,9 @@ describe('4. the tab\'s read', () => {
         expect(view.sections).toHaveLength(1);
         const [section] = view.sections;
         expect(section.scan).toMatchObject({ scanRef: 's1', outcome: 'FINDINGS', complete: true, subjects: 4 });
-        expect(section.servers).toEqual([
-            { ref: CRM, status: 'COMPLETE', reason: null, tools: 3 },
-            { ref: TICKETS, status: 'COMPLETE', reason: null, tools: 1 },
+        expect(section.origins).toEqual([
+            { ref: CRM, status: 'COMPLETE', reason: null, subjects: 3 },
+            { ref: TICKETS, status: 'COMPLETE', reason: null, subjects: 1 },
         ]);
         expect(section.findings.map((x) => [x.severity, x.code, x.field])).toEqual([
             ['HIGH', 'MCP_PROMPT_INJECTION', 'description'],

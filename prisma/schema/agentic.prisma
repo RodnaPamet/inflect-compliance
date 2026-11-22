@@ -2977,8 +2977,9 @@ model AgentRuleScan {
   outcome             String
   /// `[{ kind, status, reason?, subjects }]`, as reported.
   populationJson      Json
-  /// `[{ ref, status, reason?, tools }]`, each MCP server read, as reported.
-  serversJson         Json
+  /// `[{ ref, status, reason?, subjects }]`, each origin read — an MCP server or
+  /// a code root — as reported.
+  originsJson         Json
   subjects            Int
   flagged             Int
   findingCount        Int
@@ -2996,23 +2997,24 @@ model AgentRuleScan {
   @@index([tenantId, scannerKeyId])
 }
 
-/// One finding in one scan, as the planner listed it. `serverRef` is what a
+/// One finding in one scan, as the planner listed it. `originRef` is what a
 /// later scan reads to decide whether it may close the finding: only a scan by
-/// the same scanner that read that server in full may.
+/// the same scanner that read that origin in full may.
 model AgentRuleScanItem {
   id         String   @id @default(cuid())
   tenantId   String
   scanId     String
   /// The Finding's `sourceRef`: `agent-rule:<ruleId>@<locator>@<scannerAgentId>`.
   sourceRef  String
-  /// `mcp:<server URL>`, or `mcp:sha256-<32 hex>`.
-  serverRef  String
+  /// Where the subject was read: `mcp:<server URL>` or `code:<root label>`, or
+  /// `<family>:sha256-<32 hex>`.
+  originRef  String
   code       String
   ruleId     String
   /// `INFO` | `LOW` | `MEDIUM` | `HIGH`, as reported; never CRITICAL.
   severity   String
   subjectRef String
-  /// `mcp-tool:<subject>#<field>`, never the text.
+  /// `<kind>:<subject>#<field>` (`mcp-tool`, `skill`, `skill-file`), never the text.
   locator    String
   createdAt  DateTime @default(now())
 

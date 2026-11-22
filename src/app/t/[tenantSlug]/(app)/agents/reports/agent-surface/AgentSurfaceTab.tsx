@@ -2,19 +2,19 @@
 
 /**
  * THE AGENT SURFACE TAB on `/agents/reports` — what static rules found written
- * into the MCP tool definitions each trusted scanner read, as its latest
+ * into the MCP tool definitions and the agent skills each trusted scanner read, as its latest
  * `scanent-agent-rules/1` report and the open findings it raised say.
  *
  * READ-ONLY. The findings are raised and closed by the ingest and live in the
- * findings register; this tab shows them beside the server and tool they are
+ * findings register; this tab shows them beside the place and subject they are
  * about, and changes nothing. A finding is a suggestion a person confirms: the
- * scanner kept no text of the definition, so the tab shows where the rule
- * fired, never what it read.
+ * scanner kept no text, so the tab shows where the rule fired, never what it
+ * read.
  *
- * ZERO IS NEVER COMPLETE. No scan, a read of no tool definition, a read in
- * part and a trusted scanner that has sent no such report are each a stated
- * condition, never an empty state; "no rule fired" is said only of a complete
- * read that held at least one tool (`agentRuleScanState`).
+ * ZERO IS NEVER COMPLETE. No scan, a read of no tool definition and no skill,
+ * a read in part and a trusted scanner that has sent no such report are each a
+ * stated condition, never an empty state; "no rule fired" is said only of a
+ * complete read that held at least one subject (`agentRuleScanState`).
  *
  * Everything arrives as plain data from `getAgentRuleInventory`. The contract's
  * modules require `crypto`, so none of them is imported here.
@@ -122,23 +122,26 @@ function AgentSurfaceSection({ section }: { section: AgentRuleSection }) {
                 </InlineNotice>
             )}
             <div>
-                <Heading level={3}>{t('reports.agentSurface.serversHeading')}</Heading>
-                {section.servers.length === 0 ? (
-                    <p className="text-sm text-content-warning">{t('reports.agentSurface.noServers')}</p>
+                <Heading level={3}>{t('reports.agentSurface.originsHeading')}</Heading>
+                {section.origins.length === 0 ? (
+                    <p className="text-sm text-content-warning">{t('reports.agentSurface.noOrigins')}</p>
                 ) : (
                     <ul className="space-y-tight text-xs">
-                        {section.servers.map((s) => (
-                            <li
-                                key={s.ref}
-                                className={s.status === 'INCOMPLETE' ? 'text-content-warning' : undefined}
-                                data-testid={`agent-surface-server-${s.ref}`}
-                            >
-                                <span className="font-mono break-all">{s.ref}</span>{' '}
-                                {s.status === 'COMPLETE'
-                                    ? t('reports.agentSurface.serverComplete', { tools: s.tools })
-                                    : t('reports.agentSurface.serverIncomplete', { tools: s.tools, reason: reasonText(t, s.reason) })}
-                            </li>
-                        ))}
+                        {section.origins.map((o) => {
+                            const kind = t(`reports.agentSurface.originKind.${o.ref.startsWith('code:') ? 'code' : 'mcp'}`);
+                            return (
+                                <li
+                                    key={o.ref}
+                                    className={o.status === 'INCOMPLETE' ? 'text-content-warning' : undefined}
+                                    data-testid={`agent-surface-origin-${o.ref}`}
+                                >
+                                    <span className="font-mono break-all">{o.ref}</span>{' '}
+                                    {o.status === 'COMPLETE'
+                                        ? t('reports.agentSurface.originComplete', { kind, subjects: o.subjects })
+                                        : t('reports.agentSurface.originIncomplete', { kind, subjects: o.subjects, reason: reasonText(t, o.reason) })}
+                                </li>
+                            );
+                        })}
                     </ul>
                 )}
             </div>

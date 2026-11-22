@@ -3,10 +3,10 @@
  * AgentRuleScanItem.
  *
  * A scanner posts its third signed report, `scanent-agent-rules/1`: what static
- * rules (re-authored from Cisco AI Defense's mcp-scanner and the Agent Threat
- * Rules) found written into the MCP tool definitions it read — tool poisoning,
- * prompt injection, an executable payload, an instruction to send data away or
- * to take credentials. The shape is the third-party application ingest's
+ * rules (re-authored from Cisco AI Defense's MCP and skill scanners and the
+ * Agent Threat Rules) found written into the MCP tool definitions and the agent
+ * skills it read — tool poisoning, prompt injection, an executable payload, an
+ * instruction to send data away or to take credentials. The shape is the third-party application ingest's
  * (`third-party-app-scans.ts`), step for step:
  *
  *   1. reads the scanner keys the tenant trusts (unrevoked rows only) — the
@@ -27,12 +27,12 @@
  *
  * A finding is created when the plan raises it and none is open, and REOPENED
  * when the plan raises one that was closed. It is RESOLVED only on positive
- * evidence about its SERVER (owner decision, 2026-11-22): a later scan by the
- * SAME scanner read that finding's MCP server in full (`serversReadInFull`)
- * and did not raise it again. A server absent from a scan, or read in part,
- * closes nothing — a tool that was not read is not concluded clean. The
- * server of a stored finding is read from the items of earlier scans
- * (`AgentRuleScanItem.serverRef`); the finding's reference carries the
+ * evidence about its ORIGIN (owner decision, 2026-11-22): a later scan by the
+ * SAME scanner read the place it was found — an MCP server, a code root — in
+ * full (`originsReadInFull`) and did not raise it again. An origin absent from
+ * a scan, or read in part, closes nothing — a tool or a skill that was not read
+ * is not concluded clean. The origin of a stored finding is read from the items
+ * of earlier scans (`AgentRuleScanItem.originRef`); the finding's reference carries the
  * scanner's id (`…@<scannerAgentId>`), so one scanner's read never closes
  * another's finding.
  *
@@ -52,7 +52,7 @@ import {
     type AgentRuleFindingCode,
     type AgentRulesReportBody,
 } from '@rodnapamet/scanent-contract/agent-rules-contract';
-import { planAgentRulesScan, serversReadInFull, type PlannedAgentRuleFinding } from '@rodnapamet/scanent-contract/agent-rules-findings';
+import { originsReadInFull, planAgentRulesScan, type PlannedAgentRuleFinding } from '@rodnapamet/scanent-contract/agent-rules-findings';
 import type { Prisma } from '@prisma/client';
 
 import type { RequestContext } from '../types';
@@ -72,7 +72,7 @@ import type {
     AgentRuleInventoryView,
     AgentRuleOutcome,
     AgentRuleSection,
-    AgentRuleServerView,
+    AgentRuleOriginView,
 } from '@/lib/agentic/agent-rule-read-model';
 
 /** `Finding.sourceKind` of every finding this ingest writes. */
@@ -112,6 +112,19 @@ const CODE_TITLE: Readonly<Record<AgentRuleFindingCode, string>> = {
     MCP_COMMAND_INJECTION: 'Possible executable payload in an MCP tool definition',
     MCP_DATA_EXFILTRATION: 'Possible data exfiltration instruction in an MCP tool definition',
     MCP_CREDENTIAL_HARVESTING: 'Possible credential harvesting in an MCP tool definition',
+    SKILL_PROMPT_INJECTION: 'Possible prompt injection in an agent skill',
+    SKILL_COMMAND_INJECTION: 'Possible executable payload in an agent skill',
+    SKILL_DATA_EXFILTRATION: 'Possible data exfiltration in an agent skill',
+    SKILL_CREDENTIAL_HARVESTING: 'Possible credential harvesting in an agent skill',
+    SKILL_EXCESSIVE_PERMISSION: 'Possible excessive permission in an agent skill',
+    SKILL_IMPERSONATION: 'Possible impersonation in an agent skill',
+};
+
+/** Where a person opens the subject to judge a finding, by the subject's kind. */
+const WHERE_TO_JUDGE: Readonly<Record<PlannedAgentRuleFinding['subjectKind'], string>> = {
+    'mcp-tool': "open the tool's definition on its server",
+    skill: "open the skill's SKILL.md",
+    'skill-file': 'open the script in the skill',
 };
 
 const SEVERITY_ORDER: Readonly<Record<string, number>> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
@@ -225,8 +238,8 @@ function plannedWrite(f: PlannedAgentRuleFinding, scannerAgentId: string): Plann
         title: CODE_TITLE[f.code],
         description:
             `The rule ${f.ruleId} fired on the ${fieldOf(f.locator)} of ${f.subjectKindTitle.toLowerCase()} ${f.subjectRef}, `
-            + `read from ${f.serverRef}. A rule match is a suggestion for a person to confirm, not proof: open the tool's `
-            + 'definition on its server and judge it. The scanner kept no text of the definition.',
+            + `read from ${f.originRef}. A rule match is a suggestion for a person to confirm, not proof: `
+            + `${WHERE_TO_JUDGE[f.subjectKind]} and judge it. The scanner kept no text of it.`,
     };
 }
 
@@ -270,7 +283,7 @@ async function record(
             complete,
             outcome: plan.outcome,
             populationJson: body.population as unknown as Prisma.InputJsonValue,
-            serversJson: body.servers as unknown as Prisma.InputJsonValue,
+            originsJson: body.origins as unknown as Prisma.InputJsonValue,
             subjects: plan.subjects,
             flagged: plan.flagged,
             findingCount: assert.length,
@@ -284,7 +297,7 @@ async function record(
                 tenantId: ctx.tenantId,
                 scanId: scan.id,
                 sourceRef,
-                serverRef: f.serverRef,
+                originRef: f.originRef,
                 code: f.code,
                 ruleId: f.ruleId,
                 severity: f.severity,
@@ -294,8 +307,8 @@ async function record(
         });
     }
 
-    // ── What this scan may close: this scanner's open findings on a server it read in full ──
-    const readInFull = serversReadInFull(body);
+    // ── What this scan may close: this scanner's open findings from an origin it read in full ──
+    const readInFull = originsReadInFull(body);
     const asserted = new Set(assert.map((f) => f.sourceRef));
     const resolve: string[] = [];
     if (readInFull.size > 0) {
@@ -313,12 +326,12 @@ async function record(
         });
         const candidates = [...new Set(open.map((f) => f.sourceRef).filter((r): r is string => r !== null && !asserted.has(r)))];
         if (candidates.length > 0) {
-            // A reference names one tool's field on one server, so every item of it names the same server.
-            const servers = await db.agentRuleScanItem.groupBy({
-                by: ['sourceRef', 'serverRef'],
+            // A reference names one field of one subject at one origin, so every item of it names the same origin.
+            const origins = await db.agentRuleScanItem.groupBy({
+                by: ['sourceRef', 'originRef'],
                 where: { tenantId: ctx.tenantId, sourceRef: { in: candidates } },
             });
-            for (const s of servers) if (readInFull.has(s.serverRef)) resolve.push(s.sourceRef);
+            for (const o of origins) if (readInFull.has(o.originRef)) resolve.push(o.sourceRef);
         }
     }
 
@@ -340,8 +353,8 @@ async function record(
                 outcome: plan.outcome,
                 subjects: plan.subjects,
                 flagged: plan.flagged,
-                serverCount: body.servers.length,
-                serversReadInFull: readInFull.size,
+                originCount: body.origins.length,
+                originsReadInFull: readInFull.size,
                 findingCount: assert.length,
                 reportDigest: scan.reportDigest,
                 findingsOpened: counts.findingsOpened,
@@ -448,7 +461,7 @@ async function reconcileFindings(
                 status: 'CLOSED',
                 verifiedAt: now,
                 verificationNotes: sanitizePlainText(
-                    `Resolved by agent-surface rules scan ${scan.scanRef}: the same scanner read the tool's server in full and the rule did not fire again`,
+                    `Resolved by agent-surface rules scan ${scan.scanRef}: the same scanner read the place it was found in full and the rule did not fire again`,
                 ),
             },
         });
@@ -492,7 +505,7 @@ export async function listAgentRuleScans(ctx: RequestContext, opts: { take?: num
                 subjects: true,
                 flagged: true,
                 findingCount: true,
-                serversJson: true,
+                originsJson: true,
                 createdAt: true,
             },
         }),
@@ -501,14 +514,14 @@ export async function listAgentRuleScans(ctx: RequestContext, opts: { take?: num
 
 // ─── The inventory read ─────────────────────────────────────────────────────
 
-function serversOf(json: unknown): AgentRuleServerView[] {
+function originsOf(json: unknown): AgentRuleOriginView[] {
     if (!Array.isArray(json)) return [];
-    const out: AgentRuleServerView[] = [];
-    for (const s of json) {
-        if (!s || typeof s !== 'object') continue;
-        const { ref, status, reason, tools } = s as Record<string, unknown>;
-        if (typeof ref !== 'string' || (status !== 'COMPLETE' && status !== 'INCOMPLETE') || typeof tools !== 'number') continue;
-        out.push({ ref, status, reason: typeof reason === 'string' ? reason : null, tools });
+    const out: AgentRuleOriginView[] = [];
+    for (const o of json) {
+        if (!o || typeof o !== 'object') continue;
+        const { ref, status, reason, subjects } = o as Record<string, unknown>;
+        if (typeof ref !== 'string' || (status !== 'COMPLETE' && status !== 'INCOMPLETE') || typeof subjects !== 'number') continue;
+        out.push({ ref, status, reason: typeof reason === 'string' ? reason : null, subjects });
     }
     return out;
 }
@@ -528,7 +541,7 @@ const OUTCOMES: readonly AgentRuleOutcome[] = ['FINDINGS', 'NO_FINDING_ON_A_COMP
 
 /**
  * The Agent surface tab's read: each trusted scanner's LATEST scan (by `asOf`,
- * then arrival, then id), the servers it read, and the scanner's open
+ * then arrival, then id), the origins it read, and the scanner's open
  * agent-rule findings, most severe first.
  *
  * Read under the inventory rule, as the harness tab is. Writes nothing. An
@@ -560,7 +573,7 @@ export async function getAgentRuleInventory(
                 flagged: true,
                 findingCount: true,
                 populationJson: true,
-                serversJson: true,
+                originsJson: true,
             },
         });
         const scansTruncated = listed.length > window;
@@ -620,7 +633,7 @@ export async function getAgentRuleInventory(
         const items = refs.length === 0
             ? []
             : await db.agentRuleScanItem.groupBy({
-                by: ['sourceRef', 'serverRef', 'code', 'ruleId', 'subjectRef', 'locator'],
+                by: ['sourceRef', 'originRef', 'code', 'ruleId', 'subjectRef', 'locator'],
                 where: { tenantId: ctx.tenantId, sourceRef: { in: refs } },
             });
         const itemOf = new Map(items.map((i) => [i.sourceRef, i]));
@@ -636,7 +649,7 @@ export async function getAgentRuleInventory(
                     code: item.code,
                     ruleId: item.ruleId,
                     severity: f.severity,
-                    serverRef: item.serverRef,
+                    originRef: item.originRef,
                     subjectRef: item.subjectRef,
                     locator: item.locator,
                     field: fieldOf(item.locator),
@@ -659,7 +672,7 @@ export async function getAgentRuleInventory(
                     findingCount: s.findingCount,
                     incompleteReason: incompleteReasonOf(s.populationJson),
                 },
-                servers: serversOf(s.serversJson),
+                origins: originsOf(s.originsJson),
                 findings,
                 findingsTruncated: openTruncated || all.length > rowCap,
             };
