@@ -33,6 +33,7 @@ import {
     type AgentDriverDecision,
 } from './agent-driver';
 import { readDeploymentSwitch } from './agent-switches';
+import { managedAgentsEnabled } from './managed-agents-switch';
 import { agentProfilesOnFor, toolRunnerDecisionFor } from './agent-switches-policy';
 import { listWorkflowDefinitions } from './workflow-registry';
 
@@ -87,7 +88,16 @@ export async function resolveDriverForTenant(tenantId: string): Promise<AgentDri
         return { driver: STATIC_DRIVER, reason: 'TENANT_NOT_OPTED_IN' };
     }
 
-    const decision = resolveAgentDriver({ envEnabled, toolRunnerEnvEnabled, tenantSetting: stored });
+    // The Managed Agents switch (Step 5b) answers only a stored MANAGED_AGENTS,
+    // which no writer accepts in this build; `DRIVER_IMPLEMENTED` refuses it
+    // whatever it says. It does not reopen the short-circuits above: with the
+    // other two switches off, such a tenant reads ENV_DISABLED, static either way.
+    const decision = resolveAgentDriver({
+        envEnabled,
+        toolRunnerEnvEnabled,
+        managedAgentsEnvEnabled: managedAgentsEnabled(),
+        tenantSetting: stored,
+    });
     if (decision.driver !== 'flue') return decision;
 
     return narrowToWhatAWorkflowAsksFor(decision);

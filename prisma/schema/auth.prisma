@@ -212,6 +212,7 @@ model Tenant {
   tenantSkillVersions               TenantSkillVersion[]
   agentProfiles                     AgentProfile[]
   agentProfileVersions              AgentProfileVersion[]
+  agentProfileProvisions            AgentProfileProvision[]
   agentSpendingAuthorities          AgentSpendingAuthority[]
   peerAgentMessages                 PeerAgentMessage[]
   peerAgentKillSwitches             PeerAgentKillSwitch[]

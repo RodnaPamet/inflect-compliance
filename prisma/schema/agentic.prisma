@@ -3607,6 +3607,70 @@ model AgentProfileVersion {
   @@index([tenantId, status])
 }
 
+/// ONE MANAGED AGENT INFLECT WROTE for one approved profile version, in one
+/// customer's Anthropic workspace (Step 5b of
+/// `docs/claude-managed-agents-design.md`, shape MA-C2, #4165).
+///
+/// Approving a profile version creates, or updates, the profile's one Managed
+/// Agent in the workspace of an `anthropic-workspace` connection, and this row
+/// records what came back and what was written: the agent's id and version,
+/// the environment it runs in, and the SHA-256 of the `system` and `tools` the
+/// request carried. A run reads the agent at that version before it creates a
+/// session and refuses `AGENT_DRIFTED` when either hash disagrees, because a
+/// customer admin can edit the agent in their Console.
+///
+/// ## What is NOT here
+///
+/// The tenant's instructions. The agent's `system` is Inflect's fixed preamble
+/// only; the instructions travel in each session's `agent_with_overrides`
+/// override, and the session is deleted at settle. An agent cannot be deleted
+/// at Anthropic, only archived, so nothing a tenant wrote may sit on it.
+///
+/// ## Plain ids, no foreign keys
+///
+/// `profileId`, `profileVersionId` and `connectionId` carry no FK, on purpose.
+/// The row is the record of an object that exists OUTSIDE Inflect, and Step 5c
+/// archives every agent recorded here when the tenant is purged or the
+/// connection removed. A cascade from the profile (which cascades from the
+/// registered agent) or from the connection would delete the record before
+/// that clean-up could read it, leaving an agent at Anthropic nobody can find.
+///
+/// Ids and hashes only: no free text, so no field is encrypted. Classified in
+/// `docs/data-retention.md`.
+model AgentProfileProvision {
+  id                    String   @id @default(cuid())
+  tenantId              String
+  /// The profile the agent belongs to. One Managed Agent per profile per
+  /// connection: a later version UPDATES it, so its new row names a new
+  /// `anthropicAgentVersion` of the same `anthropicAgentId`.
+  profileId             String
+  /// The approved version this row provisions.
+  profileVersionId      String
+  /// The `anthropic-workspace` connection whose workspace holds the agent.
+  connectionId          String
+  /// Anthropic's agent id, as `agents.create` returned it.
+  anthropicAgentId      String
+  /// The agent version this profile version pins. 1 or more (CHECK).
+  anthropicAgentVersion Int
+  /// The environment the agent's sessions run in: one per connection,
+  /// `cloud` with `limited` networking and no allowed hosts.
+  environmentId         String
+  /// Hex SHA-256 of the canonical JSON of the `system` Inflect wrote.
+  systemHash            String
+  /// Hex SHA-256 of the canonical JSON of the `tools` Inflect wrote.
+  toolsHash             String
+  createdAt             DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  /// One record per version per workspace.
+  @@unique([tenantId, profileVersionId, connectionId])
+  /// The profile's agent in a workspace, for the next version's update.
+  @@index([tenantId, profileId, connectionId])
+  /// Every agent in one workspace, for Step 5c's clean-up.
+  @@index([tenantId, connectionId])
+}
+
 /// ONE SIGNED A2A MESSAGE, sent or received (#3679, step 4b; UC5): the receipt
 /// both sides keep.
 ///
