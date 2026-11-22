@@ -8971,6 +8971,10 @@
         "TOOL_RUNNER": {
           "name": "Tool Runner engine",
           "description": "A model chooses which of the agent's tools to call, following the instructions on the agent's Behaviour tab. Every call still goes through the agent's grants and controls. Powered by Claude."
+        },
+        "MANAGED_AGENTS": {
+          "name": "Managed Agents engine",
+          "description": "A model in your own Anthropic workspace chooses which of the agent's tools to call. Every call still comes back to Inflect and goes through the agent's grants and controls. Not available yet. Powered by Claude."
         }
       },
       "gateHeading": "What decides the engine",
@@ -12341,6 +12345,7 @@
         "STATIC": "Static engine",
         "FLUE": "Flue engine",
         "TOOL_RUNNER": "Tool Runner engine",
+        "MANAGED_AGENTS": "Managed Agents engine",
         "UNRECOGNISED": "Unrecognised engine"
       },
       "detail": {

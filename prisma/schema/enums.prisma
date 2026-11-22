@@ -1845,6 +1845,13 @@ enum AiSystemStatus {
 ///          Step 2c (#4150): `AGENT_DRIVER_MODES` holds it, so an owner can
 ///          choose it on Admin → AI features.
 ///
+/// MANAGED_AGENTS — the Claude Managed Agents engine, which runs a profile in
+///          the customer's own Anthropic workspace (Step 5b of
+///          `docs/claude-managed-agents-design.md`, #4165). READ_ONLY: every
+///          reader understands it and NOTHING writes it. Deploy 1 of 2; the
+///          writer ships in Step 5d, once production runs an image that reads
+///          it, and `DRIVER_IMPLEMENTED['managed-agents']` is false until then.
+///
 /// This column is ONE OF TWO switches and cannot enable anything on its own:
 /// the engine's deployment switch must also be on — `AGENT_DRIVER_FLUE` for
 /// FLUE, `AGENT_DRIVER_TOOL_RUNNER` (or, while that is unset, the
@@ -1855,6 +1862,7 @@ enum AgentDriverMode {
   STATIC
   FLUE
   TOOL_RUNNER
+  MANAGED_AGENTS
 }
 
 enum IdentityWriteMode {

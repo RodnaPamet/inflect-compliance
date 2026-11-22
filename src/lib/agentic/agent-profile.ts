@@ -187,6 +187,11 @@ const RUNS_PROFILES: Readonly<Record<AgentDriver, boolean>> = {
     // Anthropic row of `docs/sub-processors.md` names "tenant-authored agent
     // instructions" in the same diff.
     'tool-runner': true,
+    // TRUE since Step 5b (#4165): the driver sends the pinned instructions in
+    // the session's `system` override, fenced as the operator's block, and
+    // only `profileTools` are dispatched. The engine is not implemented in
+    // this build (`DRIVER_IMPLEMENTED`), so no profile runs on it yet.
+    'managed-agents': true,
 };
 
 export function runsProfiles(driver: AgentDriver): boolean {
@@ -214,6 +219,7 @@ const RUNS_FLOWS: Readonly<Record<AgentDriver, boolean>> = {
     static: false,
     flue: false,
     'tool-runner': false,
+    'managed-agents': false,
 };
 
 export function runsFlows(driver: AgentDriver): boolean {
@@ -508,6 +514,10 @@ const RUNS_SUBAGENTS: Readonly<Record<AgentDriver, boolean>> = {
     // instructions", which the Anthropic row of `docs/sub-processors.md`
     // already names.
     'tool-runner': true,
+    // FALSE (Step 5b): the agent Inflect provisions carries no `multiagent`,
+    // and the engine offers no `delegate`. A version with sub-agents is
+    // refused by name on it rather than run without its delegates.
+    'managed-agents': false,
 };
 
 export function runsSubagents(driver: AgentDriver): boolean {
@@ -547,6 +557,9 @@ const RUNS_DEFERRALS: Readonly<Record<AgentDriver, boolean>> = {
     // refuses every version with deferred tools by name rather than running
     // it as though its calls did not wait.
     'tool-runner': true,
+    // FALSE (Step 5b): a session cannot be parked on a transcript Inflect
+    // holds, so a version with deferred tools is refused by name.
+    'managed-agents': false,
 };
 
 export function runsDeferrals(driver: AgentDriver): boolean {

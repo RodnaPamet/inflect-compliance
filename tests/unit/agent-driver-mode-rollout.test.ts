@@ -52,6 +52,9 @@ const ROLLOUT: Readonly<Record<string, Stage>> = {
     // READ_ONLY in Step 2b (#4149), WRITTEN in Step 2c (#4150), once
     // production ran an image that read it (a8ba6717, confirmed 2026-10-29).
     TOOL_RUNNER: 'WRITTEN',
+    // READ_ONLY in Step 5b (#4165): every reader understands it and no writer
+    // accepts it. Step 5d makes it WRITTEN once production reads it.
+    MANAGED_AGENTS: 'READ_ONLY',
 };
 
 const upsert = jest.fn(async (_args: unknown): Promise<unknown> => ({}));

@@ -193,6 +193,7 @@ export const ACTIVITY_DOMAIN_ENTITIES = {
         'AgentAssessmentDomain', 'AgentAssessmentQuestion', 'AgentRiskAssessment',
         'AgentRiskAssessmentAnswer',
         'AgentPolicyCard', 'AgentPolicyCardVersion', 'AgentProfile', 'AgentProfileVersion',
+        'AgentProfileProvision',
         'McpToolManifestPin', 'ExternalToolParameterSet', 'ExternalToolParameterSetApproval',
         'AgentKillSwitch', 'PlatformAgentKillSwitch', 'AgentKillSwitchDrill',
         'AgentBehaviourWindow', 'AgentCircuitBreaker', 'AgentBehaviourBaseline',

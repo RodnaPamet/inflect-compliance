@@ -114,7 +114,7 @@ export interface ResidencyGateInput {
      * is not a run engine but makes the same transfer (owner decision
      * 2026-11-16).
      */
-    readonly enginePrefix?: 'flue' | 'tool_runner' | 'assistant';
+    readonly enginePrefix?: 'flue' | 'tool_runner' | 'managed_agents' | 'assistant';
 }
 
 export interface ResidencyRefusal {
@@ -188,7 +188,10 @@ export function externalResidencyRefusal(input: ResidencyGateInput): ResidencyRe
         enginePrefix === 'tool_runner'
             ? 'or run this workflow on the Flue engine with AI residency set to LOCAL_ONLY; '
               + 'the Tool Runner engine only calls Anthropic\'s API.'
-            : enginePrefix === 'assistant'
+            : enginePrefix === 'managed_agents'
+              ? 'or run this workflow on the Flue engine with AI residency set to LOCAL_ONLY; '
+                + 'the Managed Agents engine runs in your Anthropic workspace and only calls Anthropic\'s API.'
+              : enginePrefix === 'assistant'
               ? 'or set AI residency to LOCAL_ONLY, under which the assistant calls no model '
                 + 'and answers only from your posture figures.'
               : 'or set AI residency to LOCAL_ONLY so inference stays on your own gateway.';

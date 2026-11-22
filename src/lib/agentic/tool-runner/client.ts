@@ -302,3 +302,174 @@ export function toolRunnerModelFor(tier: ProfileModelTier): string {
     };
     return configured[tier]?.trim() || TOOL_RUNNER_DEFAULT_MODELS[tier];
 }
+
+// ─── The Managed Agents engine's client (Step 5b, #4165) ───────────────────
+//
+// THE ONE CONSTRUCTOR for that engine, in this file because this is the one
+// file under `src/` that may load the SDK (`local/anthropic-client-single-seam`).
+// It differs from `clientForRun` in the two ways the engine needs and in no
+// other:
+//
+//   • the CREDENTIAL is the customer's, not the deployment's: the run's
+//     `anthropic-workspace` connection's decrypted key, with that connection's
+//     workspace id in the `anthropic-workspace-id` header
+//     (`anthropicWorkspaceHeaders`), as the connection's Test sends it;
+//   • the API is Managed Agents, not Messages: `managedAgentsRequestRefusal`
+//     admits the agent, environment and session calls the engine makes and
+//     nothing else.
+//
+// Everything `clientForRun` pins is pinned here the same way: the origin, the
+// log level and logger, metadata-only tracing with no propagation, no webhook
+// key, and the refusal while `ANTHROPIC_CUSTOM_HEADERS` is set. Residency is
+// the driver's, which refuses a LOCAL_ONLY tenant before it reads the
+// connection. `tests/unit/agentic/managed-agents-client.test.ts` holds that
+// this function is the only construction of a client for the engine.
+
+/** Why the Managed Agents engine cannot have a client. */
+export type ManagedAgentsClientRefusal =
+    /** The connection holds no usable key. */
+    | 'WORKSPACE_KEY_MISSING'
+    /** `ANTHROPIC_CUSTOM_HEADERS` is set, and the SDK would add it to every request. */
+    | 'SDK_AMBIENT_HEADERS_SET';
+
+export type ManagedAgentsClientChoice =
+    | { ok: true; client: Anthropic }
+    | { ok: false; reason: ManagedAgentsClientRefusal };
+
+/** Why `managedAgentsRequestRefusal` refused a request. */
+export type ManagedAgentsRequestRefusal =
+    | 'NOT_THE_PINNED_ORIGIN'
+    | 'NOT_A_MANAGED_AGENTS_CALL'
+    | 'BODY_UNREADABLE'
+    /** An agent body asking for anything but custom tools: a toolset, MCP, skills, sub-agents. */
+    | 'AGENT_NOT_CUSTOM_TOOLS_ONLY'
+    /** A session asking for vaults, resources, or overriding anything but `system`. */
+    | 'SESSION_REACHES_BEYOND_SYSTEM'
+    /** An environment that is not `cloud` with `limited` networking and no hosts. */
+    | 'ENVIRONMENT_NOT_SEALED';
+
+/** The routes the engine calls, by method. Anything else is refused. */
+const MANAGED_AGENTS_ROUTES: ReadonlyArray<{ readonly method: string; readonly path: RegExp }> = [
+    { method: 'POST', path: /^\/v1\/agents$/ },
+    { method: 'GET', path: /^\/v1\/agents\/[A-Za-z0-9_-]+$/ },
+    { method: 'POST', path: /^\/v1\/agents\/[A-Za-z0-9_-]+$/ },
+    { method: 'POST', path: /^\/v1\/environments$/ },
+    { method: 'POST', path: /^\/v1\/sessions$/ },
+    { method: 'GET', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+$/ },
+    { method: 'DELETE', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+$/ },
+    { method: 'GET', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+\/events$/ },
+    { method: 'POST', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+\/events$/ },
+    { method: 'GET', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+\/events\/stream$/ },
+];
+
+/** Present and not an empty list or `null`: what "asks for it" means for an optional body member. */
+function asksFor(value: unknown): boolean {
+    if (value === undefined || value === null) return false;
+    if (Array.isArray(value)) return value.length > 0;
+    return true;
+}
+
+/**
+ * The reason a request may not leave a Managed Agents client, or null when it
+ * may. Pure, so every branch is unit-tested without a network.
+ */
+export function managedAgentsRequestRefusal(request: { method?: string; url: string; body?: unknown }): ManagedAgentsRequestRefusal | null {
+    const url = new URL(request.url);
+    const method = (request.method ?? 'GET').toUpperCase();
+    if (url.origin !== ANTHROPIC_API_BASE_URL) return 'NOT_THE_PINNED_ORIGIN';
+    if (!MANAGED_AGENTS_ROUTES.some((r) => r.method === method && r.path.test(url.pathname))) {
+        return 'NOT_A_MANAGED_AGENTS_CALL';
+    }
+    if (method !== 'POST') return null;
+    let members: Record<string, unknown>;
+    try {
+        const parsed: unknown = typeof request.body === 'string' ? JSON.parse(request.body) : null;
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return 'BODY_UNREADABLE';
+        members = parsed as Record<string, unknown>;
+    } catch {
+        return 'BODY_UNREADABLE';
+    }
+    if (url.pathname.startsWith('/v1/agents')) {
+        if (asksFor(members.mcp_servers) || asksFor(members.multiagent) || asksFor(members.skills)) {
+            return 'AGENT_NOT_CUSTOM_TOOLS_ONLY';
+        }
+        const tools = members.tools;
+        if (tools !== undefined && tools !== null) {
+            if (!Array.isArray(tools)) return 'BODY_UNREADABLE';
+            const notCustom = tools.some(
+                (t: unknown) => t === null || typeof t !== 'object' || (t as { type?: unknown }).type !== 'custom',
+            );
+            if (notCustom) return 'AGENT_NOT_CUSTOM_TOOLS_ONLY';
+        }
+        return null;
+    }
+    if (url.pathname === '/v1/environments') {
+        const config = members.config as { type?: unknown; networking?: Record<string, unknown> | null; packages?: unknown } | undefined;
+        const net = config?.networking;
+        const sealed =
+            config?.type === 'cloud' &&
+            net != null &&
+            net.type === 'limited' &&
+            !asksFor(net.allowed_hosts) &&
+            net.allow_mcp_servers !== true &&
+            net.allow_package_managers !== true &&
+            !asksFor(config.packages);
+        return sealed ? null : 'ENVIRONMENT_NOT_SEALED';
+    }
+    if (url.pathname === '/v1/sessions') {
+        if (asksFor(members.vault_ids) || asksFor(members.resources)) return 'SESSION_REACHES_BEYOND_SYSTEM';
+        const agent = members.agent;
+        if (agent === null || typeof agent !== 'object' || Array.isArray(agent)) return 'SESSION_REACHES_BEYOND_SYSTEM';
+        const allowed = new Set(['type', 'id', 'version', 'system']);
+        const keys = Object.keys(agent as Record<string, unknown>);
+        if ((agent as { type?: unknown }).type !== 'agent_with_overrides' || keys.some((k) => !allowed.has(k))) {
+            return 'SESSION_REACHES_BEYOND_SYSTEM';
+        }
+        return null;
+    }
+    // A session's events: a user message, a tool result, an interrupt.
+    return null;
+}
+
+function managedAgentsOnlyFor(run: { readonly runId?: string }): Middleware {
+    return async (request, next) => {
+        const url = new URL(request.url);
+        const verdict = { refusal: managedAgentsRequestRefusal(request) };
+        logger.info('managed-agents: request', {
+            component: 'agentic',
+            runId: run.runId,
+            method: (request.method ?? 'GET').toUpperCase(),
+            path: url.pathname,
+            refused: verdict.refusal,
+        });
+        if (verdict.refusal) {
+            throw forbidden('A Managed Agents run\'s client sends the engine\'s own calls only.', { reason: verdict.refusal });
+        }
+        return next(request);
+    };
+}
+
+/**
+ * A new client for one Managed Agents run, keyed with the customer's
+ * workspace key, or the named reason there is none. Never cached.
+ */
+export function managedAgentsClientFor(input: {
+    readonly apiKey: string;
+    readonly workspaceId: string;
+    readonly runId?: string;
+}): ManagedAgentsClientChoice {
+    const apiKey = input.apiKey.trim();
+    if (!apiKey) return { ok: false, reason: 'WORKSPACE_KEY_MISSING' };
+    if (env.ANTHROPIC_CUSTOM_HEADERS?.trim()) return { ok: false, reason: 'SDK_AMBIENT_HEADERS_SET' };
+    const client = new Anthropic({
+        apiKey,
+        baseURL: ANTHROPIC_API_BASE_URL,
+        defaultHeaders: { ...anthropicWorkspaceHeaders(input.workspaceId) },
+        webhookKey: null,
+        logLevel: 'warn',
+        logger: sdkLogger,
+        openTelemetry: { propagation: false, traces: { enabled: true, contentMode: 'metadata_only' } },
+        middleware: [managedAgentsOnlyFor({ runId: input.runId })],
+    });
+    return { ok: true, client };
+}
