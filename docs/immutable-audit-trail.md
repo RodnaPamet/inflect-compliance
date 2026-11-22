@@ -24,7 +24,7 @@ The `AuditLog` table stores all audit events with the following key columns:
 | `id` | `String` | CUID primary key |
 | `tenantId` | `String` | Tenant scope (FK) |
 | `userId` | `String?` | Actor user (nullable for SYSTEM/JOB actors) |
-| `actorType` | `String` | `USER`, `SYSTEM`, or `JOB` |
+| `actorType` | `String` | `USER`, `SYSTEM`, `JOB` or `API_KEY`. `API_KEY` means an API key (`iflk_…`) acted, over REST or `/api/mcp`; `userId` is then the key's creator, not a person acting (#5786) |
 | `entity` | `String` | Entity type (e.g., `Control`, `Policy`) |
 | `entityId` | `String` | Entity primary key |
 | `action` | `String` | Event type (e.g., `POLICY_CREATED`, `UPDATE`) |

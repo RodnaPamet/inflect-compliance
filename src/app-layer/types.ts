@@ -19,10 +19,11 @@ export interface RequestContext {
      * trail claimed a person did something no person did, and there was
      * no way to filter machine activity out of a review.
      *
-     * `logEvent` forwards this to `appendAuditEntry`, which already
-     * accepts the three-value `ActorType` and defaults to `'USER'`. Set
-     * `'JOB'` for scheduled work and `'SYSTEM'` for middleware-driven
-     * writes; leave it unset for anything a user asked for.
+     * `logEvent` forwards this to `appendAuditEntry`, which defaults an
+     * absent value to `'USER'`. Set `'JOB'` for scheduled work and `'SYSTEM'`
+     * for middleware-driven writes; leave it unset for anything a signed-in
+     * user asked for. `verifyApiKey` sets `'API_KEY'` on every context it
+     * builds, so a key's writes never read as its creator's (#5786).
      */
     actorType?: ActorType;
 

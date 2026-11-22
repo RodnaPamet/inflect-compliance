@@ -37,8 +37,9 @@ export async function logEvent(_db: PrismaTx, ctx: RequestContext, payload: Audi
         userId: ctx.userId,
         // Was hardcoded `'USER'`, which made every background sweep's
         // audit row claim a person acted. `appendAuditEntry` already
-        // defaults an absent value to `'USER'`, so HTTP-borne contexts —
-        // which never set `actorType` — are unchanged.
+        // defaults an absent value to `'USER'`, so a session's context —
+        // which never sets `actorType` — writes 'USER'. An API key's context
+        // carries 'API_KEY', set where `verifyApiKey` builds it (#5786).
         actorType: ctx.actorType,
         entity: payload.entityType,
         entityId: payload.entityId,

@@ -727,6 +727,10 @@ async function finaliseApiKeyAuth(
         appPermissions,
         apiKeyId: apiKey.id,
         apiKeyScopes: scopes,
+        // A credential acted, not the person who created it. Without this,
+        // `logEvent` writes the default 'USER' and the hash-chained trail claims
+        // the key's creator did, by hand, every write the key makes (#5786).
+        actorType: 'API_KEY',
         // The agent principal this credential speaks for, when it speaks for
         // one. Left UNSET rather than null when the key names no agent, so a
         // consumer that forgets to handle it gets `undefined` and not a value
