@@ -33,6 +33,10 @@ const SEAMS = {
     thirdPartyAppScan: { table: 'ThirdPartyAppScan', seam: 'src/app-layer/usecases/third-party-app-scans.ts' },
     discoveredThirdPartyApp: { table: 'DiscoveredThirdPartyApp', seam: 'src/app-layer/usecases/third-party-app-scans.ts' },
     thirdPartyAppScanItem: { table: 'ThirdPartyAppScanItem', seam: 'src/app-layer/usecases/third-party-app-scans.ts' },
+    // The scanner's third report (`scanent-agent-rules/1`): what static rules
+    // found in the MCP tool definitions it read. One writer, for the same reason.
+    agentRuleScan: { table: 'AgentRuleScan', seam: 'src/app-layer/usecases/agent-rule-scans.ts' },
+    agentRuleScanItem: { table: 'AgentRuleScanItem', seam: 'src/app-layer/usecases/agent-rule-scans.ts' },
     agentHarnessAcceptance: { table: 'AgentHarnessAcceptance', seam: 'src/app-layer/usecases/agent-harness-acceptance.ts' },
     // A review run's parsed owner suggestion (#3728). One writer, because it is
     // the only place the run's answer is held to the skill's output contract and
@@ -157,6 +161,7 @@ describe('the harness tables have one write seam each', () => {
             'src/app-layer/usecases/agent-harness-scanner-keys.ts',
             'src/app-layer/usecases/agent-harness-scans.ts',
             'src/app-layer/usecases/agent-profiles.ts',
+            'src/app-layer/usecases/agent-rule-scans.ts',
             'src/app-layer/usecases/agent-spending-authority.ts',
             'src/app-layer/usecases/peer-agents.ts',
             'src/app-layer/usecases/peer-invitations.ts',

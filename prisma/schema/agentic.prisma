@@ -905,6 +905,9 @@ model RegisteredAgent {
   /// The third-party application scans this agent signed, when it is a
   /// scanner (`scanent-integrations/1`), with the same key as its harness scans.
   thirdPartyAppScans ThirdPartyAppScan[]
+  /// The agent-surface rules scans this agent signed, when it is a scanner
+  /// (`scanent-agent-rules/1`), with the same key as its harness scans.
+  agentRuleScans     AgentRuleScan[]
   /// The client estate this agent scans, when it is a scanner (#3678). At most
   /// one: `@@unique([tenantId, scannerAgentId])` on the estate.
   harnessEstates     AgentHarnessEstate[]
@@ -2652,6 +2655,8 @@ model AgentHarnessScannerKey {
   /// The third-party application scans this key verified. The same key signs
   /// both of a scanner's reports; each verifier refuses the other's contract.
   thirdPartyAppScans ThirdPartyAppScan[]
+  /// The agent-surface rules scans this key verified: the scanner's third report.
+  agentRuleScans     AgentRuleScan[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, keyFingerprint])
@@ -2931,6 +2936,91 @@ model ThirdPartyAppScanItem {
 
   @@unique([tenantId, scanId, appId])
   @@index([tenantId, appId])
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Agent-surface rules scans (`scanent-agent-rules/1`)
+// ═══════════════════════════════════════════════════════════════════
+//
+// The scanner's THIRD signed report: what static rules found written into the
+// MCP tool definitions it read (tool poisoning, prompt injection, an executable
+// payload, an instruction to send data away or take credentials). Verified by
+// the contract package (`verifyAndParseAgentRulesReport`) against the same
+// trusted scanner keys as a harness report, planned by its planner
+// (`planAgentRulesScan`), and written here. `usecases/agent-rule-scans.ts` is
+// the ONLY writer of the two tables — pinned by
+// `tests/guards/agent-harness-single-write-seam.test.ts`.
+//
+// IDENTIFIERS ONLY. A finding is a code, a rule id, a server, a tool and a
+// field; the report carries no text of a definition, and neither does this.
+
+/// One verified, ingested `scanent-agent-rules/1` report.
+model AgentRuleScan {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  /// `scan.id` from the report, unique per tenant: a replay is refused.
+  scanRef             String
+  scannerAgentId      String
+  scannerKeyId        String
+  scannerVersion      String
+  scannerManifestHash String
+  /// The moment the report describes.
+  asOf                DateTime
+  /// sha256 over the canonical JSON of the report without its signature.
+  reportDigest        String
+  signature           String
+  /// DERIVED (`isAgentRulesScanComplete`): every population read in full. A
+  /// report cannot declare it.
+  complete            Boolean
+  /// The planner's outcome: `FINDINGS` | `NO_FINDING_ON_A_COMPLETE_READ` |
+  /// `NOTHING_READ` | `NOT_CONCLUDED`. Never "clean" of a read of nothing.
+  outcome             String
+  /// `[{ kind, status, reason?, subjects }]`, as reported.
+  populationJson      Json
+  /// `[{ ref, status, reason?, tools }]`, each MCP server read, as reported.
+  serversJson         Json
+  subjects            Int
+  flagged             Int
+  findingCount        Int
+  createdAt           DateTime @default(now())
+
+  tenant     Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  scanner    RegisteredAgent        @relation(fields: [scannerAgentId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  scannerKey AgentHarnessScannerKey @relation(fields: [scannerKeyId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  items      AgentRuleScanItem[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, scanRef])
+  @@index([tenantId, asOf])
+  @@index([tenantId, scannerAgentId])
+  @@index([tenantId, scannerKeyId])
+}
+
+/// One finding in one scan, as the planner listed it. `serverRef` is what a
+/// later scan reads to decide whether it may close the finding: only a scan by
+/// the same scanner that read that server in full may.
+model AgentRuleScanItem {
+  id         String   @id @default(cuid())
+  tenantId   String
+  scanId     String
+  /// The Finding's `sourceRef`: `agent-rule:<ruleId>@<locator>@<scannerAgentId>`.
+  sourceRef  String
+  /// `mcp:<server URL>`, or `mcp:sha256-<32 hex>`.
+  serverRef  String
+  code       String
+  ruleId     String
+  /// `INFO` | `LOW` | `MEDIUM` | `HIGH`, as reported; never CRITICAL.
+  severity   String
+  subjectRef String
+  /// `mcp-tool:<subject>#<field>`, never the text.
+  locator    String
+  createdAt  DateTime @default(now())
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  scan   AgentRuleScan @relation(fields: [scanId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([tenantId, scanId, sourceRef])
+  @@index([tenantId, sourceRef])
 }
 
 /// One client ESTATE a harness scanner covers (#3678, step 4a): a named

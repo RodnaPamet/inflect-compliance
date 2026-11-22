@@ -45,6 +45,7 @@ let _scannerFindingsTruncated: ReturnType<ReturnType<typeof getMeter>['createCou
 let _harnessScan: Counter | null = null;
 let _anthropicWorkspaceValidation: Counter | null = null;
 let _thirdPartyAppScan: Counter | null = null;
+let _agentRuleScan: Counter | null = null;
 let _deviceReport: Counter | null = null;
 let _aiGeneration: Counter | null = null;
 let _aiTokens: Histogram | null = null;
@@ -437,6 +438,28 @@ export function recordThirdPartyAppScanOutcome(attrs:
         });
     }
     _thirdPartyAppScan.add(1, attrs.outcome === 'ingested'
+        ? { outcome: attrs.outcome, complete: String(attrs.complete), empty: String(attrs.empty) }
+        : { outcome: attrs.outcome, reason: attrs.reason });
+}
+
+/**
+ * One agent-surface rules scan submission (`scanent-agent-rules/1`), by how it
+ * ended: the scanner's third report, the integrations metric's twin. `empty`
+ * is a read of no tool definition, which is never a clean result; a refusal
+ * carries its stable reason code, never anything from the report.
+ *
+ * No tenant label.
+ */
+export function recordAgentRuleScanOutcome(attrs:
+    | { outcome: 'ingested'; complete: boolean; empty: boolean }
+    | { outcome: 'refused'; reason: string }): void {
+    if (!_agentRuleScan) {
+        _agentRuleScan = getMeter().createCounter('agent_rule.scan.outcome', {
+            description: 'Agent-surface rules scan submissions by outcome',
+            unit: '1',
+        });
+    }
+    _agentRuleScan.add(1, attrs.outcome === 'ingested'
         ? { outcome: attrs.outcome, complete: String(attrs.complete), empty: String(attrs.empty) }
         : { outcome: attrs.outcome, reason: attrs.reason });
 }

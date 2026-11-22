@@ -834,7 +834,8 @@ flags — is re-checked at runtime by `permissionsExceeding`.
 `AI_ADMIN` (#3699) runs the agent register and can own and receive agents: every
 agent key in `AGENT_ADMIN_KEYS` (`src/lib/permissions.ts` — register, register
 view, tool exposure, policy card, kill switch, external tools, harness ingest,
-third-party application scan ingest (`integrations_ingest`), agent ownership,
+third-party application scan ingest (`integrations_ingest`), agent-surface rules
+scan ingest (`agent_rules_ingest`), agent ownership,
 skill review, skill authoring) on top of READER's set, and
 NONE of the tenant-wide admin keys (no `view`, `manage`, members, SSO, SCIM,
 lifecycle, owner management or DSAR). It sits on READER's rung of the coarse
@@ -996,21 +997,22 @@ new tenant-membership creation path).
   role's base. Same NOT VALID shape; `deleteCustomRole` moves a legacy row's
   base to READER in the soft-delete write, or the deletion would fail it.
 - **Only an ADMIN membership carries a custom role built on ADMIN, or one
-  granting one of eleven admin keys** (owner decisions, 2026-10-30). The edge
+  granting one of twelve admin keys** (owner decisions, 2026-10-30). The edge
   admits `/api/t/:slug/admin/**` by the membership's BUILT-IN role, and an
-  ADMIN base sets the coarse tier (`effectiveRole`) everywhere else. The eleven are
+  ADMIN base sets the coarse tier (`effectiveRole`) everywhere else. The twelve are
   `ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS` in `src/lib/roles.ts`, in two parts.
   `ADMIN_API_ONLY_KEYS` (`sso` and the tool-exposure, policy-card, ownership and
   two skill keys) are consumed only behind the admin API, so on an EDITOR,
   READER or AUDITOR membership they granted nothing but buttons the edge
   refused. `SIDE_DOOR_ADMIN_KEYS` (`scim`, `compliance_dsar_manage`,
-  `agent_harness_ingest`, `agent_external_tools`, and `integrations_ingest`,
-  the third-party application scan's twin of the harness key) are NOT dead elsewhere: an
+  `agent_harness_ingest`, `agent_external_tools`, `integrations_ingest`,
+  the third-party application scan's twin of the harness key, and
+  `agent_rules_ingest`, the agent-surface rules scan's) are NOT dead elsewhere: an
   agent-bound API key acting for the membership reaches their admin routes past
   the edge, and a run the membership starts or a key at `/api/mcp` reaches
   `get_harness_register` and every external tool call. They are refused BY
   DECISION, because that path is a side door around the edge's role gate — so
-  for these five the rule DOES take something away. The other nine admin keys
+  for these six the rule DOES take something away. The other nine admin keys
   are left alone. ONE predicate, `customRoleCarriageRefusal(after, before)`,
   refuses only what a change ADDS (a save that narrows, a clear, a move among
   EDITOR/READER/AUDITOR all pass) with a 409 and
@@ -1026,8 +1028,9 @@ new tenant-membership creation path).
   once by migration `20261030170000_admin_membership_only_keys_off_for_non_admin_custom_roles`:
   a role carried ONLY by non-ADMIN memberships (any status) has the ten stated
   `false`, base unchanged (`integrations_ingest`, added later, by
-  `20261114120100_integrations_ingest_off_for_non_admin_custom_roles`, the same
-  scope: on an ADMIN base the new key would otherwise read ADMIN's `true`); a role with any ADMIN carrier, a role nobody carries
+  `20261114120100_integrations_ingest_off_for_non_admin_custom_roles`, and
+  `agent_rules_ingest` by `20261122120100_agent_rules_ingest_off_for_non_admin_custom_roles`,
+  the same scope: on an ADMIN base a new key would otherwise read ADMIN's `true`); a role with any ADMIN carrier, a role nobody carries
   and a legacy OWNER- or AI_ADMIN-based row (the NOT VALID #3734 CHECK refuses
   its update) were left alone. It is orthogonal to the Admin-base rule (#4536,
   #4595: `ADMIN_BASE_ONLY_PERMISSIONS` in `src/lib/custom-role-admin-base-rule.ts`),
@@ -1037,7 +1040,7 @@ new tenant-membership creation path).
   `PERMISSION_NEEDS_ADMIN_BASE`) is asked first: it reads only the request.
   `tests/guardrails/admin-membership-only-keys-are-dead-elsewhere.test.ts`
   fails when one of the six gains a consumer outside the admin API, and when
-  one of the five stops having one.
+  one of the six side-door keys stops having one.
 - **An admin page offers a write only where the server takes it** (#4467,
   #4466, generalised from #4471's agent register). Three gates, each asked as
   the server asks it: the edge (#4587's `membershipOpensAdminConsole` over
@@ -2062,6 +2065,34 @@ are easy to undo:
   mismatch is no link, and the only hosts produced are `github.com`,
   `entra.microsoft.com` and an Okta org's `-admin` host. Deactivation happens
   there and the next scan shows it: do not add a write path or a permission.
+
+**The agent-surface rules ingest** (`usecases/agent-rule-scans.ts`) is the
+same ingest for the scanner's third signed report, `scanent-agent-rules/1`:
+what static rules (re-authored from Cisco AI Defense's mcp-scanner and the
+Agent Threat Rules) found written into the MCP tool definitions a scanner read.
+It is the only writer of `AgentRuleScan` and `AgentRuleScanItem` (the
+single-write-seam guard holds them); its results are the Agent surface tab on
+`/agents/reports` (`getAgentRuleInventory`). Rules that are easy to undo:
+
+- **Its own key, `admin.agent_rules_ingest`** (scope `admin:agent_rules_ingest`;
+  owner decision 3 of `scanent`'s agent-surface rules design), held and
+  classified exactly as `integrations_ingest`, side-door list included.
+- **A finding closes only on positive evidence about its SERVER** (owner
+  decision, 2026-11-22): a later scan by the SAME scanner read that finding's
+  MCP server in full (`serversReadInFull`) and the rule did not fire again. A
+  server absent from a scan or read in part closes nothing. The server of a
+  stored finding is read from `AgentRuleScanItem.serverRef` (one reference names
+  one tool's field on one server, so every item of it names the same server),
+  and the finding's reference ends `@<scannerAgentId>`, so one scanner never
+  closes another's. Do not "simplify" to closing on any complete scan: a tool
+  nobody read is not concluded clean.
+- **Zero is never clean.** The planner's `NOTHING_READ` (a complete read of no
+  tool) is stored as the scan's `outcome` and shown as an alert, never as
+  "no rule fired".
+- **A finding is a suggestion, and carries no text.** It is an `OBSERVATION`,
+  its severity is the report's (at most HIGH; `INFO` stored `LOW`, which
+  `FindingSeverity` has), and its title and description are built from the code
+  table and identifiers alone: the report carries no text of a definition.
 
 **The stale-estate alert** (`usecases/agent-harness-estate-staleness.ts`, a
 daily job since #3741) judges each estate with `computeEstateHealth` and nothing

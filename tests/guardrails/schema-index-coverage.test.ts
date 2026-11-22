@@ -473,6 +473,13 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         justification:
             'third-party-app-scans.listThirdPartyAppScans and getThirdPartyAppInventory filter by tenantId and order by asOf desc, then createdAt and id; bounded take ≤200 (the list) and ≤51 (the inventory window)',
     },
+    // ── Agent-surface rules scans (`scanent-agent-rules/1`) ──────────
+    {
+        model: 'AgentRuleScan',
+        fields: ['tenantId', 'asOf'],
+        justification:
+            'agent-rule-scans.listAgentRuleScans and getAgentRuleInventory filter by tenantId and order by asOf desc, then createdAt and id; bounded take ≤200 (the list) and ≤51 (the inventory window)',
+    },
     {
         model: 'AgentHarnessAcceptance',
         fields: ['tenantId', 'discoveredAgentId'],
