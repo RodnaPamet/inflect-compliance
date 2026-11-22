@@ -119,7 +119,23 @@ puts at Anthropic:
   Integrations card says what Inflect will create there and offers "Keep sessions
   in my workspace", off by default (decision 4). With the switch unset the
   provider is not registered and the card does not render. Nothing runs in the
-  workspace yet: no agent, environment or session is created until Steps 5b–5d.
+  workspace yet: no agent, environment or session is created until Step 5d.
+- **The Managed Agents engine is built and cannot run (Step 5b, #4165).** The
+  driver (`src/lib/agentic/managed-agents/`) provisions an approved profile
+  version as one agent per profile (Inflect's preamble as `system`, custom tools
+  only) in one environment per connection (`cloud`, `limited`, no allowed hosts),
+  recorded in `AgentProfileProvision`; checks the agent for drift before each
+  session; runs the session with the tenant's instructions only in its
+  `agent_with_overrides` override, a dollar budget derived from the run's caps
+  and metadata naming the tenant and run by id; bridges every custom tool call
+  through `runGuardedTool`; writes one `MODEL_CALL` and one span-derived Art 12
+  row per `span.model_request_end`; resumes a dropped stream without answering a
+  call twice; and deletes the session in `finally`, or records it kept when the
+  connection keeps sessions. It passes the driver conformance suite on a faux
+  SSE transport with two declared variances (decision 3). No input selects it:
+  `DRIVER_IMPLEMENTED['managed-agents']` is false, and `MANAGED_AGENTS` is a
+  READ_ONLY driver mode no writer accepts, so approval provisions nothing and no
+  run reaches it.
 
 ## What Managed Agents is, as documented on 2026-10-24
 
@@ -498,6 +514,10 @@ Deliver per the Definition of done. This step is Significant.
 **Exit.** A customer can connect an Anthropic workspace and test it, and Inflect has created nothing in it.
 
 #### Step 5b — Managed Agents driver, reader-only
+
+Built for #4165; the Current state section above describes the result, and
+`docs/implementation-notes/2026-11-22-step-5b-managed-agents-driver.md` the
+decisions.
 
 **Goal.** Build the whole engine behind `DRIVER_IMPLEMENTED = false`. It covers
 provisioning, the drift check, the session job and the custom-tool bridge, and
