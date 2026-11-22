@@ -25,6 +25,7 @@ import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 interface DashboardMetrics {
     periodDays: number;
@@ -310,7 +311,7 @@ export default function TestDashboardPage() {
                     </p>
                     <div className="space-y-section animate-fadeIn">
                         {readiness.map(fw => (
-                            <div key={fw.frameworkKey} className="border border-border-default/30 rounded-lg p-4">
+                            <ShadedRow padding="lg" key={fw.frameworkKey}>
                                 <div className="flex items-center justify-between mb-3">
                                     <Heading level={3}>{fw.frameworkName}</Heading>
                                     <span className="text-xs text-content-muted">{t('dashboard.mappedControls', { count: fw.totalMappedControls })}</span>
@@ -353,7 +354,7 @@ export default function TestDashboardPage() {
                                         <p className="text-xs text-content-subtle mt-1">{t('dashboard.passed', { count: fw.recentPasses, total: fw.recentRuns })}</p>
                                     </div>
                                 </div>
-                            </div>
+                            </ShadedRow>
                         ))}
                     </div>
                 </div>

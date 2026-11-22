@@ -64,6 +64,7 @@ import { resolveProposalGuardState } from '@/lib/agentic/proposal-guard-state';
 import { proposalKindLabelKey } from '@/lib/agentic/proposal-labels';
 import { proposalRefusalKey } from '@/lib/agentic/proposal-refusal-keys';
 import type { AgentGuardVerdict } from '@/app-layer/ai/guard/proposal-guard';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 /**
  * DERIVED from what the usecase returns, never restated.
@@ -331,11 +332,11 @@ export function CheckpointReviewPanel() {
                                 const badge = GUARD_BADGE[guardState];
                                 const flagged = guardState === 'FLAGGED';
                                 return (
-                                    <li
+                                    <ShadedRow as="li" padding="none"
                                         key={p.id}
                                         data-testid={`checkpoint-proposal-${p.id}`}
                                         data-guard-state={guardState}
-                                        className="flex flex-col gap-tight rounded-md border border-border-subtle bg-bg-default p-compact"
+                                        className="flex flex-col gap-tight p-compact"
                                     >
                                         <div className="flex items-center justify-between gap-tight">
                                             <span
@@ -430,7 +431,7 @@ export function CheckpointReviewPanel() {
                                                 </Button>
                                             </div>
                                         ) : null}
-                                    </li>
+                                    </ShadedRow>
                                 );
                             })}
                         </ul>

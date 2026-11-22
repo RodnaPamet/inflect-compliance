@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 // Mirror of the server SuggestionResult shape (policy-template-mapping.ts).
 export interface SuggestedControlDTO {
@@ -97,9 +98,9 @@ export function TemplateControlSuggestModal({ policyTitle, result, onConfirm, on
                             <Heading level={3} className="text-sm">{fw.frameworkLabel}</Heading>
                             <ul className="space-y-tight">
                                 {fw.suggestions.map((s) => (
-                                    <li
+                                    <ShadedRow as="li" padding="none"
                                         key={s.controlId}
-                                        className="flex items-start gap-compact rounded border border-border-subtle p-compact"
+                                        className="flex items-start gap-compact p-compact"
                                     >
                                         <Checkbox
                                             id={`suggest-${s.controlId}`}
@@ -121,7 +122,7 @@ export function TemplateControlSuggestModal({ policyTitle, result, onConfirm, on
                                                 {t('templates.satisfies', { codes: s.requirements.map((r) => r.code).join(', ') })}
                                             </p>
                                         </div>
-                                    </li>
+                                    </ShadedRow>
                                 ))}
                             </ul>
                         </div>

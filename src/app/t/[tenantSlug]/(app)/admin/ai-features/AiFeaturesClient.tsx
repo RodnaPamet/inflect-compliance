@@ -35,6 +35,7 @@ import { apiRefusalMessage } from '@/lib/api-error';
 import type { AiToggleKey, AiToggleState } from '@/app-layer/usecases/ai-feature-toggles';
 
 import { displayFor, type ToggleDisplay } from './ai-feature-display';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 interface TogglesResponse {
     toggles: AiToggleState[];
@@ -99,9 +100,9 @@ export function AiFeaturesClient() {
     function row(state: AiToggleState, testId: string) {
         const display = displayFor(state, tenantMasterEnabled);
         return (
-            <section
+            <ShadedRow as="section" padding="xl"
                 key={state.key}
-                className="space-y-compact rounded-lg border border-border-subtle p-5"
+                className="space-y-compact"
                 data-testid={testId}
                 data-display-kind={display.kind}
             >
@@ -145,7 +146,7 @@ export function AiFeaturesClient() {
                         {t('aiFeatures.masterOffBody')}
                     </InlineNotice>
                 )}
-            </section>
+            </ShadedRow>
         );
     }
 

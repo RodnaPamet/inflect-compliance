@@ -45,6 +45,7 @@ import { isOnboardingRefusal } from '@/lib/onboarding-refusals';
 import { Nis2SelfAssessmentStep } from './Nis2SelfAssessmentStep';
 import { AiGovSelfAssessmentStep } from './AiGovSelfAssessmentStep';
 import { SovereigntySelfAssessmentStep } from './SovereigntySelfAssessmentStep';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 // ─── Step Definitions ───
 //
@@ -974,7 +975,7 @@ function FrameworkSelectionStep({ data, onUpdate }: { data: StepData; onUpdate: 
             {frameworks.filter(fw => isSelected(fw.key) && choosesPacks(fw)).map(fw => {
                 const chosen = selectedPacks[fw.key] ?? [];
                 return (
-                    <div key={fw.key} className="rounded-lg border border-border-subtle p-4 space-y-compact" data-testid={`fw-packs-${fw.key.toLowerCase()}`}>
+                    <ShadedRow padding="lg" key={fw.key} className="space-y-compact" data-testid={`fw-packs-${fw.key.toLowerCase()}`}>
                         <p className="text-sm font-semibold text-content-emphasis">{t('wizard.frameworks.choosePacks', { name: fw.name })}</p>
                         <p className="text-xs text-content-muted">{t('wizard.frameworks.choosePacksHint')}</p>
                         <div className="space-y-tight">
@@ -996,7 +997,7 @@ function FrameworkSelectionStep({ data, onUpdate }: { data: StepData; onUpdate: 
                         {chosen.length === 0 && (
                             <p className="text-xs text-content-warning">{t('wizard.frameworks.choosePacksRequired', { name: fw.name })}</p>
                         )}
-                    </div>
+                    </ShadedRow>
                 );
             })}
 
@@ -1050,7 +1051,7 @@ function AssetSetupStep({ data, onUpdate }: { data: StepData; onUpdate: (d: Step
             {assets.length > 0 && (
                 <div className="space-y-1">
                     {assets.map(a => (
-                        <div key={a} className="flex items-center justify-between bg-bg-default/50 rounded-lg px-3 py-2 text-sm">
+                        <ShadedRow padding="none" key={a} className="flex items-center justify-between px-3 py-2 text-sm">
                             <div className="flex items-center gap-tight">
                                 <Server className="w-3.5 h-3.5 text-content-subtle" />
                                 <span className="text-content-emphasis">{a}</span>
@@ -1062,7 +1063,7 @@ function AssetSetupStep({ data, onUpdate }: { data: StepData; onUpdate: (d: Step
                                 aria-label={t('wizard.assets.remove', { name: a })}
                                 onClick={() => removeAsset(a)}
                             />
-                        </div>
+                        </ShadedRow>
                     ))}
                 </div>
             )}
@@ -1088,14 +1089,14 @@ function ControlInstallStep({ data, onUpdate, allData }: { data: StepData; onUpd
             ) : (
                 <div className="space-y-compact">
                     {selectedFrameworks.map(fw => (
-                        <div key={fw} className="flex items-center gap-compact p-3 bg-bg-default/50 rounded-lg">
+                        <ShadedRow key={fw} className="flex items-center gap-compact">
                             <ShieldCheck className="w-5 h-5 text-brand-400" />
                             <div>
                                 <span className="text-sm font-medium text-content-emphasis">{fwLabels[fw] || fw}</span>
                                 <p className="text-xs text-content-subtle">{t('wizard.controls.willInstall')}</p>
                             </div>
                             <CheckCircle2 className="w-4 h-4 text-content-success ml-auto" />
-                        </div>
+                        </ShadedRow>
                     ))}
                 </div>
             )}
@@ -1182,7 +1183,7 @@ function TeamSetupStep({ data, onUpdate }: { data: StepData; onUpdate: (d: StepD
             {emails.length > 0 && (
                 <div className="space-y-1">
                     {emails.map(e => (
-                        <div key={e} className="flex items-center justify-between bg-bg-default/50 rounded-lg px-3 py-2 text-sm">
+                        <ShadedRow padding="none" key={e} className="flex items-center justify-between px-3 py-2 text-sm">
                             <div className="flex items-center gap-tight">
                                 <Users className="w-3.5 h-3.5 text-content-subtle" />
                                 <span className="text-content-emphasis">{e}</span>
@@ -1194,7 +1195,7 @@ function TeamSetupStep({ data, onUpdate }: { data: StepData; onUpdate: (d: StepD
                                 aria-label={t('wizard.team.remove', { email: e })}
                                 onClick={() => removeEmail(e)}
                             />
-                        </div>
+                        </ShadedRow>
                     ))}
                 </div>
             )}
@@ -1235,7 +1236,7 @@ function ReviewStep({ completedSteps, allData }: { completedSteps: string[]; all
                 {summaryItems.map(item => {
                     const done = completedSteps.includes(item.key);
                     return (
-                        <div key={item.key} className="flex items-center gap-compact p-3 bg-bg-default/30 rounded-lg" data-testid={`review-${item.key}`}>
+                        <ShadedRow key={item.key} className="flex items-center gap-compact" data-testid={`review-${item.key}`}>
                             {done ? (
                                 <CheckCircle2 className="w-5 h-5 text-content-success flex-shrink-0" />
                             ) : (
@@ -1245,7 +1246,7 @@ function ReviewStep({ completedSteps, allData }: { completedSteps: string[]; all
                                 <span className="text-sm font-medium text-content-emphasis">{item.label}</span>
                                 <p className="text-xs text-content-subtle truncate">{item.detail}</p>
                             </div>
-                        </div>
+                        </ShadedRow>
                     );
                 })}
             </div>

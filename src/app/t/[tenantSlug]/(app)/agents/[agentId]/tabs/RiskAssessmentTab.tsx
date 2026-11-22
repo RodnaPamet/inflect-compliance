@@ -21,6 +21,7 @@ import { Heading } from '@/components/ui/typography';
 import { ApiClientError } from '@/lib/api-client';
 import { apiErrorMessage } from '@/lib/api-error';
 import { cn } from '@inflect/ui/lib/cn';
+import { ShadedRow } from '@/components/ui/shaded-row';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
@@ -898,12 +899,10 @@ function QuestionRow({
     const questionTextId = `agent-risk-question-${question.id}-text`;
 
     return (
-        <li
+        <ShadedRow
+            as="li"
             id={`agent-risk-question-${question.id}`}
-            className={cn(
-                'rounded-lg border border-border-subtle p-3 space-y-tight',
-                saving && 'opacity-60',
-            )}
+            className={cn('space-y-tight', saving && 'opacity-60')}
         >
             <div className="flex flex-wrap items-start gap-tight">
                 <StatusBadge variant={criticalityVariant(question.criticality)} size="sm">
@@ -969,7 +968,7 @@ function QuestionRow({
             {!canWrite && current?.note && (
                 <p className="text-xs text-content-muted">{current.note}</p>
             )}
-        </li>
+        </ShadedRow>
     );
 }
 

@@ -25,6 +25,7 @@ export default async function ClausesLoading() {
                 {/* Clause list */}
                 <div className="w-1/3 space-y-tight">
                     {[...Array(8)].map((_, i) => (
+                        // eslint-disable-next-line local/shaded-list-rows -- a loading skeleton, not a card's rows
                         <div
                             key={i}
                             className="rounded border border-border-default p-3 space-y-tight"

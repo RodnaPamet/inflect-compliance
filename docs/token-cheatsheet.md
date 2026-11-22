@@ -20,6 +20,12 @@ For the full rationale, see `src/styles/tokens.css`.
 | `bg-slate-100` (inverted) | `bg-bg-inverted` | `--bg-inverted` |
 | `bg-black/60` (modal backdrop) | `bg-bg-overlay` | `--bg-overlay` |
 | `bg-slate-700/30` (selection / disabled tint) | `bg-bg-subtle` | `--bg-subtle` |
+| (shaded band / boxed list row) | `bg-bg-shaded` | `--bg-shaded` |
+
+`--bg-shaded` is warm grey in light and a cool blue tint in dark (owner choice,
+2026-11-22). It is the detail-page tab bar's band and every boxed list row's
+box, always with `border-border-strong`: use `<ShadedRow>` (below) rather than
+writing the classes.
 
 ## Content / text
 
@@ -68,6 +74,7 @@ For these patterns, migrate to the component — not to semantic-class equivalen
 | `<button className="btn btn-danger">` | `<Button variant="danger">` |
 | `<span className="badge badge-success">` | `<Badge variant="success">` from `@/components/ui/badge`, or `<StatusBadge variant="success">` for badges with an icon / tooltip |
 | `<span className="badge badge-neutral">` | `<Badge variant="neutral">` (default) |
+| `<li className="rounded-lg border border-border-subtle p-3">` (one of a card's boxed rows) | `<ShadedRow as="li">` from `@/components/ui/shaded-row` — the shade and strong outline, `padding` `sm`/`md` (default)/`lg`/`xl`/`none`. A row carrying a state tone keeps its own classes. Lint: `local/shaded-list-rows` |
 
 The component layer carries:
 - Token-backed surface + text + border (so light mode works)

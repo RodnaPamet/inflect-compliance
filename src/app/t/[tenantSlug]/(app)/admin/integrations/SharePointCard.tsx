@@ -17,6 +17,7 @@ import { apiErrorMessage } from '@/lib/api-error';
 import Link from 'next/link';
 import { useToastWithUndo } from '@/components/ui/hooks';
 import { useTranslations } from 'next-intl';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 interface SpConnection {
     id: string;
@@ -225,7 +226,7 @@ export function SharePointCard() {
             {error && <InlineNotice variant="error">{error}</InlineNotice>}
 
             {connections.map((conn) => (
-                <div key={conn.id} className="rounded-md border border-border-subtle p-4 space-y-default" data-testid={`sp-connection-${conn.id}`}>
+                <ShadedRow padding="lg" key={conn.id} className="space-y-default" data-testid={`sp-connection-${conn.id}`}>
                     <div className="flex items-center gap-default">
                         <span className="font-medium text-content-default">{conn.name}</span>
                         {/* A DISABLED connection read "Connected": the badge looked
@@ -289,7 +290,7 @@ export function SharePointCard() {
                             </div>
                         </div>
                     )}
-                </div>
+                </ShadedRow>
             ))}
         </Card>
     );

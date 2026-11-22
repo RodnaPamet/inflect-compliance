@@ -65,6 +65,10 @@ module.exports = {
                     info: 'var(--bg-info)',
                     'info-emphasis': 'var(--bg-info-emphasis)',
                     attention: 'var(--bg-attention)',
+                    // The detail-page tab bar and every boxed list row
+                    // (`ShadedRow`): cool blue tint in dark, warm grey in
+                    // light (owner choice 2026-11-22).
+                    shaded: 'var(--bg-shaded)',
                 },
 
                 // ── Semantic content/text tokens ──

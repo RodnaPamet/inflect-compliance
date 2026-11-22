@@ -39,6 +39,7 @@ import {
     type IncidentSeverityKey,
     type IncidentPhaseKey,
 } from '../filter-defs';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 // ─── Types (the GET /incidents/{id} payload) ───────────────────────
 interface IncidentNotification {
@@ -440,12 +441,12 @@ export default function IncidentDetailPage() {
                                     const n = incident.notifications.find((x) => x.kind === kind);
                                     if (!n) return null;
                                     return (
-                                        <div
+                                        <ShadedRow padding="none"
                                             key={kind}
                                             // Anchor target for the compliance-calendar
                                             // incident-notification-due deep-link.
                                             id={`incident-notification-${n.id}`}
-                                            className="flex flex-wrap items-center justify-between gap-default rounded-lg border border-border-subtle px-4 py-3 scroll-mt-24"
+                                            className="flex flex-wrap items-center justify-between gap-default px-4 py-3 scroll-mt-24"
                                         >
                                             <div className="space-y-tight">
                                                 <div className="font-medium text-content-emphasis">
@@ -485,7 +486,7 @@ export default function IncidentDetailPage() {
                                                     </Button>
                                                 )}
                                             </div>
-                                        </div>
+                                        </ShadedRow>
                                     );
                                 })}
                             </div>
@@ -534,9 +535,9 @@ export default function IncidentDetailPage() {
                                     (l) => l.forensicCategory === cat.key,
                                 );
                                 return (
-                                    <li
+                                    <ShadedRow as="li" padding="none"
                                         key={cat.key}
-                                        className="flex flex-wrap items-center justify-between gap-default rounded-lg border border-border-subtle px-4 py-2"
+                                        className="flex flex-wrap items-center justify-between gap-default px-4 py-2"
                                     >
                                         <div className="space-y-tight">
                                             <div className="text-sm font-medium text-content-emphasis">
@@ -547,7 +548,7 @@ export default function IncidentDetailPage() {
                                         <StatusBadge variant={links.length > 0 ? 'success' : 'neutral'}>
                                             {links.length > 0 ? tx('detail.nLinked', { count: links.length }) : tx('detail.noneLinked')}
                                         </StatusBadge>
-                                    </li>
+                                    </ShadedRow>
                                 );
                             })}
                         </ul>
@@ -620,7 +621,7 @@ export default function IncidentDetailPage() {
                     </div>
                     <ol className="space-y-default">
                         {incident.timeline.map((t) => (
-                            <li key={t.id} className="rounded-lg border border-border-subtle px-4 py-3">
+                            <ShadedRow as="li" padding="none" key={t.id} className="px-4 py-3">
                                 <div className="flex items-center justify-between gap-default">
                                     <span className="text-xs text-content-muted">{formatDateTime(t.at)}</span>
                                     <StatusBadge variant="neutral">
@@ -628,7 +629,7 @@ export default function IncidentDetailPage() {
                                     </StatusBadge>
                                 </div>
                                 <p className="mt-1 text-sm text-content-default">{t.entry}</p>
-                            </li>
+                            </ShadedRow>
                         ))}
                     </ol>
                 </div>

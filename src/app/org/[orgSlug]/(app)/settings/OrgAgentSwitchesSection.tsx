@@ -51,6 +51,7 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { useOrgApiUrl, useOrgContext } from '@/lib/org-context-provider';
 import type { AgentSwitch, DeploymentSwitch } from '@/lib/agentic/agent-switches';
 import { TURN_CAP_KEYS, TURN_CAP_MAX, TURN_CAP_MIN, type TurnCapKey } from '@/lib/agentic/turn-caps';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 export interface OrgAgentSwitchesPayload {
     agentProfiles: { organization: boolean; deployment: DeploymentSwitch };
@@ -138,9 +139,8 @@ export function OrgAgentSwitchesSection({
                         const id = `org-agent-switch-${key}`;
                         const overridden = s.deployment !== 'UNSET';
                         return (
-                            <li
+                            <ShadedRow as="li"
                                 key={key}
-                                className="rounded-lg border border-border-subtle p-3"
                                 data-testid={`${id}-row`}
                                 data-deployment={s.deployment}
                             >
@@ -177,7 +177,7 @@ export function OrgAgentSwitchesSection({
                                         <InlineNotice variant="error" icon={null}>{error.message}</InlineNotice>
                                     </div>
                                 )}
-                            </li>
+                            </ShadedRow>
                         );
                     })}
                 </ul>
@@ -272,7 +272,7 @@ function TurnCapsGroup({ initial }: { initial: OrgAgentTurnCapsPayload }) {
                     const id = `org-turn-cap-${key}`;
                     const dirty = draft[key] !== state[key];
                     return (
-                        <li key={key} className="rounded-lg border border-border-subtle p-3" data-testid={`${id}-row`}>
+                        <ShadedRow as="li" key={key} data-testid={`${id}-row`}>
                             <FormField label={t(`turnCaps.${key}.label`)} description={t(`turnCaps.${key}.help`)}>
                                 <div className="flex items-center gap-compact">
                                     <NumberStepper
@@ -316,7 +316,7 @@ function TurnCapsGroup({ initial }: { initial: OrgAgentTurnCapsPayload }) {
                                     </InlineNotice>
                                 </div>
                             )}
-                        </li>
+                        </ShadedRow>
                     );
                 })}
             </ul>

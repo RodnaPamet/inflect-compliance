@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { apiErrorMessage } from '@/lib/api-error';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 interface Props {
     slug: string;
@@ -33,7 +34,7 @@ export function GatedDocumentRequests({ slug, ndaRequired, documents }: Props) {
             <p className="text-sm text-content-muted">{t('intro')}</p>
             <ul className="space-y-default">
                 {documents.map((d) => (
-                    <li key={d.id} className="rounded-md border border-border-subtle p-4 space-y-default">
+                    <ShadedRow as="li" padding="lg" key={d.id} className="space-y-default">
                         <div className="flex flex-wrap items-center justify-between gap-default">
                             <span className="font-medium text-content-default">{d.label}</span>
                             {!received.includes(d.id) && openId !== d.id && (
@@ -62,7 +63,7 @@ export function GatedDocumentRequests({ slug, ndaRequired, documents }: Props) {
                                 }}
                             />
                         )}
-                    </li>
+                    </ShadedRow>
                 ))}
             </ul>
         </section>

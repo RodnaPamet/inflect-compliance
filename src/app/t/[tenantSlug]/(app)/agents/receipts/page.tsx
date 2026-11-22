@@ -14,6 +14,7 @@ import { readReceiptPage } from '@/app-layer/usecases/agent-action-receipt';
 import { oversightReadsFor } from '@/app-layer/usecases/agent-oversight-settings';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { getTranslations } from 'next-intl/server';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 export const dynamic = 'force-dynamic';
 
@@ -208,9 +209,9 @@ export default async function AgentReceiptsPage({
                             const verdictKey = VERDICT_KEY[r.decisionVerdict.trim().toLowerCase()];
                             const provenanceKey = r.toolProvenance ? PROVENANCE_KEY[r.toolProvenance] : undefined;
                             return (
-                                <li
+                                <ShadedRow as="li" padding="lg"
                                     key={r.id}
-                                    className="flex flex-col gap-tight rounded-lg border border-border-subtle bg-bg-default p-4"
+                                    className="flex flex-col gap-tight"
                                     data-testid={`receipt-${r.id}`}
                                 >
                                     <div className="flex flex-col gap-tight sm:flex-row sm:items-center sm:justify-between">
@@ -309,7 +310,7 @@ export default async function AgentReceiptsPage({
                                             </div>
                                         </dl>
                                     </details>
-                                </li>
+                                </ShadedRow>
                             );
                         })}
                     </ul>
