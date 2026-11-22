@@ -28,6 +28,16 @@
  * This is the weaker stop the kill-switch variance names.
  *
  * The stream does not replay. `events.list` returns the whole history.
+ *
+ * ── THE CLEAN-UP SURFACE (Step 5c, #4166) ───────────────────────────────────
+ *
+ * `sessions.list` filtered by `agent_id` (archived sessions only with
+ * `include_archived=true`, `created_at[lte]` honoured), `sessions.retrieve`
+ * with the session's metadata, and `agents.archive`. `seedSession` and
+ * `seedAgent` put objects in the workspace that no run created: a FOREIGN
+ * session or agent, or a session a crash left unrecorded. `unreachable` makes
+ * every request fail at the network, and `authStatus` answers every request
+ * with that status, so a test can take the provider away and give it back.
  */
 
 export interface FauxScriptedTurn {
@@ -56,6 +66,8 @@ interface FauxSession {
     metadata: unknown;
     status: 'idle' | 'running' | 'terminated';
     deleted: boolean;
+    archived: boolean;
+    createdAt: string;
     history: FauxEvent[];
     subscribers: Set<ReadableStreamDefaultController<Uint8Array>>;
     pending: Set<string>;
@@ -110,6 +122,12 @@ export class ManagedAgentsFaux {
     readonly unexpectedResults: string[] = [];
     readonly interrupts: string[] = [];
     readonly deletes: string[] = [];
+    /** Agents archived, in order. */
+    readonly archives: string[] = [];
+    /** Every request fails at the network while this is true. */
+    unreachable = false;
+    /** Every request is answered with this status (401, 403, 503…) while set. */
+    authStatus: number | null = null;
     /** Called as each model call starts. */
     onModelCall: (() => void) | null = null;
     /** A Console edit: change what `agents.retrieve` returns. */
@@ -151,7 +169,14 @@ export class ManagedAgentsFaux {
         const body = typeof init?.body === 'string' && init.body.length > 0 ? (JSON.parse(init.body) as Record<string, unknown>) : null;
         this.requests.push({ method, path: url.pathname, body, headers: new Headers(init?.headers) });
         if (url.origin !== FAUX_ORIGIN) return apiError(404, 'not_found_error', 'not served here');
+        if (this.unreachable) throw new TypeError('faux: fetch failed (the workspace is unreachable)');
+        if (this.authStatus !== null) {
+            return apiError(this.authStatus, this.authStatus === 401 ? 'authentication_error' : this.authStatus === 403 ? 'permission_error' : 'api_error', 'refused');
+        }
         const p = url.pathname;
+        if (method === 'GET' && p === '/v1/sessions') return this.listSessions(url.searchParams);
+        const archive = /^\/v1\/agents\/([^/]+)\/archive$/.exec(p);
+        if (archive && method === 'POST') return this.archiveAgent(archive[1]);
 
         if (method === 'POST' && p === '/v1/agents') return this.createAgent(body ?? {});
         let m = /^\/v1\/agents\/([^/]+)$/.exec(p);
@@ -167,7 +192,7 @@ export class ManagedAgentsFaux {
         if (m && method === 'GET') {
             const s = this.sessions.get(m[1]);
             if (!s || s.deleted) return apiError(404, 'not_found_error', 'no such session');
-            return json({ id: s.id, type: 'session', status: s.status });
+            return json(this.sessionObject(s));
         }
         if (m && method === 'DELETE') return this.deleteSession(m[1]);
         m = /^\/v1\/sessions\/([^/]+)\/events$/.exec(p);
@@ -180,6 +205,85 @@ export class ManagedAgentsFaux {
         m = /^\/v1\/sessions\/([^/]+)\/events\/stream$/.exec(p);
         if (m && method === 'GET') return this.openStream(m[1], init?.signal ?? null);
         return apiError(404, 'not_found_error', `faux: ${method} ${p}`);
+    }
+
+    /** A session no run created: foreign, or one a crash left unrecorded. */
+    seedSession(input: { agentId: string; metadata?: Record<string, string>; status?: 'idle' | 'running' | 'terminated'; archived?: boolean }): string {
+        const id = this.nextId('sesn');
+        this.sessions.set(id, {
+            id,
+            agent: { type: 'agent', id: input.agentId },
+            system: '',
+            environmentId: 'env_seeded',
+            budget: null,
+            metadata: input.metadata ?? {},
+            status: input.status ?? 'idle',
+            deleted: false,
+            archived: input.archived ?? false,
+            createdAt: new Date().toISOString(),
+            history: [],
+            subscribers: new Set(),
+            pending: new Set(),
+            inFlight: false,
+            interruptRequested: false,
+            conversation: [],
+        });
+        return id;
+    }
+
+    /** An agent no provision created. */
+    seedAgent(name = 'foreign'): string {
+        const id = this.nextId('agent');
+        this.agents.set(id, [this.agentObject(id, 1, { name, model: 'claude-sonnet-5-5', system: 'not inflect' })]);
+        return id;
+    }
+
+    /** Is this session still in the workspace? */
+    holdsSession(id: string): boolean {
+        const s = this.sessions.get(id);
+        return Boolean(s && !s.deleted);
+    }
+
+    /** Is this agent archived? */
+    isArchived(id: string): boolean {
+        const versions = this.agents.get(id);
+        return Boolean(versions && versions[versions.length - 1].archived_at);
+    }
+
+    private sessionObject(s: FauxSession): Record<string, unknown> {
+        const agentId = typeof s.agent.id === 'string' ? s.agent.id : null;
+        return {
+            id: s.id,
+            type: 'session',
+            status: s.status,
+            agent: { type: 'agent', id: agentId },
+            metadata: (s.metadata ?? {}) as Record<string, string>,
+            archived_at: s.archived ? s.createdAt : null,
+            created_at: s.createdAt,
+            environment_id: s.environmentId,
+        };
+    }
+
+    private listSessions(params: URLSearchParams): Response {
+        const agentId = params.get('agent_id');
+        const includeArchived = params.get('include_archived') === 'true';
+        const lte = params.get('created_at[lte]');
+        const data = [...this.sessions.values()]
+            .filter((s) => !s.deleted)
+            .filter((s) => agentId === null || s.agent.id === agentId)
+            .filter((s) => includeArchived || !s.archived)
+            .filter((s) => lte === null || s.createdAt <= lte)
+            .map((s) => this.sessionObject(s));
+        return json({ data, next_page: null, prev_page: null });
+    }
+
+    private archiveAgent(id: string): Response {
+        const versions = this.agents.get(id);
+        if (!versions) return apiError(404, 'not_found_error', 'no such agent');
+        const latest = versions[versions.length - 1];
+        latest.archived_at = new Date().toISOString();
+        this.archives.push(id);
+        return json(latest);
     }
 
     private agentObject(id: string, version: number, body: Record<string, unknown>): Record<string, unknown> {
@@ -239,6 +343,8 @@ export class ManagedAgentsFaux {
             metadata: body.metadata,
             status: 'idle',
             deleted: false,
+            archived: false,
+            createdAt: new Date().toISOString(),
             history: [],
             subscribers: new Set(),
             pending: new Set(),

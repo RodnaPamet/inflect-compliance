@@ -213,6 +213,7 @@ model Tenant {
   agentProfiles                     AgentProfile[]
   agentProfileVersions              AgentProfileVersion[]
   agentProfileProvisions            AgentProfileProvision[]
+  managedAgentsCleanups             ManagedAgentsCleanup[]
   agentSpendingAuthorities          AgentSpendingAuthority[]
   peerAgentMessages                 PeerAgentMessage[]
   peerAgentKillSwitches             PeerAgentKillSwitch[]

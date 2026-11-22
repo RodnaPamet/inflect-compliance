@@ -316,7 +316,8 @@ export function toolRunnerModelFor(tier: ProfileModelTier): string {
 //     (`anthropicWorkspaceHeaders`), as the connection's Test sends it;
 //   • the API is Managed Agents, not Messages: `managedAgentsRequestRefusal`
 //     admits the agent, environment and session calls the engine makes and
-//     nothing else.
+//     nothing else, and Step 5c's clean-up calls: a session list by recorded
+//     agent and an agent archive.
 //
 // Everything `clientForRun` pins is pinned here the same way: the origin, the
 // log level and logger, metadata-only tracing with no propagation, no webhook
@@ -346,7 +347,12 @@ export type ManagedAgentsRequestRefusal =
     /** A session asking for vaults, resources, or overriding anything but `system`. */
     | 'SESSION_REACHES_BEYOND_SYSTEM'
     /** An environment that is not `cloud` with `limited` networking and no hosts. */
-    | 'ENVIRONMENT_NOT_SEALED';
+    | 'ENVIRONMENT_NOT_SEALED'
+    /** A session list with no `agent_id`: a list of the customer's whole workspace (Step 5c). */
+    | 'SESSION_LIST_NOT_BY_AGENT';
+
+/** Archiving an agent: the one POST the engine sends without a body (Step 5c). */
+const ARCHIVE_AGENT = /^\/v1\/agents\/[A-Za-z0-9_-]+\/archive$/;
 
 /** The routes the engine calls, by method. Anything else is refused. */
 const MANAGED_AGENTS_ROUTES: ReadonlyArray<{ readonly method: string; readonly path: RegExp }> = [
@@ -355,11 +361,18 @@ const MANAGED_AGENTS_ROUTES: ReadonlyArray<{ readonly method: string; readonly p
     { method: 'POST', path: /^\/v1\/agents\/[A-Za-z0-9_-]+$/ },
     { method: 'POST', path: /^\/v1\/environments$/ },
     { method: 'POST', path: /^\/v1\/sessions$/ },
+    // Step 5c's crash window: a session list, which the clean-up sends only
+    // with an `agent_id` Inflect recorded (`listCrashWindow` in
+    // `managed-agents/cleanup.ts`). A list with no `agent_id` is refused below.
+    { method: 'GET', path: /^\/v1\/sessions$/ },
     { method: 'GET', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+$/ },
     { method: 'DELETE', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+$/ },
     { method: 'GET', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+\/events$/ },
     { method: 'POST', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+\/events$/ },
     { method: 'GET', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+\/events\/stream$/ },
+    // Step 5c: archive a recorded agent. It carries no body, so it is answered
+    // before the body checks below (`ARCHIVE_AGENT`).
+    { method: 'POST', path: ARCHIVE_AGENT },
 ];
 
 /** Present and not an empty list or `null`: what "asks for it" means for an optional body member. */
@@ -380,7 +393,14 @@ export function managedAgentsRequestRefusal(request: { method?: string; url: str
     if (!MANAGED_AGENTS_ROUTES.some((r) => r.method === method && r.path.test(url.pathname))) {
         return 'NOT_A_MANAGED_AGENTS_CALL';
     }
+    // A session list must name a recorded agent: the clean-up never lists a
+    // customer's whole workspace (Step 5c).
+    if (method === 'GET' && url.pathname === '/v1/sessions') {
+        return url.searchParams.get('agent_id') ? null : 'SESSION_LIST_NOT_BY_AGENT';
+    }
     if (method !== 'POST') return null;
+    // Archive takes no body: exempt from the body checks, and only this path.
+    if (ARCHIVE_AGENT.test(url.pathname)) return null;
     let members: Record<string, unknown>;
     try {
         const parsed: unknown = typeof request.body === 'string' ? JSON.parse(request.body) : null;

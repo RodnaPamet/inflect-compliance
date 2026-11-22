@@ -3671,6 +3671,75 @@ model AgentProfileProvision {
   @@index([tenantId, connectionId])
 }
 
+/// ONE REMOTE CLEAN-UP of what Inflect created in a customer's Anthropic
+/// workspace (Step 5c of `docs/claude-managed-agents-design.md`, #4166): the
+/// sessions to delete and the agents to archive, by the ids Inflect recorded,
+/// and what became of them.
+///
+/// ## Three triggers
+///
+/// `TENANT_PURGE`: written by the tenant purge after ONE attempt made before
+/// any of the tenant's rows are deleted. Inflect never keeps the customer's key
+/// past the purge (owner decision 7), so this row is never retried: it ends
+/// `DONE`, or `PURGED_KEY_DESTROYED_UNFINISHED` naming what is left, for a
+/// person to finish in the customer's workspace.
+///
+/// `CONNECTION_REMOVED` and `DSAR_ERASURE`: opened `OPEN` and retried by the
+/// data-lifecycle job, which reads the (disabled) connection's key, until
+/// `DONE`, or `ABANDONED` after `CLEANUP_ABANDON_AFTER_DAYS`.
+///
+/// ## Ids and codes only
+///
+/// The workspace id, the connection id, Anthropic's session and agent ids, a
+/// named outcome and timestamps. NO key and no ciphertext of one: that is the
+/// point of owner decision 7. No free text, so nothing is encrypted.
+///
+/// ## Retained by the tenant purge
+///
+/// A Regulatory artefact in `docs/data-retention.md`: the record that a
+/// processor was told to delete, and of what it did not delete. In
+/// `TENANT_PURGE_RETAINED`, with no foreign key but `tenantId` (RESTRICT, to the
+/// retained tombstone), so no cascade from a purged table reaches it.
+/// `connectionId` is a plain id for the same reason. `app_user` holds no DELETE.
+model ManagedAgentsCleanup {
+  id                String    @id @default(cuid())
+  tenantId          String
+  /// `TENANT_PURGE` | `CONNECTION_REMOVED` | `DSAR_ERASURE` (CHECK).
+  trigger           String
+  /// The `anthropic-workspace` connection, by plain id: it outlives the row.
+  connectionId      String
+  workspaceId       String
+  /// `OPEN` | `DONE` | `ABANDONED` | `PURGED_KEY_DESTROYED_UNFINISHED` |
+  /// `SUPERSEDED_BY_PURGE` (CHECK). Only `OPEN` is retried.
+  status            String
+  /// The named outcome: why it is not done, or `NOTHING_RECORDED` when the
+  /// ledger held nothing for the connection. Shape-checked. Not called
+  /// `reason`: that name is in the field-encryption manifest, and a write to a
+  /// model outside it encrypts every manifest field name it carries.
+  outcome           String?
+  /// The clean-up covers what was recorded at or before this instant.
+  coversUntil       DateTime
+  /// Sessions still to delete, including any the crash window found.
+  pendingSessionIds String[]  @default([])
+  /// Agents still to archive.
+  pendingAgentIds   String[]  @default([])
+  deletedSessionIds String[]  @default([])
+  archivedAgentIds  String[]  @default([])
+  attempts          Int       @default(0)
+  createdAt         DateTime  @default(now())
+  lastAttemptAt     DateTime?
+  closedAt          DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  /// A tenant's records by state.
+  @@index([tenantId, status])
+  /// The records of one connection.
+  @@index([tenantId, connectionId])
+  /// The data-lifecycle job's cross-tenant read of `OPEN` records, oldest first.
+  @@index([status, createdAt])
+}
+
 /// ONE SIGNED A2A MESSAGE, sent or received (#3679, step 4b; UC5): the receipt
 /// both sides keep.
 ///

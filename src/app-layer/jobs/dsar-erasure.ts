@@ -252,18 +252,52 @@ function isReferenceRefusal(error: unknown): boolean {
  */
 export async function eraseUser(
     userId: string,
-    options: { db?: ErasureDb } = {},
+    options: { db?: ErasureDb; afterCommit?: ErasureAfterCommit } = {},
 ): Promise<ErasureReceipt> {
     if (!userId) {
         throw new Error('dsar-erasure: refusing to erase without a subject id.');
     }
-    if (options.db) return eraseUserWithin(options.db, userId);
+    let erased: { receipt: ErasureReceipt; tenantIds: string[] };
+    if (options.db) {
+        erased = await eraseUserWithin(options.db, userId);
+    } else {
+        // Imported lazily so that merely importing this module does not build the
+        // Prisma client: `coolingOffElapsed` and `planErasure` are both usable
+        // without one, and their tests should not pay for a client they never use.
+        const { runInGlobalContext } = await import('@/lib/db-context');
+        erased = await runInGlobalContext((db) => eraseUserWithin(db as unknown as ErasureDb, userId));
+    }
 
-    // Imported lazily so that merely importing this module does not build the
-    // Prisma client: `coolingOffElapsed` and `planErasure` are both usable
-    // without one, and their tests should not pay for a client they never use.
-    const { runInGlobalContext } = await import('@/lib/db-context');
-    return runInGlobalContext((db) => eraseUserWithin(db as unknown as ErasureDb, userId));
+    // ── AFTER THE TRANSACTION HAS COMMITTED (Step 5c, #4166) ───────────
+    //
+    // Kept Managed Agents sessions in the customer's own Anthropic workspace
+    // may hold anything the person said to an agent, and Inflect cannot read a
+    // transcript to find them in it, so every KEPT session in every tenant
+    // where they held a membership is deleted (owner decisions 4 and 7 of
+    // docs/claude-managed-agents-design.md). Never inside the transaction: a
+    // provider call cannot be rolled back, and an erasure must not wait on
+    // one. Never failing the erasure, which has already happened: what is
+    // left is an OPEN record the data-lifecycle job retries.
+    await (options.afterCommit ?? deleteKeptManagedAgentsSessions)(erased.tenantIds);
+    return erased.receipt;
+}
+
+/**
+ * What runs after an erasure commits, given the tenants where the subject
+ * held a membership. Never throws. A parameter so a test can observe it; the
+ * default is the one production uses.
+ */
+export type ErasureAfterCommit = (tenantIds: readonly string[]) => Promise<void>;
+
+async function deleteKeptManagedAgentsSessions(tenantIds: readonly string[]): Promise<void> {
+    if (tenantIds.length === 0) return;
+    try {
+        const { openDsarErasureCleanups } = await import('@/app-layer/usecases/managed-agents-cleanup');
+        await openDsarErasureCleanups(tenantIds);
+    } catch {
+        // `openDsarErasureCleanups` logs and meters its own failures; this
+        // catches only a failure to load it, which must not undo nothing.
+    }
 }
 
 /**
@@ -409,7 +443,7 @@ async function recordErasure(
 }
 
 /** The cascade itself, in one transaction. See {@link eraseUser}. */
-async function eraseUserWithin(db: ErasureDb, userId: string): Promise<ErasureReceipt> {
+async function eraseUserWithin(db: ErasureDb, userId: string): Promise<{ receipt: ErasureReceipt; tenantIds: string[] }> {
     return db.$transaction(async (tx) => {
         // ── POSITIVE CONTROL, same reasoning as planErasure's ──────
         //
@@ -534,12 +568,22 @@ async function eraseUserWithin(db: ErasureDb, userId: string): Promise<ErasureRe
         }
 
         return {
-            userId,
-            auditRowsPseudonymized: count,
-            auditRowsDeleted: 0,
-            userDeleted: true,
-            erasureRecordIds,
-            auditRowsTolerated,
+            receipt: {
+                userId,
+                auditRowsPseudonymized: count,
+                auditRowsDeleted: 0,
+                userDeleted: true,
+                erasureRecordIds,
+                auditRowsTolerated,
+            },
+            // THE TENANTS WHERE THE SUBJECT HELD A MEMBERSHIP, for the
+            // after-commit clean-up above. Read off the subject's own audit
+            // rows, captured before the pseudonymization: a `TenantMembership`
+            // row is a RESTRICT blocker, so none survives to this point, and
+            // what a member did in a tenant (accepting its invite among it) is
+            // an audit row naming them. A member who never acted in a tenant
+            // leaves no such row; the Step 5c note records that gap (#4166).
+            tenantIds: [...new Set(rowsBefore.map((r) => r.tenantId))].sort(),
         };
     });
 }

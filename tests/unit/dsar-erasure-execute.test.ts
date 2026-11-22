@@ -470,7 +470,9 @@ describe('eraseUser — the default client', () => {
         const fake = makeFakeDb();
         mockGlobalDbHolder.db = fake.db;
 
-        const receipt = await eraseUser(SUBJECT);
+        // The after-commit provider clean-up (Step 5c) reads through a client
+        // of its own; it is held out here so the count is the ERASURE's alone.
+        const receipt = await eraseUser(SUBJECT, { afterCommit: async () => undefined });
 
         expect(runInGlobalContext).toHaveBeenCalledTimes(1);
         expect(receipt.userDeleted).toBe(true);
@@ -479,7 +481,8 @@ describe('eraseUser — the default client', () => {
 
     it('does not reach for a client at all when one is injected', async () => {
         const fake = makeFakeDb();
-        await eraseUser(SUBJECT, { db: fake.db });
+        // The erasure's own client; the Step 5c hook's is held out, as above.
+        await eraseUser(SUBJECT, { db: fake.db, afterCommit: async () => undefined });
         expect(runInGlobalContext).not.toHaveBeenCalled();
     });
 });
@@ -533,5 +536,32 @@ describe('eraseUser — the read and the write must have seen the same rows (#26
         await expect(eraseUser(SUBJECT, { db: fake.db })).rejects.toThrow(/dsar-erasure/);
 
         expect(fake.calls).not.toContain('user:delete');
+    });
+});
+
+describe('eraseUser — the provider clean-up runs AFTER the commit, never inside it (Step 5c, #4166)', () => {
+    // Owner decision 7 of docs/claude-managed-agents-design.md: after the
+    // erasure's transaction commits, every KEPT Managed Agents session in every
+    // tenant where the person held a membership is deleted. The hook is handed
+    // the tenants; the DB-backed suite (`managed-agents-cleanup.test.ts`)
+    // proves what the default hook deletes.
+    it('hands the hook the tenants the subject acted in, once the transaction has committed', async () => {
+        const fake = makeFakeDb();
+        const seen: Array<{ tenants: readonly string[]; committed: boolean }> = [];
+        await eraseUser(SUBJECT, {
+            db: fake.db,
+            afterCommit: async (tenants) => {
+                seen.push({ tenants, committed: fake.committed.userDeleted });
+            },
+        });
+        // The fixture's rows span two tenants; the hook ran with the erasure committed.
+        expect(seen).toEqual([{ tenants: ['tenant-a', 'tenant-b'], committed: true }]);
+    });
+
+    it('never runs the hook for an erasure that rolled back', async () => {
+        const fake = makeFakeDb({ deleteError: Object.assign(new Error('Foreign key constraint violated'), { code: 'P2003' }) });
+        const hook = jest.fn(async () => undefined);
+        await expect(eraseUser(SUBJECT, { db: fake.db, afterCommit: hook })).rejects.toThrow(/refused by a reference/i);
+        expect(hook).not.toHaveBeenCalled();
     });
 });

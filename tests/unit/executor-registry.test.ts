@@ -91,6 +91,13 @@ jest.mock('@/lib/prisma', () => ({ prisma: {} }));
 jest.mock('@/app-layer/usecases/tenant-purge', () => ({
     purgeSoftDeletedTenants: jest.fn(async () => []),
 }));
+// Step 5c (#4166): data-lifecycle retries the Managed Agents clean-ups and runs
+// the lost-delete reconciliation. Both are proved against a real schema and a
+// faux workspace in tests/integration/managed-agents-cleanup.test.ts.
+jest.mock('@/app-layer/usecases/managed-agents-cleanup', () => ({
+    retryOpenManagedAgentsCleanups: jest.fn(async () => ({ attempted: 0, done: 0, abandoned: 0, open: 0 })),
+    reconcileLostSessionDeletes: jest.fn(async () => ({ checked: 0, lost: 0, deleted: 0, failed: 0 })),
+}));
 jest.mock('@/app-layer/jobs/nvd-cve-sync', () => ({
     runNvdCveSync: jest.fn(async () => ({
         fetched: 0, upserted: 0, skipped: 0, matched: 0, windowStart: 'a', windowEnd: 'b',

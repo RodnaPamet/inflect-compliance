@@ -499,6 +499,24 @@ executorRegistry.register('data-lifecycle', async (payload) => {
         dryRun: payload.dryRun,
     });
 
+    // Step 5c (#4166) — what Inflect created in customers' Anthropic
+    // workspaces. The OPEN clean-ups (a removed connection, a DSAR erasure)
+    // are retried with the disabled connection's key until done, or ABANDONED
+    // after 30 days; then the lost-delete reconciliation reads back the
+    // sessions recorded DELETED. Both BEFORE the tenant purge, which closes
+    // the open records of the tenants it purges. A dry run sends nothing.
+    const managedAgentsCleanup = payload.dryRun
+        ? null
+        : await (async () => {
+            const { retryOpenManagedAgentsCleanups, reconcileLostSessionDeletes } = await import(
+                '../usecases/managed-agents-cleanup'
+            );
+            return {
+                retried: await retryOpenManagedAgentsCleanups(),
+                reconciled: await reconcileLostSessionDeletes(),
+            };
+        })();
+
     // #2747 — tenants deleted from the org plane. Runs LAST, after the
     // per-model purges above: those work on `deletedAt` per row and would
     // otherwise be scanning tables this is about to empty wholesale.
@@ -532,7 +550,7 @@ executorRegistry.register('data-lifecycle', async (payload) => {
         totalScanned, totalActioned, 0,
         {
             purgeResults, evidencePurge, identityPurge, legacySnapshotPurge,
-            retentionResults, tenantPurge,
+            retentionResults, tenantPurge, managedAgentsCleanup,
         },
     );
 });
