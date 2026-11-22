@@ -903,6 +903,7 @@ function SectionCard({
             <div className="space-y-tight mb-3">
                 {section.questions.map((q, qi) =>
                     editingQuestionId === q.id ? (
+                        // eslint-disable-next-line local/shaded-list-rows -- the one question being EDITED, boxed as an edit state; its siblings are unboxed rows
                         <div
                             key={q.id}
                             className="rounded border border-border-subtle p-compact"

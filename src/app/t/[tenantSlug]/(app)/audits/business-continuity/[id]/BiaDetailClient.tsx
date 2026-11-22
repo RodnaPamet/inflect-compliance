@@ -29,6 +29,7 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { DependencyPickerRow, useDepTypeLabel } from '../BiaDependencyControls';
 import { buildBiaCriticalityLabels } from '../filter-defs';
 import { BiaLinkControlModal } from './BiaLinkControlModal';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 interface ImpactPoint {
     atHours: number;
@@ -320,9 +321,9 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
                     ) : (
                         <ul className="space-y-tight">
                             {dependencies.map((d) => (
-                                <li
+                                <ShadedRow as="li" padding="none"
                                     key={d.id}
-                                    className="flex items-center justify-between rounded-lg border border-border-subtle px-3 py-1.5 text-sm"
+                                    className="flex items-center justify-between px-3 py-1.5 text-sm"
                                 >
                                     <span className="text-content-default">
                                         <span className="text-content-subtle">{depTypeLabel(d.dependsOnType)}</span>{' '}
@@ -345,7 +346,7 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
                                         {tx('biaDetail.depRemove')}
                                     </Button>
                                     )}
-                                </li>
+                                </ShadedRow>
                             ))}
                         </ul>
                     )}
@@ -390,7 +391,7 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
                     ) : (
                         <div className="space-y-default">
                             {bia.linkedControls.map((c) => (
-                                <div key={c.id} className="rounded-lg border border-border-subtle p-3 space-y-tight">
+                                <ShadedRow key={c.id} className="space-y-tight">
                                     <Link
                                         href={`/t/${tenantSlug}/controls/${c.id}`}
                                         className="text-sm font-medium text-content-link hover:underline"
@@ -408,7 +409,7 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
                                             ))}
                                         </div>
                                     )}
-                                </div>
+                                </ShadedRow>
                             ))}
                             {canWrite && (
                             <Button variant="secondary" onClick={() => setShowLinkControl(true)}>

@@ -57,6 +57,7 @@ import type {
     WidgetPosition,
     WidgetSize,
 } from '@/app-layer/schemas/org-dashboard-widget.schemas';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 const INITIATIVE_STATUSES = [
     'PLANNED',
@@ -496,9 +497,10 @@ export function WidgetPicker({
                             disabled={isEdit}
                         >
                             {widgetTypes.map((opt) => (
-                                <div
+                                <ShadedRow
                                     key={opt.type}
-                                    className={`flex items-start gap-compact rounded-md border border-border-subtle p-3 ${isEdit ? 'opacity-60' : 'hover:border-border-default'}`}
+                                    interactive={!isEdit}
+                                    className={isEdit ? 'flex items-start gap-compact opacity-60' : 'flex items-start gap-compact cursor-default'}
                                 >
                                     <RadioGroupItem
                                         value={opt.type}
@@ -517,7 +519,7 @@ export function WidgetPicker({
                                             {opt.description}
                                         </p>
                                     </div>
-                                </div>
+                                </ShadedRow>
                             ))}
                         </RadioGroup>
                     </FormField>

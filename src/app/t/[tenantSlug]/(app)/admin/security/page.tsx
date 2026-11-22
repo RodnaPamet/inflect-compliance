@@ -27,6 +27,7 @@ import { UserCombobox, type Member } from '@/components/ui/user-combobox';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 type MfaPolicy = 'DISABLED' | 'OPTIONAL' | 'REQUIRED';
 
@@ -298,14 +299,14 @@ export default function AdminSecurityPage() {
                     className="space-y-compact"
                 >
                     {POLICY_VALUES.map((value) => (
-                        <label
+                        <ShadedRow
+                            as="label"
                             key={value}
                             htmlFor={`mfa-policy-${value}`}
-                            className={`flex items-start gap-compact p-4 rounded-lg border cursor-pointer transition-all ${
-                                settings?.mfaPolicy === value
-                                    ? 'border-[var(--brand-default)]/60 bg-[var(--brand-subtle)]'
-                                    : 'border-border-default hover:border-border-emphasis'
-                            }`}
+                            padding="lg"
+                            interactive
+                            selected={settings?.mfaPolicy === value}
+                            className="flex items-start gap-compact"
                         >
                             <RadioGroupItem
                                 id={`mfa-policy-${value}`}
@@ -324,7 +325,7 @@ export default function AdminSecurityPage() {
                                 </span>
                                 <p className="text-xs text-content-muted mt-1">{t(`security.policy.${value}.description`)}</p>
                             </div>
-                        </label>
+                        </ShadedRow>
                     ))}
                 </RadioGroup>
 

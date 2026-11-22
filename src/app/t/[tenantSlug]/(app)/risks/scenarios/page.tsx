@@ -29,6 +29,7 @@ import { useTranslations } from 'next-intl';
 import { RiskPicker } from '../_shared/RiskPicker';
 import { AnalyticsState } from '../_shared/AnalyticsState';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 interface Scenario { id: string; name: string; status: string; investmentCost: number | null; computedRoi: number | null; createdAt: string }
 
@@ -354,11 +355,11 @@ export default function RiskScenariosPage() {
                     {overrides.length > 0 && (
                         <ul className="space-y-tight" data-testid="scenario-overrides">
                             {overrides.map((o, i) => (
-                                <li key={`${o.riskId}-${o.field}`} className="flex items-center justify-between gap-default rounded-md border border-border-subtle px-3 py-1.5 text-sm">
+                                <ShadedRow as="li" padding="none" key={`${o.riskId}-${o.field}`} className="flex items-center justify-between gap-default px-3 py-1.5 text-sm">
                                     <span className="truncate text-content-emphasis">{o.label || o.riskId}</span>
                                     <span className="tabular-nums text-content-muted">{fieldLabel(o.field)} → {formatValue(o.field, o.newValue)}</span>
                                     <Button size="sm" variant="ghost" onClick={() => removeOverride(i)}>{t('scenarios.removeOverride')}</Button>
-                                </li>
+                                </ShadedRow>
                             ))}
                         </ul>
                     )}

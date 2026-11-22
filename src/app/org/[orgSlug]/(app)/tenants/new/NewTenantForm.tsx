@@ -33,6 +33,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Heading } from '@/components/ui/typography';
 import { refreshSessionClaims } from '@/lib/auth/refresh-session-claims';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 interface Props {
     orgSlug: string;
@@ -259,14 +260,13 @@ export function NewTenantForm({ orgSlug }: Props) {
                             const id = `org-new-tenant-framework-${opt.key}`;
                             const checked = framework === opt.key;
                             return (
-                                <label
+                                <ShadedRow
+                                    as="label"
                                     key={opt.key}
                                     htmlFor={id}
-                                    className={`flex items-start gap-compact rounded-lg border p-3 cursor-pointer transition-colors duration-150 ease-out ${
-                                        checked
-                                            ? 'border-border-emphasis bg-bg-subtle'
-                                            : 'border-border-subtle hover:bg-bg-muted'
-                                    }`}
+                                    interactive
+                                    selected={checked}
+                                    className="flex items-start gap-compact"
                                 >
                                     <RadioGroupItem
                                         id={id}
@@ -283,7 +283,7 @@ export function NewTenantForm({ orgSlug }: Props) {
                                             {opt.description}
                                         </p>
                                     </div>
-                                </label>
+                                </ShadedRow>
                             );
                         })}
                     </RadioGroup>

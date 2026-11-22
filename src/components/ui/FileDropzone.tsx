@@ -46,6 +46,7 @@ import { useLocale, useTranslations } from 'next-intl';
 
 import { FileTypeIcon } from '@/components/ui/file-type-icon';
 import { formatBytes } from '@/lib/format-bytes';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -584,11 +585,11 @@ function FileDropzoneInner(
                     data-testid="file-dropzone-list"
                 >
                     {entries.map((entry) => (
-                        <li
+                        <ShadedRow as="li" padding="none"
                             key={entry.id}
                             data-file-status={entry.status}
                             data-testid={`file-dropzone-row-${entry.id}`}
-                            className="flex items-center gap-compact rounded-md border border-border-default bg-bg-subtle px-3 py-2"
+                            className="flex items-center gap-compact px-3 py-2"
                         >
                             <FileTypeIcon
                                 fileName={entry.file.name}
@@ -646,7 +647,7 @@ function FileDropzoneInner(
                                     <X size={14} />
                                 </button>
                             )}
-                        </li>
+                        </ShadedRow>
                     ))}
                 </ul>
             )}

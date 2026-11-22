@@ -17,6 +17,7 @@ import { Heading } from '@/components/ui/typography';
 import { useMoneyFormatter } from '@/lib/tenant-context-provider';
 import type { BowTieGraph } from './BowTieCanvas';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 // xyflow is client-only + heavy — load the canvas on demand.
 const BowTieCanvas = dynamic(() => import('./BowTieCanvas').then((m) => m.BowTieCanvas), {
@@ -37,12 +38,12 @@ const effVariant = (e: number | null) => (e == null ? 'neutral' : e >= 70 ? 'suc
 
 function BarrierChip({ b }: { b: Barrier }) {
     return (
-        <div className="rounded-md border border-border-subtle bg-bg-muted/20 px-default py-tight text-sm">
+        <ShadedRow padding="none" className="px-default py-tight text-sm">
             <div className="flex items-center justify-between gap-tight">
                 <span className="flex items-center gap-tight truncate text-content-emphasis"><ShieldCheck className="size-3.5 shrink-0" />{b.title}</span>
                 <StatusBadge variant={effVariant(b.effectiveness)}>{b.effectiveness == null ? '—' : `${b.effectiveness}%`}</StatusBadge>
             </div>
-        </div>
+        </ShadedRow>
     );
 }
 
@@ -105,7 +106,7 @@ export function BowTiePanel({ riskId }: { riskId: string }) {
                 <div className="space-y-tight">
                     <Heading level={3} className="text-xs uppercase text-content-subtle">{t('bowtie.threats')}</Heading>
                     {p.threats.map((threat) => (
-                        <div key={threat.id} className="flex items-center gap-tight rounded-md border border-border-subtle px-default py-tight text-sm text-content-emphasis"><Bolt className="size-3.5 shrink-0" />{threat.label}</div>
+                        <ShadedRow padding="none" key={threat.id} className="flex items-center gap-tight px-default py-tight text-sm text-content-emphasis"><Bolt className="size-3.5 shrink-0" />{threat.label}</ShadedRow>
                     ))}
                 </div>
                 {/* Preventive barriers */}
@@ -130,12 +131,12 @@ export function BowTiePanel({ riskId }: { riskId: string }) {
                 <div className="space-y-tight">
                     <Heading level={3} className="text-xs uppercase text-content-subtle">{t('bowtie.consequences')}</Heading>
                     {p.consequences.map((c) => (
-                        <div key={c.id} className="rounded-md border border-border-subtle px-default py-tight text-sm">
+                        <ShadedRow padding="none" key={c.id} className="px-default py-tight text-sm">
                             <div className="flex justify-between gap-tight">
                                 <span className="flex items-center gap-tight truncate text-content-emphasis"><CurrencyDollar className="size-3.5 shrink-0" />{c.label}</span>
                                 <span className="tabular-nums text-content-muted">{money(c.magnitude)}</span>
                             </div>
-                        </div>
+                        </ShadedRow>
                     ))}
                 </div>
             </div>

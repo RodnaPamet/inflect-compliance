@@ -20,6 +20,7 @@ import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 import type { RichTextContentType } from '@/components/ui/RichTextEditor';
 import type { NewPolicyFormReturn } from './useNewPolicyForm';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 // Prompt-3.3 — the SAME Tiptap editor used for later versions (lazy, no SSR).
 const RichTextEditor = dynamic(
@@ -75,15 +76,14 @@ export function NewPolicyFields({ form }: { form: NewPolicyFormReturn }) {
                     ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-tight max-h-60 overflow-y-auto">
                             {form.templates.map((tpl) => (
-                                <button
+                                <ShadedRow
+                                    as="button"
                                     key={tpl.id}
                                     type="button"
                                     onClick={() => form.selectTemplate(tpl)}
-                                    className={`text-left p-3 rounded-lg border transition text-sm ${
-                                        form.fields.templateId === tpl.id
-                                            ? 'border-[var(--brand-default)] bg-[var(--brand-subtle)] text-content-emphasis'
-                                            : 'border-border-default bg-bg-default/50 text-content-default hover:bg-bg-muted/50'
-                                    }`}
+                                    interactive
+                                    selected={form.fields.templateId === tpl.id}
+                                    className={`text-left text-sm ${form.fields.templateId === tpl.id ? 'text-content-emphasis' : 'text-content-default'}`}
                                 >
                                     <p className="font-medium">{tpl.title}</p>
                                     {tpl.category && (
@@ -91,7 +91,7 @@ export function NewPolicyFields({ form }: { form: NewPolicyFormReturn }) {
                                             {tpl.category}
                                         </p>
                                     )}
-                                </button>
+                                </ShadedRow>
                             ))}
                         </div>
                     )}

@@ -413,6 +413,20 @@ const config = [
         rules: { 'local/web-bot-auth-single-seam': 'error' },
     },
     {
+        // ── Boxed list rows are <ShadedRow> (owner request, 2026-11-22) ──
+        //
+        // Every card that lists two or more boxed rows draws each row as its
+        // own shaded box, through ONE shared style with the detail-page tab
+        // bar's look: `src/components/ui/shaded-row.tsx`. A hand-rolled
+        // `rounded border border-border-subtle|default` row returned from a
+        // `.map(...)`, or on any `<li>`, fails here. A row that carries a
+        // state (a tone, a hover, a ring), a chip, a pill, a skeleton and a
+        // grid tile are left alone. See eslint-rules/rules/shaded-list-rows.js.
+        files: ['src/app/**/*.tsx', 'src/components/**/*.tsx'],
+        ignores: ['**/__tests__/**', '**/*.test.tsx', '**/*.spec.tsx'],
+        rules: { 'local/shaded-list-rows': 'error' },
+    },
+    {
         // The seam and the signer it calls.
         files: ['src/lib/web-bot-auth/bot-fetch.ts', 'src/lib/web-bot-auth/sign.ts'],
         rules: { 'local/web-bot-auth-single-seam': 'off' },

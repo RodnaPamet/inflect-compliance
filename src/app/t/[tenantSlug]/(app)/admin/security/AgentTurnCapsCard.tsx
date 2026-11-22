@@ -14,6 +14,7 @@ import { Heading } from '@/components/ui/typography';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { apiErrorMessage } from '@/lib/api-error';
 import { TURN_CAP_KEYS, TURN_CAP_MIN, type TurnCapKey, type TurnCaps } from '@/lib/agentic/turn-caps';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 /**
  * AGENT PER-TURN LIMITS — this workspace's narrowing of the two caps its
@@ -161,7 +162,7 @@ function TurnCapRow({
     }
 
     return (
-        <div className="rounded-lg border border-border-subtle p-3 space-y-default" data-testid={`${id}-row`}>
+        <ShadedRow className="space-y-default" data-testid={`${id}-row`}>
             <div className="flex flex-wrap items-center gap-tight" data-testid={`${id}-state`}>
                 <span className="text-sm font-medium text-content-emphasis">{label}</span>
                 <StatusBadge variant={cap.basis === 'WORKSPACE' ? 'info' : 'neutral'} size="sm">
@@ -234,6 +235,6 @@ function TurnCapRow({
                     text={t('security.agentTurnCaps.save')}
                 />
             </div>
-        </div>
+        </ShadedRow>
     );
 }

@@ -55,6 +55,7 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { apiErrorMessage } from '@/lib/api-error';
 import { FormField } from '@/components/ui/form-field';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 // ─── Types ───
 
@@ -1457,16 +1458,16 @@ export default function MembersAdminPage() {
                     {sessionsLoading ? (
                         <ul className="space-y-tight" aria-busy="true" aria-label={t('members.loadingSessionsAria')}>
                             {Array.from({ length: 3 }).map((_, i) => (
-                                <li
+                                <ShadedRow as="li"
                                     key={i}
-                                    className="border border-border-subtle rounded-md p-3 flex items-start justify-between gap-compact"
+                                    className="flex items-start justify-between gap-compact"
                                 >
                                     <div className="min-w-0 flex-1 space-y-tight">
                                         <Skeleton className="h-4 w-2/3" />
                                         <Skeleton className="h-3 w-1/2" />
                                     </div>
                                     <SkeletonButton className="h-6 w-16" />
-                                </li>
+                                </ShadedRow>
                             ))}
                         </ul>
                     ) : memberSessions.length === 0 ? (
@@ -1484,9 +1485,9 @@ export default function MembersAdminPage() {
                         )}
                         <ul className="space-y-tight" id="sessions-list">
                             {memberSessions.map((s) => (
-                                <li
+                                <ShadedRow as="li"
                                     key={s.sessionId}
-                                    className="border border-border-subtle rounded-md p-3 flex items-start justify-between gap-compact"
+                                    className="flex items-start justify-between gap-compact"
                                     data-session-id={s.sessionId}
                                 >
                                     <div className="min-w-0 flex-1">
@@ -1511,7 +1512,7 @@ export default function MembersAdminPage() {
                                             {revokingSessionId === s.sessionId ? t('members.revoking') : t('members.revoke')}
                                         </Button>
                                     )}
-                                </li>
+                                </ShadedRow>
                             ))}
                         </ul>
                         </>

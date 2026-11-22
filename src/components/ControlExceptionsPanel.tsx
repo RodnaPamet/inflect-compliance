@@ -30,6 +30,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 import { apiErrorMessage } from '@/lib/api-error';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 type Status = 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'EXPIRED';
 
@@ -186,9 +187,9 @@ export function ControlExceptionsPanel({
             ) : (
                 <ul className="space-y-tight" data-testid="control-exceptions-list">
                     {rows.map((r) => (
-                        <li
+                        <ShadedRow
+                            as="li"
                             key={r.id}
-                            className="rounded border border-border-subtle p-3"
                             data-testid={`control-exception-row-${r.id}`}
                         >
                             <div className="flex items-center justify-between gap-compact">
@@ -241,7 +242,7 @@ export function ControlExceptionsPanel({
                                 {t('requested', { date: formatDateTime(r.createdAt) })}
                                 {r.renewedFromId ? renewedFromText(r.renewedFromId) : ''}
                             </p>
-                        </li>
+                        </ShadedRow>
                     ))}
                 </ul>
             )}

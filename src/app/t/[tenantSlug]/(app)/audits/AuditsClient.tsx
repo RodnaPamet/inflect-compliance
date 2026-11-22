@@ -40,6 +40,7 @@ import { isAuditReadOnly } from '@/lib/audit-lifecycle';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import type { StatusBadgeVariant } from '@/components/ui/status-badge';
 import { auditWriteErrorFrom, auditWriteFailureMessage } from './_lib/audit-write-error';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 // listAudits → AuditRepository.list (auditListSelect). The lighter LIST row
 // (distinct from the detail AuditDetail). List map callback stays untyped.
@@ -655,7 +656,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                 <CardHeader title={`${t.checklist} (${selected.checklist?.length || 0})`} className="mb-3" />
                                 <div className="space-y-tight">
                                     {selected.checklist?.map((item) => (
-                                        <div key={item.id} className="flex flex-col sm:flex-row items-start gap-compact p-3 border border-border-default/50 rounded-lg">
+                                        <ShadedRow key={item.id} className="flex flex-col sm:flex-row items-start gap-compact">
                                             {/* A read-only viewer, or a completed or cancelled
                                                 audit, gets no picker: the badge at the row's end
                                                 already states the result. */}
@@ -681,7 +682,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                             </div>
                                             {/* R8-PR5 — checklist result restates the Combobox above it. Demote to `tone="subtle"` so the row reads as one state signal, not two competing pills. */}
                                             <StatusBadge tone="subtle" variant={CHECKLIST_RESULT_VARIANT[item.result] ?? DEFAULT_STATUS_VARIANT}>{resultLabel(item.result)}</StatusBadge>
-                                        </div>
+                                        </ShadedRow>
                                     ))}
                                 </div>
                             </div>
@@ -702,7 +703,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                     )}
                                 </div>
                                 {selected.findings?.length > 0 && selected.findings.map((f) => (
-                                    <div key={f.id} className="p-3 border border-border-default/50 rounded-lg mb-2">
+                                    <ShadedRow key={f.id} className="mb-2">
                                         <div className="flex items-center justify-between">
                                             {/* Opens the finding in the register (#4962),
                                                 which links back here by its source. */}
@@ -718,7 +719,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                                 {tx.has(`findingModal.severityOptions.${f.severity}`) ? tx(`findingModal.severityOptions.${f.severity}`) : f.severity}
                                             </StatusBadge>
                                         </div>
-                                    </div>
+                                    </ShadedRow>
                                 ))}
                             </div>
                         </div>

@@ -39,6 +39,7 @@ import { useTranslations } from 'next-intl';
 import { cardVariants } from '@/components/ui/card';
 import { EntityPrevNextNav } from '@/components/ui/entity-prev-next-nav';
 import { Button } from '@/components/ui/button';
+import { SHADED_SURFACE_CLASS } from '@/components/ui/shaded-row';
 
 import { cn } from '@inflect/ui/lib/cn';
 import { type BreadcrumbItem } from '@/components/ui/breadcrumbs';
@@ -321,14 +322,17 @@ export function EntityDetailLayout<TKey extends string = string>({
 
 
             {/* Tab bar (optional). One shaded, outlined band (2026-11-22):
-                `--bg-tab-bar` is the warm muted shade in light and the cool
+                `--bg-shaded` is the warm muted shade in light and the cool
                 blue tint in dark, each chosen to set off the active tab's
                 brand underline (orange / yellow); `border-border-strong`
                 (3.4:1 light, 5.8:1 dark on the page) traces the bar's
-                edge. No dividers between tabs: the gap separates them. */}
+                edge. No dividers between tabs: the gap separates them.
+                The band's classes are `SHADED_SURFACE_CLASS`, the same
+                source every boxed list row (`ShadedRow`) draws from, so
+                the two cannot drift apart. */}
             {tabs && tabs.length > 0 && (
                 <nav
-                    className="flex gap-1 overflow-x-auto rounded-lg border border-border-strong bg-[var(--bg-tab-bar)] px-1"
+                    className={cn('flex gap-1 overflow-x-auto px-1', SHADED_SURFACE_CLASS)}
                     role="tablist"
                     aria-label={t('table.detailSections')}
                     data-testid="entity-detail-tabs"

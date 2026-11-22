@@ -9,6 +9,7 @@ import { listAgentCredentials } from '@/app-layer/usecases/api-keys';
 import { AUTONOMY_REQUIRED_BY_CAPABILITY } from '@/lib/agentic/autonomy-ceiling';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { gateAdminPage } from '../_lib/admin-page-gate';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 export const dynamic = 'force-dynamic';
 
@@ -206,10 +207,10 @@ export default async function McpAdminPage({
                             const standing = standingLine(cred);
                             const ceiling = ceilingLine(cred);
                             return (
-                                <li
+                                <ShadedRow as="li" padding="lg"
                                     key={cred.id}
                                     id={`mcp-agent-credential-${cred.id}`}
-                                    className="flex flex-col gap-tight rounded-lg border border-border-subtle bg-bg-default p-4 sm:flex-row sm:items-center sm:justify-between"
+                                    className="flex flex-col gap-tight sm:flex-row sm:items-center sm:justify-between"
                                 >
                                     <span className="flex flex-col gap-tight">
                                         <span className="font-medium text-content-emphasis">
@@ -268,7 +269,7 @@ export default async function McpAdminPage({
                                             </span>
                                         )}
                                     </span>
-                                </li>
+                                </ShadedRow>
                             );
                         })}
                     </ul>

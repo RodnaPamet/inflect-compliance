@@ -30,6 +30,7 @@ import {
     formatEvalUsd,
     type EvalNightly,
 } from '@/lib/evals/evaluation-nightlies';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 const code = (chunks: ReactNode) => <code className="font-mono text-xs">{chunks}</code>;
 
@@ -57,7 +58,7 @@ function NightlyEntry({ nightly }: { nightly: EvalNightly }) {
     });
 
     return (
-        <li className="rounded-lg border border-border-subtle p-3" data-testid={id}>
+        <ShadedRow as="li" data-testid={id}>
             <div className="flex items-center gap-compact">
                 <span className="font-medium text-content-emphasis">{t(`${nightly.key}.name`)}</span>
                 <span className="ml-auto">
@@ -98,7 +99,7 @@ function NightlyEntry({ nightly }: { nightly: EvalNightly }) {
                     </dd>
                 </div>
             </dl>
-        </li>
+        </ShadedRow>
     );
 }
 

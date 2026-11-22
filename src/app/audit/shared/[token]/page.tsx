@@ -13,6 +13,7 @@ import { cn } from '@inflect/ui/lib/cn';
 import { RelianceSnapshotBlock } from '@/components/audits/RelianceSnapshotBlock';
 import { apiErrorMessage } from '@/lib/api-error';
 import { humanizeSnakeCase } from '@/lib/audit/activity-humanize';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 type ReturnChannelKind = 'COMMENT' | 'EVIDENCE_REQUEST' | 'FINDING' | 'QUESTION';
 const KINDS: ReturnChannelKind[] = ['COMMENT', 'EVIDENCE_REQUEST', 'FINDING', 'QUESTION'];
@@ -350,13 +351,13 @@ export default function SharedPackPage() {
                         ) : (
                             <ul className="space-y-tight">
                                 {submissions.map((s) => (
-                                    <li key={s.id} className="text-sm bg-bg-muted rounded-md px-3 py-2">
+                                    <ShadedRow as="li" padding="none" key={s.id} className="text-sm px-3 py-2">
                                         <div className="flex items-center gap-tight mb-0.5">
                                             <StatusBadge variant="info">{t(`returnChannel.kind.${s.kind}`)}</StatusBadge>
                                             {s.itemName && <span className="text-xs text-content-subtle truncate">{s.itemName}</span>}
                                         </div>
                                         <p className="text-content-default whitespace-pre-wrap break-words">{s.body}</p>
-                                    </li>
+                                    </ShadedRow>
                                 ))}
                             </ul>
                         )}

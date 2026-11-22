@@ -30,6 +30,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 type Residency = 'EXTERNAL' | 'LOCAL_ONLY';
 
@@ -144,14 +145,13 @@ export function AiResidencySection() {
                         const id = `ai-residency-${value === 'EXTERNAL' ? 'external' : 'local-only'}`;
                         const checked = choice === value;
                         return (
-                            <label
+                            <ShadedRow
+                                as="label"
                                 key={value}
                                 htmlFor={id}
-                                className={`flex items-start gap-compact rounded-lg border p-3 cursor-pointer transition-colors duration-150 ease-out ${
-                                    checked
-                                        ? 'border-border-emphasis bg-bg-subtle'
-                                        : 'border-border-subtle hover:bg-bg-muted'
-                                }`}
+                                interactive
+                                selected={checked}
+                                className="flex items-start gap-compact"
                             >
                                 <RadioGroupItem id={id} value={value} size="sm" className="mt-0.5" data-testid={id} />
                                 <div className="min-w-0">
@@ -162,7 +162,7 @@ export function AiResidencySection() {
                                         {value === 'EXTERNAL' ? t('externalDesc') : t('localDesc')}
                                     </p>
                                 </div>
-                            </label>
+                            </ShadedRow>
                         );
                     })}
                 </RadioGroup>

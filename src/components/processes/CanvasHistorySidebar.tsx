@@ -29,6 +29,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatDateTime } from "@inflect/ui/lib/format-date";
 import { apiErrorMessage } from "@/lib/api-error";
 import { extractMutationError } from "@/lib/mutations";
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 interface SnapshotRow {
     id: string;
@@ -183,11 +184,11 @@ export function CanvasHistorySidebar({
                         {rows.map((r) => {
                             const isCurrent = r.version === currentVersion;
                             return (
-                                <li
+                                <ShadedRow as="li" padding="none"
                                     key={r.id}
                                     data-testid="canvas-history-row"
                                     data-version={r.version}
-                                    className="flex flex-col rounded-[8px] border border-border-subtle px-default py-2"
+                                    className="flex flex-col px-default py-2"
                                 >
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm font-medium text-content-emphasis">
@@ -245,7 +246,7 @@ export function CanvasHistorySidebar({
                                             )}
                                         </div>
                                     )}
-                                </li>
+                                </ShadedRow>
                             );
                         })}
                     </ul>

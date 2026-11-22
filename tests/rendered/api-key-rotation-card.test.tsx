@@ -124,6 +124,43 @@ describe('a NULL setting', () => {
     });
 });
 
+describe('the option cards are shaded boxes (owner decision 2026-11-22)', () => {
+    const optionCard = (card: HTMLElement, mode: 'default' | 'custom') => {
+        const label = within(card).getByTestId(`api-key-rotation-mode-${mode}`).closest('label');
+        if (!(label instanceof HTMLElement)) throw new Error(`no option card for ${mode}`);
+        return label.className.split(/\s+/);
+    };
+
+    it('the unselected option is shaded with the strong outline', async () => {
+        const card = await mount(null);
+        const cls = optionCard(card, 'custom');
+        expect(cls).toContain('bg-bg-shaded');
+        expect(cls).toContain('border-border-strong');
+        expect(cls).not.toContain('border-border-subtle');
+    });
+
+    it('the selected option keeps the shade and swaps only its border to the brand outline', async () => {
+        const card = await mount(null);
+        const cls = optionCard(card, 'default');
+        expect(cls).toContain('bg-bg-shaded');
+        expect(cls).toContain('border-[var(--brand-default)]');
+        expect(cls).not.toContain('border-border-emphasis');
+        expect(cls).not.toContain('border-border-strong');
+        expect(cls).not.toContain('bg-bg-subtle');
+    });
+
+    it('moving the choice moves the selected border with it', async () => {
+        const user = userEvent.setup();
+        const card = await mount(null);
+        await user.click(within(card).getByTestId('api-key-rotation-mode-custom'));
+        expect(optionCard(card, 'custom')).toContain('border-[var(--brand-default)]');
+        expect(optionCard(card, 'default')).toContain('border-border-strong');
+        for (const mode of ['default', 'custom'] as const) {
+            expect(optionCard(card, mode)).toContain('bg-bg-shaded');
+        }
+    });
+});
+
 describe('a tenant value', () => {
     it("reads as the workspace's own, with the stepper holding it", async () => {
         const card = await mount(45);

@@ -18,6 +18,7 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { Button } from '@/components/ui/button';
 import { Sparkle3 } from '@inflect/ui/components/ui/icons/glyphs/sparkle3';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 interface RuleSuggestion {
     id: string;
@@ -117,9 +118,9 @@ export function AutomationSuggestionsRail() {
 
             <ul className="space-y-default">
                 {suggestions.map((s) => (
-                    <li
+                    <ShadedRow as="li"
                         key={s.id}
-                        className="rounded-[10px] border border-border-subtle bg-bg-subtle/40 p-3 space-y-tight"
+                        className="space-y-tight"
                         data-suggestion-id={s.id}
                     >
                         <div className="flex items-start gap-tight">
@@ -173,7 +174,7 @@ export function AutomationSuggestionsRail() {
                                 {failed.message}
                             </p>
                         )}
-                    </li>
+                    </ShadedRow>
                 ))}
             </ul>
         </div>

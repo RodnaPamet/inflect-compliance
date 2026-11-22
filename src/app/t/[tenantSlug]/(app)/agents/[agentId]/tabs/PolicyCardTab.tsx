@@ -55,6 +55,7 @@ import { MCP_TOOL_NAMES } from '@/lib/mcp/tool-catalogue';
 import { isExternalToolName } from '@/lib/mcp/external-tool-name';
 
 import type { PolicyCardTabProps } from './types';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 /**
  * The agent's POLICY CARD — the card in force, how it got there, and the one
@@ -935,7 +936,7 @@ function VersionRow({
                 : { key: 'agentDetail.policyCard.unchangedBadge', variant: 'neutral' };
 
     return (
-        <li className="rounded-lg border border-border-subtle p-3 space-y-tight">
+        <ShadedRow as="li" className="space-y-tight">
             <div className="flex flex-wrap items-center gap-tight">
                 <span className="font-mono text-sm text-content-emphasis">
                     {t('agentDetail.policyCard.versionLabel', { version: version.version })}
@@ -1007,7 +1008,7 @@ function VersionRow({
                     ))}
                 </ul>
             )}
-        </li>
+        </ShadedRow>
     );
 }
 

@@ -30,6 +30,7 @@ import { Heading } from '@/components/ui/typography';
 import { apiErrorMessage } from '@/lib/api-error';
 import { useOffersAdminApiWrite } from '@/lib/auth/use-offers-admin-api-write';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 export const ANTHROPIC_WORKSPACE_PROVIDER = 'anthropic-workspace';
 
@@ -211,9 +212,9 @@ export function AnthropicWorkspaceCard({ connections, onChanged }: Props) {
                         ? { variant: 'error' as const, label: t('statusError') }
                         : { variant: 'neutral' as const, label: t('statusUntested') };
                 return (
-                    <div
+                    <ShadedRow padding="lg"
                         key={conn.id}
-                        className="space-y-default rounded-md border border-border-subtle p-4"
+                        className="space-y-default"
                         data-testid={`anthropic-workspace-connection-${conn.id}`}
                     >
                         <div className="flex flex-wrap items-center gap-default">
@@ -246,7 +247,7 @@ export function AnthropicWorkspaceCard({ connections, onChanged }: Props) {
                             />
                             {t('keepSessions')}
                         </label>
-                    </div>
+                    </ShadedRow>
                 );
             })}
 
