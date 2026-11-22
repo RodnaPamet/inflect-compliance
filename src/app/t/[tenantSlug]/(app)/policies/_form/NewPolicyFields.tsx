@@ -83,7 +83,6 @@ export function NewPolicyFields({ form }: { form: NewPolicyFormReturn }) {
                                     onClick={() => form.selectTemplate(tpl)}
                                     interactive
                                     selected={form.fields.templateId === tpl.id}
-                                    selectedTone="brand"
                                     className={`text-left text-sm ${form.fields.templateId === tpl.id ? 'text-content-emphasis' : 'text-content-default'}`}
                                 >
                                     <p className="font-medium">{tpl.title}</p>

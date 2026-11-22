@@ -337,7 +337,6 @@ export default function InstallWizardPage() {
                                     htmlFor={`pack-${p.key}`}
                                     interactive
                                     selected={checked}
-                                    selectedTone="brand"
                                     className="flex items-start gap-compact"
                                 >
                                     <Checkbox
@@ -386,7 +385,6 @@ export default function InstallWizardPage() {
                                     key={p.key}
                                     interactive
                                     selected={selectedPack === p.key}
-                                    selectedTone="brand"
                                     className="flex items-center gap-compact"
                                 >
                                     <input

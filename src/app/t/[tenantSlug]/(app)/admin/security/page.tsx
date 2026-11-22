@@ -306,7 +306,6 @@ export default function AdminSecurityPage() {
                             padding="lg"
                             interactive
                             selected={settings?.mfaPolicy === value}
-                            selectedTone="brand"
                             className="flex items-start gap-compact"
                         >
                             <RadioGroupItem

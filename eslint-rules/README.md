@@ -462,8 +462,9 @@ seen), a class held in a constant, and a box built with `cardVariants`.
 **Option cards (owner decision, 2026-11-22).** A `<label>` (or a `.map(…)`
 root `div`) that wraps a radio or checkbox and draws a padded `rounded border`
 box with a neutral tone in any branch is reported as `handRolledOption`: the
-remedy is `<ShadedRow as="label" interactive selected={…} selectedTone=…>`,
-which keeps every option shaded and swaps only the chosen one's border. A
+remedy is `<ShadedRow as="label" interactive selected={…}>`, which keeps
+every option shaded and swaps only the chosen one's border, to the brand
+outline on every site (owner decision, 2026-11-22). A
 `<button>` choice with no radio inside is invisible to this check. Grid tiles
 stay unshaded by owner decision (readiness tiles, org drill-down CTAs, api-keys
 scope groups).

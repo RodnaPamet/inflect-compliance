@@ -48,8 +48,9 @@
  * ── OPTION CARDS (owner decision, 2026-11-22) ────────────────────────────
  *
  * A radio / checkbox choice box is shaded too: every option gets the shade and
- * the strong outline, and the chosen one swaps only its border to the site's
- * selected tone (`<ShadedRow as="label" interactive selected selectedTone>`).
+ * the strong outline, and the chosen one swaps only its border to the brand
+ * outline (`<ShadedRow as="label" interactive selected>`). Brand is the ONE
+ * selected look on every site (owner decision, 2026-11-22).
  * The rule reports (`handRolledOption`) a `<label>` anywhere, or a `.map(…)`
  * root `div`, that wraps a radio or checkbox (`<input type="radio|checkbox">`,
  * `RadioGroupItem`, `Checkbox`) and draws a padded `rounded border` box with a
@@ -260,7 +261,7 @@ module.exports = {
             handRolledOption:
                 'An option card (a box wrapping a radio or checkbox) is a <ShadedRow as="label" interactive ' +
                 'selected={…}> from @/components/ui/shaded-row (owner decision 2026-11-22: every option shaded, ' +
-                'the chosen one keeps its selected border via `selectedTone`), not a hand-rolled ' +
+                'the chosen one swaps only its border to the brand outline), not a hand-rolled ' +
                 '`rounded border` class with its own selected/hover branches.',
         },
     },

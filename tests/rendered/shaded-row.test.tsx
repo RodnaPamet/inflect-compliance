@@ -77,25 +77,28 @@ describe('ShadedRow — option cards (owner decision 2026-11-22)', () => {
         expect(opt.hasAttribute('data-selected')).toBe(false);
     });
 
-    it('a selected option keeps the shade and swaps ONLY its border to the emphasis tone', () => {
+    it('a selected option keeps the shade and swaps ONLY its border to the brand outline', () => {
+        // Owner decision 2026-11-22: brand is the ONE selected look, on every
+        // site — orange in light, yellow in dark.
         render(<ShadedRow as="label" interactive selected data-testid="opt">A</ShadedRow>);
         const opt = screen.getByTestId('opt');
         const cls = tokens(opt);
         expect(cls).toContain('bg-bg-shaded');
-        expect(cls).toContain('border-border-emphasis');
+        expect(cls).toContain('border-[var(--brand-default)]');
         expect(cls).not.toContain('border-border-strong');
+        expect(cls).not.toContain('border-border-emphasis');
         expect(cls.filter((c) => c.startsWith('bg-'))).toEqual(['bg-bg-shaded']);
         // A chosen option takes no hover: it is already the one you mean.
         expect(cls.some((c) => c.startsWith('hover:'))).toBe(false);
         expect(opt.hasAttribute('data-selected')).toBe(true);
     });
 
-    it('selectedTone="brand" swaps the border to the brand outline instead', () => {
-        render(<ShadedRow as="label" selected selectedTone="brand" data-testid="opt">A</ShadedRow>);
-        const cls = tokens(screen.getByTestId('opt'));
+    it('there is no emphasis variant: a stray tone cannot change the selected border', () => {
+        const stray = { selected: true, selectedTone: 'emphasis' } as unknown as Parameters<
+            typeof shadedRowVariants
+        >[0];
+        const cls = shadedRowVariants(stray).split(/\s+/);
         expect(cls).toContain('border-[var(--brand-default)]');
-        expect(cls).toContain('bg-bg-shaded');
-        expect(cls).not.toContain('border-border-strong');
         expect(cls).not.toContain('border-border-emphasis');
     });
 

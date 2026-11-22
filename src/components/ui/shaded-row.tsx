@@ -16,9 +16,10 @@
  *
  * Option cards too (owner decision, 2026-11-22): a radio / checkbox choice box
  * is a `<ShadedRow as="label" interactive selected={checked}>`. Every option
- * is shaded; the chosen one swaps ONLY its border to the site's existing
- * selected tone (`selectedTone`: `emphasis` or `brand`), so it still stands
- * out. Any other row box that carries a STATE (a success / warning / error
+ * is shaded; the chosen one swaps ONLY its border to the brand outline
+ * (`--brand-default`: orange in light, yellow in dark), the same on every
+ * site (owner decision, 2026-11-22 — the emphasis outline measured weaker
+ * than the strong one it replaced, 1.47:1 light, 2.05:1 dark on the shade). Any other row box that carries a STATE (a success / warning / error
  * tone, a health ring) keeps its own tone and does not use this primitive.
  *
  * No `'use client'`: the component renders a plain element and holds no
@@ -55,16 +56,11 @@ export const shadedRowVariants = cva('rounded-lg border bg-bg-shaded', {
         },
         /**
          * An OPTION card that is chosen. It keeps the shade; only the border
-         * changes, to `selectedTone`.
+         * changes, to the brand outline — one selected look for every site.
          */
         selected: {
             false: 'border-border-strong',
-            true: '',
-        },
-        /** The selected border: the emphasis outline, or the brand outline. */
-        selectedTone: {
-            emphasis: '',
-            brand: '',
+            true: 'border-[var(--brand-default)]',
         },
         /**
          * A clickable option. Hover thickens the strong outline with a 1px
@@ -78,14 +74,11 @@ export const shadedRowVariants = cva('rounded-lg border bg-bg-shaded', {
         },
     },
     compoundVariants: [
-        { selected: true, selectedTone: 'emphasis', class: 'border-border-emphasis' },
-        { selected: true, selectedTone: 'brand', class: 'border-[var(--brand-default)]' },
         { interactive: true, selected: false, class: 'hover:ring-1 hover:ring-border-strong' },
     ],
     defaultVariants: {
         padding: 'md',
         selected: false,
-        selectedTone: 'emphasis',
         interactive: false,
     },
 });
@@ -106,7 +99,6 @@ export function ShadedRow<E extends ShadedRowElement = 'div'>({
     as,
     padding,
     selected,
-    selectedTone,
     interactive,
     className,
     ...rest
@@ -117,7 +109,7 @@ export function ShadedRow<E extends ShadedRowElement = 'div'>({
             data-shaded-row=""
             data-selected={selected ? '' : undefined}
             className={cn(
-                shadedRowVariants({ padding, selected, selectedTone, interactive }),
+                shadedRowVariants({ padding, selected, interactive }),
                 className,
             )}
             {...rest}

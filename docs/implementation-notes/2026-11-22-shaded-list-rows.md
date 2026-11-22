@@ -31,11 +31,20 @@ cool blue tint in dark) and the `border-border-strong` outline.
   other spacing (`px-4 py-3`, `p-compact`) passes `padding="none"` and keeps
   its classes. Each row's radius became `rounded-lg`, the tab bar's.
 - **Option cards are shaded too (owner decision, 2026-11-22, second
-  commit).** `shadedRowVariants` gained `selected`, `selectedTone`
-  (`emphasis` | `brand`) and `interactive`. Every option is shaded; the chosen
-  one swaps ONLY its border to the site's existing selected tone, and its old
+  commit).** `shadedRowVariants` gained `selected` and `interactive`. Every
+  option is shaded; the chosen one swaps ONLY its border, and its old
   selected background (`bg-bg-subtle` / `bg-[var(--brand-subtle)]`) is
-  dropped for the shade. Hover on an unselected option is a 1px ring in the
+  dropped for the shade.
+- **The selected border is the brand outline, everywhere (owner decision,
+  2026-11-22, third commit).** The second commit kept each site's own
+  selected tone, and the emphasis outline measured WEAKER than the strong
+  outline on the unselected options beside it (1.47:1 vs 3.24:1 on the light
+  shade, 2.05:1 vs 2.93:1 on the dark one), so the chosen option receded.
+  `--brand-default` measures 3.85:1 light and 6.09:1 dark on the shade. There
+  is no tone choice: `selectedTone` was removed, and every selected option
+  looks the same. Not changed here: the MFA-policy cards' selected label
+  text (`--brand-muted`) is 2.97:1 on the light shade, below AA; it was about
+  the same on the old brand tint, so it predates this work. Hover on an unselected option is a 1px ring in the
   strong tone: the old `hover:bg-bg-muted` is invisible in light, where the
   shade IS `--bg-muted`. The rule reports a hand-rolled option card
   (`handRolledOption`): a padded, rounded, bordered `<label>` (or map-root

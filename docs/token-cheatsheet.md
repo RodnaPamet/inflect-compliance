@@ -75,7 +75,7 @@ For these patterns, migrate to the component — not to semantic-class equivalen
 | `<span className="badge badge-success">` | `<Badge variant="success">` from `@/components/ui/badge`, or `<StatusBadge variant="success">` for badges with an icon / tooltip |
 | `<span className="badge badge-neutral">` | `<Badge variant="neutral">` (default) |
 | `<li className="rounded-lg border border-border-subtle p-3">` (one of a card's boxed rows) | `<ShadedRow as="li">` from `@/components/ui/shaded-row` — the shade and strong outline, `padding` `sm`/`md` (default)/`lg`/`xl`/`none`. A row carrying a state tone keeps its own classes. Lint: `local/shaded-list-rows` |
-| `<label className={checked ? 'border-border-emphasis bg-bg-subtle' : 'border-border-subtle hover:bg-bg-muted'}>` (a radio / checkbox option card) | `<ShadedRow as="label" interactive selected={checked}>` — every option shaded; the chosen one swaps only its border (`selectedTone="emphasis"` default, or `"brand"`) |
+| `<label className={checked ? 'border-border-emphasis bg-bg-subtle' : 'border-border-subtle hover:bg-bg-muted'}>` (a radio / checkbox option card) | `<ShadedRow as="label" interactive selected={checked}>` — every option shaded; the chosen one swaps only its border, to the brand outline (`--brand-default`: orange in light, yellow in dark), the one selected look on every site (owner decision 2026-11-22) |
 
 The component layer carries:
 - Token-backed surface + text + border (so light mode works)
