@@ -3702,6 +3702,29 @@ each one careless edit from being undone:
   nothing. Only the parent parks: a child's binding defers nothing, and
   compaction never summarises the turn a run parks on (`DEFERRAL_LATCHED`).
 
+**The customer's own Anthropic workspace is a connection with a FIXED host, and
+its Test writes nothing** (Step 5a, #4164; `providers/anthropic-workspace/`).
+Registered only when `AGENT_MANAGED_AGENTS` is on (`managedAgentsEnabled`), and
+the Integrations card exists only when the server lists the provider. Rules that
+are each one careless edit from being undone:
+
+- **The host is `api.anthropic.com` and nothing else.** `apiHost` is a
+  `vendorOrigin` rule over `ANTHROPIC_API_HOSTS` (one exact name, no suffix), so
+  another host is refused at save, and the provider resolves it again before any
+  Test request because an unsaved Test never passed the validator. The card never
+  offers it for typing and the provider is in `CARD_OWNED_PROVIDERS`, so the
+  generic form, which would render it, never shows this provider.
+- **The only other destination is the Playwright faux** (`e2e-faux.ts`): a
+  constant loopback port, chosen only when `NEXT_TEST_MODE` AND `AUTH_TEST_MODE`
+  are both `1`. It is a deployment decision no tenant value reaches. Do not make
+  the port or the origin configurable.
+- **Test is one `GET /v1/agents?limit=1`** through `safeFetch`, never calls
+  `markAuthFailure` and creates nothing in the workspace. It sends
+  `anthropic-workspace-id` (so an organisation-level key works) and passes only
+  when the RESPONSE's `anthropic-workspace-id` names the configured workspace: a
+  key for another workspace, or an answer naming none, is invalid. Anthropic's
+  error text is used to classify and is never shown.
+
 ## Testing Conventions
 
 - **Unit tests**: Mock dependencies with `jest.mock()` declared **before** imports. Use the `makeRequestContext(role, overrides)` helper from `tests/helpers/make-context.ts` to construct test contexts.

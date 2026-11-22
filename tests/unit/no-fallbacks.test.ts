@@ -102,6 +102,11 @@ describe('Static Analysis: No process.env fallbacks', () => {
             // read at request time so the Playwright suite can flip the
             // bypass per-test without re-importing the module.
             if (file.endsWith('apiReadRateLimit.ts')) continue;
+            // The anthropic-workspace provider's end-to-end seam (#4164) reads
+            // NEXT_TEST_MODE at call time, as the two rate limiters above do:
+            // it is not in the env schema, and the seam must answer per
+            // process. Only this one file; the provider itself reads no env raw.
+            if (file.endsWith('providers/anthropic-workspace/e2e-faux.ts')) continue;
             // GAP-10 Swagger-UI route gates prod via process.env.NODE_ENV
             // (HARD 404 in production). Same rationale as health/readyz
             // routes above — env.ts snapshot freezes at import time and

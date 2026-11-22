@@ -38,6 +38,7 @@ import { buttonVariants } from '@/components/ui/button-variants';
 import { cn } from '@inflect/ui/lib/cn';
 import { useTranslations } from 'next-intl';
 import { SharePointCard } from './SharePointCard';
+import { AnthropicWorkspaceCard, ANTHROPIC_WORKSPACE_PROVIDER } from './AnthropicWorkspaceCard';
 import { ConnectionHealthPanel } from './ConnectionHealthPanel';
 
 interface ConnectionDTO {
@@ -90,7 +91,14 @@ const CATEGORY_ORDER = ['identity', 'legacy', 'cloud', 'scm', 'hris', 'document'
  * disconnected, so its row is listed there and nowhere else. The health panel
  * still lists it, because sync freshness is a question about every connection.
  */
-const CARD_OWNED_PROVIDERS: ReadonlySet<string> = new Set(['sharepoint']);
+const CARD_OWNED_PROVIDERS: ReadonlySet<string> = new Set([
+    'sharepoint',
+    // Step 5a: the Anthropic workspace is connected, tested and switched off on
+    // its own card, which never offers its fixed host for typing. The generic
+    // catalogue and form would render every declared field, `apiHost` included,
+    // so this provider is kept out of both as well as out of the table.
+    ANTHROPIC_WORKSPACE_PROVIDER,
+]);
 
 /** The `?mcp=` outcomes the Entra consent callback redirects back with. */
 const CONSENT_OUTCOMES = ['connected', 'declined', 'error'] as const;
@@ -238,8 +246,15 @@ export default function AdminIntegrationsPage() {
     // actually take a config or secret (internal-only check providers like
     // personnel/device/training carry no config and are driven by their pages).
     const connectableProviders = providers.filter(
-        (p) => p.configSchema.configFields.length + p.configSchema.secretFields.length > 0,
+        (p) =>
+            p.configSchema.configFields.length + p.configSchema.secretFields.length > 0 &&
+            !CARD_OWNED_PROVIDERS.has(p.id),
     );
+    /**
+     * The Anthropic workspace card exists only when the server lists its
+     * provider, which it does only with `AGENT_MANAGED_AGENTS` on (Step 5a).
+     */
+    const offersAnthropicWorkspace = providers.some((p) => p.id === ANTHROPIC_WORKSPACE_PROVIDER);
 
     /**
      * A provider's name, translated, everywhere this page shows one: both
@@ -715,6 +730,13 @@ export default function AdminIntegrationsPage() {
                 {/* SP-1 — SharePoint connection (delegated consent, separate
                     from the generic config-field connections below). */}
                 <SharePointCard />
+
+                {offersAnthropicWorkspace && (
+                    <AnthropicWorkspaceCard
+                        connections={connections.filter((c) => c.provider === ANTHROPIC_WORKSPACE_PROVIDER)}
+                        onChanged={fetchConnections}
+                    />
+                )}
 
                 {/* The agent engine setting used to be a card here. It moved to
                     AI features (owner decision 2026-10-25, #4139), so the
