@@ -222,6 +222,8 @@ export const CACHE_KEYS = {
     // see is an agent id nobody should be able to type.
     agents: {
         list: () => '/admin/agents?status=ACTIVE' as const,
+        /** One agent's profile and its versions (#3752): the Invoke agent picker's profile option. */
+        profile: (agentId: string) => `/admin/agents/${encodeURIComponent(agentId)}/profile` as const,
     },
 
     // ─── Agent run replay (#3472) ───────────────────────────────────
