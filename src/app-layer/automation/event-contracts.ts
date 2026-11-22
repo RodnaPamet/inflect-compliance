@@ -40,6 +40,12 @@ export interface RiskCreatedData {
     title: string;
     score: number;
     category: string | null;
+    /**
+     * The risk's status at creation (OPEN unless a template set another).
+     * Every risk usecase sets it (`usecases/risk-automation-events.ts`); it
+     * is optional only so the many hand-built test events need not.
+     */
+    status?: string;
 }
 export interface RiskUpdatedData {
     changedFields: string[];

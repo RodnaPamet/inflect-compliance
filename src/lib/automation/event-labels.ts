@@ -27,6 +27,13 @@ export interface EventLabel {
     domain: 'Risk' | 'Control testing' | 'Control' | 'Policy' | 'Vendor' | 'Evidence' | 'Schedule' | 'Onboarding' | 'Task' | 'Issue';
     /** Payload fields a condition can filter on. */
     filterFields: ReadonlyArray<FilterFieldDef>;
+    /**
+     * Not offered for a new rule because nothing emits it any more. A rule
+     * stored on it still reads its label. The producer guardrail
+     * (`tests/guardrails/automation-trigger-has-producer.test.ts`) holds both
+     * halves: every offered event has a producer, and a hidden one has none.
+     */
+    hidden?: true;
 }
 
 const SEVERITY_OPTS = [
@@ -50,12 +57,14 @@ export const EVENT_LABELS: Record<AutomationEventName, EventLabel> = {
     [AUTOMATION_EVENTS.RISK_CREATED]: {
         name: AUTOMATION_EVENTS.RISK_CREATED,
         label: 'Risk created',
-        description: 'A new risk is added to the register.',
+        description: 'A new risk is added to the register, by any path: the form, a template, an import, accepted AI suggestions or onboarding.',
         domain: 'Risk',
+        // A risk has no severity: the payload is title, score, category and
+        // status, so a condition on severity could never match.
         filterFields: [
-            { field: 'severity', label: 'Severity', type: 'enum', options: SEVERITY_OPTS },
             { field: 'status', label: 'Status', type: 'enum', options: RISK_STATUS_OPTS },
             { field: 'score', label: 'Score', type: 'number' },
+            { field: 'category', label: 'Category', type: 'string' },
         ],
     },
     [AUTOMATION_EVENTS.RISK_UPDATED]: {
@@ -63,10 +72,9 @@ export const EVENT_LABELS: Record<AutomationEventName, EventLabel> = {
         label: 'Risk updated',
         description: 'An existing risk is edited.',
         domain: 'Risk',
-        filterFields: [
-            { field: 'severity', label: 'Severity', type: 'enum', options: SEVERITY_OPTS },
-            { field: 'score', label: 'Score', type: 'number' },
-        ],
+        // The payload names the changed fields only (`changedFields`); a
+        // condition on a field it does not carry could never match.
+        filterFields: [],
     },
     [AUTOMATION_EVENTS.RISK_STATUS_CHANGED]: {
         name: AUTOMATION_EVENTS.RISK_STATUS_CHANGED,
@@ -81,7 +89,7 @@ export const EVENT_LABELS: Record<AutomationEventName, EventLabel> = {
     [AUTOMATION_EVENTS.RISK_CONTROLS_MAPPED]: {
         name: AUTOMATION_EVENTS.RISK_CONTROLS_MAPPED,
         label: 'Risk controls mapped',
-        description: 'Controls are linked to a risk.',
+        description: 'A control is linked to a risk.',
         domain: 'Risk',
         filterFields: [],
     },
@@ -256,8 +264,9 @@ export const EVENT_LABELS: Record<AutomationEventName, EventLabel> = {
     [AUTOMATION_EVENTS.ISSUE_CREATED]: {
         name: AUTOMATION_EVENTS.ISSUE_CREATED,
         label: 'Issue created',
-        description: 'An issue is opened.',
+        description: 'An issue is opened. No longer emitted: Issues were replaced by Tasks; use "Task created".',
         domain: 'Issue',
+        hidden: true,
         filterFields: [
             { field: 'severity', label: 'Severity', type: 'enum', options: SEVERITY_OPTS },
         ],
@@ -265,8 +274,9 @@ export const EVENT_LABELS: Record<AutomationEventName, EventLabel> = {
     [AUTOMATION_EVENTS.ISSUE_STATUS_CHANGED]: {
         name: AUTOMATION_EVENTS.ISSUE_STATUS_CHANGED,
         label: 'Issue status changed',
-        description: 'An issue moves between states.',
+        description: 'An issue moves between states. No longer emitted: Issues were replaced by Tasks; use "Task status changed".',
         domain: 'Issue',
+        hidden: true,
         filterFields: [{ field: 'toStatus', label: 'New status', type: 'string' }],
     },
 };
@@ -278,6 +288,7 @@ export function eventOptionsByDomain(): Array<{
 }> {
     const groups = new Map<EventLabel['domain'], EventLabel[]>();
     for (const ev of Object.values(EVENT_LABELS)) {
+        if (ev.hidden) continue;
         const list = groups.get(ev.domain) ?? [];
         list.push(ev);
         groups.set(ev.domain, list);

@@ -18,6 +18,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
 import { OnboardingRepository } from '../repositories/OnboardingRepository';
 import { RiskRepository } from '../repositories/RiskRepository';
+import { emitRiskCreatedEvent } from './risk-automation-events';
 import { TaskRepository } from '../repositories/TaskRepository';
 import { badRequest, isAppError } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
@@ -411,6 +412,7 @@ async function executeRiskGeneration(ctx: RequestContext, allData: StepData, loc
 
     let created = 0;
     let skipped = 0;
+    const newRisks: Array<{ id: string; title: string; score: number; category: string | null; status: string }> = [];
 
     await runInTenantContext(ctx, async (db) => {
         // Each axis is bounded by the tenant's own matrix (#5080).
@@ -433,7 +435,7 @@ async function executeRiskGeneration(ctx: RequestContext, allData: StepData, loc
             // matching note in risk-suggestions.ts. Creating directly left
             // every onboarding-seeded risk with a NULL key and a blank Code
             // column.
-            await RiskRepository.create(db, ctx, {
+            const createdRisk = await RiskRepository.create(db, ctx, {
                 title: risk.title,
                 category: risk.category,
                 threat: risk.threat,
@@ -445,6 +447,7 @@ async function executeRiskGeneration(ctx: RequestContext, allData: StepData, loc
                 status: 'OPEN',
                 createdByUserId: ctx.userId,
             });
+            newRisks.push(createdRisk);
             created++;
         }
 
@@ -466,6 +469,12 @@ async function executeRiskGeneration(ctx: RequestContext, allData: StepData, loc
             });
         }
     });
+
+    // "Risk created" fires for each starter risk, after the commit (owner
+    // decision, 2026-11-22: every created risk).
+    for (const risk of newRisks) {
+        await emitRiskCreatedEvent(ctx, risk);
+    }
 
     return { action: 'RISK_GENERATION', created, skipped, details: `${created} risks generated, ${skipped} already existed` };
 }

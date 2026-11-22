@@ -16,7 +16,7 @@ import { emitAutomationEvent } from '../automation';
 export async function emitRiskCreated(
     db: PrismaTx,
     ctx: RequestContext,
-    risk: { id: string; title: string; score: number; category?: string | null }
+    risk: { id: string; title: string; score: number; category?: string | null; status?: string }
 ): Promise<void> {
     await logEvent(db, ctx, {
         action: 'RISK_CREATED',
@@ -33,6 +33,7 @@ export async function emitRiskCreated(
             title: risk.title,
             score: risk.score,
             category: risk.category ?? null,
+            status: risk.status ?? 'OPEN',
         },
     });
 }

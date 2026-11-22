@@ -16426,6 +16426,7 @@
       "detailLoading": "Loading this rule…",
       "detailLoadFailed": "Couldn't load this rule. Close the builder and open it again before saving.",
       "agentProfileOption": "This agent's profile (approved version {version})",
+      "triggerNoLongerEmitted": "{label} (no longer emitted)",
       "agentProfileStored": "Stored target: {key}",
       "agentProfileNeedsAutomation": "This agent’s approved profile (version {version}) does not allow “Started by an automation”, so a rule cannot start it. Allow that trigger in a new version of the profile."
     },

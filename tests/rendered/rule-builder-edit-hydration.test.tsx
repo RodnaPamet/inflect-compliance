@@ -232,3 +232,33 @@ describe('rule builder — Invoke agent offers the agent\'s approved profile (#3
         expect(picker.value).toBe('agent-profile:prof-1@v1');
     });
 });
+
+describe('rule builder — a stored trigger nothing emits any more', () => {
+    it('keeps a rule stored on a hidden Issue trigger selectable and says it no longer fires', () => {
+        mockSwr.set('/automation/rules/rule-i', {
+            data: detail('Old issue rule', { triggerEvent: 'ISSUE_CREATED' }),
+        });
+        render(
+            <RuleBuilderModal
+                tenantSlug="acme"
+                open
+                setOpen={jest.fn()}
+                editRule={{ ...row('rule-i', 'Old issue rule'), triggerEvent: 'ISSUE_CREATED' }}
+            />,
+        );
+        const event = screen.getByLabelText(rb.selectEvent) as HTMLSelectElement;
+        expect(event.value).toBe('ISSUE_CREATED');
+        expect(event.selectedOptions[0].textContent).toBe(
+            rb.triggerNoLongerEmitted.replace('{label}', 'Issue created'),
+        );
+    });
+
+    it('does not offer a hidden Issue trigger on a new rule', () => {
+        render(<RuleBuilderModal tenantSlug="acme" open setOpen={jest.fn()} editRule={null} />);
+        const event = screen.getByLabelText(rb.selectEvent) as HTMLSelectElement;
+        const values = Array.from(event.options).map((o) => o.value);
+        expect(values).toContain('RISK_CREATED');
+        expect(values).not.toContain('ISSUE_CREATED');
+        expect(values).not.toContain('ISSUE_STATUS_CHANGED');
+    });
+});

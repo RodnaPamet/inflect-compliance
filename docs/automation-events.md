@@ -121,10 +121,21 @@ If you forget this step, the compile-time `_catalogueCheck` fails.
 
 Two patterns, pick whichever matches the area:
 
-**Pattern A — extend an audit emitter helper.** Most domains
-(risk/test/onboarding) already have a thin emitter file in
-`src/app-layer/events/*.ts`. Add the `emitAutomationEvent` call
-next to the existing `logEvent`:
+**Writing the helper is not wiring the event.** Until 2026-11-22 the
+four risk helpers in `src/app-layer/events/risk.events.ts` existed,
+were unit-tested and had no caller: no risk usecase emitted a risk
+event, and every "Risk created" rule saved, enabled and never ran.
+`tests/guardrails/automation-trigger-has-producer.test.ts` now fails
+CI when a trigger the rule builder offers has no producer that
+something calls. The risk usecases emit inline (Pattern B) after their
+transaction commits, through `usecases/risk-automation-events.ts` for
+RISK_CREATED, which every path that creates a risk calls (the form, a
+template, the CSV import, accepted AI suggestions, onboarding).
+
+**Pattern A — extend an audit emitter helper.** Test and onboarding
+have a thin emitter file in `src/app-layer/events/*.ts`. Add the
+`emitAutomationEvent` call next to the existing `logEvent`, and make
+sure a usecase calls the helper:
 
 ```ts
 import { emitAutomationEvent } from '../automation';
@@ -150,7 +161,7 @@ export async function emitVendorRenewalDue(
 ```
 
 **Pattern B — inline at the mutation site.** Where the usecase
-already calls `logEvent` directly (task.ts, issue.ts), add the
+already calls `logEvent` directly (task.ts, risk.ts), add the
 `emitAutomationEvent` call in the same block. Read any pre-mutation
 state you need (e.g. `fromStatus`) once and pass it to both writers.
 
@@ -264,6 +275,18 @@ closed. To extend the operator set, edit `evalCondition` in
 When adding new events, expand the wiring test + the catalogue
 test. The contracts + schema tests catch drift automatically — if
 either fails, something structural moved.
+
+---
+
+## Triggers nothing emits
+
+`ISSUE_CREATED` and `ISSUE_STATUS_CHANGED` stay in the catalogue and
+the contracts, so a rule stored on one still reads, but the rule
+builder no longer offers them (`hidden: true` in
+`src/lib/automation/event-labels.ts`): the Issues routes were retired
+and Tasks replaced them. Editing such a rule shows its trigger as
+"(no longer emitted)". The producer guardrail holds both halves: an
+offered trigger must have a producer, and a hidden one must have none.
 
 ---
 

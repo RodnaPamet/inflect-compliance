@@ -53,6 +53,11 @@ jest.mock('@/lib/risk-scoring', () => ({
     calculateRiskScore: jest.fn((l: number, i: number) => l * i),
 }));
 
+// The risk usecases emit the risk automation triggers (2026-11-22); the bus
+// is covered by tests/integration/risk-automation-events.test.ts.
+jest.mock('@/app-layer/automation', () => ({
+    emitAutomationEvent: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('@/app-layer/events/audit', () => ({
     logEvent: jest.fn(),
 }));

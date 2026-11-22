@@ -35,6 +35,7 @@ import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { recordAiRiskAssessment } from '@/lib/observability/metrics';
 import { logAiDecision, recordDecisionOutcome } from '@/app-layer/ai/decision-log';
 import { RiskRepository } from '../repositories/RiskRepository';
+import { emitRiskCreatedEvent } from './risk-automation-events';
 
 // ─── Generate Risk Suggestions ───
 
@@ -450,7 +451,7 @@ export async function applySession(ctx: RequestContext, sessionId: string, input
         throw forbidden('Only editors and admins can apply AI risk suggestions');
     }
 
-    const { updatedSession, createdRiskCount, summary } = await runInTenantContext(ctx, async (db) => {
+    const { updatedSession, createdRiskCount, newRisks, summary } = await runInTenantContext(ctx, async (db) => {
         const session = await db.riskSuggestionSession.findFirst({
             where: { id: sessionId, tenantId: ctx.tenantId },
             include: { items: true },
@@ -469,6 +470,7 @@ export async function applySession(ctx: RequestContext, sessionId: string, input
 
         const acceptedIds = new Set(input.acceptedItemIds);
         const createdRisks: string[] = [];
+        const newRisks: Array<{ id: string; title: string; score: number; category: string | null; status: string }> = [];
         // #4776 — how many accepted suggestions became NEW risks, and how
         // many matched a risk the register already had. The done screen
         // used to say "N risks added" for both.
@@ -573,6 +575,7 @@ export async function applySession(ctx: RequestContext, sessionId: string, input
                     data: { ...editedFields, status: 'ACCEPTED', createdRiskId: risk.id },
                 });
                 createdRisks.push(risk.id);
+                newRisks.push(risk);
                 createdCount += 1;
             } else {
                 // Not in accepted list → mark rejected
@@ -614,6 +617,7 @@ export async function applySession(ctx: RequestContext, sessionId: string, input
         return {
             updatedSession,
             createdRiskCount: createdCount,
+            newRisks,
             summary: { created: createdCount, linkedExisting: linkedExistingCount },
         };
     });
@@ -625,6 +629,12 @@ export async function applySession(ctx: RequestContext, sessionId: string, input
     // Register until the cache TTL expires.
     if (createdRiskCount > 0) {
         await bumpEntityCacheVersion(ctx, 'risk');
+    }
+    // "Risk created" fires for each risk this session created (owner
+    // decision, 2026-11-22: every created risk), after the commit. A
+    // suggestion linked to an existing risk created nothing and fires nothing.
+    for (const risk of newRisks) {
+        await emitRiskCreatedEvent(ctx, risk);
     }
 
     return { ...updatedSession, summary };

@@ -810,8 +810,24 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
         }
     }
 
+    // A rule stored on a trigger the picker no longer offers (one nothing
+    // emits any more) keeps it selectable and labelled, so an edit never
+    // drops the rule's trigger; it says the trigger no longer fires.
+    const storedHiddenTrigger =
+        form.triggerEvent && !triggerOptions.some((o) => o.value === form.triggerEvent)
+            ? EVENT_LABELS[form.triggerEvent as keyof typeof EVENT_LABELS]
+            : undefined;
+    const triggerPickerOptions: ComboboxOption[] = storedHiddenTrigger
+        ? [
+              ...triggerOptions,
+              {
+                  value: storedHiddenTrigger.name,
+                  label: t('triggerNoLongerEmitted', { label: storedHiddenTrigger.label }),
+              },
+          ]
+        : triggerOptions;
     const triggerSelected = form.triggerEvent
-        ? triggerOptions.find((o) => o.value === form.triggerEvent) ?? null
+        ? triggerPickerOptions.find((o) => o.value === form.triggerEvent) ?? null
         : null;
 
     return (
@@ -849,7 +865,7 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                         </FormField>
                         <FormField label={t('triggerEvent')} required>
                             <Combobox
-                                options={triggerOptions}
+                                options={triggerPickerOptions}
                                 selected={triggerSelected}
                                 setSelected={(o) => {
                                     const next = o?.value ?? '';

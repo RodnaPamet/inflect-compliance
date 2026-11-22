@@ -5,6 +5,8 @@ import { RiskTemplateRepository } from '../repositories/RiskTemplateRepository';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { assertCanCreateRisk, assertCanUpdateRisk } from '../policies/risk.policies';
 import { logEvent } from '../events/audit';
+import { emitAutomationEvent } from '../automation';
+import { emitRiskCreatedEvent } from './risk-automation-events';
 import { notFound, badRequest, conflict } from '@/lib/errors/types';
 import { readRiskMatrixAxes } from './risk-matrix-axes';
 import {
@@ -307,8 +309,13 @@ export async function createRisk(ctx: RequestContext, data: {
     });
     await bumpEntityCacheVersion(ctx, 'risk');
     recordRiskCreated({ source: 'manual' });
+    // After the commit, so a rolled-back create fires no rule. Every caller
+    // that creates a risk through here (the form, the CSV import) fires
+    // "Risk created" once per risk (owner decision, 2026-11-22).
+    await emitRiskCreatedEvent(ctx, created);
     return created;
 }
+
 
 interface RiskCreateInput {
     title: string;
@@ -400,6 +407,7 @@ export async function createRiskFromTemplate(ctx: RequestContext, templateId: st
         return risk;
     });
     await bumpEntityCacheVersion(ctx, 'risk');
+    await emitRiskCreatedEvent(ctx, created);
     return created;
 }
 
@@ -460,7 +468,7 @@ export async function updateRisk(ctx: RequestContext, id: string, data: {
 }) {
     assertCanUpdateRisk(ctx);
 
-    const { risk: updated, previousOwnerId } = await runInTenantContext(ctx, async (db) => {
+    const { risk: updated, previousOwnerId, previousStatus } = await runInTenantContext(ctx, async (db) => {
         // Each axis is bounded by the tenant's own matrix (#5080).
         const axes = await readRiskMatrixAxes(db, ctx.tenantId);
 
@@ -469,6 +477,7 @@ export async function updateRisk(ctx: RequestContext, id: string, data: {
         // a one-axis edit is scored against.
         const before = await RiskRepository.getById(db, ctx, id);
         const previousOwnerId = before?.ownerUserId ?? null;
+        const previousStatus = before?.status ?? null;
 
         // Either axis alone re-scores against the other's STORED value
         // (#5318). Scoring only when both were sent left `{ likelihood: 5 }`
@@ -587,9 +596,31 @@ export async function updateRisk(ctx: RequestContext, id: string, data: {
             detailsJson: { category: 'custom', event: 'update' },
         });
 
-        return { risk, previousOwnerId };
+        return { risk, previousOwnerId, previousStatus };
     });
     await bumpEntityCacheVersion(ctx, 'risk');
+
+    // Automation, after the commit. The changed fields are the keys the
+    // caller supplied; a status change also fires RISK_STATUS_CHANGED.
+    const changedFields = Object.keys(data).filter(
+        (k) => (data as Record<string, unknown>)[k] !== undefined,
+    );
+    await emitAutomationEvent(ctx, {
+        event: 'RISK_UPDATED',
+        entityType: 'Risk',
+        entityId: id,
+        actorUserId: ctx.userId,
+        data: { changedFields },
+    });
+    if (data.status !== undefined && previousStatus !== null && data.status !== previousStatus) {
+        await emitAutomationEvent(ctx, {
+            event: 'RISK_STATUS_CHANGED',
+            entityType: 'Risk',
+            entityId: id,
+            actorUserId: ctx.userId,
+            data: { fromStatus: previousStatus, toStatus: data.status },
+        });
+    }
 
     // In-app RISK_ASSIGNED bell notification for the new owner — only
     // when the assignee actually changed to a real user. Mirrors the
@@ -949,6 +980,14 @@ export async function linkControlToRisk(ctx: RequestContext, riskId: string, con
     // (risks[] count). Bump both.
     await bumpEntityCacheVersion(ctx, 'risk');
     await bumpEntityCacheVersion(ctx, 'control');
+    await emitAutomationEvent(ctx, {
+        event: 'RISK_CONTROLS_MAPPED',
+        entityType: 'Risk',
+        entityId: riskId,
+        actorUserId: ctx.userId,
+        stableKey: `${riskId}:${controlId}:LINKED`,
+        data: { controlId, action: 'LINKED' },
+    });
     return linked;
 }
 
@@ -1191,9 +1230,9 @@ export async function bulkSetRiskStatus(
     status: 'OPEN' | 'MITIGATING' | 'MITIGATED' | 'ACCEPTED' | 'CLOSED',
 ) {
     assertCanWrite(ctx);
-    const updated = await runInTenantContext(ctx, async (db) => {
+    const moved = await runInTenantContext(ctx, async (db) => {
         const rows = await RiskRepository.listByIds(db, ctx, riskIds);
-        if (rows.length === 0) return 0;
+        if (rows.length === 0) return [];
         await RiskRepository.bulkUpdate(db, ctx, riskIds, { status });
         for (const r of rows) {
             await logEvent(db, ctx, {
@@ -1209,10 +1248,20 @@ export async function bulkSetRiskStatus(
                 },
             });
         }
-        return rows.length;
+        return rows.map((r) => ({ id: r.id, fromStatus: r.status as string }));
     });
     await bumpEntityCacheVersion(ctx, 'risk');
-    return { updated };
+    for (const r of moved) {
+        if (r.fromStatus === status) continue;
+        await emitAutomationEvent(ctx, {
+            event: 'RISK_STATUS_CHANGED',
+            entityType: 'Risk',
+            entityId: r.id,
+            actorUserId: ctx.userId,
+            data: { fromStatus: r.fromStatus, toStatus: status },
+        });
+    }
+    return { updated: moved.length };
 }
 
 export async function bulkAssignRisk(
