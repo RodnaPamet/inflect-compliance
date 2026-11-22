@@ -103,10 +103,12 @@ describe('deploy/postgres/Dockerfile — postgres:16-alpine plus pinned pgvector
         expect(ops[7].args).toBe(`PGVECTOR_COMMIT=${PGVECTOR_COMMIT}`);
     });
 
-    it('fetches, verifies, builds portably, installs and removes the toolchain in one layer', () => {
+    it('upgrades Alpine packages, then fetches, verifies, builds portably, installs and removes the toolchain in one layer', () => {
         const commands = ops[8].args.split('&&').map((c) => c.trim().replace(/\s+/g, ' '));
         expect(commands).toEqual([
             'set -eux',
+            // Alpine fixes the upstream 16-alpine image has not picked up yet (#5790).
+            'apk upgrade --no-cache',
             'apk add --no-cache --virtual .pgvector-build build-base git',
             'git clone --quiet --depth 1 --branch "${PGVECTOR_VERSION}" https://github.com/pgvector/pgvector.git /tmp/pgvector',
             'test "$(git -C /tmp/pgvector rev-parse HEAD)" = "${PGVECTOR_COMMIT}"',
