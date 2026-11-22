@@ -697,9 +697,12 @@ the sub-processor change policy's 30-day notice, and for each tenant to opt in.
    as steps 2f (#5530) and 2g (#5531); deferral cannot resume without a durable
    transcript, which Inflect would own either way, and the Tool Runner already
    has compaction, off by choice. The workspace (3) is Managed Agents' Step 5e.
-   Phase 4 stays parked once the owner's `--real` run confirms the faux-mode
-   figures, and the Agent SDK remains the candidate second engine should a
-   later need be one the other two cannot serve.
+   The owner's `--real` run (2026-11-14,
+   `docs/implementation-notes/2026-11-22-spike-4a-real-run.md`) confirmed the
+   faux-mode figures: a 256 MiB peak per run against 251 to 265 MiB faux, so the
+   concurrency ceiling stays 3. Phase 4 therefore stays parked, and the Agent SDK
+   remains the candidate second engine should a later need be one the other two
+   cannot serve. Steps 2f and 2g have both merged.
 2. **The four #3351 questions, for instructions instead of compose text.**
    **Decided (owner, 2026-10-25): all four answers below are accepted as
    written.** Step 1a builds to them. *Recorded where:* encrypted on `AgentProfileVersion`, its hash pinned on every
