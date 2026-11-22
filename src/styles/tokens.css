@@ -134,6 +134,7 @@
 
   /* ── Status: Info ──────────────────────────────────────────────── */
   --bg-info:          rgba(59, 130, 246, 0.15);      /* blue-500 @ 15% — badge tint */
+  --bg-tab-bar:       var(--bg-info);                /* detail-page tab bar — cool blue tint under the yellow underline */
   --bg-info-emphasis: #2563EB;                       /* blue-600 — solid actionable surface */
   --content-info:     #60a5fa;                       /* blue-400 */
   --border-info:      rgba(59, 130, 246, 0.30);      /* blue-500 @ 30% */
@@ -482,6 +483,7 @@
   --bg-page:      #F4F2ED;                  /* warm off-white — app background */
   --bg-default:   #F8F6F3;                  /* warm off-white — cards, panels, modals */
   --bg-muted:     #F0EDE7;                  /* warm light gray — hover, pressed */
+  --bg-tab-bar:   var(--bg-muted);          /* detail-page tab bar — warm shade under the orange underline */
   --bg-subtle:    rgba(139, 130, 118, 0.07); /* warm taupe @ 7% — selection, faint tints */
   --bg-elevated:  #FDFCFA;                  /* lightest off-white — tooltips, dropdowns above default */
   --bg-inverted:  #1A1A1A;                  /* near-black — primary button bg */

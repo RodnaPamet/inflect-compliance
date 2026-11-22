@@ -320,10 +320,15 @@ export function EntityDetailLayout<TKey extends string = string>({
             {headerNode}
 
 
-            {/* Tab bar (optional) */}
+            {/* Tab bar (optional). One shaded, outlined band (2026-11-22):
+                `--bg-tab-bar` is the warm muted shade in light and the cool
+                blue tint in dark, each chosen to set off the active tab's
+                brand underline (orange / yellow); `border-border-strong`
+                (3.4:1 light, 5.8:1 dark on the page) traces the bar's
+                edge. No dividers between tabs: the gap separates them. */}
             {tabs && tabs.length > 0 && (
                 <nav
-                    className="flex gap-1 border-b border-border-default overflow-x-auto"
+                    className="flex gap-1 overflow-x-auto rounded-lg border border-border-strong bg-[var(--bg-tab-bar)] px-1"
                     role="tablist"
                     aria-label={t('table.detailSections')}
                     data-testid="entity-detail-tabs"
