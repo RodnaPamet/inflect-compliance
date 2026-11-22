@@ -68,7 +68,10 @@ code:
   through the api-keys route, and shows the Agent SDK options (TypeScript and
   Python) or the Console configuration for a Managed Agent that point the agent
   at `/api/mcp`. The key carries exactly the scopes the agent's grants need
-  (`connectKeyScopes` in `src/lib/agentic/connect-wizard.ts`).
+  (`connectKeyScopes` in `src/lib/agentic/connect-wizard.ts`). An Agent SDK
+  program configured with exactly those options has connected in production and
+  been held to its grants: its granted call answered and its ungranted call was
+  refused with `AUTHZ_DENIED` (Step 3H, 2026-11-22; see "Operational evidence").
 
 Since Step 2c a tenant can also have Inflect run what it says the agent should
 *do*: it writes a profile behind the `AGENT_PROFILES` flag (see "Agent profiles"
@@ -694,9 +697,12 @@ the sub-processor change policy's 30-day notice, and for each tenant to opt in.
    as steps 2f (#5530) and 2g (#5531); deferral cannot resume without a durable
    transcript, which Inflect would own either way, and the Tool Runner already
    has compaction, off by choice. The workspace (3) is Managed Agents' Step 5e.
-   Phase 4 stays parked once the owner's `--real` run confirms the faux-mode
-   figures, and the Agent SDK remains the candidate second engine should a
-   later need be one the other two cannot serve.
+   The owner's `--real` run (2026-11-14,
+   `docs/implementation-notes/2026-11-22-spike-4a-real-run.md`) confirmed the
+   faux-mode figures: a 256 MiB peak per run against 251 to 265 MiB faux, so the
+   concurrency ceiling stays 3. Phase 4 therefore stays parked, and the Agent SDK
+   remains the candidate second engine should a later need be one the other two
+   cannot serve. Steps 2f and 2g have both merged.
 2. **The four #3351 questions, for instructions instead of compose text.**
    **Decided (owner, 2026-10-25): all four answers below are accepted as
    written.** Step 1a builds to them. *Recorded where:* encrypted on `AgentProfileVersion`, its hash pinned on every
@@ -917,7 +923,7 @@ Each phase's hardening step fills its row.
 | 0 — Foundations | yes, 2026-10-26 | Deployed at 19:04:37 UTC on 2026-10-25, when Watchtower rolled the `ced48e0` publish. Before that, every image publish after 04:28 had been cancelled by the next push (#4280). **`/api/mcp` limiting**, about 19:25 UTC: a probe of 610 unauthenticated requests drew 600 `401` and 10 `429`, and exactly 10 `rate-limit.blocked` lines, all `mcp-ip`, none `api-mutation`. **A Flue run:** the first start after the deploy answered 500, because the image did not carry the skill corpus (#4301, fixed by #4302). After the fix, `access-posture` run `cmvp38v9d000001o5526qt04h` completed on 2026-10-26: recorded `FLUE`, 1 `MODEL_CALL` and 2 `TOOL_CALL` steps, all `DONE`, in 16 s. The baseline, `cmujpuc84000001pgl3rdy9ud` (2026-09-27), had 1 `MODEL_CALL` and 5 `TOOL_CALL` steps. |
 | 1 — Agent builder | yes, 2026-11-11 | In the proving tenant, agent "Proving Agent" (`cmwc7djln000o01o5l8c2ay4c`): profile `cmwc7sgtz002301o5nkwb5prt`, version 1, written by one member at 14:28 UTC and approved by a different member at 14:29 UTC; instructions hash `e4221e1c4669532b50cebf95754f553af154a6d00a79ae5eb86461d5911b0f97`. Read off the Behaviour tab's version history. The `AGENT_PROFILE_SUBMITTED` / `AGENT_PROFILE_APPROVED` audit rows were not read from the audit log: the evidence was gathered from a phone, and the page shows the two people and times those rows record. |
 | 2 — Tool Runner engine | yes, 2026-11-11 | Profile `cmwc7sgtz002301o5nkwb5prt` v1 by Test run, on the Tool Runner engine. **Completed**: run `cmwc8pgt2000301o5927h6ozw` (14:54 UTC), 3 `MODEL_CALL` and 2 `TOOL_CALL` steps (`list_risks`, `list_controls`, guard clean), 3 Art 12 decision rows, 25,119 tokens, last stop reason `end_turn`. **Kill switch**: run `cmwclvwva001301o5iycngfi0` (21:03 UTC), the same five steps, 49,465 tokens, settled Aborted with "The run was stopped because a kill switch was engaged for this agent". The stop was pressed during the last model call (44,107 tokens), which the engine does not interrupt; the check after it settled the run, and nothing was sent after it. **`LOCAL_ONLY`**: with the tenant's residency set to local only, a Test run failed at once with `tool_runner_local_only_unserved` and 0 steps. **No conversation stored at Anthropic**: every `MODEL_CALL` step of both runs records `wire` `POST /v1/messages` with body keys `fallbacks, max_tokens, messages, model, output_config, stream, system, thinking, tool_choice, tools` and `threadMember: absent`, read on the run page (the shape `messagesOnlyFor` logs for every attempt, retries included, #4537). |
-| 3 — Connect agents customers run | no | — |
+| 3 — Connect agents customers run | yes, 2026-11-22 | In the proving tenant, agent "Proving Agent" (`cmwc7djln000o01o5l8c2ay4c`), granted `list_risks` and not `list_controls`. A key minted by **Connect an agent you run** (`TenantApiKey` `cmwruabmk004g01mu2gqod9ch`, scopes `mcp:read`, `risks:read`, `tasks:read`; `API_KEY_CREATED` row `c8eae4a81ed57acd40a6576dc`, 12:55 UTC). An Agent SDK program (`scripts/agent-sdk-proving-run`, SDK `0.3.314`) whose `agent.ts` is the wizard's TypeScript options byte for byte, run from Google Cloud Shell. **Granted call**: `list_risks` answered, audited as `MCP_TOOL_INVOKED` rows `c3958c1c7f8a579d041cad228` (13:01:01 UTC) and `c19d39dbd690fd6a01dd7e905` (13:01:03 UTC), `actorType` `API_KEY`, policy card version 6. (The roadmap calls this the `TOOL_CALL` row; `/api/mcp` audits a granted call as `MCP_TOOL_INVOKED`, and `TOOL_CALL` is the `WorkflowStep` kind of Inflect-hosted runs.) **Ungranted call**: `list_controls` with the same key refused, JSON-RPC `-32600`, `answered: false`; `AUTHZ_DENIED` row `c31ec7a266a910e319e885d86` (13:01:51 UTC), reason `tool_not_granted`, gate `mcp_tool_invocation`. **Scanner**: scanent (the in-repo scanner was removed by #5684) read the program's folder with a `code` source and posted scan `proving-run-20261122T124139Z-fb85e544`, ingested complete as `AgentHarnessScan` `cmwrtt5oi004a01mumtzp81sq` (12:41 UTC) under scanner agent `cmwrtjwu2003l01murhwtij0y`. It found one agent, `DiscoveredAgent` `code:agent-sdk-proving-run/agent.ts#options` with tool `list_risks`, as SHADOW: code names no register entry, so the scan links it to nothing. The scan also raised `UNPINNED_WRITE_TOOL`, which looks like a false positive: scanent reads `allowedTools` as non-restricting even under `permissionMode: "dontAsk"`, and reports the server-wide `inflect:*` (reported to scanent). The ingest's audit rows read `actorType` `USER` although a key posted it (#5786). **Managed Agent**: none connected; the owner chose on 2026-11-22 to record its absence rather than run one, and Phase 5 builds that path. |
 | 4 — Agent SDK engine | no | — |
 | 5 — Managed Agents, customer workspace | no | — |
 | 6 — Managed Agents, Inflect-hosted | no | — |

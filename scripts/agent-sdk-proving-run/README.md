@@ -29,8 +29,15 @@ The wizard's TypeScript snippet type-checks against it under `--strict`.
    wizard's key and calls a tool the agent is not granted. Expect a JSON-RPC
    error, `answered: false`.
 
+The granted call is audited as `MCP_TOOL_INVOKED`, the refused one as
+`AUTHZ_DENIED`; both name the key and the agent. The audit log page hides row
+ids, and `GET /api/t/<slug>/audit-log` returns the newest 100 rows with them.
+
 Then point the harness scanner's `code` source at this folder (it reads files,
-and runs nothing) and record the `DiscoveredAgent` id it reports.
+and runs nothing) and record the `DiscoveredAgent` it reports. The scanner is
+scanent ([RodnaPamet/scanent](https://github.com/RodnaPamet/scanent)); the
+in-repo one was removed by #5684. Its `scan --dry-run` prints the signed report
+and posts nothing.
 
 Keys are read from hidden prompts only. `agent.ts`, `node_modules` and the lock
 file are ignored by git.
