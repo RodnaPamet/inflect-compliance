@@ -37,6 +37,8 @@ import { SharePointMapper } from './providers/sharepoint/mapper';
 import { ServiceNowProvider } from './providers/servicenow';
 import { McpServerProvider } from './providers/mcp-server-provider';
 import { A2aPeerProvider } from './providers/a2a-peer-provider';
+import { AnthropicWorkspaceProvider } from './providers/anthropic-workspace';
+import { managedAgentsEnabled } from '@/lib/agentic/managed-agents-switch';
 import { ServiceNowClient } from './providers/servicenow/client';
 import { ServiceNowChangeMapper } from './providers/servicenow/mapper';
 
@@ -113,6 +115,17 @@ registry.register(new McpServerProvider());
 // every other connection uses, and `upsertIntegrationConnection` refuses a
 // provider the registry does not know.
 registry.register(new A2aPeerProvider());
+
+// The customer's own Anthropic workspace (Step 5a of
+// docs/claude-managed-agents-design.md). Behind the opt-in AGENT_MANAGED_AGENTS
+// switch: with it unset the provider is not registered, so a connection can be
+// neither saved nor tested (`upsertIntegrationConnection` and
+// `testConnectionCredentials` refuse a provider the registry does not know),
+// and the integrations page, which offers the card only for a provider the
+// server lists, shows none.
+if (managedAgentsEnabled()) {
+    registry.register(new AnthropicWorkspaceProvider());
+}
 
 // Future providers:
 // registry.register(new GitLabProvider());

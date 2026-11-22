@@ -45,6 +45,7 @@ export const LABELLED_PROVIDERS: ReadonlySet<string> = new Set([
     // Agent connections.
     'mcp-server',
     'a2a-peer',
+    'anthropic-workspace',
     // Documents (its own card on the page).
     'sharepoint',
 ]);

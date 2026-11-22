@@ -135,6 +135,15 @@ const SINKS: { file: string; reason: string; noBareFetchOf: string }[] = [
     // refused the Compose network it lives on, so it moved to the in-deployment
     // dial, where it is held below.
     {
+        // Step 5a of docs/claude-managed-agents-design.md. The host is FIXED
+        // (`api.anthropic.com`, a `vendorOrigin` field no surface offers for
+        // typing), but the request carries a tenant's stored key, and the one
+        // non-safeFetch path is the explicit Playwright-only branch to loopback.
+        file: 'src/app-layer/integrations/providers/anthropic-workspace/index.ts',
+        reason: "The customer's own Anthropic workspace: a stored key sent to the Anthropic API.",
+        noBareFetchOf: 'fetch(url',
+    },
+    {
         file: 'src/lib/security/oidc-client.ts',
         reason:
             'SSO sign-in: a workspace administrator types the OIDC issuer, and the ' +

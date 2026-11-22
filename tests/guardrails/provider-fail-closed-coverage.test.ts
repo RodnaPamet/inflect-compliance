@@ -69,6 +69,8 @@ const MARKERS: Readonly<Record<string, RegExp>> = {
     'mcp-server': /\.valid\)\.toBe\(false\)/,
     // The A2A peer route (#3679) refuses the same way.
     'a2a-peer': /\.valid\)\.toBe\(false\)/,
+    // The Anthropic workspace Test (Step 5a) refuses the same way.
+    'anthropic-workspace': /\.valid\)\.toBe\(false\)/,
 };
 
 const FAIL_CLOSED_COVERAGE: Readonly<Record<string, { test: string; needle: string }>> = {
@@ -136,6 +138,14 @@ const FAIL_CLOSED_COVERAGE: Readonly<Record<string, { test: string; needle: stri
     'a2a-peer': {
         test: 'tests/unit/a2a-peer-provider.test.ts',
         needle: 'A2aPeerProvider',
+    },
+    // `anthropic-workspace` (Step 5a of docs/claude-managed-agents-design.md)
+    // holds a key for an engine and runs no check. Its fail-closed surface is
+    // the Test: a key for another workspace, an answer that names no workspace,
+    // an unreachable API and a refused host each read invalid, never valid.
+    'anthropic-workspace': {
+        test: 'tests/unit/anthropic-workspace-provider.test.ts',
+        needle: 'AnthropicWorkspaceProvider',
     },
 };
 

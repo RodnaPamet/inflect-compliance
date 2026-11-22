@@ -6929,6 +6929,7 @@
         "servicenow": "ServiceNow",
         "mcp-server": "External tool server",
         "a2a-peer": "A2A peer agent (outbound)",
+        "anthropic-workspace": "Anthropic workspace",
         "sharepoint": "Microsoft SharePoint"
       },
       "providerText": {
@@ -7329,6 +7330,28 @@
             "authorization": {
               "label": "Authorization header",
               "description": "The credential the peer issued this workspace, sent verbatim as the Authorization header. Leave blank for a peer that relies on signatures alone."
+            }
+          }
+        },
+        "anthropic-workspace": {
+          "description": "Your own Anthropic workspace, where Inflect will run agents that need a sandbox. Anthropic acts as your processor, at your direction. Connecting it stores a key and creates nothing in the workspace.",
+          "setupGuide": "Create an API key inside the Anthropic workspace you want Inflect to use, and copy the workspace ID (wrkspc_…) from the Anthropic Console. Testing the connection lists at most one agent in that workspace and changes nothing. The key is encrypted at rest and is never shown again.",
+          "fields": {
+            "workspaceId": {
+              "label": "Workspace ID",
+              "description": "The ID of your Anthropic workspace, from the Anthropic Console."
+            },
+            "keepSessions": {
+              "label": "Keep sessions in my workspace",
+              "description": "Off by default: each session is deleted when its run ends. A kept session is still deleted when the workspace is purged, when this connection is removed, and on a data-subject erasure request."
+            },
+            "apiHost": {
+              "label": "API host",
+              "description": "Fixed to api.anthropic.com. No other host is accepted."
+            },
+            "apiKey": {
+              "label": "API key",
+              "description": "An API key created inside the workspace. It is encrypted at rest and is never returned by the API, shown in a message or written to a log line."
             }
           }
         }

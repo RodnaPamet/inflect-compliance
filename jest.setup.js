@@ -99,6 +99,13 @@ process.env.UPLOAD_DIR = 'uploads';
 // expectations hold.
 process.env.STORAGE_PROVIDER = process.env.STORAGE_PROVIDER || 'local';
 process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:3000';
+// The Managed Agents switch ON, so every guard that enumerates the provider
+// registry (config-field classification, fail-closed coverage, provider text,
+// runtime wiring) sees the `anthropic-workspace` provider an operator CAN
+// register. The production default — unset, not registered — is proven by
+// tests/unit/anthropic-workspace-provider.test.ts, which clears it in an
+// isolated module registry.
+process.env.AGENT_MANAGED_AGENTS = '1';
 
 // Note: tests/unit/env.test.ts clears this and runs in a separate process
 // so it can still test the actual validation logic.
