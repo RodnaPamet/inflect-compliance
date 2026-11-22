@@ -3741,8 +3741,9 @@ Rules that are each one careless edit from being undone:
 - **One constructor.** `managedAgentsClientFor` in `tool-runner/client.ts` (the
   one file that may load the SDK) builds a client per run from the CONNECTION's
   decrypted key with its workspace header, under `managedAgentsRequestRefusal`.
-  Only the engine's driver and `agent-profile-provision.ts` call it, and no file
-  of the engine reaches `clientForRun` (`managed-agents-client.test.ts`).
+  Only the engine's driver, `agent-profile-provision.ts` and Step 5c's
+  `managed-agents-cleanup.ts` call it, and no file of the engine reaches
+  `clientForRun` (`managed-agents-client.test.ts`).
 - **Every call goes through `runGuardedTool`** with the prefix
   `managed-agents`, through the Tool Runner's runnables. A turn's custom calls
   are QUEUED and run after its `span.model_request_end`, so the token cap and
@@ -3762,6 +3763,50 @@ Rules that are each one careless edit from being undone:
   variances, both citing decision 3: the kill switch (Anthropic stops at a safe
   boundary; asserted instead: no tool runs after it and the session is deleted)
   and the decision-row digest.
+
+**What Inflect created in a customer's workspace is removed by recorded id on
+purge, connection removal and DSAR erasure** (Step 5c, #4166;
+`usecases/managed-agents-cleanup.ts`, the calls in
+`managed-agents/cleanup.ts`). Rules that are each one careless edit from being
+undone:
+
+- **Recorded ids only.** Sessions come from 5b's `managed-agents-session`
+  steps (CREATED with no DELETED, KEPT, or DELETE_FAILED; a DSAR takes KEPT
+  only), agents from `AgentProfileProvision`. The crash window is found by
+  `sessions.list` filtered by a RECORDED `agent_id` and nothing else, and a
+  listed session is taken only when its metadata names this tenant AND a run
+  this tenant holds. `managedAgentsRequestRefusal` refuses a session list
+  without `agent_id` (`SESSION_LIST_NOT_BY_AGENT`) and admits the body-less
+  agent archive by its exact path only. Never list the customer's workspace to
+  match by name.
+- **The purge attempts once and keeps no key** (owner decision 7 of
+  `docs/claude-managed-agents-design.md`). `purgeSoftDeletedTenants` calls
+  `cleanUpManagedAgentsBeforePurge` BEFORE its transaction, under a 60 s
+  deadline, and it never throws. What it leaves is a retained
+  `ManagedAgentsCleanup` row in `PURGED_KEY_DESTROYED_UNFINISHED`, ids only,
+  with the `AgenticManagedAgentsCleanupUnfinished` alert; nothing retries it (a
+  CHECK keeps a purge record from being OPEN). Do not add a retry that needs a
+  key: there is none after the purge, by decision.
+- **Done is removed or 404, and nothing else.** A 401/403 is `AUTH_REFUSED`, a
+  running session `SESSION_STILL_RUNNING`, a cut-off pass `DEADLINE`; each keeps
+  the record open. A removal or DSAR record is retried by `data-lifecycle`,
+  which reads the DISABLED connection row's key through the clean-up's own
+  reader (the engine's reader takes enabled rows only), until DONE, or ends
+  `ABANDONED` after `CLEANUP_ABANDON_AFTER_DAYS` (30; Step 5c's choice, not an
+  owner decision). An empty ledger is DONE with the outcome `NOTHING_RECORDED`,
+  never a bare DONE, and a truncated ledger read is `LEDGER_TRUNCATED`.
+- **The DSAR clean-up runs after `eraseUser`'s transaction commits, never inside
+  it**, over the tenants named by the subject's own audit rows (a membership is
+  a RESTRICT blocker, so none survives to erasure), and its records name
+  tenants and connections, never the person.
+- **The record's outcome column is `outcome`, not `reason`.** A write to a model
+  outside the encryption manifest encrypts EVERY manifest field name it
+  carries, and `reason` is one: a CHECK on it then refuses ciphertext. Name a
+  new plaintext column on any model away from the manifest's field names.
+- **The lost-delete reconciliation** (`reconcileLostSessionDeletes`, run by
+  `data-lifecycle`) reads back every session recorded DELETED in the last seven
+  days, deletes one that still exists, and meters it
+  (`agentic.managed_agents.lost_delete`).
 
 ## Testing Conventions
 
