@@ -614,6 +614,43 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
     }));
     const [step, setStep] = useState<1 | 2 | 3>(1);
     const [form, setForm] = useState<BuilderState>(EMPTY);
+    // #3752 — the chosen agent's APPROVED PROFILE, offered beside the built-in
+    // workflows. An `INVOKE_AGENT` rule is the AUTOMATION trigger, the one path
+    // that starts a profile whose output may write (the Ask page runs a fixed
+    // read-only question, and a Test run is read-only), and the dispatcher
+    // already resolves a profile key; but the picker listed only the registry,
+    // so no approved profile could be chosen. The read is the Behaviour tab's
+    // own route (`admin.agent_registry`, and a 404 while profiles are off): a
+    // reader without it simply gets no profile option.
+    const profilePath =
+        form.actionType === 'INVOKE_AGENT' && form.agent.agentId
+            ? CACHE_KEYS.agents.profile(form.agent.agentId)
+            : null;
+    const { data: agentProfile } = useTenantSWR<{
+        profile: { runKey: string | null; currentApprovedVersion: number | null } | null;
+        versions?: Array<{ version: number; allowedTriggers: string[] }>;
+    }>(profilePath, { shouldRetryOnError: false });
+    const inForce = agentProfile?.profile?.currentApprovedVersion ?? null;
+    const inForceRunKey = agentProfile?.profile?.runKey ?? null;
+    const inForceAllowsAutomation =
+        inForce !== null &&
+        (agentProfile?.versions ?? []).some((v) => v.version === inForce && v.allowedTriggers.includes('AUTOMATION'));
+    const agentWorkflowOptions: ComboboxOption[] = useMemo(() => {
+        const options: ComboboxOption[] = [];
+        if (inForceRunKey && inForce !== null && inForceAllowsAutomation) {
+            options.push({ value: inForceRunKey, label: t('agentProfileOption', { version: inForce }) });
+        }
+        options.push(...workflowOptions);
+        // A rule saved with a profile key the agent no longer has in force (a
+        // newer version was approved, or the profile is not loaded yet) stays
+        // selectable, labelled, so opening it for edit never drops the target.
+        const stored = form.agent.workflowKey;
+        if (stored && !options.some((o) => o.value === stored)) {
+            options.push({ value: stored, label: t('agentProfileStored', { key: stored }) });
+        }
+        return options;
+    }, [inForceRunKey, inForce, inForceAllowsAutomation, form.agent.workflowKey, t]);
+    const profileNeedsAutomationTrigger = inForce !== null && inForceRunKey !== null && !inForceAllowsAutomation;
     // #5477 — the INVOKE_SUBFLOW target picker: the tenant's groups on live
     // automation canvases, labelled by map and group. The stored value stays
     // the group's `nodeKey`, which is what the sub-flow dispatcher matches
@@ -1369,25 +1406,36 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                                         description={t('agentWorkflowHint')}
                                         required
                                     >
-                                        <Combobox
-                                            options={workflowOptions}
-                                            selected={
-                                                workflowOptions.find(
-                                                    (o) => o.value === form.agent.workflowKey,
-                                                ) ?? null
-                                            }
-                                            setSelected={(o) =>
-                                                patch({
-                                                    agent: {
-                                                        ...form.agent,
-                                                        workflowKey: o?.value ?? '',
-                                                    },
-                                                })
-                                            }
-                                            placeholder={t('agentWorkflowPlaceholder')}
-                                            forceDropdown
-                                            matchTriggerWidth
-                                        />
+                                        {/* One child: FormField hands its single child the field's id. */}
+                                        <div>
+                                            <Combobox
+                                                options={agentWorkflowOptions}
+                                                selected={
+                                                    agentWorkflowOptions.find(
+                                                        (o) => o.value === form.agent.workflowKey,
+                                                    ) ?? null
+                                                }
+                                                setSelected={(o) =>
+                                                    patch({
+                                                        agent: {
+                                                            ...form.agent,
+                                                            workflowKey: o?.value ?? '',
+                                                        },
+                                                    })
+                                                }
+                                                placeholder={t('agentWorkflowPlaceholder')}
+                                                forceDropdown
+                                                matchTriggerWidth
+                                            />
+                                            {profileNeedsAutomationTrigger && (
+                                                <p
+                                                    className="mt-1 text-xs text-content-muted"
+                                                    data-testid="rule-agent-profile-needs-automation"
+                                                >
+                                                    {t('agentProfileNeedsAutomation', { version: inForce ?? 0 })}
+                                                </p>
+                                            )}
+                                        </div>
                                     </FormField>
                                     <FormField
                                         label={t('agentInputMappingLabel')}

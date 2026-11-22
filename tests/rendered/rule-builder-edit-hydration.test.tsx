@@ -61,6 +61,12 @@ jest.mock('@/components/ui/combobox', () => ({
     ),
 }));
 jest.mock('@/components/ui/user-combobox', () => ({ UserCombobox: () => null }));
+// Step three draws its action fields with a radio group; what is under test
+// there is the agent and workflow pickers, so the group is a plain wrapper.
+jest.mock('@/components/ui/radio-group', () => ({
+    RadioGroup: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+    RadioGroupItem: () => null,
+}));
 jest.mock('@/lib/tenant-context-provider', () => {
     const apiUrl = (p: string) => `/api/t/acme${p}`;
     return { useTenantApiUrl: () => apiUrl };
@@ -176,5 +182,53 @@ describe('rule builder — a new trigger event drops the old nested filter', () 
     it('drops it when the event changes', () => {
         openOnStepTwo('CONTROL_STATUS_CHANGED');
         expect(screen.queryByText(rb.advancedFilterTitle)).toBeNull();
+    });
+});
+
+describe('rule builder — Invoke agent offers the agent\'s approved profile (#3752)', () => {
+    const invokeRule = (workflowKey: string) =>
+        detail('Send to peer', {
+            actionType: 'INVOKE_AGENT',
+            actionConfigJson: { agentId: 'agent-1', workflowKey, inputMapping: {} },
+        });
+    const profile = (allowedTriggers: string[]) => ({
+        profile: { runKey: 'agent-profile:prof-1@v1', currentApprovedVersion: 1 },
+        versions: [{ version: 1, allowedTriggers }],
+    });
+
+    function openOnStepThree(workflowKey: string, triggers: string[] | null) {
+        mockSwr.set('/automation/rules/rule-a', { data: invokeRule(workflowKey) });
+        mockSwr.set('/admin/agents?status=ACTIVE', { data: { agents: [{ id: 'agent-1', name: 'Agent p2p 2' }] } });
+        if (triggers) mockSwr.set('/admin/agents/agent-1/profile', { data: profile(triggers) });
+        render(
+            <RuleBuilderModal
+                tenantSlug="acme"
+                open
+                setOpen={jest.fn()}
+                editRule={{ ...row('rule-a', 'Send to peer'), actionType: 'INVOKE_AGENT' as unknown as 'NOTIFY_USER' }}
+            />,
+        );
+        fireEvent.click(nextButton());
+        fireEvent.click(nextButton());
+        return screen.getByLabelText(rb.agentWorkflowPlaceholder) as HTMLSelectElement;
+    }
+
+    it('lists the approved profile first when its version allows the automation trigger, and it can be chosen', () => {
+        const picker = openOnStepThree('diagnostic', ['ASK', 'AUTOMATION']);
+        const labels = Array.from(picker.options).map((o) => o.textContent);
+        expect(labels[1]).toBe(rb.agentProfileOption.replace('{version}', '1'));
+        fireEvent.change(picker, { target: { value: 'agent-profile:prof-1@v1' } });
+        expect(picker.value).toBe('agent-profile:prof-1@v1');
+    });
+
+    it('does not offer a profile whose version does not allow it, and says why', () => {
+        const picker = openOnStepThree('diagnostic', ['ASK', 'TEST_RUN']);
+        expect(Array.from(picker.options).map((o) => o.value)).not.toContain('agent-profile:prof-1@v1');
+        expect(screen.getByTestId('rule-agent-profile-needs-automation')).toHaveTextContent('Started by an automation');
+    });
+
+    it('keeps a stored profile key selectable when the profile is not loaded', () => {
+        const picker = openOnStepThree('agent-profile:prof-1@v1', null);
+        expect(picker.value).toBe('agent-profile:prof-1@v1');
     });
 });

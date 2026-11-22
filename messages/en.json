@@ -16424,7 +16424,10 @@
       "agentInputMappingHint": "One per line, as inputKey: triggerField. Field names only — never free text.",
       "agentInputMappingPlaceholder": "riskId: id\nseverity: severity",
       "detailLoading": "Loading this rule…",
-      "detailLoadFailed": "Couldn't load this rule. Close the builder and open it again before saving."
+      "detailLoadFailed": "Couldn't load this rule. Close the builder and open it again before saving.",
+      "agentProfileOption": "This agent's profile (approved version {version})",
+      "agentProfileStored": "Stored target: {key}",
+      "agentProfileNeedsAutomation": "This agent’s approved profile (version {version}) does not allow “Started by an automation”, so a rule cannot start it. Allow that trigger in a new version of the profile."
     },
     "autoInspector": {
       "triggerChangeTitle": "Change the trigger event?",

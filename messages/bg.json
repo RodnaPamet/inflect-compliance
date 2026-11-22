@@ -16424,7 +16424,10 @@
       "agentInputMappingHint": "По един на ред, във вида inputKey: triggerField. Само имена на полета — никога свободен текст.",
       "agentInputMappingPlaceholder": "riskId: id\nseverity: severity",
       "detailLoading": "Правилото се зарежда…",
-      "detailLoadFailed": "Правилото не можа да се зареди. Затворете конструктора и го отворете отново, преди да запазите."
+      "detailLoadFailed": "Правилото не можа да се зареди. Затворете конструктора и го отворете отново, преди да запазите.",
+      "agentProfileOption": "Профилът на този агент (одобрена версия {version})",
+      "agentProfileStored": "Записана цел: {key}",
+      "agentProfileNeedsAutomation": "Одобреният профил на този агент (версия {version}) не позволява „Стартиран от автоматизация“, така че правило не може да го стартира. Разрешете този механизъм в нова версия на профила."
     },
     "autoInspector": {
       "triggerChangeTitle": "Да се смени ли събитието-тригер?",
