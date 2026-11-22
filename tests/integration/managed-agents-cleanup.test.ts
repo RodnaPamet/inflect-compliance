@@ -17,6 +17,7 @@
  * scenario, not in one of its own.
  */
 import { PrismaClient } from '@prisma/client';
+import { __resetAuditStreamForTests } from '@/app-layer/events/audit-stream';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
 
@@ -225,6 +226,11 @@ afterAll(async () => {
     await prisma.tenant.deleteMany({ where: { id: { in: tenants } } });
     await appPrisma.$disconnect();
     await prisma.$disconnect();
+    // Every audit row above was also buffered for the tenant's SIEM stream,
+    // and the buffer's 5 s flush timer would otherwise fire after this file's
+    // environment is torn down, requiring `@/lib/prisma` into a dead registry
+    // and failing the in-band shard after every test passed.
+    __resetAuditStreamForTests();
 });
 
 describeFn('Step 5c — the remote clean-up (real DB, faux workspace)', () => {
