@@ -14,6 +14,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 interface TraceabilityPanelProps {
     apiBase: string;            // e.g. /api/t/acme-corp
@@ -613,9 +614,11 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                     </Heading>
                     <ul className="mt-default flex flex-col gap-tight">
                         {processMaps.map((p) => (
-                            <li
+                            <ShadedRow
+                                as="li"
+                                padding="none"
                                 key={`${p.mapId}-${p.via}-${p.locationKey}`}
-                                className="flex items-center justify-between gap-default rounded-[8px] border border-border-subtle px-default py-2"
+                                className="flex items-center justify-between gap-default px-default py-2"
                             >
                                 <a
                                     href={tenantHref(`/processes?activeId=${p.mapId}`)}
@@ -629,7 +632,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                                     </span>
                                     <StatusBadge variant="neutral">{p.mapStatus}</StatusBadge>
                                 </span>
-                            </li>
+                            </ShadedRow>
                         ))}
                     </ul>
                 </div>
