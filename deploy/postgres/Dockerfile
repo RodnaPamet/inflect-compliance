@@ -44,6 +44,14 @@
 # would report. Moving it is a reviewed diff; a weekly rebuild whose gate
 # finds a newer Go fix fails, visibly, until it moves.
 #
+# ALPINE PACKAGES ARE UPGRADED AT BUILD (2026-11-22, #5790). The upstream
+# 16-alpine image is rebuilt on Docker Hub's schedule, not Alpine's, so it can
+# carry a package Alpine has already fixed: on 2026-11-22 it shipped libxml2
+# 2.13.9-r2 while 3.24 had r3 for CVE-2026-86144 (HIGH), and the gate failed.
+# `apk upgrade` in the final stage's one RUN takes every fix Alpine publishes
+# on each build, the weekly rebuild included. The PostgreSQL server is not an
+# apk (the upstream image compiles it into /usr/local), so it does not move.
+#
 # NOTHING ELSE CHANGES. No ENTRYPOINT, CMD, ENV, USER or config file of ours:
 # the upstream entrypoint, its environment variables and the data directory
 # behave exactly as they do in postgres:16-alpine.
@@ -73,6 +81,7 @@ ARG PGVECTOR_VERSION=v0.8.7
 ARG PGVECTOR_COMMIT=f37c13f68b57d2c3472b2214fbcff699d6d34876
 
 RUN set -eux \
+ && apk upgrade --no-cache \
  && apk add --no-cache --virtual .pgvector-build build-base git \
  && git clone --quiet --depth 1 --branch "${PGVECTOR_VERSION}" https://github.com/pgvector/pgvector.git /tmp/pgvector \
  && test "$(git -C /tmp/pgvector rev-parse HEAD)" = "${PGVECTOR_COMMIT}" \
