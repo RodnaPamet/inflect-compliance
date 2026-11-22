@@ -29,6 +29,7 @@ import { isPostureProvider } from '../integrations/posture-providers';
 import type { CheckResult, EvidencePayload, ConnectionValidationResult } from '../integrations/types';
 import { integrationEvidenceText } from '../integrations/evidence-text';
 import { encryptField, decryptField } from '@/lib/security/encryption';
+import { ANTHROPIC_WORKSPACE_PROVIDER } from '@/lib/agentic/managed-agents/store';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest, forbidden, conflict } from '@/lib/errors/types';
 import {
@@ -596,7 +597,7 @@ export async function upsertIntegrationConnection(
 export async function removeIntegrationConnection(ctx: RequestContext, connectionId: string) {
     if (!ctx.permissions?.canAdmin) throw forbidden('Admin only');
 
-    return runInTenantContext(ctx, async (db) => {
+    const removed = await runInTenantContext(ctx, async (db) => {
         const existing = await db.integrationConnection.findFirst({
             where: { id: connectionId, tenantId: ctx.tenantId },
         });
@@ -627,8 +628,21 @@ export async function removeIntegrationConnection(ctx: RequestContext, connectio
             },
         });
 
-        return { ok: true };
+        return { ok: true as const, provider: existing.provider };
     });
+
+    // STEP 5c (#4166): removing a customer's Anthropic workspace deletes what
+    // Inflect created there — every session it recorded, kept ones included,
+    // and its agents archived. After the disable has COMMITTED, and never
+    // failing the removal: what the first attempt leaves is retried by the
+    // data-lifecycle job with the disabled row's key, which stays.
+    if (removed.provider === ANTHROPIC_WORKSPACE_PROVIDER) {
+        // Lazily: the clean-up loads the Anthropic SDK seam, which no other
+        // connection's removal needs.
+        const { openConnectionRemovalCleanup } = await import('@/app-layer/usecases/managed-agents-cleanup');
+        await openConnectionRemovalCleanup(ctx, connectionId);
+    }
+    return { ok: true };
 }
 
 // ─── Automation Execution ────────────────────────────────────────────

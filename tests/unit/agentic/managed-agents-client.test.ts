@@ -12,7 +12,8 @@
  *              load to `tool-runner/client.ts`. Inside that file, this holds
  *              that exactly two clients are constructed, one by each named
  *              constructor; and across `src/` (from git), that only the
- *              engine's driver and the provisioning usecase call this one, and
+ *              engine's driver, the provisioning usecase and Step 5c's
+ *              clean-up usecase call this one, and
  *              that no file of the engine reaches the deployment's
  *              `clientForRun`, whose key is Inflect's, not the customer's.
  */
@@ -108,7 +109,7 @@ describe('the engine\'s client has one constructor', () => {
         expect(codeOf(functionBodyOf(source, 'managedAgentsClientFor'))).not.toMatch(/messagesOnlyFor/);
     });
 
-    it('only the engine\'s driver and the provisioning usecase call it, and no file of the engine calls clientForRun', () => {
+    it('only the engine\'s driver, the provisioning usecase and the clean-up call it, and no file of the engine calls clientForRun', () => {
         const callers: string[] = [];
         const deploymentClientInEngine: string[] = [];
         let scanned = 0;
@@ -122,6 +123,9 @@ describe('the engine\'s client has one constructor', () => {
         expect(scanned).toBeGreaterThan(1000);
         expect(callers.sort()).toEqual([
             'src/app-layer/usecases/agent-profile-provision.ts',
+            // Step 5c (#4166): the purge, connection-removal and DSAR clean-up
+            // and the lost-delete reconciliation, each with the connection's key.
+            'src/app-layer/usecases/managed-agents-cleanup.ts',
             'src/lib/agentic/managed-agents/driver.ts',
         ]);
         expect(deploymentClientInEngine).toEqual([]);

@@ -179,7 +179,11 @@ export const ACTIVITY_DOMAIN_ENTITIES = {
     // for writes to a customer's third-party systems, and the prior-state
     // pairing that feeds it, sit beside it on the same key as their policy
     // surfaces (`admin/external-write-policy`, `admin/external-prior-state-read`).
-    'admin.tenant_lifecycle': ['IdentityWriteJournal', 'ExternalWriteJournal', 'ExternalToolPriorStateRead'],
+    // The record of what Inflect deleted, or could not, in a customer's own
+    // Anthropic workspace on a purge, a connection removal or a DSAR erasure
+    // (Step 5c) sits with them: it is the same kind of record, of a change
+    // made in a customer's system.
+    'admin.tenant_lifecycle': ['IdentityWriteJournal', 'ExternalWriteJournal', 'ExternalToolPriorStateRead', 'ManagedAgentsCleanup'],
 
     // ── The agent register (#5384) ──────────────────────────────────────
     //

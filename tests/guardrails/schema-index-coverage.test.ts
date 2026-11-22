@@ -790,6 +790,11 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     TenantSkillVersion:
         'read by (tenantId, skillId) ordered by version — exactly @@unique([tenantId, skillId, version]) — or by (tenantId, status) for the mount read and the approval budget check, covered by @@index([tenantId, status]); bounded take ≤500.',
     // Agent profiles (#4143) — one profile per agent, a handful of versions each.
+    // Step 5c (#4166): the remote clean-up's reads.
+    AgentProfileProvision:
+        'the one list read is the clean-up\'s readRecordedAgents: every recorded agent of ONE tenant by (tenantId[, createdAt <= cutoff]) ordered by createdAt, bounded take 5000 — tenantId leads three indexes, and the rows are one per approved profile version per workspace.',
+    ManagedAgentsCleanup:
+        'a tenant\'s records by (tenantId[, connectionId, trigger, status]) — @@index([tenantId, status]) and @@index([tenantId, connectionId]) lead with tenantId; the data-lifecycle retry\'s one cross-tenant read is (status = OPEN) ordered by createdAt, served by @@index([status, createdAt]); every read is bounded.',
     AgentProfileVersion:
         'getAgentProfile reads one profile\'s versions by (tenantId, profileId) ordered by version desc — exactly @@unique([tenantId, profileId, version]); every other read is by (tenantId, profileId, version) or (tenantId, profileId, status), covered by the same unique and the partial uniques on status; bounded take ≤50.',
     // Spending authority (Agent Pay Phase 1) — at most one row per agent per rail.

@@ -488,6 +488,71 @@ groups:
           summary: Agent kill-switch drill did not verify the kill switch ({{ $labels.outcome }})
           description: 'The drill reported {{ $labels.outcome }}, so the kill switch went untested. ERROR: read the drill job''s log for the failure. SWEPT_NOBODY: the worker log line "kill-switch drill swept ZERO tenants" says whether any tenant has only placeholder agents.'
 
+      # --- Step 5c (#4166): something Inflect created in a customer's own
+      # --- Anthropic workspace is still there and nothing will retry it. The
+      # --- purge's one attempt did not finish (Inflect keeps no key past a
+      # --- purge, owner decision 7), or a removal/DSAR clean-up was ABANDONED.
+      - uid: agentic-managed-agents-cleanup-unfinished
+        title: AgenticManagedAgentsCleanupUnfinished
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: sum by (trigger, status, reason) (increase(agentic_managed_agents_cleanup_total{status=~"PURGED_KEY_DESTROYED_UNFINISHED|ABANDONED"}[24h])) > 0
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: critical
+          compliance: 'true'
+        annotations:
+          summary: 'Managed Agents clean-up unfinished ({{ $labels.trigger }}, {{ $labels.reason }})'
+          description: 'A clean-up of a customer''s Anthropic workspace ended {{ $labels.status }}. Read the ManagedAgentsCleanup rows with that status: pendingSessionIds and pendingAgentIds name what is left, workspaceId names the workspace. A person deletes those sessions and archives those agents in the customer''s workspace, with the customer; Inflect holds no key to do it.'
+
+      # --- A session the ledger records DELETED still existed and could not be
+      # --- deleted by the reconciliation.
+      - uid: agentic-managed-agents-lost-delete-failed
+        title: AgenticManagedAgentsLostDeleteFailed
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: sum(increase(agentic_managed_agents_lost_delete_total{outcome="delete_failed"}[24h])) > 0
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: A Managed Agents session recorded deleted still exists
+          description: 'The lost-delete reconciliation found a session the run ledger records SESSION_DELETED in a customer workspace and could not delete it. The worker log line "a session recorded deleted still exists" names the tenant and run. The next data-lifecycle run retries it for seven days.'
+
       # --- An agent's behavioural circuit breaker latched OPEN, halting it at
       # --- the tool boundary. A claim about CHANGE, not volume. TOOL_MIX (the
       # --- agent started doing a kind of thing it has never done) is the

@@ -54,6 +54,7 @@
  *
  * @module usecases/tenant-purge
  */
+import { cleanUpManagedAgentsBeforePurge, type PurgeCleanupSummary } from '@/app-layer/usecases/managed-agents-cleanup';
 import { runInGlobalContext } from '@/lib/db-context';
 import { internal } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
@@ -126,6 +127,10 @@ export const TENANT_PURGE_RETAINED: ReadonlySet<string> = new Set([
     'Incident',
     'IncidentNotification',
     'IncidentTimelineEntry',
+    // Step 5c (#4166): the record that a customer's Anthropic workspace was
+    // told to delete what Inflect created there, and of what it did not. Its
+    // one FK is to this tombstone (RESTRICT); `connectionId` is a plain id.
+    'ManagedAgentsCleanup',
     // A2A (#3679): the signed receipts and the per-peer kills. Neither carries a
     // cascading FK from any purged table — `peerId`, `runId` and `journalId` are
     // plain ids — so retaining them keeps them.
@@ -163,6 +168,12 @@ export interface TenantPurgeResult {
     readonly deleted: Record<string, number>;
     readonly totalRows: number;
     readonly dryRun: boolean;
+    /**
+     * The one attempt at what Inflect created in the tenant's Anthropic
+     * workspaces (Step 5c), made before any row was deleted. Absent on a dry
+     * run, which sends nothing.
+     */
+    readonly managedAgents?: PurgeCleanupSummary;
 }
 
 /** A table that carries `tenantId`, with its FK dependencies. */
@@ -280,6 +291,18 @@ export async function purgeSoftDeletedTenants(
 
         const results: TenantPurgeResult[] = [];
         for (const tenant of tenants) {
+            // STEP 5c (#4166): WHAT INFLECT CREATED AT ANTHROPIC, FIRST.
+            //
+            // Before the transaction below deletes the connection (and its key),
+            // the ledger and the provisions, ONE attempt deletes every session
+            // Inflect recorded in the tenant's workspaces and archives every
+            // agent. Inflect never keeps the customer's key past the purge
+            // (owner decision 7), so what this cannot finish is written, ids
+            // only, to a retained `ManagedAgentsCleanup` row for a person, with
+            // an alert. Bounded by a deadline and never throws: a provider that
+            // does not answer does not block the purge.
+            const managedAgents = dryRun ? undefined : await cleanUpManagedAgentsBeforePurge(tenant.id, { now });
+
             // ONE TRANSACTION PER TENANT, and the first real run is why.
             //
             // Without it the purge hit the LAST_OWNER_GUARD trigger part-way
@@ -305,6 +328,7 @@ export async function purgeSoftDeletedTenants(
                 deleted,
                 totalRows,
                 dryRun,
+                ...(managedAgents ? { managedAgents } : {}),
             });
             logger.info(dryRun ? 'tenant purge (dry run)' : 'tenant purged', {
                 component: 'tenant-purge',

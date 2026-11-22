@@ -118,10 +118,20 @@ describe('managedAgentsRequestRefusal', () => {
         expect(managedAgentsRequestRefusal(req('DELETE', '/v1/sessions/s1'))).toBeNull();
     });
 
+    it('admits Step 5c\'s clean-up calls: an agent archive with no body, and a session list BY A RECORDED AGENT', () => {
+        expect(managedAgentsRequestRefusal(req('POST', '/v1/agents/agent_1/archive'))).toBeNull();
+        expect(managedAgentsRequestRefusal(req('GET', '/v1/sessions?agent_id=agent_1&include_archived=true&limit=100'))).toBeNull();
+    });
+
     it.each([
         ['another origin', { method: 'GET', url: 'https://evil.example/v1/agents/a', body: undefined }, 'NOT_THE_PINNED_ORIGIN'],
         ['the Messages API', req('POST', '/v1/messages', {}), 'NOT_A_MANAGED_AGENTS_CALL'],
-        ['an agent archive', req('POST', '/v1/agents/a/archive', {}), 'NOT_A_MANAGED_AGENTS_CALL'],
+        ['a session list of the whole workspace', req('GET', '/v1/sessions?include_archived=true'), 'SESSION_LIST_NOT_BY_AGENT'],
+        ['a session list with an empty agent', req('GET', '/v1/sessions?agent_id='), 'SESSION_LIST_NOT_BY_AGENT'],
+        ['an agent list', req('GET', '/v1/agents'), 'NOT_A_MANAGED_AGENTS_CALL'],
+        ['a session archive', req('POST', '/v1/sessions/s1/archive'), 'NOT_A_MANAGED_AGENTS_CALL'],
+        ['an archive below an agent', req('POST', '/v1/agents/a/versions/archive'), 'NOT_A_MANAGED_AGENTS_CALL'],
+        ['an archive read as a GET', req('GET', '/v1/agents/a/archive'), 'NOT_A_MANAGED_AGENTS_CALL'],
         ['a vault', req('POST', '/v1/vaults', {}), 'NOT_A_MANAGED_AGENTS_CALL'],
         ['an agent with a toolset', req('POST', '/v1/agents', { tools: [{ type: 'agent_toolset_20260401' }] }), 'AGENT_NOT_CUSTOM_TOOLS_ONLY'],
         ['an agent with MCP servers', req('POST', '/v1/agents/a', { mcp_servers: [{ type: 'url' }] }), 'AGENT_NOT_CUSTOM_TOOLS_ONLY'],
