@@ -30,6 +30,19 @@ cool blue tint in dark) and the `border-border-strong` outline.
 - **Spacing kept per site.** Uniform `p-2..p-5` became a `padding` step; every
   other spacing (`px-4 py-3`, `p-compact`) passes `padding="none"` and keeps
   its classes. Each row's radius became `rounded-lg`, the tab bar's.
+- **Option cards are shaded too (owner decision, 2026-11-22, second
+  commit).** `shadedRowVariants` gained `selected`, `selectedTone`
+  (`emphasis` | `brand`) and `interactive`. Every option is shaded; the chosen
+  one swaps ONLY its border to the site's existing selected tone, and its old
+  selected background (`bg-bg-subtle` / `bg-[var(--brand-subtle)]`) is
+  dropped for the shade. Hover on an unselected option is a 1px ring in the
+  strong tone: the old `hover:bg-bg-muted` is invisible in light, where the
+  shade IS `--bg-muted`. The rule reports a hand-rolled option card
+  (`handRolledOption`): a padded, rounded, bordered `<label>` (or map-root
+  `div`) wrapping a radio or checkbox.
+- **Grid tiles stay as they are (owner decision, 2026-11-22).** The readiness
+  tiles, the org drill-down CTAs and the api-keys scope groups are not
+  shaded; the rule skips a map root inside a `grid`.
 - **A lint rule, with inline disables for the two deliberate exceptions**
   (an edit-state box, a loading skeleton), rather than a guard with an
   allowlist: `reportUnusedDisableDirectives` keeps each disable honest.

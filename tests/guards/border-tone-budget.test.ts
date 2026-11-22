@@ -149,7 +149,14 @@ const ROOT = path.resolve(__dirname, '../..');
 // matrix's band rows, the audit checklist and findings rows, the per-framework
 // blocks on the tests dashboard, and FileDropzone's file row (the 573 chip
 // above). FileDropzone's drop area keeps its two.
-const BORDER_DEFAULT_BUDGET = 103;
+//
+// 103 → 98 (2026-11-22): −5, option cards moved to `<ShadedRow as="label"
+// interactive selected>` (owner decision: every radio / checkbox option
+// shaded, the chosen one keeps its selected border): the unselected / hover
+// tones of the MFA-policy cards, the single-pack install cards, the
+// policy-template picker and the widget-type picker. Re-seated to the live
+// count the sentinel reported (98).
+const BORDER_DEFAULT_BUDGET = 98;
 
 // Tolerance before the drift sentinel reports the budget as unseated.
 //

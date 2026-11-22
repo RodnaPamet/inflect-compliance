@@ -24,6 +24,7 @@ import { KillSwitchTimeline } from './KillSwitchTimeline';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 
 import type { CircuitBreakerTabProps } from './types';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 /**
  * The behavioural circuit breaker, on the agent it stops (OWASP ASI08).
@@ -854,14 +855,13 @@ export function CircuitBreakerTab({
                                     a reason added or retired there cannot leave
                                     this list offering a code the route refuses. */}
                                 {data.closeReasons.map((code) => (
-                                    <label
+                                    <ShadedRow
+                                        as="label"
                                         key={code}
                                         htmlFor={`agent-breaker-reason-${code}`}
-                                        className={
-                                            reason === code
-                                                ? 'flex cursor-pointer gap-compact rounded-md border border-border-emphasis bg-bg-subtle p-3'
-                                                : 'flex cursor-pointer gap-compact rounded-md border border-border-subtle p-3'
-                                        }
+                                        interactive
+                                        selected={reason === code}
+                                        className="flex gap-compact"
                                     >
                                         <RadioGroupItem
                                             value={code}
@@ -877,7 +877,7 @@ export function CircuitBreakerTab({
                                                 {closeReasonBody(code, t, baseline)}
                                             </span>
                                         </span>
-                                    </label>
+                                    </ShadedRow>
                                 ))}
                             </RadioGroup>
                         </FormField>

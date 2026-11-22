@@ -57,6 +57,7 @@ import {
     type EngineTermKey,
     type FlueWiringPayload,
 } from './agent-engine-display';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 export function AgentEnginesSection() {
     const t = useTranslations('admin.agentEngines');
@@ -226,14 +227,13 @@ export function AgentEnginesSection() {
                             const checked = state.mode === mode;
                             const enabled = choiceEnabled(control, mode, state);
                             return (
-                                <label
+                                <ShadedRow
+                                    as="label"
                                     key={mode}
                                     htmlFor={id}
-                                    className={`flex items-start gap-compact rounded-lg border p-3 transition-colors duration-150 ease-out ${
-                                        checked
-                                            ? 'border-border-emphasis bg-bg-subtle'
-                                            : 'border-border-subtle hover:bg-bg-muted'
-                                    } ${enabled ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                                    interactive={enabled}
+                                    selected={checked}
+                                    className={`flex items-start gap-compact${enabled ? '' : ' cursor-not-allowed'}`}
                                 >
                                     <RadioGroupItem
                                         id={id}
@@ -249,7 +249,7 @@ export function AgentEnginesSection() {
                                         </p>
                                         <p className="text-xs text-content-muted">{t(`engine.${mode}.description`)}</p>
                                     </div>
-                                </label>
+                                </ShadedRow>
                             );
                         })}
                     </RadioGroup>

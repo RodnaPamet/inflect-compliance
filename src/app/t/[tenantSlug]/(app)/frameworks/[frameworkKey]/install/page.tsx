@@ -21,6 +21,7 @@ import { cardVariants } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { usePermissions } from '@/lib/tenant-context-provider';
 import { cn } from '@inflect/ui/lib/cn';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 // Shapes cross-walked from the framework install API:
 //   framework → getFramework (framework/catalog.ts)
@@ -330,8 +331,15 @@ export default function InstallWizardPage() {
                         {packs.map(p => {
                             const checked = chosenPacks.includes(p.key);
                             return (
-                                <label key={p.key} htmlFor={`pack-${p.key}`} className={`flex items-start gap-compact p-3 rounded-lg border cursor-pointer transition-colors ${checked ? 'border-[var(--brand-default)] bg-[var(--brand-subtle)]' : 'border-border-subtle hover:border-border-emphasis'
-                                    }`}>
+                                <ShadedRow
+                                    as="label"
+                                    key={p.key}
+                                    htmlFor={`pack-${p.key}`}
+                                    interactive
+                                    selected={checked}
+                                    selectedTone="brand"
+                                    className="flex items-start gap-compact"
+                                >
                                     <Checkbox
                                         id={`pack-${p.key}`}
                                         checked={checked}
@@ -343,7 +351,7 @@ export default function InstallWizardPage() {
                                         {p.description && <div className="text-xs text-content-muted mt-0.5">{p.description}</div>}
                                         <div className="text-xs text-content-subtle mt-0.5">{packMeta(p)}</div>
                                     </div>
-                                </label>
+                                </ShadedRow>
                             );
                         })}
                     </div>
@@ -373,8 +381,14 @@ export default function InstallWizardPage() {
                     ) : (
                         <div className="space-y-tight">
                             {packs.map(p => (
-                                <label key={p.key} className={`flex items-center gap-compact p-3 rounded-lg border cursor-pointer transition-colors ${selectedPack === p.key ? 'border-[var(--brand-default)] bg-[var(--brand-subtle)]' : 'border-border-default hover:border-border-emphasis'
-                                    }`}>
+                                <ShadedRow
+                                    as="label"
+                                    key={p.key}
+                                    interactive
+                                    selected={selectedPack === p.key}
+                                    selectedTone="brand"
+                                    className="flex items-center gap-compact"
+                                >
                                     <input
                                         type="radio"
                                         name="pack"
@@ -387,7 +401,7 @@ export default function InstallWizardPage() {
                                         <div className="text-sm font-medium text-content-emphasis">{p.name}</div>
                                         <div className="text-xs text-content-subtle">{packMeta(p)}</div>
                                     </div>
-                                </label>
+                                </ShadedRow>
                             ))}
                         </div>
                     )}

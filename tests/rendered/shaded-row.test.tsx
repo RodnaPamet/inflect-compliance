@@ -62,6 +62,50 @@ describe('ShadedRow — the look', () => {
     });
 });
 
+describe('ShadedRow — option cards (owner decision 2026-11-22)', () => {
+    it('an unselected option is shaded with the strong outline, and hover thickens it', () => {
+        render(
+            <ShadedRow as="label" interactive selected={false} data-testid="opt">
+                <input type="radio" /> A
+            </ShadedRow>,
+        );
+        const opt = screen.getByTestId('opt');
+        expect(opt.tagName).toBe('LABEL');
+        const cls = tokens(opt);
+        expect(cls).toEqual(expect.arrayContaining(['bg-bg-shaded', 'border', 'border-border-strong']));
+        expect(cls).toEqual(expect.arrayContaining(['hover:ring-1', 'hover:ring-border-strong', 'cursor-pointer']));
+        expect(opt.hasAttribute('data-selected')).toBe(false);
+    });
+
+    it('a selected option keeps the shade and swaps ONLY its border to the emphasis tone', () => {
+        render(<ShadedRow as="label" interactive selected data-testid="opt">A</ShadedRow>);
+        const opt = screen.getByTestId('opt');
+        const cls = tokens(opt);
+        expect(cls).toContain('bg-bg-shaded');
+        expect(cls).toContain('border-border-emphasis');
+        expect(cls).not.toContain('border-border-strong');
+        expect(cls.filter((c) => c.startsWith('bg-'))).toEqual(['bg-bg-shaded']);
+        // A chosen option takes no hover: it is already the one you mean.
+        expect(cls.some((c) => c.startsWith('hover:'))).toBe(false);
+        expect(opt.hasAttribute('data-selected')).toBe(true);
+    });
+
+    it('selectedTone="brand" swaps the border to the brand outline instead', () => {
+        render(<ShadedRow as="label" selected selectedTone="brand" data-testid="opt">A</ShadedRow>);
+        const cls = tokens(screen.getByTestId('opt'));
+        expect(cls).toContain('border-[var(--brand-default)]');
+        expect(cls).toContain('bg-bg-shaded');
+        expect(cls).not.toContain('border-border-strong');
+        expect(cls).not.toContain('border-border-emphasis');
+    });
+
+    it('a plain row is neither interactive nor selected', () => {
+        render(<ShadedRow data-testid="row">r</ShadedRow>);
+        const cls = tokens(screen.getByTestId('row'));
+        expect(cls.some((c) => c.startsWith('hover:') || c === 'cursor-pointer')).toBe(false);
+    });
+});
+
 describe('ShadedRow — element, padding and props', () => {
     it('renders a div by default and the element `as` names', () => {
         render(

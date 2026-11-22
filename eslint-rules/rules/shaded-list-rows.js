@@ -39,14 +39,32 @@
  *     "one of a set"; a state says "this one is different";
  *   - a chip (`inline-flex` / `inline-block`), a pill (`rounded-full`) and a
  *     loading skeleton (`animate-pulse`): not rows;
- *   - a map root inside a `grid` container: tiles, not rows;
+ *   - a map root inside a `grid` container: tiles, not rows. OWNER DECISION
+ *     (2026-11-22): grid tiles stay as they are — the readiness tiles, the
+ *     org drill-down CTAs and the api-keys scope groups are not shaded;
  *   - a `className` with a part the rule cannot read (an identifier, a member,
  *     any other call): that part may be a tone, so it is left alone.
+ *
+ * ── OPTION CARDS (owner decision, 2026-11-22) ────────────────────────────
+ *
+ * A radio / checkbox choice box is shaded too: every option gets the shade and
+ * the strong outline, and the chosen one swaps only its border to the site's
+ * selected tone (`<ShadedRow as="label" interactive selected selectedTone>`).
+ * The rule reports (`handRolledOption`) a `<label>` anywhere, or a `.map(…)`
+ * root `div`, that wraps a radio or checkbox (`<input type="radio|checkbox">`,
+ * `RadioGroupItem`, `Checkbox`) and draws a padded `rounded border` box with a
+ * neutral tone in any branch. Its hover and selected branches do NOT exempt
+ * it — the primitive carries both. Not flagged: a label with no padding (the
+ * label IS a 20px checkbox box), a pill, and a label wrapping no choice
+ * control.
  *
  * ── WHAT IT CANNOT SEE ───────────────────────────────────────────────────
  *
  * A row rendered by its own component whose root is a `div` (an `li` root is
- * seen), a class held in a constant, and a box built with `cardVariants`. A
+ * seen), a class held in a constant, and a box built with `cardVariants`. An
+ * option card that is a `<button>` with no radio inside it (the policy
+ * template picker) is invisible to the option check: nothing in the AST says
+ * a boxed button is a choice rather than an action. A
  * green run proves the visible shape is absent, not that every row in the tree
  * is shaded.
  */
@@ -118,6 +136,50 @@ function isNeutralBox(tokens) {
     if (tokens.some((t) => NOT_A_ROW.has(t))) return false;
     if (tokens.some((t) => STATE_VARIANT.test(t) || STATE_TONE.test(t))) return false;
     return true;
+}
+
+/**
+ * An option card's box: a radius, a bare `border`, and a neutral border tone
+ * in at least one branch (the unselected one). Not a chip or pill.
+ */
+function isOptionBox(tokens) {
+    if (!tokens.some((t) => RADIUS.test(t))) return false;
+    if (!tokens.includes('border')) return false;
+    if (!tokens.some((t) => NEUTRAL_TONE.test(t))) return false;
+    if (tokens.some((t) => NOT_A_ROW.has(t))) return false;
+    // A card has padding; a label that IS the control (a 20px checkbox box)
+    // has none.
+    if (!tokens.some((t) => /^p[xytrbl]?-/.test(t))) return false;
+    return true;
+}
+
+const CHOICE_COMPONENTS = new Set(['RadioGroupItem', 'Checkbox']);
+
+/** Whether `element` has a radio / checkbox control among its descendants. */
+function wrapsChoiceControl(element) {
+    let found = false;
+    const visit = (node) => {
+        if (found || !node || typeof node.type !== 'string') return;
+        if (node.type === 'JSXOpeningElement' && node.name.type === 'JSXIdentifier') {
+            const name = node.name.name;
+            if (CHOICE_COMPONENTS.has(name)) found = true;
+            if (name === 'input') {
+                const typeAttr = node.attributes.find(
+                    (a) => a.type === 'JSXAttribute' && a.name && a.name.name === 'type',
+                );
+                const v = typeAttr && typeAttr.value && typeAttr.value.type === 'Literal' ? typeAttr.value.value : null;
+                if (v === 'radio' || v === 'checkbox') found = true;
+            }
+        }
+        for (const key of Object.keys(node)) {
+            if (key === 'parent') continue;
+            const child = node[key];
+            if (Array.isArray(child)) child.forEach(visit);
+            else if (child && typeof child.type === 'string') visit(child);
+        }
+    };
+    for (const child of element.children) visit(child);
+    return found;
 }
 
 function classNameAttr(opening) {
@@ -195,6 +257,11 @@ module.exports = {
                 'each row its own shaded box, the tab bar\'s shade and strong outline), not a hand-rolled ' +
                 '`rounded border border-border-{{tone}}` class. A row that carries a state keeps its own tone; ' +
                 'see eslint-rules/rules/shaded-list-rows.js.',
+            handRolledOption:
+                'An option card (a box wrapping a radio or checkbox) is a <ShadedRow as="label" interactive ' +
+                'selected={…}> from @/components/ui/shaded-row (owner decision 2026-11-22: every option shaded, ' +
+                'the chosen one keeps its selected border via `selectedTone`), not a hand-rolled ' +
+                '`rounded border` class with its own selected/hover branches.',
         },
     },
     create(context) {
@@ -203,11 +270,26 @@ module.exports = {
                 const opening = element.openingElement;
                 if (opening.name.type !== 'JSXIdentifier') return;
                 const tag = opening.name.name;
-                if (!ROW_TAGS.has(tag)) return;
+                if (!ROW_TAGS.has(tag) && tag !== 'label') return;
                 const attr = classNameAttr(opening);
                 if (!attr || !attr.value) return;
                 const tokens = classTokens(attr.value);
-                if (tokens === null || !isNeutralBox(tokens)) return;
+                if (tokens === null) return;
+
+                // An OPTION card: a `<label>` anywhere, or a `.map(...)` root
+                // `div`, that wraps a radio / checkbox and draws a neutral box
+                // in any branch. Its selected/hover state is expected here —
+                // the primitive carries it — so state tokens do not exempt it.
+                if (
+                    (tag === 'label' || (tag === 'div' && mapCallReturning(element))) &&
+                    isOptionBox(tokens) &&
+                    wrapsChoiceControl(element)
+                ) {
+                    context.report({ node: opening, messageId: 'handRolledOption' });
+                    return;
+                }
+
+                if (!ROW_TAGS.has(tag) || !isNeutralBox(tokens)) return;
 
                 const call = mapCallReturning(element);
                 if (tag !== 'li' && !call) return;

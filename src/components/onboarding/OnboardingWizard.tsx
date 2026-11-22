@@ -824,7 +824,7 @@ function CompanyProfileStep({ data, onUpdate }: { data: StepData; onUpdate: (d: 
             {/* Screening toggle — gates the conditional AI-governance
                 self-assessment step (also triggered by selecting an AI
                 framework). */}
-            <label className="flex items-start gap-tight cursor-pointer rounded-lg border border-border-subtle p-3">
+            <ShadedRow as="label" interactive className="flex items-start gap-tight">
                 <Checkbox
                     className="mt-0.5"
                     checked={data.usesAiSystems === true}
@@ -837,7 +837,7 @@ function CompanyProfileStep({ data, onUpdate }: { data: StepData; onUpdate: (d: 
                         {t('wizard.companyProfile.usesAiHint')}
                     </span>
                 </span>
-            </label>
+            </ShadedRow>
         </div>
     );
 }

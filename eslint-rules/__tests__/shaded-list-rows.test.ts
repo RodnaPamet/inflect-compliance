@@ -103,8 +103,39 @@ describe('local/shaded-list-rows', () => {
                 name: 'a component, not an intrinsic element',
                 code: `const a = items.map((v) => <Card key={v} className="rounded border border-border-subtle p-2">{v}</Card>);`,
             },
+            {
+                name: 'option-card remedy: a ShadedRow label wrapping a radio',
+                code: `const a = opts.map((o) => <ShadedRow as="label" key={o} interactive selected={o === v}><RadioGroupItem value={o} />{o}</ShadedRow>);`,
+            },
+            {
+                name: 'a label that IS the control (no padding) is not an option card',
+                code: `const a = <label className={cn('flex h-5 w-5 rounded border border-border-default bg-bg-default', on && 'border-[var(--brand-default)]')}><input type="checkbox" className="sr-only" /></label>;`,
+            },
+            {
+                name: 'a boxed label wrapping no radio or checkbox is not an option card',
+                code: `const a = <label className="rounded-lg border border-border-subtle p-3"><input type="text" /></label>;`,
+            },
+            {
+                name: 'an option pill (rounded-full) is not a card',
+                code: `const a = <label className="rounded-full border border-border-subtle px-2"><input type="checkbox" /></label>;`,
+            },
         ],
         invalid: [
+            {
+                name: 'option card: a label wrapping a RadioGroupItem, with its own selected / hover branches',
+                code: "const a = opts.map((o) => <label key={o} className={`flex rounded-lg border p-3 cursor-pointer ${o === v ? 'border-border-emphasis bg-bg-subtle' : 'border-border-subtle hover:bg-bg-muted'}`}><RadioGroupItem value={o} />{o}</label>);",
+                errors: [{ messageId: 'handRolledOption' }],
+            },
+            {
+                name: 'option card: a single label wrapping a Checkbox, brand selected tone',
+                code: "const a = <label className={`p-3 rounded-lg border ${on ? 'border-[var(--brand-default)] bg-[var(--brand-subtle)]' : 'border-border-default hover:border-border-emphasis'}`}><Checkbox checked={on} /></label>;",
+                errors: [{ messageId: 'handRolledOption' }],
+            },
+            {
+                name: 'option card: a map-root div wrapping a native radio, with a hover state',
+                code: `const a = opts.map((o) => <div key={o} className="flex rounded-md border border-border-subtle p-3 hover:border-border-default"><input type="radio" />{o}</div>);`,
+                errors: [{ messageId: 'handRolledOption' }],
+            },
             {
                 name: 'an li root of a row component — the Policy card version history',
                 code: `function VersionRow() { return <li className="rounded-lg border border-border-subtle p-3 space-y-tight">v1</li>; }`,

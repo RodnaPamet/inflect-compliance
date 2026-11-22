@@ -19,6 +19,7 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 import { isOrgAdminTier, isOrgOwner } from '@/lib/org-roles';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 interface MemberRow {
     membershipId: string;
@@ -422,14 +423,13 @@ function AddMemberModal({ orgSlug, open, onClose, onSuccess }: AddMemberModalPro
                             const id = `org-add-member-role-${opt}`;
                             const checked = role === opt;
                             return (
-                                <label
+                                <ShadedRow
+                                    as="label"
                                     key={opt}
                                     htmlFor={id}
-                                    className={`flex items-start gap-compact rounded-lg border p-3 cursor-pointer transition-colors ${
-                                        checked
-                                            ? 'border-border-emphasis bg-bg-subtle'
-                                            : 'border-border-subtle hover:bg-bg-muted'
-                                    }`}
+                                    interactive
+                                    selected={checked}
+                                    className="flex items-start gap-compact"
                                 >
                                     <input
                                         id={id}
@@ -451,7 +451,7 @@ function AddMemberModal({ orgSlug, open, onClose, onSuccess }: AddMemberModalPro
                                                 : t('members.orgReaderDesc')}
                                         </p>
                                     </div>
-                                </label>
+                                </ShadedRow>
                             );
                         })}
                     </fieldset>
@@ -737,14 +737,13 @@ function ChangeRoleModal({
                             const id = `org-change-role-${opt}`;
                             const checked = chosen === opt;
                             return (
-                                <label
+                                <ShadedRow
+                                    as="label"
                                     key={opt}
                                     htmlFor={id}
-                                    className={`flex items-start gap-compact rounded-lg border p-3 cursor-pointer transition-colors ${
-                                        checked
-                                            ? 'border-border-emphasis bg-bg-subtle'
-                                            : 'border-border-subtle hover:bg-bg-muted'
-                                    }`}
+                                    interactive
+                                    selected={checked}
+                                    className="flex items-start gap-compact"
                                 >
                                     <input
                                         id={id}
@@ -768,7 +767,7 @@ function ChangeRoleModal({
                                                   : t('members.orgReaderDesc')}
                                         </p>
                                     </div>
-                                </label>
+                                </ShadedRow>
                             );
                         })}
                     </fieldset>
@@ -1005,14 +1004,13 @@ function InviteMemberModal({ orgSlug, open, onClose, onSuccess }: InviteMemberMo
                                 const id = `org-invite-member-role-${opt}`;
                                 const checked = role === opt;
                                 return (
-                                    <label
+                                    <ShadedRow
+                                        as="label"
                                         key={opt}
                                         htmlFor={id}
-                                        className={`flex items-start gap-compact rounded-lg border p-3 cursor-pointer transition-colors ${
-                                            checked
-                                                ? 'border-border-emphasis bg-bg-subtle'
-                                                : 'border-border-subtle hover:bg-bg-muted'
-                                        }`}
+                                        interactive
+                                        selected={checked}
+                                        className="flex items-start gap-compact"
                                     >
                                         <input
                                             id={id}
@@ -1034,7 +1032,7 @@ function InviteMemberModal({ orgSlug, open, onClose, onSuccess }: InviteMemberMo
                                                     : t('members.orgReaderDesc')}
                                             </p>
                                         </div>
-                                    </label>
+                                    </ShadedRow>
                                 );
                             })}
                         </fieldset>

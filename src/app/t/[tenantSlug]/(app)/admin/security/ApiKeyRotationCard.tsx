@@ -18,6 +18,7 @@ import {
     MAX_KEY_ROTATION_DAYS,
     MIN_KEY_ROTATION_DAYS,
 } from '@/lib/agentic/credential-hygiene';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 /**
  * API-KEY ROTATION AGE — the number the credential-hygiene pass judges agent
@@ -145,14 +146,13 @@ export function ApiKeyRotationCard() {
                         const id = `api-key-rotation-mode-${value}`;
                         const checked = mode === value;
                         return (
-                            <label
+                            <ShadedRow
+                                as="label"
                                 key={value}
                                 htmlFor={id}
-                                className={`flex items-start gap-compact rounded-lg border p-3 cursor-pointer transition-colors duration-150 ease-out ${
-                                    checked
-                                        ? 'border-border-emphasis bg-bg-subtle'
-                                        : 'border-border-subtle hover:bg-bg-muted'
-                                }`}
+                                interactive
+                                selected={checked}
+                                className="flex items-start gap-compact"
                             >
                                 <RadioGroupItem id={id} value={value} size="sm" className="mt-0.5" data-testid={id} />
                                 <div className="min-w-0">
@@ -170,7 +170,7 @@ export function ApiKeyRotationCard() {
                                               })}
                                     </p>
                                 </div>
-                            </label>
+                            </ShadedRow>
                         );
                     })}
                 </RadioGroup>
