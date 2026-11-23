@@ -34,6 +34,7 @@ import {
     controlCategoryLabel,
     ownerOptionsFromControls,
 } from '../../src/app/t/[tenantSlug]/(app)/controls/filter-defs';
+import { ISO27001_DOMAIN } from '../../src/lib/controls/control-taxonomy';
 
 // The filter defs are a `buildControlFilterDefs(t, tGroup)` factory now; build
 // with an en.json-backed resolver so labels resolve to the real (byte-identical)
@@ -51,6 +52,18 @@ const resolve = (ns: string) => (key: string) => {
     return typeof v === 'string' ? v : key;
 };
 const tControls = resolve('controls');
+const BG = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '..', '..', 'messages/bg.json'), 'utf-8'),
+) as Record<string, unknown>;
+const tBgControls = (key: string) => {
+    const v = key
+        .split('.')
+        .reduce<unknown>(
+            (o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined),
+            BG.controls,
+        );
+    return typeof v === 'string' ? v : key;
+};
 const tGroup = (k: string) => resolve('common')(`filterGroups.${k}`);
 const controlFilterDefs = buildControlFilterDefs(tControls, tGroup);
 // Enum VALUE sets (the URL/API contract — unchanged by i18n).
@@ -190,8 +203,28 @@ describe('category labels — a stored theme constant is never shown raw', () =>
         expect(controlCategoryLabel('TECHNOLOGICAL', tControls)).not.toBe('TECHNOLOGICAL');
     });
 
-    it('passes any other derived category through untouched', () => {
-        expect(controlCategoryLabel('Access control', tControls)).toBe('Access control');
+    it('passes a persisted framework category through as stored', () => {
+        // A SOC 2 / NIS2 control's persisted category is tenant data.
+        expect(controlCategoryLabel('Logical and Physical Access Controls', tControls)).toBe(
+            'Logical and Physical Access Controls',
+        );
+        // Legacy free text is matched exactly, so it is not mistaken for a domain.
+        expect(controlCategoryLabel('Business Continuity', tBgControls)).toBe('Business Continuity');
+    });
+
+    it.each(Object.entries(ISO27001_DOMAIN))(
+        'an ISO 27001 domain (%s) keeps the taxonomy\'s own words in English',
+        (_key, domain) => {
+            // Bulgarian is held by tests/guards/bulgarian-ui-chrome-sources.test.ts.
+            expect(controlCategoryLabel(domain, tControls)).toBe(domain);
+        },
+    );
+
+    it('the Category filter shows a Bulgarian domain but keeps the English value it filters on', () => {
+        const live = buildControlFilters([{ code: 'A.5.15', annexId: 'A.5.15', category: null }], tBgControls, tGroup);
+        expect(live.find((f) => f.key === 'category')?.options).toEqual([
+            { value: ISO27001_DOMAIN.ACCESS_CONTROL, label: 'Контрол на достъпа' },
+        ]);
     });
 
     it('the Category filter option keeps the derived VALUE and shows the label', () => {

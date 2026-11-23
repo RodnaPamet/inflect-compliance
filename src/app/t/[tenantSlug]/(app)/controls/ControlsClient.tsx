@@ -1833,10 +1833,15 @@ function ControlsPageInner({
                                 density="compact"
                                 data-category-group={g.key}
                             >
-                                <AccordionTrigger size="sm" className="px-2">
+                                {/* The domain name WRAPS. The trigger is a flex item, so
+                                    without `min-w-0` the label's width was its minimum,
+                                    and a truncated one never shrank: a long Bulgarian
+                                    name ("Физическа сигурност и сигурност на средата")
+                                    pushed the count and chevron off the rail. */}
+                                <AccordionTrigger size="sm" className="min-w-0 px-2">
                                     <span className="flex min-w-0 flex-1 items-center justify-between gap-tight pr-2">
                                         <span className="flex min-w-0 flex-col items-start gap-0.5">
-                                            <span className="truncate font-medium text-content-default">
+                                            <span className="break-words text-left font-medium text-content-default">
                                                 {categoryLabel(g.category)}
                                             </span>
                                             {g.frameworkLabel && (

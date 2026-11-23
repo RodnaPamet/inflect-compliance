@@ -220,7 +220,18 @@ the first use that would store data at Anthropic beyond a Messages API call.
 Common to (a) to (f):
 - **Legal basis:** legitimate interest (Art. 6(1)(f)); only active when the operator opts in.
 - **Processing instructions:** generate the requested completion; per Anthropic's terms.
-- **Transfer:** Anthropic US/global; per its terms.
+- **Agreement (recorded 2026-11-23, #5865):** Anthropic's standard Commercial
+  Terms of Service with the Data Processing Addendum they incorporate, accepted
+  when the API account was set up (acceptance date not recorded). They commit
+  Anthropic not to train on Inflect's API data. There are no custom retention
+  terms: Anthropic's published retention applies, including up to two years for
+  inputs and outputs its safety systems flag.
+- **Transfer:** Anthropic US/global. Mechanism: the EU Standard Contractual
+  Clauses incorporated in Anthropic's DPA (recorded 2026-11-23, #5865).
+- **Transfer impact assessment:** not obtained. The repo owner accepted proceeding
+  without one on 2026-11-23 (#5865), as *Sub-processors: who confirms which half
+  of step 2* in [`docs/change-management-policy.md`](./change-management-policy.md)
+  requires it to be recorded.
 - **Vendor pages:** https://www.anthropic.com/legal/privacy · https://www.anthropic.com/legal/commercial-terms
 - **Operator-optional:** the posture summary (a) and risk suggestions (b) default to `stub` (deterministic local providers — no external call). Set `AI_POSTURE_PROVIDER=anthropic` and/or `AI_RISK_PROVIDER=anthropic`, plus `ANTHROPIC_API_KEY` (model via `ANTHROPIC_MODEL`), to enable. `…=openrouter` routes the same respective payload through OpenRouter instead. The assistant (f) does NOT default off: setting `ANTHROPIC_API_KEY` — which the agent runtimes need as well — turns it on for every `EXTERNAL` workspace until `AI_ASSISTANT_ENABLED=false`, `AI_RISK_ENABLED=false` or the workspace's own switch turns it off.
 - **Workspace:** an API key created inside an Anthropic workspace needs nothing more. An ORGANISATION-level key is refused by Anthropic with HTTP 400 unless each request names its workspace, so set `ANTHROPIC_WORKSPACE_ID` (a `wrkspc_…` identifier, not a secret) and every request to the Anthropic API — (a) and (b), the Flue agent runtime's external provider and the assistant, which use the same key — carries the header `anthropic-workspace-id: <id>`. Unset, no request carries it. The header names which of the operator's own workspaces the request is billed and governed under; it sends no customer data and changes nothing about what each payload contains (`src/lib/ai/anthropic-workspace.ts`).

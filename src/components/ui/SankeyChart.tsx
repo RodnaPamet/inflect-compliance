@@ -142,7 +142,7 @@ export function SankeyChart({
             if (pinnedId) setPinnedId(null);
         },
         {
-            description: 'Unpin Sankey node',
+            description: t('shortcutUnpinNode'),
             enabled: pinnedId !== null,
         },
     );

@@ -7,6 +7,7 @@
 import { cn } from "@inflect/ui/lib/cn";
 import { Command, useCommandState } from "cmdk";
 import { ChevronDown, ListFilter } from "lucide-react";
+import { useTranslations } from "next-intl";
 import {
   Fragment,
   PropsWithChildren,
@@ -123,6 +124,7 @@ export function FilterSelect({
   }>(undefined);
 
   const [isOpen, setIsOpen] = useState(false);
+  const tShortcut = useTranslations("shortcutDescriptions");
 
   // Epic 57 — `F` on any list page opens the first FilterSelect
   // trigger. The hook blocks the shortcut inside text inputs and any
@@ -139,7 +141,7 @@ export function FilterSelect({
     enabled: !isOpen && !!hostRef,
     scope: "global",
     within: hostRef,
-    description: "Open filters",
+    description: tShortcut("openFilters"),
   });
 
   const [search, setSearch] = useState(

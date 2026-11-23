@@ -23,12 +23,19 @@
  * detail pane has been a recurring failure mode in compliance UIs.
  */
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@inflect/ui/lib/cn';
 import type { ComplianceStatus } from '@/lib/framework-tree/types';
 
 // ─── Token map ─────────────────────────────────────────────────────────
 
 interface StatusVisual {
+    /**
+     * The English word, kept for callers that read the token map outside a
+     * render. What the indicator SHOWS is `complianceStatus.<status>` from the
+     * catalog, so a Bulgarian page reads it in Bulgarian (#5828).
+     */
     label: string;
     /** Background utility for chips + bars. */
     bg: string;
@@ -96,8 +103,10 @@ export function ComplianceStatusIndicator({
     className,
     labelled = true,
 }: ComplianceStatusIndicatorProps) {
+    const t = useTranslations('complianceStatus');
     const v = STATUS_VISUALS[status];
-    const ariaLabel = labelled ? `Compliance status: ${v.label}` : undefined;
+    const label = t(status);
+    const ariaLabel = labelled ? t('ariaLabel', { status: label }) : undefined;
     const dataAttrs = { 'data-status': status } as const;
 
     if (mode === 'chip') {
@@ -114,7 +123,7 @@ export function ComplianceStatusIndicator({
                 {...dataAttrs}
             >
                 <span className={cn('w-1.5 h-1.5 rounded-full', v.solid)} aria-hidden="true" />
-                {v.label}
+                {label}
             </span>
         );
     }

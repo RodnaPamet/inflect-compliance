@@ -70,7 +70,7 @@ export function FilterList({
   useKeyboardShortcut("Escape", onRemoveAll, {
     priority: 1,
     scope: "global",
-    description: "Clear all filters",
+    description: t("shortcutClearAll"),
   });
   const normalizedFilters = activeFilters?.map(normalizeActiveFilter) ?? [];
 

@@ -27,7 +27,14 @@
  * Until the width is known (the server render and the first client render),
  * it is the desktop position: `sonner` renders no toast before then anyway,
  * so the first toast always lands in the right place.
+ *
+ * ═══ ITS OWN WORDS ═══
+ *
+ * `sonner` names the close button "Close toast" and the region
+ * "Notifications" in English unless told otherwise; both come from the
+ * catalog (#5828).
  */
+import { useTranslations } from 'next-intl';
 import { Toaster } from 'sonner';
 import { useMediaQuery } from '@/components/ui/hooks';
 
@@ -37,6 +44,7 @@ import { useTheme } from './ThemeProvider';
 const MD_BREAKPOINT_PX = 768;
 
 export function AppToaster() {
+    const t = useTranslations('toaster');
     const { theme } = useTheme();
     const { width } = useMediaQuery();
     const phone = width !== undefined && width < MD_BREAKPOINT_PX;
@@ -49,6 +57,8 @@ export function AppToaster() {
             richColors
             closeButton
             duration={3000}
+            containerAriaLabel={t('region')}
+            toastOptions={{ closeButtonAriaLabel: t('closeButton') }}
         />
     );
 }

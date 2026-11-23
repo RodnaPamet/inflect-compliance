@@ -63,6 +63,7 @@ import { CircleDot, Tag, UserCircle2, ShieldCheck, Activity } from 'lucide-react
 // from this node-env module. Drives the DERIVED Category filter options (#8a).
 import {
     categorizeControl,
+    iso27001DomainKey,
     type CategorizableControl,
 } from '@/lib/controls/control-taxonomy';
 // Dependency-free as well — the four ISO 27002 theme constants.
@@ -98,12 +99,18 @@ export function buildControlStatusLabels(t: T): Record<string, string> {
  * value IS the constant. Every list surface — the Category column, the
  * Category filter and the Browse rail — showed it raw. Themes get their
  * localized `categoryLabels.*` label (the one the dialogs already show);
- * any other derived value is already prose ("Access control") and passes
- * through. Only the LABEL changes: filter option values stay the derived
+ * an ISO 27001 domain ("Access control") gets `isoDomainLabels.*`; any other
+ * derived value is a framework's persisted category — tenant data — and
+ * passes through as stored. Only the LABEL changes: filter option values stay the derived
  * value the client-side category filter compares against.
  */
 export function controlCategoryLabel(value: string, t: T): string {
-    return isControlCategoryTheme(value) ? t(`categoryLabels.${value}`) : value;
+    if (isControlCategoryTheme(value)) return t(`categoryLabels.${value}`);
+    // An ISO 27001 domain ("Access control") is the taxonomy's grouping key,
+    // English by construction; its label is the catalog's (#5828). The value
+    // the filter compares and the URL carries is unchanged.
+    const isoKey = iso27001DomainKey(value);
+    return isoKey ? t(`isoDomainLabels.${isoKey}`) : value;
 }
 
 function applicabilityLabels(t: T): Record<string, string> {

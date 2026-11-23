@@ -1312,7 +1312,10 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 152;
 // Toaster left `providers.tsx` and the hamburger's class became the shared
 // `NAV_BAR_ICON_BUTTON_CLASS` (bottom-right-corner, r14-mobile-parity) dropped
 // one un-analysable whole-file read between them. Measured.
-const UNANALYSABLE_READ_BASELINE = 1366;
+// 1366 -> 1365 on 2026-11-23 (#5828). core-shortcuts' call-site check reads
+// every description through the catalog now, so its literal-description arm
+// (an unresolvable template needle) is gone. Measured.
+const UNANALYSABLE_READ_BASELINE = 1365;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.
