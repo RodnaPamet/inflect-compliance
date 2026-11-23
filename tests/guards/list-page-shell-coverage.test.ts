@@ -81,6 +81,8 @@ const EXEMPTIONS: Record<string, string> = {
         'detail-page tab sub-tables (kill history, signed messages) inside <EntityDetailLayout> — not a viewport-clamped list page',
     'agents/reports/integrations/IntegrationsSection.tsx':
         'sub-table inside the multi-section /agents/reports dashboard (Integrations tab) — one card per scanner with its coverage above; not a viewport-clamped list page',
+    'agents/reports/agent-surface/AgentSurfaceTab.tsx':
+        'sub-table inside the multi-section /agents/reports dashboard (Agent surface tab) — one card per scanner with the servers it read above; not a viewport-clamped list page',
     'agents/reports/harness/ScannerKeysCard.tsx':
         'sub-table inside the multi-section /agents/reports dashboard (harness tab) — the scanner-key register, the last card below the scan history; not a viewport-clamped list page',
 

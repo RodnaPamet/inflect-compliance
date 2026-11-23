@@ -11,7 +11,7 @@
  * because the webServer command sets both NEXT_TEST_MODE and AUTH_TEST_MODE —
  * the deployment-level seam in `e2e-faux.ts`, which no tenant setting reaches.
  * The faux answers key `sk-ant-e2e-valid` for whatever workspace the request
- * names, and counts every request it receives.
+ * names, and counts every request it receives, by workspace.
  *
  * One `test()` with `test.step(...)`: connect, then Test, is one sequence.
  */
@@ -24,7 +24,9 @@ const WORKSPACE = 'wrkspc_e2eIsolated';
 
 type Seen = { method: string; path: string };
 async function fauxRequests(request: import('@playwright/test').APIRequestContext): Promise<Seen[]> {
-    const res = await request.get(`${FAUX}/__faux/requests`);
+    // This spec's workspace only: the faux also serves the Managed Agents
+    // spec (Step 5d), whose requests run beside these.
+    const res = await request.get(`${FAUX}/__faux/requests?workspace=${encodeURIComponent(WORKSPACE)}`);
     expect(res.ok()).toBe(true);
     return ((await res.json()) as { requests: Seen[] }).requests;
 }

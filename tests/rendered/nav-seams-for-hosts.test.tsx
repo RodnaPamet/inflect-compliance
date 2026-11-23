@@ -109,13 +109,16 @@ describe('AppShellFrame — topChrome sees the drawer state', () => {
 });
 
 describe('MobileNavDrawer — title', () => {
-    it('defaults to the hamburger label, as before', () => {
+    it('defaults to a name for the PANEL, not the hamburger\'s instruction (#5821)', () => {
         render(
             <MobileNavDrawer open onClose={jest.fn()}>
                 <a href="/dashboard">Board</a>
             </MobileNavDrawer>,
         );
-        expect(screen.getByRole('dialog', { name: 'Open navigation menu' })).toBeTruthy();
+        // The heading used to reuse the button that opened it ("Open
+        // navigation menu"), so an open panel told the reader to open itself.
+        expect(screen.getByRole('dialog', { name: 'Navigation' })).toBeTruthy();
+        expect(screen.queryByText('Open navigation menu')).toBeNull();
     });
 
     it('names the dialog and its visible heading with the host title', () => {

@@ -69,6 +69,7 @@ import {
     type RunStepRow,
     type RunHeader,
 } from '@/app/t/[tenantSlug]/(app)/agents/runs/[runId]/AgentRunDetailClient';
+import { projectRunSteps } from '@/lib/agentic/run-step-projection';
 
 const EN = jest.requireActual('../../messages/en.json') as {
     agents: {
@@ -81,6 +82,7 @@ const EN = jest.requireActual('../../messages/en.json') as {
                 inputLabel: string;
                 outputLabel: string;
                 decisionLink: string;
+                spanDerived: string;
                 emptyTitle: string;
                 skillVersion: string;
                 skillsNone: string;
@@ -129,6 +131,7 @@ function step(over: Partial<RunStepRow> = {}): RunStepRow {
         inputJson: null,
         outputJson: null,
         decisionDigest: null,
+        spanDerivedDecision: false,
         // #3473 part 3 — null for every step that is not a delegation, which
         // is every step in these fixtures.
         delegation: null,
@@ -472,6 +475,61 @@ describe('a step reaches the Art 12 decision it produced', () => {
         // than pointing at a query that matches nothing.
         renderDetail([step({ seq: 0, kind: 'READ', decisionDigest: null })]);
         expect(document.querySelector('a[href*="/agents/decisions"]')).toBeNull();
+    });
+});
+
+/**
+ * A SPAN-DERIVED DECISION ROW SAYS SO (Step 5d of
+ * `docs/claude-managed-agents-design.md`, owner decision 3). The Managed Agents
+ * engine runs the model in the customer's own workspace, so the call's prompt
+ * was never visible to Inflect and its Art 12 row (provider
+ * `anthropic-managed-agents:span-derived`) digests what Inflect sent. The rows
+ * below are built the way the engine writes them and go through the REAL
+ * projection, so the label is the page reading the ledger, not a fixture.
+ */
+describe('a span-derived decision row is labelled, so a reviewer knows the prompt was not visible', () => {
+    const DIGEST = `sha256:${'5d5d5d5d'.repeat(8)}`;
+    const raw = (seq: number, input: Record<string, unknown>) => ({
+        id: `raw-${seq}`,
+        seq,
+        kind: 'MODEL_CALL',
+        status: 'DONE',
+        toolCalled: null,
+        inputJson: JSON.stringify(input),
+        outputJson: null,
+        guardVerdict: null,
+        guardRuleIds: [],
+        costTokens: 18,
+        at: new Date('2026-11-23T10:00:00.000Z'),
+        actorUserId: null,
+    });
+
+    it('a Managed Agents MODEL_CALL, as the engine records it, carries the label beside its decision link', () => {
+        const steps = projectRunSteps(undefined, [
+            raw(0, { modelCalls: 1, decisionDigest: DIGEST, inputBasis: 'INFLECT_SENT', spanDerived: true, model: 'claude-opus-5-5' }),
+        ], []);
+        renderDetail(steps, { ...RUN, driver: 'MANAGED_AGENTS' });
+        const label = document.querySelector('[data-testid="step-0-span-derived"]');
+        expect(label?.textContent).toBe(EN.agents.runs.detail.spanDerived);
+        // Beside the link it qualifies, which is still there.
+        expect(document.querySelector(`a[href*="${encodeURIComponent(DIGEST)}"]`)).not.toBeNull();
+    });
+
+    it('another engine\'s MODEL_CALL, whose row holds the prompt, carries none', () => {
+        const steps = projectRunSteps(undefined, [raw(0, { modelCalls: 1, decisionDigest: DIGEST })], []);
+        renderDetail(steps);
+        expect(document.querySelector('[data-testid$="-span-derived"]')).toBeNull();
+        expect(document.querySelector(`a[href*="${encodeURIComponent(DIGEST)}"]`)).not.toBeNull();
+    });
+
+    it('needs both markers and a decision row: half a marker, or no row to qualify, is no label', () => {
+        const steps = projectRunSteps(undefined, [
+            raw(0, { decisionDigest: DIGEST, spanDerived: true }),
+            raw(1, { decisionDigest: DIGEST, inputBasis: 'INFLECT_SENT' }),
+            raw(2, { inputBasis: 'INFLECT_SENT', spanDerived: true }),
+        ], []);
+        renderDetail(steps);
+        expect(document.querySelector('[data-testid$="-span-derived"]')).toBeNull();
     });
 });
 

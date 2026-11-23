@@ -44,7 +44,6 @@ import { usePermissions, useTenantApiUrl, useTenantHref } from '@/lib/tenant-con
 import type { AgentDriverMode } from '@/lib/agentic/agent-driver';
 
 import {
-    OFFERED_ENGINES,
     choiceEnabled,
     effectiveEngineNameFor,
     engineControlFor,
@@ -52,6 +51,8 @@ import {
     gateTermsFor,
     headlineFor,
     headlineToneFor,
+    listedEngines,
+    managedAgentsChoiceBlockedBy,
     type AgentDriverSettingPayload,
     type EngineTerm,
     type EngineTermKey,
@@ -136,17 +137,26 @@ export function AgentEnginesSection() {
     // The owner's six terms only when they have arrived. While the checklist
     // is loading, or if it failed, the three terms the gate reports are shown
     // under the gate's own heading, never as "what a Flue run needs".
-    const wiringData = canChange ? wiring.data : undefined;
+    // ...and only when they are THIS engine's terms. Right after a change of
+    // engine the setting refetch can land before the checklist's, and the old
+    // engine's terms (Flue's WORKFLOW and BOUND_KEY, say) have no sentence in
+    // the new engine's vocabulary (Step 5d found it in the E2E).
+    const wiringData = canChange && wiring.data?.engine === engine ? wiring.data : undefined;
     const terms: EngineTerm[] = wiringData ? wiringData.terms : gateTermsFor(state);
     // Term sentences per engine: `term.*` for Flue, `toolRunnerTerm.*` for the
-    // Tool Runner, whose terms are about its own switch, build and needs.
-    const termNamespace = engine === 'TOOL_RUNNER' ? 'toolRunnerTerm' : 'term';
+    // Tool Runner and `managedAgentsTerm.*` for Managed Agents, whose terms are
+    // about each engine's own switch, build and needs.
+    const termNamespace =
+        engine === 'TOOL_RUNNER' ? 'toolRunnerTerm' : engine === 'MANAGED_AGENTS' ? 'managedAgentsTerm' : 'term';
+    // Why the Managed Agents engine cannot be chosen yet, when its switch is on.
+    const managedAgentsBlockedBy = managedAgentsChoiceBlockedBy(state);
     const tone = headlineToneFor(state, wiringData);
 
     /** Where a tenant-owned wiring term is fixed. Operator terms have no link. */
     const fixHref = (key: EngineTermKey): string | null => {
         if (key === 'REGISTERED_AGENT') return tenantHref('/admin/agents');
         if (key === 'BOUND_KEY') return tenantHref('/admin/api-keys');
+        if (key === 'WORKSPACE') return tenantHref('/admin/integrations');
         return null;
     };
 
@@ -194,6 +204,11 @@ export function AgentEnginesSection() {
                                 {t('deploymentOffStoredToolRunner')}
                             </span>
                         )}
+                        {state.mode === 'MANAGED_AGENTS' && (
+                            <span data-testid="agent-engines-deployment-off-stored-managed-agents" className="mt-1 block">
+                                {t('deploymentOffStoredManagedAgents')}
+                            </span>
+                        )}
                         {/* The organization, not the operator, can turn the
                             Tool Runner on here (#4557): say so. */}
                         {state.toolRunner.basis === 'ORGANIZATION_OFF' && (
@@ -222,7 +237,7 @@ export function AgentEnginesSection() {
                         aria-label={t('choiceAria')}
                         className="space-y-1.5"
                     >
-                        {OFFERED_ENGINES.map((mode) => {
+                        {listedEngines(state).map((mode) => {
                             const id = `agent-engine-${mode}`;
                             const checked = state.mode === mode;
                             const enabled = choiceEnabled(control, mode, state);
@@ -248,6 +263,15 @@ export function AgentEnginesSection() {
                                             {t(`engine.${mode}.name`)}
                                         </p>
                                         <p className="text-xs text-content-muted">{t(`engine.${mode}.description`)}</p>
+                                        {/* Why it cannot be chosen yet, and where that is fixed (Step 5d). */}
+                                        {mode === 'MANAGED_AGENTS' && managedAgentsBlockedBy && (
+                                            <p className="text-xs text-content-muted" data-testid="agent-engines-managed-agents-blocked">
+                                                {t(managedAgentsBlockedBy)}{' '}
+                                                <Link href={tenantHref('/admin/integrations')} className="text-content-link">
+                                                    {t('fix')}
+                                                </Link>
+                                            </p>
+                                        )}
                                     </div>
                                 </ShadedRow>
                             );
@@ -263,7 +287,13 @@ export function AgentEnginesSection() {
                     )}
                     <p className="text-sm font-medium text-content-emphasis">
                         {wiringData
-                            ? t(engine === 'TOOL_RUNNER' ? 'wiringHeadingToolRunner' : 'wiringHeading')
+                            ? t(
+                                  engine === 'TOOL_RUNNER'
+                                      ? 'wiringHeadingToolRunner'
+                                      : engine === 'MANAGED_AGENTS'
+                                        ? 'wiringHeadingManagedAgents'
+                                        : 'wiringHeading',
+                              )
                             : t('gateHeading')}
                     </p>
                     <ul className="space-y-tight" data-testid="agent-engines-terms">
@@ -313,9 +343,29 @@ export function AgentEnginesSection() {
                         to every viewer: it is the one condition the three-term
                         gate cannot report. */}
                     <p className="text-xs text-content-muted">
-                        {t(engine === 'TOOL_RUNNER' ? 'toolRunnerStartNote' : 'boundKeyNote')}
+                        {t(
+                            engine === 'TOOL_RUNNER'
+                                ? 'toolRunnerStartNote'
+                                : engine === 'MANAGED_AGENTS'
+                                  ? 'managedAgentsStartNote'
+                                  : 'boundKeyNote',
+                        )}
                     </p>
                 </div>
+
+                {/* WHAT THE MANAGED AGENTS ENGINE DOES WITH THE WORKSPACE'S
+                    DATA, in plain words (Step 5d, decision 4), wherever the
+                    engine is listed: where the conversation lives, for how
+                    long, and what Inflect cannot see of it. */}
+                {listedEngines(state).includes('MANAGED_AGENTS') && (
+                    <div className="space-y-tight" data-testid="agent-engines-managed-agents-explainer">
+                        <p className="text-sm font-medium text-content-emphasis">{t('managedAgentsExplainer.heading')}</p>
+                        <p className="text-sm text-content-muted">{t('managedAgentsExplainer.where')}</p>
+                        <p className="text-sm text-content-muted">{t('managedAgentsExplainer.sessions')}</p>
+                        <p className="text-sm text-content-muted">{t('managedAgentsExplainer.controls')}</p>
+                        <p className="text-sm text-content-muted">{t('managedAgentsExplainer.record')}</p>
+                    </div>
+                )}
             </Card>
 
             {pending && (

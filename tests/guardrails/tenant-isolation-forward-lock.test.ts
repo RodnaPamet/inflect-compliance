@@ -128,6 +128,8 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     ThirdPartyAppScan: "tests/integration/third-party-app-scans.test.ts",
     DiscoveredThirdPartyApp: "tests/integration/third-party-app-scans.test.ts",
     ThirdPartyAppScanItem: "tests/integration/third-party-app-scans.test.ts",
+    AgentRuleScan: "tests/integration/agent-rule-scans.test.ts",
+    AgentRuleScanItem: "tests/integration/agent-rule-scans.test.ts",
     AgentHarnessAcceptance: "tests/integration/agent-harness-ingest.test.ts",
     PeerAgentReplyDelivery: "tests/integration/a2a-reply-delivery.test.ts",
     AgentHarnessEstate: "tests/integration/agent-harness-estates.test.ts",

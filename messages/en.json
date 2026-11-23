@@ -5513,6 +5513,7 @@
         "agent_external_tools": "Agent external tools",
         "agent_harness_ingest": "Agent scan reports",
         "integrations_ingest": "Third-party application scan reports",
+        "agent_rules_ingest": "Agent-surface rules scan reports",
         "agent_ownership": "Own agents",
         "agent_skill_review": "Review agent skills",
         "agent_skill_author": "Author agent skills"
@@ -8974,7 +8975,7 @@
         },
         "MANAGED_AGENTS": {
           "name": "Managed Agents engine",
-          "description": "A model in your own Anthropic workspace chooses which of the agent's tools to call. Every call still comes back to Inflect and goes through the agent's grants and controls. Not available yet. Powered by Claude."
+          "description": "A model in your own Anthropic workspace chooses which of the agent's tools to call, following the instructions on the agent's Behaviour tab. Every call comes back to Inflect and goes through the agent's grants and controls. Needs a connected Anthropic workspace. Powered by Claude."
         }
       },
       "gateHeading": "What decides the engine",
@@ -8982,12 +8983,14 @@
       "confirmTitle": {
         "STATIC": "Switch this workspace to the built-in engine?",
         "FLUE": "Switch this workspace to the Flue engine?",
-        "TOOL_RUNNER": "Switch this workspace to the Tool Runner engine?"
+        "TOOL_RUNNER": "Switch this workspace to the Tool Runner engine?",
+        "MANAGED_AGENTS": "Switch this workspace to the Managed Agents engine?"
       },
       "confirmBody": {
         "FLUE": "Runs already in progress stay on the engine they started on. A paused run that is resumed, and every new run, will use the Flue engine if its workflow asks for it and the conditions below are met. Every call still goes through the agent's grants, policy card, autonomy ceiling and kill switch. You can switch back at any time.",
         "STATIC": "Runs already in progress stay on the engine they started on. A paused run that is resumed, and every new run, will use the built-in engine. You can switch back at any time.",
-        "TOOL_RUNNER": "Runs already in progress stay on the engine they started on. Every new profile run will use the Tool Runner engine, which sends the agent's instructions and the results of its tool calls to Anthropic. Workflows that ask for the Flue engine run on the built-in engine instead. Every call still goes through the agent's grants, policy card, autonomy ceiling and kill switch. You can switch back at any time."
+        "TOOL_RUNNER": "Runs already in progress stay on the engine they started on. Every new profile run will use the Tool Runner engine, which sends the agent's instructions and the results of its tool calls to Anthropic. Workflows that ask for the Flue engine run on the built-in engine instead. Every call still goes through the agent's grants, policy card, autonomy ceiling and kill switch. You can switch back at any time.",
+        "MANAGED_AGENTS": "Runs already in progress stay on the engine they started on. Every new profile run will run as a session in your connected Anthropic workspace, which holds the agent's instructions, its messages and the results of its tool calls until the run ends. Workflows that ask for the Flue engine run on the built-in engine instead. Every call still goes through the agent's grants, policy card, autonomy ceiling and kill switch. You can switch back at any time."
       },
       "confirmLabel": "Switch engine",
       "term": {
@@ -9022,7 +9025,34 @@
       },
       "toolRunnerStartNote": "A Tool Runner run starts in two ways: a Test run from an agent's Behaviour tab, which is always read-only, or an automation rule's Invoke agent action on a profile version that allows automation starts. Either way it runs as that agent, under the agent's own grants and controls.",
       "organizationTerm": "Set by your organization",
-      "deploymentOffOrganization": "Your organization can turn on the Tool Runner engine for its workspaces in the organization's settings."
+      "deploymentOffOrganization": "Your organization can turn on the Tool Runner engine for its workspaces in the organization's settings.",
+      "runsOnManagedAgents": "In this workspace, agent profiles run on the Managed Agents engine, in your connected Anthropic workspace.",
+      "runsOnManagedAgentsNotReady": "This workspace has chosen the Managed Agents engine, but no Managed Agents run can start yet. The checklist below shows what is missing.",
+      "reasonManagedAgents": {
+        "ENV_DISABLED": "Runs use the built-in engine because the Managed Agents engine is not turned on for this deployment. Only the deployment's operator can turn it on.",
+        "DRIVER_NOT_IMPLEMENTED": "Runs use the built-in engine because this version of Inflect does not include the Managed Agents engine, even though both the deployment and this workspace ask for it.",
+        "NO_WORKFLOW_REQUESTS_IT": "Runs use the built-in engine because agent profiles are not turned on for this workspace, and they are what ask for the Managed Agents engine."
+      },
+      "deploymentOffStoredManagedAgents": "This workspace has chosen the Managed Agents engine, so its profile runs move to it as soon as the switch is turned on.",
+      "wiringHeadingManagedAgents": "What a Managed Agents run needs before it can start",
+      "managedAgentsTerm": {
+        "ENV": "The deployment allows the Managed Agents engine",
+        "TENANT": "This workspace has chosen it",
+        "BUILD": "This build ships the Managed Agents engine",
+        "PROFILES": "Agent profiles are turned on for this workspace",
+        "WORKSPACE": "One Anthropic workspace is connected and enabled",
+        "REGISTERED_AGENT": "An active, risk-assessed agent is registered"
+      },
+      "managedAgentsStartNote": "A Managed Agents run starts in two ways: a Test run of the approved version from an agent's Behaviour tab, which is always read-only, or an automation rule's Invoke agent action on a profile version that allows automation starts. Approving a version is what creates its agent in your Anthropic workspace.",
+      "managedAgentsNeedsWorkspace": "Connect your Anthropic workspace on the Integrations page before you choose this engine.",
+      "managedAgentsAmbiguousWorkspace": "More than one Anthropic workspace is connected and enabled. Disable all but one on the Integrations page before you choose this engine.",
+      "managedAgentsExplainer": {
+        "heading": "What the Managed Agents engine does with your data",
+        "where": "Each run is a conversation with a model in your own Anthropic workspace, which you connected with your own key. Anthropic acts as your processor, at your direction.",
+        "sessions": "The conversation (the agent's instructions, its messages and the results of its tool calls) exists in your workspace until the run ends, and Inflect deletes it then. If you tick \"Keep sessions in my workspace\" on the Anthropic workspace connection, it stays there until you delete it, or until Inflect deletes it when your Inflect workspace is purged or the connection is removed.",
+        "controls": "The model runs in your workspace, but every tool call comes back to Inflect and goes through the agent's grants, policy card, autonomy ceiling and kill switch. The agent Inflect creates there holds Inflect's own fixed instructions and the tool descriptions, never yours.",
+        "record": "Inflect records what it sent and every tool call, but cannot see the exact prompt of each model call, which stays in your workspace. The run timeline marks those records."
+      }
     },
     "modules": {
       "forbidden": "Only a workspace owner can turn product modules on or off. An administrator cannot grant this.",
@@ -11853,6 +11883,53 @@
       "tabPack": "Assessor pack",
       "tabHarness": "Harness matrix",
       "tabIntegrations": "Integrations",
+      "tabAgentSurface": "Agent surface",
+      "agentSurface": {
+        "readOnly": "Read only. The findings below were raised by a scanner's static rules over the tool definitions it read from tool servers and the agent skills it read from code folders; they live in the findings register, and a scan closes one only when the same scanner reads the place it was found in full and the rule no longer fires. A finding is a suggestion to confirm, not proof: the scanner kept no text, so open the tool on its server, or the skill's file, to judge it.",
+        "noScansTitle": "No agent-surface rules scan",
+        "noScansBody": "Nothing has read the definitions of the tools your agents can call, or the skills they use, so this page can say nothing about them. A scanner that reads tool servers or agent code submits its report with an API key carrying the admin:agent_rules_ingest scope, signed by a scanner key registered on the Harness matrix tab.",
+        "sectionHeading": "{scanner}, as of {asOf}",
+        "state": {
+          "FINDINGS": "Rules fired",
+          "CLEAN": "No rule fired on a complete read",
+          "NOTHING_READ": "Nothing was read",
+          "NOT_CONCLUDED": "Not concluded"
+        },
+        "summary": "{subjects, plural, one {# tool definition, skill or script} other {# tool definitions, skills and scripts}} read, {flagged, plural, one {# with} other {# with}} a finding, {findings, plural, one {# finding} other {# findings}}.",
+        "nothingRead": "The places this scanner read held no tool definition and no skill. A read of nothing is not a clean result.",
+        "incomplete": "Not everything was read ({reason}). A finding below is real; an absence is not a clean result, and nothing found in a place read in part was closed.",
+        "originsHeading": "Places read",
+        "noOrigins": "No places read in this scan",
+        "originComplete": "{kind}, read in full: {subjects, plural, one {# item} other {# items}}",
+        "originIncomplete": "{kind}, read in part ({reason}): {subjects, plural, one {# item} other {# items}} read",
+        "originKind": {
+          "mcp": "tool server",
+          "code": "code folder"
+        },
+        "findingsHeading": "Open findings",
+        "noOpenFindings": "No open agent-surface findings",
+        "findingsTruncated": "There are more open findings than this page lists. The findings register has them all.",
+        "colSeverity": "Severity",
+        "colFinding": "Finding",
+        "colWhere": "Where",
+        "field": "in its {field}",
+        "code": {
+          "MCP_TOOL_POISONING": "Possible tool poisoning",
+          "MCP_PROMPT_INJECTION": "Possible prompt injection",
+          "MCP_COMMAND_INJECTION": "Possible executable payload",
+          "MCP_DATA_EXFILTRATION": "Possible data exfiltration instruction",
+          "MCP_CREDENTIAL_HARVESTING": "Possible credential harvesting",
+          "SKILL_PROMPT_INJECTION": "Possible prompt injection in a skill",
+          "SKILL_COMMAND_INJECTION": "Possible executable payload in a skill",
+          "SKILL_DATA_EXFILTRATION": "Possible data exfiltration in a skill",
+          "SKILL_CREDENTIAL_HARVESTING": "Possible credential harvesting in a skill",
+          "SKILL_EXCESSIVE_PERMISSION": "Possible excessive permission in a skill",
+          "SKILL_IMPERSONATION": "Possible impersonation in a skill"
+        },
+        "scannersNotShown": "{count, plural, one {# more scanner has} other {# more scanners have}} a scan this page does not show.",
+        "scannersWithoutScan": "{count, plural, one {# trusted scanner has} other {# trusted scanners have}} sent no agent-surface rules report in the scans this page read: {names}. As far as this page can see, they read nothing.",
+        "scansTruncated": "There are more scans than this page read; the latest of each scanner is shown."
+      },
       "integrations": {
         "readOnly": "The applications a directory has granted access to — Entra, Okta and GitHub — as each scanner’s latest third-party application report found them. Read-only: what the scan raised is in the findings register, shown here beside the application it is about.",
         "noScansTitle": "No third-party application scan has been received",
@@ -12458,7 +12535,8 @@
           "monthly_token_budget_exceeded": "This workspace has used its monthly token budget, so the run stopped.",
           "run_agent_killed": "The run was stopped because a kill switch was engaged for this agent.",
           "detailLabel": "Technical detail"
-        }
+        },
+        "spanDerived": "Prompt not visible to Inflect: this call ran in your Anthropic workspace, and its decision record covers what Inflect sent."
       },
       "awaitingApprovalNoProposals": "Paused for review — nothing is queued for approval. Open the run to see what stopped it, then Resume.",
       "approvalWindowCloses": "Approval window closes {date}",
@@ -14054,7 +14132,9 @@
           "AGENT_NOT_READY": "A Test run runs as this agent, so the agent must be active and risk-assessed first.",
           "TRIGGER_NOT_ALLOWED": "This version does not allow Test runs. Write a version that allows them.",
           "FLOW_NOT_RUNNABLE": "This version carries a drawn flow, and no engine runs a drawn flow yet. Write a version without a flow to try it.",
-          "NO_READ_TOOL": "A Test run is read-only, so it is offered no propose tool, and this version names only propose tools. Write a version that names a read tool to try it."
+          "NO_READ_TOOL": "A Test run is read-only, so it is offered no propose tool, and this version names only propose tools. Write a version that names a read tool to try it.",
+          "MANAGED_AGENTS_NOT_IN_FORCE": "This workspace has chosen the Managed Agents engine, but it is not running yet. Admin → AI features → Agent engines shows what it still needs.",
+          "NEEDS_APPROVED_VERSION": "On the Managed Agents engine a Test run tries the approved version: approving a version is what creates its agent in your Anthropic workspace."
         },
         "engine": {
           "STATIC": "built-in engine",
@@ -17738,6 +17818,9 @@
       "noReviewStatus": "No review status",
       "remove": "× Remove"
     }
+  },
+  "mobileNav": {
+    "drawerTitle": "Navigation"
   },
   "assistant": {
     "title": "Assistant",

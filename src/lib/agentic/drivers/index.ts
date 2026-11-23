@@ -46,9 +46,11 @@ const DRIVERS: Partial<Record<AgentDriver, RunDriver>> = {
     // tenant chose it and the Tool Runner is available to the workspace
     // (`AGENT_DRIVER_TOOL_RUNNER`, or its organization's choice when unset).
     'tool-runner': runToolRunnerDriver,
-    // Mapped and NOT selectable (Step 5b, #4165): `DRIVER_IMPLEMENTED
-    // ['managed-agents']` is false, so `resolveAgentDriver` never permits this
-    // key. Step 5d flips the flag; this line does not change.
+    // Mapped and gated, as the others are (Step 5b, #4165; on from Step 5d,
+    // #4167): `resolveAgentDriver` permits this key only for a workspace that
+    // chose MANAGED_AGENTS, with `AGENT_MANAGED_AGENTS` on and
+    // `DRIVER_IMPLEMENTED['managed-agents']` true. Reverting that flag turns
+    // the engine off; this line does not change.
     'managed-agents': runManagedAgentsDriver,
 };
 

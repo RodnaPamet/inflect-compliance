@@ -87,6 +87,37 @@ describe('managedAgentsClientFor', () => {
         expect(sdk.default).not.toHaveBeenCalled();
     });
 
+    it('dials the loopback faux in a Playwright run only, decided by the deployment\'s two flags (Step 5d)', async () => {
+        const urls: string[] = [];
+        global.fetch = (async (input: RequestInfo | URL) => {
+            urls.push(String(input));
+            return new Response(JSON.stringify({ id: 'sesn_1', type: 'session', status: 'idle' }), {
+                status: 200,
+                headers: { 'content-type': 'application/json' },
+            });
+        }) as typeof fetch;
+        const before = process.env.NEXT_TEST_MODE;
+        try {
+            // One flag is not a Playwright run: Anthropic's host, as everywhere.
+            process.env.NEXT_TEST_MODE = '1';
+            mockEnv.AUTH_TEST_MODE = undefined;
+            const pinned = managedAgentsClientFor({ apiKey: 'k', workspaceId: 'wrkspc_abc' });
+            if (!pinned.ok) throw new Error(pinned.reason);
+            await pinned.client.beta.sessions.retrieve('sesn_1');
+            // Both flags: the constant loopback port, and the middleware pins THAT
+            // origin, so nothing else is reachable from it either.
+            mockEnv.AUTH_TEST_MODE = '1';
+            const faux = managedAgentsClientFor({ apiKey: 'k', workspaceId: 'wrkspc_abc' });
+            if (!faux.ok) throw new Error(faux.reason);
+            await faux.client.beta.sessions.retrieve('sesn_1');
+            expect(urls.map((u) => new URL(u).origin)).toEqual(['https://api.anthropic.com', 'http://127.0.0.1:3008']);
+        } finally {
+            if (before === undefined) delete process.env.NEXT_TEST_MODE;
+            else process.env.NEXT_TEST_MODE = before;
+            mockEnv.AUTH_TEST_MODE = undefined;
+        }
+    });
+
     it('builds a new client per call', () => {
         const a = managedAgentsClientFor({ apiKey: 'k1', workspaceId: 'wrkspc_a' });
         const b = managedAgentsClientFor({ apiKey: 'k2', workspaceId: 'wrkspc_b' });

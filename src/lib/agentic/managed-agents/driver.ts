@@ -6,10 +6,12 @@
  * `execute.ts`. Every refusal is settled on the run row with a named reason
  * and never degrades to another engine (global rule 4).
  *
- * BUILT AND NOT SELECTABLE. Mapped in `drivers/index.ts`, and
- * `DRIVER_IMPLEMENTED['managed-agents']` is FALSE, so `resolveAgentDriver`
- * never permits this key and `selectRunDriver` never chooses it;
- * `MANAGED_AGENTS` is a READ_ONLY mode no writer accepts. Step 5d turns it on.
+ * SELECTED BY THE GATE, NEVER BY THIS MODULE. Mapped in `drivers/index.ts`;
+ * `resolveAgentDriver` permits this key only for a workspace that chose
+ * `MANAGED_AGENTS` (which the setting allows only with a connected Anthropic
+ * workspace, Step 5d), with `AGENT_MANAGED_AGENTS` on and
+ * `DRIVER_IMPLEMENTED['managed-agents']` true, and `selectRunDriver` chooses it
+ * only for a definition that asks for it: a profile of such a workspace.
  *
  * The order of the checks is the residency rule's: a LOCAL_ONLY tenant is
  * refused BEFORE the customer's connection, and so their key, is read. Then
@@ -47,6 +49,7 @@ export type ManagedAgentsStartRefusal =
     | 'NO_STEPS_REMAIN'
     | WorkspaceConnectionRefusal
     | 'NOT_PROVISIONED'
+    | 'AGENT_ARCHIVED'
     | ManagedAgentsClientRefusal;
 
 /** The sentence a refused run is settled with. Never the key, never a workspace's content. */
@@ -77,6 +80,12 @@ export function refusalMessage(reason: ManagedAgentsStartRefusal): string {
             return (
                 `${p}_not_provisioned: this profile version has no agent in the connected Anthropic workspace. `
                 + 'Approving the version provisions it.'
+            );
+        case 'AGENT_ARCHIVED':
+            return (
+                `${p}_agent_archived: this profile version's agent was archived when the Anthropic workspace connection `
+                + 'was removed, and re-enabling the connection does not bring it back. Approve a new version of the '
+                + 'profile to create its agent again.'
             );
         case 'WORKSPACE_KEY_MISSING':
             return `${p}_workspace_key_missing: the Anthropic workspace connection holds no API key.`;
@@ -131,6 +140,12 @@ export async function runManagedAgentsDriver(
 
     const provision = await readProvision(ctx, def.profile.versionId, connection.connectionId);
     if (!provision) return refuse('NOT_PROVISIONED');
+    // A REMOVED-THEN-RE-ENABLED CONNECTION (Step 5d, #4167). Removing it
+    // archived this version's agent (Step 5c), and an archived agent starts no
+    // session. Refused by name, before a client exists, rather than sent to a
+    // session create Anthropic would refuse. The next approval provisions a new
+    // agent (`readProfileAgent` skips the archived one).
+    if (provision.archived) return refuse('AGENT_ARCHIVED');
 
     const choice = managedAgentsClientFor({ apiKey: connection.apiKey, workspaceId: connection.workspaceId, runId });
     if (!choice.ok) return refuse(choice.reason);

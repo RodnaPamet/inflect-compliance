@@ -85,7 +85,10 @@ describe('<NavBar>', () => {
                 name: /Inflect Compliance/i,
             });
             expect(link).not.toBeNull();
-            const cls = link.className;
+            // The mark is painted INSIDE the link since #5820: the link is the
+            // (touch-sized) hit area, the mark keeps the 22px brand square.
+            const cls = screen.getByTestId('nav-bar-brand-mark').className;
+            expect(link.contains(screen.getByTestId('nav-bar-brand-mark'))).toBe(true);
             // Brand gradient (3 stops).
             expect(cls).toContain('from-[var(--brand-default)]');
             expect(cls).toContain('via-[var(--brand-muted)]');
@@ -94,8 +97,9 @@ describe('<NavBar>', () => {
             expect(cls).toContain('shadow-[var(--nav-band-glow)]');
             // 6s pulse via background-position pan.
             expect(cls).toContain('animate-nav-brand-pulse');
-            // Press-feedback recipe (R14-PR11).
-            expect(cls).toContain('active:translate-y-px');
+            // Press-feedback recipe (R14-PR11) — on the link, which is what
+            // the finger presses.
+            expect(link.className).toContain('active:translate-y-px');
         });
 
         it('the brand mark uses `href` to navigate to the variant root', () => {

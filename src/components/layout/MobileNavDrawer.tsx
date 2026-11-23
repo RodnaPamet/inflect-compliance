@@ -56,22 +56,22 @@ export interface MobileNavDrawerProps {
     onClose: () => void;
     /**
      * The panel's visible heading AND its accessible name (one string, so the
-     * two cannot drift). Defaults to `nav.openNavigationMenu`.
+     * two cannot drift). Defaults to `mobileNav.drawerTitle` ("Navigation").
      *
-     * That default is the HAMBURGER's label, an instruction ("Open navigation
-     * menu"), and on an open panel it reads as one: the heading tells a
-     * sighted user to open what they are already looking at, and a screen
-     * reader announces the dialog as a command. A host that names its drawer
-     * as a place ("Menu", the context's name) passes it here. The default is
-     * kept so no existing drawer changes under its users.
+     * The default used to be `nav.openNavigationMenu` — the HAMBURGER's label,
+     * an instruction ("Open navigation menu") — and on an open panel it read
+     * as one: the heading told a sighted user to open what they were already
+     * looking at, and a screen reader announced the dialog as a command
+     * (#5821). The default now names the panel as a place. A host that names
+     * its drawer differently (the context's name, "Menu") passes it here.
      */
     title?: string;
     children: ReactNode;
 }
 
 export function MobileNavDrawer({ open, onClose, title, children }: MobileNavDrawerProps) {
-    const tn = useTranslations('nav');
-    const panelTitle = title ?? tn('openNavigationMenu');
+    const tm = useTranslations('mobileNav');
+    const panelTitle = title ?? tm('drawerTitle');
 
     useKeyboardShortcut('Escape', onClose, {
         enabled: open,

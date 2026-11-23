@@ -46,8 +46,10 @@ const HOOK_PATH = 'packages/ui/src/components/ui/hooks/use-toast.ts';
 // `useToast()`. Adding to this set requires a written rationale
 // in the PR description.
 const SONNER_PRIMITIVE_FILES = new Set<string>([
-    // The Toaster <Toaster /> mount lives here.
-    'src/app/providers.tsx',
+    // The Toaster <Toaster /> mount. It lived in `src/app/providers.tsx`
+    // until #5821 moved it into its own component, which reads the theme and
+    // the breakpoint; providers mounts `<AppToaster />`.
+    'src/components/theme/AppToaster.tsx',
     // The useToast hook IS the seam — it imports sonner under
     // the hood and re-exports a four-method API.
     'packages/ui/src/components/ui/hooks/use-toast.ts',

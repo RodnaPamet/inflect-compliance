@@ -365,7 +365,16 @@ const BUDGETS_KB: Record<string, number> = {
     // toolbar) that every tenant page loads. The later mobile batches touch
     // shared primitives too, so 0.1 KB left would trip on the next one.
     // 679 is measured + ~4, the convention.
-    'controls': 679,
+    //
+    // Raised 679 -> 683 by the mobile top-bar batch (#5847, same owner
+    // request). CI's webpack build of #5847 on main-with-#5845:
+    // `controls/.../tests/[planId]/page` 674.9 -> 677.5 KB (+2.6), and
+    // #5846 (the tab-strip cue, +1.0 here) landed between the two, so the
+    // merged figure is about 678.5 against 679. The batch adds the phone
+    // top-bar entry points (assistant and command-palette buttons), the
+    // themed toaster and tap-to-open tooltips to the shared tenant shell.
+    // 683 is measured + ~4, the convention.
+    'controls': 683,
     // Catch-all for any other tenant page.
     //
     // Raised 682 → 688 by the AI-roadmap integration (#5323, owner decision
@@ -379,7 +388,16 @@ const BUDGETS_KB: Record<string, number> = {
     // `controls` note): policies/[policyId]/page 687.3 -> 688.1 KB, +0.8,
     // shared phone-layout code in the popover, modal, sheet and selection
     // toolbar. 692 is measured + ~4, the convention.
-    'tenant-default': 692,
+    //
+    // Raised 692 -> 699 by the mobile top-bar batch (#5847; see the
+    // `controls` note). policies/[policyId]/page 688.1 -> 693.2 KB on
+    // main-with-#5845 (+5.1, against +0.6 to +2.6 on every other bucket's
+    // worst route), plus #5846's +0.7 landing in between: about 694.5
+    // merged. The +5.1 is NOT fully attributed — the route-specific share
+    // is chunk re-partitioning around the shell change, and the local
+    // attribution build ran out of memory on the shared machine. 699 is
+    // measured + ~4, the convention.
+    'tenant-default': 699,
     // Auth / public / org pages.
     //
     // RAISED 575 -> 580 on 2026-10-23, and this entry is the cautionary one.

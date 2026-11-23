@@ -409,6 +409,19 @@ export type PermissionSet = {
          */
         integrations_ingest: boolean;
         /**
+         * SUBMITTING an agent-surface rules scan: a scanner posting its signed
+         * `scanent-agent-rules/1` report — what static rules found written into
+         * the MCP tool definitions it read (`…/admin/agents/agent-rule-scans`).
+         *
+         * Its own key, by the owner's decision that each report has its own
+         * contract, ingest and key scope: a key minted to post one report does
+         * not post another. Held, granted and classified exactly as
+         * `integrations_ingest`: OWNER, ADMIN and AI_ADMIN by default, the
+         * scanner's API key through the `admin:agent_rules_ingest` scope, and a
+         * report counts only when a scanner key the register trusts signed it.
+         */
+        agent_rules_ingest: boolean;
+        /**
          * OWNING AN AGENT BY TRANSFER (#3699): propose, read, cancel and
          * complete a two-step agent ownership transfer
          * (`…/admin/agents/[agentId]/ownership-transfer` and `…/complete`).
@@ -542,6 +555,7 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
         'agent_registry', 'agent_registry_view', 'agent_tool_exposure', 'agent_policy_card',
         'agent_kill_switch', 'agent_external_tools', 'agent_harness_ingest',
         'integrations_ingest',
+        'agent_rules_ingest',
         'agent_ownership', 'agent_skill_review', 'agent_skill_author',
     ],
 };
@@ -567,6 +581,7 @@ export const AGENT_ADMIN_KEYS = [
     'agent_external_tools',
     'agent_harness_ingest',
     'integrations_ingest',
+    'agent_rules_ingest',
     'agent_ownership',
     'agent_skill_review',
     'agent_skill_author',
@@ -621,6 +636,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     agent_kill_switch: true, agent_external_tools: true,
                     agent_harness_ingest: true,
                     integrations_ingest: true,
+                    agent_rules_ingest: true,
                     agent_ownership: true,
                     agent_skill_review: true,
                     agent_skill_author: true,
@@ -671,6 +687,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     agent_kill_switch: true, agent_external_tools: true,
                     agent_harness_ingest: true,
                     integrations_ingest: true,
+                    agent_rules_ingest: true,
                     // Explicit false (#3699, owner default): ADMIN holds the
                     // register key, and an agent's accountable owner must not
                     // be movable by the role that owner is accountable to. An
@@ -709,7 +726,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false, workpaper_view: false },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, integrations_ingest: false, agent_ownership: false, agent_skill_review: false, agent_skill_author: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, integrations_ingest: false, agent_rules_ingest: false, agent_ownership: false, agent_skill_review: false, agent_skill_author: false },
             };
         case 'AUDITOR':
             return {
@@ -735,7 +752,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 // Auditors can view and maybe export/share depending on policy, but let's keep view/share
                 audits: { view: true, manage: false, freeze: false, share: true, workpaper_view: false },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: true, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, integrations_ingest: false, agent_ownership: false, agent_skill_review: false, agent_skill_author: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: true, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, integrations_ingest: false, agent_rules_ingest: false, agent_ownership: false, agent_skill_review: false, agent_skill_author: false },
             };
         case 'READER':
             return readerPermissions();
@@ -768,6 +785,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     agent_external_tools: true,
                     agent_harness_ingest: true,
                     integrations_ingest: true,
+                    agent_rules_ingest: true,
                     agent_ownership: true,
                     agent_skill_review: true,
                     agent_skill_author: true,
@@ -812,7 +830,7 @@ function readerPermissions(): PermissionSet {
         frameworks: { view: true, install: false },
         audits: { view: true, manage: false, freeze: false, share: false, workpaper_view: false },
         reports: { view: true, export: false, schedule_external: false },
-        admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, integrations_ingest: false, agent_ownership: false, agent_skill_review: false, agent_skill_author: false },
+        admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, integrations_ingest: false, agent_rules_ingest: false, agent_ownership: false, agent_skill_review: false, agent_skill_author: false },
     };
 }
 
