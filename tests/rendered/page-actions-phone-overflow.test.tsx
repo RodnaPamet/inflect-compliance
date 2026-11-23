@@ -34,13 +34,14 @@ function WrappedOverflow({ onSelect }: { onSelect: () => void }) {
     return <OverflowAction label="Use for Ask" onSelect={onSelect} data-testid="menu-ask" />;
 }
 
-function openMenu() {
-    fireEvent.click(screen.getByTestId('page-actions-more'));
+/** The menu is loaded with `next/dynamic`, a tick after mount: await it. */
+async function openMenu() {
+    fireEvent.click(await screen.findByTestId('page-actions-more'));
     return screen.getByTestId('page-actions-menu');
 }
 
 describe('PageActions — overflow on a phone', () => {
-    it('offers every overflow action in a labelled "⋯" menu, in source order', () => {
+    it('offers every overflow action in a labelled "⋯" menu, in source order', async () => {
         const onAsk = jest.fn();
         render(
             <PageActions>
@@ -52,11 +53,11 @@ describe('PageActions — overflow on a phone', () => {
             </PageActions>,
         );
 
-        const trigger = screen.getByTestId('page-actions-more');
+        const trigger = await screen.findByTestId('page-actions-more');
         // Labelled, because it is an icon-only button.
         expect(trigger).toHaveAttribute('aria-label', 'More actions');
 
-        const menu = openMenu();
+        const menu = await openMenu();
         const items = within(menu).getAllByRole('menuitem');
         expect(items.map((i) => i.textContent)).toEqual([
             'Use for Ask',
@@ -68,45 +69,45 @@ describe('PageActions — overflow on a phone', () => {
         expect(within(menu).queryByText('Stop agent')).toBeNull();
     });
 
-    it('choosing a menu item runs the action and closes the menu', () => {
+    it('choosing a menu item runs the action and closes the menu', async () => {
         const onAsk = jest.fn();
         render(
             <PageActions>
                 <WrappedOverflow onSelect={onAsk} />
             </PageActions>,
         );
-        const menu = openMenu();
+        const menu = await openMenu();
         fireEvent.click(within(menu).getByTestId('menu-ask'));
         expect(onAsk).toHaveBeenCalledTimes(1);
         expect(screen.queryByTestId('page-actions-menu')).toBeNull();
     });
 
-    it('a navigating item is a real link', () => {
+    it('a navigating item is a real link', async () => {
         render(
             <PageActions>
                 <OverflowAction label="Open on canvas" href="/t/acme/processes" data-testid="menu-canvas" />
             </PageActions>,
         );
-        const menu = openMenu();
+        const menu = await openMenu();
         const link = within(menu).getByTestId('menu-canvas');
         expect(link.tagName).toBe('A');
         expect(link).toHaveAttribute('href', '/t/acme/processes');
     });
 
-    it('menu items reach 44 px on touch', () => {
+    it('menu items reach 44 px on touch', async () => {
         render(
             <PageActions>
                 <OverflowAction label="Connect" onSelect={jest.fn()} data-testid="menu-connect" />
                 <OverflowAction label="Canvas" href="/x" data-testid="menu-canvas" />
             </PageActions>,
         );
-        const menu = openMenu();
+        const menu = await openMenu();
         for (const id of ['menu-connect', 'menu-canvas']) {
             expect(within(menu).getByTestId(id).className).toContain('pointer-coarse:min-h-11');
         }
     });
 
-    it('a heading groups a run of related items', () => {
+    it('a heading groups a run of related items', async () => {
         render(
             <PageActions>
                 <OverflowAction label="NIS2 gap" href="/a" />
@@ -114,12 +115,12 @@ describe('PageActions — overflow on a phone', () => {
                 <OverflowAction label="Findings" href="/c" group="Related" />
             </PageActions>,
         );
-        const menu = openMenu();
+        const menu = await openMenu();
         expect(within(menu).getAllByText('Related')).toHaveLength(1);
         expect(within(menu).getAllByRole('separator')).toHaveLength(1);
     });
 
-    it('the menu trigger exists only on a phone, and only when something overflows', () => {
+    it('the menu trigger exists only on a phone, and only when something overflows', async () => {
         const { rerender } = render(
             <PageActions>
                 <Button testId="only">Only</Button>
@@ -134,7 +135,7 @@ describe('PageActions — overflow on a phone', () => {
             </PageActions>,
         );
         const triggerSlot = screen.getByTestId('page-actions-more-slot');
-        expect(triggerSlot).toContainElement(screen.getByTestId('page-actions-more'));
+        expect(triggerSlot).toContainElement(await screen.findByTestId('page-actions-more'));
         expect(triggerSlot.className).toContain('md:hidden');
         // And after every visible action, whatever the source order.
         expect(triggerSlot.className).toContain('max-md:order-last');
