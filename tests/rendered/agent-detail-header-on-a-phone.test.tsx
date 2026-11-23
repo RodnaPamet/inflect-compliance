@@ -135,7 +135,6 @@ function renderPage() {
 describe('the agent header on a phone', () => {
     it('puts Use for Ask, Connect and Open on canvas in the "⋯" menu, in that order', async () => {
         renderPage();
-        // The menu loads with next/dynamic, a tick after mount.
         fireEvent.click(await screen.findByTestId('page-actions-more'));
         const menu = screen.getByTestId('page-actions-menu');
         expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent)).toEqual([
@@ -151,7 +150,6 @@ describe('the agent header on a phone', () => {
 
     it('Connect from the menu opens the same sheet as the desktop button', async () => {
         renderPage();
-        // The menu loads with next/dynamic, a tick after mount.
         fireEvent.click(await screen.findByTestId('page-actions-more'));
         fireEvent.click(screen.getByTestId('agent-connect-menu-item'));
         expect(screen.getByTestId('connect-sheet-open')).toBeInTheDocument();
@@ -166,7 +164,6 @@ describe('the agent header on a phone', () => {
         // …and painted with the danger fill, not a ghost tinted red.
         expect(stop.className).toContain('bg-[var(--btn-still-danger)]');
 
-        // The menu loads with next/dynamic, a tick after mount.
         fireEvent.click(await screen.findByTestId('page-actions-more'));
         expect(
             within(screen.getByTestId('page-actions-menu')).queryByText(EN.admin.agentDetail.kill.engageAction),

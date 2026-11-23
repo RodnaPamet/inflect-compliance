@@ -60,7 +60,8 @@ unknown section now reads "previous page" instead of the raw URL segment.
 | `src/components/layout/PageHeader.tsx` | Column below `sm`; no inline trail on a back-link subpage |
 | `src/components/layout/PageBreadcrumbs.tsx` | Same rule for pages that mount the trail directly |
 | `src/components/layout/breadcrumbs-store.tsx` | `BACK_LINK_ATTR` / `PHONE_TRAIL_CLASS`; content key tolerates a ReactNode label |
-| `src/components/layout/PageActionsMenu.tsx` | The "⋯" trigger and menu, loaded with `next/dynamic` |
+| `src/components/layout/PageActionsMenu.tsx` | The "⋯" trigger and menu |
+| `tests/guardrails/bundle-size-budget.test.ts` | `controls` and `dashboard` raised, attributed |
 | `src/lib/nav/canonical-parents.ts` | `labelKey`, `BACK_LABEL_KEYS`, `SECTION_LABEL_KEYS` |
 | `src/lib/nav/back-destination.ts` | `BackDestination`, `labelForKey` |
 | `src/components/nav/BackAffordance.tsx` | Localised keys, "previous page" fallback, touch hit area |
@@ -91,8 +92,15 @@ unknown section now reads "previous page" instead of the raw URL segment.
   JS, 2–7 KB gzipped a route. The CSS rule costs nothing, is right in the
   server HTML (no flash of the trail), and says exactly what is meant — "a
   back link is showing" — rather than a route list's approximation of it.
-- **The "⋯" menu loads after mount** (`next/dynamic`, like
-  `toggle-group-select`): it renders the Popover primitive, Radix plus vaul.
+- **The "⋯" menu is a static import, measured.** Loading it with
+  `next/dynamic` was tried and came out WORSE on the bundle budget (its async
+  chunk regrouped the shared split chunks), and so was dropping the
+  `OverflowAction` default button from `PageActions` on its own; the Popover it
+  renders is already in the tenant shell. What remains is about 2.3 KB of
+  module code for pages with a header, and `controls`/`dashboard` were raised
+  to measured + ~4 with the single-variable builds written into the budget
+  note. `OverflowAction` takes the page's own button as a required child, so
+  the primitive imports no button of its own.
 - **No shell-level back bar.** Every subpage already mounts its back link first,
   so removing the phone trail on subpages gives one way back in one place
   without a new slot in the app shell (where the top-bar batch is working).

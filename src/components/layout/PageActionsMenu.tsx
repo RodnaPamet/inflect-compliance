@@ -3,12 +3,11 @@
 /**
  * The phone "⋯" menu of `<PageActions>` — the trigger and the menu it opens.
  *
- * A module of its own so `PageActions` can load it with `next/dynamic`: it
- * pulls in the Popover primitive (Radix popover plus the vaul drawer), and a
- * static import put that graph into the First Load JS of every page with a
- * page header — measured at 3–7 KB per route by the bundle budget. The menu is
- * `md:hidden` and does nothing before hydration, so loading it after mount
- * costs nothing a reader can see. Same split as `toggle-group-select.tsx`.
+ * A module of its own for readability. It is imported STATICALLY: loading it
+ * with `next/dynamic` was measured on the bundle budget and came out 2.8 KB
+ * WORSE on `controls/dashboard` (the async chunk regrouped the shared split
+ * chunks around it), while the Popover primitive it renders is already in
+ * the shared tenant shell (the user menu). See the `dashboard` budget note.
  */
 import { useState, type ReactNode } from 'react';
 import Link from 'next/link';

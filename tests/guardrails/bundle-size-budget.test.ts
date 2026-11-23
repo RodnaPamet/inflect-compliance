@@ -277,7 +277,23 @@ const BUDGETS_KB: Record<string, number> = {
     // group's scroll cue in shared primitives. The toggle group's phone
     // select (the Combobox graph, ~10 KB) loads on demand and is not in this
     // figure. 635 is measured + ~4, the convention.
-    'dashboard': 635,
+    //
+    // Raised 635 -> 639 by the mobile page-header batch (#5853, same owner
+    // request). Local `next build --webpack` runs, main (3c3b192b0) against
+    // the branch: `controls/dashboard/page` 631.7 -> 635.4 KB (+3.7). What the
+    // page now loads is the header's phone overflow: `PageActions`' registry,
+    // `OverflowAction`/`PrimaryAction` and the "⋯" menu (about 2.3 KB of
+    // module code together), plus translated back-link keys (+0.1). Attributed
+    // with single-variable builds, same route, KB:
+    //       first push: trail rule as a JS context in ClientProviders  639.3 (CI)
+    //       trail rule moved to CSS (no JS at all)                     638.2
+    //       "⋯" menu loaded with next/dynamic                          638.2
+    //       ... and PageActions importing no button of its own          644.5
+    //       menu imported statically instead                           635.4
+    // Lazy-loading the menu was measured WORSE (its async chunk regrouped the
+    // shared split chunks around it), so it is a static import. 639 is
+    // measured + ~4, the convention.
+    'dashboard': 639,
     // Raised 653 → 654 in the Tasks list fixes (#4300, #4278; owner decision).
     // Main measured this route at 652.9 KB (0.1 KB left); the PR measured
     // 653.2. The growth is in the task form and edit panel that the risk
@@ -390,7 +406,16 @@ const BUDGETS_KB: Record<string, number> = {
     // top-bar entry points (assistant and command-palette buttons), the
     // themed toaster and tap-to-open tooltips to the shared tenant shell.
     // 683 is measured + ~4, the convention.
-    'controls': 683,
+    //
+    // Raised 683 -> 689 by the mobile page-header batch (#5853, same owner
+    // request). Local `next build --webpack` runs, main (3c3b192b0) against
+    // the branch: `controls/.../tests/[planId]/page` 681.5 -> 685.3 KB
+    // (+3.8). This route is the batch's P0 page (#5830): its hand-rolled,
+    // non-wrapping header — which clipped "Run test" off a phone — became the
+    // shared `<PageHeader>`, so it now loads the header and the phone overflow
+    // (`PageActions` and its "⋯" menu, ~2.3 KB) that other detail pages
+    // already had. Attributed in the `dashboard` note. 689 is measured + ~4.
+    'controls': 689,
     // Catch-all for any other tenant page.
     //
     // Raised 682 → 688 by the AI-roadmap integration (#5323, owner decision

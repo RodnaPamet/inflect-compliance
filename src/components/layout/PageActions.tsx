@@ -63,22 +63,8 @@ import {
     type ReactElement,
     type ReactNode,
 } from 'react';
-import Link from 'next/link';
-import dynamic from 'next/dynamic';
 import { cn } from '@inflect/ui/lib/cn';
-import { Button } from '@/components/ui/button';
-import { buttonVariants } from '@/components/ui/button-variants';
-
-/**
- * The "⋯" trigger and its menu, loaded after mount. It renders the Popover
- * primitive (Radix popover + the vaul drawer); a static import put that graph
- * into the First Load JS of every page with a header. It is `md:hidden` and
- * inert before hydration, so nothing is lost by loading it late.
- */
-const PageActionsMenu = dynamic(
-    () => import('./PageActionsMenu').then((m) => m.PageActionsMenu),
-    { ssr: false },
-);
+import { PageActionsMenu } from './PageActionsMenu';
 
 // ─── Overflow registry ────────────────────────────────────────────────
 
@@ -197,9 +183,9 @@ export function PageActions({
 // ─── <OverflowAction> ─────────────────────────────────────────────────
 
 export interface OverflowActionProps {
-    /** The menu item's label — and the default desktop button's. */
+    /** The menu item's label. */
     label: string;
-    /** Runs when the action is chosen (desktop button click or menu item). */
+    /** Runs when the action is chosen from the menu. */
     onSelect?: () => void;
     /** Navigates instead of `onSelect`. */
     href?: string;
@@ -214,16 +200,17 @@ export interface OverflowActionProps {
     /** Test id for the MENU item (the desktop child keeps its own). */
     'data-testid'?: string;
     /**
-     * The desktop rendering, when it is more than a secondary button — e.g.
-     * the page's existing `<Link className={buttonVariants(…)} id=…>`. Omit
-     * it for a plain `<Button variant="secondary" size="sm">`.
+     * The desktop rendering: the page's own button or link, exactly as it was
+     * (e.g. `<Link className={buttonVariants(…)} id=…>`). Required, so this
+     * primitive imports no button of its own — that import put the button
+     * graph into the First Load JS of every page with a header.
      */
-    children?: ReactNode;
+    children: ReactNode;
 }
 
 /**
  * Marks an action that a phone moves into the "⋯" menu. On desktop it renders
- * `children` (or a secondary button) exactly where it stands; below md that
+ * `children` exactly where it stands; below md that
  * render is hidden and the action is an item of the cluster's menu instead.
  * Outside a `<PageActions>` it just renders its desktop form.
  *
@@ -270,29 +257,7 @@ export function OverflowAction({
         return () => registry.remove(id);
     }, [registry, id]);
 
-    const desktop =
-        children ??
-        (href ? (
-            <Link
-                href={href}
-                className={buttonVariants({ variant: 'secondary', size: 'sm' })}
-            >
-                {Icon ? <Icon className="h-4 w-4" aria-hidden="true" /> : null}
-                {label}
-            </Link>
-        ) : (
-            <Button
-                variant="secondary"
-                size="sm"
-                disabled={disabled}
-                onClick={() => onSelectRef.current?.()}
-                icon={Icon ? <Icon className="h-4 w-4" aria-hidden="true" /> : undefined}
-            >
-                {label}
-            </Button>
-        ));
-
-    if (!registry) return <>{desktop}</>;
+    if (!registry) return <>{children}</>;
 
     // `display: contents` at md+ makes the child a direct flex item of the
     // cluster, exactly as if this wrapper were not there.
@@ -302,7 +267,7 @@ export function OverflowAction({
             className="hidden md:contents"
             data-page-action="overflow"
         >
-            {desktop}
+            {children}
         </span>
     );
 }

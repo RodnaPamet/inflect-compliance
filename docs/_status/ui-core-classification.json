@@ -62,12 +62,12 @@
  "src/components/layout/PageActions.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "The page-header action cluster plus its phone overflow (#5815): `<OverflowAction>` entries register through a local context and become items of a \"⋯\" menu below md, `<PrimaryAction>` orders the primary first. The menu itself is the sibling `PageActionsMenu`, loaded with `next/dynamic`. Imports are `react`, `next/link`, `next/dynamic`, `@inflect/ui/lib/cn` and the sibling shared primitives `@/components/ui/button` and `button-variants` — no `src/app-layer` or domain `src/lib`. No strings, no GRC nouns, no storage, no brand tokens."
+  "reason": "The page-header action cluster plus its phone overflow (#5815): `<OverflowAction>` entries register through a local context and become items of a \"⋯\" menu below md, `<PrimaryAction>` orders the primary first. The menu itself is the sibling `PageActionsMenu`. Imports are `react`, `@inflect/ui/lib/cn` and `./PageActionsMenu` — no `src/app-layer` or domain `src/lib`; the page passes its own buttons as children. No strings, no GRC nouns, no storage, no brand tokens."
  },
  "src/components/layout/PageActionsMenu.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "The phone \"⋯\" trigger and menu of `<PageActions>`, split out so the cluster can load it with `next/dynamic` (it pulls in the Popover primitive). Renders caller-supplied entries as `Popover.Item` rows or `next/link` menu items. Imports are `react`, `next/link`, `next-intl`, `lucide-react`, `@inflect/ui/lib/cn`, the sibling shared primitives `@/components/ui/button` and `popover`, and a type from `./PageActions`. Its one string, the trigger's accessible name, goes through `common.ui.moreActions`. No GRC nouns, no storage, no brand tokens."
+  "reason": "The phone \"⋯\" trigger and menu of `<PageActions>`, split out of the cluster for readability. Renders caller-supplied entries as `Popover.Item` rows or `next/link` menu items. Imports are `react`, `next/link`, `next-intl`, `lucide-react`, `@inflect/ui/lib/cn`, the sibling shared primitives `@/components/ui/button` and `popover`, and a type from `./PageActions`. Its one string, the trigger's accessible name, goes through `common.ui.moreActions`. No GRC nouns, no storage, no brand tokens."
  },
  "src/components/layout/PageBreadcrumbs.tsx": {
   "classification": "GENERIC",

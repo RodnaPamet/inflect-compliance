@@ -296,8 +296,7 @@ describe('the picture is loaded on demand, and is never the record', () => {
         // Recorded when the preview module was imported: exactly one lazy
         // import resolves to the canvas component from the process module,
         // and it has server rendering off. Other modules on the page may make
-        // `next/dynamic` calls of their own (the page header's phone menu
-        // does), so the canvas's call is picked out by what its loader
+        // `next/dynamic` calls of their own, so the canvas's call is picked out by what its loader
         // resolves to rather than by counting every call.
         const { ProposedProcessMapCanvas } = jest.requireMock('@/components/processes/ProposedProcessMapCanvas') as {
             ProposedProcessMapCanvas: unknown;

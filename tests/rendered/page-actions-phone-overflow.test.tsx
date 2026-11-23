@@ -31,10 +31,10 @@ import { PageHeader } from '@/components/layout/PageHeader';
 
 /** A component that renders an overflow action — the registry must see through it. */
 function WrappedOverflow({ onSelect }: { onSelect: () => void }) {
-    return <OverflowAction label="Use for Ask" onSelect={onSelect} data-testid="menu-ask" />;
+    return <OverflowAction label="Use for Ask" onSelect={onSelect} data-testid="menu-ask"><button type="button">Use for Ask</button></OverflowAction>;
 }
 
-/** The menu is loaded with `next/dynamic`, a tick after mount: await it. */
+/** Opens the "⋯" menu (awaited, so a later lazy load cannot break it). */
 async function openMenu() {
     fireEvent.click(await screen.findByTestId('page-actions-more'));
     return screen.getByTestId('page-actions-menu');
@@ -47,8 +47,8 @@ describe('PageActions — overflow on a phone', () => {
             <PageActions>
                 <Button testId="amend">Amend</Button>
                 <WrappedOverflow onSelect={onAsk} />
-                <OverflowAction label="Connect" onSelect={jest.fn()} data-testid="menu-connect" />
-                <OverflowAction label="Open on canvas" href="/t/acme/processes" data-testid="menu-canvas" />
+                <OverflowAction label="Connect" onSelect={jest.fn()} data-testid="menu-connect"><button type="button">Connect</button></OverflowAction>
+                <OverflowAction label="Open on canvas" href="/t/acme/processes" data-testid="menu-canvas"><button type="button">Open on canvas</button></OverflowAction>
                 <Button testId="stop">Stop agent</Button>
             </PageActions>,
         );
@@ -85,7 +85,7 @@ describe('PageActions — overflow on a phone', () => {
     it('a navigating item is a real link', async () => {
         render(
             <PageActions>
-                <OverflowAction label="Open on canvas" href="/t/acme/processes" data-testid="menu-canvas" />
+                <OverflowAction label="Open on canvas" href="/t/acme/processes" data-testid="menu-canvas"><button type="button">Open on canvas</button></OverflowAction>
             </PageActions>,
         );
         const menu = await openMenu();
@@ -97,8 +97,8 @@ describe('PageActions — overflow on a phone', () => {
     it('menu items reach 44 px on touch', async () => {
         render(
             <PageActions>
-                <OverflowAction label="Connect" onSelect={jest.fn()} data-testid="menu-connect" />
-                <OverflowAction label="Canvas" href="/x" data-testid="menu-canvas" />
+                <OverflowAction label="Connect" onSelect={jest.fn()} data-testid="menu-connect"><button type="button">Connect</button></OverflowAction>
+                <OverflowAction label="Canvas" href="/x" data-testid="menu-canvas"><button type="button">Canvas</button></OverflowAction>
             </PageActions>,
         );
         const menu = await openMenu();
@@ -110,9 +110,9 @@ describe('PageActions — overflow on a phone', () => {
     it('a heading groups a run of related items', async () => {
         render(
             <PageActions>
-                <OverflowAction label="NIS2 gap" href="/a" />
-                <OverflowAction label="Frameworks" href="/b" group="Related" />
-                <OverflowAction label="Findings" href="/c" group="Related" />
+                <OverflowAction label="NIS2 gap" href="/a"><button type="button">NIS2 gap</button></OverflowAction>
+                <OverflowAction label="Frameworks" href="/b" group="Related"><button type="button">Frameworks</button></OverflowAction>
+                <OverflowAction label="Findings" href="/c" group="Related"><button type="button">Findings</button></OverflowAction>
             </PageActions>,
         );
         const menu = await openMenu();
@@ -131,7 +131,7 @@ describe('PageActions — overflow on a phone', () => {
         rerender(
             <PageActions>
                 <Button testId="only">Only</Button>
-                <OverflowAction label="More" onSelect={jest.fn()} />
+                <OverflowAction label="More" onSelect={jest.fn()}><button type="button">More</button></OverflowAction>
             </PageActions>,
         );
         const triggerSlot = screen.getByTestId('page-actions-more-slot');
@@ -158,10 +158,13 @@ describe('PageActions — overflow on a phone', () => {
     });
 
     it('outside a cluster an overflow action is just its button', () => {
-        const onSelect = jest.fn();
-        render(<OverflowAction label="Connect" onSelect={onSelect} />);
-        fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
-        expect(onSelect).toHaveBeenCalledTimes(1);
+        render(
+            <OverflowAction label="Connect" onSelect={jest.fn()}>
+                <button type="button">Connect</button>
+            </OverflowAction>,
+        );
+        const button = screen.getByRole('button', { name: 'Connect' });
+        expect(button.closest('[data-page-action]')).toBeNull();
     });
 
     it('the primary leads on a phone (reading order, primary first)', () => {
