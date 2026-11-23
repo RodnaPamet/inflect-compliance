@@ -1578,7 +1578,12 @@ export function recordAgentRunStarted(attrs: { driver: string }): void {
  */
 export function recordAgentRunSettled(attrs: {
     driver: string;
-    outcome: 'completed' | 'failed' | 'aborted';
+    /**
+     * `lease_lost` (#5854): the segment stopped because another worker holds
+     * the run, or the SIGTERM drain paused it. The run did not settle here; it
+     * is counted so a started segment always has an end.
+     */
+    outcome: 'completed' | 'failed' | 'aborted' | 'lease_lost';
     steps?: number | null;
     tokens?: number | null;
 }): void {

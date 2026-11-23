@@ -71,6 +71,7 @@ import { describeFailure, isAgenticFatal } from '@/lib/agentic/failure-isolation
 import { approvalDeadline } from '@/lib/agentic/approval-window';
 
 import { getRunRow, proposedItemsSoFar } from './run-store';
+import { runLeaseLost } from '@/lib/agentic/run-lease';
 
 /**
  * Execute steps from `fromSeq` until completion or a HUMAN_CHECKPOINT. Returns
@@ -246,6 +247,11 @@ async function executeSteps(
         if (live.status === 'ABORTED' || live.status === 'PAUSED') {
             return { status: live.status, stepFailures };
         }
+        // …or another worker may hold the run now (#5854): a queued run the
+        // static engine walks in the worker carries a lease, and one that lost
+        // it stops here, as at an Abort, and writes nothing more. An inline
+        // run holds no lease and never stops here.
+        if (runLeaseLost(ctx, live)) return { status: 'ABORTED', stepFailures };
 
         // RE-OPEN THE CONTEXT FROM THE ROW AT EVERY STEP, rather than trusting
         // the copy this function is holding. That is what makes "a tampered
