@@ -8,6 +8,9 @@ import { ListPageShell } from '@/components/layout/ListPageShell';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { auditEntityNounKey, readableAuditCode } from '@/lib/audit/audit-log-display';
+import { activityEventToken, activitySubject, activityVerbToken } from '@/lib/audit/activity-humanize';
+
+const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // listAuditLogPage → AuditLogRepository.listPage, projected by the server page
 // to what the table shows. createdAt is an ISO string; `action` and `entity`
@@ -49,6 +52,24 @@ interface AuditLogClientProps {
 export function AuditLogClient({ auditLog, olderHref, newestHref, translations: t }: AuditLogClientProps) {
     const tx = useTranslations('admin');
     const tEntity = useTranslations('dashboard.activity.entity');
+    const tChip = useTranslations('admin.auditActionChip');
+    const actionLabel = useCallback((action: string, entity: string) => {
+        // A whole-action event has its own label. A known verb on a known
+        // entity is composed in the catalog ("Risk created" / "Създаване на
+        // риск"); a generic bare verb (`UPDATE`) takes the row's entity. The
+        // long tail shows the code as words.
+        const event = activityEventToken(action);
+        if (event) return tChip(`event.${event}`);
+        const { token } = activityVerbToken(action);
+        if (token) {
+            const verb = tChip(`verb.${token}`);
+            const subject = activitySubject(action);
+            const nounKey = subject.bare ? auditEntityNounKey(entity) : subject.nounKey;
+            if (nounKey) return capitalise(tChip('composed', { entity: tEntity(nounKey), verb }));
+            if (subject.bare) return capitalise(verb);
+        }
+        return readableAuditCode(action);
+    }, [tChip, tEntity]);
     const entityLabel = useCallback((entity: string) => {
         // A translated noun where the dashboard feed has one, else the code as words.
         const key = auditEntityNounKey(entity);
@@ -72,7 +93,7 @@ export function AuditLogClient({ auditLog, olderHref, newestHref, translations: 
         {
             id: 'action',
             header: t.action,
-            accessorFn: (e) => readableAuditCode(e.action),
+            accessorFn: (e) => actionLabel(e.action, e.entity),
             cell: ({ getValue }) => <StatusBadge variant="info">{getValue()}</StatusBadge>,
         },
         {
@@ -86,7 +107,7 @@ export function AuditLogClient({ auditLog, olderHref, newestHref, translations: 
             header: t.details,
             cell: ({ getValue }) => <span className="text-content-muted max-w-xs truncate">{getValue()}</span>,
         },
-    ]), [t, entityLabel]);
+    ]), [t, entityLabel, actionLabel]);
 
     return (
         <ListPageShell.Body>

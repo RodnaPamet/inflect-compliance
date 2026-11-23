@@ -199,7 +199,9 @@
         "INCIDENT": "инциденти",
         "FRAMEWORK_REQUIREMENT": "изисквания на рамки"
       },
-      "noData": "Няма данни"
+      "noData": "Няма данни",
+      "expandAll": "Разгъни всички",
+      "collapseAll": "Свий всички"
     },
     "calendar": {
       "prevYear": "Към предходната година",
@@ -757,6 +759,23 @@
         "asset": "актив",
         "incident": "инцидент",
         "issue": "проблем"
+      },
+      "verbFallback": "{action, select, other {извърши действие върху}}",
+      "entityFallback": "{entity, select, other {запис}}",
+      "event": {
+        "AUTH_LOGIN_SUCCESS": "влезе в системата",
+        "AUTH_LOGIN_FAILURE": "не успя да влезе в системата",
+        "AUTH_LOGIN_RATE_LIMITED": "беше ограничен при опит за вход",
+        "AUTH_PASSWORD_CHANGED": "смени паролата си",
+        "AUTH_PASSWORD_RESET_REQUESTED": "поиска нулиране на паролата си",
+        "AUTH_PASSWORD_RESET_COMPLETED": "нулира паролата си",
+        "AUTH_EMAIL_VERIFIED": "потвърди имейл адреса си",
+        "MFA_ENROLLED": "активира MFA",
+        "MFA_REMOVED": "премахна MFA",
+        "MFA_CHALLENGE_PASSED": "премина MFA проверка",
+        "MFA_CHALLENGE_FAILED": "не премина MFA проверка",
+        "AUTHZ_DENIED": "получи отказ за достъп",
+        "TENANT_SEEDED": "създаде работното пространство"
       }
     },
     "kpiTrend30Day": "{label} — тенденция за 30 дни",
@@ -2598,6 +2617,13 @@
       "source": {
         "MEASURED": "Измерена",
         "DECLARED": "Декларирана"
+      },
+      "perYear": "{amount}/год.",
+      "gap": {
+        "noCost": "Задайте годишен разход, за да остойностите тази контрола",
+        "noEffectiveness": "Декларирайте или измерете показател за ефективност",
+        "linkRiskFirst": "Първо свържете тази контрола с риск",
+        "quantifyRisks": "Определете количествено свързаните рискове (SLE × ARO или FAIR), за да остойностите тази контрола"
       }
     },
     "mappingsTab": {
@@ -4463,7 +4489,8 @@
       "impactCellAria": "Въздействие „{dimension}“, точка {row}",
       "impactRemoveAria": "Премахни точка {row}",
       "impactInvalid": "Всяка стойност трябва да е число, нула или повече, и всяка точка трябва да има часове. Поправете маркираните клетки и запазете.",
-      "hoursInvalid": "Въведете цели часове, нула или повече."
+      "hoursInvalid": "Въведете цели часове, нула или повече.",
+      "recoveryRationale": "Критичност: {criticality} · {mtpd, select, none {MTPD не е зададен} other {MTPD {mtpd} ч}}{rto, select, none {} other { · RTO {rto} ч}} → възстановяване №{rank}"
     },
     "nis2Gap": {
       "runStatus": {
@@ -5557,7 +5584,7 @@
       "inviteMember": "Покани член",
       "inviteFormTitle": "Покани нов член",
       "emailLabel": "Имейл адрес",
-      "emailPlaceholder": "colleague@company.com",
+      "emailPlaceholder": "колега@компания.бг",
       "roleLabel": "Роля",
       "sendInvite": "Изпрати покана",
       "cancel": "Отказ",
@@ -9397,6 +9424,56 @@
       "NUMBER": "Число",
       "SCALE": "Скала",
       "FILE_UPLOAD": "Качване на файл"
+    },
+    "auditActionChip": {
+      "composed": "{verb} на {entity}",
+      "event": {
+        "AUTH_LOGIN_SUCCESS": "Вход",
+        "AUTH_LOGIN_FAILURE": "Неуспешен вход",
+        "AUTH_LOGIN_RATE_LIMITED": "Ограничен вход",
+        "AUTH_PASSWORD_CHANGED": "Смяна на парола",
+        "AUTH_PASSWORD_RESET_REQUESTED": "Заявка за нулиране на парола",
+        "AUTH_PASSWORD_RESET_COMPLETED": "Нулиране на парола",
+        "AUTH_EMAIL_VERIFIED": "Потвърден имейл",
+        "MFA_ENROLLED": "Активиране на MFA",
+        "MFA_REMOVED": "Премахване на MFA",
+        "MFA_CHALLENGE_PASSED": "Успешна MFA проверка",
+        "MFA_CHALLENGE_FAILED": "Неуспешна MFA проверка",
+        "AUTHZ_DENIED": "Отказан достъп",
+        "TENANT_SEEDED": "Създаване на работно пространство"
+      },
+      "verb": {
+        "CREATED": "Създаване",
+        "UPDATED": "Актуализиране",
+        "DELETED": "Изтриване",
+        "APPROVED": "Одобрение",
+        "REJECTED": "Отхвърляне",
+        "CLOSED": "Затваряне",
+        "LINKED": "Свързване",
+        "UNLINKED": "Премахване на връзката",
+        "UPLOADED": "Качване",
+        "SUBMITTED": "Подаване",
+        "ARCHIVED": "Архивиране",
+        "COMPLETED": "Завършване",
+        "ASSIGNED": "Възлагане",
+        "REVOKED": "Отмяна",
+        "PUBLISHED": "Публикуване",
+        "REQUESTED": "Заявка",
+        "ACKNOWLEDGED": "Потвърждение",
+        "RESOLVED": "Разрешаване",
+        "REOPENED": "Повторно отваряне",
+        "CANCELED": "Анулиране",
+        "EXPIRED": "Изтичане",
+        "RENEWED": "Подновяване",
+        "GENERATED": "Генериране",
+        "IMPORTED": "Импортиране",
+        "EXPORTED": "Експортиране",
+        "REMOVED": "Премахване",
+        "ADDED": "Добавяне",
+        "REVIEWED": "Преглед",
+        "SHARED": "Споделяне",
+        "STATUS_CHANGED": "Промяна на статуса"
+      }
     }
   },
   "riskManager": {
@@ -11173,6 +11250,11 @@
         "ACTIVE": "Активен",
         "RETIRED": "Изведен от употреба"
       }
+    },
+    "mapStatus": {
+      "ACTIVE": "Активна",
+      "DRAFT": "Чернова",
+      "ARCHIVED": "Архивирана"
     }
   },
   "issues": {
@@ -11959,7 +12041,12 @@
         },
         "scannersNotShown": "{count, plural, one {Още # скенер има} other {Още # скенера имат}} сканиране, което тази страница не показва.",
         "scannersWithoutScan": "{count, plural, one {# доверен скенер не е изпратил} other {# доверени скенера не са изпратили}} отчет с правила за повърхността на агентите в прочетените сканирания: {names}. Доколкото тази страница вижда, те не са прочели нищо.",
-        "scansTruncated": "Има повече сканирания, отколкото тази страница прочете; показано е последното на всеки скенер."
+        "scansTruncated": "Има повече сканирания, отколкото тази страница прочете; показано е последното на всеки скенер.",
+        "severity": {
+          "HIGH": "Висока",
+          "MEDIUM": "Средна",
+          "LOW": "Ниска"
+        }
       },
       "integrations": {
         "readOnly": "Приложенията, на които дадена директория е дала достъп — Entra, Okta и GitHub — както ги е открил последният отчет за приложения на трети страни от всеки скенер. Само за четене: констатациите от сканирането са в регистъра с констатации и са показани тук до приложението, за което се отнасят.",
@@ -15468,15 +15555,15 @@
       "moreCount": "и още {count}",
       "automation": "Автоматизация",
       "summary": "{scheduled} насрочени • {manual} ръчни • {automated} автоматизирани",
-      "resultDistribution": "Разпределение на резултатите ({period}d)",
+      "resultDistribution": "Разпределение на резултатите ({period} дни)",
       "passRate": "Успеваемост",
       "pass": "Успех",
       "fail": "Провал",
       "inconclusive": "Неубедителен",
       "overdueScheduled": "Просрочени насрочени",
       "onTrack": "Всички насрочени планове са в срок.",
-      "daysOverdue": "{days}d просрочени",
-      "dailyRuns": "Дневни изпълнения ({period}d)",
+      "daysOverdue": "просрочено с {days, plural, one {# ден} other {# дни}}",
+      "dailyRuns": "Дневни изпълнения ({period} дни)",
       "total": "{count} общо",
       "dailyRunsAria": "Дневни завършени тестови изпълнения",
       "completedRunsEmpty": "Няма завършени изпълнения през този период.",
@@ -15609,7 +15696,13 @@
       "now": "сега",
       "sessionExpired": "Сесията ви изтече.",
       "sessionExpiredAction": "Влезте отново",
-      "loadFailed": "Известията не можаха да бъдат заредени."
+      "loadFailed": "Известията не можаха да бъдат заредени.",
+      "age": {
+        "now": "сега",
+        "minutes": "{n} мин",
+        "hours": "{n} ч",
+        "days": "{n} д"
+      }
     },
     "sessionExpired": {
       "body": "Сесията ви изтече. Показаното на екрана може да не е актуално.",
@@ -15648,7 +15741,7 @@
       "resetTitle": "Нулиране на паролата",
       "resetIntro": "Въведете имейл адреса на вашия акаунт и ще ви изпратим връзка за нулиране на паролата.",
       "emailLabel": "Имейл",
-      "emailPlaceholder": "you@company.com",
+      "emailPlaceholder": "вие@компания.бг",
       "sendResetLink": "Изпрати връзка за нулиране",
       "sending": "Изпращане…",
       "backToSignIn": "Обратно към входа",
@@ -15985,7 +16078,8 @@
       "recentActivityEmpty": "няма скорошна активност",
       "historyFailed": "Историята не се зареди. Затворете панела и го отворете отново.",
       "headlineLabel": "Заглавие",
-      "contextLabel": "Контекст"
+      "contextLabel": "Контекст",
+      "noThreatAssessment": "Няма активна оценка на заплахите"
     },
     "tenants": {
       "title": "Работни пространства",
@@ -17148,7 +17242,7 @@
       },
       "team": {
         "intro": "Избройте колегите, които смятате да поканите. От тази стъпка не се изпраща нищо.",
-        "placeholder": "colleague@company.com",
+        "placeholder": "колега@компания.бг",
         "add": "Добави",
         "remove": "Премахни {email}",
         "inviteFrom": "Поканете всеки от тях от <link>страницата с членове</link>, където избирате ролята му."
@@ -18082,5 +18176,53 @@
       "readOnly": "На изпълнението се предлагат само инструменти за четене.",
       "offered": "предлага се"
     }
+  },
+  "celebrations": {
+    "framework100": {
+      "message": "100% покритие на рамката",
+      "description": "Всяка приложима контрола е внедрена."
+    },
+    "auditPackComplete": {
+      "message": "Одитният пакет е готов",
+      "description": "Замразен е и може да бъде споделен с вашия одитор."
+    },
+    "firstControlMapped": {
+      "message": "Първата контрола е съпоставена",
+      "description": "На прав път сте — продължавайте."
+    }
+  },
+  "riskMatrixDefaults": {
+    "axis": {
+      "likelihood": "Вероятност",
+      "impact": "Въздействие"
+    },
+    "likelihood": {
+      "1": "Рядко",
+      "2": "Малко вероятно",
+      "3": "Възможно",
+      "4": "Вероятно",
+      "5": "Почти сигурно"
+    },
+    "impact": {
+      "1": "Незначително",
+      "2": "Малко",
+      "3": "Умерено",
+      "4": "Голямо",
+      "5": "Тежко"
+    },
+    "band": {
+      "Low": "Нисък",
+      "Medium": "Среден",
+      "High": "Висок",
+      "Critical": "Критичен"
+    }
+  },
+  "notificationTitles": {
+    "AGENT_KILL_SWITCH_ENGAGED": "Задействан е аварийният стоп на агент",
+    "AGENT_PROPOSAL_QUARANTINED": "Предложение на агент е поставено под карантина",
+    "AGENT_CIRCUIT_BREAKER_TRIPPED": "Предпазителят на агент се задейства",
+    "AGENT_TOOL_MANIFEST_PIN_CHANGED": "Дефиниция на инструмент е одобрена за това работно пространство",
+    "AGENT_RISK_ASSESSMENT_STALE": "Оценката на риска на агент е остаряла",
+    "AGENT_OWNER_DEPARTED": "Собственикът на агент е напуснал работното пространство"
   }
 }

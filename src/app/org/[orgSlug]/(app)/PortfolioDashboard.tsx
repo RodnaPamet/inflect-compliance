@@ -49,6 +49,7 @@ import type {
 } from '@/app-layer/schemas/org-dashboard-widget.schemas';
 
 import { DispatchedWidget, type PortfolioData } from './widget-dispatcher';
+import { localizedWidgetTitle } from '@/lib/org-dashboard-widget-titles';
 // PR-3 — org dashboard now uses the same `<DashboardLayout>` shell
 // the tenant dashboard sits inside. The shell carries the
 // canonical PageHeader (title + description + meta + actions
@@ -251,7 +252,7 @@ export function PortfolioDashboard({
         triggerUndoToast({
             action: () => deleteWidget(data.orgSlug, id),
             undoAction: restore,
-            message: t('dashboard.widgetRemoved', { name: removed.title ?? removed.chartType }),
+            message: t('dashboard.widgetRemoved', { name: localizedWidgetTitle(removed.type, removed.chartType, removed.title, (k) => t(`widgets.${k}`)) }),
             undoMessage: t('dashboard.undo'),
             onError: () => {
                 restore();
@@ -459,7 +460,7 @@ export function PortfolioDashboard({
                                                 setEditWidget(w);
                                                 setPickerOpen(true);
                                             }}
-                                            aria-label={t('dashboard.editWidgetAria', { name: w.title ?? w.chartType })}
+                                            aria-label={t('dashboard.editWidgetAria', { name: localizedWidgetTitle(w.type, w.chartType, w.title, (k) => t(`widgets.${k}`)) })}
                                             data-testid={`dashboard-edit-widget-${w.id}`}
                                             className="text-content-subtle hover:text-content-emphasis transition-colors p-1 rounded"
                                         >
@@ -470,7 +471,7 @@ export function PortfolioDashboard({
                                             onClick={() => {
                                                 handleDelete(w.id);
                                             }}
-                                            aria-label={t('dashboard.deleteWidgetAria', { name: w.title ?? w.chartType })}
+                                            aria-label={t('dashboard.deleteWidgetAria', { name: localizedWidgetTitle(w.type, w.chartType, w.title, (k) => t(`widgets.${k}`)) })}
                                             data-testid={`dashboard-delete-widget-${w.id}`}
                                             className="text-content-subtle hover:text-content-error transition-colors p-1 rounded"
                                         >

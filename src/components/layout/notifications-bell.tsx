@@ -46,6 +46,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { localizedNotificationTitle } from '@/lib/notifications/agentic-titles';
 import { Bell, CheckCheck } from 'lucide-react';
 
 import { Popover } from '@/components/ui/popover';
@@ -118,21 +119,22 @@ const ROW_UNREAD_CLASS = 'bg-bg-subtle';
 // ─── Helpers ───────────────────────────────────────────────────────
 
 /**
- * Relative-time formatter. Returns "5m", "2h", "3d", "Mar 12".
- * Avoids dependency on date-fns / dayjs — this is the only place in
- * the bell that needs date formatting.
+ * Compact age: "5m", "2h", "3d", then "12 Mar" — in the reader's language
+ * (`panels.bell.age.*`; "5 мин", "2 ч", "3 д" in Bulgarian). Avoids a
+ * dependency on date-fns / dayjs: this is the only place in the bell that
+ * needs date formatting.
  */
-function formatRelativeTime(iso: string): string {
+function formatRelativeTime(iso: string, t: (key: string, values?: Record<string, number>) => string): string {
     const then = new Date(iso).getTime();
     if (Number.isNaN(then)) return '';
     const diff = Date.now() - then;
     const minutes = Math.floor(diff / 60_000);
-    if (minutes < 1) return 'now';
-    if (minutes < 60) return `${minutes}m`;
+    if (minutes < 1) return t('age.now');
+    if (minutes < 60) return t('age.minutes', { n: minutes });
     const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h`;
+    if (hours < 24) return t('age.hours', { n: hours });
     const days = Math.floor(hours / 24);
-    if (days < 7) return `${days}d`;
+    if (days < 7) return t('age.days', { n: days });
     return formatDateCompact(iso);
 }
 
@@ -162,6 +164,7 @@ function markReadRequest(tenantSlug: string | null): RequestInit {
 
 export function NotificationsBell() {
     const t = useTranslations('panels.bell');
+    const tTitles = useTranslations('notificationTitles');
     // The CURRENT workspace, from the URL rather than `useTenantHref`: the bell
     // is also mounted in the org chrome, which has no tenant context (and so
     // no workspace to resolve a legacy tenant path against).
@@ -528,10 +531,10 @@ export function NotificationsBell() {
                                     <>
                                         <div className="flex items-center justify-between gap-tight">
                                             <p className="min-w-0 flex-1 break-words text-sm font-medium text-content-emphasis">
-                                                {n.title}
+                                                {localizedNotificationTitle(n.type, n.title, tTitles)}
                                             </p>
                                             <span className="flex-shrink-0 text-[10px] text-content-subtle tabular-nums">
-                                                {formatRelativeTime(n.createdAt)}
+                                                {formatRelativeTime(n.createdAt, t)}
                                             </span>
                                         </div>
                                         <p className="text-xs text-content-muted line-clamp-2">

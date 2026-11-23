@@ -42,7 +42,7 @@ import {
 // String literals are KEPT, so assertions that harvest codes or ids from source
 // still see them. Every path this file reads is a TypeScript-alike, re-derived
 // per file rather than assumed from the directory.
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, declarationOf } from '../helpers/source-blocks';
 
 /** The locale + timezone the module docblock commits to. */
 const LOCALE = 'en-GB';
@@ -204,13 +204,13 @@ describe('the five helpers are genuinely five different formatters', () => {
 
 // ─── The UTC pin — the module's entire stated reason for existing ──────
 
-describe('every Intl.DateTimeFormat in format-date.ts is pinned to en-GB + UTC', () => {
+describe('every date in format-date.ts is read in the UTC calendar', () => {
     /**
      * WHY THIS IS A SOURCE READ AND NOT A BEHAVIOURAL ASSERTION
      * ─────────────────────────────────────────────────────────
      * The obvious test — "23:59Z and 00:01Z on the same UTC day format
      * identically" — is INERT on a UTC host, and GitHub runners are UTC.
-     * Dropping `timeZone: 'UTC'` from `DATE_FMT` fails it under
+     * Dropping `timeZone: 'UTC'` from the English formatters fails it under
      * Europe/Sofia and passes the whole file under `TZ=UTC`, so on CI it
      * asserts nothing. Setting `process.env.TZ` inside the suite does not
      * rescue it either: Node caches the default zone, so a
@@ -219,54 +219,33 @@ describe('every Intl.DateTimeFormat in format-date.ts is pinned to en-GB + UTC',
      *
      * The pin is the reason this module exists (SSR hydration drift when
      * server and browser disagree on the zone), so it gets a check that
-     * fires on every host: each formatter constant must literally carry
-     * the locale and the timezone.
+     * fires on every host. English goes through Intl, and every Intl
+     * formatter is built by ONE factory that carries the locale and the
+     * timezone. Bulgarian is assembled from a Date's fields, so it must
+     * read only the `getUTC*` ones.
      */
     const SOURCE = codeOf(fs.readFileSync(
         path.join(__dirname, '..', '..', 'packages', 'ui', 'src', 'lib', 'format-date.ts'),
         'utf8',
     ));
 
-    /** Each `new Intl.DateTimeFormat(...)` call, sliced to its closing `})`. */
-    function formatterBlocks(source: string): string[] {
-        const marker = 'new Intl.DateTimeFormat(';
-        const out: string[] = [];
-        let from = 0;
-        for (;;) {
-            const start = source.indexOf(marker, from);
-            if (start < 0) break;
-            const end = source.indexOf('})', start);
-            expect(end).toBeGreaterThan(start);
-            out.push(source.slice(start, end + 2));
-            from = end + 2;
-        }
-        return out;
-    }
-
-    const blocks = formatterBlocks(SOURCE);
-
-    it('finds every formatter constant in the module (the scan is not silently empty)', () => {
-        // An absence is ambiguous: a scan that matched nothing would let
-        // the per-block assertion below pass vacuously. Pin the count
-        // against an independent count of the same marker, and against a
-        // floor. Lower the floor deliberately if a formatter is removed.
-        expect(blocks.length).toBe(SOURCE.split('new Intl.DateTimeFormat(').length - 1);
-        expect(blocks.length).toBeGreaterThanOrEqual(10);
+    it('builds every Intl formatter through the one factory, pinned to en-GB + UTC', () => {
+        expect(SOURCE.split('new Intl.DateTimeFormat(').length - 1).toBe(1);
+        expect(declarationOf(SOURCE, 'intl')).toMatch(/new Intl\.DateTimeFormat\(EN_TAG, \{ \.\.\.options, timeZone: 'UTC' \}\)/);
+        expect(declarationOf(SOURCE, 'EN_TAG')).toBe("const EN_TAG = 'en-GB';");
     });
 
-    it("every formatter carries timeZone: 'UTC'", () => {
-        const offenders = blocks.filter((b) => !/timeZone:\s*'UTC'/.test(b));
-        expect(offenders).toStrictEqual([]);
+    it('finds every English formatter constant (the scan is not silently empty)', () => {
+        // Lower the floor deliberately if a formatter is removed.
+        expect(SOURCE.match(/= intl\(\{/g)?.length ?? 0).toBeGreaterThanOrEqual(9);
     });
 
-    it('every formatter is constructed with the shared LOCALE constant', () => {
-        const offenders = blocks.filter(
-            (b) => !/^new Intl\.DateTimeFormat\(LOCALE,/.test(b),
-        );
-        expect(offenders).toStrictEqual([]);
-    });
-
-    it("pins LOCALE to 'en-GB'", () => {
-        expect(SOURCE).toMatch(/^const LOCALE = 'en-GB';$/m);
+    it('reads no local-time field of a Date', () => {
+        const local = SOURCE.match(/\.get(?:Date|Day|Month|FullYear|Hours|Minutes|Seconds)\(/g) ?? [];
+        expect(local).toStrictEqual([]);
+        // …and the Bulgarian date really is assembled from the UTC fields.
+        const bgDate = declarationOf(SOURCE, 'bgDate');
+        expect(bgDate).toMatch(/getUTCDate\(\)/);
+        expect(bgDate).toMatch(/getUTCFullYear\(\)/);
     });
 });

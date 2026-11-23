@@ -83,14 +83,16 @@ describe('template library filters', () => {
         render(<TemplateLibraryPage />);
         await screen.findByText('Policies');
         await openCategoryPicker();
-        const organizational = await screen.findByRole('option', { name: 'ORGANIZATIONAL' });
+        // The ISO 27002 theme constants read as their labels, never raw.
+        expect(screen.queryByRole('option', { name: 'ORGANIZATIONAL' })).toBeNull();
+        const organizational = await screen.findByRole('option', { name: 'Organizational' });
         await act(async () => { fireEvent.click(organizational); });
         await waitFor(() => expect(screen.queryByText('Endpoint devices')).toBeNull());
         expect(screen.getByText('Policies')).toBeInTheDocument();
 
         await openCategoryPicker();
         // The other category is still a choice, one step away.
-        const technological = await screen.findByRole('option', { name: 'TECHNOLOGICAL' });
+        const technological = await screen.findByRole('option', { name: 'Technological' });
         await act(async () => { fireEvent.click(technological); });
         await waitFor(() => expect(screen.getByText('Endpoint devices')).toBeInTheDocument());
         expect(screen.queryByText('Policies')).toBeNull();

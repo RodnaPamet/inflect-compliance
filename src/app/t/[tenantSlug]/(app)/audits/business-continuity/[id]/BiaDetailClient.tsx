@@ -319,7 +319,14 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
                         <p className="text-sm text-content-default">
                             {tx.rich('biaDetail.recoversSeq', { rank: bia.recovery.rank, b: (c) => <span className="font-semibold">{c}</span> })}
                         </p>
-                        <p className="text-sm text-content-muted">{bia.recovery.rationale}</p>
+                        <p className="text-sm text-content-muted">
+                            {tx('biaDetail.recoveryRationale', {
+                                criticality: critLabels[bia.criticality] ?? bia.criticality,
+                                mtpd: bia.mtpdHours ?? 'none',
+                                rto: bia.rtoHours ?? 'none',
+                                rank: bia.recovery.rank,
+                            })}
+                        </p>
                     </Section>
                 )}
 

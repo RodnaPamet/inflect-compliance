@@ -199,7 +199,9 @@
         "INCIDENT": "incidents",
         "FRAMEWORK_REQUIREMENT": "framework requirements"
       },
-      "noData": "No data"
+      "noData": "No data",
+      "expandAll": "Expand all",
+      "collapseAll": "Collapse all"
     },
     "calendar": {
       "prevYear": "Go to previous year",
@@ -757,6 +759,23 @@
         "asset": "asset",
         "incident": "incident",
         "issue": "issue"
+      },
+      "verbFallback": "{action}",
+      "entityFallback": "{entity}",
+      "event": {
+        "AUTH_LOGIN_SUCCESS": "signed in",
+        "AUTH_LOGIN_FAILURE": "failed to sign in",
+        "AUTH_LOGIN_RATE_LIMITED": "was rate-limited while signing in",
+        "AUTH_PASSWORD_CHANGED": "changed their password",
+        "AUTH_PASSWORD_RESET_REQUESTED": "requested a password reset",
+        "AUTH_PASSWORD_RESET_COMPLETED": "reset their password",
+        "AUTH_EMAIL_VERIFIED": "verified their email address",
+        "MFA_ENROLLED": "enrolled in MFA",
+        "MFA_REMOVED": "removed MFA",
+        "MFA_CHALLENGE_PASSED": "passed an MFA challenge",
+        "MFA_CHALLENGE_FAILED": "failed an MFA challenge",
+        "AUTHZ_DENIED": "was denied access",
+        "TENANT_SEEDED": "set up the workspace"
       }
     },
     "kpiTrend30Day": "{label} 30-day trend",
@@ -2598,6 +2617,13 @@
       "source": {
         "MEASURED": "Measured",
         "DECLARED": "Declared"
+      },
+      "perYear": "{amount}/yr",
+      "gap": {
+        "noCost": "Set an annual cost to price this control",
+        "noEffectiveness": "Declare or measure an effectiveness signal",
+        "linkRiskFirst": "Link this control to a risk first",
+        "quantifyRisks": "Quantify the linked risks (SLE × ARO or FAIR) to price this control"
       }
     },
     "mappingsTab": {
@@ -4463,7 +4489,8 @@
       "impactCellAria": "{dimension} impact, point {row}",
       "impactRemoveAria": "Remove point {row}",
       "impactInvalid": "Each value must be a number, zero or more, and every point needs its hours. Fix the highlighted cells, then save.",
-      "hoursInvalid": "Enter whole hours, zero or more."
+      "hoursInvalid": "Enter whole hours, zero or more.",
+      "recoveryRationale": "Criticality: {criticality} · {mtpd, select, none {MTPD not set} other {MTPD {mtpd}h}}{rto, select, none {} other { · RTO {rto}h}} → recovery #{rank}"
     },
     "nis2Gap": {
       "runStatus": {
@@ -9397,6 +9424,56 @@
       "NUMBER": "Number",
       "SCALE": "Scale",
       "FILE_UPLOAD": "File upload"
+    },
+    "auditActionChip": {
+      "composed": "{entity} {verb}",
+      "event": {
+        "AUTH_LOGIN_SUCCESS": "Sign-in",
+        "AUTH_LOGIN_FAILURE": "Failed sign-in",
+        "AUTH_LOGIN_RATE_LIMITED": "Sign-in rate-limited",
+        "AUTH_PASSWORD_CHANGED": "Password changed",
+        "AUTH_PASSWORD_RESET_REQUESTED": "Password reset requested",
+        "AUTH_PASSWORD_RESET_COMPLETED": "Password reset",
+        "AUTH_EMAIL_VERIFIED": "Email verified",
+        "MFA_ENROLLED": "MFA enrolled",
+        "MFA_REMOVED": "MFA removed",
+        "MFA_CHALLENGE_PASSED": "MFA challenge passed",
+        "MFA_CHALLENGE_FAILED": "MFA challenge failed",
+        "AUTHZ_DENIED": "Authorization denied",
+        "TENANT_SEEDED": "Workspace set up"
+      },
+      "verb": {
+        "CREATED": "created",
+        "UPDATED": "updated",
+        "DELETED": "deleted",
+        "APPROVED": "approved",
+        "REJECTED": "rejected",
+        "CLOSED": "closed",
+        "LINKED": "linked",
+        "UNLINKED": "unlinked",
+        "UPLOADED": "uploaded",
+        "SUBMITTED": "submitted",
+        "ARCHIVED": "archived",
+        "COMPLETED": "completed",
+        "ASSIGNED": "assigned",
+        "REVOKED": "revoked",
+        "PUBLISHED": "published",
+        "REQUESTED": "requested",
+        "ACKNOWLEDGED": "acknowledged",
+        "RESOLVED": "resolved",
+        "REOPENED": "reopened",
+        "CANCELED": "canceled",
+        "EXPIRED": "expired",
+        "RENEWED": "renewed",
+        "GENERATED": "generated",
+        "IMPORTED": "imported",
+        "EXPORTED": "exported",
+        "REMOVED": "removed",
+        "ADDED": "added",
+        "REVIEWED": "reviewed",
+        "SHARED": "shared",
+        "STATUS_CHANGED": "status changed"
+      }
     }
   },
   "riskManager": {
@@ -11173,6 +11250,11 @@
         "ACTIVE": "Active",
         "RETIRED": "Retired"
       }
+    },
+    "mapStatus": {
+      "ACTIVE": "Active",
+      "DRAFT": "Draft",
+      "ARCHIVED": "Archived"
     }
   },
   "issues": {
@@ -11959,7 +12041,12 @@
         },
         "scannersNotShown": "{count, plural, one {# more scanner has} other {# more scanners have}} a scan this page does not show.",
         "scannersWithoutScan": "{count, plural, one {# trusted scanner has} other {# trusted scanners have}} sent no agent-surface rules report in the scans this page read: {names}. As far as this page can see, they read nothing.",
-        "scansTruncated": "There are more scans than this page read; the latest of each scanner is shown."
+        "scansTruncated": "There are more scans than this page read; the latest of each scanner is shown.",
+        "severity": {
+          "HIGH": "High",
+          "MEDIUM": "Medium",
+          "LOW": "Low"
+        }
       },
       "integrations": {
         "readOnly": "The applications a directory has granted access to — Entra, Okta and GitHub — as each scanner’s latest third-party application report found them. Read-only: what the scan raised is in the findings register, shown here beside the application it is about.",
@@ -15609,7 +15696,13 @@
       "now": "now",
       "sessionExpired": "Your session has expired.",
       "sessionExpiredAction": "Sign in again",
-      "loadFailed": "Notifications couldn't be loaded."
+      "loadFailed": "Notifications couldn't be loaded.",
+      "age": {
+        "now": "now",
+        "minutes": "{n}m",
+        "hours": "{n}h",
+        "days": "{n}d"
+      }
     },
     "sessionExpired": {
       "body": "Your session has expired. Anything on screen may be out of date.",
@@ -15985,7 +16078,8 @@
       "recentActivityEmpty": "no recent activity",
       "historyFailed": "The history did not load. Close this panel and open it again.",
       "headlineLabel": "Headline",
-      "contextLabel": "Context"
+      "contextLabel": "Context",
+      "noThreatAssessment": "No active threat assessment"
     },
     "tenants": {
       "title": "Workspaces",
@@ -18082,5 +18176,53 @@
       "readOnly": "The run is offered read tools only.",
       "offered": "offered"
     }
+  },
+  "celebrations": {
+    "framework100": {
+      "message": "100% framework coverage",
+      "description": "Every applicable control is implemented."
+    },
+    "auditPackComplete": {
+      "message": "Audit pack ready",
+      "description": "Frozen and shareable with your auditor."
+    },
+    "firstControlMapped": {
+      "message": "First control mapped",
+      "description": "You're on your way — keep going."
+    }
+  },
+  "riskMatrixDefaults": {
+    "axis": {
+      "likelihood": "Likelihood",
+      "impact": "Impact"
+    },
+    "likelihood": {
+      "1": "Rare",
+      "2": "Unlikely",
+      "3": "Possible",
+      "4": "Likely",
+      "5": "Almost Certain"
+    },
+    "impact": {
+      "1": "Negligible",
+      "2": "Minor",
+      "3": "Moderate",
+      "4": "Major",
+      "5": "Severe"
+    },
+    "band": {
+      "Low": "Low",
+      "Medium": "Medium",
+      "High": "High",
+      "Critical": "Critical"
+    }
+  },
+  "notificationTitles": {
+    "AGENT_KILL_SWITCH_ENGAGED": "An agent kill switch was engaged",
+    "AGENT_PROPOSAL_QUARANTINED": "An agent proposal was quarantined",
+    "AGENT_CIRCUIT_BREAKER_TRIPPED": "An agent's circuit breaker tripped",
+    "AGENT_TOOL_MANIFEST_PIN_CHANGED": "A tool definition was approved for this workspace",
+    "AGENT_RISK_ASSESSMENT_STALE": "An agent's risk assessment is out of date",
+    "AGENT_OWNER_DEPARTED": "An agent's owner has left the workspace"
   }
 }

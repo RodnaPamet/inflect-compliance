@@ -91,17 +91,15 @@
 import type { PrismaClient } from '@prisma/client';
 
 import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
+import {
+    AGENTIC_NOTIFICATION_TITLES,
+    type AgenticNotificationKind,
+} from '@/lib/notifications/agentic-titles';
 import { insertedNotificationIds } from './inserted-ids';
 import { isInAppTypeEnabled } from './settings';
 
-/** The agentic members of `NotificationType`. */
-export type AgenticNotificationKind =
-    | 'AGENT_KILL_SWITCH_ENGAGED'
-    | 'AGENT_PROPOSAL_QUARANTINED'
-    | 'AGENT_CIRCUIT_BREAKER_TRIPPED'
-    | 'AGENT_TOOL_MANIFEST_PIN_CHANGED'
-    | 'AGENT_RISK_ASSESSMENT_STALE'
-    | 'AGENT_OWNER_DEPARTED';
+/** The agentic members of `NotificationType` (titles: `agentic-titles.ts`). */
+export type { AgenticNotificationKind };
 
 interface AgenticCopy {
     title: string;
@@ -129,8 +127,9 @@ interface AgenticCopy {
 /**
  * Copy, in the same shape and register as `assignment.ts`'s `COPY`. English
  * literals, matching every other notification emitter in the repo — the bell's
- * rows are written at emit time and stored, so they are not reachable by
- * `next-intl` at render.
+ * rows are written at emit time and stored. The TITLE is fixed per type, so the
+ * bell renders it in the reader's language (`@/lib/notifications/agentic-titles`);
+ * the body interpolates the subject at emit time and stays as stored.
  *
  * The link is to wherever the recipient can ACT on what they were told. For a
  * kill switch that is the register, where you lift it; for a quarantined
@@ -145,14 +144,14 @@ interface AgenticCopy {
  */
 const COPY: Record<AgenticNotificationKind, AgenticCopy> = {
     AGENT_KILL_SWITCH_ENGAGED: {
-        title: 'An agent kill switch was engaged',
+        title: AGENTIC_NOTIFICATION_TITLES.AGENT_KILL_SWITCH_ENGAGED,
         body: (subject) =>
             `${subject} is stopped at the tool boundary, including runs already in flight. ` +
             `Its registered status is unchanged — lift the kill switch to let it act again.`,
         linkPath: (slug) => `/t/${slug}/agents`,
     },
     AGENT_PROPOSAL_QUARANTINED: {
-        title: 'An agent proposal was quarantined',
+        title: AGENTIC_NOTIFICATION_TITLES.AGENT_PROPOSAL_QUARANTINED,
         body: (subject) =>
             `The output guard refused a write from ${subject}. Quarantine is terminal — ` +
             `the proposal cannot be approved. Read the attempted content before deciding ` +
@@ -160,7 +159,7 @@ const COPY: Record<AgenticNotificationKind, AgenticCopy> = {
         linkPath: (slug) => `/t/${slug}/agents/quarantine`,
     },
     AGENT_CIRCUIT_BREAKER_TRIPPED: {
-        title: "An agent's circuit breaker tripped",
+        title: AGENTIC_NOTIFICATION_TITLES.AGENT_CIRCUIT_BREAKER_TRIPPED,
         body: (subject, detail) =>
             `${subject} was stopped automatically by its behavioural circuit breaker` +
             `${detail === null ? '' : ` — firing signals: ${detail}`}. ` +
@@ -171,7 +170,7 @@ const COPY: Record<AgenticNotificationKind, AgenticCopy> = {
         linkPath: (slug, agentId) => `/t/${slug}/agents/${agentId}`,
     },
     AGENT_TOOL_MANIFEST_PIN_CHANGED: {
-        title: 'A tool definition was approved for this workspace',
+        title: AGENTIC_NOTIFICATION_TITLES.AGENT_TOOL_MANIFEST_PIN_CHANGED,
         body: (subject, detail) =>
             `${subject} was accepted for every agent in this workspace, clearing the ` +
             `tool boundary's refusal${detail === null ? '' : ` (${detail})`}. ` +
@@ -192,7 +191,7 @@ const COPY: Record<AgenticNotificationKind, AgenticCopy> = {
         linkPath: (slug) => `/t/${slug}/agents`,
     },
     AGENT_RISK_ASSESSMENT_STALE: {
-        title: "An agent's risk assessment is out of date",
+        title: AGENTIC_NOTIFICATION_TITLES.AGENT_RISK_ASSESSMENT_STALE,
         body: (subject, detail) =>
             `${subject} has been widened since its risk assessment was completed` +
             `${detail === null ? '' : ` — ${detail}`}. ` +
@@ -204,7 +203,7 @@ const COPY: Record<AgenticNotificationKind, AgenticCopy> = {
         linkPath: (slug, agentId) => `/t/${slug}/agents/${agentId}`,
     },
     AGENT_OWNER_DEPARTED: {
-        title: "An agent's owner has left the workspace",
+        title: AGENTIC_NOTIFICATION_TITLES.AGENT_OWNER_DEPARTED,
         // `detail` carries the rung's sentence: at DRY_RUN what the pass WOULD
         // do, at AUTOMATIC what it did. Signal codes only — never the departed
         // person's name or address, which the subject does not need either: the
@@ -236,12 +235,9 @@ export interface InAppNotificationTypeInfo {
  * preference page by that same edit — the client renders whatever this
  * returns and needs no change.
  *
- * The TITLE is the English literal the stored row carries, deliberately, and
- * this is the one place on the page that is not translated. Bell rows are
- * written at emit time and stored, so `next-intl` cannot reach them at render
- * (see the note on `COPY`); a translated label here would promise the operator
- * a Bulgarian bell that the emitter will not deliver. The surrounding section
- * heading and helper text ARE translated — they are rendered, not stored.
+ * The TITLE is the English literal the stored row carries. The page shows it
+ * through `localizedNotificationTitle`, the same mapping the bell applies to a
+ * row's title, so the label is what the operator's bell actually displays.
  */
 export function listInAppNotificationTypes(): InAppNotificationTypeInfo[] {
     return (Object.keys(COPY) as AgenticNotificationKind[]).map((type) => ({

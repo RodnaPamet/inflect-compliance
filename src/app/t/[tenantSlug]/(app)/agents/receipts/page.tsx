@@ -12,7 +12,7 @@ import { mayReadAgentActivity } from '@/lib/permissions';
 import { getTenantCtx } from '@/app-layer/context';
 import { readReceiptPage } from '@/app-layer/usecases/agent-action-receipt';
 import { oversightReadsFor } from '@/app-layer/usecases/agent-oversight-settings';
-import { formatDateTime } from '@inflect/ui/lib/format-date';
+import { getDateFormatters } from '@/lib/i18n/date-format-server';
 import { getTranslations } from 'next-intl/server';
 import { ShadedRow } from '@/components/ui/shaded-row';
 
@@ -111,6 +111,7 @@ export default async function AgentReceiptsPage({
     const ctx = await getTenantCtx({ tenantSlug });
     const t = await getTranslations('admin');
     const tAgents = await getTranslations('agents');
+    const { formatDateTime } = await getDateFormatters();
 
     // The register key, or the inventory view key while an owner lets Auditors
     // read receipts (`agent-oversight-settings.ts`, #4897). The list and export

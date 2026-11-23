@@ -16,15 +16,18 @@ import { render, screen, within } from '@testing-library/react';
 
 jest.mock('next-intl', () => {
     const en = require('../../messages/en.json') as Record<string, Record<string, unknown>>;
+    // The namespace may be dotted (`admin.auditActionChip`), as next-intl allows.
     const resolve = (ns: string, key: string): unknown =>
-        key.split('.').reduce<unknown>(
+        `${ns}.${key}`.split('.').reduce<unknown>(
             (o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined),
-            en[ns],
+            en,
         );
     return {
-        useTranslations: (ns: string) => (key: string) => {
+        useTranslations: (ns: string) => (key: string, values: Record<string, string> = {}) => {
             const v = resolve(ns, key);
-            return typeof v === 'string' ? v : key;
+            return typeof v === 'string'
+                ? v.replace(/\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole)
+                : key;
         },
         useLocale: () => 'en',
     };

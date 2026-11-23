@@ -151,9 +151,12 @@ function toLocalYMD(d: Date): string {
  * untrustworthy. One constant now, imported by both.
  */
 // Weekday column headers, localized + SSR-safe via the shared formatter.
+// Built at RENDER, not at module load: the formatter writes in the reader's
+// language, which is bound per render — a module-level constant would freeze
+// whichever language happened to load the module first.
 // 2023-01-01 (UTC) is a Sunday, so offsetting by WEEK_STARTS_ON walks the
 // labels to the configured first day.
-const WEEKDAY_HEADERS = Array.from({ length: 7 }, (_, i) =>
+const weekdayHeaders = () => Array.from({ length: 7 }, (_, i) =>
     formatWeekdayShort(new Date(Date.UTC(2023, 0, 1 + ((i + WEEK_STARTS_ON) % 7)))),
 );
 
@@ -331,7 +334,7 @@ export function CalendarMonth({
                 {/* `display: contents` — the row stays in the a11y tree
                     while its cells participate in the parent CSS grid. */}
                 <div role="row" className="contents">
-                    {WEEKDAY_HEADERS.map((label, i) => (
+                    {weekdayHeaders().map((label, i) => (
                         <div
                             key={i}
                             role="columnheader"

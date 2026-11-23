@@ -39,12 +39,16 @@ import { type CelebrateInput } from '@inflect/ui/components/ui/hooks/use-celebra
 import {
     celebrationDedupe,
     MILESTONES,
+    milestoneCopy,
     scopedMilestone,
 } from '@/lib/celebrations';
 import {
     isAllEvidenceCurrent,
     type EvidenceFreshnessRow,
 } from '@/lib/evidence-freshness';
+import { catalogTranslator } from '../helpers/catalog-translator';
+
+const tEn = catalogTranslator('en');
 
 interface ConfettiCall {
     options: import('canvas-confetti').Options | undefined;
@@ -100,7 +104,7 @@ function frameworkTrigger(args: {
 }): Trigger {
     return () => {
         if (args.coveragePercent !== 100) return null;
-        return scopedMilestone('framework-100', args.frameworkKey);
+        return scopedMilestone('framework-100', args.frameworkKey, milestoneCopy('framework-100', tEn));
     };
 }
 
@@ -113,8 +117,8 @@ function evidenceTrigger(args: {
         return {
             preset: def.preset,
             key: def.key,
-            message: def.message,
-            description: def.description,
+            message: milestoneCopy(def.key, tEn).message,
+            description: milestoneCopy(def.key, tEn).description,
         };
     };
 }
@@ -125,7 +129,7 @@ function auditPackTrigger(args: {
 }): Trigger {
     return () => {
         if (args.status !== 'FROZEN' && args.status !== 'EXPORTED') return null;
-        return scopedMilestone('audit-pack-complete', args.packId);
+        return scopedMilestone('audit-pack-complete', args.packId, milestoneCopy('audit-pack-complete', tEn));
     };
 }
 

@@ -39,6 +39,7 @@ jest.mock('@/app-layer/usecases/compliance-posture', () => ({
     toPostureDto: () => null,
 }));
 jest.mock('next-intl/server', () => ({
+    getLocale: async () => 'en',
     getTranslations: async () => (key: string) => key,
 }));
 jest.mock('@/app/t/[tenantSlug]/(app)/dashboard/DashboardClient', () => ({
