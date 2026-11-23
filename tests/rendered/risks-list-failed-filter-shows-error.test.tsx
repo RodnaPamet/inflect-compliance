@@ -67,6 +67,7 @@ jest.mock('@/components/layout/PageBreadcrumbs', () => ({ PageBreadcrumbs: () =>
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { RisksClient } from '@/app/t/[tenantSlug]/(app)/risks/RisksClient';
+import { DEFAULT_RISK_MATRIX_CONFIG } from '@/lib/risk-matrix/defaults';
 
 const en = require('../../messages/en.json');
 
@@ -84,11 +85,8 @@ const TRANSLATIONS = Object.fromEntries(
     ].map((k) => [k, typeof en.risks[k] === 'string' ? en.risks[k] : k]),
 ) as React.ComponentProps<typeof RisksClient>['translations'];
 
-const MATRIX_CONFIG = {
-    likelihoodLabels: ['1', '2', '3', '4', '5'],
-    impactLabels: ['1', '2', '3', '4', '5'],
-    thresholds: { low: 4, medium: 9, high: 16 },
-} as unknown as React.ComponentProps<typeof RisksClient>['matrixConfig'];
+// The real default shape: the list localizes its default names on the way in.
+const MATRIX_CONFIG = DEFAULT_RISK_MATRIX_CONFIG;
 
 type RiskRow = React.ComponentProps<typeof RisksClient>['initialRisks'][number];
 const RISK_TITLE = 'Edge proxy left unpatched';

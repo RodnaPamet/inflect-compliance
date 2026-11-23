@@ -102,7 +102,8 @@ function eachDay(from: Date, to: Date): Date[] {
 // from the canonical `formatWeekdayShort` so they stay locale/UTC-pinned
 // like every other date string, replacing the hand-rolled
 // `['Sun', 'Mon', …]` array.
-const WEEKDAY_LABELS: string[] = Array.from({ length: 7 }, (_, i) =>
+// Built at render, because the formatter writes in the reader's language.
+const weekdayLabels = (): string[] => Array.from({ length: 7 }, (_, i) =>
     formatWeekdayShort(new Date(Date.UTC(2023, 0, 1 + i))),
 );
 
@@ -275,7 +276,7 @@ export function CalendarHeatmap({
             <div className="flex gap-tight">
                 {/* Row labels (only show every other row to save space). */}
                 <div className="flex flex-col gap-[2px] pt-[14px] text-[10px] text-content-muted select-none">
-                    {WEEKDAY_LABELS.map((label, i) => (
+                    {weekdayLabels().map((label, i) => (
                         <span
                             key={i}
                             className={cn(

@@ -27,7 +27,7 @@ function translator(ns: string) {
             .replace(/\{(\w+)\}/g, (m, name) => (name in values ? String(values[name]) : m));
     };
 }
-jest.mock('next-intl/server', () => ({ getTranslations: async (ns: string) => translator(ns) }));
+jest.mock('next-intl/server', () => ({ getLocale: async () => 'en', getTranslations: async (ns: string) => translator(ns) }));
 jest.mock('next-intl', () => ({ useTranslations: (ns: string) => translator(ns), useLocale: () => 'en' }));
 jest.mock('next/navigation', () => ({
     useRouter: () => ({ push: jest.fn(), replace: jest.fn(), refresh: jest.fn(), back: jest.fn(), prefetch: jest.fn() }),

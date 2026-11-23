@@ -21,6 +21,7 @@ jest.mock('next-intl/server', () => {
         path.split('.').reduce<unknown>((acc, k) => (acc && typeof acc === 'object' ? (acc as Record<string, unknown>)[k] : undefined), o);
     return {
         __esModule: true,
+        getLocale: async () => 'en',
         getTranslations: async (ns: string) => {
             const bag = lookup(en, ns);
             const t = (key: string, values?: Record<string, unknown>) => {

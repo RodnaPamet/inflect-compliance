@@ -65,7 +65,7 @@ function AgentSurfaceSection({ section }: { section: AgentRuleSection }) {
                     enableSorting: false,
                     cell: ({ row }) => (
                         <StatusBadge variant={SEVERITY_VARIANT[row.original.severity] ?? 'neutral'} size="sm">
-                            {row.original.severity}
+                            {row.original.severity in SEVERITY_VARIANT ? t(`reports.agentSurface.severity.${row.original.severity}`) : row.original.severity}
                         </StatusBadge>
                     ),
                 },

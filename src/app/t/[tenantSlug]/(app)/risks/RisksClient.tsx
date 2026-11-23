@@ -67,6 +67,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { resolveBandForScore } from '@/lib/risk-matrix/scoring';
 import { RISK_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
 import type { RiskMatrixConfigShape } from '@/lib/risk-matrix/types';
+import { useLocalizedRiskMatrixConfig } from '@/lib/hooks/use-risk-matrix-config';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
@@ -281,7 +282,7 @@ const RISK_VIEW_LINKS: ReadonlyArray<{ href: string; labelKey: string; icon: App
 function RisksPageInner({
     initialRisks,
     initialFilters,
-    matrixConfig,
+    matrixConfig: storedMatrixConfig,
     tenantSlug,
     bulkPermissions,
     canCreate,
@@ -289,6 +290,8 @@ function RisksPageInner({
     translations: t,
 }: RisksClientProps) {
     const tx = useTranslations('risks');
+    // The default band / level names in the viewer's language; a tenant's own names as stored.
+    const matrixConfig = useLocalizedRiskMatrixConfig(storedMatrixConfig);
     const { cache: swrCache } = useSWRConfig();
     const buildApiUrl = useTenantApiUrl();
     const toast = useToast();

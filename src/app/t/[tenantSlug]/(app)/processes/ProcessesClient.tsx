@@ -368,7 +368,7 @@ function ProcessListMobile({
                                     variant={PROCESS_STATUS_BADGE[p.status]}
                                     size="sm"
                                 >
-                                    {p.status}
+                                    {t(`mapStatus.${p.status}`)}
                                 </StatusBadge>
                             </div>
                             {p.description && (

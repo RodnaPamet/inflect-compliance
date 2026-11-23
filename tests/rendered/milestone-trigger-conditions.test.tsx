@@ -37,12 +37,14 @@ import {
     useCelebration,
     __setConfettiForTest,
 } from '@inflect/ui/components/ui/hooks/use-celebration';
-import { celebrationDedupe, MILESTONES } from '@/lib/celebrations';
+import { celebrationDedupe, MILESTONES, milestoneCopy } from '@/lib/celebrations';
+import { catalogTranslator } from '../helpers/catalog-translator';
 import {
     isAllEvidenceCurrent,
     type EvidenceFreshnessRow,
 } from '@/lib/evidence-freshness';
 
+const tEn = catalogTranslator('en');
 const NOW = new Date('2026-05-03T00:00:00Z');
 const DAY = 86_400_000;
 const days = (n: number) => new Date(NOW.getTime() - n * DAY).toISOString();
@@ -89,10 +91,10 @@ function FrameworkHarness({
         celebrate({
             preset: def.preset,
             key: `framework-100:${frameworkKey}`,
-            message: def.message,
+            message: milestoneCopy(def.key, tEn).message,
             description: frameworkName
-                ? `${frameworkName} — ${def.description ?? ''}`.trim()
-                : def.description,
+                ? `${frameworkName} — ${milestoneCopy(def.key, tEn).description ?? ''}`.trim()
+                : milestoneCopy(def.key, tEn).description,
         });
     }, [coveragePercent, frameworkKey, frameworkName, celebrate]);
     return null;
@@ -253,8 +255,8 @@ function EvidenceHarness({
         celebrate({
             preset: def.preset,
             key: def.key,
-            message: def.message,
-            description: def.description,
+            message: milestoneCopy(def.key, tEn).message,
+            description: milestoneCopy(def.key, tEn).description,
         });
     }, [
         rows,

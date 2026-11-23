@@ -96,14 +96,76 @@ export interface ActivityVerb {
 }
 
 /**
+ * The generic CRUD actions many `logEvent` callers write as a bare verb
+ * (`UPDATE`, not `RISK_UPDATED`), mapped onto the verb tokens above.
+ */
+const GENERIC_VERB_ALIASES: Readonly<Record<string, (typeof KNOWN_ACTIVITY_VERBS)[number]>> = {
+    CREATE: 'CREATED',
+    UPDATE: 'UPDATED',
+    DELETE: 'DELETED',
+    SOFT_DELETE: 'DELETED',
+    STATUS_CHANGE: 'STATUS_CHANGED',
+};
+
+/**
+ * Whole-action events that are a sentence on their own — an actor and what
+ * they did, with no entity noun ("signed in"). Their `entity` (`'Auth'`,
+ * `'User'`) is bookkeeping, not an object worth naming, and their trailing
+ * word (`SUCCESS`, `FAILURE`) is no verb. Each resolves to
+ * `dashboard.activity.event.<ACTION>` for the feed and
+ * `admin.auditActionChip.event.<ACTION>` for the audit log's action chip.
+ */
+export const ACTIVITY_EVENT_ACTIONS = [
+    'AUTH_LOGIN_SUCCESS',
+    'AUTH_LOGIN_FAILURE',
+    'AUTH_LOGIN_RATE_LIMITED',
+    'AUTH_PASSWORD_CHANGED',
+    'AUTH_PASSWORD_RESET_REQUESTED',
+    'AUTH_PASSWORD_RESET_COMPLETED',
+    'AUTH_EMAIL_VERIFIED',
+    'MFA_ENROLLED',
+    'MFA_REMOVED',
+    'MFA_CHALLENGE_PASSED',
+    'MFA_CHALLENGE_FAILED',
+    'AUTHZ_DENIED',
+    'TENANT_SEEDED',
+] as const;
+
+const EVENT_ACTION_SET = new Set<string>(ACTIVITY_EVENT_ACTIONS);
+
+/**
+ * The noun key of the entity an action NAMES, for a verb-token action:
+ * `RISK_CREATED` → `'risk'`. `bare` is true for the generic bare verbs
+ * (`UPDATE`), which name no entity — the caller falls back to the row's own
+ * `entity`. `nounKey` is null when the prefix is not a known entity
+ * (`CONTROL_EVIDENCE_LINKED`) or the action has no verb token at all.
+ */
+export function activitySubject(action: string): { nounKey: string | null; bare: boolean } {
+    const upper = normalizeActivityEntity(action);
+    if (GENERIC_VERB_ALIASES[upper]) return { nounKey: null, bare: true };
+    const { token } = activityVerbToken(action);
+    if (!token || upper.length <= token.length + 1) return { nounKey: null, bare: false };
+    const prefix = upper.slice(0, upper.length - token.length - 1);
+    return { nounKey: activityEntityMeta(prefix)?.nounKey ?? null, bare: false };
+}
+
+/** The whole-action event token for `action`, or null when it is not one. */
+export function activityEventToken(action: string): string | null {
+    const upper = normalizeActivityEntity(action);
+    return EVENT_ACTION_SET.has(upper) ? upper : null;
+}
+
+/**
  * Resolve an audit `action` to a localizable verb token. Matches the
- * `*_STATUS_CHANGED` two-word suffix first, then the single trailing
- * `_TOKEN`. Unknown actions return `token: null` + a de-snaked
- * fallback of the whole action.
+ * generic bare verbs first, then the `*_STATUS_CHANGED` two-word suffix,
+ * then the single trailing `_TOKEN`. Unknown actions return `token: null`
+ * + a de-snaked fallback of the whole action.
  */
 export function activityVerbToken(action: string): ActivityVerb {
     const upper = normalizeActivityEntity(action);
     const fallback = humanizeSnakeCase(action);
+    const alias = GENERIC_VERB_ALIASES[upper];
+    if (alias) return { token: alias, fallback };
     if (upper.endsWith('STATUS_CHANGED')) {
         return { token: 'STATUS_CHANGED', fallback };
     }

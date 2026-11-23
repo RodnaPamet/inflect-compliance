@@ -32,6 +32,7 @@
  *     grid; we preserve it by not overriding `components.Day`.
  */
 
+import { activeDateFnsLocale } from '@inflect/ui/lib/format-date';
 import { cn } from '@inflect/ui/lib/cn';
 import { WEEK_STARTS_ON } from './week-start';
 import { addMonths, addYears, format } from 'date-fns';
@@ -106,7 +107,7 @@ export function Calendar({
     numberOfMonths = 1,
     showYearNavigation = false,
     disabled: disabledDays,
-    locale,
+    locale: localeProp,
     className,
     classNames,
     startMonth,
@@ -114,6 +115,8 @@ export function Calendar({
     ...props
 }: CalendarProps) {
     const t = useTranslations('common.calendar');
+    // No locale from the caller → the reader's UI language (format-date.ts).
+    const locale = localeProp ?? activeDateFnsLocale();
     // A caller that passes `month` controls it — the range picker opens on
     // the committed range that way. It used to be ignored in favour of this
     // component's own state, so every range picker opened on today's month

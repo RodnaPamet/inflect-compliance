@@ -43,6 +43,12 @@ export interface RecoveryCandidate {
 export interface RecoveryRanking {
     id: string;
     rank: number;
+    /**
+     * The English sentence, for the API and exports. The BIA detail page does
+     * NOT render it: it composes the same sentence from the BIA's own inputs
+     * through `audits.biaDetail.recoveryRationale`, so it reads in the
+     * viewer's language.
+     */
     rationale: string;
 }
 

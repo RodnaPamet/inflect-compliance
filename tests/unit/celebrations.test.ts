@@ -15,9 +15,11 @@ import {
     clearCelebrated,
     hasCelebrated,
     markCelebrated,
+    milestoneCopy,
     scopedMilestone,
     type MilestoneKey,
 } from '@/lib/celebrations';
+import { catalogTranslator, catalogValue } from '../helpers/catalog-translator';
 import { EVIDENCE_EXPIRING_SOON_DAYS } from '@/app-layer/repositories/EvidenceRepository';
 
 const ALL_KEYS: MilestoneKey[] = [
@@ -35,10 +37,23 @@ describe('MILESTONES registry', () => {
         }
     });
 
-    it('every entry has a non-empty message and a valid preset', () => {
+    it('every entry has a valid preset and copy in BOTH catalogs', () => {
+        // The copy is read in the viewer's language, so a key only one
+        // catalog holds is a toast that throws (or reads raw) in the other.
         for (const def of Object.values(MILESTONES)) {
-            expect(def.message.length).toBeGreaterThan(0);
             expect(['burst', 'rain', 'fireworks']).toContain(def.preset);
+            for (const locale of ['en', 'bg'] as const) {
+                expect(catalogValue(locale, def.messageKey).length).toBeGreaterThan(0);
+                expect(catalogValue(locale, def.descriptionKey).length).toBeGreaterThan(0);
+            }
+        }
+    });
+
+    it('a Bulgarian viewer gets Bulgarian toast copy', () => {
+        for (const key of ALL_KEYS) {
+            const copy = milestoneCopy(key, catalogTranslator('bg'));
+            expect(copy.message).toMatch(/[\u0400-\u04FF]/);
+            expect(copy.description).toMatch(/[\u0400-\u04FF]/);
         }
     });
 
@@ -60,7 +75,7 @@ describe("'evidence-all-current' names the window it is checked against", () => 
         // The celebration fires when nothing is expiring soon, and "soon" is
         // EVIDENCE_EXPIRING_SOON_DAYS. It said "this week" while the window
         // was 30 days (#4277); a window change must move the text with it.
-        expect(MILESTONES['evidence-all-current'].description).toContain(
+        expect(milestoneCopy('evidence-all-current', catalogTranslator('en')).description).toContain(
             `${EVIDENCE_EXPIRING_SOON_DAYS} days`,
         );
     });
@@ -126,29 +141,29 @@ describe('hasCelebrated / markCelebrated / clearCelebrated', () => {
 });
 
 describe('scopedMilestone builder', () => {
-    it('returns the registry preset + message + colon-namespaced key', () => {
-        const out = scopedMilestone('framework-100', 'iso27001');
+    const copy = milestoneCopy('framework-100', catalogTranslator('en'));
+
+    it('returns the registry preset + the given copy + colon-namespaced key', () => {
+        const out = scopedMilestone('framework-100', 'iso27001', copy);
         expect(out.preset).toBe(MILESTONES['framework-100'].preset);
-        expect(out.message).toBe(MILESTONES['framework-100'].message);
-        expect(out.description).toBe(
-            MILESTONES['framework-100'].description,
-        );
+        expect(out.message).toBe(copy.message);
+        expect(out.description).toBe(copy.description);
         expect(out.key).toBe('framework-100:iso27001');
     });
 
-    it('descriptionOverride wins over the registry default', () => {
-        const out = scopedMilestone('framework-100', 'iso27001', {
+    it('descriptionOverride wins over the copy default', () => {
+        const out = scopedMilestone('framework-100', 'iso27001', copy, {
             descriptionOverride: 'ISO 27001:2022 — done.',
         });
         expect(out.description).toBe('ISO 27001:2022 — done.');
-        // Other registry fields untouched.
+        // Other fields untouched.
         expect(out.preset).toBe(MILESTONES['framework-100'].preset);
-        expect(out.message).toBe(MILESTONES['framework-100'].message);
+        expect(out.message).toBe(copy.message);
     });
 
     it('different scopes produce different dedupe keys for the same milestone', () => {
-        const a = scopedMilestone('audit-pack-complete', 'pack_abc');
-        const b = scopedMilestone('audit-pack-complete', 'pack_xyz');
+        const a = scopedMilestone('audit-pack-complete', 'pack_abc', copy);
+        const b = scopedMilestone('audit-pack-complete', 'pack_xyz', copy);
         expect(a.key).not.toBe(b.key);
     });
 

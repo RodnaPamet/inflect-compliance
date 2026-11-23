@@ -112,19 +112,22 @@ export function rankByRoi<T>(
         .slice(0, limit);
 }
 
+/** The nudge a non-OK verdict shows, as a key under `controls.roi.gap`. */
+export type RoiGapMessageKey = 'noCost' | 'noEffectiveness' | 'linkRiskFirst' | 'quantifyRisks';
+
 /**
- * Human-friendly description for a non-OK verdict. Used by the UI's
- * honest-null affordances.
+ * Which nudge a non-OK verdict earns. Used by the UI's honest-null
+ * affordances, which render it through the catalog
+ * (`controls.roi.gap.<key>`) so it reads in the viewer's language — this
+ * module is shared with the server and holds no copy of its own.
  */
-export function describeRoiGap(verdict: { ok: false; reason: ControlRoiReason; linkedRiskCount: number }): string {
+export function describeRoiGap(verdict: { ok: false; reason: ControlRoiReason; linkedRiskCount: number }): RoiGapMessageKey {
     switch (verdict.reason) {
         case 'NO_COST':
-            return 'Set an annual cost to price this control';
+            return 'noCost';
         case 'NO_EFFECTIVENESS':
-            return 'Declare or measure an effectiveness signal';
+            return 'noEffectiveness';
         case 'NO_QUANT_RISKS':
-            return verdict.linkedRiskCount === 0
-                ? 'Link this control to a risk first'
-                : 'Quantify the linked risks (SLE × ARO or FAIR) to price this control';
+            return verdict.linkedRiskCount === 0 ? 'linkRiskFirst' : 'quantifyRisks';
     }
 }

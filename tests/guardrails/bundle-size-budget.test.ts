@@ -277,7 +277,14 @@ const BUDGETS_KB: Record<string, number> = {
     // group's scroll cue in shared primitives. The toggle group's phone
     // select (the Combobox graph, ~10 KB) loads on demand and is not in this
     // figure. 635 is measured + ~4, the convention.
-    'dashboard': 635,
+    //
+    // Raised by the mobile Bulgarian-chrome batch (#5858, owner request
+    // 2026-11-23 to work through the mobile issues #5805). CI's webpack build
+    // of #5858: `controls/dashboard/page` 634.8 KB against the 635 budget. The shared
+    // date helpers now carry the Bulgarian month/weekday tables and the
+    // date-fns `bg` locale on every page, so dates and relative times render
+    // in the reader's language. 639 is measured + ~4, the convention.
+    'dashboard': 639,
     // Raised 653 → 654 in the Tasks list fixes (#4300, #4278; owner decision).
     // Main measured this route at 652.9 KB (0.1 KB left); the PR measured
     // 653.2. The growth is in the task form and edit panel that the risk
@@ -309,7 +316,14 @@ const BUDGETS_KB: Record<string, number> = {
     // group's scroll cue in shared primitives. The toggle group's phone
     // select (the Combobox graph, ~10 KB) loads on demand and is not in this
     // figure. 672 is measured + ~4, the convention.
-    'risks': 672,
+    //
+    // Raised by the mobile Bulgarian-chrome batch (#5858, owner request
+    // 2026-11-23 to work through the mobile issues #5805). CI's webpack build
+    // of #5858: `risks/[riskId]/page` 671.6 KB against the 672 budget. The shared
+    // date helpers now carry the Bulgarian month/weekday tables and the
+    // date-fns `bg` locale on every page, so dates and relative times render
+    // in the reader's language. 676 is measured + ~4, the convention.
+    'risks': 676,
     // Raised 645 → 650 in the i18n-kept-primitives PR (#3004): that route had
     // grown to 643.8 KB on main (ff71f42ed), and localising the shared
     // primitives (useTranslations + key lookups in ~20 components, all on this
@@ -390,7 +404,14 @@ const BUDGETS_KB: Record<string, number> = {
     // top-bar entry points (assistant and command-palette buttons), the
     // themed toaster and tap-to-open tooltips to the shared tenant shell.
     // 683 is measured + ~4, the convention.
-    'controls': 683,
+    //
+    // Raised by the mobile Bulgarian-chrome batch (#5858, owner request
+    // 2026-11-23 to work through the mobile issues #5805). CI's webpack build
+    // of #5858: `controls/.../tests/[planId]/page` 682.2 KB against the 683 budget. The shared
+    // date helpers now carry the Bulgarian month/weekday tables and the
+    // date-fns `bg` locale on every page, so dates and relative times render
+    // in the reader's language. 686 is measured + ~4, the convention.
+    'controls': 686,
     // Catch-all for any other tenant page.
     //
     // Raised 682 → 688 by the AI-roadmap integration (#5323, owner decision
@@ -413,7 +434,14 @@ const BUDGETS_KB: Record<string, number> = {
     // is chunk re-partitioning around the shell change, and the local
     // attribution build ran out of memory on the shared machine. 699 is
     // measured + ~4, the convention.
-    'tenant-default': 699,
+    //
+    // Raised by the mobile Bulgarian-chrome batch (#5858, owner request
+    // 2026-11-23 to work through the mobile issues #5805). CI's webpack build
+    // of #5858: `policies/[policyId]/page` 703.0 KB against the 699 budget. The shared
+    // date helpers now carry the Bulgarian month/weekday tables and the
+    // date-fns `bg` locale on every page, so dates and relative times render
+    // in the reader's language. 707 is measured + ~4, the convention.
+    'tenant-default': 707,
     // Auth / public / org pages.
     //
     // RAISED 575 -> 580 on 2026-10-23, and this entry is the cautionary one.
@@ -454,7 +482,14 @@ const BUDGETS_KB: Record<string, number> = {
     // group's scroll cue in shared primitives. The toggle group's phone
     // select (the Combobox graph, ~10 KB) loads on demand and is not in this
     // figure. 588 is measured + ~4, the convention.
-    'root': 588,
+    //
+    // Raised by the mobile Bulgarian-chrome batch (#5858, owner request
+    // 2026-11-23 to work through the mobile issues #5805). CI's webpack build
+    // of #5858: `org/.../initiatives/[initiativeId]/page` 589.9 KB against the 588 budget. The shared
+    // date helpers now carry the Bulgarian month/weekday tables and the
+    // date-fns `bg` locale on every page, so dates and relative times render
+    // in the reader's language. 594 is measured + ~4, the convention.
+    'root': 594,
 };
 
 /** Map an app route key to a budget key. */
