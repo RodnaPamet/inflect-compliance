@@ -52,11 +52,20 @@ import { runInGlobalContext } from '@/lib/db-context';
  * the drain needs no tenant to address the row, and holding tenant ids here
  * would be a second copy of something the row already knows.
  */
-const inFlight = new Set<string>();
+/**
+ * Keyed by the execution, not the run (#5854): a worker that holds a run lease
+ * is keyed by its attempt token, so the drain pauses a row only while that
+ * token still holds it, and a second execution of the same run in this process
+ * (one that took over after the first one's lease lapsed) is its own entry. An
+ * execution with no lease (an inline run) is keyed by the run id, as before.
+ */
+const inFlight = new Map<string, { runId: string; leaseToken: string | undefined }>();
 
-/** Begin executing `runId` in this process. */
-export function trackInFlightRun(runId: string): void {
-    inFlight.add(runId);
+const keyOf = (runId: string, leaseToken: string | undefined): string => leaseToken ?? `run:${runId}`;
+
+/** Begin executing `runId` in this process, under the lease `leaseToken` when it holds one. */
+export function trackInFlightRun(runId: string, leaseToken?: string): void {
+    inFlight.set(keyOf(runId, leaseToken), { runId, leaseToken });
 }
 
 /**
@@ -64,8 +73,8 @@ export function trackInFlightRun(runId: string): void {
  * no longer executing, and leaving it tracked would have the drain pause a row
  * that has already settled to FAILED.
  */
-export function untrackInFlightRun(runId: string): void {
-    inFlight.delete(runId);
+export function untrackInFlightRun(runId: string, leaseToken?: string): void {
+    inFlight.delete(keyOf(runId, leaseToken));
 }
 
 /** A snapshot, for the drain and for tests. Never the live set. */
@@ -86,7 +95,7 @@ export function untrackInFlightRun(runId: string): void {
 startAgentRunsInFlightReporting(() => inFlight.size);
 
 export function inFlightRunIds(): string[] {
-    return [...inFlight];
+    return [...new Set([...inFlight.values()].map((e) => e.runId))];
 }
 
 /** Test-only: drop everything this process thinks it is running. @internal */
@@ -117,10 +126,18 @@ export interface PauseInFlightRunsOutcome {
  * stopped; this log line records why.
  */
 export async function pauseInFlightRuns(budgetMs: number): Promise<PauseInFlightRunsOutcome> {
+    const entries = [...inFlight.values()];
     const ids = inFlightRunIds();
     if (ids.length === 0) {
         return { attempted: 0, paused: 0, timedOut: false };
     }
+    // A LEASED execution pauses its row only while its token still holds it
+    // (#5854): a run another worker took over after this one's lease lapsed is
+    // that worker's, and pausing it would stop work this process is not doing.
+    // An unleased one (an inline run) is paused by id, as before.
+    const unleased = [...new Set(entries.filter((e) => e.leaseToken === undefined).map((e) => e.runId))];
+    const leased = entries.flatMap((e) => (e.leaseToken === undefined ? [] : [{ id: e.runId, leaseHolder: e.leaseToken }]));
+    const owned = [...(unleased.length > 0 ? [{ id: { in: unleased } }] : []), ...leased];
 
     let timedOut = true;
     const work = (async (): Promise<number> => {
@@ -132,22 +149,33 @@ export async function pauseInFlightRuns(budgetMs: number): Promise<PauseInFlight
         // `id: { in: ids }` with a LITERAL array — the one `in` shape Prisma
         // validates. See the teardown note in tests/integration/db-helper.ts for
         // why `{ in: someUndefined }` would be an unpredicated write.
+        //
+        // AND THE LEASE IS RELEASED WITH THE PAUSE (#5854), so the job a
+        // person's resume enqueues can claim the run. The engine still running
+        // here then reads its run as no longer its own at its next check,
+        // stops, and its writes are fenced: before the lease, it carried on and
+        // could settle COMPLETED over the PAUSED.
         const res = await runInGlobalContext((tx) =>
             tx.workflowRun.updateMany({
-                where: { id: { in: ids }, status: 'RUNNING' },
-                data: { status: 'PAUSED' },
+                where: { status: 'RUNNING', OR: owned },
+                data: { status: 'PAUSED', leaseHolder: null, leaseExpiresAt: null },
             }),
         );
         return res.count;
     })();
 
+    // Cleared once the race is decided, so a drain that finished early keeps
+    // no budget timer alive behind it.
+    let budgetTimer: ReturnType<typeof setTimeout> | undefined;
     const paused = await Promise.race([
         work.then((count) => {
             timedOut = false;
             return count;
         }),
-        new Promise<number>((resolve) => setTimeout(() => resolve(0), budgetMs)),
-    ]).catch((err) => {
+        new Promise<number>((resolve) => {
+            budgetTimer = setTimeout(() => resolve(0), budgetMs);
+        }),
+    ]).finally(() => clearTimeout(budgetTimer)).catch((err) => {
         timedOut = false;
         logger.warn('shutdown: pausing in-flight agentic runs failed', {
             component: 'shutdown',

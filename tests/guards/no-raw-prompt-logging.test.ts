@@ -212,6 +212,11 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // still log: the usecase for run lifecycle, the driver for each step.
     'src/lib/agentic/drivers/static-driver.ts — identifier bound elsewhere',
     'src/lib/agentic/run-concurrency-policy.ts — identifier bound elsewhere',
+    // The run lease (#5854 finding 2): two warns, a renewal stopped past the
+    // wall clock and a renewal that failed. Every value is a tenant id, a run
+    // id or the database driver's `err.message`. The module holds no model
+    // call, no transcript and no tool arguments.
+    'src/lib/agentic/run-lease.ts — identifier bound elsewhere',
     // #3473 — the same shape as every other policy module in this family: the
     // log line names `tenantId` and `requestId`, which the rule cannot follow
     // to their bindings. REGISTERED rather than reworded, because that is this
@@ -903,7 +908,12 @@ const SINK_FLOOR = 30;
 // the refusal warn's closed `reason` code and its audit rows' ids, finding
 // codes and references. The report it ingests carries no text of a tool
 // definition, and it calls no model.
-const MEASURED_HOLES = 235;
+// 235 -> 242 on 2026-11-23 (#5854 finding 2, the run lease). Seven holes, all
+// `identifier bound elsewhere` over ids and one database error: five in
+// `run-lease.ts`'s two renewal warns (tenant id, run id, `err.message`) and
+// two in `workflow-runs.ts`'s lease-release warn (tenant id, run id). No model
+// text, transcript or tool argument is in scope at any of them.
+const MEASURED_HOLES = 242;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field

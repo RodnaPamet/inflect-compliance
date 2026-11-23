@@ -4,6 +4,7 @@ import { appendAuditEntry } from '@/lib/audit';
 import { recordAgentGuardBlock } from '@/lib/observability/metrics';
 import type { RunCapHalt } from '@/lib/agentic/run-caps';
 import { recordAgentRunCapHalt } from '@/lib/observability/metrics';
+import { runLeaseLost } from '@/lib/agentic/run-lease';
 
 /**
  * HOW A RUN ROW IS SETTLED — shared by every driver.
@@ -40,10 +41,16 @@ export async function updateRun(
     // lands: the tokens were spent, and the operator's status, reason and
     // `completedAt` are untouched by it.
     const settles = Object.prototype.hasOwnProperty.call(data, 'status');
+    // AND NO WRITE AT ALL LANDS FOR A WORKER THAT LOST THE RUN (#5854). A
+    // context holding a run lease writes only while the row still names its
+    // token: another worker claimed the run after this one's lease lapsed, or
+    // the SIGTERM drain paused it, and either way the row is somebody else's.
+    // A context with no lease (every inline run) adds no condition.
+    const leased = ctx.runLeaseToken !== undefined ? { leaseHolder: ctx.runLeaseToken } : {};
     try {
         await runInTenantContext(ctx, (db) =>
             db.workflowRun.update({
-                where: settles ? { id: runId, status: { not: 'ABORTED' } } : { id: runId },
+                where: settles ? { id: runId, status: { not: 'ABORTED' }, ...leased } : { id: runId, ...leased },
                 data: data as never,
                 // An `update` RETURNS the row, and Prisma maps every scalar it
                 // returns — so a run stamped with an engine this build does not
@@ -61,7 +68,13 @@ export async function updateRun(
         // No row matched (P2025). Whether that is the abort or a run that is
         // not there is a question for the row, not for the error's shape: only
         // a row that IS aborted makes this a no-op. Anything else still throws.
-        if (settles && (await readRunSettlementState(ctx, runId))?.status === 'ABORTED') return false;
+        if (ctx.runLeaseToken !== undefined || settles) {
+            const row = await readRunSettlementState(ctx, runId);
+            if (settles && row?.status === 'ABORTED') return false;
+            // The lease is gone: this worker writes nothing more, and that is
+            // not an error. The run is the new holder's (or a paused run's).
+            if (row && runLeaseLost(ctx, row)) return false;
+        }
         throw err;
     }
 }
@@ -82,11 +95,11 @@ export const OPERATOR_ABORT_MESSAGE = 'run_aborted_by_operator: an operator stop
 export async function readRunSettlementState(
     ctx: RequestContext,
     runId: string,
-): Promise<{ status: string; errorMessage: string | null } | null> {
+): Promise<{ status: string; errorMessage: string | null; leaseHolder: string | null } | null> {
     return runInTenantContext(ctx, (db) =>
         db.workflowRun.findFirst({
             where: { id: runId, tenantId: ctx.tenantId },
-            select: { status: true, errorMessage: true },
+            select: { status: true, errorMessage: true, leaseHolder: true },
         }),
     );
 }
@@ -106,7 +119,14 @@ export async function readRunSettlementState(
  * stop.
  */
 export async function isRunAborted(ctx: RequestContext, runId: string): Promise<boolean> {
-    return (await readRunSettlementState(ctx, runId))?.status === 'ABORTED';
+    const row = await readRunSettlementState(ctx, runId);
+    // A RUN THIS WORKER NO LONGER HOLDS STOPS HERE TOO (#5854). The same
+    // check, the same stop: another worker claimed it after this one's lease
+    // lapsed, or the SIGTERM drain paused it, and the engine leaves the loop as
+    // it leaves at an Abort. Its settlement then lands nowhere (`updateRun` is
+    // fenced on the token) and `executeFrom` reports the lost lease, not an
+    // ABORTED. A context with no lease reads exactly as before.
+    return row?.status === 'ABORTED' || runLeaseLost(ctx, row);
 }
 
 /**

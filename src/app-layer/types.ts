@@ -143,6 +143,21 @@ export interface RequestContext {
      * when it is set. It grants nothing; it only ever narrows.
      */
     readOnlyRun?: true;
+
+    /**
+     * The attempt token of the run lease THIS execution holds (#5854 finding
+     * 2), set by `executeQueuedWorkflowRun` once its claim succeeded and
+     * absent on every other context: a request, an inline static run, a job.
+     *
+     * It is a FENCE. While it is set, `updateRun` and `recordStep` write only
+     * while the run row still names this token, and `isRunAborted` reads a run
+     * held by somebody else as stopped, so a worker that lost the run (another
+     * worker claimed it after the lease lapsed, or the SIGTERM drain paused
+     * it) stops at its next check and writes nothing more. It grants nothing;
+     * it only ever narrows. Absent, every one of those behaves exactly as it
+     * did before the lease existed.
+     */
+    runLeaseToken?: string;
 }
 
 /**

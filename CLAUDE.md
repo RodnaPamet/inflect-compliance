@@ -3277,6 +3277,32 @@ abort, telling it from an engine's own ABORTED (a kill, a guard block) by
 is terminal: the abort refuses it (`isLiveRunStatus`), and its decision rows
 and metric settle as a FAILED run's.
 
+**A queued run executes in at most one place at a time** (#5854 finding 2,
+`src/lib/agentic/run-lease.ts`). `executeQueuedWorkflowRun` CLAIMS the run
+before it executes any of it: a conditional UPDATE, on the database's clock,
+that sets `WorkflowRun.leaseHolder` to a fresh attempt token only where the run
+is RUNNING and nobody holds it or the lease has lapsed. A worker that cannot
+claim does nothing (`skipped: LEASE_HELD`), after watching the lease for at
+most one TTL so a dead holder's run is taken over rather than left to the
+reaper. The holder renews while it runs and releases in `finally`. The token
+rides on the context (`RequestContext.runLeaseToken`) and is a FENCE: `updateRun`
+and `recordStep` write only while the row names it, and `isRunAborted` reads a
+run held by somebody else as stopped, so a worker that lost the run stops at the
+check where it stops for an Abort and writes nothing more (`skipped:
+LEASE_LOST`); `executeFrom` takes none of its settlement steps for it. Expiry
+alone fences nobody. The SIGTERM drain pauses only rows its own tokens hold and
+releases them; the reaper reaps a run only with no live lease and clears the one
+it reaps; an operator's Abort wins over a held lease. Inline runs (a static
+start or resume in the request) take no lease, and with no token every fence is
+a no-op. Do not add a write path for a run's row or ledger that bypasses
+`updateRun` / `recordStep`: it would not be fenced. Each `agent-run-execute`
+enqueue names its segment (`agentRunExecuteJobId`: the run's `startedAt`, or the
+`updatedAt` its #5119 resume claim left), so BullMQ drops a duplicate enqueue;
+never key it on `stepCount` or a clock read at the enqueue. A retry still
+re-RUNS a reasoning segment from its opening message, so a tool the dead attempt
+called can run again: replaying or refusing it is an open owner decision (the
+note `docs/implementation-notes/2026-11-23-fix-5854-run-claim.md`).
+
 **"Is this a reasoning engine" is `isReasoningEngine(driver)`**
 (`src/lib/agentic/agent-driver.ts`), never a comparison with `'flue'`. It is
 backed by a `Record<AgentDriver, boolean>`, so a driver added to `AGENT_DRIVERS`
