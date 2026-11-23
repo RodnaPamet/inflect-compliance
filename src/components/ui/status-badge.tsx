@@ -38,8 +38,11 @@ const statusBadgeVariants = cva(
         // where the standard tone would feel too loud.
         subtle: "bg-bg-subtle",
       },
+      // No badge renders under 12 px (owner decision, 2026-11-23, #5871):
+      // `sm` was 10 px, unreadable on a phone. `sm` now differs from `md` in
+      // padding only — on desktop too.
       size: {
-        sm: "px-1.5 py-0.5 text-[10px]",
+        sm: "px-1.5 py-0.5 text-xs",
         md: "px-2 py-1 text-xs",
       },
     },

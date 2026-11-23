@@ -115,8 +115,10 @@ export function MetaStrip({
 }
 
 function MetaItemRender({ item }: { item: MetaItem }) {
+    // 12 px, not 11 (owner decision, 2026-11-23, #5872) — the same eyebrow
+    // as KPIStat's label, which a `metric` item renders.
     const labelClass =
-        'text-[11px] font-medium uppercase tracking-wide text-content-muted';
+        'text-xs font-medium uppercase tracking-wide text-content-muted';
 
     if (item.kind === 'status') {
         const inner = (

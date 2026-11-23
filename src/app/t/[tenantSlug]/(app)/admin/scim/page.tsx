@@ -234,7 +234,7 @@ export default function ScimAdminPage() {
                     <Heading level={3}>{t('scim.tokensHeading')}</Heading>
                     <Button
                         variant="primary"
-                        icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                        icon={<Plus />}
                         onClick={() => setShowForm(true)}
                         id="generate-token-btn"
                         disabled={generating}

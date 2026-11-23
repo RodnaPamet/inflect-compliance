@@ -200,7 +200,8 @@ export function KPIStat({
             )}
             data-testid={testId}
         >
-            <span className="text-[11px] font-medium uppercase tracking-wide text-content-muted">
+            {/* 12 px, not 11 (owner decision, 2026-11-23, #5872). */}
+            <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
                 {label}
             </span>
             <div className="flex items-baseline gap-tight flex-wrap">
