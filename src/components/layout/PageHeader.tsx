@@ -60,12 +60,17 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@inflect/ui/lib/cn";
+import { TOUCH_HIT_AREA_CLASS } from "@inflect/ui/components/ui/hit-area";
 import { classifyRoute } from "@/lib/nav/page-segregation";
 import {
     Breadcrumbs,
     type BreadcrumbItem,
 } from "@/components/ui/breadcrumbs";
-import { useBreadcrumbs } from "@/components/layout/breadcrumbs-store";
+import {
+    BACK_LINK_ATTR,
+    PHONE_TRAIL_CLASS,
+    useBreadcrumbs,
+} from "@/components/layout/breadcrumbs-store";
 import { PageActions } from "@/components/layout/PageActions";
 import { BackAffordance } from "@/components/nav/BackAffordance";
 import {
@@ -196,18 +201,25 @@ export function PageHeader({
     // the repo's own MAIN vs SUBPAGE source of truth (page-segregation).
     const pathname = usePathname();
     const titleHidden = classifyRoute(pathname ?? "") === "main";
+    const mobileCrumbs = breadcrumbs && breadcrumbs.length > 0;
 
     return (
         <header
             className={cn(
-                "flex items-start justify-between gap-default flex-wrap",
+                // Below `sm` the header is a column: the title block takes the
+                // full width and the actions sit under it, so a long title is
+                // never squeezed into half a phone screen beside the buttons.
+                // From `sm` up it is the row it always was.
+                "flex flex-col items-stretch gap-default sm:flex-row sm:items-start sm:justify-between sm:flex-wrap",
                 className,
             )}
             data-testid={dataTestId}
         >
             <div className="min-w-0">
-                {breadcrumbs && breadcrumbs.length > 0 && (
-                    <div className="md:hidden">
+                {mobileCrumbs && (
+                    // Hidden on a phone too where a back link is showing: one
+                    // way back, in one place (#5822, `PHONE_TRAIL_CLASS`).
+                    <div className={PHONE_TRAIL_CLASS}>
                         <Breadcrumbs
                             items={breadcrumbs}
                             className="mb-1"
@@ -220,8 +232,13 @@ export function PageHeader({
                 ) : back ? (
                     <Link
                         href={back.href}
-                        className="text-content-muted text-xs hover:text-content-emphasis transition-colors duration-150 ease-out"
+                        className={cn(
+                            "relative inline-flex items-center text-content-muted text-xs hover:text-content-emphasis transition-colors duration-150 ease-out",
+                            // A 44 px tap target on a phone, layout untouched.
+                            TOUCH_HIT_AREA_CLASS,
+                        )}
                         data-testid="page-header-back"
+                        {...{ [BACK_LINK_ATTR]: "" }}
                     >
                         ← {back.label}
                     </Link>

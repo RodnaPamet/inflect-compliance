@@ -1,43 +1,128 @@
 'use client';
 
 /**
- * `<PageActions>` — Roadmap-3 PR-1.
+ * `<PageActions>` — Roadmap-3 PR-1, phone layout since the mobile roadmap P1.6.
  *
- * The single canonical shape for every page-header action cluster
- * across the product. Until this PR each page hand-rolled its own
- * `<>...</>` fragment with mixed button sizes, gaps, and order —
- * the user observed the inconsistency directly ("action buttons in
- * the top right of each page have differences in position, size,
- * and color").
+ * The single canonical shape for every page-header action cluster. Pages pass
+ * their own `<Button>` / `<Link>` children; the primitive owns the geometry.
  *
- * What `<PageActions>` locks
- *   • Layout — `flex flex-wrap-reverse items-center justify-end gap-tight`.
- *     `flex-wrap-reverse` keeps the rightmost button (typically
- *     primary) visually rightmost even when the cluster wraps to a
- *     second line on a narrow viewport.
- *   • Right-alignment — the cluster always pushes to the trailing
- *     edge of the page-header row.
- *   • Spacing — `gap-tight` (8 px) between buttons, no exceptions.
- *   • Min height — `min-h-9` so the cluster's vertical footprint
- *     matches `<Button size="sm">`'s `h-9` and the row never reads
- *     as ragged.
+ * Desktop (md+) — unchanged
+ *   `flex md:flex-wrap-reverse items-center sm:justify-end gap-tight min-h-9`.
+ *   Right-aligned, `gap-tight` between buttons, and `flex-wrap-reverse` keeps
+ *   the rightmost button (typically the primary) rightmost when a wide cluster
+ *   wraps. Every action renders as a button, in source order.
+ *
+ * Phone (below md) — the primary action, at most one more, and a "⋯" menu
+ *   Owner decision, 2026-11-22. A phone cannot hold five header buttons: they
+ *   wrapped into a ragged, right-aligned stack in REVERSE reading order (that
+ *   is what `flex-wrap-reverse` does to a cluster that wraps more than once).
+ *   So below md:
+ *     • An action wrapped in `<OverflowAction>` leaves the row and becomes an
+ *       item of a labelled "⋯" menu (the Popover primitive's `Menu`/`Item`,
+ *       which a phone opens as a bottom sheet). The menu lists items in the
+ *       order they appear in the page's source.
+ *     • Every other action stays a visible button. A page keeps that to the
+ *       primary and at most one more — and a destructive action (an agent's
+ *       "Stop agent") is never put in the menu: it stays a visible destructive
+ *       button.
+ *     • `<PrimaryAction>` marks the primary, which a phone shows FIRST:
+ *       reading order, primary first. On desktop the same button keeps its
+ *       place (conventionally last, i.e. rightmost).
+ *     • The cluster wraps normally (not reversed), left-aligned below `sm`,
+ *       where `<PageHeader>` stacks it under a full-width title.
+ *   Marking is explicit, never guessed from a button's variant: whether an
+ *   action can wait behind a menu is a decision about the page, not a style.
+ *
+ * A page cannot defeat it with a wrapper
+ *   A page that passed its actions inside its own `<div className="flex …">`
+ *   turned the whole group into ONE flex item that does not wrap, so at 360 px
+ *   it was clipped by the shell. A single plain `<div>` child is therefore
+ *   unwrapped: its children become the cluster's items, and the wrapper's
+ *   classes are dropped. Pass a fragment instead.
  *
  * What it does NOT do
  *   • Doesn't enforce button SIZE — that's the
- *     `tests/guards/page-actions-discipline.test.ts` ratchet's
- *     job. The primitive is the layout; the ratchet is the
- *     discipline.
- *   • Doesn't own button content — pages still pass their own
- *     `<Button>` / `<Link>` children. The primitive only owns
- *     the cluster geometry.
- *
- * How `<PageHeader>` uses it
- *   `<PageHeader>` wraps its `actions` slot in `<PageActions>`
- *   automatically. Pages that pass actions to PageHeader get the
- *   canonical shape without changing their call site.
+ *     `tests/guards/page-actions-discipline.test.ts` ratchet's job.
+ *   • Doesn't cap the number of visible actions — the page decides which are
+ *     overflow. `<PageHeader>` wraps its `actions` slot in this primitive, so
+ *     `<EntityDetailLayout>` and `<EntityListPage>` get it for free.
  */
-import { type ReactNode } from 'react';
+import {
+    Children,
+    createContext,
+    isValidElement,
+    useCallback,
+    useContext,
+    useEffect,
+    useId,
+    useLayoutEffect,
+    useMemo,
+    useRef,
+    useState,
+    type ElementType,
+    type ReactElement,
+    type ReactNode,
+} from 'react';
 import { cn } from '@inflect/ui/lib/cn';
+import { PageActionsMenu } from './PageActionsMenu';
+
+// ─── Overflow registry ────────────────────────────────────────────────
+
+/** What the "⋯" menu needs to render one overflow action. */
+export interface OverflowEntry {
+    label: string;
+    href?: string;
+    disabled?: boolean;
+    icon?: ElementType;
+    group?: string;
+    testId?: string;
+    /** Stable; calls the action's latest `onSelect`. */
+    select: () => void;
+    /** The action's desktop slot — its position orders the menu. */
+    anchor: HTMLElement | null;
+}
+
+interface OverflowRegistry {
+    set: (id: string, entry: OverflowEntry) => void;
+    remove: (id: string) => void;
+}
+
+const OverflowRegistryContext = createContext<OverflowRegistry | null>(null);
+
+/** Source (document) order, which is the page's reading order. */
+function byDocumentPosition(a: OverflowEntry, b: OverflowEntry): number {
+    if (!a.anchor || !b.anchor || a.anchor === b.anchor) return 0;
+    return a.anchor.compareDocumentPosition(b.anchor) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+        ? -1
+        : 1;
+}
+
+/** A flex-layout utility, optionally behind a breakpoint: nothing it draws. */
+const LAYOUT_ONLY_CLASS =
+    /^(?:[a-z0-9]+:)*(?:flex|inline-flex|flex-(?:row|col|wrap|nowrap|wrap-reverse)|items-[a-z]+|justify-[a-z]+|gap(?:-[xy])?-[\w.]+)$/;
+
+/**
+ * A single plain `<div>` child that only lays its children out is a page's own
+ * wrapper; its children are the real actions. See the docblock. A div that is
+ * a box in its own right — an id, a border, padding, any other prop — is left
+ * alone (the admin page's theme chip is one).
+ */
+function unwrapSingleWrapper(children: ReactNode): ReactNode {
+    const items = Children.toArray(children);
+    if (items.length !== 1) return children;
+    const only = items[0];
+    if (!isValidElement(only) || only.type !== 'div') return children;
+    const props = (only as ReactElement<{ children?: ReactNode; className?: string }>).props;
+    const otherProps = Object.keys(props).filter((k) => k !== 'children' && k !== 'className');
+    const classes = (props.className ?? '').split(/\s+/).filter(Boolean);
+    if (otherProps.length > 0 || !classes.every((c) => LAYOUT_ONLY_CLASS.test(c))) {
+        return children;
+    }
+    return props.children;
+}
+
+// ─── <PageActions> ────────────────────────────────────────────────────
 
 export interface PageActionsProps {
     children: ReactNode;
@@ -52,19 +137,156 @@ export function PageActions({
     className,
     'data-testid': dataTestId,
 }: PageActionsProps) {
+    const [entries, setEntries] = useState<ReadonlyMap<string, OverflowEntry>>(
+        () => new Map(),
+    );
+    const registry = useMemo<OverflowRegistry>(
+        () => ({
+            set: (id, entry) =>
+                setEntries((prev) => new Map(prev).set(id, entry)),
+            remove: (id) =>
+                setEntries((prev) => {
+                    if (!prev.has(id)) return prev;
+                    const next = new Map(prev);
+                    next.delete(id);
+                    return next;
+                }),
+        }),
+        [],
+    );
+
+    const overflow = [...entries.values()].sort(byDocumentPosition);
+
     return (
-        <div
-            className={cn(
-                // flex-wrap-reverse keeps primary (rightmost) at
-                // the right edge when wrapping. min-h-9 matches
-                // <Button size="sm">'s h-9 so vertical alignment
-                // stays clean even with mixed-height children.
-                'flex flex-wrap-reverse items-center justify-end gap-tight min-h-9',
-                className,
-            )}
-            data-testid={dataTestId ?? 'page-actions'}
+        <OverflowRegistryContext.Provider value={registry}>
+            <div
+                className={cn(
+                    // Phone: normal wrap, left-aligned below `sm` (the title
+                    // sits full width above). Desktop: the cluster recipe it
+                    // always had — right-aligned, wrap-reverse.
+                    'flex flex-wrap md:flex-wrap-reverse items-center justify-start sm:justify-end gap-tight min-h-9',
+                    className,
+                )}
+                data-testid={dataTestId ?? 'page-actions'}
+            >
+                {unwrapSingleWrapper(children)}
+                {overflow.length > 0 && (
+                    <div className="flex md:hidden max-md:order-last" data-testid="page-actions-more-slot">
+                        <PageActionsMenu entries={overflow} />
+                    </div>
+                )}
+            </div>
+        </OverflowRegistryContext.Provider>
+    );
+}
+
+// ─── <OverflowAction> ─────────────────────────────────────────────────
+
+export interface OverflowActionProps {
+    /** The menu item's label. */
+    label: string;
+    /** Runs when the action is chosen from the menu. */
+    onSelect?: () => void;
+    /** Navigates instead of `onSelect`. */
+    href?: string;
+    disabled?: boolean;
+    /** A component (not an element), so its identity is stable. */
+    icon?: ElementType;
+    /**
+     * A heading for a run of related menu items ("Related"). Consecutive items
+     * with the same group sit under one heading, after a separator.
+     */
+    group?: string;
+    /** Test id for the MENU item (the desktop child keeps its own). */
+    'data-testid'?: string;
+    /**
+     * The desktop rendering: the page's own button or link, exactly as it was
+     * (e.g. `<Link className={buttonVariants(…)} id=…>`). Required, so this
+     * primitive imports no button of its own — that import put the button
+     * graph into the First Load JS of every page with a header.
+     */
+    children: ReactNode;
+}
+
+/**
+ * Marks an action that a phone moves into the "⋯" menu. On desktop it renders
+ * `children` exactly where it stands; below md that
+ * render is hidden and the action is an item of the cluster's menu instead.
+ * Outside a `<PageActions>` it just renders its desktop form.
+ *
+ * Never use it for a destructive action — the owner's rule is that those stay
+ * visible on a phone.
+ */
+export function OverflowAction({
+    label,
+    onSelect,
+    href,
+    disabled,
+    icon: Icon,
+    group,
+    'data-testid': testId,
+    children,
+}: OverflowActionProps) {
+    const registry = useContext(OverflowRegistryContext);
+    const id = useId();
+    const anchorRef = useRef<HTMLSpanElement>(null);
+
+    // The latest handler, read only when the action is chosen.
+    const onSelectRef = useRef(onSelect);
+    useLayoutEffect(() => {
+        onSelectRef.current = onSelect;
+    });
+    const select = useCallback(() => onSelectRef.current?.(), []);
+
+    useEffect(() => {
+        if (!registry) return;
+        registry.set(id, {
+            label,
+            href,
+            disabled,
+            icon: Icon,
+            group,
+            testId,
+            select,
+            anchor: anchorRef.current,
+        });
+    }, [registry, id, label, href, disabled, Icon, group, testId, select]);
+
+    useEffect(() => {
+        if (!registry) return;
+        return () => registry.remove(id);
+    }, [registry, id]);
+
+    if (!registry) return <>{children}</>;
+
+    // `display: contents` at md+ makes the child a direct flex item of the
+    // cluster, exactly as if this wrapper were not there.
+    return (
+        <span
+            ref={anchorRef}
+            className="hidden md:contents"
+            data-page-action="overflow"
         >
             {children}
-        </div>
+        </span>
+    );
+}
+
+// ─── <PrimaryAction> ──────────────────────────────────────────────────
+
+/**
+ * Marks the page's primary action. A phone shows it first in the row; desktop
+ * leaves it where the page put it. Renders nothing extra when its child renders
+ * nothing (e.g. a `<RequirePermission>` that refuses), so the row keeps no gap
+ * for it.
+ */
+export function PrimaryAction({ children }: { children: ReactNode }) {
+    return (
+        <span
+            className="inline-flex max-md:order-first empty:hidden"
+            data-page-action="primary"
+        >
+            {children}
+        </span>
     );
 }

@@ -17,6 +17,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { Heading } from '@/components/ui/typography';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { OverflowAction, PrimaryAction } from '@/components/layout/PageActions';
 import { CardHeader } from '@/components/ui/card-header';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
@@ -363,13 +364,26 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
         [t.notTested, t.pass, t.fail],
     );
 
+    // The header's destinations, named once: each is both a desktop link and,
+    // on a phone, an item of the "⋯" menu.
+    const hubHref = {
+        nis2Gap: `/t/${tenantSlug}/audits/nis2-gap`,
+        businessContinuity: `/t/${tenantSlug}/audits/business-continuity`,
+        frameworks: `/t/${tenantSlug}/frameworks`,
+        scans: `/t/${tenantSlug}/security-testing`,
+        findings: `/t/${tenantSlug}/findings`,
+        incidents: `/t/${tenantSlug}/incidents`,
+    };
+
     return (
         <>
             <PageHeader
                 // The Internal Audit action row (6 pills + New Audit) is wide
                 // enough to wrap onto its own header line; ml-auto keeps it
-                // right-aligned there instead of landing left under justify-between.
-                actionsClassName="ml-auto"
+                // right-aligned there instead of landing left under
+                // justify-between. `sm:` only — below sm the header is a
+                // column and the row starts at the left edge.
+                actionsClassName="sm:ml-auto"
                 breadcrumbs={[
                     { label: tx('crumb.dashboard'), href: `/t/${tenantSlug}/dashboard` },
                     { label: t.title },
@@ -377,26 +391,34 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                 title={t.title}
                 description={t.listDescription || undefined}
                 actions={
-                    <div className="flex flex-wrap items-center gap-tight">
+                    // On a phone (#5815) this was nine links and a button in a
+                    // pile. Now: "New audit" and a "⋯" menu that lists the two
+                    // subpages, then the four related surfaces under their own
+                    // "Related" heading. Desktop is unchanged.
+                    <>
                         {/* PR-O — the actual /audits/* children of Internal Audit
                             (NIS2 Gap, Business Continuity). These live under
                             /audits and are true subpages. */}
                         {hasNis2 && (
-                            <Link
-                                href={`/t/${tenantSlug}/audits/nis2-gap`}
-                                className={cn(buttonVariants({ variant: 'secondary' }))}
-                                id="audits-nis2-gap-link"
-                            >
-                                {tx('nav.nis2Gap')}
-                            </Link>
+                            <OverflowAction label={tx('nav.nis2Gap')} href={hubHref.nis2Gap} data-testid="audits-nis2-gap-menu-item">
+                                <Link
+                                    href={hubHref.nis2Gap}
+                                    className={cn(buttonVariants({ variant: 'secondary' }))}
+                                    id="audits-nis2-gap-link"
+                                >
+                                    {tx('nav.nis2Gap')}
+                                </Link>
+                            </OverflowAction>
                         )}
-                        <Link
-                            href={`/t/${tenantSlug}/audits/business-continuity`}
-                            className={cn(buttonVariants({ variant: 'secondary' }))}
-                            id="audits-business-continuity-link"
-                        >
-                            {tx('nav.businessContinuity')}
-                        </Link>
+                        <OverflowAction label={tx('nav.businessContinuity')} href={hubHref.businessContinuity} data-testid="audits-business-continuity-menu-item">
+                            <Link
+                                href={hubHref.businessContinuity}
+                                className={cn(buttonVariants({ variant: 'secondary' }))}
+                                id="audits-business-continuity-link"
+                            >
+                                {tx('nav.businessContinuity')}
+                            </Link>
+                        </OverflowAction>
 
                         {/* PR-O — "Related" cross-links. These are SEPARATE
                             top-level routes (/frameworks, /security-testing,
@@ -405,41 +427,52 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                             their data feeds the audit story (framework clauses,
                             scan findings as evidence, findings raised against
                             cycles, NIS2 Art.23 incidents), but they are not
-                            /audits children. */}
-                        <span className="ml-1 text-xs text-content-subtle">{tx('hub.related')}</span>
-                        <Link
-                            href={`/t/${tenantSlug}/frameworks`}
-                            className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}
-                            id="audits-frameworks-link"
-                        >
-                            {tx('nav.frameworks')}
-                        </Link>
-                        <Link
-                            href={`/t/${tenantSlug}/security-testing`}
-                            className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}
-                            id="audits-scans-link"
-                        >
-                            {tx('nav.scans')}
-                        </Link>
-                        <Link
-                            href={`/t/${tenantSlug}/findings`}
-                            className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}
-                            id="findings-link-btn"
-                        >
-                            {t.findingsTab}
-                        </Link>
-                        <Link
-                            href={`/t/${tenantSlug}/incidents`}
-                            className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}
-                            id="audits-incidents-link"
-                        >
-                            {tx('nav.incidents')}
-                        </Link>
+                            /audits children. On a phone the "Related" label is
+                            the menu's group heading instead. */}
+                        <span className="ml-1 text-xs text-content-subtle max-md:hidden">{tx('hub.related')}</span>
+                        <OverflowAction label={tx('nav.frameworks')} href={hubHref.frameworks} group={tx('hub.related')} data-testid="audits-frameworks-menu-item">
+                            <Link
+                                href={hubHref.frameworks}
+                                className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}
+                                id="audits-frameworks-link"
+                            >
+                                {tx('nav.frameworks')}
+                            </Link>
+                        </OverflowAction>
+                        <OverflowAction label={tx('nav.scans')} href={hubHref.scans} group={tx('hub.related')} data-testid="audits-scans-menu-item">
+                            <Link
+                                href={hubHref.scans}
+                                className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}
+                                id="audits-scans-link"
+                            >
+                                {tx('nav.scans')}
+                            </Link>
+                        </OverflowAction>
+                        <OverflowAction label={t.findingsTab} href={hubHref.findings} group={tx('hub.related')} data-testid="audits-findings-menu-item">
+                            <Link
+                                href={hubHref.findings}
+                                className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}
+                                id="findings-link-btn"
+                            >
+                                {t.findingsTab}
+                            </Link>
+                        </OverflowAction>
+                        <OverflowAction label={tx('nav.incidents')} href={hubHref.incidents} group={tx('hub.related')} data-testid="audits-incidents-menu-item">
+                            <Link
+                                href={hubHref.incidents}
+                                className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}
+                                id="audits-incidents-link"
+                            >
+                                {tx('nav.incidents')}
+                            </Link>
+                        </OverflowAction>
 
                         {canWrite && (
-                            <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setIsCreateOpen(true)} id="new-audit-btn">{t.newAudit}</Button>
+                            <PrimaryAction>
+                                <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setIsCreateOpen(true)} id="new-audit-btn">{t.newAudit}</Button>
+                            </PrimaryAction>
                         )}
-                    </div>
+                    </>
                 }
             />
 

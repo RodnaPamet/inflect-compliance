@@ -284,7 +284,27 @@ const BUDGETS_KB: Record<string, number> = {
     // date helpers now carry the Bulgarian month/weekday tables and the
     // date-fns `bg` locale on every page, so dates and relative times render
     // in the reader's language. 639 is measured + ~4, the convention.
-    'dashboard': 639,
+    //
+    // Raised 635 -> 639 by the mobile page-header batch (#5853, same owner
+    // request). Local `next build --webpack` runs, main (3c3b192b0) against
+    // the branch: `controls/dashboard/page` 631.7 -> 635.4 KB (+3.7). What the
+    // page now loads is the header's phone overflow: `PageActions`' registry,
+    // `OverflowAction`/`PrimaryAction` and the "⋯" menu (about 2.3 KB of
+    // module code together), plus translated back-link keys (+0.1). Attributed
+    // with single-variable builds, same route, KB:
+    //       first push: trail rule as a JS context in ClientProviders  639.3 (CI)
+    //       trail rule moved to CSS (no JS at all)                     638.2
+    //       "⋯" menu loaded with next/dynamic                          638.2
+    //       ... and PageActions importing no button of its own          644.5
+    //       menu imported statically instead                           635.4
+    // Lazy-loading the menu was measured WORSE (its async chunk regrouped the
+    // shared split chunks around it), so it is a static import. 639 is
+    // measured + ~4, the convention.
+    //
+    // Combined when #5853 merged after #5858: 634.8 (#5858 on CI) + 3.7 (this
+    // batch, measured locally above) = about 638.5 against 639, so 643 is the
+    // combined measured + ~4. Re-measured on CI for the merge commit.
+    'dashboard': 643,
     // Raised 653 → 654 in the Tasks list fixes (#4300, #4278; owner decision).
     // Main measured this route at 652.9 KB (0.1 KB left); the PR measured
     // 653.2. The growth is in the task form and edit panel that the risk
@@ -411,7 +431,20 @@ const BUDGETS_KB: Record<string, number> = {
     // date helpers now carry the Bulgarian month/weekday tables and the
     // date-fns `bg` locale on every page, so dates and relative times render
     // in the reader's language. 686 is measured + ~4, the convention.
-    'controls': 686,
+    //
+    // Raised 683 -> 689 by the mobile page-header batch (#5853, same owner
+    // request). Local `next build --webpack` runs, main (3c3b192b0) against
+    // the branch: `controls/.../tests/[planId]/page` 681.5 -> 685.3 KB
+    // (+3.8). This route is the batch's P0 page (#5830): its hand-rolled,
+    // non-wrapping header — which clipped "Run test" off a phone — became the
+    // shared `<PageHeader>`, so it now loads the header and the phone overflow
+    // (`PageActions` and its "⋯" menu, ~2.3 KB) that other detail pages
+    // already had. Attributed in the `dashboard` note. 689 is measured + ~4.
+    //
+    // Combined when #5853 merged after #5858: 682.2 (#5858 on CI) + 3.8 (this
+    // batch, measured locally above) = about 686.0, so 690 is the combined
+    // measured + ~4. Re-measured on CI for the merge commit.
+    'controls': 690,
     // Catch-all for any other tenant page.
     //
     // Raised 682 → 688 by the AI-roadmap integration (#5323, owner decision
@@ -489,7 +522,14 @@ const BUDGETS_KB: Record<string, number> = {
     // date helpers now carry the Bulgarian month/weekday tables and the
     // date-fns `bg` locale on every page, so dates and relative times render
     // in the reader's language. 594 is measured + ~4, the convention.
-    'root': 594,
+    //
+    // Raised 594 -> 598 when the mobile page-header batch (#5853) merged after
+    // #5858 and #5859 (owner request 2026-11-23 to work through the mobile
+    // issues #5805). CI's webpack build of the merge commit: `org/.../
+    // initiatives/[initiativeId]/page` 594.3 KB — the Bulgarian catalog
+    // labels #5859 added and the header's phone overflow registry, both in
+    // the shared shell. 598 is measured + ~4, the convention.
+    'root': 598,
 };
 
 /** Map an app route key to a budget key. */
