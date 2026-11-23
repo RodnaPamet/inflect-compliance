@@ -80,6 +80,7 @@
       "noItemsFound": "No items found"
     },
     "ui": {
+      "shortcutUnpinNode": "Unpin the diagram node",
       "select": "Select…",
       "noResults": "No results",
       "loading": "Loading…",
@@ -9685,6 +9686,7 @@
   "ui": {
     "filterList": {
       "clearFilters": "Clear filters",
+      "shortcutClearAll": "Clear all filters",
       "removeFilter": "Remove the {label} filter"
     },
     "dataTableCards": {
@@ -19605,9 +19607,7 @@
   },
   "shortcutDescriptions": {
     "openFilters": "Open filters",
-    "clearAllFilters": "Clear all filters",
     "closeScoreExplainer": "Close the risk score explainer",
-    "unpinSankeyNode": "Unpin the diagram node",
     "applyDateRangePreset": "Apply a date-range preset",
     "exitDrillDown": "Exit the current drill-down level"
   },

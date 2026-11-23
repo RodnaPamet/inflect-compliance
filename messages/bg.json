@@ -80,6 +80,7 @@
       "noItemsFound": "Няма намерени елементи"
     },
     "ui": {
+      "shortcutUnpinNode": "Освободи закачения възел на диаграмата",
       "select": "Изберете…",
       "noResults": "Няма резултати",
       "loading": "Зареждане…",
@@ -9685,6 +9686,7 @@
   "ui": {
     "filterList": {
       "clearFilters": "Изчисти филтрите",
+      "shortcutClearAll": "Изчисти всички филтри",
       "removeFilter": "Премахни филтъра „{label}“"
     },
     "dataTableCards": {
@@ -19605,9 +19607,7 @@
   },
   "shortcutDescriptions": {
     "openFilters": "Отвори филтрите",
-    "clearAllFilters": "Изчисти всички филтри",
     "closeScoreExplainer": "Затвори обяснението на оценката на риска",
-    "unpinSankeyNode": "Освободи закачения възел на диаграмата",
     "applyDateRangePreset": "Приложи готов период",
     "exitDrillDown": "Излез от текущото ниво на детайлизация"
   },

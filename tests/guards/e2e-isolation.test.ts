@@ -383,6 +383,7 @@ const SHARED_SEED_ALLOWLIST: ReadonlyArray<{ file: string; reason: string }> = [
     { file: 'tooltip-and-copy.spec.ts', reason: 'read-only tooltip + clipboard chrome' },
     { file: 'mobile-layout.spec.ts', reason: 'read-only: loads the fixed mobile route set at phone width and opens menus, drawers and the create sheet to measure them; never submits anything. Needs the shared seed so list, detail and P0 pages have records to lay out. Its ratchet counts routes failing a metric, not elements, so rows another spec adds to the shared tenant cannot move it' },
     { file: 'mobile-measure.spec.ts', reason: 'touches no tenant at all: every case renders a static page with page.setContent and measures it' },
+    { file: 'mobile-safe-area.spec.ts', reason: 'read-only: opens the new-risk modal, the assistant sheet, the navigation drawer and the user menu on a phone with an emulated home indicator, measures them and closes them; never submits anything' },
     // ── Self-isolating: build their own tenant via createIsolatedTenant ──
     { file: 'e2e-utils-isolation.spec.ts', reason: 'exercises the isolation utils themselves; provisions its own tenants' },
     { file: 'onboarding.spec.ts', reason: 'beforeAll createIsolatedTenant + serial wizard flow on its OWN tenant' },

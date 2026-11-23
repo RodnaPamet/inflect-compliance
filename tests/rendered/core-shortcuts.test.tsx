@@ -308,8 +308,8 @@ describe('Call sites carry palette-ready descriptions', () => {
         {
             file: 'src/components/ui/filter/filter-list.tsx',
             description: 'Clear all filters',
-            call: 'tShortcut("clearAllFilters")',
-            i18nKey: 'shortcutDescriptions.clearAllFilters',
+            call: 't("shortcutClearAll")',
+            i18nKey: 'ui.filterList.shortcutClearAll',
         },
         {
             file: 'src/components/ui/table/selection-toolbar.tsx',

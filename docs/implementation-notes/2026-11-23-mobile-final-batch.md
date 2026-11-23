@@ -31,6 +31,10 @@ through the catalog:
   derived category is a framework's persisted value (tenant data) and passes
   through as stored; the match is exact, so legacy free text such as
   "Business Continuity" is not mistaken for a domain.
+  The Bulgarian names are longer, and the rail truncated its group name on one
+  line inside an accordion trigger that could not shrink below it, so the
+  count and chevron of "Физическа сигурност и сигурност на средата" left the
+  phone's rail. The name now wraps (`break-words`, `min-w-0` on the trigger).
 - *ISO 27001 theme sections on the framework page.* The leak detector did
   not count them (an all-caps constant is not prose to it), but the framework
   tree, its detail pane and the minimap named the four sections
@@ -72,6 +76,7 @@ change and the spec holds it as it is.
 | `src/components/layout/MobileNavDrawer.tsx`, `src/components/ui/filter/filter-{select,list}.tsx`, `src/components/ui/SankeyChart.tsx`, `src/components/ui/date-picker/date-range-picker.tsx`, `src/components/risks/RiskScoreExplainer.tsx`, `src/lib/processes/use-canvas-drill-stack.ts` | Shortcut descriptions through the catalog |
 | `src/lib/controls/control-taxonomy.ts` | `iso27001DomainKey`: a domain value → its stable key |
 | `src/app/t/[tenantSlug]/(app)/controls/filter-defs.ts` | `controlCategoryLabel` labels ISO domains from the catalog |
+| `src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx` | The browse rail's group name wraps beside its count |
 | `src/lib/framework-tree/section-label.ts`, `src/components/frameworks/FrameworkExplorer.tsx`, `src/components/ui/FrameworkMinimap.tsx` | ISO theme sections labelled from the catalog |
 | `scripts/mobile-audit/resolve.ts` | Risks' free-text owners are data, not UI |
 | `tests/guards/bulgarian-ui-chrome-sources.test.ts` | No literal shortcut description in `src/`; every ISO domain and theme section labels in Bulgarian |

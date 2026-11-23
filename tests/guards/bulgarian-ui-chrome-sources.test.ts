@@ -320,7 +320,7 @@ describe('I3: the shell and the shared primitives speak through the catalog', ()
             // The domain strings are the taxonomy's grouping, ordering and
             // filter keys and stay English; every surface labels them through
             // `controlCategoryLabel` (#5828).
-            expect(latinIn(controlCategoryLabel(domain, scoped('controls')))).toStrictEqual([]);
+            expect(latinIn(controlCategoryLabel(domain, (key) => bg(`controls.${key}`)))).toStrictEqual([]);
         },
     );
 
