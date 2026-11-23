@@ -115,6 +115,7 @@ import type { PrismaTx } from '@/lib/db-context';
 import { recentAgentCard, type RecentCardResult } from '@/lib/agentic/a2a/card-cache';
 import { compareAgentCard, pinnedCardHashesOf } from '@/lib/agentic/peer-agent-card';
 import { storedReceiptVerificationKey, verifyStoredA2aReceipt } from '@/lib/agentic/a2a/receipt';
+import { AGENTIC_CHECK_TITLES } from '@/lib/agentic/agentic-check-titles';
 
 import { loadReviewObservations, DEFAULT_WINDOW_DAYS } from '../usecases/agent-review-quality';
 import { auditProcedureHandler } from './audit-procedures';
@@ -157,7 +158,7 @@ export interface AgenticCheckDefinition {
 export const AGENTIC_CHECKS: Readonly<Record<AgenticCheckId, AgenticCheckDefinition>> = {
     AGENTIC_POLICY_CARD_CONFORMANCE: {
         id: 'AGENTIC_POLICY_CARD_CONFORMANCE',
-        title: 'Agent policy cards still match what was approved',
+        title: AGENTIC_CHECK_TITLES.AGENTIC_POLICY_CARD_CONFORMANCE,
         // ASI02 is the permitted-TOOL half of a card; ASI03 is its autonomy and
         // data-scope half. The two are one row and one check, but they answer
         // two different risks and an assessor cites them separately.
@@ -166,25 +167,25 @@ export const AGENTIC_CHECKS: Readonly<Record<AgenticCheckId, AgenticCheckDefinit
     },
     AGENTIC_TOOL_MANIFEST_INTEGRITY: {
         id: 'AGENTIC_TOOL_MANIFEST_INTEGRITY',
-        title: 'Every pinned tool manifest still matches the live definition',
+        title: AGENTIC_CHECK_TITLES.AGENTIC_TOOL_MANIFEST_INTEGRITY,
         covers: ['ASI04'],
         severity: 'CRITICAL',
     },
     AGENTIC_REVIEW_QUALITY: {
         id: 'AGENTIC_REVIEW_QUALITY',
-        title: 'Agent proposal reviews show no automation-bias signal',
+        title: AGENTIC_CHECK_TITLES.AGENTIC_REVIEW_QUALITY,
         covers: ['ASI09'],
         severity: 'MEDIUM',
     },
     AGENTIC_KILL_SWITCH_DRILL: {
         id: 'AGENTIC_KILL_SWITCH_DRILL',
-        title: 'The most recent kill-switch drill passed',
+        title: AGENTIC_CHECK_TITLES.AGENTIC_KILL_SWITCH_DRILL,
         covers: ['ASI08', 'ASI10'],
         severity: 'CRITICAL',
     },
     AGENTIC_A2A_INTEGRITY: {
         id: 'AGENTIC_A2A_INTEGRITY',
-        title: 'Peer agents still match their approved cards, keys and receipts',
+        title: AGENTIC_CHECK_TITLES.AGENTIC_A2A_INTEGRITY,
         covers: ['ASI07'],
         severity: 'HIGH',
     },

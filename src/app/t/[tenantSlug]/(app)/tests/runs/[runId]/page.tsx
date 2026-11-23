@@ -9,6 +9,7 @@
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { useState, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
+import { useLocalizedPlanName } from '@/lib/agentic/use-localized-plan-name';
 import { useParams, useRouter } from 'next/navigation';
 import { Paperclip } from 'lucide-react';
 import { textLinkVariants } from '@/components/ui/typography';
@@ -82,6 +83,7 @@ interface TestRunDetail {
 
 export default function TestRunPage() {
     const t = useTranslations('controlTests');
+    const planName = useLocalizedPlanName();
     const EV_KIND_OPTIONS = useMemo(() => buildEvKindOptions(t), [t]);
     // R4-P3 #11 — render enums through the SHARED label builders so the run page
     // speaks the same localized vocabulary ("Completed" / "Pass") as the plan
@@ -478,7 +480,7 @@ export default function TestRunPage() {
 
             title={
                 <span id="test-run-title">
-                    {t('run.title')}{run.testPlan ? ` — ${run.testPlan.name}` : ''}
+                    {t('run.title')}{run.testPlan ? ` — ${planName(run.testPlan.name)}` : ''}
                 </span>
             }
             meta={

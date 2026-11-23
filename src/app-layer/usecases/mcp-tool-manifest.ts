@@ -52,6 +52,7 @@ import {
     resolveAgenticRecipients,
 } from '../notifications/agentic';
 import type { RequestContext } from '../types';
+import { pinDetail, toolSubject } from '@/lib/notifications/agentic-bodies';
 
 // ── Read ────────────────────────────────────────────────────────────────────
 
@@ -425,11 +426,8 @@ export async function writeToolManifestPin(
             // of this module explains why the description reaches no
             // audit row, no log line and no response — a bell row is one
             // more reader, and it is read by people.
-            subject: `The tool "${toolName}"`,
-            detail:
-                previousManifestHash === null
-                    ? 'first approval for this tool'
-                    : `revision ${revision}, replacing the definition previously on file`,
+            subject: toolSubject(toolName),
+            detail: pinDetail(previousManifestHash === null ? null : revision),
             recipientUserIds,
             actorUserId: approvedByUserId,
         });

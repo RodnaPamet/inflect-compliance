@@ -17,6 +17,7 @@
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { useState, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
+import { useLocalizedPlanName } from '@/lib/agentic/use-localized-plan-name';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
@@ -125,6 +126,7 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
     const canManagePlan = appPermissions.tests.create;
     const canRun = appPermissions.tests.execute;
     const t = useTranslations('controls');
+    const planName = useLocalizedPlanName();
     // Second binding: the plan/run enum labels live in `controlTests` (where the
     // /tests register already localized them), so reuse those keys rather than
     // duplicating the vocabulary under `controls`.
@@ -255,7 +257,7 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
         ? [
             { label: t('detailPage.breadcrumbDashboard'), href: tenantHref('/dashboard') },
             { label: t('detailPage.breadcrumbTests'), href: tenantHref('/tests') },
-            { label: plan.name },
+            { label: planName(plan.name) },
         ]
         : [
             { label: t('detailPage.breadcrumbDashboard'), href: tenantHref('/dashboard') },
@@ -271,7 +273,7 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
                 ),
                 href: tenantHref(`/controls/${plan.controlId}`),
             },
-            { label: plan.name },
+            { label: planName(plan.name) },
         ];
 
     return (
@@ -287,7 +289,7 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
             <PageHeader
                 breadcrumbs={breadcrumbs}
                 back={{ smart: true }}
-                title={plan.name}
+                title={planName(plan.name)}
                 titleId="test-plan-title"
                 // A long plan name wraps the actions onto their own line on
                 // desktop; keep them at the right edge, where they sat before.

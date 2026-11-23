@@ -982,7 +982,7 @@ export const METRIC_DEFINITIONS = {
     },
     'thirdparty.tools_pinned': {
         id: 'thirdparty.tools_pinned',
-        label: 'MCP tools with a pinned definition',
+        label: 'Agent tools with a pinned definition',
         population: 'rows in McpToolManifestPin for this tenant',
         moment: 'AS_OF_GENERATION',
         includes: [
