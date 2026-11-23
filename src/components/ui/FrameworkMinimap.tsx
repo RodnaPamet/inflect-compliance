@@ -34,6 +34,7 @@ import { cn } from '@inflect/ui/lib/cn';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ComplianceStatusIndicator } from './ComplianceStatusIndicator';
+import { frameworkSectionLabel } from '@/lib/framework-tree/section-label';
 import {
     type MinimapSection,
     deriveMinimapSections,
@@ -201,6 +202,7 @@ function MinimapRow({
     active: boolean;
     onClick: () => void;
 }) {
+    const tRoot = useTranslations();
     const status = section.status ?? 'unknown';
     return (
         <button
@@ -222,7 +224,7 @@ function MinimapRow({
                 className="self-stretch h-auto"
                 labelled={false}
             />
-            <span className="truncate flex-1 min-w-0">{section.label}</span>
+            <span className="truncate flex-1 min-w-0">{frameworkSectionLabel(section.label, tRoot)}</span>
             <span className="text-[10px] text-content-subtle tabular-nums">
                 {section.descendantCount}
             </span>

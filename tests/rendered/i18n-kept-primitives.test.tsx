@@ -33,12 +33,15 @@
  * (locale, namespace), so a `t` in a hook dependency cannot loop a render.
  */
 
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
 
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
+import { AppToaster } from '@/components/theme/AppToaster';
+import { ComplianceStatusIndicator } from '@/components/ui/ComplianceStatusIndicator';
 import { UserMenu } from '@/components/layout/user-menu';
 import { NavBarBrand, NavBarMobileMenu } from '@/components/layout/nav-bar';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
@@ -859,5 +862,43 @@ describe.each<Locale>(['en', 'bg'])('shared primitives render their own copy —
             screen.getByRole('group').getAttribute('aria-label'),
             'Tree expansion controls',
         );
+    });
+
+    it.each([
+        ['compliant', 'Compliant'],
+        ['partial', 'Partial'],
+        ['gap', 'Gap'],
+        ['na', 'N/A'],
+        ['unknown', 'No data'],
+    ] as const)(
+        'ComplianceStatusIndicator (%s): the chip word and the status name (#5828)',
+        (status, english) => {
+            // Framework detail renders the dot on every tree row and the chip
+            // in the detail pane; "Compliance status: Partial" read in English
+            // on a Bulgarian page.
+            const { unmount } = render(<ComplianceStatusIndicator status={status} mode="chip" />);
+            const chip = screen.getByRole('status');
+            expectLocalised(chip.getAttribute('aria-label'), `Compliance status: ${english}`);
+            expectLocalised(chip.textContent, english);
+            unmount();
+            render(<ComplianceStatusIndicator status={status} mode="dot" />);
+            expectLocalised(screen.getByRole('status').getAttribute('aria-label'), `Compliance status: ${english}`);
+        },
+    );
+
+    it('AppToaster: the close button and the notifications region (#5828)', async () => {
+        // sonner names both in English unless it is told otherwise.
+        render(<AppToaster />);
+        act(() => {
+            toast('-');
+        });
+        const close = await screen.findByRole('button', { name: /./ });
+        expectLocalised(close.getAttribute('aria-label'), 'Close notification');
+        const region = document.querySelector('section[aria-label]');
+        // The region's name is "<name> <hotkey>": the hotkey is sonner's.
+        expectLocalised(region?.getAttribute('aria-label')?.replace(/ alt\+T$/, ''), 'Notifications');
+        act(() => {
+            toast.dismiss();
+        });
     });
 });

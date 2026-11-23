@@ -754,4 +754,19 @@ describe('Controls list — a stored theme category reads as its label', () => {
         await waitFor(() => expect(rail).toHaveTextContent(C.categoryLabels.TECHNOLOGICAL));
         expect(rail).not.toHaveTextContent('TECHNOLOGICAL');
     });
+
+    it('a long group name wraps beside its count instead of pushing it off the rail', async () => {
+        // "Физическа сигурност и сигурност на средата" truncated on one line,
+        // and the trigger (a flex item) would not shrink below it: the count
+        // and the chevron left the rail on a phone. Layout is not measured in
+        // jsdom, so this holds the two classes that make the wrap happen.
+        window.localStorage.setItem('aside:collapsed:controls-list-browse', 'false');
+        mountAs('EDITOR');
+        await screen.findByText(CUSTOM.name);
+        const rail = await screen.findByTestId('controls-browse-aside');
+        const label = await within(rail).findByText(C.categoryLabels.TECHNOLOGICAL);
+        expect(label).not.toHaveClass('truncate');
+        expect(label).toHaveClass('break-words');
+        expect(label.closest('button')).toHaveClass('min-w-0');
+    });
 });

@@ -146,14 +146,33 @@ export async function resolveContext(
  * assets", "Segregation of duties"), and which of them a tenant holds depends
  * on what else ran against the database first, so without them the count
  * moved between a fresh seed and the E2E run.
+ *
+ * A risk's legacy `treatmentOwner` is free text a person typed (the seed's
+ * "Infrastructure"), and the risks list shows it in the Owner column when no
+ * owner account is linked. It is the tenant's words, not the product's; that
+ * it happens to equal a catalog value ("Infrastructure", an asset type) made
+ * the detector call it a leak (#5828).
  */
 export async function dataNames(db: PrismaClient): Promise<Set<string>> {
-    const [tenants, orgs, controls] = await Promise.all([
+    const [tenants, orgs, controls, riskOwners] = await Promise.all([
         db.tenant.findMany({ select: { name: true }, take: 1000 }),
         db.organization.findMany({ select: { name: true }, take: 1000 }),
         db.control.findMany({ select: { name: true }, distinct: ['name'], take: 5000 }),
+        db.risk.findMany({
+            where: { treatmentOwner: { not: null } },
+            select: { treatmentOwner: true },
+            distinct: ['treatmentOwner'],
+            take: 1000,
+        }),
     ]);
-    return new Set([...tenants, ...orgs, ...controls].map((r) => r.name.trim()).filter(Boolean));
+    return new Set(
+        [
+            ...[...tenants, ...orgs, ...controls].map((r) => r.name),
+            ...riskOwners.map((r) => r.treatmentOwner ?? ''),
+        ]
+            .map((n) => n.trim())
+            .filter(Boolean),
+    );
 }
 
 export type ResolvedRoute =

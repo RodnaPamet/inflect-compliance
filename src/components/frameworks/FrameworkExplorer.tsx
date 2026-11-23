@@ -41,6 +41,7 @@ import { TreeView } from '@/components/ui/TreeView';
 import { TreeViewItem } from '@/components/ui/TreeViewItem';
 import { TreeExpandCollapseToggle } from '@/components/ui/TreeExpandCollapseToggle';
 import { ComplianceStatusIndicator } from '@/components/ui/ComplianceStatusIndicator';
+import { frameworkSectionLabel } from '@/lib/framework-tree/section-label';
 import { FrameworkMinimap } from '@/components/ui/FrameworkMinimap';
 import {
     collectExpandableIds,
@@ -364,6 +365,7 @@ function FrameworkTreeRow({
     onSelect,
 }: FrameworkTreeRowProps) {
     const t = useTranslations('panels.framework');
+    const tRoot = useTranslations();
     // Epic 46.3 — compliance status comes from the server. Sections
     // get the aggregated status; requirements get their own. When
     // the tree was loaded without coverage context the status falls
@@ -437,7 +439,7 @@ function FrameworkTreeRow({
     return (
         <TreeViewItem
             id={node.id}
-            label={node.label}
+            label={isSection ? frameworkSectionLabel(node.label, tRoot) : node.label}
             secondary={
                 isSection ? null : (
                     <span className="inline-flex items-center gap-1.5">
@@ -472,12 +474,13 @@ function FrameworkTreeRow({
 
 function SectionDetail({ node }: { node: FrameworkTreeNode }) {
     const t = useTranslations('panels.framework');
+    const tRoot = useTranslations();
     return (
         <div className="p-5">
             <p className="text-xs uppercase tracking-wider text-content-subtle mb-1">
                 {t('section')}
             </p>
-            <Heading level={2}>{node.label}</Heading>
+            <Heading level={2}>{frameworkSectionLabel(node.label, tRoot)}</Heading>
             <p className="text-xs text-content-muted mt-2">
                 {node.descendantCount === 1
                     ? t('sectionCountOne', { count: node.descendantCount })

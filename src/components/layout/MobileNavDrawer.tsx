@@ -71,13 +71,15 @@ export interface MobileNavDrawerProps {
 
 export function MobileNavDrawer({ open, onClose, title, children }: MobileNavDrawerProps) {
     const tm = useTranslations('mobileNav');
+    const tNav = useTranslations('nav');
     const panelTitle = title ?? tm('drawerTitle');
 
     useKeyboardShortcut('Escape', onClose, {
         enabled: open,
         scope: 'overlay',
         priority: 5,
-        description: 'Close navigation drawer',
+        // Listed by the command palette's shortcut group, so it is UI copy.
+        description: tNav('closeNavigationDrawer'),
     });
 
     // Return focus to whatever opened the drawer.

@@ -337,8 +337,6 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx': 1, // partial, 1 prop
     'src/components/TraceabilityPanel.tsx': 1, // partial, 1 prop
     'src/components/dev/swr-devtools.tsx': 6, // 6 jsx; the 3 a11y props left for common.ui (#3209 tranche 4)
-    'src/components/layout/MobileNavDrawer.tsx': 1, // partial, 1 prop
-    'src/components/risks/RiskScoreExplainer.tsx': 1, // partial, 1 prop
     'src/components/ui/ComplianceStatusIndicator.tsx': 4, // no-intl, 4 prop
     'src/components/ui/DonutChart.tsx': 1, // partial, 1 jsx
     'src/components/ui/FrameworkBuilder.tsx': 3, // no-intl, 3 jsx
@@ -347,12 +345,10 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/components/ui/GraphExplorer.tsx': 1, // no-intl, 1 jsx
     'src/components/ui/OnboardingTour.tsx': 1, // no-intl, 1 prop
     'src/components/ui/RichTextEditor.tsx': 1, // partial, 1 jsx
-    'src/components/ui/SankeyChart.tsx': 1, // intl wired #3209; #4794 translated the rest but 1 remains
     'src/components/ui/TreeView.tsx': 1, // no-intl, 1 jsx
     'src/components/ui/ai-assist-rail.tsx': 5, // no-intl, 2 jsx + 3 prop
-    'src/components/ui/date-picker/date-range-picker.tsx': 1, // partial, 1 prop (#5309 paid down the Clear label and the placeholder)
-    'src/components/ui/filter/filter-list.tsx': 2, // 1 jsx + 1 prop ("Clear Filters" now via ui.filterList)
-    'src/components/ui/filter/filter-select.tsx': 2, // no-intl, 1 jsx + 1 prop
+    'src/components/ui/filter/filter-list.tsx': 1, // 1 jsx ("Clear Filters" now via ui.filterList; the Escape shortcut's description too)
+    'src/components/ui/filter/filter-select.tsx': 1, // 1 jsx (the "f" shortcut's description is now a catalog key)
     'src/components/ui/selection-summary-panel.tsx': 1, // no-intl, 1 jsx
     'src/components/ui/table-load-more-footer.tsx': 1, // no-intl, 1 jsx
 };
