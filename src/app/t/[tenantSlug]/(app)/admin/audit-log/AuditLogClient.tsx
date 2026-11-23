@@ -102,7 +102,14 @@ export function AuditLogClient({ auditLog, olderHref, newestHref, translations: 
             id: 'action',
             header: t.action,
             accessorFn: (e) => actionLabel(e.action, e.entity),
-            cell: ({ getValue }) => <StatusBadge variant="info">{getValue()}</StatusBadge>,
+            // A label can be a long phrase ("Предоставяне на членство в
+            // работното пространство"); it wraps inside its card on a phone
+            // rather than running past it.
+            cell: ({ getValue }) => (
+                <StatusBadge variant="info" className="max-w-full whitespace-normal">
+                    {getValue()}
+                </StatusBadge>
+            ),
         },
         {
             id: 'entity',

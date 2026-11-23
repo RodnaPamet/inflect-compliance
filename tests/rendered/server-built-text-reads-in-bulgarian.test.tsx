@@ -122,6 +122,10 @@ describe('the notifications page, in Bulgarian', () => {
         expect(screen.queryByText(killBody)).toBeNull();
         expect(screen.queryByText(breakerBody)).toBeNull();
         expect(screen.getByText('Ivo assigned you “Rotate keys”')).toBeInTheDocument();
+        // A Bulgarian body is long: on a phone the row's actions wrap below
+        // the text instead of being pushed out of the card.
+        expect(screen.getByTestId('inbox-notification-n1')).toHaveClass('flex-wrap');
+        expect(screen.getByTestId('inbox-notification-actions-n1')).toHaveClass('ml-auto');
     });
 });
 
@@ -170,6 +174,9 @@ describe('the audit log, in Bulgarian', () => {
         ]) {
             expect(within(table).getAllByText(bgAt(key)).length).toBeGreaterThan(0);
         }
+        // A long label wraps inside its chip instead of running past a phone's card.
+        const chip = within(table).getAllByText(bgAt('auditCodes.action.ACCESS_REVIEW_CLOSE_REFUSED'))[0];
+        expect(chip).toHaveClass('whitespace-normal', 'max-w-full');
         // A code no catalog holds yet still reads as words, never as the code.
         expect(within(table).getByText('Something new happened')).toBeInTheDocument();
         expect(within(table).queryByText('ACCESS_REVIEW_CLOSE_REFUSED')).toBeNull();
