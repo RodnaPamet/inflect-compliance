@@ -850,7 +850,7 @@ export default function PolicyDetailPage() {
                         <button onClick={() => {
                             setTab('editor');
                             seedEditor(newest);
-                        }} className={buttonVariants({ variant: 'primary' })} id="new-version-btn"><Plus className="-ml-0.5 -mr-2.5" />{t('detail.version')}</button>
+                        }} className={buttonVariants({ variant: 'primary' })} id="new-version-btn"><Plus />{t('detail.version')}</button>
                     )}
                     {canArchivePolicy && policy.status !== 'ARCHIVED' && (
                         <Button variant="ghost" size="sm" className="text-content-muted hover:text-content-error" onClick={() => setArchiveOpen(true)} disabled={actionLoading === 'archive'} loading={actionLoading === 'archive'} id="archive-btn">
@@ -1278,7 +1278,7 @@ export default function PolicyDetailPage() {
                         </InlineNotice>
                     )}
 
-                    <Button variant="primary" icon={saving ? undefined : <Plus className="-ml-0.5 -mr-2.5" />} onClick={createVersion} disabled={saving} id="save-version-btn">
+                    <Button variant="primary" icon={saving ? undefined : <Plus />} onClick={createVersion} disabled={saving} id="save-version-btn">
                         {saving ? t('detail.saving') : t('detail.version')}
                     </Button>
                 </div>

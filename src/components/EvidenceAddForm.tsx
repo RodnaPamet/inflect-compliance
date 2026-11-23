@@ -130,7 +130,7 @@ export function EvidenceAddForm({
                         subject. They used to share one key. */}
                     <Button
                         variant="primary"
-                        icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                        icon={<Plus />}
                         onClick={onToggleShow}
                         id={ids.trigger}
                     >

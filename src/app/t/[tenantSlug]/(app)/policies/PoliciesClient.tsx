@@ -1003,7 +1003,7 @@ function PoliciesPageInner({
                 toolbarLeading: canCreate ? (
                     <Button
                         variant="primary"
-                        icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                        icon={<Plus />}
                         onClick={() => {
                             setCreateTemplateMode(false);
                             setIsCreateOpen(true);

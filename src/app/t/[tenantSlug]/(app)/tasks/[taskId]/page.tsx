@@ -1543,7 +1543,7 @@ export default function TaskDetailPage() {
                                 primary submit of the form it reveals
                                 (`submit-link-btn`). Pays for one of the intake
                                 dialogs' primaries under `primary-secondary-ratio`. */}
-                            <Button variant="secondary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setShowLinkForm(!showLinkForm)} id="add-link-btn">
+                            <Button variant="secondary" icon={<Plus />} onClick={() => setShowLinkForm(!showLinkForm)} id="add-link-btn">
                                 {t('detail.addLink')}
                             </Button>
                         </div>
@@ -1571,7 +1571,7 @@ export default function TaskDetailPage() {
                                 />
                                 <Combobox hideSearch id="link-relation" selected={RELATION_CB_OPTIONS.find(o => o.value === linkRelation) ?? null} setSelected={(opt) => setLinkRelation(opt?.value ?? linkRelation)} options={RELATION_CB_OPTIONS} matchTriggerWidth />
                             </div>
-                            <Button type="submit" variant="primary" icon={savingLink ? undefined : <Plus className="-ml-0.5 -mr-2.5" />} disabled={savingLink} id="submit-link-btn">
+                            <Button type="submit" variant="primary" icon={savingLink ? undefined : <Plus />} disabled={savingLink} id="submit-link-btn">
                                 {savingLink ? t('detail.linking') : t('detail.link')}
                             </Button>
                         </form>
@@ -1608,7 +1608,7 @@ export default function TaskDetailPage() {
                                 required
                                 id="comment-body"
                             />
-                            <Button type="submit" variant="primary" icon={savingComment ? undefined : <Plus className="-ml-0.5 -mr-2.5" />} disabled={savingComment} id="submit-comment-btn">
+                            <Button type="submit" variant="primary" icon={savingComment ? undefined : <Plus />} disabled={savingComment} id="submit-comment-btn">
                                 {savingComment ? t('detail.posting') : t('detail.comment')}
                             </Button>
                         </form>

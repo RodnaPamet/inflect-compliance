@@ -929,7 +929,7 @@ export default function CustomRolesPage() {
                     {canManage && !showCreate && !editingId && (
                         <Button
                             variant="primary"
-                            icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                            icon={<Plus />}
                             onClick={() => setShowCreate(true)}
                             id="create-role-btn"
                         >

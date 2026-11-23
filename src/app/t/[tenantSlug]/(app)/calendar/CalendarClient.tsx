@@ -900,7 +900,7 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                                     variant="secondary"
                                     size="sm"
                                     className="mb-3 w-full"
-                                    icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                                    icon={<Plus />}
                                     id="calendar-new-task-on-day"
                                     onClick={() => setTaskCreateDate(selectedDate)}
                                 >

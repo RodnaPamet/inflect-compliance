@@ -535,7 +535,7 @@ export function RiskMatrixAdminClient({
                             </Heading>
                             <Button
                                 variant="primary"
-                                icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                                icon={<Plus />}
                                 type="button"
                                 id="rm-add-band-btn"
                                 onClick={addBand}
