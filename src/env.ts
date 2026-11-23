@@ -653,9 +653,13 @@ export const env = createEnv({
         // docs/claude-managed-agents-design.md) — opt-in. With it unset the
         // `anthropic-workspace` integration provider is not registered, so no
         // connection to a customer's workspace can be saved or tested and the
-        // integrations page shows no card for one. '1'/'true' on, anything else
-        // off, for the reason AGENT_DRIVER_FLUE above carries. Read through
-        // `managedAgentsEnabled` (src/lib/agentic/managed-agents-switch.ts).
+        // integrations page shows no card for one. It is also the Managed
+        // Agents ENGINE's operator switch (Step 5d): off, no workspace can
+        // choose the engine on Admin → AI features, and a stored choice runs
+        // static. Kept off in production until #5797 is settled. '1'/'true'
+        // on, anything else off, for the reason AGENT_DRIVER_FLUE above
+        // carries. Read through `managedAgentsEnabled`
+        // (src/lib/agentic/managed-agents-switch.ts).
         AGENT_MANAGED_AGENTS: z.string().optional(),
         // AUTOMATION RULES FROM WEB EVENTS (owner decision 2026-11-13) — opt-in.
         // Until #5541 no automation event emitted in the web process ever

@@ -198,7 +198,11 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns, canva
             ? state.reason === 'ENGINE_DOES_NOT_RUN_PROFILES'
                 ? t('testRun.reason.ENGINE_DOES_NOT_RUN_PROFILES', { engine: t(`testRun.engine.${state.engine}`) })
                 : t(`testRun.reason.${state.reason}`)
-            : v.flow !== null
+            : // The Managed Agents engine (Step 5d): approval provisions a
+              // version's agent, so a version under review has none to run.
+              state.approvedVersionOnly === true && v.status !== 'APPROVED'
+              ? t('testRun.reason.NEEDS_APPROVED_VERSION')
+              : v.flow !== null
               ? t('testRun.reason.FLOW_NOT_RUNNABLE')
               : !v.allowedTriggers.includes('TEST_RUN')
                 ? t('testRun.reason.TRIGGER_NOT_ALLOWED')

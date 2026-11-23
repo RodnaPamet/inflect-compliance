@@ -770,6 +770,22 @@ describe('Step 5b hardening', () => {
         expect(faux.sessionCreates).toEqual([]);
     });
 
+    it('a provision whose agent a connection removal archived is refused by name, before any session (Step 5d)', async () => {
+        const run = { tools: [LIST_RISKS], turns: [{ text: 'done' }] } as ConformanceRun;
+        reset(run);
+        const def = definitionFor(['list_risks'], false);
+        await provision(run, def);
+        // The connection was removed after this provision was written, then
+        // re-enabled: the store reads the row as archived.
+        mockState.provisions = mockState.provisions.map((p) => ({ ...p, archived: true }));
+        const requestsBefore = faux.requests.length;
+        const outcome = await runManagedAgentsDriver(context(), 'run-archived', def, 0, Date.now());
+        expect(outcome.status).toBe('FAILED');
+        expect(mockState.settlement?.reason).toMatch(/^managed_agents_agent_archived:/);
+        expect(faux.sessionCreates).toEqual([]);
+        expect(faux.requests.slice(requestsBefore)).toEqual([]);
+    });
+
     it('a version that was never provisioned is refused by name', async () => {
         reset({ tools: [LIST_RISKS], turns: [] });
         const outcome = await runManagedAgentsDriver(context(), 'run-x', definitionFor(['list_risks'], false), 0, Date.now());
