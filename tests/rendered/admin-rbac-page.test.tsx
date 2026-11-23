@@ -94,3 +94,20 @@ it('shows a member\'s custom role beside the built-in one', async () => {
     expect(screen.getByTestId('rbac-custom-role-c')).toHaveTextContent('Auditor lite');
     expect(screen.queryByTestId('rbac-custom-role-a')).toBeNull();
 });
+
+it('shows a phone one role at a time, and the six-column table from md up, from the same rows', async () => {
+    await renderPage();
+    const matrix = screen.getByTestId('rbac-matrix');
+    expect(matrix.className.split(' ')).toEqual(expect.arrayContaining(['hidden', 'md:block']));
+    const phone = screen.getByTestId('rbac-by-role');
+    expect(phone.parentElement!.className.split(' ')).toContain('md:hidden');
+
+    // Every row of the table is a line in the phone list, and each role tab is a column.
+    const rows = matrix.querySelectorAll('tbody tr').length;
+    expect(phone.querySelectorAll('[data-testid^="rbac-permission-"]')).toHaveLength(rows);
+    expect(within(phone).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(
+        expect.arrayContaining([EN.roles.OWNER, EN.roles.AI_ADMIN]),
+    );
+    // It opens on the viewer's own role (ADMIN here).
+    expect(within(phone).getByRole('tab', { name: EN.roles.ADMIN })).toHaveAttribute('aria-selected', 'true');
+});

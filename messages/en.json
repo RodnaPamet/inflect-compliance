@@ -5182,6 +5182,16 @@
       "exceptedUntil": "Excepted until {date}",
       "otherSection": "Other"
     },
+    "soaMobile": {
+      "summaryAria": "Statement of Applicability summary",
+      "justification": "Justification",
+      "mappedControls": "Mapped controls ({count})"
+    },
+    "soaPrintMobile": {
+      "title": "This view is for printing",
+      "description": "The print layout is made for paper and a large screen. Print it or save it as a PDF, or read the Statement of Applicability on this phone.",
+      "openSoa": "Open the Statement of Applicability"
+    },
     "trustCenter": "Trust Center",
     "catalogSubtitle": "Framework-scoped coverage & readiness, gap analysis, risk and applicability reports.",
     "frameworkLabel": "Framework",
@@ -5490,7 +5500,13 @@
         "DEACTIVATED": "Deactivated",
         "REMOVED": "Removed"
       },
-      "matrixNote": "Built-in roles only. A member with a custom role can do what that role grants instead."
+      "matrixNote": "Built-in roles only. A member with a custom role can do what that role grants instead.",
+      "byRole": {
+        "pickerAria": "Role",
+        "summary": "{role}: {granted} of {total} permissions",
+        "granted": "Allowed",
+        "notGranted": "Not allowed"
+      }
     },
     "roles": {
       "crumbSelf": "Custom Roles",
@@ -14472,6 +14488,15 @@
     "eventsEmptyDay": "No events on this day.",
     "heatmapWindowLabel": "Past year + next 6 months",
     "ganttWindowLabel": "12-month timeline (fixed window)",
+    "agenda": {
+      "filtersOn": "{count} active",
+      "view": "Agenda",
+      "today": "Today",
+      "showEarlier": "Earlier days ({count})",
+      "hideEarlier": "Hide earlier days",
+      "until": "until {date}",
+      "empty": "Nothing due this month."
+    },
     "completeAction": "Complete",
     "rescheduleAction": "Reschedule",
     "rescheduleAria": "Reschedule task due date",
