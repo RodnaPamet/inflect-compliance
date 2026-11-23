@@ -294,9 +294,15 @@ jest.mock('@/lib/agentic/managed-agents/store', () => ({
             ? { anthropicAgentId: last.anthropicAgentId, anthropicAgentVersion: last.anthropicAgentVersion, systemHash: last.systemHash, toolsHash: last.toolsHash }
             : null;
     }),
-    readConnectionEnvironment: jest.fn(async (_ctx: unknown, connectionId: string) =>
-        (mockState.provisions.find((p) => p.connectionId === connectionId)?.environmentId as string | undefined) ?? null,
-    ),
+    readConnectionEnvironment: jest.fn(async (_ctx: unknown, connectionId: string) => {
+        const first = mockState.provisions.find((p) => p.connectionId === connectionId);
+        return first ? { environmentId: first.environmentId, environmentHash: first.environmentHash ?? null } : null;
+    }),
+    recordEnvironmentHashOnFirstUse: jest.fn(async (_ctx: unknown, versionId: string, connectionId: string, hash: string) => {
+        for (const p of mockState.provisions) {
+            if (p.profileVersionId === versionId && p.connectionId === connectionId && p.environmentHash === null) p.environmentHash = hash;
+        }
+    }),
     recordProvision: jest.fn(async (_ctx: unknown, record: Record<string, unknown>) => {
         mockState.provisions.push({ ...record });
     }),
@@ -318,7 +324,7 @@ import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import { ENGINE_CAPS } from '@/lib/agentic/workflow-types';
 import { runManagedAgentsDriver } from '@/lib/agentic/managed-agents/driver';
 import { provisionManagedAgent } from '@/lib/agentic/managed-agents/provision';
-import { agentToolsFor, sessionBudgetFor, toolsHashOf } from '@/lib/agentic/managed-agents/definition';
+import { agentToolsFor, sessionBudgetFor, toolsHashOf, writtenEnvironmentHash } from '@/lib/agentic/managed-agents/definition';
 import { MANAGED_AGENTS_SPAN_PROVIDER } from '@/lib/agentic/managed-agents/model-decision';
 import { NOT_OFFERED_TOOL_RESULT, STOPPED_TOOL_RESULT } from '@/lib/agentic/managed-agents/execute';
 import { managedAgentsClientFor } from '@/lib/agentic/tool-runner/client';
@@ -435,11 +441,15 @@ async function provision(run: ConformanceRun, def: WorkflowDefinition): Promise<
     });
 }
 
-async function drive(run: ConformanceRun, opts: { turns?: readonly FauxScriptedTurn[]; before?: () => void } = {}) {
+async function drive(
+    run: ConformanceRun,
+    opts: { turns?: readonly FauxScriptedTurn[]; before?: () => void; afterProvision?: () => void } = {},
+) {
     reset(run);
     opts.before?.();
     const def = definitionFor(run.tools.map((t) => t.name), skillsMounted(run));
     await provision(run, def);
+    opts.afterProvision?.();
     faux.turns = [...(opts.turns ?? (run.turns as FauxScriptedTurn[]))];
     const runId = `run-${Math.random().toString(36).slice(2)}`;
     const startedAt = Date.now() - (run.alreadySpent?.elapsedMs ?? 0);
@@ -616,6 +626,56 @@ describe('Step 5b hardening', () => {
             expect(mockState.settlement?.reason).toMatch(/^managed_agents_agent_drifted: .*\(ARCHIVED\)/);
             expect(mockState.settlement?.reason).toContain('Approve a new version of this profile');
             expect(mockState.settlement?.reason).not.toMatch(/approve the version again/i);
+        });
+    });
+
+    describe('the environment is read again before the session exists, and a Console edit refuses the run (#5854)', () => {
+        it.each([
+            ['an allowed host', (f: ManagedAgentsFaux, id: string) => f.consoleEditEnvironment(id, (c) => ({ ...c, networking: { type: 'limited', allowed_hosts: ['evil.example'] } })), 'CONFIG_CHANGED'],
+            ['unrestricted networking', (f: ManagedAgentsFaux, id: string) => f.consoleEditEnvironment(id, (c) => ({ ...c, networking: { type: 'unrestricted' } })), 'CONFIG_CHANGED'],
+            ['a package', (f: ManagedAgentsFaux, id: string) => f.consoleEditEnvironment(id, (c) => ({ ...c, packages: { pip: ['requests'] } })), 'CONFIG_CHANGED'],
+            ['archived', (f: ManagedAgentsFaux, id: string) => f.consoleArchiveEnvironment(id), 'ARCHIVED'],
+        ] as const)('%s', async (_label, edit, drift) => {
+            await drive(
+                { tools: [LIST_RISKS], turns: [{ text: 'done' }] },
+                { afterProvision: () => edit(faux, faux.environments[0].id as string) },
+            );
+            expect(mockState.settlement?.status).toBe('FAILED');
+            expect(mockState.settlement?.reason).toMatch(/^managed_agents_environment_drifted: /);
+            expect(mockState.settlement?.reason).toContain(`(${drift})`);
+            expect(faux.sessionCreates).toEqual([]);
+            expect(faux.modelInputs).toEqual([]);
+        });
+
+        it('positive control: the environment as written passes, and approval recorded its hash', async () => {
+            await drive({ tools: [LIST_RISKS], turns: [{ text: 'done' }] });
+            expect(mockState.settlement?.status).toBe('COMPLETED');
+            expect(mockState.provisions[0].environmentHash).toBe(writtenEnvironmentHash('conn-workspace'));
+            expect(faux.requests.some((r) => r.method === 'GET' && r.path === `/v1/environments/${String(faux.environments[0].id)}`)).toBe(true);
+        });
+
+        it('a provision that predates the hash runs, and its first run records what Inflect WROTE', async () => {
+            await drive(
+                { tools: [LIST_RISKS], turns: [{ text: 'done' }] },
+                { afterProvision: () => { mockState.provisions[0].environmentHash = null; } },
+            );
+            expect(mockState.settlement?.status).toBe('COMPLETED');
+            expect(mockState.provisions[0].environmentHash).toBe(writtenEnvironmentHash('conn-workspace'));
+        });
+
+        it('a provision that predates the hash, whose environment was edited before its first run, is refused: the edit is not recorded as the baseline', async () => {
+            await drive(
+                { tools: [LIST_RISKS], turns: [{ text: 'done' }] },
+                {
+                    afterProvision: () => {
+                        mockState.provisions[0].environmentHash = null;
+                        faux.consoleEditEnvironment(faux.environments[0].id as string, (c) => ({ ...c, networking: { type: 'unrestricted' } }));
+                    },
+                },
+            );
+            expect(mockState.settlement?.reason).toMatch(/^managed_agents_environment_drifted: .*\(CONFIG_CHANGED\)/);
+            expect(mockState.provisions[0].environmentHash).toBe(writtenEnvironmentHash('conn-workspace'));
+            expect(faux.sessionCreates).toEqual([]);
         });
     });
 

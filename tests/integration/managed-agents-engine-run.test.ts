@@ -49,6 +49,7 @@ import { encryptField, hashForLookup } from '@/lib/security/encryption';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { DRIVER_IMPLEMENTED } from '@/lib/agentic/agent-driver';
+import { environmentBodyFor, writtenEnvironmentHash } from '@/lib/agentic/managed-agents/definition';
 import { MANAGED_AGENTS_SPAN_PROVIDER } from '@/lib/agentic/managed-agents/model-decision';
 import { executeQueuedWorkflowRun } from '@/app-layer/usecases/workflow-runs';
 import {
@@ -273,6 +274,33 @@ describeFn('the Managed Agents engine, on (real DB, faux workspace)', () => {
         // It REMAINS: nothing deleted it, and the workspace still holds it.
         expect(faux.holdsSession(sessionId)).toBe(true);
         expect(faux.deletes.length).toBe(deletesBefore);
+    });
+
+    it('the environment is re-read before every session: a Console edit refuses the run, putting it back lets runs start, and a row from before the hash records it at first use (#5854)', async () => {
+        const row = () =>
+            prisma.agentProfileProvision.findFirstOrThrow({ where: { tenantId: TENANT, connectionId }, select: { id: true, environmentId: true, environmentHash: true } });
+        const provisioned = await row();
+        // Approval recorded what Inflect wrote.
+        expect(provisioned.environmentHash).toBe(writtenEnvironmentHash(connectionId));
+
+        // A row from before the column: not recorded. Its first run is allowed,
+        // and records what Inflect wrote.
+        await prisma.agentProfileProvision.update({ where: { id: provisioned.id }, data: { environmentHash: null } });
+        expect((await testRun(1)).outcome).toMatchObject({ status: 'COMPLETED' });
+        expect((await row()).environmentHash).toBe(writtenEnvironmentHash(connectionId));
+
+        // A customer admin opens the environment's network in the Console.
+        faux.consoleEditEnvironment(provisioned.environmentId, (c) => ({ ...c, networking: { type: 'limited', allowed_hosts: ['evil.example'] } }));
+        const sessionsBefore = faux.sessionCreates.length;
+        const refused = await testRun(1);
+        const refusedRow = await runRow(refused.runId);
+        expect(refusedRow.status).toBe('FAILED');
+        expect(refusedRow.errorMessage).toMatch(/^managed_agents_environment_drifted: .*\(CONFIG_CHANGED\)/);
+        expect(faux.sessionCreates.length).toBe(sessionsBefore);
+
+        // The remedy the refusal names works: set it back, and runs start again.
+        faux.consoleEditEnvironment(provisioned.environmentId, () => ({ ...environmentBodyFor(connectionId).config }));
+        expect((await testRun(1)).outcome).toMatchObject({ status: 'COMPLETED' });
     });
 
     it('a removed connection re-enabled: the archived agent is refused by name, and the next approved version runs on a new agent', async () => {

@@ -20,8 +20,10 @@
  * recorded and settled (`settleUnrecordedSessions`, #5854); and the DRIFT
  * CHECK: the agent is read at the version the profile pinned, and a `system`
  * or `tools` that no longer hashes to what Inflect wrote refuses the run
- * `AGENT_DRIFTED`. Every refusal settles the run with a named reason and
- * creates nothing at Anthropic.
+ * `AGENT_DRIFTED`; and the ENVIRONMENT, read again and compared with what
+ * Inflect wrote the same way, refused `ENVIRONMENT_DRIFTED` (#5854). Every
+ * refusal settles the run with a named reason and creates nothing at
+ * Anthropic.
  *
  * ── THE SESSION ─────────────────────────────────────────────────────────────
  *
@@ -154,15 +156,18 @@ import {
     MANAGED_AGENTS_PREFIX,
     SEND_ONCE,
     agentDrift,
+    environmentDrift,
     sessionBudgetFor,
     sessionMetadataFor,
     sessionSystemFor,
     type RetrievedAgent,
+    type RetrievedEnvironment,
+    writtenEnvironmentHash,
 } from './definition';
 import { listCrashWindow } from './cleanup';
 import { recordManagedAgentsDecision, type InflectSentInput } from './model-decision';
 import { sessionStepRecord, type SessionLifecycle } from './session-ledger';
-import { readRecordedSessionIds, type ProvisionRecord } from './store';
+import { readRecordedSessionIds, recordEnvironmentHashOnFirstUse, type ProvisionRecord } from './store';
 
 const RANK: Record<StepGuardObservation['verdict'], number> = { CLEAN: 0, FLAGGED: 1, QUARANTINED: 2 };
 
@@ -207,6 +212,30 @@ export function agentDriftedMessage(drift: string): string {
         + 'archived when the connection is removed.'
     );
 }
+
+export const ENVIRONMENT_DRIFTED_PREFIX = `${MANAGED_AGENTS_PREFIX}_environment_drifted`;
+
+/**
+ * The remedy is the one that works (#5854). Inflect makes ONE environment per
+ * connection and never a second, so an archived one cannot be replaced by
+ * approving anything; a changed one matches again once its settings are put
+ * back, because only the settings are compared.
+ */
+export function environmentDriftedMessage(drift: string): string {
+    const remedy =
+        drift === 'ARCHIVED'
+            ? 'It was archived, and Inflect makes one environment per connection and does not make another, so no run can start in it.'
+            : 'Someone may have edited it in the Anthropic Console. Set it back to limited networking with no allowed hosts, '
+              + 'no MCP servers, no package managers and no packages, and runs can start again.';
+    return (
+        `${ENVIRONMENT_DRIFTED_PREFIX}: the environment in your Anthropic workspace no longer matches what Inflect `
+        + `provisioned for this connection (${drift}). Nothing was sent. ${remedy}`
+    );
+}
+
+export const ENVIRONMENT_UNREADABLE_MESSAGE =
+    `${MANAGED_AGENTS_PREFIX}_environment_unreadable: the environment this connection's runs use could not be read `
+    + 'from your Anthropic workspace, so its configuration could not be checked. Nothing was sent.';
 
 export const AGENT_UNREADABLE_MESSAGE =
     `${MANAGED_AGENTS_PREFIX}_agent_unreadable: the agent this profile version was provisioned as could not be read `
@@ -598,6 +627,39 @@ export async function executeManagedAgentsRun(
     if (found.drift) {
         logger.warn('managed-agents: the provisioned agent drifted; refusing the run', { component: 'agentic', runId: run.runId, drift: found.drift });
         const status = await failRun(ctx, runId, agentDriftedMessage(found.drift));
+        return { status, stepFailures: 0 };
+    }
+
+    // ── THE ENVIRONMENT, read again before the session exists (#5854) ──────
+    // The same rule as the agent: compared with what Inflect WROTE. A row from
+    // before the hash was recorded is not refused for that: its first run
+    // records what Inflect wrote (`writtenEnvironmentHash`), never what it
+    // read, and compares as every later run will.
+    let environment: RetrievedEnvironment;
+    try {
+        environment = (await client.beta.environments.retrieve(pinned.environmentId)) as unknown as RetrievedEnvironment;
+    } catch (err) {
+        logger.warn('managed-agents: the provisioned environment could not be read', {
+            component: 'agentic',
+            runId: run.runId,
+            providerStatus: providerCodeOf(err).status,
+            providerErrorType: providerCodeOf(err).type,
+        });
+        const status = await failRun(ctx, runId, ENVIRONMENT_UNREADABLE_MESSAGE);
+        return { status, stepFailures: 0 };
+    }
+    const environmentHash = pinned.environmentHash ?? writtenEnvironmentHash(route.connectionId);
+    if (pinned.environmentHash === null) {
+        await recordEnvironmentHashOnFirstUse(ctx, pinned.profileVersionId, route.connectionId, environmentHash);
+    }
+    const environmentFound = { drift: environmentDrift(environment, { environmentId: pinned.environmentId, environmentHash }) };
+    if (environmentFound.drift) {
+        logger.warn('managed-agents: the provisioned environment drifted; refusing the run', {
+            component: 'agentic',
+            runId: run.runId,
+            drift: environmentFound.drift,
+        });
+        const status = await failRun(ctx, runId, environmentDriftedMessage(environmentFound.drift));
         return { status, stepFailures: 0 };
     }
 

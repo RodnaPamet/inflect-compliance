@@ -16,11 +16,16 @@
  *                             connection has since archived its agent.
  *   readProfileAgent          the profile's live agent in a workspace, for the
  *                             next version's update.
- *   readConnectionEnvironment the environment already made for a connection.
+ *   readConnectionEnvironment the environment already made for a connection,
+ *                             and the hash its provision recorded.
  *   readRecordedSessionIds    the sessions this run's ledger already names
  *                             (#5854), so a segment's start settles only the
  *                             ones a dead segment never recorded.
  *   recordProvision           the ONE writer of `AgentProfileProvision`.
+ *   recordEnvironmentHashOnFirstUse
+ *                             fills a NULL `environmentHash` once (#5854):
+ *                             a row written before the column existed. It
+ *                             writes that column only, and only while NULL.
  *
  * The decrypted key leaves this module only as a field of the returned
  * connection, which the driver hands to `managedAgentsClientFor` and drops.
@@ -153,6 +158,11 @@ export interface ProvisionRecord {
     readonly environmentId: string;
     readonly systemHash: string;
     readonly toolsHash: string;
+    /**
+     * The environment's configuration as Inflect wrote it (#5854), or null when
+     * the row predates the column: "not recorded", recorded at first use.
+     */
+    readonly environmentHash: string | null;
 }
 
 /**
@@ -174,6 +184,7 @@ const PROVISION_SELECT = {
     environmentId: true,
     systemHash: true,
     toolsHash: true,
+    environmentHash: true,
 } as const;
 
 export async function readProvision(
@@ -233,16 +244,22 @@ export async function readProfileAgent(
     );
 }
 
-/** The environment already made for a connection, or null before the first provision. */
-export async function readConnectionEnvironment(ctx: RequestContext, connectionId: string): Promise<string | null> {
-    const row = await runInTenantContext(ctx, (db) =>
+/**
+ * The environment already made for a connection, with the hash its first
+ * provision recorded (null when that row predates the column), or null before
+ * the first provision.
+ */
+export async function readConnectionEnvironment(
+    ctx: RequestContext,
+    connectionId: string,
+): Promise<{ environmentId: string; environmentHash: string | null } | null> {
+    return runInTenantContext(ctx, (db) =>
         db.agentProfileProvision.findFirst({
             where: { tenantId: ctx.tenantId, connectionId },
             orderBy: { createdAt: 'asc' },
-            select: { environmentId: true },
+            select: { environmentId: true, environmentHash: true },
         }),
     );
-    return row?.environmentId ?? null;
 }
 
 /** How many ledger steps one read of a run's sessions takes; one more is read so a truncation is a fact held. */
@@ -289,5 +306,26 @@ export async function readRecordedSessionIds(
 export async function recordProvision(ctx: RequestContext, record: ProvisionRecord): Promise<void> {
     await runInTenantContext(ctx, (db) =>
         db.agentProfileProvision.create({ data: { tenantId: ctx.tenantId, ...record } }),
+    );
+}
+
+/**
+ * A provision written before `environmentHash` existed records it at its first
+ * run (#5854). The run passes what Inflect WROTE (`writtenEnvironmentHash`),
+ * never the environment it read: a Console edit made before the first run must
+ * not become the record it is compared with. Only a NULL is filled, so a
+ * recorded hash is never moved.
+ */
+export async function recordEnvironmentHashOnFirstUse(
+    ctx: RequestContext,
+    profileVersionId: string,
+    connectionId: string,
+    environmentHash: string,
+): Promise<void> {
+    await runInTenantContext(ctx, (db) =>
+        db.agentProfileProvision.updateMany({
+            where: { tenantId: ctx.tenantId, profileVersionId, connectionId, environmentHash: null },
+            data: { environmentHash },
+        }),
     );
 }

@@ -381,6 +381,8 @@ const MANAGED_AGENTS_ROUTES: ReadonlyArray<{ readonly method: string; readonly p
     { method: 'GET', path: /^\/v1\/agents\/[A-Za-z0-9_-]+$/ },
     { method: 'POST', path: /^\/v1\/agents\/[A-Za-z0-9_-]+$/ },
     { method: 'POST', path: /^\/v1\/environments$/ },
+    // A run re-reads its environment before each session (#5854).
+    { method: 'GET', path: /^\/v1\/environments\/[A-Za-z0-9_-]+$/ },
     { method: 'POST', path: /^\/v1\/sessions$/ },
     // Step 5c's crash window: a session list, which the clean-up sends only
     // with an `agent_id` Inflect recorded (`listCrashWindow` in

@@ -18,6 +18,7 @@ import {
     readProfileAgent,
     readProvision,
     readWorkspaceConnection,
+    recordEnvironmentHashOnFirstUse,
     recordProvision,
 } from '@/lib/agentic/managed-agents/store';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
@@ -67,6 +68,19 @@ describeFn('AgentProfileProvision — tenant isolation', () => {
             environmentId: 'env_a',
             systemHash: HASH,
             toolsHash: HASH,
+            environmentHash: HASH,
+        });
+        // A row from before `environmentHash` existed: not recorded (#5854).
+        await recordProvision(ctxOf(A), {
+            profileId: 'profile-a',
+            profileVersionId: 'version-a-legacy',
+            connectionId: connectionA,
+            anthropicAgentId: 'agent_a',
+            anthropicAgentVersion: 1,
+            environmentId: 'env_a',
+            systemHash: HASH,
+            toolsHash: HASH,
+            environmentHash: null,
         });
     });
 
@@ -88,7 +102,7 @@ describeFn('AgentProfileProvision — tenant isolation', () => {
             systemHash: HASH,
             toolsHash: HASH,
         });
-        expect(await readConnectionEnvironment(ctxOf(A), connectionA)).toBe('env_a');
+        expect(await readConnectionEnvironment(ctxOf(A), connectionA)).toEqual({ environmentId: 'env_a', environmentHash: HASH });
         const read = await readWorkspaceConnection(ctxOf(A));
         expect(read).toEqual({ ok: true, connection: { connectionId: connectionA, workspaceId: 'wrkspc_tenantA', keepSessions: false, apiKey: KEY_A } });
     });
@@ -123,7 +137,27 @@ describeFn('AgentProfileProvision — tenant isolation', () => {
                 }),
             ),
         ).rejects.toThrow();
-        expect(await globalPrisma.agentProfileProvision.count({ where: { tenantId: A } })).toBe(1);
+        expect(await globalPrisma.agentProfileProvision.count({ where: { tenantId: A } })).toBe(2);
+    });
+
+    it('the first-use environment hash fills only a NULL, and only in the run\'s own tenant (#5854)', async () => {
+        const OTHER = 'b'.repeat(64);
+        const legacy = () =>
+            globalPrisma.agentProfileProvision.findFirstOrThrow({ where: { tenantId: A, profileVersionId: 'version-a-legacy' }, select: { environmentHash: true } });
+        // B, naming A's row, reaches nothing.
+        await recordEnvironmentHashOnFirstUse(ctxOf(B), 'version-a-legacy', connectionA, OTHER);
+        expect((await legacy()).environmentHash).toBeNull();
+        // A records it once...
+        await recordEnvironmentHashOnFirstUse(ctxOf(A), 'version-a-legacy', connectionA, OTHER);
+        expect((await legacy()).environmentHash).toBe(OTHER);
+        // ...and a recorded hash is never moved.
+        await recordEnvironmentHashOnFirstUse(ctxOf(A), 'version-a-legacy', connectionA, HASH);
+        expect((await legacy()).environmentHash).toBe(OTHER);
+        await recordEnvironmentHashOnFirstUse(ctxOf(A), 'version-a', connectionA, OTHER);
+        expect(
+            (await globalPrisma.agentProfileProvision.findFirstOrThrow({ where: { tenantId: A, profileVersionId: 'version-a' }, select: { environmentHash: true } }))
+                .environmentHash,
+        ).toBe(HASH);
     });
 
     it('the connection key is ciphertext at rest', async () => {
@@ -149,6 +183,7 @@ describeFn('AgentProfileProvision — tenant isolation', () => {
                 },
             });
         await expect(bad({ systemHash: 'not-a-hash' })).rejects.toThrow();
+        await expect(bad({ environmentHash: 'not-a-hash' })).rejects.toThrow();
         await expect(bad({ anthropicAgentVersion: 0 })).rejects.toThrow();
     });
 });

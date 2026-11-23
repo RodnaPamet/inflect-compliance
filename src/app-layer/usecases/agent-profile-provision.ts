@@ -124,6 +124,7 @@ export async function provisionApprovedProfileVersion(
                             environmentId: record.environmentId,
                             systemHash: record.systemHash,
                             toolsHash: record.toolsHash,
+                            environmentHash: record.environmentHash,
                             // The profile's earlier agent, edited or archived in
                             // the Console, that this new agent replaces (#5854).
                             // It stays recorded on the earlier versions' rows.
