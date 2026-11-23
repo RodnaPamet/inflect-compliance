@@ -162,7 +162,8 @@ describe('ToggleGroup — below sm', () => {
         const onSelect = jest.fn();
         render(<Harness options={FOUR} onSelect={onSelect} />);
         expect(screen.queryByRole('radiogroup')).toBeNull();
-        const wrap = screen.getByTestId('toggle-group-select');
+        // The select is loaded on demand (next/dynamic), so it appears a tick later.
+        const wrap = await screen.findByTestId('toggle-group-select');
         const trigger = within(wrap).getByRole('combobox', {
             name: 'Hierarchy type: Организационен',
         });
@@ -184,7 +185,7 @@ describe('ToggleGroup — below sm', () => {
         const options = FOUR.map((o) => ({ ...o, href: `/t/acme/x?view=${o.value}` }));
         render(<ToggleGroup options={options} selected="org" ariaLabel="View" />);
         const user = userEvent.setup();
-        await user.click(screen.getByRole('combobox', { name: 'View: Организационен' }));
+        await user.click(await screen.findByRole('combobox', { name: 'View: Организационен' }));
         await user.click(await screen.findByRole('option', { name: /Активи/ }));
         expect(push).toHaveBeenCalledWith('/t/acme/x?view=asset');
     });
