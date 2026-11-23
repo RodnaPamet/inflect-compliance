@@ -220,7 +220,13 @@ export class ManagedAgentsFaux {
         if (method === 'POST' && p === '/v1/environments') {
             const env = { id: this.nextId('env'), type: 'environment', ...(body ?? {}) };
             this.environments.push(env);
-            return json(env);
+            return json(this.environmentObject(env));
+        }
+        const envMatch = /^\/v1\/environments\/([^/]+)$/.exec(p);
+        if (envMatch && method === 'GET') {
+            const env = this.environments.find((e) => e.id === envMatch[1]);
+            if (!env) return apiError(404, 'not_found_error', 'no such environment');
+            return json(this.environmentObject(env));
         }
         if (method === 'POST' && p === '/v1/sessions') return this.createSession(body ?? {});
         m = /^\/v1\/sessions\/([^/]+)$/.exec(p);
@@ -315,10 +321,78 @@ export class ManagedAgentsFaux {
     private archiveAgent(id: string): Response {
         const versions = this.agents.get(id);
         if (!versions) return apiError(404, 'not_found_error', 'no such agent');
-        const latest = versions[versions.length - 1];
-        latest.archived_at = new Date().toISOString();
+        this.stampArchived(versions);
         this.archives.push(id);
-        return json(latest);
+        return json(versions[versions.length - 1]);
+    }
+
+    /** Archiving is a property of the agent: every version reads archived after it. */
+    private stampArchived(versions: Array<Record<string, unknown>>): void {
+        const at = new Date().toISOString();
+        for (const v of versions) v.archived_at = at;
+    }
+
+    /**
+     * A CUSTOMER ADMIN EDITS THE AGENT IN THE CONSOLE (#5854): a new version
+     * with the patch, as Anthropic makes one on every edit. The version a
+     * session pins is unchanged; the next update naming it is refused 409.
+     */
+    consoleEditAgent(id: string, patch: Record<string, unknown>): number {
+        const versions = this.agents.get(id);
+        if (!versions) throw new Error(`faux: no agent ${id}`);
+        const latest = versions[versions.length - 1];
+        const next = { ...latest, ...patch, version: Number(latest.version) + 1 };
+        versions.push(next);
+        return Number(next.version);
+    }
+
+    /**
+     * The environment as Anthropic returns it: the configuration as written,
+     * with the defaults Inflect left out filled in (`allowed_hosts: []`, every
+     * package list empty), so the run's comparison is held to the real shape.
+     */
+    private environmentObject(env: Record<string, unknown>): Record<string, unknown> {
+        const config = (env.config ?? {}) as Record<string, unknown>;
+        const networking = (config.networking ?? null) as Record<string, unknown> | null;
+        const packages = (config.packages ?? {}) as Record<string, unknown>;
+        return {
+            id: env.id,
+            type: 'environment',
+            name: env.name,
+            description: env.description ?? null,
+            metadata: env.metadata ?? {},
+            archived_at: env.archived_at ?? null,
+            created_at: '2026-11-23T00:00:00Z',
+            updated_at: '2026-11-23T00:00:00Z',
+            config: {
+                ...config,
+                ...(networking?.type === 'limited'
+                    ? { networking: { allowed_hosts: [], allow_mcp_servers: false, allow_package_managers: false, ...networking } }
+                    : {}),
+                packages: { type: 'packages', apt: [], cargo: [], gem: [], go: [], npm: [], pip: [], ...packages },
+            },
+        };
+    }
+
+    /** A customer admin edits the environment in the Console (#5854). */
+    consoleEditEnvironment(id: string, edit: (config: Record<string, unknown>) => Record<string, unknown>): void {
+        const env = this.environments.find((e) => e.id === id);
+        if (!env) throw new Error(`faux: no environment ${id}`);
+        env.config = edit({ ...((env.config ?? {}) as Record<string, unknown>) });
+    }
+
+    /** A customer admin archives the environment in the Console (#5854). */
+    consoleArchiveEnvironment(id: string): void {
+        const env = this.environments.find((e) => e.id === id);
+        if (!env) throw new Error(`faux: no environment ${id}`);
+        env.archived_at = new Date().toISOString();
+    }
+
+    /** A customer admin archives the agent in the Console: not one of Inflect's archives. */
+    consoleArchiveAgent(id: string): void {
+        const versions = this.agents.get(id);
+        if (!versions) throw new Error(`faux: no agent ${id}`);
+        this.stampArchived(versions);
     }
 
     private agentObject(id: string, version: number, body: Record<string, unknown>): Record<string, unknown> {
