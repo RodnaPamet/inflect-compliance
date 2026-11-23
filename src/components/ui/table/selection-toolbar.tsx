@@ -85,6 +85,9 @@ export const BatchActionButton = forwardRef<
       "inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-background",
       "disabled:pointer-events-none disabled:opacity-50",
+      // 44px for a finger below md, where the toolbar is two rows; the
+      // compact pill on desktop.
+      "min-h-11 md:min-h-0",
       variant === "default" &&
         "bg-bg-elevated text-content-emphasis hover:bg-bg-muted active:bg-bg-subtle border border-border-subtle",
       variant === "danger" &&
@@ -148,14 +151,33 @@ export function renderBatchActions<T extends TableRowData>(
 
 // ── SelectionToolbar ────────────────────────────────────────────────
 
+/**
+ * Where the bar sits.
+ *
+ * - `"overlay"` (default) — over the top of the list, covering the column
+ *   header row. What `<Table>` and the virtualized table mount.
+ * - `"dock"` — IN the flow after the list, `sticky` to the bottom of the
+ *   screen and padded clear of the home indicator. What the phone's card list
+ *   mounts: the list is long and scrolls with the page, so a bar pinned over
+ *   its TOP is off-screen by the time a card further down is ticked. Sticky,
+ *   not fixed: it takes its own space at the end of the list (so it never
+ *   covers the last card), and if an ancestor clips overflow it degrades to
+ *   sitting after the list rather than to somewhere unrelated. A docked bar
+ *   with nothing selected is not rendered as a box at all, where the overlay
+ *   only fades — an invisible box in the flow would be a gap after the list.
+ */
+export type SelectionToolbarPlacement = "overlay" | "dock";
+
 export function SelectionToolbar<T extends TableRowData>({
   table,
   controls,
   className,
+  placement = "overlay",
 }: {
   table: TableInstance<T>;
   controls?: (table: TableInstance<T>) => ReactNode;
   className?: string;
+  placement?: SelectionToolbarPlacement;
 }) {
   const t = useTranslations("common");
   const selectedCount = table.getSelectedRowModel().rows.length;
@@ -189,8 +211,17 @@ export function SelectionToolbar<T extends TableRowData>({
         selectedCount > 0
           ? "pointer-events-auto opacity-100"
           : "pointer-events-none opacity-0",
+        // Docked (the phone's card list): the hairline moves to the top edge,
+        // which is the edge that meets the list, and the bar pads itself
+        // clear of the home indicator. See SelectionToolbarPlacement.
+        placement === "dock" && [
+          "sticky bottom-0 z-30 border-b-0 border-t",
+          "pb-[env(safe-area-inset-bottom)]",
+          selectedCount === 0 && "hidden",
+        ],
         className,
       )}
+      data-placement={placement}
       // React 18 doesn't recognise `inert` as a known boolean attribute,
       // so passing a JSX boolean triggers the "non-boolean attribute"
       // warning. Conditionally spread the attribute: present (empty
@@ -205,10 +236,21 @@ export function SelectionToolbar<T extends TableRowData>({
     >
       {/* B1 (2026-06-07): the bar matches the column-header row height
           (~37px) so it pops over it cleanly — was h-11 (45px incl. border),
-          which overhung the header by ~8px. */}
-      <div className="flex h-9 items-center pr-2">
+          which overhung the header by ~8px.
+
+          BELOW md it is TWO rows, because one row does not fit a phone: the
+          count and Clear on the first, the batch controls across the whole
+          second. As one non-wrapping `h-9` row it was ~408px wide at 390, and
+          Apply was cut off by the shell's horizontal clip with no way to
+          scroll to it — bulk actions could not be used on a phone at all.
+          Every phone-only class below is the BASE and `md:` restores the
+          desktop row exactly. */}
+      <div
+        data-selection-toolbar-row
+        className="flex flex-wrap items-center gap-y-tight py-tight pr-2 md:h-9 md:flex-nowrap md:py-0"
+      >
         {/* Select-all / indeterminate checkbox */}
-        <div className="relative flex h-full w-12 shrink-0 items-center justify-center">
+        <div className="relative flex h-11 w-12 shrink-0 items-center justify-center md:h-full">
           <Tooltip
             content={
               table.getIsAllRowsSelected()
@@ -252,8 +294,9 @@ export function SelectionToolbar<T extends TableRowData>({
           </Tooltip>
         </div>
 
-        {/* Count + actions */}
-        <div className="flex min-w-0 items-center gap-2.5 pl-1">
+        {/* Count + Clear. On a phone this fills the first row beside the
+            checkbox; the controls below it then wrap to their own row. */}
+        <div className="flex min-w-0 flex-1 items-center gap-2.5 pl-1 md:flex-initial">
           <span
             className={cn(
               "text-content-emphasis text-sm font-medium tabular-nums transition-transform duration-150",
@@ -277,7 +320,10 @@ export function SelectionToolbar<T extends TableRowData>({
             type="button"
             className={cn(
               "text-content-muted hover:text-content-emphasis text-xs font-medium transition-colors",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded px-1",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded",
+              // A finger's 44px on a phone; the hairline text button on
+              // desktop.
+              "min-h-11 px-compact md:min-h-0 md:px-1",
             )}
             onClick={(e) => {
               e.stopPropagation();
@@ -288,16 +334,21 @@ export function SelectionToolbar<T extends TableRowData>({
             {t("table.clear")}
           </button>
           </Tooltip>
+        </div>
 
-          {/* Pluggable batch action buttons */}
-          <div
-            className={cn(
-              "flex items-center gap-1.5 transition-transform duration-150",
-              selectedCount > 0 ? "translate-x-0" : "-translate-x-1",
-            )}
-          >
-            {controls?.(table)}
-          </div>
+        {/* Pluggable batch action buttons. A phone gives them the whole
+            second row (`basis-full`) and lets several buttons wrap; desktop
+            keeps them inline after Clear, 10px on (`md:pl-2.5`, the gap they
+            had when they sat inside the count group). */}
+        <div
+          data-selection-toolbar-controls
+          className={cn(
+            "flex basis-full flex-wrap items-center gap-1.5 px-compact transition-transform duration-150",
+            "md:basis-auto md:flex-nowrap md:px-0 md:pl-2.5",
+            selectedCount > 0 ? "translate-x-0" : "-translate-x-1",
+          )}
+        >
+          {controls?.(table)}
         </div>
       </div>
     </div>

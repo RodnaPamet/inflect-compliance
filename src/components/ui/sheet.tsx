@@ -167,8 +167,23 @@ function SheetRoot({
                                     "w-[min(var(--sheet-width),calc(100%-2*var(--sheet-margin)))] [--sheet-margin:8px]",
                                 ]
                               : [
-                                    "inset-x-2 bottom-2",
-                                    "h-[min(var(--sheet-height),calc(100vh-var(--sheet-margin)*2))] [--sheet-margin:8px] [--sheet-height:85vh]",
+                                    // The bottom edge clears the home
+                                    // indicator: the larger of the sheet's
+                                    // own margin and the safe-area inset
+                                    // (`viewport-fit=cover` is set, so the
+                                    // inset is real on a phone that has one).
+                                    // Otherwise the last row and the footer
+                                    // sit in the system-gesture zone.
+                                    "inset-x-2 bottom-[var(--sheet-bottom)] [--sheet-bottom:max(var(--sheet-margin),env(safe-area-inset-bottom))]",
+                                    // Height in `dvh` — the viewport as it is
+                                    // now, browser chrome included. `vh` is
+                                    // the viewport with the chrome HIDDEN, so
+                                    // a sheet sized in it is taller than the
+                                    // screen while the chrome shows and its
+                                    // bottom is cut off. `vh` stays only as
+                                    // the fallback for a browser without `dvh`.
+                                    "h-[min(var(--sheet-height),calc(var(--sheet-viewport)-var(--sheet-margin)-var(--sheet-bottom)))] [--sheet-margin:8px] [--sheet-height:85vh] [--sheet-viewport:100vh]",
+                                    "supports-[height:100dvh]:[--sheet-height:85dvh] supports-[height:100dvh]:[--sheet-viewport:100dvh]",
                                 ],
                         contentProps?.className,
                     )}
