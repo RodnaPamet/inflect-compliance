@@ -148,15 +148,14 @@ import {
     type RetrievedAgent,
 } from './definition';
 import { recordManagedAgentsDecision, type InflectSentInput } from './model-decision';
+import { sessionStepRecord, type SessionLifecycle } from './session-ledger';
 import type { ProvisionRecord } from './store';
 
 const RANK: Record<StepGuardObservation['verdict'], number> = { CLEAN: 0, FLAGGED: 1, QUARANTINED: 2 };
 
-/** The label of the ledger step that records the session's lifecycle. */
-export const SESSION_STEP_LABEL = 'managed-agents-session';
-
-/** What the session step says happened to the session. */
-export type SessionLifecycle = 'SESSION_CREATED' | 'SESSION_DELETED' | 'SESSION_KEPT' | 'SESSION_DELETE_FAILED';
+// The session step's label and shape live in `session-ledger.ts`, which the
+// data-lifecycle reconciliation also writes through (#5843).
+export { SESSION_STEP_LABEL, type SessionLifecycle } from './session-ledger';
 
 /** The text a pending custom call is answered with when the run stops. Never a tool's output. */
 export const STOPPED_TOOL_RESULT = 'This run was stopped by Inflect. The tool was not run.';
@@ -969,11 +968,7 @@ async function recordSessionStep(
     lifecycle: SessionLifecycle,
     facts: Record<string, unknown>,
 ): Promise<void> {
-    await recordStep(ctx, runId, seq, 'SYNTHESIS', {
-        status: lifecycle === 'SESSION_DELETE_FAILED' ? 'FAILED' : 'DONE',
-        label: SESSION_STEP_LABEL,
-        input: { lifecycle, ...facts },
-    });
+    await recordStep(ctx, runId, seq, 'SYNTHESIS', sessionStepRecord(lifecycle, facts));
 }
 
 /**

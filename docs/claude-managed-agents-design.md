@@ -117,7 +117,11 @@ puts at Anthropic:
   held a membership; both read the connection's key, which stays (a removed
   connection is disabled, not deleted), and are retried by `data-lifecycle`
   until done, or end `ABANDONED` after 30 days. A periodic
-  reconciliation deletes a session recorded DELETED that still exists. Nothing
+  reconciliation, run by `data-lifecycle`, retries every session whose latest
+  ledger step is `SESSION_DELETE_FAILED` (a run's delete that Anthropic refused
+  or could not take), by its recorded id and never a KEPT one, writing
+  `SESSION_DELETED` on the run's ledger once it goes (#5843); and it deletes a
+  session recorded DELETED that still exists. Nothing
   has been created in a customer's workspace yet: the engine runs from Step 5d.
 - **A customer can connect its own Anthropic workspace (Step 5a, #4164),
   behind the opt-in `AGENT_MANAGED_AGENTS` switch.** The `anthropic-workspace`
@@ -635,11 +639,19 @@ Deliver per the Definition of done. This step is Significant.
 
 Built for #4166; the Current state section above describes the result, and
 `docs/implementation-notes/2026-11-22-step-5c-managed-agents-purge.md` the
-decisions. Two things in the prompt below changed while it was built:
+decisions. Two things in the prompt below changed while it was built, and a
+third after:
 
 - **The purge is attempted once and never retried** (decision 7). Item 2's
   retry holds for connection removal and DSAR erasure, whose connection row,
   and so whose key, stays; it does not hold for the tenant purge.
+- **The reconciliation also retries a failed delete** (#5843, after 5c
+  merged). Item 4 named only the lost delete, so a session whose delete failed
+  at the end of its run was retried only by a purge, a connection removal or
+  (when kept) an erasure. The same reconciliation now retries every session
+  whose latest step is `SESSION_DELETE_FAILED`, never a KEPT one, and records
+  `SESSION_DELETED` when it goes; a 401/403, an unreachable provider or a
+  running session leaves it for the next pass.
 - **A retried clean-up does not live for ever.** A connection-removal or DSAR
   record still not done 30 days after it opened ends `ABANDONED`, with the same
   alert as an unfinished purge (`CLEANUP_ABANDON_AFTER_DAYS`). This is an
@@ -697,6 +709,7 @@ Deliver per the Definition of done. This step is Significant.
 - [ ] Two tenants in one workspace: the clean-up of one never touches the other's sessions, agents or records (test).
 - [ ] `docs/data-retention.md` and `tenant-purge-retained-never-cascades` agree with the new table's retention class.
 - [ ] The reconciliation deletes a lost session and emits its metric (test).
+- [ ] The reconciliation retries a session whose delete failed, records it deleted, leaves a KEPT one alone, and leaves one the provider cannot take for the next pass (tests, #5843).
 
 **Exit.** Anything Inflect creates in a customer's workspace can be removed, and is removed when the tenant or the connection goes.
 
