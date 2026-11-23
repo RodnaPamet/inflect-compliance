@@ -178,8 +178,11 @@ export function NextBestActionCard({
                 </Button>
             </Link>
             {quickAdds && quickAdds.length > 0 && (
+                // A wrapped line of quick-adds sits 24px below the last on a
+                // touch screen, so two lines of 44px link targets barely
+                // overlap and a tap goes to the line it is nearer.
                 <div
-                    className="mt-4 pt-3 border-t border-border-subtle flex flex-wrap items-center gap-tight text-xs text-content-subtle"
+                    className="mt-4 pt-3 border-t border-border-subtle flex flex-wrap items-center gap-tight text-xs text-content-subtle pointer-coarse:gap-y-section"
                     data-next-best-action-quick-adds
                 >
                     <span className="font-medium text-content-muted">
