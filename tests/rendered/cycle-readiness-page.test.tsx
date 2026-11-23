@@ -96,3 +96,34 @@ describe('cycle readiness page', () => {
         await waitFor(() => expect(screen.getByText(R.rec.GENERIC_COVERAGE_LOW)).toBeInTheDocument());
     });
 });
+
+/**
+ * On a phone the gauge must sit above the breakdown. Side by side at every
+ * width, a 360px screen left the breakdown too narrow and cut its
+ * percentages off.
+ */
+describe('cycle readiness page on a phone', () => {
+    it('stacks the gauge above a full-width breakdown below sm, side by side from sm', async () => {
+        serve(() => reply(200, result));
+        render(<CycleReadinessPage />);
+        await screen.findByText(R.rec.GENERIC_COVERAGE_LOW);
+
+        const breakdown = document.getElementById('readiness-breakdown') as HTMLElement;
+        const pair = breakdown.parentElement as HTMLElement;
+        expect(pair.id).toBe('readiness-score-breakdown');
+        expect(pair).toHaveClass('flex-col', 'sm:flex-row');
+        expect(breakdown).toHaveClass('w-full', 'min-w-0', 'sm:flex-1');
+        // The gauge comes first, so it is above the breakdown when stacked.
+        expect(pair.firstElementChild).not.toBe(breakdown);
+    });
+
+    it('never lets a breakdown percentage shrink out of view', async () => {
+        serve(() => reply(200, result));
+        render(<CycleReadinessPage />);
+        await screen.findByText(R.rec.GENERIC_COVERAGE_LOW);
+
+        const scores = screen.getAllByTestId('breakdown-score');
+        expect(scores.map((s) => s.textContent)).toEqual(['40%', '50%', '100%']);
+        for (const s of scores) expect(s).toHaveClass('shrink-0');
+    });
+});

@@ -833,9 +833,17 @@ export default function AdminIntegrationsPage() {
                     visually). The "Configured Connections" heading +
                     Add button hoist above the table. */}
                 <div>
-                    <div className="flex justify-between items-center mb-3">
-                        <Heading level={2}>{t('integrations.configuredConnections')}</Heading>
-                        <div className="flex items-center gap-tight">
+                    {/* Up to six controls, and four of them are the ONLY way
+                        into the identity pages. In one row that never wrapped,
+                        a phone showed two of them and the shell's clip hid the
+                        rest. Below `sm` they stack as full-width rows, the
+                        primary action first; from `sm` they wrap. */}
+                    <div className="flex flex-col gap-compact mb-3 sm:flex-row sm:items-center sm:justify-between">
+                        <Heading level={2} className="sm:shrink-0">{t('integrations.configuredConnections')}</Heading>
+                        <div
+                            className="grid grid-cols-1 gap-tight sm:flex sm:flex-wrap sm:items-center sm:justify-end"
+                            id="configured-connections-actions"
+                        >
                             {canConfigure && internalProviders.length > 0 && !allInternalEnabled && (
                                 <Button variant="secondary" size="sm" onClick={handleEnableInternal} id="enable-internal-checks-btn">
                                     {t('integrations.enableInternal')}
@@ -875,6 +883,7 @@ export default function AdminIntegrationsPage() {
                                 <Button
                                     variant="primary"
                                     icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                                    className="order-first sm:order-none"
                                     onClick={() => { resetForm(); setShowForm(true); }}
                                     id="add-integration-btn"
                                 >

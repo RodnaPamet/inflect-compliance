@@ -102,7 +102,11 @@ jest.mock('@/app/t/[tenantSlug]/(app)/admin/integrations/ConnectionHealthPanel',
 jest.mock('@/components/admin/IdentityCrossLinks', () => ({ IdentityCrossLinks: () => null }));
 jest.mock('@/components/nav/BackAffordance', () => ({ BackAffordance: () => null }));
 jest.mock('@/components/layout/PageBreadcrumbs', () => ({ PageBreadcrumbs: () => null }));
-jest.mock('@/components/require-permission', () => ({ RequirePermission: () => null }));
+// The OWNER-only identity links are hidden unless a test opens the gate.
+let mockGatedShown = false;
+jest.mock('@/components/require-permission', () => ({
+    RequirePermission: ({ children }: { children: React.ReactNode }) => (mockGatedShown ? <>{children}</> : null),
+}));
 
 import AdminIntegrationsPage from '@/app/t/[tenantSlug]/(app)/admin/integrations/page';
 
@@ -604,5 +608,59 @@ describe('the connection form names its fields', () => {
             const label = document.querySelector(`label[for="${el.id}"]`);
             expect(label?.textContent?.trim()).toBeTruthy();
         }
+    });
+});
+
+/**
+ * On a phone every control above the connections table must be reachable.
+ * They were six controls in one `justify-between` row that never wrapped, and
+ * the shell's `overflow-x-clip` hid what did not fit: "Enable internal checks"
+ * was half off-screen and the four identity links — the only way into those
+ * pages from here — were invisible.
+ */
+describe('the controls above the connections table, on a phone', () => {
+    beforeEach(() => {
+        mockGatedShown = true;
+    });
+    afterEach(() => {
+        mockGatedShown = false;
+    });
+
+    it('stack as full-width rows below sm and wrap from sm, the primary action first', async () => {
+        // A disabled internal check, so "Enable internal checks" is offered.
+        serve([conn({ id: 'c-pers', provider: 'personnel', name: 'Personnel', isEnabled: false, configJson: {} })]);
+        await renderPage();
+
+        const actions = byIdOrNull('configured-connections-actions') as HTMLElement;
+        expect(actions).not.toBeNull();
+        // One column of rows on a phone; a wrapping row from `sm`. A plain
+        // `flex` without `flex-wrap` at any width is the regression.
+        expect(actions).toHaveClass('grid', 'grid-cols-1', 'sm:flex', 'sm:flex-wrap');
+        expect(actions).not.toHaveClass('flex');
+
+        const ids = [
+            'enable-internal-checks-btn',
+            'identity-accounts-link',
+            'leaver-passes-link',
+            'joiner-passes-link',
+            'write-policy-link',
+            'add-integration-btn',
+        ];
+        for (const id of ids) {
+            const el = byIdOrNull(id);
+            expect(el).not.toBeNull();
+            expect(el?.parentElement).toBe(actions);
+        }
+        expect(byIdOrNull('add-integration-btn')).toHaveClass('order-first', 'sm:order-none');
+
+        // Each identity link goes to its page.
+        expect(byIdOrNull('identity-accounts-link')).toHaveAttribute('href', '/t/acme/admin/integrations/identity-accounts');
+        expect(byIdOrNull('leaver-passes-link')).toHaveAttribute('href', '/t/acme/admin/identity-leaver-passes');
+        expect(byIdOrNull('joiner-passes-link')).toHaveAttribute('href', '/t/acme/admin/identity-joiner-passes');
+        expect(byIdOrNull('write-policy-link')).toHaveAttribute('href', '/t/acme/admin/identity-write-policy');
+
+        // The heading and the controls stack below `sm` too, rather than
+        // sharing one line.
+        expect(actions.parentElement).toHaveClass('flex-col', 'sm:flex-row');
     });
 });

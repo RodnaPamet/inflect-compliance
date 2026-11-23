@@ -381,3 +381,42 @@ describe('VendorTemplateBuilderClient', () => {
         expect(screen.getByTestId('add-section-form')).toBeTruthy();
     });
 });
+
+/**
+ * On a phone a question's prompt must keep the card's width. The badges,
+ * weight and edit buttons used to sit beside it in a row that never wrapped,
+ * which left the prompt one word wide and the page ~11,000px tall.
+ */
+describe('a question row on a phone', () => {
+    it('wraps below sm, the prompt taking a full line of its own', async () => {
+        await renderBuilder();
+        const row = screen.getByTestId('question-q-1');
+        expect(row).toHaveClass('flex-wrap', 'sm:flex-nowrap');
+
+        const prompt = screen.getByTestId('prompt-of-q-1');
+        expect(prompt).toHaveClass('w-full', 'sm:w-auto', 'sm:flex-1');
+        expect(prompt).toHaveTextContent('Do you use MFA?');
+        // The prompt leads the row (after the mouse-only drag handle), so the
+        // badges wrap onto the line below it, never beside it.
+        const children = Array.from(row.children);
+        const shownBefore = children
+            .slice(0, children.indexOf(prompt))
+            .filter((el) => !el.classList.contains('hidden'));
+        expect(shownBefore).toHaveLength(0);
+    });
+
+    it('gives every edit button the 44px touch floor', async () => {
+        await renderBuilder();
+        const actions = within(screen.getByTestId('question-q-1')).getByTestId('row-actions');
+        const buttons = within(actions).getAllByRole('button');
+        expect(buttons).toHaveLength(4);
+        for (const b of buttons) {
+            expect(b).toHaveClass('pointer-coarse:min-h-11', 'pointer-coarse:min-w-11');
+        }
+    });
+
+    it('puts the edit buttons of a section under its title below sm, not beside it', async () => {
+        await renderBuilder();
+        expect(screen.getByTestId('section-header-s-1')).toHaveClass('flex-col', 'sm:flex-row');
+    });
+});

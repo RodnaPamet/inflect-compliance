@@ -191,7 +191,14 @@ export default function CycleReadinessPage() {
         >
             {/* Score + Breakdown */}
             <div className={cardVariants()}>
-                <div className="flex items-start gap-page">
+                {/* Below `sm` the gauge sits above the breakdown, which takes
+                    the full width. Side by side at any width, a 360px phone
+                    left the breakdown too little room and cut its
+                    percentages off. */}
+                <div
+                    className="flex flex-col items-center gap-section sm:flex-row sm:items-start sm:gap-page"
+                    id="readiness-score-breakdown"
+                >
                     <div className="flex-shrink-0 text-center">
                         <ReadinessScoreRing
                             score={result.score}
@@ -220,7 +227,7 @@ export default function CycleReadinessPage() {
                             />
                         </p>
                     </div>
-                    <div className="flex-1 space-y-compact" id="readiness-breakdown">
+                    <div className="w-full min-w-0 space-y-compact sm:flex-1" id="readiness-breakdown">
                         {bd.coverage && (
                             <BreakdownBar label={tx('readiness.reqCoverage')} score={bd.coverage.score}
                                 detail={tx('readiness.reqMappedDetail', { mapped: bd.coverage.mapped, total: bd.coverage.total })} weight={bd.coverage.weight} />
@@ -341,9 +348,11 @@ function BreakdownBar({ label, score, detail, weight }: { label: string; score: 
     const variant = readinessVariant(score);
     return (
         <div>
-            <div className="flex items-center justify-between text-xs mb-1">
-                <span className="text-content-default">{label} ({Math.round(weight * 100)}%)</span>
-                <span className="text-content-muted">{score}%</span>
+            {/* The label may wrap; the score never shrinks, so a long
+                Bulgarian label cannot push the percentage out of view. */}
+            <div className="flex items-start justify-between gap-tight text-xs mb-1">
+                <span className="min-w-0 text-content-default">{label} ({Math.round(weight * 100)}%)</span>
+                <span className="shrink-0 tabular-nums text-content-muted" data-testid="breakdown-score">{score}%</span>
             </div>
             <ProgressBar
                 value={score}
