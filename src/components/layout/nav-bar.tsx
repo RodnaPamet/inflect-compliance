@@ -313,7 +313,16 @@ export const NAV_BAR_SHELL = [
  * truncating itself.
  */
 export const NAV_BAR_SLOT_LEFT =
-    'flex min-w-0 flex-1 items-center gap-default';
+    'flex min-w-0 flex-1 items-center gap-default pointer-coarse:gap-0';
+
+/*
+ * `pointer-coarse:gap-0` on both outer slots (#5813, #5821). On a touch
+ * screen every control in the bar is a 44px box around a 22px glyph, so each
+ * already carries 11px of breath on either side; the 8px gap on top of that
+ * is what pushed a 360px phone's bar — hamburger, brand, environment badge,
+ * search, assistant, bell, avatar — past the screen edge. The glyphs still sit
+ * 22px apart. On a mouse the boxes are 22px and the gap is unchanged.
+ */
 
 /**
  * Centre-slot recipe — fixed width, never grows past the search
@@ -335,7 +344,7 @@ export const NAV_BAR_SLOT_CENTER =
  * identity".
  */
 export const NAV_BAR_SLOT_RIGHT =
-    'flex shrink-0 items-center justify-end gap-default';
+    'flex shrink-0 items-center justify-end gap-default pointer-coarse:gap-0';
 
 // ─── Brand mark (R14-PR3) ──────────────────────────────────────────
 

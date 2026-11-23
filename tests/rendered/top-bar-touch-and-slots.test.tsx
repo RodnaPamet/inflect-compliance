@@ -38,7 +38,13 @@
  */
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import * as React from 'react';
-import { NavBarBrand, NavBarMobileMenu, NAV_BAR_SHELL, NAV_BAR_PADDING } from '@/components/layout/nav-bar';
+import {
+    NavBar,
+    NavBarBrand,
+    NavBarMobileMenu,
+    NAV_BAR_SHELL,
+    NAV_BAR_PADDING,
+} from '@/components/layout/nav-bar';
 import { UserMenu } from '@/components/layout/user-menu';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
@@ -81,6 +87,21 @@ describe('top bar — WCAG 2.5.5 touch targets', () => {
         // The floor is the LINK's alone: a mark that grew with it would be the
         // visual change this split exists to avoid.
         expect(mark).not.toContain('pointer-coarse:min-h-11');
+    });
+
+    it('on a touch screen the outer slots drop their gap, so seven 44px controls fit 360px', () => {
+        // #5813/#5821 added a search and an assistant icon to the phone bar.
+        // Each 44px box already carries 11px of breath around its 22px glyph;
+        // with the 8px gap on top, hamburger + brand + environment badge +
+        // search + assistant + bell + avatar ran past a 360px screen.
+        render(<NavBar left={<span />} right={<span />} />);
+        const banner = screen.getByRole('banner');
+        for (const slot of ['left', 'right']) {
+            const cls = banner.querySelector(`[data-slot="${slot}"]`)!.className.split(/\s+/);
+            expect(cls).toContain('pointer-coarse:gap-0');
+            // POSITIVE CONTROL: the mouse spacing is the one it was.
+            expect(cls).toContain('gap-default');
+        }
     });
 
     it('the bar clears the status bar and the landscape notch', () => {
