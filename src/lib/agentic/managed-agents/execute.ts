@@ -141,6 +141,7 @@ import { recordWorkflowContextIntegrityHalt } from '@/lib/observability/metrics'
 import {
     MANAGED_AGENTS_GUARD_SOURCE,
     MANAGED_AGENTS_PREFIX,
+    SEND_ONCE,
     agentDrift,
     sessionBudgetFor,
     sessionMetadataFor,
@@ -584,7 +585,7 @@ export async function executeManagedAgentsRun(
         environment_id: pinned.environmentId,
         budget: sessionBudget,
         metadata: sessionMetadataFor(ctx.tenantId, runId),
-    });
+    }, SEND_ONCE);
     const sessionId = session.id;
     // The wall clock: the read of the stream stops at the run's deadline.
     let wallTimer: ReturnType<typeof setTimeout> | null = null;
@@ -626,7 +627,7 @@ export async function executeManagedAgentsRun(
             answered.add(r.id);
             pending.delete(r.id);
         }
-        await client.beta.sessions.events.send(sessionId, { events });
+        await client.beta.sessions.events.send(sessionId, { events }, SEND_ONCE);
         for (const e of events) sent.push(e);
     };
 
@@ -846,7 +847,7 @@ export async function executeManagedAgentsRun(
             const done = await readStream(async () => {
                 if (!first) return;
                 const opening = { type: 'user.message' as const, content: [{ type: 'text' as const, text: message }] };
-                await client.beta.sessions.events.send(sessionId, { events: [opening] });
+                await client.beta.sessions.events.send(sessionId, { events: [opening] }, SEND_ONCE);
                 sent.push(opening);
                 first = false;
             }, !first);
@@ -1004,7 +1005,7 @@ async function settleSession(
             if (status !== 'running' && status !== 'rescheduling') break;
             if (i === 0 && mayBeRunning) {
                 try {
-                    await client.beta.sessions.events.send(sessionId, { events: [{ type: 'user.interrupt' }] });
+                    await client.beta.sessions.events.send(sessionId, { events: [{ type: 'user.interrupt' }] }, SEND_ONCE);
                 } catch {
                     // The delete below says whether it worked.
                 }

@@ -658,6 +658,36 @@ describe('Step 5b hardening', () => {
         });
     });
 
+    it('a tool result whose response the network lost is never sent again: the SDK does not retry a session POST (5H)', async () => {
+        // The second POST of events is the first tool result. The workspace
+        // takes it, then the connection drops before the answer arrives.
+        faux.loseResponse = { method: 'POST', path: /\/events$/, nth: 2 };
+        const outcome = await drive({ tools: [LIST_RISKS], turns: [callRisks, { text: 'done' }] });
+        // Positive control: the call ran and its result reached the session.
+        expect(mockState.funnelCalls.map((c) => c.name)).toEqual(['list_risks']);
+        expect(faux.toolResults.filter((r) => !r.isError)).toHaveLength(1);
+        // Exactly once: no second answer to the same call.
+        expect(faux.toolResults).toHaveLength(1);
+        expect(faux.unexpectedResults).toEqual([]);
+        // The run cannot know whether the answer landed, so it fails closed and the session goes.
+        expect(outcome.status).toBe('FAILED');
+        expect(mockState.settlement?.reason).toMatch(/^managed_agents_run_failed: /);
+        expectEverySessionDeleted();
+    });
+
+    it('a session create whose response the network lost is not sent again (5H)', async () => {
+        faux.loseResponse = { method: 'POST', path: /^\/v1\/sessions$/, nth: 1 };
+        await drive({ tools: [LIST_RISKS], turns: [{ text: 'done' }] }).catch(() => undefined);
+        expect(faux.sessionCreates).toHaveLength(1);
+    });
+
+    it('an agent create whose response the network lost is not sent again: no unrecorded second agent (5H)', async () => {
+        faux.loseResponse = { method: 'POST', path: /^\/v1\/agents$/, nth: 1 };
+        await expect(drive({ tools: [LIST_RISKS], turns: [{ text: 'done' }] })).rejects.toThrow();
+        expect(faux.agentWrites.filter((w) => w.op === 'create')).toHaveLength(1);
+        expect(mockState.provisions).toEqual([]);
+    });
+
     it('a drop after a completed call replays the history without counting any event twice', async () => {
         // The second turn's text drops the stream, so the reconnect's history
         // holds the first call's span, its tool use and its answer again.

@@ -145,6 +145,13 @@ export class ManagedAgentsFaux {
     /** The delete answers with this status. */
     failDelete: number | null = null;
     drop: FauxDrop | null = null;
+    /**
+     * An unreliable network: the Nth request matching (1-based) is TAKEN by the
+     * workspace, and then the connection drops before its response arrives. The
+     * client sees a network failure for a request that was processed.
+     */
+    loseResponse: { method: string; path: RegExp; nth: number } | null = null;
+    private loseResponseSeen = 0;
     /** Add a built-in tool use to the turn with this index (a reach beyond custom tools). */
     builtinToolUseOnTurn: number | null = null;
     private modelCallCount = 0;
@@ -152,7 +159,20 @@ export class ManagedAgentsFaux {
     private readonly originalFetch = global.fetch;
 
     install(): void {
-        global.fetch = ((input: RequestInfo | URL, init?: RequestInit) => this.serve(input, init)) as typeof fetch;
+        global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+            const response = await this.serve(input, init);
+            const lose = this.loseResponse;
+            if (lose) {
+                const url = new URL(typeof input === 'string' || input instanceof URL ? String(input) : input.url);
+                if ((init?.method ?? 'GET').toUpperCase() === lose.method && lose.path.test(url.pathname)) {
+                    this.loseResponseSeen += 1;
+                    if (this.loseResponseSeen === lose.nth) {
+                        throw new TypeError('faux: the connection dropped after the workspace took the request');
+                    }
+                }
+            }
+            return response;
+        }) as typeof fetch;
     }
 
     uninstall(): void {
