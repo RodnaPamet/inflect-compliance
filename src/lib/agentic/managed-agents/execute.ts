@@ -25,9 +25,10 @@
  *
  * Created with `agent_with_overrides` at the pinned version, whose `system`
  * override is the ONE place the tenant's instructions are sent; the
- * connection's environment; a dollar `budget` derived from the run's caps at
- * the tier's list price (`sessionBudgetFor`), a backstop behind the run's own
- * token count; and metadata naming the tenant and the run by id. The session
+ * connection's environment; a dollar `budget` derived from what is left of
+ * the run's caps at the tier's list price (`sessionBudgetFor`), a backstop
+ * behind the run's own token count; and metadata naming the tenant and the
+ * run by id. The session
  * id is written to the ledger AT ONCE (`SESSION_CREATED`), so a crash leaves a
  * record Step 5c can clean up by id.
  *
@@ -574,10 +575,14 @@ export async function executeManagedAgentsRun(
         return { status, stepFailures: 0 };
     }
 
+    // What the run has LEFT, not its whole cap (Step 5H, #4169): a resumed
+    // run's earlier segments spent part of it, and each segment's session is a
+    // new one with a budget of its own, so a whole-cap backstop per session
+    // would let a run's sessions together spend its cap once per segment.
     const sessionBudget = sessionBudgetFor({
         model: route.model,
-        tokensLimit: caps.TOKENS.limit,
-        runtimeMsLimit: caps.RUNTIME_MS.limit,
+        tokensLimit: budget.remaining('TOKENS'),
+        runtimeMsLimit: budget.remaining('RUNTIME_MS'),
     });
     if (!sessionBudget) {
         const status = await failRun(ctx, runId, MODEL_UNPRICED_MESSAGE);

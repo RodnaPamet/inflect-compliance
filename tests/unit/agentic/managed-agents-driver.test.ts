@@ -306,7 +306,7 @@ import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import { ENGINE_CAPS } from '@/lib/agentic/workflow-types';
 import { runManagedAgentsDriver } from '@/lib/agentic/managed-agents/driver';
 import { provisionManagedAgent } from '@/lib/agentic/managed-agents/provision';
-import { agentToolsFor, toolsHashOf } from '@/lib/agentic/managed-agents/definition';
+import { agentToolsFor, sessionBudgetFor, toolsHashOf } from '@/lib/agentic/managed-agents/definition';
 import { MANAGED_AGENTS_SPAN_PROVIDER } from '@/lib/agentic/managed-agents/model-decision';
 import { NOT_OFFERED_TOOL_RESULT, STOPPED_TOOL_RESULT } from '@/lib/agentic/managed-agents/execute';
 import { managedAgentsClientFor } from '@/lib/agentic/tool-runner/client';
@@ -562,6 +562,24 @@ describe('Step 5b hardening', () => {
         expect(body.metadata).toEqual({ inflect_tenant: 'tenant-conformance', inflect_run: expect.stringMatching(/^run-/) });
         expect(body).not.toHaveProperty('vault_ids');
         expect(body).not.toHaveProperty('resources');
+    });
+
+    it('a resumed run\'s session gets the spend cap of what the run has LEFT, not of the whole run (5H)', async () => {
+        // Half the run's tokens and half its wall clock went to an earlier
+        // segment (a worker restart, a person's resume after a checkpoint).
+        const spent = Math.floor(ENGINE_CAPS.MAX_TOKENS / 2);
+        await drive({
+            tools: [LIST_RISKS],
+            turns: [{ text: 'done' }],
+            alreadySpent: { tokens: spent, elapsedMs: ENGINE_CAPS.WALL_CLOCK_MS / 2 },
+        });
+        const amountOf = (b: ReturnType<typeof sessionBudgetFor>) => Number(b?.max_list_cost.amount);
+        const whole = amountOf(sessionBudgetFor({ model: 'claude-sonnet-5-5', tokensLimit: ENGINE_CAPS.MAX_TOKENS, runtimeMsLimit: ENGINE_CAPS.WALL_CLOCK_MS }));
+        const left = amountOf(sessionBudgetFor({ model: 'claude-sonnet-5-5', tokensLimit: ENGINE_CAPS.MAX_TOKENS - spent, runtimeMsLimit: ENGINE_CAPS.WALL_CLOCK_MS / 2 }));
+        const sent = Number((faux.sessionCreates[0].budget as { max_list_cost: { amount: string } }).max_list_cost.amount);
+        expect(left).toBeLessThan(whole);
+        expect(sent).toBe(left);
+        expect(mockState.settlement?.status).toBe('COMPLETED');
     });
 
     it('every request carries the connection\'s workspace header and the connection\'s key', async () => {
