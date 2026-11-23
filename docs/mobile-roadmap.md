@@ -40,7 +40,52 @@ run across the whole product before anything was fixed.
 
 ## Current state (true today)
 
-### The headline numbers
+### Progress since the audit (2026-11-23)
+
+Phases 0, 1 and 2, and every P0 page, have shipped: epic #5805 and its 30
+issues are closed.
+
+| Work | Pull requests |
+|---|---|
+| Phase 0: the audit harness (`scripts/mobile-audit/`), the `mobile` Playwright project, its ratchet, the 360 px checklist item | #5860, #5862, #5864 |
+| Phase 1: overlays stack and clear the home indicator, the bulk bar fits; 16 px fields on touch; the tab strip shows that it scrolls; assistant and search in the top bar, 44 px chrome targets; filter toolbar, segmented controls and list cards; page header with a "⋯" menu and one way back | #5845, #5846, #5847, #5850, #5853 |
+| Phase 2: back links, dates, helper copy, server-built text, raw enums and the shell's remaining strings in Bulgarian, with a ratchet per leak class | #5853, #5858, #5859, #5864 |
+| P0 pages: task detail, test-plan detail, integrations, agent runs, vendor template editor, audit-cycle readiness, BIA detail | #5853, #5856 |
+
+The `mobile` E2E project now holds the fixed route set (one route per shared
+primitive, plus the P0 pages) at 390 dark and 360 light, both in Bulgarian.
+On those routes:
+- nothing interactive is clipped;
+- no field is under 16 px;
+- no overlay covers a control;
+- every overflowing tab bar shows a cue;
+- no English string appears.
+
+Each count is a baseline in `tests/e2e/mobile-ratchet.ts` with
+`DRIFT_ALLOWANCE` 0. Two counts there are not zero yet: tap targets under 24 px
+(10 of the seeded routes) and one clipped text element (the integrations
+webhook URL). Bulk Apply on a phone and the home-indicator inset each have an
+E2E case of their own. See `docs/mobile-audit.md`.
+
+Across the whole product, the harness still finds what the shared fixes did not
+reach. These figures are from the Phase 0 run on 2026-11-23, before #5853 and
+#5864 landed, so the English row has fallen since. They are the starting point
+for Phase 3, which begins by re-running `npm run mobile:audit` against `main`.
+
+| Check (pages failing) | 390 bg | 390 en | 360 bg |
+|---|---|---|---|
+| Content clipped at the right edge | 12 | 9 | 17 |
+| Overlay covers text / a control | 0 / 0 | 0 / 0 | 0 / 0 |
+| Tap target < 24 px | 147 | 147 | 147 |
+| Text < 12 px | 152 | 152 | 152 |
+| Tab bar overflows with no cue | 0 | 0 | 0 |
+| Button group on 3+ lines | 13 | 11 | 14 |
+| Input font < 16 px | 0 | 0 | 0 |
+| Table wider than the screen | 4 | 4 | 4 |
+
+The sections below record the product as the audit found it on 2026-11-22.
+
+### The headline numbers at the audit (2026-11-22)
 
 Pages failing each check (390 dark bg / 390 light en / 360 dark bg):
 
@@ -159,7 +204,7 @@ and are the source for the Phase 3 work.
 The order is chosen so that each phase removes the most broken pages for the
 least code, and so that nothing fixed can quietly regress.
 
-### Phase 0 — measure, and stop it getting worse
+### Phase 0 — measure, and stop it getting worse (shipped)
 
 1. **Commit the audit harness** as `scripts/mobile-audit/`: route enumeration,
    id resolution, capture and the measurement pass, runnable against the E2E
@@ -176,7 +221,7 @@ least code, and so that nothing fixed can quietly regress.
 4. **Add "renders on a 360 px phone" to `docs/new-subsystem-checklist.md`** and
    the page conventions in `CLAUDE.md`, with the patterns below as the rules.
 
-### Phase 1 — the shell and the shared primitives
+### Phase 1 — the shell and the shared primitives (shipped)
 
 Each item is one PR in a shared component; together they fix most of the
 pages in the tables above.
@@ -219,7 +264,7 @@ pages in the tables above.
 13. **One back affordance per subpage**: breadcrumbs collapse to the back link
     below `md`, in a fixed position (S12).
 
-### Phase 2 — Bulgarian chrome is Bulgarian
+### Phase 2 — Bulgarian chrome is Bulgarian (shipped)
 
 1. **Back-link labels** become message keys (I1).
 2. **Locale-aware dates**: `format-date.ts` takes the active locale, keeping its
@@ -236,7 +281,7 @@ pages in the tables above.
 
 ### Phase 3 — the pages
 
-1. **The P0 pages first** (#3–#9 above), one small PR each.
+1. **The P0 pages first** (#3–#9 above). Shipped in #5853 and #5856.
 2. **Then the local P1s, area by area** — core GRC, agents and admin, vendors /
    audits / incidents / org — each PR closing every local defect in its area and
    lowering the Phase 0 baseline.
