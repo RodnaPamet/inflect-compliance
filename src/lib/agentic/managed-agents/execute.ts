@@ -197,6 +197,14 @@ export const MODEL_UNPRICED_MESSAGE =
     `${MANAGED_AGENTS_PREFIX}_model_unpriced: no list price is known for this profile's model, so no spend cap could `
     + 'be set on the session. Nothing was sent.';
 
+export const SESSION_NOT_CREATED_PREFIX = `${MANAGED_AGENTS_PREFIX}_session_not_created`;
+
+/** The provider's status and error type, never its text. A lost response has neither. */
+export function sessionNotCreatedMessage(code: { status: number | null; type: string | null }): string {
+    const what = code.status !== null ? `provider status ${code.status}${code.type ? ` (${code.type})` : ''}` : 'the provider did not answer';
+    return `${SESSION_NOT_CREATED_PREFIX}: ${what}. Nothing was run.`;
+}
+
 export const KILL_UNREADABLE_MESSAGE =
     `${MANAGED_AGENTS_PREFIX}_kill_switch_unreadable: the kill switch could not be read, so the run stopped rather `
     + 'than carry on unchecked.';
@@ -575,18 +583,35 @@ export async function executeManagedAgentsRun(
     });
 
     // ── The session ─────────────────────────────────────────────────────────
-    const session = await client.beta.sessions.create({
-        agent: {
-            type: 'agent_with_overrides',
-            id: pinned.anthropicAgentId,
-            version: pinned.anthropicAgentVersion,
-            system,
-        },
-        environment_id: pinned.environmentId,
-        budget: sessionBudget,
-        metadata: sessionMetadataFor(ctx.tenantId, runId),
-    }, SEND_ONCE);
-    const sessionId = session.id;
+    // A refusal is SETTLED with the provider's codes, never thrown (Step 5H,
+    // #4169): the SDK's error message carries the response body, and a throw
+    // would put it in the worker's `job failed` log line and BullMQ's stored
+    // failure, then retry the run into another session create.
+    let sessionId: string;
+    try {
+        const session = await client.beta.sessions.create({
+            agent: {
+                type: 'agent_with_overrides',
+                id: pinned.anthropicAgentId,
+                version: pinned.anthropicAgentVersion,
+                system,
+            },
+            environment_id: pinned.environmentId,
+            budget: sessionBudget,
+            metadata: sessionMetadataFor(ctx.tenantId, runId),
+        }, SEND_ONCE);
+        sessionId = session.id;
+    } catch (err) {
+        const code = providerCodeOf(err);
+        logger.warn('managed-agents: the session could not be created', {
+            component: 'agentic',
+            runId: run.runId,
+            providerStatus: code.status,
+            providerErrorType: code.type,
+        });
+        const status = await failRun(ctx, runId, sessionNotCreatedMessage(code));
+        return { status, stepFailures: 1 };
+    }
     // The wall clock: the read of the stream stops at the run's deadline.
     let wallTimer: ReturnType<typeof setTimeout> | null = null;
     const armWallClock = (): void => {

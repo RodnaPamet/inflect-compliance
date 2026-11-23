@@ -681,6 +681,34 @@ describe('Step 5b hardening', () => {
         expect(faux.sessionCreates).toHaveLength(1);
     });
 
+    it('a refused session create settles the run with codes only: the provider\'s text reaches no log, no run row and no retry (5H)', async () => {
+        const echo = 'PROVIDER-TEXT-91f0: the system override you sent was';
+        faux.failSessionCreate = { status: 400, message: echo };
+        const { logger } = jest.requireActual('@/lib/observability/logger') as typeof import('@/lib/observability/logger');
+        const logged: unknown[] = [];
+        const spies = (['debug', 'info', 'warn', 'error'] as const).map((level) =>
+            jest.spyOn(logger, level).mockImplementation((...args: unknown[]) => {
+                logged.push(args);
+                return undefined as never;
+            }),
+        );
+        try {
+            // Settled, not thrown: a throw reaches the worker's `job failed`
+            // line with the SDK's message, which carries the response body,
+            // and BullMQ retries the run into a second session create.
+            const outcome = await drive({ tools: [LIST_RISKS], turns: [{ text: 'done' }] });
+            expect(outcome.status).toBe('FAILED');
+            expect(mockState.settlement?.reason).toBe(
+                'managed_agents_session_not_created: provider status 400 (invalid_request_error). Nothing was run.',
+            );
+            expect(faux.sessionCreates).toHaveLength(1);
+            expect(JSON.stringify(logged)).not.toContain('PROVIDER-TEXT-91f0');
+            expect(JSON.stringify(mockState.ledger)).not.toContain('PROVIDER-TEXT-91f0');
+        } finally {
+            for (const s of spies) s.mockRestore();
+        }
+    });
+
     it('an agent create whose response the network lost is not sent again: no unrecorded second agent (5H)', async () => {
         faux.loseResponse = { method: 'POST', path: /^\/v1\/agents$/, nth: 1 };
         await expect(drive({ tools: [LIST_RISKS], turns: [{ text: 'done' }] })).rejects.toThrow();

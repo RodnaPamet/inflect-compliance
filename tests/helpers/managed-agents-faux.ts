@@ -144,6 +144,8 @@ export class ManagedAgentsFaux {
     failEventsFrom: { nth: number; status: number } | null = null;
     /** The delete answers with this status. */
     failDelete: number | null = null;
+    /** `sessions.create` is refused with this status and error message. */
+    failSessionCreate: { status: number; message: string } | null = null;
     drop: FauxDrop | null = null;
     /**
      * An unreliable network: the Nth request matching (1-based) is TAKEN by the
@@ -360,6 +362,9 @@ export class ManagedAgentsFaux {
 
     private createSession(body: Record<string, unknown>): Response {
         this.sessionCreates.push(body);
+        if (this.failSessionCreate) {
+            return apiError(this.failSessionCreate.status, 'invalid_request_error', this.failSessionCreate.message);
+        }
         const agent = (body.agent ?? {}) as Record<string, unknown>;
         const s: FauxSession = {
             id: this.nextId('sesn'),
