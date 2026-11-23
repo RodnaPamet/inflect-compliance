@@ -6,10 +6,15 @@ import { formatDate } from '@inflect/ui/lib/format-date';
 import { Button } from '@/components/ui/button';
 import { Heading } from '@/components/ui/typography';
 import { useTenantContext } from '@/lib/tenant-context-provider';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Monitor } from 'lucide-react';
+import { useSoASectionLabel } from '@/app/t/[tenantSlug]/(app)/reports/soa/section-label';
 
 interface SoAPrintViewProps {
     /** Where to go when there is no history to go back to (fresh tab). */
     backHref: string;
+    /** The interactive SoA for this framework — what a phone reads instead. */
+    soaHref: string;
     report: SoAReportDTO;
 }
 
@@ -25,9 +30,10 @@ type ControlStatusValue = (typeof CONTROL_STATUSES)[number];
  *
  * Print styles are in globals.css (moved there for CSP compliance — no inline <style> tags).
  */
-export function SoAPrintView({ report, backHref }: SoAPrintViewProps) {
+export function SoAPrintView({ report, backHref, soaHref }: SoAPrintViewProps) {
     const t = useTranslations('reports');
     const { tenantName } = useTenantContext();
+    const sectionLabel = useSoASectionLabel();
     const { summary, entries } = report;
     // Epic 58 — canonical app-wide formatter so the printed SoA's
     // "Generated on" line reads identically to every other date in
@@ -43,95 +49,133 @@ export function SoAPrintView({ report, backHref }: SoAPrintViewProps) {
         entries: entries.filter(e => (e.section || other) === s),
     }));
 
+    // `history.back()` is a NO-OP in the tab this page opens in. The SoA
+    // "Print" affordance opens this in a NEW TAB, so the fresh tab has no
+    // history to go back to and the button did nothing at all — the one
+    // control on an otherwise-chrome-less page. Fall back to the reports hub
+    // when there is nowhere to return to.
+    const goBack = () => {
+        if (window.history.length > 1) window.history.back();
+        else window.location.assign(backHref);
+    };
+
     return (
         <div className="soa-print-body bg-bg-page text-content-default min-h-screen text-sm">
-            {/* ─── Print toolbar (screen only) ─── */}
-            <div className="no-print flex items-center justify-between mb-6 p-4 bg-bg-muted rounded-lg">
-                <div>
-                    <Heading level={2}>{t('soaPrint.printPreview')}</Heading>
-                    <p className="text-xs text-content-muted">{t('soaPrint.printHint')}</p>
-                </div>
-                <div className="flex gap-tight">
-                    <Button variant="secondary" onClick={() => window.print()} id="soa-print-button">
-                        {t('soaPrint.printBtn')}
-                    </Button>
-                    {/* `history.back()` is a NO-OP in the tab this page opens in.
-                        The SoA "Print" affordance opens this in a NEW TAB, so the
-                        fresh tab has no history to go back to and the button
-                        did nothing at all — the one control on an
-                        otherwise-chrome-less page. Fall back to the reports hub
-                        when there is nowhere to return to. */}
-                    <Button
-                        variant="ghost"
-                        onClick={() => {
-                            if (window.history.length > 1) window.history.back();
-                            else window.location.assign(backHref);
-                        }}
-                    >
+            {/* ─── A phone's screen: a notice, not the document ───
+                The print view is a page for the printer: fixed-width tables
+                and a summary grid that a phone screen clipped on both sides.
+                On a phone SCREEN (owner decision, 2026-11-23) it says so and
+                offers what the reader came for: print or save the PDF, the
+                readable SoA, or the way back. Both gates are
+                `@media screen`, never a bare breakpoint: a printed page is
+                narrower than `md` too, and printing — from a phone or a
+                desktop — must still lay out the whole document. */}
+            <div
+                className="no-print hidden [@media_screen_and_(max-width:767.98px)]:block"
+                data-testid="soa-print-phone-notice"
+            >
+                <EmptyState
+                    icon={Monitor}
+                    title={t('soaPrintMobile.title')}
+                    description={t('soaPrintMobile.description')}
+                    primaryAction={{
+                        label: t('soaPrint.printBtn'),
+                        onClick: () => window.print(),
+                        'data-testid': 'soa-print-phone-print',
+                    }}
+                    secondaryAction={{
+                        label: t('soaPrintMobile.openSoa'),
+                        href: soaHref,
+                        'data-testid': 'soa-print-phone-open-soa',
+                    }}
+                    data-testid="soa-print-phone-empty-state"
+                >
+                    <Button variant="ghost" onClick={goBack} id="soa-print-phone-back">
                         {t('soaPrint.back')}
                     </Button>
-                </div>
+                </EmptyState>
             </div>
 
-            {/* ─── Cover section ─── */}
-            <div className="print-page">
-                <div className="border-b-2 border-border-emphasis pb-4 mb-6">
-                    <Heading level={1} className="text-content-emphasis">{t('soa')}</Heading>
-                    <p className="text-sm text-content-muted mt-1">{report.frameworkName}</p>
+            <div className="[@media_screen_and_(max-width:767.98px)]:hidden" data-testid="soa-print-document">
+                {/* ─── Print toolbar (screen only) ─── */}
+                <div className="no-print flex items-center justify-between mb-6 p-4 bg-bg-muted rounded-lg">
+                    <div>
+                        <Heading level={2}>{t('soaPrint.printPreview')}</Heading>
+                        <p className="text-xs text-content-muted">{t('soaPrint.printHint')}</p>
+                    </div>
+                    <div className="flex gap-tight">
+                        <Button variant="secondary" onClick={() => window.print()} id="soa-print-button">
+                            {t('soaPrint.printBtn')}
+                        </Button>
+                        {/* Not `history.back()` alone: see `goBack`. */}
+                        <Button variant="ghost" onClick={goBack}>
+                            {t('soaPrint.back')}
+                        </Button>
+                    </div>
                 </div>
 
-                <table className="w-full text-sm mb-8">
-                    <tbody>
-                        <tr><td className="py-1 pr-4 font-semibold text-content-default w-48">{t('soaPrint.organization')}</td><td className="py-1">{tenantName}</td></tr>
-                        <tr><td className="py-1 pr-4 font-semibold text-content-default">{t('soaPrint.framework')}</td><td className="py-1">{report.frameworkName}</td></tr>
-                        <tr><td className="py-1 pr-4 font-semibold text-content-default">{t('soaPrint.generated')}</td><td className="py-1">{generatedDate}</td></tr>
-                        <tr><td className="py-1 pr-4 font-semibold text-content-default">{t('soaPrint.totalControls')}</td><td className="py-1">{summary.total}</td></tr>
-                    </tbody>
-                </table>
+                {/* ─── Cover section ─── */}
+                <div className="print-page">
+                    <div className="border-b-2 border-border-emphasis pb-4 mb-6">
+                        <Heading level={1} className="text-content-emphasis">{t('soa')}</Heading>
+                        <p className="text-sm text-content-muted mt-1">{report.frameworkName}</p>
+                    </div>
 
-                {/* Summary */}
-                <Heading level={2} className="mb-3 border-b border-border-default pb-1">{t('soaPrint.summary')}</Heading>
-                <div className="grid grid-cols-3 gap-default mb-8">
-                    <SummaryBox label={t('soaPrint.applicable')} value={summary.applicable} total={summary.total} color="green" />
-                    <SummaryBox label={t('soaPrint.notApplicable')} value={summary.notApplicable} total={summary.total} color="gray" />
-                    <SummaryBox label={t('soaPrint.unmapped')} value={summary.unmapped} total={summary.total} color="red" />
-                    <SummaryBox label={t('soaPrint.implemented')} value={summary.implemented} total={summary.total} color="green" />
-                    <SummaryBox label={t('soaPrint.excepted')} value={summary.excepted} total={summary.total} color="amber" />
-                    <SummaryBox label={t('soaPrint.missingJustification')} value={summary.missingJustification} total={summary.total} color="amber" />
-                </div>
-            </div>
-
-            {/* ─── Detail tables per section ─── */}
-            {bySection.map(section => (
-                <div key={section.name} className="print-page">
-                    <Heading level={2} className="mb-3 border-b border-border-default pb-1">
-                        {t('soaPrint.sectionControls', { section: section.name })}
-                        <span className="text-sm font-normal text-content-muted ml-2">({section.entries.length})</span>
-                    </Heading>
-
-                    <table className="print-table w-full text-xs border-collapse mb-6">
-                        <thead>
-                            <tr className="bg-bg-muted">
-                                <th className="border border-border-default px-2 py-1.5 text-left font-semibold w-16">{t('soaPrint.colCode')}</th>
-                                <th className="border border-border-default px-2 py-1.5 text-left font-semibold">{t('soaPrint.colRequirement')}</th>
-                                <th className="border border-border-default px-2 py-1.5 text-left font-semibold w-20">{t('soaPrint.colApplicable')}</th>
-                                <th className="border border-border-default px-2 py-1.5 text-left font-semibold w-28">{t('soaPrint.colStatus')}</th>
-                                <th className="border border-border-default px-2 py-1.5 text-left font-semibold">{t('soaPrint.colControlRefs')}</th>
-                                <th className="border border-border-default px-2 py-1.5 text-left font-semibold">{t('soaPrint.colJustification')}</th>
-                            </tr>
-                        </thead>
+                    <table className="w-full text-sm mb-8">
                         <tbody>
-                            {section.entries.map(entry => (
-                                <PrintRow key={entry.requirementId} entry={entry} />
-                            ))}
+                            <tr><td className="py-1 pr-4 font-semibold text-content-default w-48">{t('soaPrint.organization')}</td><td className="py-1">{tenantName}</td></tr>
+                            <tr><td className="py-1 pr-4 font-semibold text-content-default">{t('soaPrint.framework')}</td><td className="py-1">{report.frameworkName}</td></tr>
+                            <tr><td className="py-1 pr-4 font-semibold text-content-default">{t('soaPrint.generated')}</td><td className="py-1">{generatedDate}</td></tr>
+                            <tr><td className="py-1 pr-4 font-semibold text-content-default">{t('soaPrint.totalControls')}</td><td className="py-1">{summary.total}</td></tr>
                         </tbody>
                     </table>
-                </div>
-            ))}
 
-            {/* ─── Footer ─── */}
-            <div className="text-xs text-content-subtle border-t border-border-subtle pt-4 mt-8">
-                <p>{t('soaPrint.footer', { date: generatedDate })}</p>
+                    {/* Summary */}
+                    <Heading level={2} className="mb-3 border-b border-border-default pb-1">{t('soaPrint.summary')}</Heading>
+                    <div className="grid grid-cols-3 gap-default mb-8">
+                        <SummaryBox label={t('soaPrint.applicable')} value={summary.applicable} total={summary.total} color="green" />
+                        <SummaryBox label={t('soaPrint.notApplicable')} value={summary.notApplicable} total={summary.total} color="gray" />
+                        <SummaryBox label={t('soaPrint.unmapped')} value={summary.unmapped} total={summary.total} color="red" />
+                        <SummaryBox label={t('soaPrint.implemented')} value={summary.implemented} total={summary.total} color="green" />
+                        <SummaryBox label={t('soaPrint.excepted')} value={summary.excepted} total={summary.total} color="amber" />
+                        <SummaryBox label={t('soaPrint.missingJustification')} value={summary.missingJustification} total={summary.total} color="amber" />
+                    </div>
+                </div>
+
+                {/* ─── Detail tables per section ─── */}
+                {bySection.map(section => (
+                    <div key={section.name} className="print-page">
+                        <Heading level={2} className="mb-3 border-b border-border-default pb-1">
+                            {t('soaPrint.sectionControls', {
+                                section: sectionLabel(section.name),
+                            })}
+                            <span className="text-sm font-normal text-content-muted ml-2">({section.entries.length})</span>
+                        </Heading>
+
+                        <table className="print-table w-full text-xs border-collapse mb-6">
+                            <thead>
+                                <tr className="bg-bg-muted">
+                                    <th className="border border-border-default px-2 py-1.5 text-left font-semibold w-16">{t('soaPrint.colCode')}</th>
+                                    <th className="border border-border-default px-2 py-1.5 text-left font-semibold">{t('soaPrint.colRequirement')}</th>
+                                    <th className="border border-border-default px-2 py-1.5 text-left font-semibold w-20">{t('soaPrint.colApplicable')}</th>
+                                    <th className="border border-border-default px-2 py-1.5 text-left font-semibold w-28">{t('soaPrint.colStatus')}</th>
+                                    <th className="border border-border-default px-2 py-1.5 text-left font-semibold">{t('soaPrint.colControlRefs')}</th>
+                                    <th className="border border-border-default px-2 py-1.5 text-left font-semibold">{t('soaPrint.colJustification')}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {section.entries.map(entry => (
+                                    <PrintRow key={entry.requirementId} entry={entry} />
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                ))}
+
+                {/* ─── Footer ─── */}
+                <div className="text-xs text-content-subtle border-t border-border-subtle pt-4 mt-8">
+                    <p>{t('soaPrint.footer', { date: generatedDate })}</p>
+                </div>
             </div>
         </div>
     );
