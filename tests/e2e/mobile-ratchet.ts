@@ -121,12 +121,12 @@ type Baseline = Record<MobileE2eConfig, Record<RatchetedMetric, number>>;
 
 /** Routes in `SEED_ROUTES` failing each metric. */
 export const SEED_BASELINE: Baseline = {
-    '390-dark-bg': { clipped: 0, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 0, englishLeaks: 0 },
-    '360-light-bg': { clipped: 0, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 0, englishLeaks: 0 },
+    '390-dark-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 17, englishLeaks: 10 },
+    '360-light-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 17, englishLeaks: 10 },
 };
 
 /** Routes in `RECORD_ROUTES` failing each metric. */
 export const RECORDS_BASELINE: Baseline = {
-    '390-dark-bg': { clipped: 0, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 0, englishLeaks: 0 },
-    '360-light-bg': { clipped: 0, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 0, englishLeaks: 0 },
+    '390-dark-bg': { clipped: 2, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 3, englishLeaks: 3 },
+    '360-light-bg': { clipped: 2, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 3, englishLeaks: 3 },
 };

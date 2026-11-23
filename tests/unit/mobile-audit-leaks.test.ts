@@ -11,7 +11,7 @@ import { buildLeakCatalog, findEnglishLeaks } from '../../scripts/mobile-audit/l
 const en = {
     nav: { back: 'Back to {section}', agents: 'Agents', controls: 'Controls' },
     filters: { clear: 'Clear filters', none: 'No results match these filters' },
-    brand: { okta: 'Okta', iso: 'ISO 27001' },
+    brand: { okta: 'Okta', iso: 'ISO 27001', ad: 'Active Directory' },
     login: { orgPlaceholder: 'Acme Corp' },
     untranslated: { principal: 'Service principal: {status} for the agent' },
     short: { user: 'User {name}' },
@@ -20,7 +20,7 @@ const en = {
 const bg = {
     nav: { back: 'Обратно към {section}', agents: 'Агенти', controls: 'Контроли' },
     filters: { clear: 'Изчисти филтрите', none: 'Няма резултати за тези филтри' },
-    brand: { okta: 'Okta', iso: 'ISO 27001' },
+    brand: { okta: 'Okta', iso: 'ISO 27001', ad: 'Active Directory (локален)' },
     login: { orgPlaceholder: 'Акме ООД' },
     untranslated: { principal: 'Service principal: {status} for the agent' },
     short: { user: 'Потребител {name}' },
@@ -55,6 +55,10 @@ describe('findEnglishLeaks', () => {
 
     it('does not call Bulgarian text, a kept brand or an acronym a leak', () => {
         expect(leaksIn(['Изчисти филтрите', 'Okta', 'ISO 27001', 'Обратно към Контроли'], ['Okta'])).toEqual([]);
+    });
+
+    it('does not call a product name the Bulgarian catalog keeps a leak', () => {
+        expect(leaksIn(['Active Directory (локален)', 'Свързва се с Active Directory през LDAPS'])).toEqual([]);
     });
 
     it('does not call a seeded name a leak, alone or inside a sentence', () => {

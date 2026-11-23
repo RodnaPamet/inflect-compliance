@@ -11,7 +11,9 @@
  *                 at all, see EN_IN_BG) — a string rendered from the English
  *                 catalog, or a hard-coded copy of one.
  *   EMBEDDED      a Bulgarian sentence carries an English catalog message
- *                 inside it: "Обратно към Agents".
+ *                 inside it: "Обратно към Agents". A Latin run that the
+ *                 Bulgarian catalog itself uses ("Active Directory") is a
+ *                 product name kept on purpose, not a leak.
  *   EN_IN_BG      `messages/bg.json` holds the English text itself. Only values
  *                 that contain a common English word count, so a brand or an
  *                 acronym kept on purpose ("Okta", "PDF", "ISO 27001") does not.
@@ -41,6 +43,8 @@ export interface LeakCatalog {
     exact: ReadonlySet<string>;
     /** English values with `{placeholders}`, as anchored patterns plus a literal pre-filter. */
     patterns: ReadonlyArray<{ literal: string; re: RegExp }>;
+    /** Multi-word Latin runs the Bulgarian catalog itself uses: product names kept on purpose ("Active Directory"). */
+    keptInBg: ReadonlySet<string>;
 }
 
 /**
@@ -70,6 +74,8 @@ const DATE_RES = [
 
 const CYRILLIC = /[Ѐ-ӿ]/;
 const PLACEHOLDER = /\{[^{}]*\}/g;
+/** A run of Latin words inside a mixed string: "Agents" in "Обратно към Agents". */
+const LATIN_RUN = /[A-Za-z][A-Za-z0-9'’&-]*(?: [A-Za-z0-9'’&-]+)*/g;
 
 export const squash = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
@@ -98,6 +104,13 @@ export function buildLeakCatalog(en: unknown, bg: unknown): LeakCatalog {
     flatten(bg, '', bgMap);
     const exact = new Set<string>();
     const patterns: Array<{ literal: string; re: RegExp }> = [];
+    const keptInBg = new Set<string>();
+    // Multi-word runs only: a product name ("Active Directory", "Microsoft Entra
+    // ID"). A single Latin word in bg.json ("Admin" in some technical string)
+    // says nothing about whether the word alone is Bulgarian UI.
+    for (const v of bgMap.values()) {
+        for (const run of squash(v).replace(PLACEHOLDER, ' ').match(LATIN_RUN) ?? []) if (run.includes(' ')) keptInBg.add(run);
+    }
     for (const [key, raw] of enMap) {
         const value = squash(raw);
         const bgValue = bgMap.has(key) ? squash(bgMap.get(key) as string) : undefined;
@@ -118,7 +131,7 @@ export function buildLeakCatalog(en: unknown, bg: unknown): LeakCatalog {
             exact.add(value);
         }
     }
-    return { exact, patterns };
+    return { exact, patterns, keptInBg };
 }
 
 function catalogHas(catalog: LeakCatalog, s: string): boolean {
@@ -152,8 +165,9 @@ export function findEnglishLeaks(
             continue;
         }
         if (cyr) {
-            const runs = s.match(/[A-Za-z][A-Za-z0-9'’&-]*(?: [A-Za-z0-9'’&-]+)*/g) ?? [];
-            if (runs.some((r) => r.length >= 4 && !dataNames.has(r) && catalog.exact.has(r))) leaks.set(s, 'EMBEDDED');
+            const runs = s.match(LATIN_RUN) ?? [];
+            const english = (r: string) => r.length >= 4 && !dataNames.has(r) && !catalog.keptInBg.has(r) && catalog.exact.has(r);
+            if (runs.some(english)) leaks.set(s, 'EMBEDDED');
             continue;
         }
         // Three words at most: a control label, not a seeded title shown on a button.
