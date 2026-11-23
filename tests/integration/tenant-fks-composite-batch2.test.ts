@@ -252,34 +252,31 @@ describe('the database refuses a cross-tenant reference on all ten sites', () =>
 // ═══════════════════════════════════════════════════════════════════
 describe('deleting the parent NULLS THE POINTER and succeeds', () => {
     /**
-     * AiDecisionLog is the exception, and it was already the exception.
+     * AiDecisionLog WAS the exception, and #5848 is the choice this test said
+     * somebody would one day have to make on purpose rather than by accident.
      *
-     * `ai_decision_log_immutable_trg` lists `aiSystemId` among the columns no
-     * UPDATE may change, so the SET NULL this FK declares can NEVER run: the
-     * parent delete is refused by the trigger, not by the constraint. That is
-     * true of the single-column SET NULL this migration replaced too — the FK
-     * carried `onDelete: SetNull` before and after — so the composite changes
-     * nothing here.
+     * Until migration 20261123120000, `ai_decision_log_immutable_trg` listed
+     * `aiSystemId` among the columns no UPDATE may change, so this FK's SET
+     * NULL could never run and an AiSystem with decision rows could not be
+     * deleted. The only code path that deletes one is the tenant purge, which
+     * retains the log and deletes the AI system — so it was the purge that
+     * failed, for every tenant that had ever run an agent.
      *
-     * Asserted rather than skipped, because "deleting an AiSystem that has
-     * decision logs is impossible" is a real product fact that no other test
-     * states, and because a future change that makes the trigger allow the
-     * column would silently turn this into a working SET NULL with nobody
-     * noticing which behaviour they had picked.
+     * The trigger now admits exactly the FK's own write: the link going to
+     * NULL, from the referential action, with every other column unchanged.
+     * The record stays, the link goes, its tenant is intact — the same shape
+     * as the other four sites. What stays refused is held in
+     * `tenant-purge-ai-decision-log.test.ts`.
      */
-    it('AiSystem delete is refused by the append-only trigger, as it was before', async () => {
+    it('AiSystem delete leaves the AiDecisionLog row, its tenant intact (#5848)', async () => {
         const parent = await aiSystem(T1, 'to delete');
         await prisma.$executeRawUnsafe(
             'INSERT INTO "AiDecisionLog" ("id","tenantId","feature","provider","inputDigest","aiSystemId") VALUES ($1,$2,$3,$4,$5,$6)',
             'b2-adl-del', T1, 'f', 'p', 'd', parent.id,
         );
-        const err = await failureOf('DELETE FROM "AiSystem" WHERE "id" = $1', parent.id);
-        expect(err).toContain('append-only');
-
-        // The log row and its pointer are untouched — the delete did not
-        // half-apply.
+        await hardDelete('AiSystem', parent.id);
         const row = await pointerAndTenant('AiDecisionLog', 'b2-adl-del', 'aiSystemId');
-        expect(row!.pointer).toBe(parent.id);
+        expect(row!.pointer).toBeNull();
         expect(row!.tenantId).toBe(T1);
     });
 
