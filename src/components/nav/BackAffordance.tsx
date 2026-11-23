@@ -25,6 +25,7 @@ import { usePathname } from 'next/navigation';
 import { ArrowLeft } from '@inflect/ui/components/ui/icons/glyphs';
 import { TOUCH_HIT_AREA_CLASS } from '@inflect/ui/components/ui/hit-area';
 import { cn } from '@inflect/ui/lib/cn';
+import { BACK_LINK_ATTR } from '@/components/layout/breadcrumbs-store';
 import {
     usePreviousPath,
     tenantSlugFromPath,
@@ -119,6 +120,9 @@ export function BackAffordance({ override, noFallback }: BackAffordanceProps) {
                 TOUCH_HIT_AREA_CLASS,
             )}
             data-testid="page-header-back"
+            // Marks a showing back link, so a phone hides the page's inline
+            // breadcrumb trail (`PHONE_TRAIL_CLASS`, #5822).
+            {...{ [BACK_LINK_ATTR]: '' }}
             aria-label={t('ui.backTo', { label: destination.label })}
         >
             <ArrowLeft

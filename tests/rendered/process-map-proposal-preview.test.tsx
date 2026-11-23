@@ -294,16 +294,20 @@ describe('the list a reviewer reads', () => {
 describe('the picture is loaded on demand, and is never the record', () => {
     it('is a next/dynamic import of the canvas module, with ssr off', async () => {
         // Recorded when the preview module was imported: exactly one lazy
-        // import, server rendering off, and its loader resolves to the canvas
-        // component from the process module, not to anything imported here.
-        expect(mockDynamicCalls).toHaveLength(1);
-        const [{ loader, opts }] = mockDynamicCalls;
-        expect(opts.ssr).toBe(false);
-        const loaded = (await loader()) as (props: unknown) => unknown;
+        // import resolves to the canvas component from the process module,
+        // and it has server rendering off. Other modules on the page may make
+        // `next/dynamic` calls of their own (the page header's phone menu
+        // does), so the canvas's call is picked out by what its loader
+        // resolves to rather than by counting every call.
         const { ProposedProcessMapCanvas } = jest.requireMock('@/components/processes/ProposedProcessMapCanvas') as {
             ProposedProcessMapCanvas: unknown;
         };
-        expect(loaded).toBe(ProposedProcessMapCanvas);
+        const resolved = await Promise.all(
+            mockDynamicCalls.map(async (call) => ({ call, loaded: await call.loader() })),
+        );
+        const canvasCalls = resolved.filter(({ loaded }) => loaded === ProposedProcessMapCanvas);
+        expect(canvasCalls).toHaveLength(1);
+        expect(canvasCalls[0].call.opts.ssr).toBe(false);
     });
 
     it('draws the preview the server sent, inside a labelled, inert frame', async () => {

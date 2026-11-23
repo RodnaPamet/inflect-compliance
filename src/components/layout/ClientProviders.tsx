@@ -3,7 +3,6 @@
 import { OnboardingTourProvider } from '@/components/ui/OnboardingTour';
 import SWRDevTools from '@/components/dev/swr-devtools';
 import { WebVitalsReporter } from '@/components/observability/WebVitalsReporter';
-import { PhoneWayfindingPolicy } from '@/components/nav/PhoneWayfindingPolicy';
 
 /**
  * Client-only providers for the tenant app.
@@ -15,8 +14,6 @@ import { PhoneWayfindingPolicy } from '@/components/nav/PhoneWayfindingPolicy';
  *   - OnboardingTourProvider (Driver.js-based product tour) — owns the
  *     auto-trigger gate + completion persistence; <StartTourButton>
  *     in the sidebar consumes it via useOnboardingTour()
- *   - PhoneWayfindingPolicy — the tenant app's rule for when a phone shows a
- *     page's inline breadcrumbs (not on a subpage, which shows its back link)
  *
  * NOT included here (and why):
  *   - SessionProvider — lives in root layout (src/app/providers.tsx) because
@@ -64,7 +61,7 @@ export function ClientProviders({
             userId={userId ?? null}
             autoTriggerOnFirstLogin={autoTrigger}
         >
-            <PhoneWayfindingPolicy>{children}</PhoneWayfindingPolicy>
+            {children}
             {/* RUM — beacons Core Web Vitals + Next navigation timing to
                 /api/telemetry/vitals. Renders nothing; inert in test mode. */}
             <WebVitalsReporter />

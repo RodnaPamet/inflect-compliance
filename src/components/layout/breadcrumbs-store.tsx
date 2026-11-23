@@ -91,22 +91,20 @@ export function BreadcrumbsProvider({ children }: { children: ReactNode }) {
 }
 
 /**
- * Whether a page renders its INLINE (phone-only) breadcrumb trail, given the
- * current pathname. A slot the host product fills: this file is shared UI and
- * knows nothing of the product's routes, so the default shows the trail
- * everywhere, and the product supplies its rule through
- * `<PhoneBreadcrumbsPolicy.Provider>` (the tenant app's rule — a subpage shows
- * its back link instead — is `src/components/nav/PhoneWayfindingPolicy.tsx`).
- * The desktop trail in the top chrome is unaffected either way.
+ * One way back on a phone (#5822). On a page that shows a back link, the
+ * inline (phone-only) breadcrumb trail is hidden, so a phone shows the back
+ * link and nothing else, in the one place every subpage mounts it: above the
+ * title. Desktop is untouched — its trail is the chrome's.
+ *
+ * Pure CSS, keyed on the DOM, not on a route list: every back link carries
+ * `BACK_LINK_ATTR`, and the trail wrappers carry `PHONE_TRAIL_CLASS`, whose
+ * arbitrary variant hides them inside a `<main>` that holds a back link. So
+ * the rule is exactly "a back link is showing", it is right in the server
+ * HTML (no flash), and it costs no JavaScript — a JS rule here pulled the
+ * product's route registry into every page's First Load JS.
  */
-export const PhoneBreadcrumbsPolicy = createContext<(pathname: string) => boolean>(
-    () => true,
-);
-
-/** The policy above, applied to `pathname`. */
-export function usePhoneShowsBreadcrumbs(pathname: string): boolean {
-    return useContext(PhoneBreadcrumbsPolicy)(pathname);
-}
+export const BACK_LINK_ATTR = 'data-back-link';
+export const PHONE_TRAIL_CLASS = 'md:hidden [main:has([data-back-link])_&]:hidden';
 
 /**
  * Read the current breadcrumb trail. The `<TopChrome>` is the only

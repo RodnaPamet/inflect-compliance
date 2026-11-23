@@ -34,15 +34,14 @@ single plain `<div>` child of `PageActions` that only lays its children out
 non-wrapping `flex` wrapper can no longer make the group one clipped item; a
 div that is a box in its own right (the admin page's theme chip) is kept.
 
-**One way back (#5822).** `phoneShowsBackLinkOnly(pathname)`
-(`src/lib/nav/mobile-wayfinding.ts`) is true on every subpage that owes a back
-affordance. There `PageHeader` and `PageBreadcrumbs` render no inline (phone)
-trail. They ask a slot, `PhoneBreadcrumbsPolicy` in `breadcrumbs-store.tsx`
-(default: show the trail), and the tenant app fills it with
-`<PhoneWayfindingPolicy>` from `ClientProviders`; the back link, which every subpage mounts first above its title, is the
-only way back, in one place. The trail is still pushed to the top chrome, so
-desktop is unchanged. Main pages and the exempt subpages keep their inline
-trail. The back link gets `TOUCH_HIT_AREA_CLASS` (#5847); breadcrumb links,
+**One way back (#5822).** Wherever a back link is showing, a phone hides the
+page's inline breadcrumb trail, so the back link — which every subpage mounts
+first, above its title — is the only way back, in one place. It is CSS: every
+back link carries `data-back-link` (`BACK_LINK_ATTR`), and every inline trail
+(`PageHeader`'s and `PageBreadcrumbs`') carries `PHONE_TRAIL_CLASS`, whose
+arbitrary variant `[main:has([data-back-link])_&]:hidden` hides it inside a
+`<main>` that holds one. Desktop is unchanged: its trail is the chrome's. The
+back link gets `TOUCH_HIT_AREA_CLASS` (#5847); breadcrumb links,
 which `truncate` and so would clip a pseudo-element, get 44 px through
 touch-only padding and an equal negative margin.
 
@@ -60,9 +59,8 @@ unknown section now reads "previous page" instead of the raw URL segment.
 | `src/components/layout/PageActions.tsx` | Overflow registry, "⋯" menu, `OverflowAction`, `PrimaryAction`, wrapper unwrap |
 | `src/components/layout/PageHeader.tsx` | Column below `sm`; no inline trail on a back-link subpage |
 | `src/components/layout/PageBreadcrumbs.tsx` | Same rule for pages that mount the trail directly |
-| `src/components/layout/breadcrumbs-store.tsx` | `PhoneBreadcrumbsPolicy` slot; content key tolerates a ReactNode label |
-| `src/lib/nav/mobile-wayfinding.ts` | `phoneShowsBackLinkOnly` |
-| `src/components/nav/PhoneWayfindingPolicy.tsx`, `src/components/layout/ClientProviders.tsx` | The tenant app supplies the rule to the slot |
+| `src/components/layout/breadcrumbs-store.tsx` | `BACK_LINK_ATTR` / `PHONE_TRAIL_CLASS`; content key tolerates a ReactNode label |
+| `src/components/layout/PageActionsMenu.tsx` | The "⋯" trigger and menu, loaded with `next/dynamic` |
 | `src/lib/nav/canonical-parents.ts` | `labelKey`, `BACK_LABEL_KEYS`, `SECTION_LABEL_KEYS` |
 | `src/lib/nav/back-destination.ts` | `BackDestination`, `labelForKey` |
 | `src/components/nav/BackAffordance.tsx` | Localised keys, "previous page" fallback, touch hit area |
@@ -85,9 +83,16 @@ unknown section now reads "previous page" instead of the raw URL segment.
   all sizes — the
   owner named the ghost as a defect, and a button's tone should not depend on
   the viewport.
-- **The phone-trail rule is a slot, not an import.** `PageBreadcrumbs` is shared
-  UI recorded GENERIC; importing the product's route registry into it is a
-  `domain-import` the shared-UI ratchet refuses. The host supplies the rule.
+- **The phone-trail rule is CSS keyed on the DOM, not JS keyed on routes.** A
+  first version asked the route registry (`classifyRoute` over `SUBPAGES`)
+  through a context the tenant layout filled. The bundle budget measured what
+  that cost: mounting it in `ClientProviders` dragged the registry, the
+  canonical-parent map and the header's chunk into every page's First Load
+  JS, 2–7 KB gzipped a route. The CSS rule costs nothing, is right in the
+  server HTML (no flash of the trail), and says exactly what is meant — "a
+  back link is showing" — rather than a route list's approximation of it.
+- **The "⋯" menu loads after mount** (`next/dynamic`, like
+  `toggle-group-select`): it renders the Popover primitive, Radix plus vaul.
 - **No shell-level back bar.** Every subpage already mounts its back link first,
   so removing the phone trail on subpages gives one way back in one place
   without a new slot in the app shell (where the top-bar batch is working).

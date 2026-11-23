@@ -3,17 +3,18 @@
  *
  * Below md the top chrome hides its breadcrumbs, so pages rendered an inline
  * trail AND a back link to the same parent — two lines of a small screen for
- * one destination, in an order that changed from page to page. On a subpage a
- * phone now shows the back link and nothing else; desktop is untouched (its
- * breadcrumbs live in the chrome, which still receives them).
+ * one destination, in an order that changed from page to page. Now a phone
+ * shows the back link and nothing else wherever a back link is showing;
+ * desktop is untouched (its trail is the chrome's).
  *
- * The rule is the product's, mounted in the tenant app's `ClientProviders`;
- * each render below mounts it the same way.
- *
- * jsdom has no viewport. The inline trail is a phone-only element (`md:hidden`;
- * desktop reads the chrome's copy), so whether a phone sees it is whether it
- * renders at all — which is what these tests assert.
+ * The rule is CSS: every back link carries `data-back-link`, and every inline
+ * trail carries `PHONE_TRAIL_CLASS`, whose variant hides it inside a `<main>`
+ * that holds one. jsdom applies no stylesheet, so this file holds both halves
+ * of that contract on the rendered DOM, and then compiles the real stylesheet
+ * to prove the class becomes the rule.
  */
+import { execFileSync } from 'child_process';
+import * as path from 'path';
 import * as React from 'react';
 import { render, screen } from '@testing-library/react';
 
@@ -25,16 +26,10 @@ jest.mock('next/navigation', () => ({
     useSearchParams: () => new URLSearchParams(),
 }));
 
-// ClientProviders mounts a vitals reporter jsdom cannot run; it is not under test.
-jest.mock('@/components/observability/WebVitalsReporter', () => ({ WebVitalsReporter: () => null }));
-
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
-import { SUBPAGES, BACK_AFFORDANCE_EXEMPT_SUBPAGES } from '@/lib/nav/page-segregation';
-import { phoneShowsBackLinkOnly } from '@/lib/nav/mobile-wayfinding';
-import { PhoneWayfindingPolicy } from '@/components/nav/PhoneWayfindingPolicy';
-import { ClientProviders } from '@/components/layout/ClientProviders';
+import { BACK_LINK_ATTR, PHONE_TRAIL_CLASS } from '@/components/layout/breadcrumbs-store';
 
 const CRUMBS = [
     { label: 'Dashboard', href: '/t/acme/dashboard' },
@@ -42,119 +37,89 @@ const CRUMBS = [
     { label: 'AC-1' },
 ];
 
-/** The two shapes subpages use: PageHeader's own slot, and a page-level pair. */
-function HeaderSlotPage() {
-    return (
-        <PhoneWayfindingPolicy>
-            <PageHeader breadcrumbs={CRUMBS} back={{ smart: true }} title="AC-1" />
-        </PhoneWayfindingPolicy>
-    );
-}
-function PageLevelPair() {
-    return (
-        <PhoneWayfindingPolicy>
-            <div>
-                <BackAffordance />
-                <PageBreadcrumbs items={CRUMBS} data-testid="inline-crumbs" />
-                <h1>AC-1</h1>
-            </div>
-        </PhoneWayfindingPolicy>
-    );
-}
-function InlineTrail({ items }: { items: typeof CRUMBS }) {
-    return (
-        <PhoneWayfindingPolicy>
-            <PageBreadcrumbs items={items} data-testid="inline-crumbs" />
-        </PhoneWayfindingPolicy>
-    );
-}
-
 const backLinks = () => screen.queryAllByTestId('page-header-back');
-const inlineCrumbs = () => [
-    ...screen.queryAllByTestId('page-header-breadcrumbs'),
-    ...screen.queryAllByTestId('inline-crumbs'),
-];
+/** The wrapper div around each inline (phone-only) trail. */
+const trailWrappers = () =>
+    [...screen.queryAllByTestId('page-header-breadcrumbs'), ...screen.queryAllByTestId('inline-crumbs')].map(
+        (nav) => nav.parentElement!,
+    );
 
-describe('a subpage on a phone shows exactly one way back', () => {
+describe('every back link marks itself, and every inline trail yields to it', () => {
     beforeEach(() => {
         mockPathname = '/t/acme/controls/c1';
     });
 
-    it('PageHeader: the back link, and no inline breadcrumbs', () => {
-        render(<HeaderSlotPage />);
+    it("PageHeader's smart back link and its trail", () => {
+        render(<PageHeader breadcrumbs={CRUMBS} back={{ smart: true }} title="AC-1" />);
         expect(backLinks()).toHaveLength(1);
-        expect(inlineCrumbs()).toHaveLength(0);
+        expect(backLinks()[0]).toHaveAttribute(BACK_LINK_ATTR);
+        expect(trailWrappers()).toHaveLength(1);
+        expect(trailWrappers()[0].className).toContain(PHONE_TRAIL_CLASS);
     });
 
-    it('a page-level back link + PageBreadcrumbs: the back link only', () => {
-        render(<PageLevelPair />);
-        expect(backLinks()).toHaveLength(1);
-        expect(inlineCrumbs()).toHaveLength(0);
+    it("PageHeader's static back link", () => {
+        render(<PageHeader breadcrumbs={CRUMBS} back={{ href: '/t/acme/controls', label: 'Controls' }} title="AC-1" />);
+        expect(backLinks()[0]).toHaveAttribute(BACK_LINK_ATTR);
     });
 
-    it('the back link is the first thing above the title, every time', () => {
-        const { container } = render(<HeaderSlotPage />);
+    it('a page-level back link + PageBreadcrumbs', () => {
+        render(
+            <div>
+                <BackAffordance />
+                <PageBreadcrumbs items={CRUMBS} data-testid="inline-crumbs" />
+                <h1>AC-1</h1>
+            </div>,
+        );
+        expect(backLinks()[0]).toHaveAttribute(BACK_LINK_ATTR);
+        expect(trailWrappers()[0].className).toContain(PHONE_TRAIL_CLASS);
+    });
+
+    it('the back link is the first thing above the title a phone shows', () => {
+        const { container } = render(<PageHeader breadcrumbs={CRUMBS} back={{ smart: true }} title="AC-1" />);
         const back = backLinks()[0];
         const title = screen.getByTestId('page-header-title');
         expect(back.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-        // Nothing interactive precedes it.
-        const first = container.querySelector('a, button');
-        expect(first).toBe(back);
+        // Every link before it sits in the trail, which a phone hides here.
+        const before = [...container.querySelectorAll('a, button')].filter(
+            (el) => el.compareDocumentPosition(back) & Node.DOCUMENT_POSITION_FOLLOWING,
+        );
+        expect(before.length).toBeGreaterThan(0);
+        expect(before.every((el) => trailWrappers()[0].contains(el))).toBe(true);
     });
 
     it('the back link is a 44 px target on touch', () => {
-        render(<HeaderSlotPage />);
-        // The shared 44 px touch hit area (a pseudo-element, layout untouched).
+        render(<PageHeader breadcrumbs={CRUMBS} back={{ smart: true }} title="AC-1" />);
+        // The shared touch hit area (a pseudo-element, layout untouched).
         expect(backLinks()[0].className).toContain('pointer-coarse:after:min-h-11');
         expect(backLinks()[0].className).toContain('relative');
     });
-});
 
-describe('pages without a back link keep their breadcrumbs', () => {
-    it('a MAIN page keeps its inline trail on a phone', () => {
+    it('a page with no back link keeps its trail (nothing to yield to)', () => {
         mockPathname = '/t/acme/controls';
-        render(<InlineTrail items={CRUMBS.slice(0, 2)} />);
-        expect(inlineCrumbs()).toHaveLength(1);
-    });
-
-    it('an exempt subpage (its trail IS its way back) keeps it too', () => {
-        mockPathname = '/t/acme/tests/due';
-        render(<InlineTrail items={CRUMBS} />);
-        expect(inlineCrumbs()).toHaveLength(1);
+        render(<PageHeader breadcrumbs={CRUMBS.slice(0, 2)} title="Controls" />);
+        expect(backLinks()).toHaveLength(0);
+        expect(trailWrappers()).toHaveLength(1);
     });
 });
 
-describe('the tenant app mounts the rule', () => {
-    it('ClientProviders (which wraps every tenant page) applies it', () => {
-        mockPathname = '/t/acme/controls/c1';
-        render(
-            <ClientProviders userId={null}>
-                <PageBreadcrumbs items={CRUMBS} data-testid="inline-crumbs" />
-            </ClientProviders>,
+describe('the class becomes the rule', () => {
+    let css = '';
+    beforeAll(() => {
+        css = execFileSync(
+            process.execPath,
+            [path.join(__dirname, '../helpers/compile-globals-css.mjs')],
+            { cwd: path.join(__dirname, '../..'), encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
         );
-        expect(inlineCrumbs()).toHaveLength(0);
-    });
-});
+    }, 180_000);
 
-describe('outside the tenant app (no policy mounted)', () => {
-    it('the shared header shows its trail: the default knows no routes', () => {
-        mockPathname = '/t/acme/controls/c1';
-        render(<PageHeader breadcrumbs={CRUMBS} title="AC-1" />);
-        expect(inlineCrumbs()).toHaveLength(1);
+    it('compiles to something substantial (floor on the collector)', () => {
+        expect(css.length).toBeGreaterThan(50_000);
     });
-});
 
-describe('phoneShowsBackLinkOnly covers the whole subpage population', () => {
-    it('is true for every subpage that owes a back link, and only those', () => {
-        const exempt = new Set<string>(BACK_AFFORDANCE_EXEMPT_SUBPAGES);
-        // Substitute a value for each dynamic segment to get a runtime path.
-        const runtime = (pattern: string) =>
-            `/t/acme${pattern.replace(/\[[^\]]+\]/g, 'x1')}`;
-        const wrong = SUBPAGES.filter(
-            (p) => phoneShowsBackLinkOnly(runtime(p)) !== !exempt.has(p),
-        );
-        expect(wrong).toEqual([]);
-        // Non-empty, or the check above proves nothing.
-        expect(SUBPAGES.length).toBeGreaterThan(0);
+    it('hides a trail inside a <main> that holds a back link', () => {
+        // The arbitrary variant in PHONE_TRAIL_CLASS, as Tailwind emits it.
+        const rule = css.match(/main:has\(\[data-back-link\]\)\s+[^{]*\{[^}]*\}/);
+        expect(rule).not.toBeNull();
+        expect(rule![0]).toMatch(/display:\s*none/);
     });
 });

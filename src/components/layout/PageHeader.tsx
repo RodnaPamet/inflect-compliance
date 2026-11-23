@@ -67,8 +67,9 @@ import {
     type BreadcrumbItem,
 } from "@/components/ui/breadcrumbs";
 import {
+    BACK_LINK_ATTR,
+    PHONE_TRAIL_CLASS,
     useBreadcrumbs,
-    usePhoneShowsBreadcrumbs,
 } from "@/components/layout/breadcrumbs-store";
 import { PageActions } from "@/components/layout/PageActions";
 import { BackAffordance } from "@/components/nav/BackAffordance";
@@ -200,12 +201,7 @@ export function PageHeader({
     // the repo's own MAIN vs SUBPAGE source of truth (page-segregation).
     const pathname = usePathname();
     const titleHidden = classifyRoute(pathname ?? "") === "main";
-    // One way back on a phone (#5822): on a subpage the back link is it, and
-    // the inline breadcrumbs collapse into it. The rule is the product's,
-    // supplied through the `PhoneBreadcrumbsPolicy` slot.
-    const phoneCrumbsAllowed = usePhoneShowsBreadcrumbs(pathname ?? "");
-    const mobileCrumbs =
-        breadcrumbs && breadcrumbs.length > 0 && phoneCrumbsAllowed;
+    const mobileCrumbs = breadcrumbs && breadcrumbs.length > 0;
 
     return (
         <header
@@ -221,7 +217,9 @@ export function PageHeader({
         >
             <div className="min-w-0">
                 {mobileCrumbs && (
-                    <div className="md:hidden">
+                    // Hidden on a phone too where a back link is showing: one
+                    // way back, in one place (#5822, `PHONE_TRAIL_CLASS`).
+                    <div className={PHONE_TRAIL_CLASS}>
                         <Breadcrumbs
                             items={breadcrumbs}
                             className="mb-1"
@@ -240,6 +238,7 @@ export function PageHeader({
                             TOUCH_HIT_AREA_CLASS,
                         )}
                         data-testid="page-header-back"
+                        {...{ [BACK_LINK_ATTR]: "" }}
                     >
                         ← {back.label}
                     </Link>

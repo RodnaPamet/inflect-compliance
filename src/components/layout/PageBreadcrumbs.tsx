@@ -40,8 +40,7 @@ import {
     Breadcrumbs,
     type BreadcrumbItem,
 } from '@/components/ui/breadcrumbs';
-import { usePathname } from 'next/navigation';
-import { useBreadcrumbs, usePhoneShowsBreadcrumbs } from './breadcrumbs-store';
+import { PHONE_TRAIL_CLASS, useBreadcrumbs } from './breadcrumbs-store';
 
 export interface PageBreadcrumbsProps {
     items: ReadonlyArray<BreadcrumbItem>;
@@ -63,18 +62,13 @@ export function PageBreadcrumbs({
     // Push to chrome — desktop renders here on first paint.
     useBreadcrumbs(items);
 
-    // Where the product says a phone shows the back link instead (a subpage:
-    // one way back, in one place), the inline trail is not rendered. Desktop
-    // reads the chrome's copy, pushed above. See `PhoneBreadcrumbsPolicy`.
-    const showOnPhone = usePhoneShowsBreadcrumbs(usePathname() ?? '');
-    if (!showOnPhone) return null;
-
     // Mobile fallback. The chrome is `hidden md:flex`, so on <md
     // the user only sees this inline rendering. Wrapping in
     // `md:hidden` ensures desktop doesn't double-render the same
-    // trail (chrome + page-body).
+    // trail (chrome + page-body). And a phone hides it where a back link is
+    // showing — one way back, in one place (`PHONE_TRAIL_CLASS`).
     return (
-        <div className={`md:hidden ${className}`}>
+        <div className={`${PHONE_TRAIL_CLASS} ${className}`}>
             <Breadcrumbs items={items} data-testid={dataTestId} />
         </div>
     );

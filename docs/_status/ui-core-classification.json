@@ -72,7 +72,7 @@
  "src/components/layout/PageBreadcrumbs.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "A thin wrapper: pushes items into the local `breadcrumbs-store` context and renders `<Breadcrumbs>` inside a `md:hidden` div — unless the host's `PhoneBreadcrumbsPolicy` slot (a context in the same store, default: show) says a phone shows a back link on this path instead. The product rule is supplied from `src/components/nav/PhoneWayfindingPolicy.tsx`, so no route registry is imported here. Imports only `next/navigation`, `@/components/ui/breadcrumbs` and the sibling store. No copy (items come from the caller), no GRC vocabulary, no storage key, no brand token."
+  "reason": "A thin wrapper: pushes items into the local `breadcrumbs-store` context and renders `<Breadcrumbs>` inside a phone-only div whose `PHONE_TRAIL_CLASS` (from the same store) also hides it, in CSS, inside a `<main>` that holds a back link — one way back on a phone (#5822). No route registry. Imports only `@/components/ui/breadcrumbs` and the sibling store. No copy (items come from the caller), no GRC vocabulary, no storage key, no brand token."
  },
  "src/components/layout/PageHeader.tsx": {
   "classification": "MIXED",
