@@ -16,8 +16,16 @@
  *                             connection has since archived its agent.
  *   readProfileAgent          the profile's live agent in a workspace, for the
  *                             next version's update.
- *   readConnectionEnvironment the environment already made for a connection.
+ *   readConnectionEnvironment the environment already made for a connection,
+ *                             and the hash its provision recorded.
+ *   readRecordedSessionIds    the sessions this run's ledger already names
+ *                             (#5854), so a segment's start settles only the
+ *                             ones a dead segment never recorded.
  *   recordProvision           the ONE writer of `AgentProfileProvision`.
+ *   recordEnvironmentHashOnFirstUse
+ *                             fills a NULL `environmentHash` once (#5854):
+ *                             a row written before the column existed. It
+ *                             writes that column only, and only while NULL.
  *
  * The decrypted key leaves this module only as a field of the returned
  * connection, which the driver hands to `managedAgentsClientFor` and drops.
@@ -150,6 +158,11 @@ export interface ProvisionRecord {
     readonly environmentId: string;
     readonly systemHash: string;
     readonly toolsHash: string;
+    /**
+     * The environment's configuration as Inflect wrote it (#5854), or null when
+     * the row predates the column: "not recorded", recorded at first use.
+     */
+    readonly environmentHash: string | null;
 }
 
 /**
@@ -171,6 +184,7 @@ const PROVISION_SELECT = {
     environmentId: true,
     systemHash: true,
     toolsHash: true,
+    environmentHash: true,
 } as const;
 
 export async function readProvision(
@@ -190,17 +204,31 @@ export async function readProvision(
     return { ...record, archived: removedUntil !== null && createdAt <= removedUntil };
 }
 
+/** The profile's agent as its latest provision recorded it: the next version's update starts here. */
+export interface ProfileAgentRecord {
+    readonly anthropicAgentId: string;
+    readonly anthropicAgentVersion: number;
+    /** What Inflect wrote at that version, which the next provisioning compares (#5854). */
+    readonly systemHash: string;
+    readonly toolsHash: string;
+}
+
 /**
  * The profile's LIVE agent in this workspace, from its latest provision that no
  * removal of the connection has archived, or null before the first or after a
  * removal (Step 5d): an archived agent cannot be updated, so the next version
  * creates a new one.
+ *
+ * LATEST BY WHEN IT WAS RECORDED, never by agent version (#5854). A profile's
+ * agent can be REPLACED by a new one, whose versions start again at 1, when the
+ * old one was edited or archived in the Console (`provisionManagedAgent`); the
+ * old agent's higher version number must not make it the one updated next.
  */
 export async function readProfileAgent(
     ctx: RequestContext,
     profileId: string,
     connectionId: string,
-): Promise<{ anthropicAgentId: string; anthropicAgentVersion: number } | null> {
+): Promise<ProfileAgentRecord | null> {
     const removedUntil = await connectionRemovedUntil(ctx, connectionId);
     return runInTenantContext(ctx, (db) =>
         db.agentProfileProvision.findFirst({
@@ -210,27 +238,94 @@ export async function readProfileAgent(
                 connectionId,
                 ...(removedUntil ? { createdAt: { gt: removedUntil } } : {}),
             },
-            orderBy: [{ anthropicAgentVersion: 'desc' }, { createdAt: 'desc' }],
-            select: { anthropicAgentId: true, anthropicAgentVersion: true },
+            orderBy: [{ createdAt: 'desc' }, { anthropicAgentVersion: 'desc' }],
+            select: { anthropicAgentId: true, anthropicAgentVersion: true, systemHash: true, toolsHash: true },
         }),
     );
 }
 
-/** The environment already made for a connection, or null before the first provision. */
-export async function readConnectionEnvironment(ctx: RequestContext, connectionId: string): Promise<string | null> {
-    const row = await runInTenantContext(ctx, (db) =>
+/**
+ * The environment already made for a connection, with the hash its first
+ * provision recorded (null when that row predates the column), or null before
+ * the first provision.
+ */
+export async function readConnectionEnvironment(
+    ctx: RequestContext,
+    connectionId: string,
+): Promise<{ environmentId: string; environmentHash: string | null } | null> {
+    return runInTenantContext(ctx, (db) =>
         db.agentProfileProvision.findFirst({
             where: { tenantId: ctx.tenantId, connectionId },
             orderBy: { createdAt: 'asc' },
-            select: { environmentId: true },
+            select: { environmentId: true, environmentHash: true },
         }),
     );
-    return row?.environmentId ?? null;
+}
+
+/** How many ledger steps one read of a run's sessions takes; one more is read so a truncation is a fact held. */
+export const RUN_SESSION_STEPS_READ_CAP = 500;
+
+/**
+ * THE SESSIONS THIS RUN'S LEDGER ALREADY NAMES (Step 5H, #5854): every session
+ * id on one of its `managed-agents-session` steps, whatever the lifecycle. On
+ * this engine every SYNTHESIS step of a run is a session step; the lifecycle
+ * is inside the encrypted `inputJson`, so each is read and parsed. A run makes
+ * one session per segment, so the read is small; `truncated` says when it was
+ * not, and the caller then settles nothing rather than settle a session that
+ * may be recorded past the cap.
+ */
+export async function readRecordedSessionIds(
+    ctx: RequestContext,
+    runId: string,
+): Promise<{ sessionIds: ReadonlySet<string>; truncated: boolean }> {
+    const steps = await runInTenantContext(ctx, (db) =>
+        db.workflowStep.findMany({
+            where: { tenantId: ctx.tenantId, runId, kind: 'SYNTHESIS' },
+            select: { inputJson: true },
+            orderBy: [{ seq: 'asc' }, { id: 'asc' }],
+            take: RUN_SESSION_STEPS_READ_CAP + 1,
+        }),
+    );
+    const sessionIds = new Set<string>();
+    for (const step of steps.slice(0, RUN_SESSION_STEPS_READ_CAP)) {
+        let input: unknown = null;
+        try {
+            input = step.inputJson ? JSON.parse(step.inputJson) : null;
+        } catch {
+            input = null;
+        }
+        const { lifecycle, sessionId } = (input ?? {}) as { lifecycle?: unknown; sessionId?: unknown };
+        if (typeof lifecycle === 'string' && lifecycle.startsWith('SESSION_') && typeof sessionId === 'string') {
+            sessionIds.add(sessionId);
+        }
+    }
+    return { sessionIds, truncated: steps.length > RUN_SESSION_STEPS_READ_CAP };
 }
 
 /** THE ONE WRITER of `AgentProfileProvision`. */
 export async function recordProvision(ctx: RequestContext, record: ProvisionRecord): Promise<void> {
     await runInTenantContext(ctx, (db) =>
         db.agentProfileProvision.create({ data: { tenantId: ctx.tenantId, ...record } }),
+    );
+}
+
+/**
+ * A provision written before `environmentHash` existed records it at its first
+ * run (#5854). The run passes what Inflect WROTE (`writtenEnvironmentHash`),
+ * never the environment it read: a Console edit made before the first run must
+ * not become the record it is compared with. Only a NULL is filled, so a
+ * recorded hash is never moved.
+ */
+export async function recordEnvironmentHashOnFirstUse(
+    ctx: RequestContext,
+    profileVersionId: string,
+    connectionId: string,
+    environmentHash: string,
+): Promise<void> {
+    await runInTenantContext(ctx, (db) =>
+        db.agentProfileProvision.updateMany({
+            where: { tenantId: ctx.tenantId, profileVersionId, connectionId, environmentHash: null },
+            data: { environmentHash },
+        }),
     );
 }

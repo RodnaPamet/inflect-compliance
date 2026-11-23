@@ -626,7 +626,7 @@ describe('the Managed Agents engine (Step 5d)', () => {
     type MaCopy = {
         managedAgentsNeedsWorkspace: string;
         managedAgentsAmbiguousWorkspace: string;
-        managedAgentsExplainer: Record<'heading' | 'where' | 'sessions' | 'controls' | 'record', string>;
+        managedAgentsExplainer: Record<'heading' | 'where' | 'sessions' | 'controls' | 'record' | 'keyHolders', string>;
         runsOnManagedAgents: string;
         runsOnManagedAgentsNotReady: string;
         wiringHeadingManagedAgents: string;
@@ -680,7 +680,7 @@ describe('the Managed Agents engine (Step 5d)', () => {
     it('explains, in plain words and both catalogues, where the conversation lives and what Inflect cannot see', () => {
         arrange({ setting: withMa('CONNECTED'), canChange: false });
         const explainer = screen.getByTestId('agent-engines-managed-agents-explainer');
-        for (const part of ['heading', 'where', 'sessions', 'controls', 'record'] as const) {
+        for (const part of ['heading', 'where', 'sessions', 'controls', 'record', 'keyHolders'] as const) {
             expect(explainer).toHaveTextContent(MA.managedAgentsExplainer[part]);
             expect(typeof at(BG.admin.agentEngines, `managedAgentsExplainer.${part}`)).toBe('string');
         }
@@ -689,6 +689,10 @@ describe('the Managed Agents engine (Step 5d)', () => {
         expect(MA.managedAgentsExplainer.sessions).toContain('Keep sessions in my workspace');
         // Decision 3: the per-call prompt is not visible to Inflect.
         expect(MA.managedAgentsExplainer.record).toMatch(/cannot see the exact prompt/);
+        // Decision 8: someone else holding the key is accepted, and said, in one sentence.
+        expect(MA.managedAgentsExplainer.keyHolders).toMatch(/holds your Anthropic workspace's key/);
+        expect(MA.managedAgentsExplainer.keyHolders).toMatch(/does not detect/);
+        expect(MA.managedAgentsExplainer.keyHolders.match(/[.!?](\s|$)/g)).toHaveLength(1);
         expect(MA.engine.MANAGED_AGENTS.description).not.toMatch(/Not available yet/);
     });
 

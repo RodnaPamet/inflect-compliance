@@ -31,9 +31,14 @@
  *
  *   POST /v1/environments, POST /v1/agents, POST|GET /v1/agents/{id}: stored
  *   as written, every version kept, so the run's drift check reads back what
- *   Inflect wrote;
+ *   Inflect wrote; GET /v1/environments/{id}, the configuration as written with
+ *   Anthropic's defaults filled in, which a run re-reads before its session
+ *   (#5854);
  *   POST /v1/sessions, GET|DELETE /v1/sessions/{id}, GET /v1/sessions/{id}/events,
- *   POST /v1/sessions/{id}/events, GET /v1/sessions/{id}/events/stream (SSE).
+ *   POST /v1/sessions/{id}/events, GET /v1/sessions/{id}/events/stream (SSE);
+ *   GET /v1/sessions?agent_id=…, the one page of an agent's live sessions that a
+ *   run lists at its start for a session an earlier segment never recorded
+ *   (#5854).
  *
  * A session plays a fixed two-turn script, one model call each: the first calls
  * the agent's first custom tool other than `activate_skill` with `{}` and idles
@@ -105,6 +110,29 @@ function agentObject(id, version, body) {
         multiagent: null,
         metadata: body.metadata ?? {},
         archived_at: null,
+    };
+}
+
+/** The environment as Anthropic returns it: the configuration as written, the defaults Inflect left out filled in. */
+function environmentObject(env) {
+    const config = env.config ?? {};
+    const networking = config.networking ?? null;
+    return {
+        id: env.id,
+        type: 'environment',
+        name: env.name,
+        description: null,
+        metadata: env.metadata ?? {},
+        archived_at: null,
+        created_at: '2026-11-23T00:00:00Z',
+        updated_at: '2026-11-23T00:00:00Z',
+        config: {
+            ...config,
+            ...(networking?.type === 'limited'
+                ? { networking: { allowed_hosts: [], allow_mcp_servers: false, allow_package_managers: false, ...networking } }
+                : {}),
+            packages: { type: 'packages', apt: [], cargo: [], gem: [], go: [], npm: [], pip: [], ...(config.packages ?? {}) },
+        },
     };
 }
 
@@ -252,7 +280,12 @@ const server = createServer(async (req, res) => {
     if (p === '/v1/environments' && method === 'POST') {
         const env = { id: nextId('env'), type: 'environment', ...(body ?? {}) };
         ws.environments.push(env);
-        return reply(res, 200, env);
+        return reply(res, 200, environmentObject(env));
+    }
+    const envMatch = /^\/v1\/environments\/([^/]+)$/.exec(p);
+    if (envMatch && method === 'GET') {
+        const env = ws.environments.find((e) => e.id === envMatch[1]);
+        return env ? reply(res, 200, environmentObject(env)) : apiError(res, 404, 'not_found_error', 'no such environment');
     }
     if (p === '/v1/agents' && method === 'POST') {
         const id = nextId('agent');
@@ -278,6 +311,12 @@ const server = createServer(async (req, res) => {
             return reply(res, 200, agent);
         }
         return apiError(res, 405, 'invalid_request_error', 'method not allowed');
+    }
+    if (p === '/v1/sessions' && method === 'GET') {
+        const agentId = url.searchParams.get('agent_id');
+        if (!agentId) return apiError(res, 400, 'invalid_request_error', 'faux: a session list names an agent');
+        const data = [...ws.sessions.values()].filter((s) => !s.deleted && s.agentId === agentId).map(sessionObject);
+        return reply(res, 200, { data, next_page: null });
     }
     if (p === '/v1/sessions' && method === 'POST') {
         const agent = body?.agent ?? {};

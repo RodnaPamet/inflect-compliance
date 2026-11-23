@@ -3790,6 +3790,13 @@ careless edit from being undone:
   Only the engine's driver, `agent-profile-provision.ts` and Step 5c's
   `managed-agents-cleanup.ts` call it, and no file of the engine reaches
   `clientForRun` (`managed-agents-client.test.ts`).
+- **`managedAgentsRequestRefusal` is an ALLOWLIST** (#5854). Each POST body may
+  carry only the members the engine writes (an agent: name, model, system,
+  tools, metadata, and version on an update; a custom tool its four fields), an
+  agent's `system` must be `MANAGED_AGENTS_PREAMBLE` byte for byte, and a session
+  events POST may carry only `user.message`, `user.custom_tool_result` and
+  `user.interrupt`. A member the engine starts sending is listed there in the
+  same diff; never turn a list back into "refuse what we know is bad".
 - **Every call goes through `runGuardedTool`** with the prefix
   `managed-agents`, through the Tool Runner's runnables. A turn's custom calls
   are QUEUED and run after its `span.model_request_end`, so the token cap and
@@ -3800,9 +3807,24 @@ careless edit from being undone:
   `SESSION_CREATED`, written first, then `SESSION_DELETED`,
   `SESSION_DELETE_FAILED` or, when the connection keeps sessions (decision 4),
   `SESSION_KEPT`). 5c finds them by id there.
+- **Every segment first settles a session of its run that no ledger step names**
+  (#5854): one a dead worker created after `sessions.create` answered and before
+  `SESSION_CREATED` was written. It is the lost-create recovery
+  (`settleUnrecordedSessions`, the crash window's own `listCrashWindow` by the
+  pinned agent), called at the segment's start too, never a second mechanism; it
+  takes only sessions whose metadata names this tenant AND this run and that the
+  run's ledger does not hold, and it never blocks the run.
 - **Drift refuses before a session exists**: the agent at the pinned version
   must hash to what Inflect wrote (`AgentProfileProvision`) and hold nothing but
-  custom tools.
+  custom tools, and the ENVIRONMENT, read again, must hash to the configuration
+  Inflect wrote (`environmentHash`, `ENVIRONMENT_DRIFTED`, #5854). A NULL
+  `environmentHash` is "not recorded": the first run records what Inflect WROTE
+  (`writtenEnvironmentHash`), never what it read, so an edit made before that
+  run is refused rather than becoming the baseline.
+- **Events from someone else holding the workspace's key are accepted, not
+  detected** (owner decision 8, 2026-11-23): the workspace is the customer's own
+  (decision 5), and every real tool call still goes through the funnel. Do not
+  build detection without a new owner decision.
 - **Each `span.model_request_end` is one `MODEL_CALL` and one Art 12 row marked
   span-derived** (provider `anthropic-managed-agents:span-derived`), whose digest
   covers what Inflect SENT (decision 3). The conformance adapter declares two
@@ -3843,6 +3865,14 @@ Rules that are each one careless edit from being undone:
   refuse. The version in force is not re-provisioned in place: its row is unique
   per (version, connection), and rewriting it would either drop the archived
   agent's id or put the new agent inside an open clean-up's scope.
+- **An agent edited or archived in the Console is replaced the same way**
+  (#5854). Provisioning reads the profile's agent at its LATEST version before
+  updating it, and one `agentDrift` does not pass (ahead of the record, or
+  archived) gets a NEW agent through `recordProvision`, the audit row naming the
+  one it replaced; the run's `AGENT_DRIFTED` sentence says to approve a new
+  version. `readProfileAgent` orders by `createdAt`, never by agent version: a
+  replacement starts again at 1, and the old agent's higher number would make it
+  the one updated next.
 - **The run timeline labels span-derived decision rows**
   (`spanDerivedDecisionOf` in `run-step-projection.ts`): a MODEL_CALL carrying
   `spanDerived: true` AND `inputBasis: 'INFLECT_SENT'` and a decision digest,

@@ -84,9 +84,14 @@ const CRITICALITY_VARIANT: Record<string, StatusBadgeVariant> = {
 
 const hrs = (v: number | null) => (v != null ? `${v}h` : '—');
 
+/**
+ * A titled section card. It was `density: 'none'`, so every section's text
+ * touched its border. Compact, the card's own dense rung: the page stacks
+ * seven of these, and a phone has no room to spare for the comfortable one.
+ */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
     return (
-        <div className={cn(cardVariants({ density: 'none' }), 'space-y-default')}>
+        <div className={cn(cardVariants({ density: 'compact' }), 'space-y-default')} data-testid="bia-section">
             <Heading level={2}>{title}</Heading>
             {children}
         </div>

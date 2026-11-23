@@ -3751,6 +3751,12 @@ model AgentProfileProvision {
   systemHash            String
   /// Hex SHA-256 of the canonical JSON of the `tools` Inflect wrote.
   toolsHash             String
+  /// Hex SHA-256 of the environment's configuration as Inflect wrote it, in
+  /// the normal form `environmentHashOf` reads (#5854): a run re-reads the
+  /// environment before each session and refuses one that no longer matches
+  /// (ENVIRONMENT_DRIFTED). NULL is "not recorded": a row written before the
+  /// column existed. The first run of such a row records it, and compares.
+  environmentHash       String?
   createdAt             DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)

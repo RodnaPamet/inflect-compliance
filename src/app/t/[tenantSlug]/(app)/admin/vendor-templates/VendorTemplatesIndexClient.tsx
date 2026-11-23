@@ -213,10 +213,13 @@ export function VendorTemplatesIndexClient() {
                                 href={tenantHref(
                                     `/admin/vendor-templates/${row.id}`,
                                 )}
-                                className="flex items-center justify-between py-3 hover:bg-bg-muted/50 px-2 rounded transition"
+                                // Below `sm` the badges and date go under the
+                                // name instead of beside it, where a phone
+                                // clipped them off the right edge.
+                                className="flex flex-col gap-tight py-3 hover:bg-bg-muted/50 px-2 rounded transition sm:flex-row sm:items-center sm:justify-between"
                                 data-testid={`template-row-${row.id}`}
                             >
-                                <div>
+                                <div className="min-w-0 break-words">
                                     <div className="text-sm text-content-emphasis font-medium">
                                         {row.name}
                                     </div>
@@ -229,7 +232,10 @@ export function VendorTemplatesIndexClient() {
                                         })}
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-compact">
+                                <div
+                                    className="flex flex-wrap items-center gap-compact"
+                                    data-testid={`template-row-status-${row.id}`}
+                                >
                                     {row.isGlobal && (
                                         <StatusBadge variant="info" size="sm" data-testid={`template-built-in-${row.id}`}>
                                             {t('vendorTemplates.builtIn')}
