@@ -306,7 +306,12 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // Moved 2026-11-22 by one sorted ADDITION, docs/mobile-roadmap.md (the
         // mobile-view audit and roadmap), +3/-0 against main; the previous
         // digest matched main's file before the insert.
-        keyOrderSha: '63d0ec3c8bd53ed3973a4dac16b76ff97e767b810c7b54b9d6e45716a3c23bc2',
+        //
+        // Moved 2026-11-23 by one sorted ADDITION, docs/mobile-audit.md (the
+        // mobile audit harness and E2E project), before `docs/mobile-roadmap.md`
+        // ('au' < 'ro'), +3/-0 against main; the previous digest matched
+        // main's file before the insert.
+        keyOrderSha: 'fb9f015299e7f5c1d41dd18ac98c3143ca4549d026882e65f414adbdacf0d62f',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in

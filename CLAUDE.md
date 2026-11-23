@@ -4395,6 +4395,13 @@ stands for that PR only — not as a precedent.
 - **i18n**: UI strings go through `next-intl`. Message files are in `messages/`. Server components use `getTranslations()`, client components use `useTranslations()`.
 - **Path alias**: `@/` maps to `src/`. Always use this alias — never relative paths crossing layer boundaries.
 - **Three DB connection vars**: `DATABASE_URL` points to PgBouncer (transaction-mode, used at runtime). `DIRECT_DATABASE_URL` points directly to Postgres (used for Prisma migrations). `DATABASE_READ_URL` is the optional read-replica string — when set, replica-tolerant reads route through `prismaRead` / `runInTenantReadContext`; unset means single-DB mode and `prismaRead === prisma`. See `docs/database-routing.md`.
+- **Every page renders on a 360 px phone.** Split at `md:`; header actions
+  through `PageActions` (primary + "⋯" via `OverflowAction`, destructive stays
+  visible); tab strips through `ScrollCueStrip`; rows with actions wrap, no
+  fixed-width row that never does; fields stay 16 px on touch; shared
+  primitives only; heavy phone-only branches load lazily. The mobile E2E
+  project ratchets it — see `docs/new-subsystem-checklist.md` §6 and
+  `docs/mobile-audit.md`.
 - **Page-section rhythm** (Roadmap-5 PR-9): the spacing scale
   (`tight` / `compact` / `default` / `section` / `page`) is rich, but
   vertical page rhythm wants only TWO answers most of the time.
