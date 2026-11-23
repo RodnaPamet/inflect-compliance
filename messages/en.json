@@ -9577,6 +9577,10 @@
       "required": "Required",
       "invalid": "Invalid"
     },
+    "scrollCueStrip": {
+      "scrollStart": "Show earlier tabs",
+      "scrollEnd": "Show more tabs"
+    },
     "recordStepper": {
       "previous": {
         "accessReview": "Previous access review",

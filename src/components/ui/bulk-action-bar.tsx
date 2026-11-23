@@ -25,7 +25,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
-import { IconAction } from '@/components/ui/icon-action';
+import { Button } from '@/components/ui/button';
+import { Tooltip } from '@/components/ui/tooltip';
 import { AppIcon } from '@/components/icons/AppIcon';
 import { Modal, type ConfirmTone } from '@/components/ui/modal';
 import { cn } from '@inflect/ui/lib/cn';
@@ -128,36 +129,83 @@ export function BulkActionBar({
 
     const noun = entityLabel ?? t('table.items');
 
+    const valueInput = active?.renderInput?.({ value, setValue, setLabel });
+    const applyLabel = t('table.apply');
+
+    // PHONE LAYOUT (below md). The desktop row — picker, value input, icon-only
+    // Apply, all inline — is restored at `md:` exactly; every class without a
+    // prefix below is the phone's.
+    //
+    // On a phone the bar is the selection toolbar's whole second row, and its
+    // controls fill it: the picker stretches, Apply is a labelled 44px button
+    // beside it, and an action's value input (when it has one) gets a row of
+    // its own between them — the picker takes the full row, the input and
+    // Apply share the next. DOM order stays picker → value → Apply, which is
+    // the order the user works in, so focus order and reading order agree.
     return (
-        <div className={cn('flex items-center gap-compact', className)}>
-            <Combobox
-                hideSearch
-                id="bulk-action-select"
-                selected={options.find((o) => o.value === action) ?? null}
-                setSelected={(opt) => {
-                    setAction(opt?.value ?? '');
-                    setValue('');
-                    setLabel('');
-                }}
-                options={options}
-                placeholder={t('table.chooseAction')}
-                matchTriggerWidth
-                buttonProps={{ size: 'sm' }}
-            />
-            {active?.renderInput?.({ value, setValue, setLabel })}
-            <IconAction
-                variant="primary"
-                disabled={!ready}
-                loading={applying}
-                onClick={handleApply}
-                id="bulk-apply-btn"
-                // One size smaller than the canonical icon button (h-9 → h-8,
-                // sm-equivalent square + sm icon rhythm) so it sits a notch
-                // below the row's text controls.
-                className="h-8 w-8 [&_svg]:size-3.5"
-                icon={<AppIcon name="checkCircle" size={14} />}
-                label={t('table.apply')}
-            />
+        <div
+            data-bulk-action-bar
+            className={cn(
+                'flex w-full flex-wrap items-center gap-compact',
+                'md:w-auto md:flex-nowrap',
+                className,
+            )}
+        >
+            <div
+                data-bulk-action-picker
+                // `md:contents` (here and on the value wrapper below): on
+                // desktop the wrapper is not a box, so the controls sit in the
+                // row exactly as they did before the wrappers existed.
+                className={cn(
+                    'flex min-w-0 md:contents',
+                    valueInput ? 'basis-full' : 'flex-1',
+                )}
+            >
+                <Combobox
+                    hideSearch
+                    id="bulk-action-select"
+                    selected={options.find((o) => o.value === action) ?? null}
+                    setSelected={(opt) => {
+                        setAction(opt?.value ?? '');
+                        setValue('');
+                        setLabel('');
+                    }}
+                    options={options}
+                    placeholder={t('table.chooseAction')}
+                    matchTriggerWidth
+                    buttonProps={{ size: 'sm', className: 'w-full md:w-auto' }}
+                />
+            </div>
+            {valueInput ? (
+                <div
+                    data-bulk-action-value
+                    // On a phone the input fills what Apply leaves of the row.
+                    className="flex min-w-0 flex-1 max-md:*:min-w-0 max-md:*:flex-1 md:contents"
+                >
+                    {valueInput}
+                </div>
+            ) : null}
+            <Tooltip content={applyLabel}>
+                <Button
+                    variant="primary"
+                    size="icon"
+                    disabled={!ready}
+                    loading={applying}
+                    onClick={handleApply}
+                    id="bulk-apply-btn"
+                    aria-label={applyLabel}
+                    icon={<AppIcon name="checkCircle" size={14} />}
+                    // Desktop: one size smaller than the canonical icon button
+                    // (h-9 → h-8, sm-equivalent square + sm icon rhythm) so it
+                    // sits a notch below the row's text controls, label in the
+                    // tooltip. Phone: a 44px button that SAYS Apply — an
+                    // unlabelled icon is the one control on the bar a finger
+                    // cannot hover to learn.
+                    className="h-11 w-auto shrink-0 gap-tight px-default md:h-8 md:w-8 md:px-0 [&_svg]:size-3.5"
+                    textWrapperClassName="md:sr-only"
+                    text={applyLabel}
+                />
+            </Tooltip>
             {active?.confirm && (() => {
                 const cfg = typeof active.confirm === 'object' ? active.confirm : {};
                 const verb = cfg.confirmLabel ?? t('table.confirmVerbDelete');

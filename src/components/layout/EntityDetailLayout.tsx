@@ -40,6 +40,7 @@ import { cardVariants } from '@/components/ui/card';
 import { EntityPrevNextNav } from '@/components/ui/entity-prev-next-nav';
 import { Button } from '@/components/ui/button';
 import { SHADED_SURFACE_CLASS } from '@/components/ui/shaded-row';
+import { ScrollCueStrip } from '@/components/ui/scroll-cue-strip';
 
 import { cn } from '@inflect/ui/lib/cn';
 import { type BreadcrumbItem } from '@/components/ui/breadcrumbs';
@@ -329,13 +330,22 @@ export function EntityDetailLayout<TKey extends string = string>({
                 edge. No dividers between tabs: the gap separates them.
                 The band's classes are `SHADED_SURFACE_CLASS`, the same
                 source every boxed list row (`ShadedRow`) draws from, so
-                the two cannot drift apart. */}
+                the two cannot drift apart.
+
+                On a phone it shows two or three of up to nine tabs, so the
+                strip is a `ScrollCueStrip` (owner decision, 2026-11-22: a
+                scrolling strip with cues, not a dropdown): edge fades and a
+                chevron where tabs are hidden, the active tab scrolled into
+                view, end padding, and sticky under the top bar below md. */}
             {tabs && tabs.length > 0 && (
-                <nav
-                    className={cn('flex gap-1 overflow-x-auto px-1', SHADED_SURFACE_CLASS)}
+                <ScrollCueStrip
+                    className={SHADED_SURFACE_CLASS}
+                    listClassName="gap-1 px-1"
                     role="tablist"
                     aria-label={t('table.detailSections')}
                     data-testid="entity-detail-tabs"
+                    activeKey={activeTab}
+                    sticky
                 >
                     {tabs.map((t) => {
                         const isActive = activeTab === t.key;
@@ -367,7 +377,7 @@ export function EntityDetailLayout<TKey extends string = string>({
                             </button>
                         );
                     })}
-                </nav>
+                </ScrollCueStrip>
             )}
 
             {/* Body — wraps in a 2-column grid when a `rail` slot

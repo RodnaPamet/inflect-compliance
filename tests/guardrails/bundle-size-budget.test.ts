@@ -355,7 +355,17 @@ const BUDGETS_KB: Record<string, number> = {
     // Raised 670 -> 675 by the production group bump (#5010, owner decision):
     // 668.9 -> 670.5 KB, about 1.0 KB of it react-window, lucide-react and
     // react-hook-form. Measured and attributed in the `dashboard` note.
-    'controls': 675,
+    //
+    // Raised 675 -> 679 by the mobile roadmap's overlay batch (#5845, owner
+    // request 2026-11-23 to work through the mobile issues #5805). CI's
+    // webpack build, main (960503a11) against #5845 (c1eaca25d):
+    // `controls/.../tests/[planId]/page` 674.2 -> 674.9 KB, +0.7, and every
+    // bucket moved by 0.6-0.8 KB: the change is the phone layout of shared
+    // primitives (popover sheet, modal and sheet insets, the bulk-selection
+    // toolbar) that every tenant page loads. The later mobile batches touch
+    // shared primitives too, so 0.1 KB left would trip on the next one.
+    // 679 is measured + ~4, the convention.
+    'controls': 679,
     // Catch-all for any other tenant page.
     //
     // Raised 682 → 688 by the AI-roadmap integration (#5323, owner decision
@@ -364,7 +374,12 @@ const BUDGETS_KB: Record<string, number> = {
     // the 0.6-0.9 KB every route grew. NOT ATTRIBUTED, by the owner's choice;
     // see the `risks` note for the same build and the same inference. 688 is
     // measured + ~4, the convention.
-    'tenant-default': 688,
+    //
+    // Raised 688 -> 692 by the same mobile overlay batch (#5845; see the
+    // `controls` note): policies/[policyId]/page 687.3 -> 688.1 KB, +0.8,
+    // shared phone-layout code in the popover, modal, sheet and selection
+    // toolbar. 692 is measured + ~4, the convention.
+    'tenant-default': 692,
     // Auth / public / org pages.
     //
     // RAISED 575 -> 580 on 2026-10-23, and this entry is the cautionary one.

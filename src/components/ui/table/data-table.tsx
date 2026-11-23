@@ -696,21 +696,23 @@ export function DataTable<T extends TableRowData>({
   // `<Table>` alone, so the card view (a phone) and the virtualized view (a
   // list that loads past the threshold mid-session) let rows be ticked with
   // no bar to act on them (#5230), and the card view stopped after its first
-  // batch (#5229). Both branches now render them too. The bar is the same
-  // overlay `<Table>` mounts, positioned over the top of the list.
-  const selectionToolbar =
-    (selectionEnabled ?? true) ? (
-      <SelectionToolbar
-        table={table}
-        controls={effectiveSelectionControls}
-        className="absolute left-0 top-0 z-30 rounded-t-[inherit]"
-      />
-    ) : null;
+  // batch (#5229). Both branches now render them too. The virtualized view
+  // mounts the same overlay `<Table>` does, positioned over the top of the
+  // list. The card list DOCKS it instead: the cards scroll with the page, so a
+  // bar over the top of the list is off-screen by the time a card further
+  // down is ticked. See `SelectionToolbarPlacement`.
+  const selectionOn = selectionEnabled ?? true;
+  const selectionToolbar = selectionOn ? (
+    <SelectionToolbar
+      table={table}
+      controls={effectiveSelectionControls}
+      className="absolute left-0 top-0 z-30 rounded-t-[inherit]"
+    />
+  ) : null;
 
   if (belowMd && collapsesToCards && data.length > 0 && !error && !loading) {
     return (
       <div id={dataTestId} data-testid={dataTestId} className={cn(wrapperClassName, "relative")}>
-        {selectionToolbar}
         <DataTableCards<T> table={table} onRowClick={onRowClick} />
         {onReachEnd && (
           <InfiniteScrollSentinel
@@ -718,6 +720,16 @@ export function DataTable<T extends TableRowData>({
             testId="cards-infinite-scroll-sentinel"
           />
         )}
+        {/* LAST, so `sticky bottom-0` holds it to the bottom of the screen
+            while the list runs past it and lets it come to rest after the
+            final card rather than over it. */}
+        {selectionOn ? (
+          <SelectionToolbar
+            table={table}
+            controls={effectiveSelectionControls}
+            placement="dock"
+          />
+        ) : null}
       </div>
     );
   }

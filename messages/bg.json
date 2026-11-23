@@ -9577,6 +9577,10 @@
       "required": "Задължително",
       "invalid": "Невалидно"
     },
+    "scrollCueStrip": {
+      "scrollStart": "Покажи предишните раздели",
+      "scrollEnd": "Покажи още раздели"
+    },
     "recordStepper": {
       "previous": {
         "accessReview": "Предишен преглед на достъпа",
