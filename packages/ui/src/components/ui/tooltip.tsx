@@ -31,8 +31,18 @@
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { HelpCircle } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { createContext, forwardRef, useContext, type ReactNode } from "react";
+import {
+    createContext,
+    forwardRef,
+    useContext,
+    useRef,
+    useState,
+    type MouseEvent,
+    type PointerEvent,
+    type ReactNode,
+} from "react";
 import { cn } from "@inflect/ui/lib/cn";
+import { TOUCH_HIT_AREA_CLASS } from "./hit-area";
 
 export type TooltipSide = "top" | "right" | "bottom" | "left";
 export type TooltipAlign = "start" | "center" | "end";
@@ -115,7 +125,35 @@ export interface TooltipProps {
     disableHoverableContent?: boolean;
     /** Escape hatch for callers that need to style the content surface. */
     contentClassName?: string;
+    /**
+     * Whether a TAP on a touch screen opens the tooltip (a second tap, or a
+     * tap outside, closes it).
+     *
+     * Radix opens a tooltip on mouse hover and keyboard focus only; a touch
+     * pointer never opens one, and a tap CLOSES it. So on a phone the content
+     * of every tooltip was unreachable — harmless for an icon button whose
+     * tooltip repeats its `aria-label`, a loss for a help icon or a badge
+     * whose tooltip is the only place the text lives.
+     *
+     * Defaults to "only when the trigger has nothing else to do": a trigger
+     * that is not itself a link or a control, and sits inside none. A tap on
+     * an action button keeps doing the action and nothing more — opening a
+     * tooltip there would leave the label floating over whatever the button
+     * opened, since tooltips sit above sheets and modals. `InfoTooltip`,
+     * whose button exists only to show its tooltip, passes `true`.
+     *
+     * Mouse and keyboard behaviour is unchanged either way.
+     */
+    openOnTap?: boolean;
 }
+
+/**
+ * What counts as "the trigger already does something on a tap". Checked with
+ * `closest`, so a badge inside a row link or a label counts too: preventing
+ * the click's default there would cancel the navigation or the toggle.
+ */
+const TAP_HAS_ITS_OWN_ACTION =
+    'a[href], button, input, select, textarea, label, summary, [role="button"], [role="link"], [role="menuitem"], [role="tab"], [role="checkbox"], [role="switch"], [role="option"]';
 
 /**
  * Canonical tooltip. Wrap any focusable/hoverable element.
@@ -141,12 +179,20 @@ export const Tooltip = forwardRef<HTMLButtonElement, TooltipProps>(function Tool
         delayDuration,
         disableHoverableContent,
         contentClassName,
+        openOnTap,
     },
     ref,
 ) {
     // BEFORE the early return: a hook after a conditional return is a
     // rules-of-hooks violation, and `disabled` flips between renders.
     const providerAlreadyMounted = useContext(TooltipProviderPresent);
+    // Controlled so a tap can open it — see `openOnTap`. Hover and focus still
+    // go through Radix, which reports them here through `onOpenChange`.
+    const [open, setOpen] = useState(false);
+    // Read at pointerdown, BEFORE Radix's own handler runs: Radix closes an
+    // open tooltip on pointerdown, so by the time the click arrives the state
+    // no longer says whether this tap is the first or the second.
+    const tap = useRef<{ touch: boolean; wasOpen: boolean }>({ touch: false, wasOpen: false });
 
     if (disabled || (content == null && title == null)) {
         return <>{children}</>;
@@ -158,12 +204,33 @@ export const Tooltip = forwardRef<HTMLButtonElement, TooltipProps>(function Tool
     return (
         <Wrapper>
             <TooltipPrimitive.Root
+                open={open}
+                onOpenChange={setOpen}
                 delayDuration={delayDuration}
                 disableHoverableContent={disableHoverableContent}
             >
                 <TooltipPrimitive.Trigger
                     ref={ref}
                     asChild
+                    onPointerDown={(e: PointerEvent<HTMLElement>) => {
+                        tap.current = {
+                            // A pen taps like a finger: it has no hover to
+                            // open the tooltip with either.
+                            touch: e.pointerType === "touch" || e.pointerType === "pen",
+                            wasOpen: open,
+                        };
+                    }}
+                    onClick={(e: MouseEvent<HTMLElement>) => {
+                        if (!tap.current.touch) return;
+                        const tapOpens =
+                            openOnTap ?? e.currentTarget.closest(TAP_HAS_ITS_OWN_ACTION) === null;
+                        if (!tapOpens) return;
+                        // Radix composes its own click handler AFTER this one
+                        // and skips it when the event is default-prevented;
+                        // that handler would close what this tap opens.
+                        e.preventDefault();
+                        setOpen(!tap.current.wasOpen);
+                    }}
                     // Hover-or-keyboard, never auto. Radix opens the tooltip on
                     // ANY focus, so when a popover/dialog auto-focuses its first
                     // control (e.g. the calendar's prev-month arrow, or the theme
@@ -279,12 +346,20 @@ export const InfoTooltip = forwardRef<
     // cannot run in a default, and a literal there is English in every locale.
     const t = useTranslations("common.ui");
     return (
-        <Tooltip {...tooltipProps}>
+        // A tap opens it: the button exists for nothing else.
+        <Tooltip openOnTap {...tooltipProps}>
             <button
                 ref={ref}
                 type="button"
                 aria-label={ariaLabel ?? t("moreInformation")}
-                className="inline-flex h-4 w-4 items-center justify-center rounded-full text-content-muted outline-none transition-colors hover:text-content-default focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                // 16px painted, 44px to a finger. The icon sits inline beside
+                // a label, so growing its BOX would move the label; the touch
+                // hit area is a centred pseudo-element instead (see
+                // `hit-area.ts`), and `relative` anchors it.
+                className={cn(
+                    "relative inline-flex h-4 w-4 items-center justify-center rounded-full text-content-muted outline-none transition-colors hover:text-content-default focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                    TOUCH_HIT_AREA_CLASS,
+                )}
             >
                 <HelpCircle className={cn("h-4 w-4", iconClassName)} aria-hidden="true" />
             </button>

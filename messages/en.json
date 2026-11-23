@@ -17735,6 +17735,9 @@
       "remove": "× Remove"
     }
   },
+  "mobileNav": {
+    "drawerTitle": "Navigation"
+  },
   "assistant": {
     "title": "Assistant",
     "description": "Ask about this tenant's compliance data. The assistant reads live data and can queue an action for approval — it never changes anything itself.",

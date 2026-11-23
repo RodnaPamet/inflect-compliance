@@ -66,6 +66,23 @@ describe('top bar — WCAG 2.5.5 touch targets', () => {
         expect(cls).toContain('h-[22px]');
     });
 
+    it('the brand link reaches 44px on a coarse pointer, the mark stays 22px', () => {
+        // #5820. The mark used to BE the link, so the floor could not be added
+        // without painting a 44px gradient square. The link is now the hit
+        // area and the mark sits inside it, unchanged.
+        render(<NavBarBrand href="/x" initials="IC" />);
+        const link = screen.getByTestId('nav-bar-brand').className.split(/\s+/);
+        expect(link).toContain('pointer-coarse:min-h-11');
+        expect(link).toContain('pointer-coarse:min-w-11');
+        expect(link).toContain('h-[22px]');
+        const mark = screen.getByTestId('nav-bar-brand-mark').className.split(/\s+/);
+        expect(mark).toContain('h-[22px]');
+        expect(mark).toContain('w-[22px]');
+        // The floor is the LINK's alone: a mark that grew with it would be the
+        // visual change this split exists to avoid.
+        expect(mark).not.toContain('pointer-coarse:min-h-11');
+    });
+
     it('the bar clears the status bar and the landscape notch', () => {
         // `env(safe-area-inset-*)` is 0 wherever there is no inset, so this is
         // inert rather than conditional on a user-agent sniff.

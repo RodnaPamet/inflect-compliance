@@ -95,14 +95,20 @@ const NOTIFICATIONS_FALLBACK_POLL_INTERVAL_MS = 5 * 60_000;
 // `HIT_AREA_CLASS`: a 22px `rounded-full` bell is a circle in a square —
 // 14% of its box rendered as bell but did not answer to `:hover`. See
 // `hit-area.ts` for the measurements.
+//
+// `pointer-coarse:min-h-11 min-w-11`: 22px is half of WCAG 2.5.5's 44 on a
+// touch screen. The floor is the hamburger's and the avatar's, so the three
+// controls of the bar answer a finger the same; on a mouse nothing moves.
 const BELL_BUTTON_CLASS =
-    `relative inline-flex items-center justify-center h-[22px] w-[22px] rounded-full text-content-muted transition-colors hover:bg-bg-muted/50 hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${NAV_BAR_SLOT_PRESS} ${HIT_AREA_CLASS}`;
+    `relative inline-flex items-center justify-center h-[22px] w-[22px] pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-full text-content-muted transition-colors hover:bg-bg-muted/50 hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${NAV_BAR_SLOT_PRESS} ${HIT_AREA_CLASS}`;
 
 const BADGE_OVERLAY_CLASS =
     // Pill chip pinned to the bell's top-right corner. Negative
     // inset puts it slightly outside the bell's bounding box so
-    // the bell glyph remains uncluttered.
-    'absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-bg-error-emphasis text-[10px] font-semibold text-content-inverted tabular-nums leading-none';
+    // the bell glyph remains uncluttered. On a touch screen the box is
+    // 44px with the 22px bell centred in it, so the chip moves in by the
+    // 11px between them and stays on the bell, not in the box's corner.
+    'absolute -top-0.5 -right-0.5 pointer-coarse:top-[9px] pointer-coarse:right-[9px] flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-bg-error-emphasis text-[10px] font-semibold text-content-inverted tabular-nums leading-none';
 
 const ROW_CLASS =
     'flex flex-col gap-tight rounded-md px-2.5 py-2 transition-colors hover:bg-bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]';
