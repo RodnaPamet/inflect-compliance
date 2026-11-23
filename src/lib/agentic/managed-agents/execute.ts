@@ -30,7 +30,11 @@
  * behind the run's own token count; and metadata naming the tenant and the
  * run by id. The session
  * id is written to the ledger AT ONCE (`SESSION_CREATED`), so a crash leaves a
- * record Step 5c can clean up by id.
+ * record Step 5c can clean up by id. A create Anthropic REFUSES settles the run
+ * with its status and error type, never its text; one that gets NO answer may
+ * still have made a session, which is found by this run's metadata on the
+ * pinned agent, recorded and settled (`settleUnrecordedSessions`, Step 5H). The
+ * create, like every POST here, is never re-sent by the SDK (`SEND_ONCE`).
  *
  * ── THE STREAM ──────────────────────────────────────────────────────────────
  *
@@ -153,6 +157,7 @@ import {
     sessionSystemFor,
     type RetrievedAgent,
 } from './definition';
+import { listCrashWindow } from './cleanup';
 import { recordManagedAgentsDecision, type InflectSentInput } from './model-decision';
 import { sessionStepRecord, type SessionLifecycle } from './session-ledger';
 import type { ProvisionRecord } from './store';
@@ -626,6 +631,13 @@ export async function executeManagedAgentsRun(
             providerStatus: code.status,
             providerErrorType: code.type,
         });
+        // NO ANSWER IS NOT "NOT CREATED" (Step 5H, #4169). The request may have
+        // reached Anthropic and made a session whose id never came back, and
+        // nothing would record it. Find it as the purge's crash window does:
+        // sessions listed by the pinned agent only, taken only when their
+        // metadata names this tenant AND this run. Each is recorded, then
+        // settled like any other (deleted, or recorded kept). Never throws.
+        if (code.status === null) await settleUnrecordedSessions(ctx, runId, client, pinned.anthropicAgentId, route, binding);
         const status = await failRun(ctx, runId, sessionNotCreatedMessage(code));
         return { status, stepFailures: 1 };
     }
@@ -1027,6 +1039,48 @@ async function recordSessionStep(
     facts: Record<string, unknown>,
 ): Promise<void> {
     await recordStep(ctx, runId, seq, 'SYNTHESIS', sessionStepRecord(lifecycle, facts));
+}
+
+/**
+ * The sessions of THIS run that a lost `sessions.create` answer left with no
+ * id on the ledger (Step 5H, #4169): listed through the clean-up's own
+ * crash-window call (`listCrashWindow`, by the pinned agent, this tenant's
+ * metadata only) and taken only when the metadata names this run. Each is
+ * recorded `SESSION_CREATED`, then settled. Never throws: what it cannot reach
+ * is left to the purge's and a connection removal's crash window.
+ */
+async function settleUnrecordedSessions(
+    ctx: RequestContext,
+    runId: string,
+    client: Anthropic,
+    agentId: string,
+    route: ManagedAgentsRoute,
+    binding: ToolRunBinding,
+): Promise<void> {
+    try {
+        const listing = await listCrashWindow(client, agentId, ctx.tenantId, undefined);
+        if (!listing.ok) {
+            logger.warn('managed-agents: a session create had no answer, and the agent\'s sessions could not be listed', {
+                component: 'agentic', runId: binding.runId, outcome: listing.outcome,
+            });
+            return;
+        }
+        for (const found of listing.candidates.filter((c) => c.runId === runId)) {
+            await recordSessionStep(ctx, runId, binding.nextSeq(), 'SESSION_CREATED', {
+                sessionId: found.sessionId,
+                connectionId: route.connectionId,
+                agentId,
+                foundAfterLostCreate: true,
+            });
+            await settleSession(ctx, runId, client, found.sessionId, route, binding, false);
+        }
+    } catch (err) {
+        logger.error('managed-agents: a session whose create had no answer could not be settled', {
+            component: 'agentic',
+            runId: binding.runId,
+            error: err instanceof Error ? err.name : 'a non-Error value was thrown',
+        });
+    }
 }
 
 /**
