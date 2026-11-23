@@ -74,6 +74,7 @@ const EXPECTED_AI_ADMIN: { [D in keyof PermissionSet]: PermissionSet[D] } = {
         agent_external_tools: true,
         agent_harness_ingest: true,
         integrations_ingest: true,
+        agent_rules_ingest: true,
         agent_ownership: true,
         agent_skill_review: true,
         agent_skill_author: true,
@@ -117,6 +118,7 @@ describe('AI_ADMIN — every PermissionSet key, classified', () => {
         // owner named it for the report it submits (the third-party
         // applications a directory has granted access to), and it is held
         // exactly as its twin `agent_harness_ingest` is — the scanner's key.
+        // `agent_rules_ingest`, the third report's key, is named `agent_*`.
         expect(agentNamed).toEqual([...AGENT_ADMIN_KEYS].filter((k) => k !== 'integrations_ingest').sort());
         expect(AGENT_ADMIN_KEYS).toContain('integrations_ingest');
     });

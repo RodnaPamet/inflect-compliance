@@ -5513,6 +5513,7 @@
         "agent_external_tools": "Agent external tools",
         "agent_harness_ingest": "Agent scan reports",
         "integrations_ingest": "Third-party application scan reports",
+        "agent_rules_ingest": "Agent-surface rules scan reports",
         "agent_ownership": "Own agents",
         "agent_skill_review": "Review agent skills",
         "agent_skill_author": "Author agent skills"
@@ -11853,6 +11854,53 @@
       "tabPack": "Assessor pack",
       "tabHarness": "Harness matrix",
       "tabIntegrations": "Integrations",
+      "tabAgentSurface": "Agent surface",
+      "agentSurface": {
+        "readOnly": "Read only. The findings below were raised by a scanner's static rules over the tool definitions it read from tool servers and the agent skills it read from code folders; they live in the findings register, and a scan closes one only when the same scanner reads the place it was found in full and the rule no longer fires. A finding is a suggestion to confirm, not proof: the scanner kept no text, so open the tool on its server, or the skill's file, to judge it.",
+        "noScansTitle": "No agent-surface rules scan",
+        "noScansBody": "Nothing has read the definitions of the tools your agents can call, or the skills they use, so this page can say nothing about them. A scanner that reads tool servers or agent code submits its report with an API key carrying the admin:agent_rules_ingest scope, signed by a scanner key registered on the Harness matrix tab.",
+        "sectionHeading": "{scanner}, as of {asOf}",
+        "state": {
+          "FINDINGS": "Rules fired",
+          "CLEAN": "No rule fired on a complete read",
+          "NOTHING_READ": "Nothing was read",
+          "NOT_CONCLUDED": "Not concluded"
+        },
+        "summary": "{subjects, plural, one {# tool definition, skill or script} other {# tool definitions, skills and scripts}} read, {flagged, plural, one {# with} other {# with}} a finding, {findings, plural, one {# finding} other {# findings}}.",
+        "nothingRead": "The places this scanner read held no tool definition and no skill. A read of nothing is not a clean result.",
+        "incomplete": "Not everything was read ({reason}). A finding below is real; an absence is not a clean result, and nothing found in a place read in part was closed.",
+        "originsHeading": "Places read",
+        "noOrigins": "No places read in this scan",
+        "originComplete": "{kind}, read in full: {subjects, plural, one {# item} other {# items}}",
+        "originIncomplete": "{kind}, read in part ({reason}): {subjects, plural, one {# item} other {# items}} read",
+        "originKind": {
+          "mcp": "tool server",
+          "code": "code folder"
+        },
+        "findingsHeading": "Open findings",
+        "noOpenFindings": "No open agent-surface findings",
+        "findingsTruncated": "There are more open findings than this page lists. The findings register has them all.",
+        "colSeverity": "Severity",
+        "colFinding": "Finding",
+        "colWhere": "Where",
+        "field": "in its {field}",
+        "code": {
+          "MCP_TOOL_POISONING": "Possible tool poisoning",
+          "MCP_PROMPT_INJECTION": "Possible prompt injection",
+          "MCP_COMMAND_INJECTION": "Possible executable payload",
+          "MCP_DATA_EXFILTRATION": "Possible data exfiltration instruction",
+          "MCP_CREDENTIAL_HARVESTING": "Possible credential harvesting",
+          "SKILL_PROMPT_INJECTION": "Possible prompt injection in a skill",
+          "SKILL_COMMAND_INJECTION": "Possible executable payload in a skill",
+          "SKILL_DATA_EXFILTRATION": "Possible data exfiltration in a skill",
+          "SKILL_CREDENTIAL_HARVESTING": "Possible credential harvesting in a skill",
+          "SKILL_EXCESSIVE_PERMISSION": "Possible excessive permission in a skill",
+          "SKILL_IMPERSONATION": "Possible impersonation in a skill"
+        },
+        "scannersNotShown": "{count, plural, one {# more scanner has} other {# more scanners have}} a scan this page does not show.",
+        "scannersWithoutScan": "{count, plural, one {# trusted scanner has} other {# trusted scanners have}} sent no agent-surface rules report in the scans this page read: {names}. As far as this page can see, they read nothing.",
+        "scansTruncated": "There are more scans than this page read; the latest of each scanner is shown."
+      },
       "integrations": {
         "readOnly": "The applications a directory has granted access to — Entra, Okta and GitHub — as each scanner’s latest third-party application report found them. Read-only: what the scan raised is in the findings register, shown here beside the application it is about.",
         "noScansTitle": "No third-party application scan has been received",

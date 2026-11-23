@@ -361,17 +361,23 @@ export const ADMIN_API_ONLY_KEYS = [
  *     `agent_harness_ingest` by owner decision, and refused here for the same
  *     reason: the key is the scanner's, and a custom role should not buy a
  *     non-ADMIN membership a credential that posts past the edge.
+ *   - `agent_rules_ingest` — posting an agent-surface rules scan at
+ *     `…/admin/agents/agent-rule-scans` through a key with
+ *     `admin:agent_rules_ingest`, `admin:*` or `*`: the scanner's third
+ *     report, refused here for the integrations key's reason.
  *   - `agent_external_tools` — every external tool call made for the
  *     membership: a run it starts at `/agent-runs`, which checks the starter's
  *     permissions, a key at `/api/mcp` with `admin:external_tools`, `admin:*` or
  *     `*`, and an agent's A2A send.
  *
- * So for these five the rule DOES take something away. Going forward, a
+ * So for these six the rule DOES take something away. Going forward, a
  * membership that is not ADMIN cannot be given a custom role granting one, and
  * migration `20261030170000_admin_membership_only_keys_off_for_non_admin_custom_roles`
  * switched them off in every stored role that only such memberships carried
  * (`integrations_ingest`, which came later, by
- * `20261114120100_integrations_ingest_off_for_non_admin_custom_roles`).
+ * `20261114120100_integrations_ingest_off_for_non_admin_custom_roles`, and
+ * `agent_rules_ingest` by
+ * `20261122120100_agent_rules_ingest_off_for_non_admin_custom_roles`).
  * The paths above then refuse it as they refuse any member without the key:
  * the key's request answers 403, the run's or the tool call's is refused. The
  * nine other admin keys are consumed outside the admin API too, and keep
@@ -383,6 +389,7 @@ export const SIDE_DOOR_ADMIN_KEYS = [
     'agent_harness_ingest',
     'agent_external_tools',
     'integrations_ingest',
+    'agent_rules_ingest',
 ] as const satisfies readonly (keyof PermissionSet['admin'])[];
 
 /**

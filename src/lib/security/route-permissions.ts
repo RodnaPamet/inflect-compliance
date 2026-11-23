@@ -654,6 +654,20 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'ingests nothing: the report must be signed by a scanner key the ' +
             'tenant registered, which takes admin.agent_registry.',
     },
+    // ── Agent-surface rules scans (`scanent-agent-rules/1`) ─────────
+    //
+    // The scanner's third report, its own key by owner decision. Above the
+    // catch-all so a POST resolves here; the GET is the inventory read.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/agent-rule-scans$`),
+        methods: ['POST'],
+        permission: 'admin.agent_rules_ingest',
+        note:
+            'Submit a signed scanent-agent-rules/1 report: what static rules ' +
+            'found in the MCP tool definitions a scanner read. The key alone ' +
+            'ingests nothing: the report must be signed by a scanner key the ' +
+            'tenant registered, which takes admin.agent_registry.',
+    },
     // ── Third-party application scans (`scanent-integrations/1`) ─────
     //
     // The scanner's second report, its own key by owner decision: a key
@@ -854,6 +868,15 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note:
             'List third-party application scans. Reading the inventory, as the ' +
             'harness list is; submitting one is the integrations ingest key, above.',
+    },
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/agent-rule-scans$`),
+        methods: ['GET'],
+        permission: ['admin.agent_registry_view', 'admin.agent_registry'],
+        mode: 'any',
+        note:
+            'List agent-surface rules scans. Reading the inventory, as the ' +
+            'harness list is; submitting one is the agent-rules ingest key, above.',
     },
     {
         path: new RegExp(`^${T}\\/admin\\/agents\\/discovered$`),
