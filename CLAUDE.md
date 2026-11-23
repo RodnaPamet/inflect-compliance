@@ -3900,7 +3900,7 @@ undone:
   new plaintext column on any model away from the manifest's field names.
 - **The reconciliation** (`reconcileLostSessionDeletes`, run by
   `data-lifecycle` over every tenant that is not soft-deleted, disabled
-  connections included) does two things, and is the ONE periodic retry of a
+  connections included) does three things, and is the ONE periodic retry of a
   session: do not open a second. It retries every session whose LATEST step is
   `SESSION_DELETE_FAILED` (#5843) through the clean-up's own `deleteSession`,
   and on done or a 404 writes `SESSION_DELETED` on the run's ledger through
@@ -3912,9 +3912,16 @@ undone:
   `inputJson`; per tenant per pass it reads the newest
   `FAILED_DELETE_READ_CAP` (1,000; more is `LEDGER_TRUNCATED`) and attempts at
   most `FAILED_DELETE_RETRY_BATCH` (100), oldest first, under the 60 s deadline.
-  It also reads back every session recorded DELETED in the last seven days,
-  deletes one that still exists, and meters it
-  (`agentic.managed_agents.lost_delete`).
+  It settles every session a dead worker ABANDONED (Step 5H, #4169): only
+  `SESSION_CREATED` on the ledger, recorded in the last seven days and longer
+  ago than `ABANDONED_SESSION_MIN_AGE_MS` (the wall clock plus ten minutes, so
+  no live segment can still settle it), as the run's own settle would have:
+  recorded `SESSION_KEPT` on a connection that keeps sessions, else deleted and
+  recorded `SESSION_DELETED` (`agentic.managed_agents.abandoned_session`). A run
+  never re-attaches to a session, so a SIGKILL, an OOM or a SIGTERM drain
+  leaves one behind on every retry or resume. It also reads back every session
+  recorded DELETED in the last seven days, deletes one that still exists, and
+  meters it (`agentic.managed_agents.lost_delete`).
 
 ## Testing Conventions
 

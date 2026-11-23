@@ -120,8 +120,11 @@ puts at Anthropic:
   reconciliation, run by `data-lifecycle`, retries every session whose latest
   ledger step is `SESSION_DELETE_FAILED` (a run's delete that Anthropic refused
   or could not take), by its recorded id and never a KEPT one, writing
-  `SESSION_DELETED` on the run's ledger once it goes (#5843); and it deletes a
-  session recorded DELETED that still exists. Nothing has been created in a
+  `SESSION_DELETED` on the run's ledger once it goes (#5843); it settles a
+  session a dead worker abandoned, recorded only `SESSION_CREATED` and older
+  than any run segment can last, by deleting it, or recording it kept when the
+  connection keeps sessions (Step 5H, #4169); and it deletes a session recorded
+  DELETED that still exists. Nothing has been created in a
   customer's workspace in production yet: the engine runs from Step 5d, and
   `AGENT_MANAGED_AGENTS` is off there (#5797).
   - **Known limit (#5802).** A DSAR erasure finds the person's tenants from

@@ -139,6 +139,17 @@ export function agentToolsFor(input: {
     return { ok: true, tools };
 }
 
+/**
+ * THE REQUEST OPTIONS OF EVERY POST THE ENGINE SENDS (Step 5H, #4169): the
+ * SDK's own retry is off. The SDK re-sends a request whose connection failed,
+ * timed out or got a 5xx, and none of these POSTs is idempotent: a re-sent
+ * `user.custom_tool_result` answers a call twice, a re-sent `sessions.create`
+ * makes a second session nobody recorded, and a re-sent `agents.create` an
+ * agent no clean-up archives. A failed POST fails the run (or the approval's
+ * provisioning) instead, and a GET or a DELETE keeps the SDK's retry.
+ */
+export const SEND_ONCE = { maxRetries: 0 } as const;
+
 /** The agent's opaque name: an id, never a tenant's or a profile's name. */
 export function agentNameFor(profileId: string): string {
     return `inflect-profile-${profileId}`;
