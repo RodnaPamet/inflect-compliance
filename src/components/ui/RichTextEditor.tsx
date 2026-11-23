@@ -278,12 +278,16 @@ function Toolbar({
 }) {
     const t = useTranslations('richtext');
     return (
+        // On a touch screen every toolbar control is 44px (`pointer-coarse:`).
+        // A transparent hit area would not do here: the controls sit 4px
+        // apart, so each 44px square would answer for its neighbours' taps.
+        // The toolbar wraps instead. A fine pointer keeps the 24px row.
         <div className="flex flex-wrap items-center gap-1 border-b border-border-default px-2 py-1.5">
             <button
                 type="button"
                 onClick={onToggleMode}
                 disabled={disabled}
-                className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-content-muted hover:bg-bg-muted hover:text-content-emphasis disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs text-content-muted hover:bg-bg-muted hover:text-content-emphasis disabled:opacity-50 pointer-coarse:min-h-11"
                 aria-label={mode === 'MARKDOWN' ? t('switchToWysiwyg') : t('switchToMarkdown')}
                 data-testid="rich-text-editor-toggle"
                 data-mode={mode}
@@ -397,7 +401,7 @@ function Toolbar({
                                 .setLink({ href: url })
                                 .run();
                         }}
-                        className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-content-muted hover:bg-bg-muted hover:text-content-emphasis"
+                        className="inline-flex items-center justify-center gap-1 rounded-md px-1.5 py-0.5 text-content-muted hover:bg-bg-muted hover:text-content-emphasis pointer-coarse:min-h-11 pointer-coarse:min-w-11"
                         aria-label={t('insertLink')}
                         data-testid="rich-text-editor-link"
                     >
@@ -429,7 +433,7 @@ function FormatButton({
         <button
             type="button"
             onClick={action}
-            className={`inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
+            className={`inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors pointer-coarse:h-11 pointer-coarse:w-11 ${
                 active
                     ? 'bg-bg-muted text-content-emphasis'
                     : 'text-content-muted hover:bg-bg-muted hover:text-content-emphasis'

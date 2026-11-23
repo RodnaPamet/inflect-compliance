@@ -96,7 +96,7 @@ describe('RiskEvaluationFields (shared, R5/R6)', () => {
             />,
         );
         expect(screen.getByText('Risk Evaluation')).not.toBeNull();
-        expect(container.querySelectorAll('input[type="range"]').length).toBe(2);
+        expect(container.querySelectorAll('[role="slider"]').length).toBe(2);
         expect(screen.getByText('12')).not.toBeNull(); // 4 × 3
         expect(screen.getByText('High')).not.toBeNull();
     });
@@ -132,7 +132,7 @@ describe('EditRiskModal (R6/R8/R9)', () => {
     it('uses the shared "Risk Evaluation" box (not the old NumberStepper) and renames the owner label', () => {
         renderEdit();
         expect(screen.getByText('Risk Evaluation')).not.toBeNull();
-        expect(document.querySelectorAll('input[type="range"]').length).toBe(2);
+        expect(document.querySelectorAll('[role="slider"]').length).toBe(2);
         expect(screen.getByText('Owner')).not.toBeNull();
         expect(screen.queryByText('Assigned to')).toBeNull();
     });

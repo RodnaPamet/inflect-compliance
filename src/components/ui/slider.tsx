@@ -2,6 +2,7 @@
 
 import { useTranslations } from "next-intl";
 import { cn } from "@inflect/ui/lib/cn";
+import { TOUCH_HIT_AREA_CLASS } from "@inflect/ui/components/ui/hit-area";
 import * as RadixSlider from "@radix-ui/react-slider";
 import { ReactNode } from "react";
 
@@ -57,6 +58,14 @@ export interface SliderProps {
     /** Optional formatter for a floating current-value label above the
      *  thumb. Typical use: `(v) => `${v}%`` for percentage sliders. */
     formatLabel?: (value: number) => ReactNode;
+    /** The thumb's `id` (the element that takes focus: `role="slider"`). */
+    id?: string;
+    /**
+     * The id of a VISIBLE label to name the slider by. Preferred over
+     * `ariaLabel` when the form already shows one: a `<label htmlFor>`
+     * cannot point at the thumb, which is not a labelable element.
+     */
+    ariaLabelledBy?: string;
 }
 
 export function Slider({
@@ -71,6 +80,8 @@ export function Slider({
     disabled,
     ariaLabel,
     formatLabel,
+    id,
+    ariaLabelledBy,
 }: SliderProps) {
     const t = useTranslations("common.ui");
     const sliderMarks = marks || [
@@ -122,8 +133,15 @@ export function Slider({
                     </RadixSlider.Track>
 
                     <RadixSlider.Thumb
-                        aria-label={ariaLabel ?? t("slider")}
-                        className="relative z-20 flex size-[calc(var(--thumb-radius)*2)] items-center justify-center rounded-full border-0 bg-bg-default shadow-[0_2px_2px_rgba(0,0,0,0.10),0_3px_3px_rgba(0,0,0,0.09)] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                        id={id}
+                        aria-labelledby={ariaLabelledBy}
+                        aria-label={ariaLabelledBy ? undefined : (ariaLabel ?? t("slider"))}
+                        // 26px painted, 44px to a finger (the shared touch hit
+                        // area); the track itself also answers a tap.
+                        className={cn(
+                            "relative z-20 flex size-[calc(var(--thumb-radius)*2)] items-center justify-center rounded-full border-0 bg-bg-default shadow-[0_2px_2px_rgba(0,0,0,0.10),0_3px_3px_rgba(0,0,0,0.09)] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                            TOUCH_HIT_AREA_CLASS,
+                        )}
                     >
                         <span className="block size-[calc(var(--thumb-radius)*1.23)] rounded-full bg-content-emphasis" />
                         {formatLabel && (

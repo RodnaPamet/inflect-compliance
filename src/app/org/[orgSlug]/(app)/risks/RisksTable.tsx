@@ -1,6 +1,6 @@
 'use client';
 
-import Link from 'next/link';
+import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { AlertTriangle } from 'lucide-react';
@@ -90,13 +90,13 @@ export function RisksTable({ rows: initialRows, nextCursor: initialNextCursor, o
                     id: 'title',
                     header: t('risks.colRisk'),
                     cell: ({ row }) => (
-                        <Link
+                        <TableTitleCell
                             href={row.original.drillDownUrl}
-                            className="font-medium text-content-emphasis hover:text-content-info hover:underline"
-                            data-testid={`org-risk-link-${row.original.riskId}`}
+                            className="hover:text-content-info hover:underline"
+                            testId={`org-risk-link-${row.original.riskId}`}
                         >
                             {row.original.title}
-                        </Link>
+                        </TableTitleCell>
                     ),
                 },
                 {

@@ -87,7 +87,7 @@ describe('AssetCriticalityFields (A1/A2)', () => {
             />,
         );
         expect(screen.getByText('Asset Criticality')).not.toBeNull();
-        const ranges = container.querySelectorAll('input[type="range"]');
+        const ranges = container.querySelectorAll('[role="slider"]');
         expect(ranges.length).toBe(3);
         expect(document.getElementById('asset-confidentiality')).not.toBeNull();
         expect(document.getElementById('asset-integrity')).not.toBeNull();
@@ -113,7 +113,7 @@ describe('AssetCriticalityBadge (A3 — detail Overview)', () => {
         const { container } = withProviders(
             <AssetCriticalityBadge confidentiality={4} integrity={1} availability={2} />,
         );
-        expect(container.querySelectorAll('input[type="range"]').length).toBe(0);
+        expect(container.querySelectorAll('[role="slider"]').length).toBe(0);
         const badge = screen.getByTestId('asset-criticality-score');
         expect(badge.textContent).toMatch(/3/);
         expect(badge.textContent).toMatch(/Medium/);
@@ -129,7 +129,7 @@ describe('EditAssetFields includes the criticality box (A2 edit side)', () => {
     it('renders the asset-edit criticality sliders + score', () => {
         const { container } = withProviders(<EditAssetFields form={form} tenantSlug="acme" />);
         expect(screen.getByText('Asset Criticality')).not.toBeNull();
-        expect(container.querySelectorAll('input[type="range"]').length).toBe(3);
+        expect(container.querySelectorAll('[role="slider"]').length).toBe(3);
         expect(screen.getByTestId('asset-edit-criticality-score')).not.toBeNull();
     });
 });

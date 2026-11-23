@@ -7,6 +7,7 @@ import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-c
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { AppIcon } from '@/components/icons/AppIcon';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { DataTable, createColumns, TableEmptyState } from '@/components/ui/table';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
@@ -241,20 +242,16 @@ export default function ControlTemplatesPage() {
                         // offered only to a viewer who can; each box is named.
                         const selectColumn = {
                             id: 'select', header: () => (
-                                <input
-                                    type="checkbox"
+                                <Checkbox
                                     checked={selectedIds.size === filtered.length && filtered.length > 0}
-                                    onChange={toggleAll}
-                                    className="rounded"
+                                    onCheckedChange={toggleAll}
                                     aria-label={t('templates.selectAll')}
                                 />
                             ),
                             cell: ({ row }: { row: { original: ControlTemplateRow } }) => (
-                                <input
-                                    type="checkbox"
+                                <Checkbox
                                     checked={selectedIds.has(row.original.id)}
-                                    onChange={() => toggle(row.original.id)}
-                                    className="rounded"
+                                    onCheckedChange={() => toggle(row.original.id)}
                                     aria-label={t('templates.selectRow', { name: row.original.code ? `${row.original.code} ${row.original.title}` : row.original.title })}
                                 />
                             ),

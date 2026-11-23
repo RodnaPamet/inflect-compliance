@@ -106,7 +106,7 @@ describe('control templates — install refused', () => {
         render(withSWR(<ControlTemplatesPage />));
         await screen.findByText('Policies for information security');
         // The page's own per-row checkbox (the header one comes first).
-        const boxes = document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+        const boxes = document.querySelectorAll<HTMLElement>('[role="checkbox"]');
         fireEvent.click(boxes[boxes.length - 1]);
         expect(document.getElementById('install-selected-btn')).not.toBeDisabled();
         await act(async () => {

@@ -468,3 +468,19 @@ outline on every site (owner decision, 2026-11-22). A
 `<button>` choice with no radio inside is invisible to this check. Grid tiles
 stay unshaded by owner decision (readiness tiles, org drill-down CTAs, api-keys
 scope groups).
+
+### `no-native-choice-input`
+
+Flags a JSX `<input>` whose `type` is the literal `checkbox`, `radio` or
+`range` (as a string, a string in braces or a plain template literal, any
+letter case) in a file under `src/app/`.
+
+**Why.** The mobile re-audit of 2026-11-23 found native checkboxes, radios
+and ranges on six pages, each 13-16px: too small to tap, painted by the
+browser rather than the theme. `Checkbox`, `RadioGroup` + `RadioGroupItem`
+and `Slider` render `role="checkbox"` / `role="radio"` / `role="slider"`,
+which carry a 44px hit area on a touch screen and the semantic tokens. Put
+the control in a `<label>` with its words, so the whole row answers a tap.
+
+**What it cannot see.** A `type` it cannot read (`type={kind}`) and an input
+built with `createElement`. `src/components/` is outside its scope.

@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { FormField } from '@/components/ui/form-field';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Input } from '@/components/ui/input';
+import { TextLink } from '@/components/ui/text-link';
 import { Heading } from '@/components/ui/typography';
 
 export default function ForgotPasswordPage() {
@@ -77,9 +78,9 @@ export default function ForgotPasswordPage() {
                                 {t('resetSent')}
                             </InlineNotice>
                             <div className="mt-6 text-center text-sm text-content-muted">
-                                <a href="/login" className="text-content-emphasis underline underline-offset-2 hover:text-[var(--brand-default)]">
+                                <TextLink href="/login" tone="underline" className="text-content-emphasis">
                                     {t('backToSignIn')}
-                                </a>
+                                </TextLink>
                             </div>
                         </>
                     ) : (
@@ -109,9 +110,9 @@ export default function ForgotPasswordPage() {
                             </form>
 
                             <div className="mt-6 text-center text-sm text-content-muted">
-                                <a href="/login" className="text-content-emphasis underline underline-offset-2 hover:text-[var(--brand-default)]">
+                                <TextLink href="/login" tone="underline" className="text-content-emphasis">
                                     {t('backToSignIn')}
-                                </a>
+                                </TextLink>
                             </div>
                         </>
                     )}

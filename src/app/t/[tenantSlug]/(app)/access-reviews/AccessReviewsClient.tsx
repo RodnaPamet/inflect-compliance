@@ -15,6 +15,7 @@
 import { useMemo, useState } from 'react';
 import { apiErrorMessage } from '@/lib/api-error';
 import Link from 'next/link';
+import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
@@ -136,12 +137,12 @@ export function AccessReviewsClient({ tenantSlug, initialReviews, canCreate }: P
                     id: 'name',
                     header: t('colCampaign'),
                     cell: ({ row }) => (
-                        <Link
+                        <TableTitleCell
                             href={`/t/${tenantSlug}/access-reviews/${row.original.id}`}
-                            className="font-medium text-content-default hover:text-brand-emphasis"
+                            className="text-content-default hover:text-brand-emphasis"
                         >
                             {row.original.name}
-                        </Link>
+                        </TableTitleCell>
                     ),
                 },
                 {

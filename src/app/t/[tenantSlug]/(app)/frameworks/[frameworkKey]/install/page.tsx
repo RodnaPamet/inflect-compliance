@@ -13,6 +13,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { Heading } from '@/components/ui/typography';
@@ -374,11 +375,17 @@ export default function InstallWizardPage() {
             {/* Step 1: Select Pack */}
             {canInstall && step === 'select' && !multiPack && (
                 <div className={cn(cardVariants({ density: 'none' }), 'space-y-default')}>
-                    <Heading level={2}>{tx('install.selectAPack')}</Heading>
+                    <Heading level={2} id="install-pack-heading">{tx('install.selectAPack')}</Heading>
                     {packs.length === 0 ? (
                         <p className="text-content-subtle">{tx('install.packsEmpty')}</p>
                     ) : (
-                        <div className="space-y-tight">
+                        <RadioGroup
+                            value={selectedPack}
+                            onValueChange={setSelectedPack}
+                            name="pack"
+                            aria-labelledby="install-pack-heading"
+                            className="space-y-tight"
+                        >
                             {packs.map(p => (
                                 <ShadedRow
                                     as="label"
@@ -387,21 +394,14 @@ export default function InstallWizardPage() {
                                     selected={selectedPack === p.key}
                                     className="flex items-center gap-compact"
                                 >
-                                    <input
-                                        type="radio"
-                                        name="pack"
-                                        value={p.key}
-                                        checked={selectedPack === p.key}
-                                        onChange={() => setSelectedPack(p.key)}
-                                        className="accent-[var(--brand-default)]"
-                                    />
+                                    <RadioGroupItem value={p.key} />
                                     <div>
                                         <div className="text-sm font-medium text-content-emphasis">{p.name}</div>
                                         <div className="text-xs text-content-subtle">{packMeta(p)}</div>
                                     </div>
                                 </ShadedRow>
                             ))}
-                        </div>
+                        </RadioGroup>
                     )}
                     {previewError && (
                         <div className="flex flex-wrap items-center gap-compact" id="install-preview-error">

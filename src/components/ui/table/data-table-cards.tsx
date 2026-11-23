@@ -33,6 +33,7 @@ import { cn } from "@inflect/ui/lib/cn";
 import { cardVariants } from "@/components/ui/card";
 import { buttonLikeKeys } from "@/components/ui/button-like-keys";
 import { Popover } from "@/components/ui/popover";
+import { TableTitleSurfaceProvider } from "@/components/ui/table-title-cell";
 import { ChevronRight } from "@inflect/ui/components/ui/icons/glyphs/chevron-right";
 
 export interface DataTableCardsProps<T extends TableRowData> {
@@ -418,8 +419,18 @@ export function DataTableCards<T extends TableRowData>({
                                             label={labelOf(titleCell.column.columnDef.header)}
                                             omitWhenEmpty={false}
                                             wrapTitle
+                                            testId="data-table-card-title"
                                         >
-                                            {render(titleCell)}
+                                            {/* A title cell built on `<TableTitleCell>` /
+                                                `<TableTitleButton>` reads this: on a card that
+                                                is a button it renders as text (one target, not
+                                                a control nested in a control); on any other
+                                                card it wears the 44px touch hit area. */}
+                                            <TableTitleSurfaceProvider
+                                                value={clickable ? "clickable-card" : "card"}
+                                            >
+                                                {render(titleCell)}
+                                            </TableTitleSurfaceProvider>
                                         </CardField>
                                     </div>
                                 )}

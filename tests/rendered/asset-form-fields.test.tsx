@@ -103,7 +103,7 @@ describe('NewAssetFields (create)', () => {
         const { container } = withClient(<NewAssetFields form={form} labels={NEW_LABELS} tenantSlug="acme" />);
         expect(screen.getByText('Asset Criticality')).not.toBeNull();
         // C/I/A are sliders now (not NumberSteppers)
-        expect(container.querySelectorAll('input[type="range"]').length).toBe(3);
+        expect(container.querySelectorAll('[role="slider"]').length).toBe(3);
         expect(screen.getByTestId('asset-criticality-score')).not.toBeNull();
     });
 });

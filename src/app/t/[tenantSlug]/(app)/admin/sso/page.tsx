@@ -12,6 +12,7 @@ import { Card, cardVariants } from '@/components/ui/card';
 import { useTenantApiUrl, useTenantHref, usePermissions } from '@/lib/tenant-context-provider';
 import { Shield, ExternalLink, Trash2, Save, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
 import { Textarea } from '@/components/ui/textarea';
@@ -567,22 +568,18 @@ export default function SsoAdminPage() {
 
                 {/* Toggles */}
                 <div className="flex items-center gap-section mt-6 pt-4 border-t border-border-default/50">
-                    <label className="flex items-center gap-tight cursor-pointer">
-                        <input
-                            type="checkbox"
+                    <label className="flex items-center gap-tight cursor-pointer pointer-coarse:min-h-11">
+                        <Checkbox
                             checked={formEnabled}
-                            onChange={(e) => setFormEnabled(e.target.checked)}
-                            className="accent-[var(--brand-default)]"
+                            onCheckedChange={(next) => setFormEnabled(next === true)}
                             id="sso-enabled"
                         />
                         <span className="text-sm text-content-emphasis">{t('sso.enableSso')}</span>
                     </label>
-                    <label className="flex items-center gap-tight cursor-pointer">
-                        <input
-                            type="checkbox"
+                    <label className="flex items-center gap-tight cursor-pointer pointer-coarse:min-h-11">
+                        <Checkbox
                             checked={formEnforced}
-                            onChange={(e) => setFormEnforced(e.target.checked)}
-                            className="accent-amber-500"
+                            onCheckedChange={(next) => setFormEnforced(next === true)}
                             id="sso-enforced"
                         />
                         <span className="text-sm text-content-emphasis">{t('sso.enforceSso')}</span>

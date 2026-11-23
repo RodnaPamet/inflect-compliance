@@ -20,6 +20,7 @@ import { formatDate } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 import { isOrgAdminTier, isOrgOwner } from '@/lib/org-roles';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
 interface MemberRow {
     membershipId: string;
@@ -416,44 +417,46 @@ function AddMemberModal({ orgSlug, open, onClose, onSuccess }: AddMemberModalPro
                     </FormField>
 
                     <fieldset className="space-y-tight" data-testid="org-add-member-role-group">
-                        <legend className="text-sm font-medium text-content-emphasis">
+                        <legend id="org-add-member-role-legend" className="text-sm font-medium text-content-emphasis">
                             {t('members.roleLegend')}
                         </legend>
-                        {(['ORG_READER', 'ORG_ADMIN'] as const).map((opt) => {
-                            const id = `org-add-member-role-${opt}`;
-                            const checked = role === opt;
-                            return (
-                                <ShadedRow
-                                    as="label"
-                                    key={opt}
-                                    htmlFor={id}
-                                    interactive
-                                    selected={checked}
-                                    className="flex items-start gap-compact"
-                                >
-                                    <input
-                                        id={id}
-                                        type="radio"
-                                        name="role"
-                                        value={opt}
-                                        checked={checked}
-                                        onChange={() => setRole(opt)}
-                                        className="mt-0.5"
-                                        data-testid={id}
-                                    />
-                                    <div className="min-w-0">
-                                        <p className="text-sm font-medium text-content-emphasis">
-                                            {t(ROLE_LABEL_KEY[opt])}
-                                        </p>
-                                        <p className="text-xs text-content-muted">
-                                            {opt === 'ORG_ADMIN'
-                                                ? t('members.orgAdminDesc')
-                                                : t('members.orgReaderDesc')}
-                                        </p>
-                                    </div>
-                                </ShadedRow>
-                            );
-                        })}
+                        <RadioGroup
+                            value={role}
+                            onValueChange={(v) => setRole(v as MemberRow['role'])}
+                            aria-labelledby="org-add-member-role-legend"
+                        >
+                            {(['ORG_READER', 'ORG_ADMIN'] as const).map((opt) => {
+                                const id = `org-add-member-role-${opt}`;
+                                const checked = role === opt;
+                                return (
+                                    <ShadedRow
+                                        as="label"
+                                        key={opt}
+                                        htmlFor={id}
+                                        interactive
+                                        selected={checked}
+                                        className="flex items-start gap-compact"
+                                    >
+                                        <RadioGroupItem
+                                            id={id}
+                                            value={opt}
+                                            className="mt-0.5"
+                                            data-testid={id}
+                                        />
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-medium text-content-emphasis">
+                                                {t(ROLE_LABEL_KEY[opt])}
+                                            </p>
+                                            <p className="text-xs text-content-muted">
+                                                {opt === 'ORG_ADMIN'
+                                                    ? t('members.orgAdminDesc')
+                                                    : t('members.orgReaderDesc')}
+                                            </p>
+                                        </div>
+                                    </ShadedRow>
+                                );
+                            })}
+                        </RadioGroup>
                     </fieldset>
 
                     {error && (
@@ -724,52 +727,54 @@ function ChangeRoleModal({
                     )}
 
                     <fieldset className="space-y-tight">
-                        <legend className="text-sm font-medium text-content-emphasis">
+                        <legend id="org-change-role-legend" className="text-sm font-medium text-content-emphasis">
                             {t('members.newRole')}
                         </legend>
-                        {/* Owner is offered only to an owner (#4576): only an
-                            owner makes another one, and the server refuses
-                            anybody else. */}
-                        {(viewerIsOwner
-                            ? (['ORG_OWNER', 'ORG_ADMIN', 'ORG_READER'] as const)
-                            : (['ORG_ADMIN', 'ORG_READER'] as const)
-                        ).map((opt) => {
-                            const id = `org-change-role-${opt}`;
-                            const checked = chosen === opt;
-                            return (
-                                <ShadedRow
-                                    as="label"
-                                    key={opt}
-                                    htmlFor={id}
-                                    interactive
-                                    selected={checked}
-                                    className="flex items-start gap-compact"
-                                >
-                                    <input
-                                        id={id}
-                                        type="radio"
-                                        name="role"
-                                        value={opt}
-                                        checked={checked}
-                                        onChange={() => setChosen(opt)}
-                                        className="mt-0.5"
-                                        data-testid={id}
-                                    />
-                                    <div className="min-w-0">
-                                        <p className="text-sm font-medium text-content-emphasis">
-                                            {t(ROLE_LABEL_KEY[opt])}
-                                        </p>
-                                        <p className="text-xs text-content-muted">
-                                            {opt === 'ORG_OWNER'
-                                                ? t('members.orgOwnerDesc')
-                                                : opt === 'ORG_ADMIN'
-                                                  ? t('members.orgAdminDesc')
-                                                  : t('members.orgReaderDesc')}
-                                        </p>
-                                    </div>
-                                </ShadedRow>
-                            );
-                        })}
+                        <RadioGroup
+                            value={chosen ?? ''}
+                            onValueChange={(v) => setChosen(v as MemberRow['role'])}
+                            aria-labelledby="org-change-role-legend"
+                        >
+                            {/* Owner is offered only to an owner (#4576): only an
+                                owner makes another one, and the server refuses
+                                anybody else. */}
+                            {(viewerIsOwner
+                                ? (['ORG_OWNER', 'ORG_ADMIN', 'ORG_READER'] as const)
+                                : (['ORG_ADMIN', 'ORG_READER'] as const)
+                            ).map((opt) => {
+                                const id = `org-change-role-${opt}`;
+                                const checked = chosen === opt;
+                                return (
+                                    <ShadedRow
+                                        as="label"
+                                        key={opt}
+                                        htmlFor={id}
+                                        interactive
+                                        selected={checked}
+                                        className="flex items-start gap-compact"
+                                    >
+                                        <RadioGroupItem
+                                            id={id}
+                                            value={opt}
+                                            className="mt-0.5"
+                                            data-testid={id}
+                                        />
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-medium text-content-emphasis">
+                                                {t(ROLE_LABEL_KEY[opt])}
+                                            </p>
+                                            <p className="text-xs text-content-muted">
+                                                {opt === 'ORG_OWNER'
+                                                    ? t('members.orgOwnerDesc')
+                                                    : opt === 'ORG_ADMIN'
+                                                      ? t('members.orgAdminDesc')
+                                                      : t('members.orgReaderDesc')}
+                                            </p>
+                                        </div>
+                                    </ShadedRow>
+                                );
+                            })}
+                        </RadioGroup>
                     </fieldset>
 
                     {/*
@@ -997,44 +1002,46 @@ function InviteMemberModal({ orgSlug, open, onClose, onSuccess }: InviteMemberMo
                         </FormField>
 
                         <fieldset className="space-y-tight" data-testid="org-invite-member-role-group">
-                            <legend className="text-sm font-medium text-content-emphasis">
+                            <legend id="org-invite-member-role-legend" className="text-sm font-medium text-content-emphasis">
                                 {t('members.roleLegend')}
                             </legend>
-                            {(['ORG_READER', 'ORG_ADMIN'] as const).map((opt) => {
-                                const id = `org-invite-member-role-${opt}`;
-                                const checked = role === opt;
-                                return (
-                                    <ShadedRow
-                                        as="label"
-                                        key={opt}
-                                        htmlFor={id}
-                                        interactive
-                                        selected={checked}
-                                        className="flex items-start gap-compact"
-                                    >
-                                        <input
-                                            id={id}
-                                            type="radio"
-                                            name="role"
-                                            value={opt}
-                                            checked={checked}
-                                            onChange={() => setRole(opt)}
-                                            className="mt-0.5"
-                                            data-testid={id}
-                                        />
-                                        <div className="min-w-0">
-                                            <p className="text-sm font-medium text-content-emphasis">
-                                                {t(ROLE_LABEL_KEY[opt])}
-                                            </p>
-                                            <p className="text-xs text-content-muted">
-                                                {opt === 'ORG_ADMIN'
-                                                    ? t('members.orgAdminDescInvite')
-                                                    : t('members.orgReaderDesc')}
-                                            </p>
-                                        </div>
-                                    </ShadedRow>
-                                );
-                            })}
+                            <RadioGroup
+                                value={role}
+                                onValueChange={(v) => setRole(v as MemberRow['role'])}
+                                aria-labelledby="org-invite-member-role-legend"
+                            >
+                                {(['ORG_READER', 'ORG_ADMIN'] as const).map((opt) => {
+                                    const id = `org-invite-member-role-${opt}`;
+                                    const checked = role === opt;
+                                    return (
+                                        <ShadedRow
+                                            as="label"
+                                            key={opt}
+                                            htmlFor={id}
+                                            interactive
+                                            selected={checked}
+                                            className="flex items-start gap-compact"
+                                        >
+                                            <RadioGroupItem
+                                                id={id}
+                                                value={opt}
+                                                className="mt-0.5"
+                                                data-testid={id}
+                                            />
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-medium text-content-emphasis">
+                                                    {t(ROLE_LABEL_KEY[opt])}
+                                                </p>
+                                                <p className="text-xs text-content-muted">
+                                                    {opt === 'ORG_ADMIN'
+                                                        ? t('members.orgAdminDescInvite')
+                                                        : t('members.orgReaderDesc')}
+                                                </p>
+                                            </div>
+                                        </ShadedRow>
+                                    );
+                                })}
+                            </RadioGroup>
                         </fieldset>
 
                         {error && (

@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Heading } from '@/components/ui/typography';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { useUnsavedChangesWarning } from '@/lib/hooks';
 import { RequiredMarker } from '@/components/ui/required-marker';
@@ -306,9 +307,9 @@ export function VendorAssessmentClient({
     }
 
     return (
-        <div className="min-h-screen bg-bg-subtle py-10 px-4">
+        <div className="min-h-screen bg-bg-subtle px-4 py-6 sm:py-10">
             <div
-                className="max-w-2xl mx-auto bg-bg-default rounded-lg shadow p-8"
+                className="max-w-2xl mx-auto bg-bg-default rounded-lg shadow p-4 sm:p-8"
                 data-testid="vendor-assessment-form"
             >
                 <header className="border-b pb-4 mb-6">
@@ -462,24 +463,25 @@ function QuestionField({
             return (
                 <div data-testid={`q-${question.id}`}>
                     {baseLabel}
-                    <div className="flex gap-default">
+                    {/* Each answer is a labelled 44px row on a touch screen:
+                        the word ticks it as well as the circle. */}
+                    <RadioGroup
+                        value={typeof value === 'string' ? value : ''}
+                        onValueChange={onChange}
+                        name={question.id}
+                        aria-labelledby={labelId}
+                        className="flex gap-default"
+                    >
                         {['yes', 'no'].map((opt) => (
                             <label
                                 key={opt}
-                                className="inline-flex items-center text-sm text-content-default"
+                                className="inline-flex cursor-pointer items-center gap-tight pr-2 text-sm text-content-default pointer-coarse:min-h-11"
                             >
-                                <input
-                                    type="radio"
-                                    name={question.id}
-                                    value={opt}
-                                    checked={value === opt}
-                                    onChange={() => onChange(opt)}
-                                    className="mr-2"
-                                />
+                                <RadioGroupItem value={opt} />
                                 {opt === 'yes' ? tCommon('yes') : tCommon('no')}
                             </label>
                         ))}
-                    </div>
+                    </RadioGroup>
                 </div>
             );
 

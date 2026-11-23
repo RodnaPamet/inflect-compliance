@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { isControlCategoryTheme } from '@/lib/controls/control-categories';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading, Eyebrow } from '@/components/ui/typography';
@@ -348,12 +349,11 @@ export default function TemplateLibraryPage() {
                             <div className="flex items-start gap-compact">
                                 {/* Checkbox */}
                                 {canInstall && !t.installed && (
-                                    <input
-                                        type="checkbox"
+                                    <Checkbox
                                         checked={isSelected}
                                         aria-label={tx('templates.selectTemplateAria', { code: t.code, title: t.title })}
-                                        onChange={() => toggleSelect(t.code)}
-                                        className="mt-1 accent-[var(--brand-default)]"
+                                        onCheckedChange={() => toggleSelect(t.code)}
+                                        className="mt-0.5"
                                     />
                                 )}
 

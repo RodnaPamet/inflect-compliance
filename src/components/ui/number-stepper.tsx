@@ -57,8 +57,20 @@ import { Minus, Plus } from "./icons";
  * get the right signal.
  */
 
+/**
+ * On a touch screen every part of the stepper is a 44px target.
+ *
+ * The field sat at its text's height (23px) in the middle of the frame, and
+ * the `sm` buttons were 40px wide inside a 32px frame, so on a phone the
+ * number itself was the smallest control in the settings forms that use it
+ * (org settings, admin/security, admin/agents). A pseudo-element hit area
+ * cannot help an `<input>` (it renders none), so the frame grows on a coarse
+ * pointer instead: 48px tall with no inner padding leaves 46px for the
+ * field and the buttons, and the field fills that height (`h-full`). A fine
+ * pointer keeps the 40px / 32px frame.
+ */
 const stepperVariants = cva(
-    "flex w-full select-none items-stretch overflow-hidden rounded-lg border border-border-subtle bg-bg-default",
+    "flex w-full select-none items-stretch overflow-hidden rounded-lg border border-border-subtle bg-bg-default pointer-coarse:h-12 pointer-coarse:p-0",
     {
         variants: {
             size: {
@@ -71,7 +83,7 @@ const stepperVariants = cva(
 );
 
 const stepperButtonVariants = cva(
-    "flex h-full items-center justify-center rounded-lg text-content-default outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+    "flex h-full items-center justify-center rounded-lg text-content-default outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background pointer-coarse:min-w-11",
     {
         variants: {
             size: {
@@ -84,7 +96,7 @@ const stepperButtonVariants = cva(
 );
 
 const stepperInputVariants = cva(
-    "w-full border-0 bg-transparent text-center text-content-emphasis outline-none transition-colors focus:ring-0",
+    "h-full w-full border-0 bg-transparent text-center text-content-emphasis outline-none transition-colors focus:ring-0",
     {
         variants: {
             size: {

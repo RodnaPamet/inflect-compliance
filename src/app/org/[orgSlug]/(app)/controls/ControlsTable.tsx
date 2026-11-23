@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { ShieldCheck } from 'lucide-react';
@@ -130,13 +131,13 @@ export function ControlsTable({ rows: initialRows, nextCursor: initialNextCursor
                     id: 'name',
                     header: t('controls.colControl'),
                     cell: ({ row }) => (
-                        <Link
+                        <TableTitleCell
                             href={row.original.drillDownUrl}
-                            className="font-medium text-content-emphasis hover:text-content-info hover:underline"
-                            data-testid={`org-control-link-${row.original.controlId}`}
+                            className="hover:text-content-info hover:underline"
+                            testId={`org-control-link-${row.original.controlId}`}
                         >
                             {row.original.name}
-                        </Link>
+                        </TableTitleCell>
                     ),
                 },
                 {

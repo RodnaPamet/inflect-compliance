@@ -41,6 +41,7 @@ import { cn } from "@inflect/ui/lib/cn";
 import { Card } from "./card";
 import { Heading } from "./typography";
 import { Button } from "./button";
+import { TextLink } from "./text-link";
 import { BadgeCheck } from "@inflect/ui/components/ui/icons/glyphs/badge-check";
 import {
     resolveNextBestAction,
@@ -187,12 +188,13 @@ export function NextBestActionCard({
                     {quickAdds.slice(0, 3).map((qa, i) => (
                         <React.Fragment key={qa.href}>
                             {i > 0 && <span aria-hidden="true">·</span>}
-                            <Link
+                            <TextLink
                                 href={qa.href}
-                                className="text-content-muted hover:text-content-emphasis transition-colors duration-150 ease-out"
+                                tone="muted"
+                                className="font-normal duration-150 ease-out"
                             >
                                 {qa.label}
-                            </Link>
+                            </TextLink>
                         </React.Fragment>
                     ))}
                 </div>
