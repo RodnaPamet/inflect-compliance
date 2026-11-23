@@ -213,6 +213,9 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     // directory has granted access to), and its own action by owner decision:
     // a key minted to post agent reports does not post application reports,
     // nor the other way round. Same verification, same registered signing key.
+    // `agent_rules_ingest` is the third report's, `scanent-agent-rules/1` (what
+    // static rules found in the MCP tool definitions the scanner read), and its
+    // own action for the same reason.
     //
     // `agent_registry_view` (#3710) is its own action too, and the only one
     // here a WILDCARD does not reach (`WILDCARD_EXCLUDED_ACTIONS` below): it is
@@ -220,7 +223,7 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     // harness scans, `DiscoveredAgent.ownerRef` among them — and a key reads
     // that only when somebody minted it for that purpose. It maps to the view
     // key alone, never to `agent_registry`.
-    admin:      { read: ['view'], write: ['manage', 'members', 'sso', 'scim'], external_tools: ['agent_external_tools'], harness_ingest: ['agent_harness_ingest'], integrations_ingest: ['integrations_ingest'], agent_registry_view: ['agent_registry_view'] },
+    admin:      { read: ['view'], write: ['manage', 'members', 'sso', 'scim'], external_tools: ['agent_external_tools'], harness_ingest: ['agent_harness_ingest'], integrations_ingest: ['integrations_ingest'], agent_rules_ingest: ['agent_rules_ingest'], agent_registry_view: ['agent_registry_view'] },
     // MCP capability gate (Epic MCP). These are CAPABILITY scopes, not
     // resource permissions — they deliberately map to NO PermissionSet flags
     // (empty action arrays). `mcp:read` gates access to the read-only MCP tool

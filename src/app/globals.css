@@ -635,6 +635,32 @@ body {
     min-height: 44px;
   }
 
+  /* ── 16px text in every field on a touch device (#5812) ──
+   * iOS Safari zooms the page when a field whose font is under 16px takes
+   * focus, and leaves it zoomed. Our fields are 14px (`text-sm` on `.input`,
+   * `<Input>`, `<Textarea>`), 12px in places (`<Input size="sm">`, the
+   * sign-in resend field), and a WYSIWYG editor is a `contenteditable`.
+   *
+   * ONE element-keyed rule rather than `text-base md:text-sm` in each cva,
+   * because it reaches every field — the primitives, the `.input` recipe,
+   * the ad-hoc inputs on the public pages, cmdk's search input, the date
+   * picker, a field added next year — with nothing to remember. Gated on
+   * `pointer: coarse` rather than a width breakpoint, because the zoom is a
+   * property of touch input, not of the viewport: a narrow desktop window
+   * keeps 14px, an iPad gets 16px. Desktop rendering does not change.
+   *
+   * Unlayered on purpose, for the reason the floor above is: it must beat a
+   * layered utility (`text-sm`, `text-xs`), which it does on layer order. It
+   * stays an ELEMENT selector (0,0,1) so a third-party editor that sizes its
+   * own field with a class (tldraw's `.tl-text-input`) still wins on
+   * specificity — its text size is its canvas's zoom, not a reading size. */
+  input,
+  select,
+  textarea,
+  [contenteditable]:not([contenteditable="false"]) {
+    font-size: 16px;
+  }
+
   /* Small toggle controls (Radix Checkbox/Radio/Switch render
    * role=checkbox|radio|switch) keep their compact VISUAL size but gain a
    * 44px transparent hit-target via a centred ::before — finger-friendly

@@ -16,6 +16,7 @@ import { useTenantHref } from '@/lib/tenant-context-provider';
 import type { HarnessMatrixView, HarnessScannerKeysView } from '@/lib/agentic/harness-read-model';
 import type { HarnessEstateHealthView } from '@/lib/agentic/harness-estate-health';
 import type { ThirdPartyAppInventoryView } from '@/lib/agentic/third-party-app-read-model';
+import type { AgentRuleInventoryView } from '@/lib/agentic/agent-rule-read-model';
 import type { BehaviourReportView } from './behaviour/BehaviourTab';
 
 import { AgentsViewsMenu } from '../AgentsViewsMenu';
@@ -35,6 +36,11 @@ const HarnessTab = dynamic(() => import('./harness/HarnessTab').then((m) => m.Ha
 
 /** Loaded on demand for the same reason: the integrations view is not the default tab either. */
 const IntegrationsTab = dynamic(() => import('./integrations/IntegrationsTab').then((m) => m.IntegrationsTab), {
+    loading: () => <SkeletonCard lines={4} />,
+});
+
+/** Loaded on demand for the same reason: the agent surface view is not the default tab either. */
+const AgentSurfaceTab = dynamic(() => import('./agent-surface/AgentSurfaceTab').then((m) => m.AgentSurfaceTab), {
     loading: () => <SkeletonCard lines={4} />,
 });
 
@@ -186,15 +192,18 @@ export type HarnessTabProps = ReportsCommonProps & {
 /** The third-party application inventory, read server-side by `getThirdPartyAppInventory`. */
 export type IntegrationsTabProps = ReportsCommonProps & { tab: 'integrations'; integrations: ThirdPartyAppInventoryView };
 
+/** The agent-surface rules findings, read server-side by `getAgentRuleInventory`. */
+export type AgentSurfaceTabProps = ReportsCommonProps & { tab: 'agent-surface'; agentSurface: AgentRuleInventoryView };
+
 /** The behaviour-fingerprint anomalies (Morpheus 1.3), read by `listAgentBehaviourAnomalies` under the register key. */
 export type BehaviourTabProps = ReportsCommonProps & { tab: 'behaviour'; behaviour: BehaviourReportView };
 
-export function ReportsClient(props: PackTabProps | HarnessTabProps | IntegrationsTabProps | BehaviourTabProps) {
+export function ReportsClient(props: PackTabProps | HarnessTabProps | IntegrationsTabProps | AgentSurfaceTabProps | BehaviourTabProps) {
     const { tenantSlug, canReviewProposals, canCompose, canInvestigate, canExport, canSetOrphanPass = false } = props;
     const t = useTranslations('agents');
     const tenantHref = useTenantHref();
     const tab =
-        props.tab === 'harness' || props.tab === 'integrations' || props.tab === 'behaviour' ? props.tab : 'pack';
+        props.tab === 'harness' || props.tab === 'integrations' || props.tab === 'agent-surface' || props.tab === 'behaviour' ? props.tab : 'pack';
 
     return (
         <DashboardLayout
@@ -255,6 +264,12 @@ export function ReportsClient(props: PackTabProps | HarnessTabProps | Integratio
                             href: tenantHref('/agents/reports?tab=integrations'),
                             id: 'reports-tab-integrations',
                         },
+                        {
+                            value: 'agent-surface',
+                            label: t('reports.tabAgentSurface'),
+                            href: tenantHref('/agents/reports?tab=agent-surface'),
+                            id: 'reports-tab-agent-surface',
+                        },
                         // The register key's view (the fingerprint route's
                         // key): not offered to a view-key reader, whom the
                         // page would answer with the pack.
@@ -275,6 +290,8 @@ export function ReportsClient(props: PackTabProps | HarnessTabProps | Integratio
                 <BehaviourTab view={props.behaviour} />
             ) : props.tab === 'integrations' ? (
                 <IntegrationsTab view={props.integrations} />
+            ) : props.tab === 'agent-surface' ? (
+                <AgentSurfaceTab view={props.agentSurface} />
             ) : props.tab === 'harness' ? (
                 <HarnessTab
                     view={props.harness}

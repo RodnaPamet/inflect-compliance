@@ -7,6 +7,7 @@ import { canRunRegistrationIntake } from '@/app-layer/usecases/agent-registratio
 import { getHarnessMatrix, getHarnessScannerKeysView } from '@/app-layer/usecases/agent-harness-matrix';
 import { getHarnessEstateHealth } from '@/app-layer/usecases/agent-harness-estates';
 import { getThirdPartyAppInventory } from '@/app-layer/usecases/third-party-app-scans';
+import { getAgentRuleInventory } from '@/app-layer/usecases/agent-rule-scans';
 import { listAgentBehaviourAnomalies } from '@/app-layer/usecases/agent-behaviour-fingerprint-read';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
@@ -183,6 +184,24 @@ export default async function AgentReportsPage({
                 // JSON-safe by construction (ISO strings, plain data): the
                 // contract's modules stay on the server.
                 integrations={JSON.parse(JSON.stringify(integrations))}
+                canReviewProposals={canReviewProposals}
+                canCompose={canCompose}
+                canInvestigate={canInvestigate}
+                canSetOrphanPass={Boolean(ctx.appPermissions?.admin?.tenant_lifecycle)}
+                canExport={canExport}
+            />
+        );
+    }
+
+    // What the scanner's third report found in the MCP tool definitions it read
+    // (`scanent-agent-rules/1`). The same inventory gate, read only when asked for.
+    if (requestedTab === 'agent-surface') {
+        const agentSurface = await getAgentRuleInventory(ctx);
+        return (
+            <ReportsClient
+                tab="agent-surface"
+                tenantSlug={resolved.tenantSlug}
+                agentSurface={JSON.parse(JSON.stringify(agentSurface))}
                 canReviewProposals={canReviewProposals}
                 canCompose={canCompose}
                 canInvestigate={canInvestigate}

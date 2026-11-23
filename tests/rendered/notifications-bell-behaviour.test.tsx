@@ -318,6 +318,29 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
         expect(bell.className).toContain('hover:text-content-emphasis');
     });
 
+    it('reaches 44px on a coarse pointer, and the badge stays on the bell (#5820)', async () => {
+        fetchMock.mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => makeNotifications(),
+        });
+        render(<NotificationsBell />);
+        const bell = screen.getByTestId('top-chrome-notifications-bell');
+        const cls = bell.className.split(/\s+/);
+        expect(cls).toContain('pointer-coarse:min-h-11');
+        expect(cls).toContain('pointer-coarse:min-w-11');
+        // POSITIVE CONTROL: on a mouse the bell is the 22px it was.
+        expect(cls).toContain('h-[22px]');
+
+        // In the 44px box the 22px bell is centred 11px in, so the chip moves
+        // in by the same 11px rather than sitting in the empty corner.
+        const badge = await screen.findByTestId('notifications-unread-badge');
+        const badgeCls = badge.className.split(/\s+/);
+        expect(badgeCls).toContain('-top-0.5');
+        expect(badgeCls).toContain('pointer-coarse:top-[9px]');
+        expect(badgeCls).toContain('pointer-coarse:right-[9px]');
+    });
+
     it('renders RELATIVE timestamps ("5m", "2h", "3d") — not raw dates', async () => {
         const user = userEvent.setup();
         fetchMock.mockResolvedValue({

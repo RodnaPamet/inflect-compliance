@@ -17,7 +17,7 @@ scanner and its egress proxy, run one image pinned by its multi-arch index
 digest:
 
 ```
-ghcr.io/rodnapamet/scanent@sha256:7f9005ae540ca51abec195c21903fc593d5a3cf0c63478f4dc5eed6fbdb08493   # 0.16.0
+ghcr.io/rodnapamet/scanent@sha256:169ce7dc79eed0b8fa41be8cf53e6bc8c230100d82380b5d2ee341c50f68f85f   # 0.17.0
 ```
 
 The image is public, so the VM pulls it with no registry login. Before a

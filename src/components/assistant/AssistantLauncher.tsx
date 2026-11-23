@@ -20,10 +20,30 @@
  *
  * ═══ THE CORNER IS FREE — VERIFIED, NOT ASSUMED ═══
  *
- * Toasts render TOP-right (`sonner`, `src/app/providers.tsx`), so the Epic 67
- * undo toasts and their countdown bars cannot collide with this. Mobile
- * navigation is a drawer (`MobileNavDrawer`), not a persistent bottom bar,
- * and `src/components/layout` has no other fixed bottom-anchored element.
+ * From `md` up toasts render TOP-right (`sonner`, `src/app/providers.tsx`),
+ * so the Epic 67 undo toasts and their countdown bars cannot collide with
+ * this. Below `md` they render bottom-centre — and below `md` this button is
+ * not rendered at all (see the next section). Mobile navigation is a drawer
+ * (`MobileNavDrawer`), not a persistent bottom bar, and `src/components/layout`
+ * has no other fixed bottom-anchored element.
+ *
+ * ═══ NOT ON A PHONE (#5813, owner decision 2026-11-22) ═══
+ *
+ * Below `md` the floating button is hidden and the assistant opens from an
+ * icon in the top bar beside the bell (`AssistantTopBarButton`). A button
+ * fixed over a 360px page covered the last row of a list, a select, a form's
+ * primary action — and the shell reserves no space for it, so scrolling to
+ * the end did not uncover what lay underneath. The sheet is still mounted
+ * HERE, once, whichever of the two opened it: both drive the same shared open
+ * state, so there is one sheet and one conversation.
+ *
+ * ═══ NOT ON THE AUTH GATE ═══
+ *
+ * `/t/<slug>/auth/*` (the MFA challenge) renders inside the tenant app
+ * layout, so this mounted there too. A person who has not finished signing
+ * in has nothing to ask the assistant about, and the server would refuse the
+ * turn. The launcher neither renders nor registers there, so the top-bar icon
+ * and the palette entry — which follow the registration — vanish with it.
  *
  * ═══ Z-ORDER ═══
  *
@@ -35,6 +55,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Sparkle3, Xmark } from '@inflect/ui/components/ui/icons/glyphs';
 
@@ -61,6 +82,25 @@ const AssistantSheet = dynamic(() => loadAssistantSheet().then((m) => m.Assistan
     ssr: false,
     loading: () => null,
 });
+
+/**
+ * Warm the sheet's chunk. Exported for the top-bar entry point, which warms it
+ * on pointer-enter and focus exactly as the floating button does.
+ */
+export function warmAssistantSheet(): void {
+    void loadAssistantSheet();
+}
+
+/**
+ * The routes inside the tenant app layout where no assistant entry point is
+ * offered: the sign-in gates under `/t/<slug>/auth/` (the MFA challenge).
+ * See the header.
+ */
+const AUTH_GATE_PATH = /^\/t\/[^/]+\/auth(?:\/|$)/;
+
+export function isAssistantSuppressedPath(pathname: string | null): boolean {
+    return pathname != null && AUTH_GATE_PATH.test(pathname);
+}
 
 export function AssistantLauncher() {
     const t = useTranslations('assistant');
@@ -92,7 +132,8 @@ export function AssistantLauncher() {
     const { permissions } = useTenantContext();
     // Shared with the command palette rather than local — see
     // `assistant-open-context.tsx` for why the state cannot live here.
-    const { open, setOpen, setAvailable } = useAssistantOpen();
+    const { open, setOpen, setAvailable, returnFocusRef } = useAssistantOpen();
+    const pathname = usePathname();
     const launcherRef = useRef<HTMLButtonElement>(null);
     const labelId = useId();
     // Once opened, by the button, the shortcut or the command palette, the
@@ -101,7 +142,7 @@ export function AssistantLauncher() {
     const [sheetMounted, setSheetMounted] = useState(false);
     if (open && !sheetMounted) setSheetMounted(true);
     const warmSheet = useCallback(() => {
-        void loadAssistantSheet();
+        warmAssistantSheet();
     }, []);
 
     // Tell the palette the assistant exists. This component only mounts when
@@ -112,7 +153,8 @@ export function AssistantLauncher() {
     // Only for a viewer who may USE it (#5171): a READER is never rendered the
     // launcher, so registering for them put "Ask the assistant" in the palette
     // and bound mod+shift+A to a sheet the server refuses them.
-    const canUse = permissions.canWrite;
+    // ...and never on the sign-in gate (see the header).
+    const canUse = permissions.canWrite && !isAssistantSuppressedPath(pathname);
     useEffect(() => {
         if (!canUse) return;
         setAvailable(true);
@@ -121,11 +163,16 @@ export function AssistantLauncher() {
 
     const close = useCallback(() => {
         setOpen(false);
-        // Focus returns to the launcher, which is where it came from. Without
-        // this a keyboard user lands back at the top of the document and has
-        // to traverse the whole page to get anywhere.
-        launcherRef.current?.focus();
-    }, [setOpen]);
+        // Focus returns to where it came from: the top-bar icon when that
+        // opened it (it records itself in `returnFocusRef`), otherwise this
+        // launcher. Without this a keyboard user lands back at the top of the
+        // document and has to traverse the whole page to get anywhere.
+        const returnTo = returnFocusRef.current?.isConnected
+            ? returnFocusRef.current
+            : launcherRef.current;
+        returnFocusRef.current = null;
+        returnTo?.focus();
+    }, [setOpen, returnFocusRef]);
 
     const toggle = useCallback(() => {
         if (open) {
@@ -163,7 +210,10 @@ export function AssistantLauncher() {
                 // offsets stay at 0 (#3837). A hardcoded `bottom-4` lands under
                 // the iOS home indicator; padding that resolves to 0px on
                 // desktop is correct in both places without a media query.
-                className="fixed bottom-0 right-0 z-30 p-4"
+                //
+                // `hidden md:block`: no floating button on a phone (#5813) —
+                // the top bar carries the entry point there.
+                className="fixed bottom-0 right-0 z-30 hidden p-4 md:block"
                 style={{
                     paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
                     paddingRight: 'calc(1rem + env(safe-area-inset-right, 0px))',
@@ -173,7 +223,11 @@ export function AssistantLauncher() {
                     ref={launcherRef}
                     type="button"
                     variant="primary"
-                    onClick={toggle}
+                    onClick={() => {
+                        // Opened from here, so focus comes back here.
+                        returnFocusRef.current = null;
+                        toggle();
+                    }}
                     onPointerEnter={warmSheet}
                     onFocus={warmSheet}
                     // While the window is open this button IS the close
