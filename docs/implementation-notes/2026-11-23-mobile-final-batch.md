@@ -12,10 +12,14 @@ routes with English on them. Each leak had one source, and each now goes
 through the catalog:
 
 - *Keyboard-shortcut descriptions.* The command palette lists every registered
-  shortcut by its `description`, so the description is UI copy. Six call sites
-  passed an English literal ("Close navigation drawer" from the phone's nav
-  drawer, which is mounted on every page). They read
-  `shortcutDescriptions.*` (or the key that already existed, for the drawer).
+  shortcut by its `description`, so the description is UI copy. Seven call
+  sites passed an English literal ("Close navigation drawer" from the phone's
+  nav drawer, which is mounted on every page). They read
+  `shortcutDescriptions.*`, or a key in the namespace the component already
+  uses (`nav.closeNavigationDrawer`, `ui.filterList.shortcutClearAll`,
+  `common.ui.shortcutUnpinNode`) where a second namespace would have made the
+  file unreadable to `i18n-keys-resolve`, which binds one namespace per
+  translator identifier.
 - *The compliance status indicator.* `ComplianceStatusIndicator` built its
   `aria-label` and chip text from an English token map. It reads
   `complianceStatus.*`; the map keeps its English `label` for callers outside
