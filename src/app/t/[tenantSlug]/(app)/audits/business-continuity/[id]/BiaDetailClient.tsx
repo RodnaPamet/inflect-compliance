@@ -284,7 +284,10 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
                             {tx('biaDetail.edit')}
                         </Button>
                     </PrimaryAction>
-                    <Button variant="ghost" size="sm" className="text-content-error" onClick={() => setDeleting(true)} id="bia-delete-btn">
+                    {/* The destructive variant (owner decision, 2026-11-22):
+                        a destructive action stays visible as a destructive
+                        button, not a ghost tinted red. */}
+                    <Button variant="destructive" size="sm" onClick={() => setDeleting(true)} id="bia-delete-btn">
                         {tx('biaDetail.delete')}
                     </Button>
                 </>

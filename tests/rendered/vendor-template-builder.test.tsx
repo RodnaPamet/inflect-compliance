@@ -336,6 +336,15 @@ describe('VendorTemplateBuilderClient', () => {
         await waitFor(() => expect(callsTo('POST', '/publish')).toHaveLength(1));
     });
 
+    it('puts Publish in the shared page header, first on a phone (#5815)', async () => {
+        await renderBuilder();
+        const publish = document.getElementById('publish-template-btn')!;
+        // Inside the shared cluster (which wraps instead of clipping), and the
+        // primary a phone shows first.
+        expect(publish.closest('[data-testid="page-header-actions"]')).not.toBeNull();
+        expect(publish.closest('[data-page-action="primary"]')).not.toBeNull();
+    });
+
     it("shows the server's sentence when an edit is refused, not a status code", async () => {
         fetchMock.mockImplementation((url: string, init?: RequestInit) => {
             if (init?.method === 'PATCH') {

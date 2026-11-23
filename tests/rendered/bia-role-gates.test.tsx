@@ -127,6 +127,18 @@ describe('BIA analysis page — writes follow the server (#4632)', () => {
         expect((getByLabelText('Hours after the disruption, point 1') as HTMLInputElement).readOnly).toBe(false);
     });
 
+    it('on a phone: Edit first, Delete a visible destructive button, Mark reviewed in "⋯" (#5815)', () => {
+        const { container } = render(
+            <Wrapper><BiaDetailClient bia={DETAIL} tenantSlug="acme" canWrite /></Wrapper>,
+        );
+        const del = container.querySelector('#bia-delete-btn')!;
+        // Never in the overflow slot a phone hides, and painted as danger.
+        expect(del.closest('[data-page-action="overflow"]')).toBeNull();
+        expect(del.className).toContain('bg-[var(--btn-still-danger)]');
+        expect(container.querySelector('#bia-edit-btn')!.closest('[data-page-action="primary"]')).not.toBeNull();
+        expect(container.querySelector('#bia-mark-reviewed-btn')!.closest('[data-page-action="overflow"]')).not.toBeNull();
+    });
+
     it('shows the criticality label, not the stored code', () => {
         const { getByTestId } = render(
             <Wrapper><BiaDetailClient bia={DETAIL} tenantSlug="acme" canWrite={false} /></Wrapper>,

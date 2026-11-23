@@ -69,6 +69,7 @@ unknown section now reads "previous page" instead of the raw URL segment.
 | `src/components/ui/breadcrumbs.tsx` | Touch hit area on crumb links |
 | `src/components/test-plans/TestPlanDetailView.tsx` | Hand-rolled header → `PageHeader` (#5830) |
 | agent detail, framework detail, BIA, audits hub, NIS2 gap, vulnerabilities, access-review detail | Marked primary / overflow; page wrappers removed |
+| `admin/vendor-templates/[templateId]/VendorTemplateBuilderClient.tsx` | Hand-rolled header → `PageHeader`; Publish was clipped on a phone |
 
 ## Decisions
 
@@ -80,7 +81,8 @@ unknown section now reads "previous page" instead of the raw URL segment.
   below md. Rendering the same element in the menu would duplicate component
   state, and a modal owned by a component inside a closing menu would unmount.
 - **A destructive action is never an `OverflowAction`.** The agent's kill switch
-  moved from a red-tinted ghost to the destructive variant on all sizes — the
+  and BIA's Delete moved from a red-tinted ghost to the destructive variant on
+  all sizes — the
   owner named the ghost as a defect, and a button's tone should not depend on
   the viewport.
 - **The phone-trail rule is a slot, not an import.** `PageBreadcrumbs` is shared
