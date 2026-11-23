@@ -80,6 +80,22 @@ describe('<RiskMatrixAdminClient>', () => {
         expect(screen.getByTestId('rm-band-row-3')).toBeInTheDocument();
     });
 
+    it('keeps Save on a phone screen: the header buttons wrap under the title', () => {
+        render(
+            withTooltip(
+                <RiskMatrixAdminClient
+                    tenantSlug="acme"
+                    initialConfig={DEFAULT_RISK_MATRIX_CONFIG}
+                />,
+            ),
+        );
+        // In a row that never wrapped, Save was cut off at 390 and 360 px (#5874).
+        const control = document.getElementById('risk-matrix-save-btn')!.closest('[data-slot="setting-row-control"]');
+        expect(control).not.toBeNull();
+        expect(control!.className).toContain('flex-wrap');
+        expect(control).toContainElement(document.getElementById('risk-matrix-restore-defaults'));
+    });
+
     it('names every level-name field, which had only its value to go by (#4991)', () => {
         render(
             withTooltip(

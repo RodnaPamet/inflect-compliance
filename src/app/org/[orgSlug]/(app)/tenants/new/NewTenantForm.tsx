@@ -299,7 +299,9 @@ export function NewTenantForm({ orgSlug }: Props) {
                     </p>
                 )}
 
-                <div className="flex items-center justify-end gap-tight pt-2">
+                {/* `flex-wrap`: at 360 px the two did not fit on one line, and
+                    `justify-end` pushed Cancel past the LEFT edge. */}
+                <div className="flex flex-wrap items-center justify-end gap-tight pt-2">
                     <Link
                         href={`/org/${orgSlug}/tenants`}
                         className={buttonVariants({ variant: 'ghost', size: 'sm' })}

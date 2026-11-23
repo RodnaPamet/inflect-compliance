@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@inflect/ui/lib/cn';
+import { SettingRow } from '@/components/layout/SettingRow';
 import { localizedNotificationTitle } from '@/lib/notifications/agentic-titles';
 
 interface NotificationSettings {
@@ -255,17 +256,23 @@ export default function NotificationSettingsPage() {
         <div className="space-y-section animate-fadeIn">
             <BackAffordance />
             {header}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-default">
-                <div className="flex flex-wrap items-center gap-compact">
-                    {title}
+            {/* The two job buttons wrap onto their own lines on a phone: in one
+                row that never wrapped, "Стартирай ежедневното почистване" ran
+                off the screen at 390 and 360 (#5874). */}
+            <SettingRow
+                align="center"
+                title={title}
+                titleGap="compact"
+                titleAdornment={
                     <StatusBadge
                         variant={savedSettings.enabled ? 'success' : 'warning'}
                         data-testid="notifications-email-status"
                     >
                         {savedSettings.enabled ? t('notifications.enabled') : t('notifications.disabled')}
                     </StatusBadge>
-                </div>
-                <div className="flex items-center gap-compact">
+                }
+                controlGap="compact"
+                control={<>
                     <Button
                         variant="secondary"
                         size="sm"
@@ -286,8 +293,8 @@ export default function NotificationSettingsPage() {
                     >
                         {runningJob === 'dailySweep' ? t('notifications.running') : t('notifications.dailySweep')}
                     </Button>
-                </div>
-            </div>
+                </>}
+            />
 
             <ConfirmDialog
                 showModal={confirmOpen}

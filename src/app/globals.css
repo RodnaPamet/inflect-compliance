@@ -894,3 +894,24 @@ body {
     .policy-content hr::after { display: none; }
   }
 }
+
+/* Code and identifiers wrap instead of running off the screen (#5875).
+ *
+ * A URL, a redirect URI, an environment variable name or a digest has no
+ * space to break at, so on a phone it ran past the right edge, where the
+ * shell's `overflow-x-clip` cut it off. `anywhere` (not `break-word`) is the
+ * value that works in a flex row too: it lowers the element's min-content
+ * width, so a `<dd className="font-mono">` beside its `<dt>` shrinks and
+ * wraps instead of holding the row open.
+ *
+ * In `@layer base`, so a utility still overrides it (`whitespace-nowrap`,
+ * `truncate` and `wrap-normal` win). Text that fits never breaks, so a wide
+ * screen is unchanged; table cells are `whitespace-nowrap` or `truncate`
+ * already. `pre` keeps its own `white-space: pre` and is not touched. */
+@layer base {
+  code,
+  samp,
+  .font-mono {
+    overflow-wrap: anywhere;
+  }
+}

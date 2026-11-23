@@ -754,7 +754,11 @@ export default function PolicyDetailPage() {
             tabs={tabs}
             activeTab={tab}
             onTabChange={setTab}
-            title={<span className="truncate" id="policy-title">{policy.title}</span>}
+            // Wraps on a phone, truncates from `sm`. A bare `truncate` on an
+            // inline span only kept the title on one line (an inline box
+            // never clips), so a long title pushed the record pager off the
+            // screen (#5879).
+            title={<span className="block sm:truncate" id="policy-title">{policy.title}</span>}
             prevNext={{
                 ids: policyIds,
                 currentId: policyId,

@@ -68,6 +68,15 @@ describe('AgentOversightSection', () => {
         expect(screen.getByTestId('agent-oversight-toggle-auditorReadsReceipts')).toHaveTextContent('Turn on');
     });
 
+    it('puts each switch on its own line on a phone (the shared setting row)', () => {
+        render(<AgentOversightSection />);
+        // A hand-rolled `justify-between` row pushed the button off a 360 px
+        // screen. The shared row stacks it below `sm` (#5874).
+        const toggle = screen.getByTestId('agent-oversight-toggle-composeNeedsSecondApprover');
+        expect(toggle.closest('[data-slot="setting-row-control"]')).not.toBeNull();
+        expect(screen.getByTestId('agent-oversight-composeNeedsSecondApprover')).toContainElement(toggle);
+    });
+
     it('sends only the switch that was pressed', async () => {
         fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) });
         render(<AgentOversightSection />);

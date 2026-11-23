@@ -265,14 +265,27 @@ export function PageHeader({
                         )}
                         data-testid="page-header-title-row"
                     >
+                        {/* The heading can shrink (`min-w-0`) and breaks a
+                            word longer than the line (`wrap-break-word`); the
+                            adornment does not shrink. Without both, a title on
+                            one long word pushed the record pager past the
+                            right edge of a phone, where the shell's clip cut it
+                            off (#5879). Nothing grows, so on a wide screen the
+                            pager still sits right beside the title. */}
                         <Heading
                             level={1}
                             id={titleId}
+                            className="min-w-0 wrap-break-word"
                             data-testid="page-header-title"
                         >
                             {title}
                         </Heading>
-                        {titleAdornment}
+                        <div
+                            className="shrink-0"
+                            data-testid="page-header-title-adornment"
+                        >
+                            {titleAdornment}
+                        </div>
                     </div>
                 ) : (
                     <Heading

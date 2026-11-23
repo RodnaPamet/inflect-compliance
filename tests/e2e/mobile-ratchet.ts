@@ -131,10 +131,14 @@ type Baseline = Record<MobileE2eConfig, Record<RatchetedMetric, number>>;
  * root, which takes focus for its radios and is not a control itself. On the
  * controls list the selection circles are now measured by the 44px wrapper
  * that takes the tap; the page still fails on its card title buttons.
+ *
+ * clipped, 0 (#5875, with #5874 and #5879): the last one was the integrations
+ * page's webhook URL, a `<code>` with no space to break at. `code`, `samp` and
+ * `.font-mono` now wrap anywhere (`src/app/globals.css`).
  */
 export const SEED_BASELINE: Baseline = {
-    '390-dark-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 9, englishLeaks: 0 },
-    '360-light-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 9, englishLeaks: 0 },
+    '390-dark-bg': { clipped: 0, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 9, englishLeaks: 0 },
+    '360-light-bg': { clipped: 0, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 9, englishLeaks: 0 },
 };
 
 /** Routes in `RECORD_ROUTES` failing each metric. */
