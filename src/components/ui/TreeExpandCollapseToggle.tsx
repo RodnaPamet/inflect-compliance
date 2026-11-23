@@ -29,7 +29,7 @@ export interface TreeExpandCollapseToggleProps {
     totalExpandable: number;
     onExpandAll: () => void;
     onCollapseAll: () => void;
-    /** Optional accessible labels — defaults to the obvious English. */
+    /** Optional labels — default to the catalog's "Expand all" / "Collapse all". */
     expandLabel?: string;
     collapseLabel?: string;
     className?: string;
@@ -42,12 +42,14 @@ export function TreeExpandCollapseToggle({
     totalExpandable,
     onExpandAll,
     onCollapseAll,
-    expandLabel = 'Expand all',
-    collapseLabel = 'Collapse all',
+    expandLabel: expandLabelProp,
+    collapseLabel: collapseLabelProp,
     className,
     id = 'tree-toggle',
 }: TreeExpandCollapseToggleProps) {
     const t = useTranslations('common.ui');
+    const expandLabel = expandLabelProp ?? t('expandAll');
+    const collapseLabel = collapseLabelProp ?? t('collapseAll');
     // Derive tri-state. Disabling the no-op direction makes the
     // affordance honest: when nothing's expanded, "Collapse all" is
     // pointless and clicking it would be confusing. The state

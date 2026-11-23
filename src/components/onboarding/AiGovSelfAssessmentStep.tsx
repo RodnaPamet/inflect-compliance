@@ -89,6 +89,9 @@ function buildArchOptions(t: AiGovT) {
     ];
 }
 
+/** The criticalities `onboarding.nis2Step.criticality` labels. */
+const LABELLED_CRITICALITIES: ReadonlySet<string> = new Set(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']);
+
 function criticalityVariant(c: string): 'error' | 'warning' | 'info' | 'neutral' {
     if (c === 'CRITICAL') return 'error';
     if (c === 'HIGH') return 'warning';
@@ -314,7 +317,7 @@ export function AiGovSelfAssessmentStep({
                                                         aria-label={t('aiGov.showReferences')}
                                                     />
                                                     <StatusBadge variant={criticalityVariant(q.criticality)} size="sm">
-                                                        {q.criticality}
+                                                        {LABELLED_CRITICALITIES.has(q.criticality) ? t(`nis2Step.criticality.${q.criticality}`) : q.criticality}
                                                     </StatusBadge>
                                                 </div>
                                                 {naByArch ? (

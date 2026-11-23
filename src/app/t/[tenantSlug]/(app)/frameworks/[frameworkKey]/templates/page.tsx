@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { isControlCategoryTheme } from '@/lib/controls/control-categories';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { Button } from '@/components/ui/button';
 import { BackAffordance } from '@/components/nav/BackAffordance';
@@ -58,6 +59,13 @@ interface CatalogTemplate {
 
 export default function TemplateLibraryPage() {
     const tx = useTranslations('frameworks');
+    const tControls = useTranslations('controls');
+    // An ISO 27002 theme constant (`TECHNOLOGICAL`) reads as its label; any
+    // other category is already prose and passes through.
+    const categoryLabel = useCallback(
+        (c: string) => (isControlCategoryTheme(c) ? tControls(`categoryLabels.${c}`) : c),
+        [tControls],
+    );
     const params = useParams();
     const searchParams = useSearchParams();
     const tenantSlug = params.tenantSlug as string;
@@ -223,9 +231,9 @@ export default function TemplateLibraryPage() {
     const categoryOptions = useMemo<ComboboxOption[]>(
         () => [
             { value: '', label: tx('templates.allCategories') },
-            ...categories.map((c) => ({ value: c as string, label: c as string })),
+            ...categories.map((c) => ({ value: c as string, label: categoryLabel(c as string) })),
         ],
-        [categories],
+        [categories, categoryLabel],
     );
     const sectionOptions = useMemo<ComboboxOption[]>(
         () => [
@@ -383,7 +391,7 @@ export default function TemplateLibraryPage() {
 
                                     {/* Badges row */}
                                     <div className="flex flex-wrap gap-1.5 mt-1">
-                                        {t.category && <span className="text-xs text-content-subtle bg-bg-default px-2 py-0.5 rounded">{t.category}</span>}
+                                        {t.category && <span className="text-xs text-content-subtle bg-bg-default px-2 py-0.5 rounded">{categoryLabel(t.category)}</span>}
                                         {t.defaultFrequency && <span className="text-xs text-content-subtle bg-bg-default px-2 py-0.5 rounded">{tx(`templates.frequency.${t.defaultFrequency}`)}</span>}
                                         <span className="text-xs text-content-subtle">{tx('templates.tasksCount', { count: t.tasks.length })}</span>
                                         <span className="text-xs text-content-subtle">{tx('templates.requirementsCount', { count: t.requirements.length })}</span>

@@ -17,10 +17,28 @@
  *
  * FIX
  * ───
- * Hardcode locale to `en-GB` and timezone to `UTC` on every
- * Intl.DateTimeFormat instance in this file so server and client
- * always produce identical output regardless of OS or browser
- * settings.
+ * Every helper renders in the UTC calendar and in ONE of the app's
+ * locales — never the host's. The locale is the reader's UI language,
+ * not the machine's, and it is chosen in one of two ways:
+ *
+ *   • Explicitly — `dateFormattersFor(locale)` returns the helpers bound
+ *     to that locale. Server components use this (through
+ *     `getDateFormatters()` in `src/lib/i18n/date-format-server.ts`), as
+ *     does anything that formats outside a React render.
+ *   • Implicitly — the bare exports below (`formatDate`, …) read the
+ *     ACTIVE locale, which `bindDateLocale()` sets once per render from
+ *     next-intl's `useLocale()` (the app's root `<Providers>` does it).
+ *     In the browser that is a module value: a tab has one locale. On
+ *     the server it is an AsyncLocalStorage store entered for THIS
+ *     request's render, so two concurrent requests in different
+ *     languages cannot see each other's locale. Outside any binding
+ *     (jobs, API routes, PDFs, tests) the active locale is English.
+ *
+ * English keeps the `en-GB` Intl output it always had. Bulgarian is
+ * TABLE-DRIVEN rather than `Intl.DateTimeFormat('bg')`: Intl's `bg`
+ * output depends on the ICU/CLDR build (Node and each browser ship
+ * their own), and a server and a browser that disagree by one "г."
+ * is a hydration mismatch. A table renders the same bytes everywhere.
  *
  * PICK-A-HELPER DECISION TREE
  * ───────────────────────────
@@ -32,6 +50,9 @@
  *   formatDateCompact  → "16 Apr"                             (chart axes, mini-calendars — year is context)
  *   formatDateRange    → adaptive (see the function's docblock) (all range chrome — pickers, filters, legends)
  *   formatRelativeTime → "2 hours ago" / "in 3 days"           (Epic 63 — the underlying helper for <TimestampTooltip>)
+ *
+ * In Bulgarian the same helpers read "16 апр 2026", "16 апр 2026, 08:00",
+ * "16.04.2026", "16 април 2026 г." and "преди 2 часа".
  *
  * RELATIVE-TIME RENDERING (Epic 63)
  * ─────────────────────────────────
@@ -61,6 +82,9 @@
  *     `formatDateTimeSmart`, `timeAgo`, `formatPeriod`, `parseDateTime`,
  *     `getDateTimeLocal`, `getDaysDifference`, `getFirstAndLastDay`
  *     were removed on 2026-04-22; don't resurrect them.
+ *   - Call date-fns `format*` / `formatDistance*` without a locale, or
+ *     build an `Intl.DateTimeFormat` with a hard-coded language for text a
+ *     person reads: the reader's language is the active locale.
  *
  * USAGE
  * ─────
@@ -79,139 +103,82 @@
  *   formatDateShort('2026-04-16T08:00:00Z') // → "16/04/2026"
  */
 
-const LOCALE = 'en-GB';
+import { formatDistance, type Locale as DateFnsLocale } from 'date-fns';
+import { bg as dateFnsBg, enUS as dateFnsEnUS } from 'date-fns/locale';
 
-/** Shared Intl.DateTimeFormat instances (created once, reused — fast). */
-const DATE_FMT = new Intl.DateTimeFormat(LOCALE, {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'UTC',
-});
+// ─── Locales ─────────────────────────────────────────────────────────────────
 
-const DATETIME_FMT = new Intl.DateTimeFormat(LOCALE, {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'UTC',
-});
+/** The UI languages a date can be written in. Mirrors the app's message catalogs. */
+export type DateLocale = 'en' | 'bg';
 
-const DATE_SHORT_FMT = new Intl.DateTimeFormat(LOCALE, {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    timeZone: 'UTC',
-});
+/** Any locale tag (`'bg'`, `'bg-BG'`, `'en'`, junk) → a supported date locale. */
+export function resolveDateLocale(value: string | null | undefined): DateLocale {
+    return typeof value === 'string' && value.trim().toLowerCase().startsWith('bg') ? 'bg' : 'en';
+}
 
-const DATE_LONG_FMT = new Intl.DateTimeFormat(LOCALE, {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-});
+/** The subset of Node's AsyncLocalStorage this module uses. */
+interface LocaleStore {
+    getStore(): DateLocale | undefined;
+    enterWith(value: DateLocale): void;
+}
 
-// Standalone month / weekday names — the shared, SSR-safe replacement for
-// hand-rolled `MONTH_NAMES` / `WEEKDAY_NAMES` arrays scattered across the
-// calendar views. Same en-GB/UTC pinning as every other formatter here.
-const MONTH_YEAR_FMT = new Intl.DateTimeFormat(LOCALE, {
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-});
+const IS_BROWSER = typeof window !== 'undefined';
 
-const MONTH_SHORT_FMT = new Intl.DateTimeFormat(LOCALE, {
-    month: 'short',
-    timeZone: 'UTC',
-});
+/**
+ * The server's per-request store. Next.js puts Node's `AsyncLocalStorage`
+ * on `globalThis` for its own request scoping, which keeps `node:async_hooks`
+ * out of this module's import graph — it is bundled for the browser too.
+ * `null` in the browser and wherever the global is absent (Jest, edge): the
+ * active locale then falls back to English on the server side.
+ */
+const serverStore: LocaleStore | null = (() => {
+    if (IS_BROWSER) return null;
+    const Ctor = (globalThis as { AsyncLocalStorage?: new () => LocaleStore }).AsyncLocalStorage;
+    return typeof Ctor === 'function' ? new Ctor() : null;
+})();
 
-const WEEKDAY_SHORT_FMT = new Intl.DateTimeFormat(LOCALE, {
-    weekday: 'short',
-    timeZone: 'UTC',
-});
+let browserLocale: DateLocale = 'en';
+
+/**
+ * Make `locale` the active date locale for the current render.
+ *
+ * Called once per render, at the root, before anything that formats a date
+ * renders (`useBindDateLocale()` in the app's `<Providers>`). Idempotent.
+ */
+export function bindDateLocale(locale: string | null | undefined): void {
+    const resolved = resolveDateLocale(locale);
+    if (IS_BROWSER) {
+        browserLocale = resolved;
+        return;
+    }
+    if (serverStore && serverStore.getStore() !== resolved) serverStore.enterWith(resolved);
+}
+
+/** The locale the bare helpers render in right now. */
+export function activeDateLocale(): DateLocale {
+    if (IS_BROWSER) return browserLocale;
+    return serverStore?.getStore() ?? 'en';
+}
+
+/** The date-fns locale for a UI locale (react-day-picker, relative time). */
+export function dateFnsLocaleFor(locale: string | null | undefined): DateFnsLocale {
+    return resolveDateLocale(locale) === 'bg' ? dateFnsBg : dateFnsEnUS;
+}
+
+/** The date-fns locale for the active UI locale. */
+export function activeDateFnsLocale(): DateFnsLocale {
+    return dateFnsLocaleFor(activeDateLocale());
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function toDate(value: string | Date | null | undefined): Date | null {
+type DateInput = string | Date | null | undefined;
+
+function toDate(value: DateInput): Date | null {
     if (!value) return null;
     const d = value instanceof Date ? value : new Date(value);
     return isNaN(d.getTime()) ? null : d;
 }
-
-// ─── Public API ──────────────────────────────────────────────────────────────
-
-/**
- * Format a date as "16 Apr 2026".
- * Returns the fallback string (default `'—'`) for null/invalid inputs.
- */
-export function formatDate(
-    value: string | Date | null | undefined,
-    fallback = '—',
-): string {
-    const d = toDate(value);
-    return d ? DATE_FMT.format(d) : fallback;
-}
-
-/**
- * Format a date + time as "16 Apr 2026, 08:00".
- * Returns the fallback string (default `'—'`) for null/invalid inputs.
- */
-export function formatDateTime(
-    value: string | Date | null | undefined,
-    fallback = '—',
-): string {
-    const d = toDate(value);
-    return d ? DATETIME_FMT.format(d) : fallback;
-}
-
-// Richer form for record-quality timestamps (PDF metadata page,
-// export receipts): weekday + long month + seconds so the
-// exact moment is preserved for downstream forensics. Locked to the
-// same `en-GB` + `UTC` calendar as every other helper here so server
-// and client produce identical strings regardless of host timezone.
-const DATETIME_LONG_FMT = new Intl.DateTimeFormat(LOCALE, {
-    weekday: 'long',
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    timeZone: 'UTC',
-});
-
-/**
- * Format a date + time in long, record-quality form —
- * "Thursday, 16 April 2026, 08:00:45". Use for PDF metadata pages,
- * export receipts, or any surface where the exact moment is
- * legally / operationally load-bearing. Returns the fallback string
- * (default `'—'`) for null/invalid inputs.
- */
-export function formatDateTimeLong(
-    value: string | Date | null | undefined,
-    fallback = '—',
-): string {
-    const d = toDate(value);
-    return d ? DATETIME_LONG_FMT.format(d) : fallback;
-}
-
-// ─── Relative time (Epic 63) ─────────────────────────────────────────────────
-//
-// Centralised so every "2 hours ago" / "in 3 days" string in the UI
-// goes through one helper. Wraps date-fns's `formatDistance` rather
-// than `formatDistanceToNow` so the caller can pin "now" — this is
-// what makes `<TimestampTooltip>` hydration-safe (the component
-// passes the `useHydratedNow()` value as `now`).
-//
-// Both past and future dates supported via `addSuffix: true` —
-// past becomes "X ago", future becomes "in X".
-//
-// Returns the fallback string (default `'—'`) when EITHER `value`
-// or `now` is null / invalid; the visible text on a card with a
-// missing date should not flash "less than a minute ago".
-
-import { formatDistance } from 'date-fns';
 
 export interface FormatRelativeTimeOptions {
     /** Show "less than a minute ago" instead of "less than a minute". Defaults to true. */
@@ -220,95 +187,293 @@ export interface FormatRelativeTimeOptions {
     includeSeconds?: boolean;
 }
 
+/** Every helper, bound to one locale. See the decision tree above. */
+export interface DateFormatters {
+    readonly locale: DateLocale;
+    formatDate(value: DateInput, fallback?: string): string;
+    formatDateTime(value: DateInput, fallback?: string): string;
+    formatDateTimeLong(value: DateInput, fallback?: string): string;
+    formatDateShort(value: DateInput, fallback?: string): string;
+    formatDateLong(value: DateInput, fallback?: string): string;
+    formatDateCompact(value: DateInput, fallback?: string): string;
+    formatMonthYear(value: DateInput, fallback?: string): string;
+    formatMonthShort(value: DateInput, fallback?: string): string;
+    formatWeekdayShort(value: DateInput, fallback?: string): string;
+    formatDateRange(from: DateInput, to: DateInput, fallback?: string): string;
+    formatRelativeTime(
+        value: DateInput,
+        now: Date | null | undefined,
+        options?: FormatRelativeTimeOptions,
+        fallback?: string,
+    ): string;
+}
+
+/**
+ * The calendar pieces a locale's formatters are assembled from. Each takes a
+ * Date that has already been validated, and reads only its UTC fields.
+ */
+interface CalendarParts {
+    date(d: Date): string;
+    dateTime(d: Date): string;
+    dateTimeLong(d: Date): string;
+    dateShort(d: Date): string;
+    dateLong(d: Date): string;
+    dateCompact(d: Date): string;
+    monthYear(d: Date): string;
+    monthShort(d: Date): string;
+    weekdayShort(d: Date): string;
+    /** "From X" / "Until X" for an open-ended range. */
+    rangeFrom(formatted: string): string;
+    rangeUntil(formatted: string): string;
+    relativeLocale: DateFnsLocale | undefined;
+}
+
+// ─── English (en-GB, through Intl) ───────────────────────────────────────────
+
+const EN_TAG = 'en-GB';
+
+const intl = (options: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat(EN_TAG, { ...options, timeZone: 'UTC' });
+
+const EN_DATE = intl({ day: '2-digit', month: 'short', year: 'numeric' });
+const EN_DATETIME = intl({ day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+// Richer form for record-quality timestamps (PDF metadata page, export
+// receipts): weekday + long month + seconds so the exact moment is preserved
+// for downstream forensics.
+const EN_DATETIME_LONG = intl({
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+});
+const EN_DATE_SHORT = intl({ day: '2-digit', month: '2-digit', year: 'numeric' });
+const EN_DATE_LONG = intl({ day: 'numeric', month: 'long', year: 'numeric' });
+const EN_DATE_COMPACT = intl({ day: 'numeric', month: 'short' });
+// Standalone month / weekday names — the shared, SSR-safe replacement for
+// hand-rolled `MONTH_NAMES` / `WEEKDAY_NAMES` arrays scattered across the
+// calendar views.
+const EN_MONTH_YEAR = intl({ month: 'long', year: 'numeric' });
+const EN_MONTH_SHORT = intl({ month: 'short' });
+const EN_WEEKDAY_SHORT = intl({ weekday: 'short' });
+
+const EN_PARTS: CalendarParts = {
+    date: (d) => EN_DATE.format(d),
+    dateTime: (d) => EN_DATETIME.format(d),
+    dateTimeLong: (d) => EN_DATETIME_LONG.format(d),
+    dateShort: (d) => EN_DATE_SHORT.format(d),
+    dateLong: (d) => EN_DATE_LONG.format(d),
+    dateCompact: (d) => EN_DATE_COMPACT.format(d),
+    monthYear: (d) => EN_MONTH_YEAR.format(d),
+    monthShort: (d) => EN_MONTH_SHORT.format(d),
+    weekdayShort: (d) => EN_WEEKDAY_SHORT.format(d),
+    rangeFrom: (s) => `From ${s}`,
+    rangeUntil: (s) => `Until ${s}`,
+    // date-fns' default IS English; passing none keeps the strings it always gave.
+    relativeLocale: undefined,
+};
+
+// ─── Bulgarian (table-driven — see FIX above) ────────────────────────────────
+
+const BG_MONTHS_LONG = [
+    'януари', 'февруари', 'март', 'април', 'май', 'юни',
+    'юли', 'август', 'септември', 'октомври', 'ноември', 'декември',
+] as const;
+const BG_MONTHS_SHORT = [
+    'яну', 'фев', 'мар', 'апр', 'май', 'юни',
+    'юли', 'авг', 'сеп', 'окт', 'ное', 'дек',
+] as const;
+/** Indexed by `getUTCDay()` — Sunday first. */
+const BG_WEEKDAYS_LONG = [
+    'неделя', 'понеделник', 'вторник', 'сряда', 'четвъртък', 'петък', 'събота',
+] as const;
+const BG_WEEKDAYS_SHORT = ['Нд', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'] as const;
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const hhmm = (d: Date) => `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
+const bgDate = (d: Date) =>
+    `${pad2(d.getUTCDate())} ${BG_MONTHS_SHORT[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+const bgDateLong = (d: Date) =>
+    `${d.getUTCDate()} ${BG_MONTHS_LONG[d.getUTCMonth()]} ${d.getUTCFullYear()} г.`;
+
+const BG_PARTS: CalendarParts = {
+    date: bgDate,
+    dateTime: (d) => `${bgDate(d)}, ${hhmm(d)}`,
+    dateTimeLong: (d) =>
+        `${BG_WEEKDAYS_LONG[d.getUTCDay()]}, ${pad2(d.getUTCDate())} ${BG_MONTHS_LONG[d.getUTCMonth()]} ` +
+        `${d.getUTCFullYear()} г., ${hhmm(d)}:${pad2(d.getUTCSeconds())}`,
+    dateShort: (d) => `${pad2(d.getUTCDate())}.${pad2(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`,
+    dateLong: bgDateLong,
+    dateCompact: (d) => `${d.getUTCDate()} ${BG_MONTHS_SHORT[d.getUTCMonth()]}`,
+    monthYear: (d) => `${capitalise(BG_MONTHS_LONG[d.getUTCMonth()])} ${d.getUTCFullYear()} г.`,
+    monthShort: (d) => BG_MONTHS_SHORT[d.getUTCMonth()],
+    weekdayShort: (d) => BG_WEEKDAYS_SHORT[d.getUTCDay()],
+    rangeFrom: (s) => `От ${s}`,
+    rangeUntil: (s) => `До ${s}`,
+    relativeLocale: dateFnsBg,
+};
+
+// ─── Assembly ────────────────────────────────────────────────────────────────
+
+function buildFormatters(locale: DateLocale, parts: CalendarParts): DateFormatters {
+    const single =
+        (render: (d: Date) => string) =>
+        (value: DateInput, fallback = '—'): string => {
+            const d = toDate(value);
+            return d ? render(d) : fallback;
+        };
+
+    return {
+        locale,
+        formatDate: single(parts.date),
+        formatDateTime: single(parts.dateTime),
+        formatDateTimeLong: single(parts.dateTimeLong),
+        formatDateShort: single(parts.dateShort),
+        formatDateLong: single(parts.dateLong),
+        formatDateCompact: single(parts.dateCompact),
+        formatMonthYear: single(parts.monthYear),
+        formatMonthShort: single(parts.monthShort),
+        formatWeekdayShort: single(parts.weekdayShort),
+
+        formatDateRange(from, to, fallback = '—') {
+            const fromD = toDate(from);
+            const toD = toDate(to);
+
+            if (!fromD && !toD) return fallback;
+            if (fromD && !toD) return parts.rangeFrom(parts.date(fromD));
+            if (!fromD && toD) return parts.rangeUntil(parts.date(toD));
+
+            // TS narrowing — both non-null here.
+            const a = fromD as Date;
+            const b = toD as Date;
+
+            const sameYear = a.getUTCFullYear() === b.getUTCFullYear();
+            const sameMonth = sameYear && a.getUTCMonth() === b.getUTCMonth();
+            const sameDay = sameMonth && a.getUTCDate() === b.getUTCDate();
+
+            if (sameDay) return parts.date(a);
+            // "16 – 30 Apr 2026"
+            if (sameMonth) return `${a.getUTCDate()} – ${parts.date(b)}`;
+            // "16 Apr – 30 Jun 2026": drop the year on the left endpoint.
+            if (sameYear) return `${a.getUTCDate()} ${parts.monthShort(a)} – ${parts.date(b)}`;
+            // Different years — both endpoints carry their year.
+            return `${parts.date(a)} – ${parts.date(b)}`;
+        },
+
+        // Wraps date-fns's `formatDistance` rather than `formatDistanceToNow`
+        // so the caller can pin "now" — this is what makes `<TimestampTooltip>`
+        // hydration-safe (the component passes the `useHydratedNow()` value as
+        // `now`). Returns the fallback when EITHER `value` or `now` is null /
+        // invalid: a card with a missing date should not flash "less than a
+        // minute ago".
+        formatRelativeTime(value, now, options = {}, fallback = '—') {
+            const d = toDate(value);
+            if (!d || !now) return fallback;
+            return formatDistance(d, now, {
+                addSuffix: options.addSuffix ?? true,
+                includeSeconds: options.includeSeconds ?? true,
+                ...(parts.relativeLocale ? { locale: parts.relativeLocale } : {}),
+            });
+        },
+    };
+}
+
+const FORMATTERS: Readonly<Record<DateLocale, DateFormatters>> = {
+    en: buildFormatters('en', EN_PARTS),
+    bg: buildFormatters('bg', BG_PARTS),
+};
+
+/** The helpers bound to an explicit locale — server components, jobs, exports. */
+export function dateFormattersFor(locale: string | null | undefined): DateFormatters {
+    return FORMATTERS[resolveDateLocale(locale)];
+}
+
+const active = (): DateFormatters => FORMATTERS[activeDateLocale()];
+
+// ─── Public API (active locale) ──────────────────────────────────────────────
+
+/**
+ * Format a date as "16 Apr 2026".
+ * Returns the fallback string (default `'—'`) for null/invalid inputs.
+ */
+export function formatDate(value: DateInput, fallback = '—'): string {
+    return active().formatDate(value, fallback);
+}
+
+/**
+ * Format a date + time as "16 Apr 2026, 08:00".
+ * Returns the fallback string (default `'—'`) for null/invalid inputs.
+ */
+export function formatDateTime(value: DateInput, fallback = '—'): string {
+    return active().formatDateTime(value, fallback);
+}
+
+/**
+ * Format a date + time in long, record-quality form —
+ * "Thursday, 16 April 2026, 08:00:45". Use for PDF metadata pages,
+ * export receipts, or any surface where the exact moment is
+ * legally / operationally load-bearing. Returns the fallback string
+ * (default `'—'`) for null/invalid inputs.
+ */
+export function formatDateTimeLong(value: DateInput, fallback = '—'): string {
+    return active().formatDateTimeLong(value, fallback);
+}
+
+/**
+ * "2 hours ago" / "in 3 days" (Epic 63). Both past and future dates
+ * supported via `addSuffix: true`. Returns the fallback string
+ * (default `'—'`) when EITHER `value` or `now` is null / invalid.
+ */
 export function formatRelativeTime(
-    value: string | Date | null | undefined,
+    value: DateInput,
     now: Date | null | undefined,
     options: FormatRelativeTimeOptions = {},
     fallback = '—',
 ): string {
-    const d = toDate(value);
-    if (!d || !now) return fallback;
-    return formatDistance(d, now, {
-        addSuffix: options.addSuffix ?? true,
-        includeSeconds: options.includeSeconds ?? true,
-    });
+    return active().formatRelativeTime(value, now, options, fallback);
 }
 
 /**
  * Format a date as "16/04/2026".
  * Returns the fallback string (default `'—'`) for null/invalid inputs.
  */
-export function formatDateShort(
-    value: string | Date | null | undefined,
-    fallback = '—',
-): string {
-    const d = toDate(value);
-    return d ? DATE_SHORT_FMT.format(d) : fallback;
+export function formatDateShort(value: DateInput, fallback = '—'): string {
+    return active().formatDateShort(value, fallback);
 }
 
 /**
  * Format a date as "16 April 2026".
  * Returns the fallback string (default `'—'`) for null/invalid inputs.
  */
-export function formatDateLong(
-    value: string | Date | null | undefined,
-    fallback = '—',
-): string {
-    const d = toDate(value);
-    return d ? DATE_LONG_FMT.format(d) : fallback;
+export function formatDateLong(value: DateInput, fallback = '—'): string {
+    return active().formatDateLong(value, fallback);
 }
-
-// ─── Compact + range formatters (Epic 58) ────────────────────────────────────
-
-const DATE_COMPACT_FMT = new Intl.DateTimeFormat(LOCALE, {
-    day: 'numeric',
-    month: 'short',
-    timeZone: 'UTC',
-});
-
-const MONTH_FMT = new Intl.DateTimeFormat(LOCALE, {
-    month: 'short',
-    timeZone: 'UTC',
-});
 
 /**
  * Compact day + month, no year — "16 Apr". Use for chart axes,
  * mini-calendars, and anywhere the calendar context already implies
  * the year. Returns the fallback (default `'—'`) for nullish input.
  */
-export function formatDateCompact(
-    value: string | Date | null | undefined,
-    fallback = '—',
-): string {
-    const d = toDate(value);
-    return d ? DATE_COMPACT_FMT.format(d) : fallback;
+export function formatDateCompact(value: DateInput, fallback = '—'): string {
+    return active().formatDateCompact(value, fallback);
 }
 
 /** Month + year, e.g. "January 2026" — calendar month-nav headers. */
-export function formatMonthYear(
-    value: string | Date | null | undefined,
-    fallback = '—',
-): string {
-    const d = toDate(value);
-    return d ? MONTH_YEAR_FMT.format(d) : fallback;
+export function formatMonthYear(value: DateInput, fallback = '—'): string {
+    return active().formatMonthYear(value, fallback);
 }
 
 /** Short month name, e.g. "Jan" — timeline axis ticks. */
-export function formatMonthShort(
-    value: string | Date | null | undefined,
-    fallback = '—',
-): string {
-    const d = toDate(value);
-    return d ? MONTH_SHORT_FMT.format(d) : fallback;
+export function formatMonthShort(value: DateInput, fallback = '—'): string {
+    return active().formatMonthShort(value, fallback);
 }
 
 /** Short weekday name, e.g. "Mon" — month-grid + heatmap column headers. */
-export function formatWeekdayShort(
-    value: string | Date | null | undefined,
-    fallback = '—',
-): string {
-    const d = toDate(value);
-    return d ? WEEKDAY_SHORT_FMT.format(d) : fallback;
+export function formatWeekdayShort(value: DateInput, fallback = '—'): string {
+    return active().formatWeekdayShort(value, fallback);
 }
 
 /**
@@ -326,39 +491,6 @@ export function formatWeekdayShort(
  * rest of the date helpers. Use everywhere a range is surfaced in chrome
  * — picker triggers, filter pills, period headers, reports legends.
  */
-export function formatDateRange(
-    from: string | Date | null | undefined,
-    to: string | Date | null | undefined,
-    fallback = '—',
-): string {
-    const fromD = toDate(from);
-    const toD = toDate(to);
-
-    if (!fromD && !toD) return fallback;
-    if (fromD && !toD) return `From ${DATE_FMT.format(fromD)}`;
-    if (!fromD && toD) return `Until ${DATE_FMT.format(toD)}`;
-
-    // TS narrowing — both non-null here.
-    const a = fromD as Date;
-    const b = toD as Date;
-
-    const sameYear = a.getUTCFullYear() === b.getUTCFullYear();
-    const sameMonth = sameYear && a.getUTCMonth() === b.getUTCMonth();
-    const sameDay = sameMonth && a.getUTCDate() === b.getUTCDate();
-
-    if (sameDay) return DATE_FMT.format(a);
-
-    if (sameMonth) {
-        // "16 – 30 Apr 2026"
-        return `${a.getUTCDate()} – ${DATE_FMT.format(b)}`;
-    }
-
-    if (sameYear) {
-        // "16 Apr – 30 Jun 2026": drop the year on the left endpoint.
-        const leftNoYear = `${a.getUTCDate()} ${MONTH_FMT.format(a)}`;
-        return `${leftNoYear} – ${DATE_FMT.format(b)}`;
-    }
-
-    // Different years — both endpoints carry their year.
-    return `${DATE_FMT.format(a)} – ${DATE_FMT.format(b)}`;
+export function formatDateRange(from: DateInput, to: DateInput, fallback = '—'): string {
+    return active().formatDateRange(from, to, fallback);
 }

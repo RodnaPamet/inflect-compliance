@@ -133,12 +133,11 @@ describe('rankByRoi', () => {
 
 describe('describeRoiGap', () => {
     it.each([
-        ['NO_COST', 0, /Set an annual cost/],
-        ['NO_EFFECTIVENESS', 1, /effectiveness signal/],
-        ['NO_QUANT_RISKS', 0, /Link this control to a risk first/],
-        ['NO_QUANT_RISKS', 2, /Quantify the linked risks/],
-    ] as const)('reason=%s linkedCount=%d → %s', (reason, linkedRiskCount, pattern) => {
-        const text = describeRoiGap({ ok: false, reason, linkedRiskCount });
-        expect(text).toMatch(pattern);
+        ['NO_COST', 0, 'noCost'],
+        ['NO_EFFECTIVENESS', 1, 'noEffectiveness'],
+        ['NO_QUANT_RISKS', 0, 'linkRiskFirst'],
+        ['NO_QUANT_RISKS', 2, 'quantifyRisks'],
+    ] as const)('reason=%s linkedCount=%d → %s', (reason, linkedRiskCount, key) => {
+        expect(describeRoiGap({ ok: false, reason, linkedRiskCount })).toBe(key);
     });
 });

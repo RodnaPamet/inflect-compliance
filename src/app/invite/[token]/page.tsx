@@ -13,7 +13,7 @@
 import { auth } from '@/auth';
 import { getTranslations } from 'next-intl/server';
 import { previewInviteByToken } from '@/app-layer/usecases/tenant-invites';
-import { formatDateLong } from '@inflect/ui/lib/format-date';
+import { getDateFormatters } from '@/lib/i18n/date-format-server';
 import { Heading } from '@/components/ui/typography';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { AppIcon } from '@/components/icons/AppIcon';
@@ -39,6 +39,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
 
     const t = await getTranslations('invite');
     const tRoles = await getTranslations('roles');
+    const { formatDateLong } = await getDateFormatters();
 
     if (!preview) {
         return (

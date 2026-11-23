@@ -1,4 +1,4 @@
-import { formatDate } from '@inflect/ui/lib/format-date';
+import { getDateFormatters } from '@/lib/i18n/date-format-server';
 import { getTranslations } from 'next-intl/server';
 import prisma from '@/lib/prisma';
 import { BillingActions } from './BillingActions';
@@ -35,6 +35,7 @@ export default async function BillingPage({
     if (!gate.allowed) return gate.forbidden;
     const { ctx, tenantSlug } = gate;
     const t = await getTranslations('admin');
+    const { formatDate } = await getDateFormatters();
 
     const tenant = await prisma.tenant.findUnique({
         where: { id: ctx.tenantId },

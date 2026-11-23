@@ -19,6 +19,7 @@ import {
 import { KeyboardShortcutProvider } from '@/lib/hooks/use-keyboard-shortcut';
 import { ShortcutHelpOverlay } from '@/components/app-shell/shortcut-help-overlay';
 import { registerFormTelemetrySink } from '@/lib/telemetry/form-telemetry';
+import { useBindDateLocale } from '@/lib/i18n/use-bind-date-locale';
 
 /**
  * Epic 54 — bootstrap the global form-telemetry sink once at mount.
@@ -135,6 +136,9 @@ export function useSwrSessionSeam() {
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {
+    // First, before anything below renders: dates and relative times are
+    // written in the reader's UI language (format-date.ts, "FIX").
+    useBindDateLocale();
     const swrSeam = useSwrSessionSeam();
 
     // No <SessionProvider>. The tenant layout resolves the session

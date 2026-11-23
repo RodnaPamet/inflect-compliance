@@ -217,7 +217,8 @@ describe('Epic 41 — DispatchedWidget per (type, chartType)', () => {
             title: 'Tenants',
         });
         render(<DispatchedWidget widget={widget} data={makeData()} />);
-        expect(screen.getByText('Tenants')).toBeInTheDocument();
+        // A stored stock English title is not a rename: it reads from the catalog.
+        expect(screen.getByText('Workspaces')).toBeInTheDocument();
         expect(screen.getByText('12')).toBeInTheDocument();
         expect(screen.getByText(/10 snapshotted/)).toBeInTheDocument();
     });
@@ -235,7 +236,7 @@ describe('Epic 41 — DispatchedWidget per (type, chartType)', () => {
         render(<DispatchedWidget widget={widget} data={makeData()} />);
         // The wrapper renders the title.
         expect(
-            screen.getByText('Tenant Health Distribution'),
+            screen.getByText('Workspace health'),
         ).toBeInTheDocument();
         // The donut renders the three positive segments + one PENDING.
         // (RAG_COLORS includes PENDING, but only segments with value>0
@@ -259,7 +260,7 @@ describe('Epic 41 — DispatchedWidget per (type, chartType)', () => {
             size: { w: 12, h: 6 },
         });
         render(<DispatchedWidget widget={widget} data={makeData()} />);
-        expect(screen.getByText('Coverage by Tenant')).toBeInTheDocument();
+        expect(screen.getByText('Coverage by workspace')).toBeInTheDocument();
         // Both fixture tenants appear; sort 'rag' puts AMBER (Alpha)
         // before GREEN (Beta).
         const links = screen.getAllByRole('link');

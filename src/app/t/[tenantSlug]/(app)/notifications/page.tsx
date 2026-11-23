@@ -13,6 +13,7 @@ import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 import { MARK_NOTIFICATION_READ_REQUEST } from '@/lib/notifications/mark-read';
 import { resolveNotificationHref } from '@/lib/notifications/notification-href';
+import { localizedNotificationTitle } from '@/lib/notifications/agentic-titles';
 
 type Notification = {
     id: string;
@@ -34,6 +35,7 @@ export default function NotificationsPage() {
     const params = useParams();
     const tenantSlug = typeof params?.tenantSlug === 'string' ? params.tenantSlug : null;
     const t = useTranslations('notifications');
+    const tTitles = useTranslations('notificationTitles');
     const [notifications, setNotifications] = useState<Notification[]>([]);
     // Loading, loaded and failed are three facts, and the page used to show the
     // empty list for all of them: "No notifications" while it loaded, and the
@@ -122,7 +124,7 @@ export default function NotificationsPage() {
                         <div key={n.id} data-testid={`inbox-notification-${n.id}`} className={cn(cardVariants({ density: 'compact' }), 'flex items-start gap-compact', !n.read ? 'border-l-2 border-[var(--brand-default)]' : 'opacity-60')}>
                             <span className="text-lg"><AppIcon name={n.type === 'EVIDENCE' ? 'evidence' : n.type === 'FINDING' ? 'bug' : 'bell'} size={18} /></span>
                             <div className="flex-1">
-                                <p className="text-sm font-medium text-content-emphasis">{n.title}</p>
+                                <p className="text-sm font-medium text-content-emphasis">{localizedNotificationTitle(n.type, n.title, tTitles)}</p>
                                 <p className="text-sm text-content-default">{n.message}</p>
                                 <p className="text-xs text-content-subtle mt-1">{formatDateTime(n.createdAt)}</p>
                             </div>

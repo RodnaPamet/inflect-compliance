@@ -37,7 +37,7 @@ jest.mock('next-intl/server', () => {
     const { useTranslations: translatorFor } = jest.requireMock('next-intl') as {
         useTranslations: (ns: string) => unknown;
     };
-    return { getTranslations: async (ns: string) => translatorFor(ns) };
+    return { getLocale: async () => 'en', getTranslations: async (ns: string) => translatorFor(ns) };
 });
 
 const authMock = jest.fn();

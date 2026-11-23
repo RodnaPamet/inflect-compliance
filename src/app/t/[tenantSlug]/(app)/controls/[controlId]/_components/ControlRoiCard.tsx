@@ -97,8 +97,8 @@ export function ControlRoiCard({ controlId }: { controlId: string }) {
                 <div className="space-y-default">
                     <p className="text-sm text-content-default" data-testid="control-roi-headline">
                         {tx.rich('roi.headline', {
-                            ale: `${money(verdict.value.aleProtected)}/yr`,
-                            cost: `${money(annualCost)}/yr`,
+                            ale: tx('roi.perYear', { amount: money(verdict.value.aleProtected) }),
+                            cost: tx('roi.perYear', { amount: money(annualCost) }),
                             roi: verdict.value.roiMultiple.toFixed(1),
                             b: (chunks) => <strong>{chunks}</strong>,
                             m: (chunks) => (
@@ -122,7 +122,7 @@ export function ControlRoiCard({ controlId }: { controlId: string }) {
             ) : (
                 <div className="space-y-default">
                     <p className="text-sm text-content-warning" data-testid="control-roi-gap">
-                        {describeRoiGap(verdict)}
+                        {tx(`roi.gap.${describeRoiGap(verdict)}`)}
                     </p>
                     <p className="text-xs text-content-subtle">
                         {tx('roi.gapSubline')}

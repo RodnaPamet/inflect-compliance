@@ -23,7 +23,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
-import { celebrationDedupe, scopedMilestone } from '@/lib/celebrations';
+import { celebrationDedupe, milestoneCopy, scopedMilestone } from '@/lib/celebrations';
 import { Package, MessageSquare } from 'lucide-react';
 import { Xmark } from '@inflect/ui/components/ui/icons/glyphs';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -550,16 +550,17 @@ export default function PackDetailPage() {
     // real freeze later. Celebrate the status the server confirmed.
     const packComplete = (packStatus === 'FROZEN' || packStatus === 'EXPORTED') && !freezing;
     const packName: string | undefined = pack?.name;
+    const tRoot = useTranslations();
     useEffect(() => {
         if (!packComplete) return;
         celebrate(
-            scopedMilestone('audit-pack-complete', packId, {
+            scopedMilestone('audit-pack-complete', packId, milestoneCopy('audit-pack-complete', tRoot), {
                 descriptionOverride: packName
                     ? tx('packs.celebrateDesc', { name: packName })
                     : undefined,
             }),
         );
-    }, [packComplete, packId, packName, celebrate]);
+    }, [packComplete, packId, packName, celebrate, tRoot]);
 
     const breadcrumbs = [
         { label: tx('crumb.dashboard'), href: `/t/${tenantSlug}/dashboard` },

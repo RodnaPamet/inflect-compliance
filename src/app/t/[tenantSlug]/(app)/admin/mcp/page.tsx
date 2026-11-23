@@ -7,7 +7,7 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
 import { listAgentCredentials } from '@/app-layer/usecases/api-keys';
 import { AUTONOMY_REQUIRED_BY_CAPABILITY } from '@/lib/agentic/autonomy-ceiling';
-import { formatDateTime } from '@inflect/ui/lib/format-date';
+import { getDateFormatters } from '@/lib/i18n/date-format-server';
 import { gateAdminPage } from '../_lib/admin-page-gate';
 import { ShadedRow } from '@/components/ui/shaded-row';
 
@@ -95,6 +95,7 @@ export default async function McpAdminPage({
     const { ctx, tenantSlug } = gate;
     const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
     const t = await getTranslations('admin');
+    const { formatDateTime } = await getDateFormatters();
     const { credentials, truncated } = await listAgentCredentials(ctx);
 
     const badgeLabel = (cred: Credential): string => {

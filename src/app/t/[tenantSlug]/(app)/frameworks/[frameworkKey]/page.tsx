@@ -13,7 +13,7 @@ import { buttonVariants } from '@/components/ui/button-variants';
 import { useCelebration, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { celebrationDedupe, MILESTONES, scopedMilestone } from '@/lib/celebrations';
+import { celebrationDedupe, milestoneCopy, scopedMilestone } from '@/lib/celebrations';
 import type { FrameworkTreePayload } from '@/lib/framework-tree/types';
 import { Heading, Caption } from '@/components/ui/typography';
 import { KPIStat } from '@/components/ui/metric';
@@ -125,17 +125,18 @@ export default function FrameworkDetailPage() {
     // session (otherwise a single global `framework-100` key would
     // mean only the first framework ever celebrates).
     const { celebrate } = useCelebration(celebrationDedupe);
+    const tRoot = useTranslations();
     useEffect(() => {
         if (coverage?.coveragePercent !== 100) return;
-        const baseDescription = MILESTONES['framework-100'].description ?? '';
+        const copy = milestoneCopy('framework-100', tRoot);
         celebrate(
-            scopedMilestone('framework-100', frameworkKey, {
+            scopedMilestone('framework-100', frameworkKey, copy, {
                 descriptionOverride: framework?.name
-                    ? `${framework.name} — ${baseDescription}`.trim()
+                    ? `${framework.name} — ${copy.description ?? ''}`.trim()
                     : undefined,
             }),
         );
-    }, [coverage?.coveragePercent, frameworkKey, framework?.name, celebrate]);
+    }, [coverage?.coveragePercent, frameworkKey, framework?.name, celebrate, tRoot]);
 
     useEffect(() => {
         // Epic 46 — fetch the new `/tree` endpoint instead of the

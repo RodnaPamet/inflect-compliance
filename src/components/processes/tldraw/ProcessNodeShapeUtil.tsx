@@ -53,6 +53,7 @@ import {
     useMaybeEditor,
 } from 'tldraw';
 
+import { useTranslations } from 'next-intl';
 import { ChevronRight } from '@inflect/ui/components/ui/icons/glyphs/chevron-right';
 
 import { isCollapsedFromDataJson } from './drill-scope-host';
@@ -109,6 +110,11 @@ import {
  * `null` is a valid `dataJson` and `typeof null === 'object'`, which is why the
  * null check is explicit rather than left to the property read.
  */
+/** The run statuses `agents.runs.status` labels. */
+const LABELLED_RUN_STATUSES: ReadonlySet<string> = new Set([
+    'RUNNING', 'AWAITING_APPROVAL', 'PAUSED', 'COMPLETED', 'ABORTED', 'FAILED', 'EMPTY_CATALOGUE',
+]);
+
 export function ruleIdFromDataJson(dataJson: unknown): string | undefined {
     if (typeof dataJson !== 'object' || dataJson === null) return undefined;
     const id = (dataJson as { ruleId?: unknown }).ruleId;
@@ -443,6 +449,7 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
         the map is keyed by the rule ids of INVOKE_AGENT rules only.
     */
     const agentRun = useNodeAgentRun(ruleId);
+    const tRunStatus = useTranslations('agents.runs.status');
     // The rule this step owns: draft, enabled, needs setup, and its runs.
     // Empty on a document map and for steps that own no rule.
     const ruleStatus = useStepRuleStatus(ruleId);
@@ -594,7 +601,7 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
                 (() => {
                     const runText = (
                         <>
-                            {agentRun.status}
+                            {LABELLED_RUN_STATUSES.has(agentRun.status) ? tRunStatus(agentRun.status) : agentRun.status}
                             {agentRun.lastStepSeq !== null
                                 ? ` · ${agentRun.lastStepSeq + 1}/${agentRun.stepCount}`
                                 : ''}
