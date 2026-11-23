@@ -227,3 +227,31 @@ describe('a cut list says so', () => {
         expect(screen.queryByTestId('agent-runs-truncated')).toBeNull();
     });
 });
+
+/**
+ * A run row must be readable on a phone. It was one row that never wrapped:
+ * the workflow link was squeezed to a sliver and the steps / tokens / date
+ * line ran past the right edge, where the shell's `overflow-x-clip` cut it.
+ */
+describe('a run row on a phone', () => {
+    it('stacks below sm, and gives the workflow link and the metrics a line each', () => {
+        renderRuns({ runs: [{ ...RUN, status: 'RUNNING' }] });
+
+        const row = screen.getByTestId('agent-run-row-run-1');
+        expect(row).toHaveClass('flex-col', 'sm:flex-row');
+
+        const link = screen.getByTestId('agent-run-workflow-link-run-1');
+        const meta = screen.getByTestId('agent-run-meta-run-1');
+        // Both share the row's left half, which must WRAP for `basis-full`
+        // to put each on its own line.
+        expect(link.parentElement).toBe(meta.parentElement);
+        expect(link.parentElement).toHaveClass('flex-wrap', 'min-w-0');
+        expect(link).toHaveClass('basis-full', 'sm:basis-auto', 'pointer-coarse:min-h-11');
+        expect(meta).toHaveClass('basis-full', 'sm:basis-auto');
+        expect(meta.textContent).toContain('3');
+
+        // The actions wrap too, rather than pushing past the edge.
+        const abort = screen.getByTestId('agent-run-abort-run-1');
+        expect(abort.closest('.flex-wrap')).not.toBeNull();
+    });
+});

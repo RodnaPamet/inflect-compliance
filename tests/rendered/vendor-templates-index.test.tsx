@@ -146,6 +146,21 @@ describe('vendor templates index', () => {
         expect(screen.getByTestId('template-row-b')).not.toHaveTextContent('(s)');
     });
 
+    // On a phone the badges and date go under the name, where they fit,
+    // instead of beside it, where the shell clipped them off the right edge.
+    it('stacks a row below sm and lets its badges and date wrap', async () => {
+        global.fetch = jest
+            .fn()
+            .mockResolvedValue(ok([template('a', { isGlobal: true })])) as unknown as typeof fetch;
+        render(<VendorTemplatesIndexClient />);
+
+        const row = await screen.findByTestId('template-row-a');
+        expect(row).toHaveClass('flex-col', 'sm:flex-row');
+        const status = screen.getByTestId('template-row-status-a');
+        expect(status).toHaveClass('flex-wrap');
+        expect(status).toContainElement(screen.getByTestId('template-built-in-a'));
+    });
+
     // #5313 — the create form follows `vendors.edit`, the key the create route
     // takes, not the coarse `canWrite` tier a custom role can contradict.
     it('offers no create form without vendors.edit, whatever the coarse tier says', async () => {
