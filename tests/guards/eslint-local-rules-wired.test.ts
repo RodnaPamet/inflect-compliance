@@ -45,6 +45,7 @@ const LOCAL_RULES = [
     'vector-store-single-seam',
     'web-bot-auth-single-seam',
     'shaded-list-rows',
+    'no-native-choice-input',
 ] as const;
 
 describe('local ESLint rules are wired at error', () => {

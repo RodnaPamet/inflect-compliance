@@ -18,9 +18,11 @@ pointer-coarse:min-h-11 / h-*   the control itself grows on a coarse pointer;
                                 answer for the neighbour)
 ```
 
-**List-card titles (3.3).** `<DataTableCards>` wraps the title field in a
+**List-card titles (3.3).** `<DataTableCards>` wraps every field in a
 `TableTitleSurfaceProvider` (`src/components/ui/table-title-cell.tsx`) that
-says whether the card is a button (`onRowClick`) or not. `<TableTitleCell>`
+says whether the card is a button (`onRowClick`) or not. Every field, not only
+the title: the org Controls and Risks drill-downs lead with the workspace
+column, so their identifying link is the card's second field. `<TableTitleCell>`
 and the new `<TableTitleButton>` (the quick-view trigger Controls, Tasks and
 Assets each hand-rolled) read it:
 
@@ -54,7 +56,8 @@ under `src/app` (18 sites, not only the six named) is now `Checkbox`,
 `local/no-native-choice-input` refuses a new one.
 
 **Small controls (3.8).** The toast close button (`toastOptions.classNames`),
-`CopyText` and the slider thumb wear the hit area; `NumberStepper` grows to
+`CopyText`, the slider thumb and the SSO page's show-secret eye wear the hit
+area; `NumberStepper` grows to
 48px with no inset on a coarse pointer and its field fills the frame (it sat
 at 23px); the rich-text toolbar's controls are 44px on a coarse pointer and the
 mode toggle's text is 12px.

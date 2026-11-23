@@ -343,6 +343,19 @@ export function DataTableCards<T extends TableRowData>({
                     typeof header === "string" && header.trim() ? header : null;
                 const render = (cell: (typeof cells)[number]) =>
                     flexRender(cell.column.columnDef.cell, cell.getContext());
+                // A field's `<TableTitleCell>` / `<TableTitleButton>` reads
+                // this: on a card that is a button it renders as text (one
+                // target, not a control nested in a control); on any other
+                // card it wears the 44px touch hit area. Every field, not
+                // only the first: a page whose identifying link is its
+                // second column (the org drill-downs lead with the
+                // workspace) has it in a field below the title.
+                const titleSurface = clickable ? "clickable-card" : "card";
+                const renderField = (cell: (typeof cells)[number]) => (
+                    <TableTitleSurfaceProvider value={titleSurface}>
+                        {render(cell)}
+                    </TableTitleSurfaceProvider>
+                );
 
                 const card = (
                     <div
@@ -421,16 +434,7 @@ export function DataTableCards<T extends TableRowData>({
                                             wrapTitle
                                             testId="data-table-card-title"
                                         >
-                                            {/* A title cell built on `<TableTitleCell>` /
-                                                `<TableTitleButton>` reads this: on a card that
-                                                is a button it renders as text (one target, not
-                                                a control nested in a control); on any other
-                                                card it wears the 44px touch hit area. */}
-                                            <TableTitleSurfaceProvider
-                                                value={clickable ? "clickable-card" : "card"}
-                                            >
-                                                {render(titleCell)}
-                                            </TableTitleSurfaceProvider>
+                                            {renderField(titleCell)}
                                         </CardField>
                                     </div>
                                 )}
@@ -452,7 +456,7 @@ export function DataTableCards<T extends TableRowData>({
                                 label={labelOf(cell.column.columnDef.header)}
                                 omitWhenEmpty
                             >
-                                {render(cell)}
+                                {renderField(cell)}
                             </CardField>
                         ))}
                     </div>

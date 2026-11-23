@@ -28,6 +28,7 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { IdentityCrossLinks } from '@/components/admin/IdentityCrossLinks';
 import { cn } from '@inflect/ui/lib/cn';
+import { TOUCH_HIT_AREA_CLASS } from '@inflect/ui/components/ui/hit-area';
 import { extractMutationError } from '@/lib/mutations';
 
 interface SsoProvider {
@@ -496,7 +497,9 @@ export default function SsoAdminPage() {
                                 type="button"
                                 aria-label={showSecret ? t('sso.hideSecret') : t('sso.showSecret')}
                                 onClick={() => setShowSecret(!showSecret)}
-                                className="absolute right-3 bottom-2.5 text-content-muted hover:text-content-emphasis"
+                                // A 16px eye in the field: 44px to a finger (it is already
+                                // `absolute`, which the hit area positions against).
+                                className={cn('absolute right-3 bottom-2.5 text-content-muted hover:text-content-emphasis', TOUCH_HIT_AREA_CLASS)}
                             >
                                 {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             </button>

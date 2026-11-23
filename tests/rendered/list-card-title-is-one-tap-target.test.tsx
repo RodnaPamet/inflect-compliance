@@ -145,6 +145,29 @@ describe('a card that does not open on a tap keeps the title action, at 44px', (
     });
 });
 
+describe('an identifying link below the title is reached too', () => {
+    it('a TableTitleCell link in the second field wears the hit area', () => {
+        // The org drill-downs lead with the workspace, so the control's link
+        // is the card's second field, not its title.
+        const columns = createColumns<Row>([
+            { id: 'status', header: 'Status', accessorKey: 'status' },
+            {
+                id: 'name',
+                header: 'Name',
+                accessorKey: 'name',
+                cell: ({ row }) => (
+                    <TableTitleCell href={`/things/${row.original.id}`}>{row.original.name}</TableTitleCell>
+                ),
+            },
+        ]);
+        render(<DataTable<Row> data={data} columns={columns} getRowId={(r) => r.id} />);
+        const card = document.querySelector('[data-row-id="r1"]') as HTMLElement;
+        expect(within(cardTitle('r1')).queryByRole('link')).toBeNull();
+        const link = within(card).getByRole('link', { name: 'Alpha control' });
+        expectTouchHitArea(link);
+    });
+});
+
 describe('the desktop table is unchanged (the control)', () => {
     it('keeps the title link and the truncating quick-view button, with no hit area', () => {
         mockBelowMd = false;

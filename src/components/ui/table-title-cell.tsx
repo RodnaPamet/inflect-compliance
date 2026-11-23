@@ -52,11 +52,12 @@ import {
  * Where a title cell is rendered, declared by the renderer that mounts it.
  *
  *   - `'table'` (default): a desktop table row. Nothing changes.
- *   - `'card'`: the TITLE of a phone card (`<DataTableCards>`) that does not
- *     open on a tap. The title is the card's way in, and as an inline link it
- *     was a 17-20px target a thumb missed, so it wears the shared touch hit
- *     area (44px on a coarse pointer, its own box everywhere else).
- *   - `'clickable-card'`: the title of a card that IS a button (`onRowClick`
+ *   - `'card'`: a field of a phone card (`<DataTableCards>`) that does not
+ *     open on a tap, usually its title. The title is the card's way in, and
+ *     as an inline link it was a 17-20px target a thumb missed, so it wears
+ *     the shared touch hit area (44px on a coarse pointer, its own box
+ *     everywhere else).
+ *   - `'clickable-card'`: a field of a card that IS a button (`onRowClick`
  *     set). The card is the one target. A link or button inside it was an
  *     interactive element inside an interactive element: two tab stops, a
  *     nested control a screen reader announces inside the card's own name,
