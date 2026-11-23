@@ -54,8 +54,10 @@ issue, and the spec asserts that they are still present.
   whole-product pass is about 165 page loads per configuration. In the shared
   E2E job, next to the rest of the suite, that would be several minutes of
   browser time on every run, and its exact counts would fail on any slow page
-  across 165 navigations. The fixed set is about 20 loads per configuration,
-  so it adds roughly a minute of wall-clock time on two workers. A pull request
+  across 165 navigations. The fixed set is 21 seeded routes and states plus
+  3 record pages per configuration. Against a production build the whole
+  `mobile` project took about 50 seconds on two workers (about 37 seconds per
+  seeded configuration, 7 per record configuration, 4 for the metric proofs). A pull request
   that changes many pages compares two harness runs (`--compare`), which fails
   on any count that rose. No whole-product figure is stored in the repository.
   A stored figure that nothing recomputes on every change would go stale.
