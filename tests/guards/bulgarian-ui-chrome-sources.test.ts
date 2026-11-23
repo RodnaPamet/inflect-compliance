@@ -9,7 +9,9 @@
  *   I3  literals in shared helpers (the ROI hint, "Expand all", the risk
  *       matrix's default names, celebration toasts);
  *   I4  English assembled on the server (the BIA rationale, the activity
- *       feed's raw codes, the audit log's action chips, agentic bell titles);
+ *       feed's raw codes, the audit log's action chips and entity column,
+ *       agentic bell titles and bodies, report metric definitions, agent
+ *       control-test titles, audit-procedure names, workflow names);
  *   I5  org dashboard widget titles stored in English;
  *   I6  raw enum values rendered as text, and catalog values that are still
  *       English ("{period}d", "you@company.com").
@@ -48,9 +50,35 @@ import {
 } from '@/lib/notifications/agentic-titles';
 import { ACTIVITY_EVENT_ACTIONS, KNOWN_ACTIVITY_VERBS } from '@/lib/audit/activity-humanize';
 import { MILESTONES } from '@/lib/celebrations';
+import { auditActionKey, auditEntityKey } from '@/lib/audit/audit-code-labels';
+import {
+    AGENTIC_SUBJECT,
+    BREAKER_SIGNAL_CODES,
+    ORPHAN_DETAIL,
+    STALE_AXES,
+    agenticBodyText,
+    agentIdSubject,
+    localizedNotificationBody,
+    pinDetail,
+    toolSubject,
+} from '@/lib/notifications/agentic-bodies';
+import { METRIC_DEFINITIONS } from '@/lib/agentic/report-definitions';
+import { joinDefinitionList } from '@/lib/agentic/report-definition-text';
+import {
+    AGENTIC_CHECK_TITLES,
+    ASSURANCE_PLAN_PREFIX,
+    PROCEDURE_PLAN_PREFIX,
+    localizedPlanName,
+    procedureNameKey,
+} from '@/lib/agentic/agentic-check-titles';
+import { AUDIT_PROCEDURE_LIBRARY_V1, LIBRARY_V1_PROCEDURE_IDS } from '@/lib/agentic/audit-procedure-library';
+import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
+import { workflowMessageKey } from '@/lib/agentic/workflow-labels';
+import { auditCodePopulation } from '../helpers/audit-code-population';
+import { parseSchemaModels } from '../helpers/prisma-schema-models';
 import { catalogTranslator, catalogValue } from '../helpers/catalog-translator';
 import { repoFiles, repoRelative } from '../helpers/repo-files';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, declarationOf } from '../helpers/source-blocks';
 
 const ACRONYMS = /\b(?:MFA|MTPD|RTO|SLE|ARO|FAIR|ROI)\b/g;
 const latinIn = (text: string): string[] => text.replace(ACRONYMS, '').match(/[A-Za-z]+/g) ?? [];
@@ -300,5 +328,300 @@ describe('I6: no raw enum and no English unit or address on a Bulgarian page', (
     it('a person in a Bulgarian placeholder address is not "you" or "colleague"', () => {
         const english = [...bgValues].filter(([, v]) => /\b(?:you|colleague)@/i.test(v)).map(([k]) => k);
         expect(english).toStrictEqual([]);
+    });
+});
+
+// ─── I4 — the rest of the server-built text ─────────────────────────
+
+/**
+ * Latin a Bulgarian label may keep: product, vendor and standard names,
+ * acronyms, and Microsoft's own term "service principal" (owner decision
+ * 2026-10-30, #4553). Everything else in a Bulgarian label is Cyrillic.
+ */
+const KEPT_LATIN = new Set([
+    'A2A', 'API', 'BIA', 'CVE', 'Entra', 'FAIR', 'KRI', 'MCP', 'MFA', 'NDA', 'NIS2', 'OpenShell',
+    'OrangeHRM', 'SCIM', 'SLA', 'SharePoint', 'SoA', 'Workday', 'OWASP', 'Agentic', 'Top', 'SAP',
+    'service', 'principal',
+]);
+const foreignWords = (text: string): string[] =>
+    (text.replace(/\{[^{}]*\}/g, ' ').match(/[A-Za-z][A-Za-z0-9]*/g) ?? []).filter((w) => !KEPT_LATIN.has(w));
+const CYRILLIC = /[Ѐ-ӿ]/;
+
+/**
+ * Audit codes written through a value the scan cannot read (a parameter, an
+ * imported constant, a computed prefix), by file: how many such sites the
+ * file holds, and the codes they write. A NEW site fails the test below until
+ * somebody lists what it writes here — that is what makes "every code has a
+ * label" a claim about the product rather than about the literals.
+ */
+const CODES_THROUGH_A_VALUE: Readonly<Record<string, { sites: number; codes: readonly string[]; why: string }>> = {
+    'src/app-layer/events/audit.ts': { sites: 1, codes: [], why: 'logEvent itself, carrying its caller’s code' },
+    'src/app-layer/jobs/dsar-erasure.ts': { sites: 1, codes: ['ERASURE_EXECUTED'], why: 'imported ERASURE_EXECUTED_ACTION' },
+    'src/app-layer/repositories/DashboardRepository.ts': { sites: 1, codes: [], why: 'projects a stored row for the feed' },
+    'src/app-layer/usecases/access-review.ts': {
+        sites: 2,
+        codes: ['ACCESS_REVIEW_EVIDENCE_GENERATED', 'ACCESS_REVIEW_EVIDENCE_REGENERATED'],
+        why: 'the refusal helper carries literal codes its callers pass (read by the scan); the evidence filer takes a union',
+    },
+    'src/app-layer/usecases/agent-registry.ts': { sites: 1, codes: ['AGENT_ACTIVATED', 'AGENT_SUSPENDED'], why: 'the status writer’s parameter' },
+    'src/app-layer/usecases/dsar-register.ts': {
+        sites: 2,
+        codes: ['DSAR_REQUESTED', 'DSAR_VERIFIED', 'DSAR_STARTED', 'DSAR_CANCELED', 'DSAR_COMPLETED', 'DSAR_REJECTED'],
+        why: 'imported DSAR_AUDIT_ACTIONS',
+    },
+    'src/app-layer/usecases/editable-lifecycle-usecase.ts': {
+        sites: 5,
+        codes: ['POLICY_DRAFT_UPDATED', 'POLICY_PUBLISHED', 'POLICY_VERSION_CREATED', 'POLICY_REVERTED', 'POLICY_ARCHIVED'],
+        why: 'buildAction(<prefix>, <operation>); the policy adapter is the one config',
+    },
+    'src/app-layer/usecases/org-members.ts': { sites: 1, codes: ['ORG_ADMIN_PROVISIONED', 'ORG_ADMIN_DEPROVISIONED'], why: 'TenantFanoutAuditAction' },
+    'src/app-layer/usecases/scim-users.ts': {
+        sites: 1,
+        codes: ['SCIM_USER_CREATED', 'SCIM_USER_UPDATED', 'SCIM_USER_DEACTIVATED', 'SCIM_USER_REACTIVATED'],
+        why: 'the audit helper’s parameter',
+    },
+    'src/app/t/[tenantSlug]/(app)/admin/audit-log/page.tsx': { sites: 2, codes: [], why: 'the page reads stored rows' },
+    'src/lib/audit-log.ts': { sites: 2, codes: [], why: 'a pass-through writer' },
+    'src/lib/audit/audit-writer.ts': { sites: 1, codes: [], why: 'the hash-chained writer itself' },
+    'src/lib/audit/event-builder.ts': { sites: 1, codes: [], why: 'a pass-through builder' },
+    'src/lib/audit/verify.ts': { sites: 3, codes: [], why: 'the chain verifier reads stored rows' },
+    'src/lib/auth/security-events.ts': {
+        sites: 1,
+        codes: [
+            'AUTH_LOGIN_SUCCESS', 'AUTH_LOGIN_FAILURE', 'AUTH_LOGIN_RATE_LIMITED', 'AUTH_LOGIN_EMAIL_VERIFICATION_REQUIRED',
+            'AUTH_EMAIL_VERIFICATION_ISSUED', 'AUTH_EMAIL_VERIFIED', 'AUTH_PASSWORD_RESET_REQUESTED',
+            'AUTH_PASSWORD_RESET_COMPLETED', 'AUTH_PASSWORD_CHANGED', 'AUTH_UNVERIFIED_ACCOUNT_CLAIMED',
+        ],
+        why: 'SecurityEventAction',
+    },
+    'src/lib/dto/common.ts': { sites: 1, codes: [], why: 'a DTO mapper over stored rows' },
+    'src/lib/prisma.ts': {
+        sites: 1,
+        codes: ['CREATE', 'CREATEMANY', 'UPDATE', 'UPDATEMANY', 'DELETE', 'DELETEMANY', 'UPSERT'],
+        why: 'the audit extension writes the operation, upper-cased, for every model but AuditLog',
+    },
+};
+
+describe('I4: every audit code reads in Bulgarian', () => {
+    const population = auditCodePopulation();
+    const actions = [
+        ...new Set([
+            ...population.actions,
+            ...Object.values(CODES_THROUGH_A_VALUE).flatMap((s) => s.codes),
+            ...ACTIVITY_EVENT_ACTIONS,
+        ]),
+    ].sort();
+    // The audit extension writes every model's own name as the entity.
+    const entities = [
+        ...new Set([...population.entities, ...parseSchemaModels().map((m) => m.name).filter((n) => n !== 'AuditLog')]),
+    ];
+
+    it('measured a real population', () => {
+        expect(actions.length).toBeGreaterThan(450);
+        expect(entities.length).toBeGreaterThan(250);
+    });
+
+    it('every code written through a value is listed with the codes it writes', () => {
+        const sites: Record<string, number> = {};
+        for (const at of population.unresolved) {
+            const file = at.slice(0, at.lastIndexOf(':'));
+            sites[file] = (sites[file] ?? 0) + 1;
+        }
+        const listed = Object.fromEntries(Object.entries(CODES_THROUGH_A_VALUE).map(([f, s]) => [f, s.sites]));
+        expect(sites).toStrictEqual(listed);
+    });
+
+    it('every action code has a label in both catalogs, and the Bulgarian one is Bulgarian', () => {
+        const missing: string[] = [];
+        const foreign: string[] = [];
+        for (const code of actions) {
+            const key = `auditCodes.action.${auditActionKey(code)}`;
+            try {
+                catalogValue('en', key);
+                const label = catalogValue('bg', key);
+                if (!CYRILLIC.test(label) || foreignWords(label).length > 0) foreign.push(`${code}: ${label}`);
+            } catch {
+                missing.push(code);
+            }
+        }
+        expect({ missing, foreign }).toStrictEqual({ missing: [], foreign: [] });
+    });
+
+    it('every entity type has a label in both catalogs, and the Bulgarian one is Bulgarian', () => {
+        const missing: string[] = [];
+        const foreign: string[] = [];
+        for (const entity of entities) {
+            const key = `auditCodes.entity.${auditEntityKey(entity)}`;
+            try {
+                catalogValue('en', key);
+                const label = catalogValue('bg', key);
+                if (foreignWords(label).length > 0) foreign.push(`${entity}: ${label}`);
+            } catch {
+                missing.push(entity);
+            }
+        }
+        expect({ missing, foreign }).toStrictEqual({ missing: [], foreign: [] });
+    });
+
+    it('one entity type spelled two ways shares one label', () => {
+        expect(auditEntityKey('AccessReview')).toBe(auditEntityKey('ACCESS_REVIEW'));
+        expect(auditEntityKey('TenantA2aSigningKey')).toBe('tenant_a2a_signing_key');
+    });
+});
+
+describe('I4: an agentic notification body reads in Bulgarian, stored rows included', () => {
+    const t = scoped('notificationBodies');
+    const NAME = 'Kestrel';
+
+    // Every body the emitter can write: each subject it builds, and each
+    // detail it builds for the types that carry one.
+    const bodies: [string, string][] = [
+        ['AGENT_KILL_SWITCH_ENGAGED', agenticBodyText('AGENT_KILL_SWITCH_ENGAGED', AGENTIC_SUBJECT.EVERY_AGENT, null)],
+        ['AGENT_KILL_SWITCH_ENGAGED', agenticBodyText('AGENT_KILL_SWITCH_ENGAGED', NAME, null)],
+        ['AGENT_PROPOSAL_QUARANTINED', agenticBodyText('AGENT_PROPOSAL_QUARANTINED', AGENTIC_SUBJECT.UNATTRIBUTED_CREDENTIAL, null)],
+        ['AGENT_CIRCUIT_BREAKER_TRIPPED', agenticBodyText('AGENT_CIRCUIT_BREAKER_TRIPPED', NAME, BREAKER_SIGNAL_CODES.join(', '))],
+        ['AGENT_CIRCUIT_BREAKER_TRIPPED', agenticBodyText('AGENT_CIRCUIT_BREAKER_TRIPPED', NAME, null)],
+        ['AGENT_TOOL_MANIFEST_PIN_CHANGED', agenticBodyText('AGENT_TOOL_MANIFEST_PIN_CHANGED', toolSubject(NAME), pinDetail(null))],
+        ['AGENT_TOOL_MANIFEST_PIN_CHANGED', agenticBodyText('AGENT_TOOL_MANIFEST_PIN_CHANGED', toolSubject(NAME), pinDetail(3))],
+        [
+            'AGENT_RISK_ASSESSMENT_STALE',
+            agenticBodyText('AGENT_RISK_ASSESSMENT_STALE', NAME, STALE_AXES.map((a) => `${a} (none) → (none)`).join('; ')),
+        ],
+        ...Object.values(ORPHAN_DETAIL).map(
+            (d) => ['AGENT_OWNER_DEPARTED', agenticBodyText('AGENT_OWNER_DEPARTED', NAME, d)] as [string, string],
+        ),
+    ];
+
+    it.each(bodies)('%s (case %#)', (type, stored) => {
+        const shown = localizedNotificationBody(type, stored, t);
+        expect(shown).not.toBe(stored);
+        // The agent's and the tool's names are a person's words, shown as written.
+        const words = foreignWords(shown).filter((w) => w !== NAME);
+        expect(words).toStrictEqual([]);
+    });
+
+    it('an agent named only by its id reads as "Агент <id>"', () => {
+        const stored = agenticBodyText('AGENT_KILL_SWITCH_ENGAGED', agentIdSubject('cmh0abcdefghijklmnopqrstu'), null);
+        expect(localizedNotificationBody('AGENT_KILL_SWITCH_ENGAGED', stored, t)).toMatch(/^Агент cmh0abcdefghijklmnopqrstu /);
+    });
+
+    it('a body this module did not write is shown exactly as stored', () => {
+        const odd = agenticBodyText('AGENT_RISK_ASSESSMENT_STALE', NAME, 'something a later build wrote');
+        expect(localizedNotificationBody('AGENT_RISK_ASSESSMENT_STALE', odd, t)).toBe(odd);
+        expect(localizedNotificationBody('TASK_ASSIGNED', 'You were assigned a task', t)).toBe('You were assigned a task');
+    });
+
+    it('the emitter writes its bodies through the shared sentences', () => {
+        const emitter = codeOf(fs.readFileSync(`${__dirname}/../../src/app-layer/notifications/agentic.ts`, 'utf8'));
+        expect(emitter.match(/\bbody:\s*\([^)]*\)\s*=>\s*`/g) ?? []).toStrictEqual([]);
+        expect(emitter.match(/\bbody:\s*\([^)]*\)\s*=>\s*agenticBodyText\(/g)?.length).toBe(
+            Object.keys(AGENTIC_NOTIFICATION_TITLES).length,
+        );
+    });
+});
+
+describe('I4: report metric definitions read in Bulgarian', () => {
+    const defs = Object.values(METRIC_DEFINITIONS);
+
+    it('the English catalog is the registry, word for word', () => {
+        const drift = defs.filter((d) => {
+            const en = (f: string) => catalogValue('en', `agentMetrics.${d.id}.${f}`);
+            return (
+                en('label') !== d.label ||
+                en('population') !== d.population ||
+                en('includes') !== joinDefinitionList(d.includes) ||
+                en('excludes') !== joinDefinitionList(d.excludes)
+            );
+        });
+        expect(drift.map((d) => d.id)).toStrictEqual([]);
+    });
+
+    it('every definition has Bulgarian label, population, includes and excludes', () => {
+        const untranslated: string[] = [];
+        for (const d of defs) {
+            for (const f of ['label', 'population', 'includes', 'excludes']) {
+                const value = catalogValue('bg', `agentMetrics.${d.id}.${f}`);
+                if (value !== '—' && !CYRILLIC.test(value)) untranslated.push(`${d.id}.${f}`);
+            }
+        }
+        expect(untranslated).toStrictEqual([]);
+    });
+});
+
+describe('I4: agent control tests and audit procedures read in Bulgarian', () => {
+    it('every check’s title is the shared one, and reads in Bulgarian', () => {
+        const src = codeOf(fs.readFileSync(`${__dirname}/../../src/app-layer/services/agent-control-tests.ts`, 'utf8'));
+        const ids = declarationOf(src, 'AGENTIC_CHECK_IDS').match(/'AGENTIC_[A-Z0-9_]+'/g)?.map((s) => s.slice(1, -1)) ?? [];
+        expect(ids.sort()).toStrictEqual(Object.keys(AGENTIC_CHECK_TITLES).sort());
+        // Every entry of the registry names its title from the shared map.
+        const named = [...declarationOf(src, 'AGENTIC_CHECKS').matchAll(/\btitle:\s*AGENTIC_CHECK_TITLES\.(\w+)/g)].map((m) => m[1]);
+        expect(named.sort()).toStrictEqual(ids.sort());
+        for (const [id, english] of Object.entries(AGENTIC_CHECK_TITLES)) {
+            expect(catalogValue('en', `agentChecks.title.${id}`)).toBe(english);
+            expect(foreignWords(catalogValue('bg', `agentChecks.title.${id}`))).toStrictEqual([]);
+        }
+    });
+
+    it('a stock plan name reads in Bulgarian; a renamed one is shown as written', () => {
+        const tChecks = Object.assign(scoped('agentChecks'), {
+            has: (k: string) => { try { catalogValue('bg', `agentChecks.${k}`); return true; } catch { return false; } },
+        });
+        const tProcedures = Object.assign(scoped('audits.workpaperReviews.procedureName'), {
+            has: (k: string) => {
+                try { catalogValue('bg', `audits.workpaperReviews.procedureName.${k}`); return true; } catch { return false; }
+            },
+        });
+        for (const title of Object.values(AGENTIC_CHECK_TITLES)) {
+            expect(foreignWords(localizedPlanName(`${ASSURANCE_PLAN_PREFIX}${title}`, tChecks, tProcedures))).toStrictEqual([]);
+        }
+        for (const id of LIBRARY_V1_PROCEDURE_IDS) {
+            const shown = localizedPlanName(
+                `${PROCEDURE_PLAN_PREFIX}${AUDIT_PROCEDURE_LIBRARY_V1[id].title} (${id})`,
+                tChecks,
+                tProcedures,
+            );
+            expect(shown).toContain(catalogValue('bg', `audits.workpaperReviews.procedureName.${procedureNameKey(id)}`));
+            expect(foreignWords(shown.replace(`(${id})`, ''))).toStrictEqual([]);
+        }
+        expect(localizedPlanName('Quarterly access check', tChecks, tProcedures)).toBe('Quarterly access check');
+        expect(localizedPlanName(`${ASSURANCE_PLAN_PREFIX}our own wording`, tChecks, tProcedures)).toBe(
+            `${ASSURANCE_PLAN_PREFIX}our own wording`,
+        );
+    });
+
+    it('every library procedure has a Bulgarian name', () => {
+        for (const id of LIBRARY_V1_PROCEDURE_IDS) {
+            const key = `audits.workpaperReviews.procedureName.${procedureNameKey(id)}`;
+            expect(catalogValue('en', key)).toBe(AUDIT_PROCEDURE_LIBRARY_V1[id].title);
+            expect(foreignWords(catalogValue('bg', key))).toStrictEqual([]);
+        }
+    });
+});
+
+describe('I4: workflow names read in Bulgarian', () => {
+    it('every registered workflow has its name and description in both catalogs', () => {
+        for (const w of listWorkflowDefinitions()) {
+            const key = `agentWorkflows.${workflowMessageKey(w.key)}`;
+            expect(catalogValue('en', `${key}.name`)).toBe(w.name);
+            expect(catalogValue('en', `${key}.description`)).toBe(w.description);
+            expect(foreignWords(catalogValue('bg', `${key}.name`))).toStrictEqual([]);
+            expect(foreignWords(catalogValue('bg', `${key}.description`))).toStrictEqual([]);
+        }
+    });
+
+    it('no page shows a definition’s own name or description', () => {
+        // `def.name` / `w.name` of a workflow definition reaches the page only
+        // through `localizedWorkflowName`. The scan reads the files that load
+        // the registry.
+        const offenders: string[] = [];
+        for (const file of repoFiles({ under: 'src', extensions: ['.tsx'] })) {
+            const src = codeOf(fs.readFileSync(file, 'utf8'));
+            if (!/\b(?:get|list)WorkflowDefinitions?\b/.test(src)) continue;
+            const unwrapped = src.split('\n').filter(
+                (line) => /\b(?:def\??|w)\.(?:name|description)\b/.test(line) && !/localizedWorkflow(?:Name|Description)\(/.test(line),
+            );
+            if (unwrapped.length > 0) offenders.push(`${repoRelative(file)}: ${unwrapped[0].trim()}`);
+        }
+        expect(offenders).toStrictEqual([]);
     });
 });

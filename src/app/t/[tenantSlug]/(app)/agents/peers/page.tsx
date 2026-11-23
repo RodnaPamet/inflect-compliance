@@ -9,6 +9,7 @@ import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
 import { listVendors } from '@/app-layer/usecases/vendor';
 import { listRegisteredAgents } from '@/app-layer/usecases/agent-registry';
 import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
+import { localizedWorkflowName } from '@/lib/agentic/workflow-labels';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity } from '@/lib/permissions';
 
@@ -39,6 +40,7 @@ export const dynamic = 'force-dynamic';
 export default async function PeersPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
     const resolved = await params;
     const ctx = await getTenantCtx(resolved);
+    const tWorkflows = await getTranslations('agentWorkflows');
 
     if (!ctx.appPermissions?.admin?.agent_registry) {
         const t = await getTranslations('agents');
@@ -111,7 +113,7 @@ export default async function PeersPage({ params }: { params: Promise<{ tenantSl
             // required input could never be started by one.
             workflows={listWorkflowDefinitions()
                 .filter((w) => (w.requiredInput ?? []).length === 0)
-                .map((w) => ({ id: w.key, label: w.name }))}
+                .map((w) => ({ id: w.key, label: localizedWorkflowName(w.key, w.name, tWorkflows) }))}
         />
     );
 }

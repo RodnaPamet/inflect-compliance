@@ -10,6 +10,7 @@ import { listRegisteredAgents } from '@/app-layer/usecases/agent-registry';
 import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
+import { localizedWorkflowName } from '@/lib/agentic/workflow-labels';
 import { NotFoundError } from '@/lib/errors/types';
 
 import { PeerDetailClient, type PeerDetail } from './PeerDetailClient';
@@ -47,6 +48,7 @@ export default async function PeerDetailPage({
 }) {
     const resolved = await params;
     const ctx = await getTenantCtx(resolved);
+    const tWorkflows = await getTranslations('agentWorkflows');
     const admin = ctx.appPermissions?.admin;
 
     if (!admin?.agent_registry) {
@@ -139,7 +141,10 @@ export default async function PeerDetailPage({
             .filter((a) => a.status !== 'RETIRED')
             .map((a) => ({ id: a.id, name: a.name })),
         agentsCapped: agentsRead.length > AGENT_CAP ? AGENT_CAP : null,
-        workflows: listWorkflowDefinitions().map((w) => ({ key: w.key, name: w.name })),
+        workflows: listWorkflowDefinitions().map((w) => ({
+            key: w.key,
+            name: localizedWorkflowName(w.key, w.name, tWorkflows),
+        })),
         outbound,
         owners:
             members === null
