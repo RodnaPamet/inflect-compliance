@@ -80,9 +80,15 @@ describe("Mobile PR-2 — responsive DataTable", () => {
         expect(hook).toMatch(/max-width: 767\.98px/);
     });
 
-    it("card values wrap (break-words), never truncate a cell value", () => {
+    it("card values wrap (break-words)", () => {
+        // The other half of this used to be `not.toMatch(/\btruncate\b/)`
+        // over the whole file. It went when the card started turning a
+        // page's own INLINE `truncate` span into a block-level one (an inline
+        // span never ellipsises, so its text ran past the card's edge). That
+        // a long value wraps, and that a page-chosen truncate becomes a real
+        // ellipsis, are asserted as rendered behaviour in
+        // `tests/rendered/data-table-mobile-cards.test.tsx`.
         expect(cards).toMatch(/break-words/);
-        expect(cards).not.toMatch(/\btruncate\b/);
     });
 
     it("the card list renders from the shared tanstack table instance", () => {
