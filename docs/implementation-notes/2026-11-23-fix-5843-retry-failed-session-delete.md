@@ -1,4 +1,4 @@
-# 2026-11-12 — Retry a failed Managed Agents session delete periodically (#5843)
+# 2026-11-23 — Retry a failed Managed Agents session delete periodically (#5843)
 
 **Commit:** `fix(agents): retry a Managed Agents session whose delete failed (#5843)`
 
