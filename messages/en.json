@@ -16055,7 +16055,8 @@
       "recentActivityEmpty": "no recent activity",
       "historyFailed": "The history did not load. Close this panel and open it again.",
       "headlineLabel": "Headline",
-      "contextLabel": "Context"
+      "contextLabel": "Context",
+      "noThreatAssessment": "No active threat assessment"
     },
     "tenants": {
       "title": "Workspaces",

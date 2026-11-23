@@ -16055,7 +16055,8 @@
       "recentActivityEmpty": "няма скорошна активност",
       "historyFailed": "Историята не се зареди. Затворете панела и го отворете отново.",
       "headlineLabel": "Заглавие",
-      "contextLabel": "Контекст"
+      "contextLabel": "Контекст",
+      "noThreatAssessment": "Няма активна оценка на заплахите"
     },
     "tenants": {
       "title": "Работни пространства",
