@@ -1219,7 +1219,13 @@ pack / narrowing / sample table), and `AgentPolicyCardVersion`,
 `IncidentEvidence` left the retained set and are removed with their parent. A
 retained model's FK to a purged table must be a column-scoped `SET NULL`;
 `tests/guardrails/tenant-purge-retained-never-cascades.test.ts` derives the
-cascade closure from the schema, with no allowlist.
+cascade closure from the schema, with no allowlist. That SET NULL is an UPDATE of
+the retained row, so an immutability trigger on the retained table must admit it
+(#5848: `ai_decision_log_immutable()` refused `aiSystemId` → NULL and no tenant
+that had run an agent could be purged); it now admits exactly the FK action's
+write, from a nested trigger with every other column unchanged.
+`tests/integration/tenant-purge-retained-set-null-admitted.test.ts` exercises
+every such FK against its table's real triggers, from the live catalogue.
 Adding a new model ⇒ classify it in the doc's inventory table (the
 `tests/guardrails/retention-policy-coverage.test.ts` ratchet fails CI until you do).
 
@@ -3752,7 +3758,10 @@ are each one careless edit from being undone:
 - **The only other destination is the Playwright faux** (`e2e-faux.ts`): a
   constant loopback port, chosen only when `NEXT_TEST_MODE` AND `AUTH_TEST_MODE`
   are both `1`. It is a deployment decision no tenant value reaches. Do not make
-  the port or the origin configurable.
+  the port or the origin configurable. Since Step 5d the engine's client takes
+  the same seam (`managedAgentsOrigin` in `tool-runner/client.ts`), and its
+  middleware pins whichever origin the client was built for, so a client built
+  for Anthropic still refuses the faux and the reverse.
 - **Test is one `GET /v1/agents?limit=1`** through `safeFetch`, never calls
   `markAuthFailure` and creates nothing in the workspace. It sends
   `anthropic-workspace-id` (so an organisation-level key works) and passes only
@@ -3760,12 +3769,14 @@ are each one careless edit from being undone:
   key for another workspace, or an answer naming none, is invalid. Anthropic's
   error text is used to classify and is never shown.
 
-**The Managed Agents engine is built and cannot run** (Step 5b, #4165;
-`src/lib/agentic/managed-agents/`). `DRIVER_IMPLEMENTED['managed-agents']` is
-false and `MANAGED_AGENTS` is a READ_ONLY `AgentDriverMode` (deploy 1 of 2): a
-stored value reads as itself, `resolveAgentDriver` answers it static with
-`DRIVER_NOT_IMPLEMENTED`, and no writer accepts it. Step 5d flips the flag.
-Rules that are each one careless edit from being undone:
+**The Managed Agents engine runs a profile in the customer's own workspace**
+(built in Step 5b, #4165, `src/lib/agentic/managed-agents/`; turned on in Step
+5d, #4167). `DRIVER_IMPLEMENTED['managed-agents']` is true, flipped in a commit
+of its own so that reverting it is the rollback, and `MANAGED_AGENTS` is
+WRITTEN (deploy 2 of 2, once production ran `960503a11`). It still runs nothing
+unless the operator sets `AGENT_MANAGED_AGENTS`, which stays OFF in production
+until #5797 is settled, and an owner chooses it. Rules that are each one
+careless edit from being undone:
 
 - **The tenant's instructions never go on the agent.** An agent can only be
   archived, never deleted, so `agentBodyFor` writes `system` = Inflect's
@@ -3798,6 +3809,55 @@ Rules that are each one careless edit from being undone:
   variances, both citing decision 3: the kill switch (Anthropic stops at a safe
   boundary; asserted instead: no tool runs after it and the session is deleted)
   and the decision-row digest.
+
+**Choosing the engine, and what a run of it may assume** (Step 5d, #4167).
+Rules that are each one careless edit from being undone:
+
+- **The choice needs exactly one enabled `anthropic-workspace` connection.**
+  `setAgentDriverSetting` refuses the move TO `MANAGED_AGENTS` with a 409,
+  `MANAGED_AGENTS_NO_WORKSPACE` or `MANAGED_AGENTS_AMBIGUOUS_WORKSPACE`, before
+  anything is written; every move away stays instant. The page lists the engine
+  only while `AGENT_MANAGED_AGENTS` is on (or the workspace already holds it),
+  and offers it only with the workspace `CONNECTED`
+  (`readWorkspaceConnectionState`, the run's own where clause, no decrypt).
+- **A profile asks for the engine its workspace chose** (`profileEngineRequestFor`
+  in `agent-profile.ts`): Managed Agents for `MANAGED_AGENTS`, the Tool Runner
+  for everything else. Admission reads the workspace's stored mode; the worker
+  and resume read the run's RECORDED driver (`readRecordedRunDriver`), never the
+  current choice, because the worker executes what admission pinned. It is a
+  request: `selectRunDriver` still intersects it with what the gate permits.
+- **Every switch is read before the short-circuit.** `resolveDriverForTenant`
+  used to return `ENV_DISABLED` when Flue's and the Tool Runner's switches were
+  both off, so a deployment that turned on only `AGENT_MANAGED_AGENTS` ran every
+  chosen tenant static. A fourth engine's switch goes into both short-circuits.
+- **A Test run on this engine tries the approved version in force.** Approval
+  is what provisions a version's agent, so a version under review has none: the
+  start refuses it `TEST_RUN_NEEDS_APPROVED_VERSION` before a run row exists, and
+  the Behaviour tab disables its button (`approvedVersionOnly`).
+- **A removed-then-re-enabled connection runs nothing it archived.** A provision
+  is ARCHIVED when a `CONNECTION_REMOVED` clean-up of its connection covers it
+  (`coversUntil >= createdAt`, the clean-up's own scope rule, read in
+  `readProvision`). A run of it is refused `managed_agents_agent_archived` before
+  any client exists, and `readProfileAgent` skips archived rows, so the NEXT
+  approved version creates a new agent instead of updating one Anthropic would
+  refuse. The version in force is not re-provisioned in place: its row is unique
+  per (version, connection), and rewriting it would either drop the archived
+  agent's id or put the new agent inside an open clean-up's scope.
+- **The run timeline labels span-derived decision rows**
+  (`spanDerivedDecisionOf` in `run-step-projection.ts`): a MODEL_CALL carrying
+  `spanDerived: true` AND `inputBasis: 'INFLECT_SENT'` and a decision digest,
+  which the engine writes beside its `anthropic-managed-agents:span-derived` row,
+  gets the sentence that the call's prompt was not visible to Inflect (decision 3).
+- **The E2E runs the queued job with the worker's own body.** The harness has no
+  worker (owner decision 2026-10-29 on #4150), so
+  `tests/e2e/managed-agents-engine.spec.ts` runs `tests/e2e/run-queued-agent-run.ts`
+  for its one run id, with both seam flags set; the faux keeps each workspace id
+  apart (`/__faux/sessions?workspace=…`), so specs never see each other's objects.
+- **Known limit: a DSAR erasure misses a tenant where the person never acted**
+  (#5802). It finds the person's tenants from their own audit rows, so a member
+  added by SCIM, SSO or org provisioning who never acted keeps any KEPT session
+  there. The fix belongs with the erasure's operator entry point, which does not
+  exist yet (`eraseUser` has no caller in `src/`).
 
 **What Inflect created in a customer's workspace is removed by recorded id on
 purge, connection removal and DSAR erasure** (Step 5c, #4166;
@@ -3840,7 +3900,7 @@ undone:
   new plaintext column on any model away from the manifest's field names.
 - **The reconciliation** (`reconcileLostSessionDeletes`, run by
   `data-lifecycle` over every tenant that is not soft-deleted, disabled
-  connections included) does two things, and is the ONE periodic retry of a
+  connections included) does three things, and is the ONE periodic retry of a
   session: do not open a second. It retries every session whose LATEST step is
   `SESSION_DELETE_FAILED` (#5843) through the clean-up's own `deleteSession`,
   and on done or a 404 writes `SESSION_DELETED` on the run's ledger through
@@ -3852,9 +3912,16 @@ undone:
   `inputJson`; per tenant per pass it reads the newest
   `FAILED_DELETE_READ_CAP` (1,000; more is `LEDGER_TRUNCATED`) and attempts at
   most `FAILED_DELETE_RETRY_BATCH` (100), oldest first, under the 60 s deadline.
-  It also reads back every session recorded DELETED in the last seven days,
-  deletes one that still exists, and meters it
-  (`agentic.managed_agents.lost_delete`).
+  It settles every session a dead worker ABANDONED (Step 5H, #4169): only
+  `SESSION_CREATED` on the ledger, recorded in the last seven days and longer
+  ago than `ABANDONED_SESSION_MIN_AGE_MS` (the wall clock plus ten minutes, so
+  no live segment can still settle it), as the run's own settle would have:
+  recorded `SESSION_KEPT` on a connection that keeps sessions, else deleted and
+  recorded `SESSION_DELETED` (`agentic.managed_agents.abandoned_session`). A run
+  never re-attaches to a session, so a SIGKILL, an OOM or a SIGTERM drain
+  leaves one behind on every retry or resume. It also reads back every session
+  recorded DELETED in the last seven days, deletes one that still exists, and
+  meters it (`agentic.managed_agents.lost_delete`).
 
 ## Testing Conventions
 

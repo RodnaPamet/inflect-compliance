@@ -313,7 +313,16 @@ export const NAV_BAR_SHELL = [
  * truncating itself.
  */
 export const NAV_BAR_SLOT_LEFT =
-    'flex min-w-0 flex-1 items-center gap-default';
+    'flex min-w-0 flex-1 items-center gap-default pointer-coarse:gap-0';
+
+/*
+ * `pointer-coarse:gap-0` on both outer slots (#5813, #5821). On a touch
+ * screen every control in the bar is a 44px box around a 22px glyph, so each
+ * already carries 11px of breath on either side; the 8px gap on top of that
+ * is what pushed a 360px phone's bar — hamburger, brand, environment badge,
+ * search, assistant, bell, avatar — past the screen edge. The glyphs still sit
+ * 22px apart. On a mouse the boxes are 22px and the gap is unchanged.
+ */
 
 /**
  * Centre-slot recipe — fixed width, never grows past the search
@@ -335,7 +344,7 @@ export const NAV_BAR_SLOT_CENTER =
  * identity".
  */
 export const NAV_BAR_SLOT_RIGHT =
-    'flex shrink-0 items-center justify-end gap-default';
+    'flex shrink-0 items-center justify-end gap-default pointer-coarse:gap-0';
 
 // ─── Brand mark (R14-PR3) ──────────────────────────────────────────
 
@@ -398,8 +407,9 @@ export const NAV_BAR_SLOT_RIGHT =
  * h1 for SEO" PR has to argue against it.
  */
 export const NAV_BAR_BRAND_CLASS = [
-    // Geometry — 28px navbar control footprint (one step below the
-    // legacy 32px; matches the bell / user-menu / mobile-menu buttons).
+    // Geometry — 22px navbar control footprint (matches the bell /
+    // user-menu / mobile-menu buttons). Painted by the inner mark; the
+    // link around it is the hit area (see `NAV_BAR_BRAND_LINK_CLASS`).
     'relative h-[22px] w-[22px] rounded-lg flex-shrink-0',
     // Flex / type
     'flex items-center justify-center',
@@ -411,8 +421,26 @@ export const NAV_BAR_BRAND_CLASS = [
     'shadow-[var(--nav-band-glow)]',
     // Slow 6s pulse via background-position pan
     'animate-nav-brand-pulse',
-    // Hover — brightness, NOT shadow/transform/scale (motion-language safe)
-    'transition-[filter] duration-200 ease-out hover:brightness-110',
+    // Hover — brightness, NOT shadow/transform/scale (motion-language safe).
+    // Keyed on the LINK's hover (`group`), which is larger than the mark on
+    // a touch screen.
+    'transition-[filter] duration-200 ease-out group-hover:brightness-110',
+].join(' ');
+
+/**
+ * **The brand link — the hit area around the mark.**
+ *
+ * 22x22 on a mouse, at least 44x44 on a touch screen (WCAG 2.5.5), with the
+ * painted mark (`NAV_BAR_BRAND_CLASS`) unchanged inside it. The mark used to
+ * BE the link, so the hamburger's `pointer-coarse:` floor could not be applied
+ * here without growing the gradient square to 44px; splitting the two lets
+ * the box grow while the brand stays the size it was designed at.
+ *
+ * The press motion and the focus ring live on the link — it is what the
+ * finger presses and what the keyboard focuses.
+ */
+export const NAV_BAR_BRAND_LINK_CLASS = [
+    'group inline-flex h-[22px] w-[22px] pointer-coarse:min-h-11 pointer-coarse:min-w-11 flex-shrink-0 items-center justify-center rounded-lg',
     // Press feedback (R14-PR11 shared slot recipe).
     NAV_BAR_SLOT_PRESS,
     // Focus story — match NavItem / Button vocabulary
@@ -449,13 +477,29 @@ export function NavBarBrand({ href, initials, ariaLabel }: NavBarBrandProps) {
             // not from the screen. So the name has to carry the initials — a
             // speech-input user reads "IC" and must be able to say it.
             aria-label={ariaLabel ?? t('brandHomeNamed', { initials })}
-            className={NAV_BAR_BRAND_CLASS}
+            className={NAV_BAR_BRAND_LINK_CLASS}
             data-testid="nav-bar-brand"
         >
-            <span aria-hidden="true">{initials}</span>
+            <span className={NAV_BAR_BRAND_CLASS} aria-hidden="true" data-testid="nav-bar-brand-mark">
+                {initials}
+            </span>
         </Link>
     );
 }
+
+// ─── Icon buttons ──────────────────────────────────────────────────
+
+/**
+ * **The top bar's icon-button recipe.**
+ *
+ * 22x22 painted, at least 44x44 on a touch screen: `pointer-coarse:` raises
+ * the floor only where the pointer is a finger, so the bar's density is
+ * unchanged on a mouse. Shared by the hamburger and by the phone-only
+ * buttons a host puts in the bar (search, the assistant) through
+ * `<TopChrome actions>`, so the controls in one bar cannot drift into
+ * different sizes.
+ */
+export const NAV_BAR_ICON_BUTTON_CLASS = `relative inline-flex items-center justify-center h-[22px] w-[22px] pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-lg text-content-muted transition-colors hover:bg-bg-muted hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${NAV_BAR_SLOT_PRESS}`;
 
 // ─── Mobile menu button (R14-PR12) ────────────────────────────────
 
@@ -493,7 +537,7 @@ export function NavBarMobileMenu({
             // where the pointer is a finger, so the bar's visual density is
             // unchanged on a mouse; `NAV_BAR_SLOT_PRESS` is a transform and
             // never contributed hit area, which is why the shortfall survived.
-            className={`md:hidden inline-flex items-center justify-center h-[22px] w-[22px] pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-lg text-content-muted transition-colors hover:bg-bg-muted hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${NAV_BAR_SLOT_PRESS}`}
+            className={`md:hidden ${NAV_BAR_ICON_BUTTON_CLASS}`}
             aria-label={ariaLabel ?? t('openNavigationMenu')}
             data-testid={dataTestId}
         >

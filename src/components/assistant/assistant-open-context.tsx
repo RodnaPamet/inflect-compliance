@@ -30,7 +30,15 @@
  * product has removed.
  */
 
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import {
+    createContext,
+    useCallback,
+    useContext,
+    useMemo,
+    useRef,
+    useState,
+    type MutableRefObject,
+} from 'react';
 
 interface AssistantOpenValue {
     open: boolean;
@@ -38,6 +46,19 @@ interface AssistantOpenValue {
     /** True while a launcher is mounted — see the header. */
     available: boolean;
     setAvailable: (next: boolean) => void;
+    /**
+     * Where focus returns when the sheet closes, when that is not the
+     * floating launcher (#5813).
+     *
+     * On a phone the floating launcher is not rendered: the assistant opens
+     * from an icon in the top bar instead, which is a different component in
+     * a different part of the tree. Without this the launcher's close would
+     * focus its own hidden button — a no-op — and a keyboard or switch user
+     * would land at the top of the document. The opener writes itself here;
+     * the launcher's close reads it and clears it. `null` means "the
+     * launcher", which is every path that does not set it.
+     */
+    returnFocusRef: MutableRefObject<HTMLElement | null>;
 }
 
 const AssistantOpenCtx = createContext<AssistantOpenValue | null>(null);
@@ -45,8 +66,9 @@ const AssistantOpenCtx = createContext<AssistantOpenValue | null>(null);
 export function AssistantOpenProvider({ children }: { children: React.ReactNode }) {
     const [open, setOpen] = useState(false);
     const [available, setAvailable] = useState(false);
+    const returnFocusRef = useRef<HTMLElement | null>(null);
     const value = useMemo<AssistantOpenValue>(
-        () => ({ open, setOpen, available, setAvailable }),
+        () => ({ open, setOpen, available, setAvailable, returnFocusRef }),
         [open, available],
     );
     return <AssistantOpenCtx.Provider value={value}>{children}</AssistantOpenCtx.Provider>;
@@ -66,8 +88,15 @@ export function AssistantOpenProvider({ children }: { children: React.ReactNode 
 export function useAssistantOpen(): AssistantOpenValue {
     const ctx = useContext(AssistantOpenCtx);
     const noopSet = useCallback(() => {}, []);
+    const inertRef = useRef<HTMLElement | null>(null);
     const inert = useMemo<AssistantOpenValue>(
-        () => ({ open: false, setOpen: noopSet, available: false, setAvailable: noopSet }),
+        () => ({
+            open: false,
+            setOpen: noopSet,
+            available: false,
+            setAvailable: noopSet,
+            returnFocusRef: inertRef,
+        }),
         [noopSet],
     );
     return ctx ?? inert;

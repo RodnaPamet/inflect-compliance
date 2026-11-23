@@ -70,6 +70,19 @@ export interface RunStepFeedRow {
      */
     decisionDigest: string | null;
     /**
+     * TRUE WHEN THIS STEP'S ART 12 ROW IS SPAN-DERIVED (Step 5d of
+     * `docs/claude-managed-agents-design.md`, #4167): a MODEL_CALL of the
+     * Managed Agents engine, which runs the model loop in the customer's own
+     * Anthropic workspace. Inflect saw that the call ended and what it cost, never
+     * its prompt, so its decision row (provider
+     * `anthropic-managed-agents:span-derived`) digests what Inflect SENT the
+     * session (owner decision 3). The engine writes that row and this step in the
+     * same handler, and marks the step `spanDerived: true` with
+     * `inputBasis: 'INFLECT_SENT'`, which is what this reads. False for every
+     * other step, and for a step with no decision row to label.
+     */
+    spanDerivedDecision: boolean;
+    /**
      * WHEN THIS STEP IS A DELEGATION, what it delegated (#3473 part 3).
      *
      * Null for every other step, which is almost all of them — a run that
@@ -186,6 +199,26 @@ export function decisionDigestOf(inputJson: string | null): string | null {
         // A malformed blob is a display problem for the payload panel, not a
         // reason to fail the page.
         return null;
+    }
+}
+
+/**
+ * Is this step's decision row SPAN-DERIVED (Step 5d)? Only a MODEL_CALL whose
+ * input says `spanDerived: true` AND `inputBasis: 'INFLECT_SENT'`, the pair the
+ * Managed Agents engine records beside the row it writes under
+ * `anthropic-managed-agents:span-derived`, and only where a decision digest
+ * exists to link to. A malformed blob is not span-derived: it costs the label,
+ * never the row.
+ */
+export function spanDerivedDecisionOf(kind: string, inputJson: string | null): boolean {
+    if (kind !== 'MODEL_CALL' || !inputJson || decisionDigestOf(inputJson) === null) return false;
+    try {
+        const parsed: unknown = JSON.parse(inputJson);
+        if (!parsed || typeof parsed !== 'object') return false;
+        const { spanDerived, inputBasis } = parsed as { spanDerived?: unknown; inputBasis?: unknown };
+        return spanDerived === true && inputBasis === 'INFLECT_SENT';
+    } catch {
+        return false;
     }
 }
 
@@ -388,6 +421,10 @@ export function projectRunSteps(
             // A GUARDED parse, and only for this one field — so a malformed
             // blob costs the LINK and not the page.
             decisionDigest: decisionDigestOf(s.inputJson),
+            // Whether that row is span-derived (Step 5d): the run page says so
+            // beside its link, so a reviewer knows the call's prompt was not
+            // visible to Inflect.
+            spanDerivedDecision: spanDerivedDecisionOf(s.kind, s.inputJson),
             // A SECOND guarded parse of the same column, and kept separate
             // from the digest's rather than folded into one pass. They answer
             // different questions about different step kinds, and a combined

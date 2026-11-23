@@ -48,6 +48,12 @@ import { listWorkflowDefinitions } from './workflow-registry';
  */
 export async function resolveDriverForTenant(tenantId: string): Promise<AgentDriverDecision> {
     const envEnabled = flueEnvEnabled(env.AGENT_DRIVER_FLUE);
+    // The Managed Agents switch (Step 5b) is a third engine's, and a deployment
+    // that turns on only it must still read the tenant's choice (Step 5d): the
+    // two short-circuits below used to name only Flue and the Tool Runner, so
+    // they answered ENV_DISABLED for every tenant there, the chosen engine
+    // included.
+    const managedAgentsEnvEnabled = managedAgentsEnabled();
 
     // Short-circuit BEFORE any query. When every engine's switch is off the
     // tenant's value cannot change the answer, so reading it would be a
@@ -56,7 +62,7 @@ export async function resolveDriverForTenant(tenantId: string): Promise<AgentDri
     // that has not enabled this. The Tool Runner's switch is OFF only when the
     // deployment says so; UNSET leaves it to the tenant's organization (#4557),
     // which is one read, and only on that path.
-    if (!envEnabled && readDeploymentSwitch(env.AGENT_DRIVER_TOOL_RUNNER) === 'OFF') {
+    if (!envEnabled && !managedAgentsEnvEnabled && readDeploymentSwitch(env.AGENT_DRIVER_TOOL_RUNNER) === 'OFF') {
         return { driver: STATIC_DRIVER, reason: 'ENV_DISABLED' };
     }
 
@@ -68,7 +74,7 @@ export async function resolveDriverForTenant(tenantId: string): Promise<AgentDri
         // stored mode, so an unread switch takes the same fallback: static,
         // never a grant.
         toolRunnerEnvEnabled = (await toolRunnerDecisionFor({ tenantId })).on;
-        if (!envEnabled && !toolRunnerEnvEnabled) {
+        if (!envEnabled && !toolRunnerEnvEnabled && !managedAgentsEnvEnabled) {
             return { driver: STATIC_DRIVER, reason: 'ENV_DISABLED' };
         }
         // AS TEXT (#4224), through the reader the settings usecase also uses.
@@ -88,14 +94,11 @@ export async function resolveDriverForTenant(tenantId: string): Promise<AgentDri
         return { driver: STATIC_DRIVER, reason: 'TENANT_NOT_OPTED_IN' };
     }
 
-    // The Managed Agents switch (Step 5b) answers only a stored MANAGED_AGENTS,
-    // which no writer accepts in this build; `DRIVER_IMPLEMENTED` refuses it
-    // whatever it says. It does not reopen the short-circuits above: with the
-    // other two switches off, such a tenant reads ENV_DISABLED, static either way.
+    // The Managed Agents switch answers only a tenant that chose MANAGED_AGENTS.
     const decision = resolveAgentDriver({
         envEnabled,
         toolRunnerEnvEnabled,
-        managedAgentsEnvEnabled: managedAgentsEnabled(),
+        managedAgentsEnvEnabled,
         tenantSetting: stored,
     });
     if (decision.driver !== 'flue') return decision;
@@ -142,6 +145,15 @@ export async function narrowToWhatAWorkflowAsksFor(
     }
     if (decision.driver === 'tool-runner') {
         return (await somethingRequestsToolRunner(tenantSlug))
+            ? decision
+            : { driver: STATIC_DRIVER, reason: 'NO_WORKFLOW_REQUESTS_IT' };
+    }
+    // MANAGED AGENTS (Step 5d) is asked for by agent profiles alone: a profile
+    // of a workspace that chose it compiles asking for it
+    // (`profileEngineRequestFor`), and no registered workflow does. So it is
+    // reachable exactly when the profile surface is on for the workspace.
+    if (decision.driver === 'managed-agents') {
+        return (await agentProfilesOnFor(tenantSlug))
             ? decision
             : { driver: STATIC_DRIVER, reason: 'NO_WORKFLOW_REQUESTS_IT' };
     }

@@ -35,6 +35,11 @@
  * nullable column, as `IdentityWriteJournal` and `ExternalWriteJournal` do) —
  * or to stop calling it retained in the document.
  *
+ * A SET NULL is an UPDATE of the retained row, so this guard's green is not
+ * the whole answer: an immutability trigger on the retained table can refuse
+ * it and fail the purge (#5848). That half needs the real triggers, so it is
+ * a DB-backed sibling: `tests/integration/tenant-purge-retained-set-null-admitted.test.ts`.
+ *
  * The schema, not the database, is read because this runs without one; the two
  * agree because `schema-drift-gate-runs-in-ci` makes CI prove the migrations
  * produce this schema. The schema's 205 cascade relations equal the live

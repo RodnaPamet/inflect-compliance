@@ -111,6 +111,7 @@ function step(seq: number, kind: string, status: string): RunStepRow {
         inputJson: null,
         outputJson: null,
         decisionDigest: null,
+        spanDerivedDecision: false,
         delegation: null,
         subagent: null,
         compaction: null,

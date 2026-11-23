@@ -2161,6 +2161,7 @@ export function recordAuditPackSnapshotEncryption(attrs: {
 let _managedAgentsCleanup: Counter | undefined;
 let _managedAgentsLostDelete: Counter | undefined;
 let _managedAgentsFailedDeleteRetry: Counter | undefined;
+let _managedAgentsAbandonedSession: Counter | undefined;
 
 /**
  * One remote clean-up record settled or retried: the purge's one attempt, or a
@@ -2224,4 +2225,24 @@ export function recordManagedAgentsFailedDeleteRetry(attrs: { outcome: string })
         });
     }
     _managedAgentsFailedDeleteRetry.add(1, { outcome: attrs.outcome });
+}
+
+/**
+ * The abandoned-session pass (Step 5H, #4169): a session whose run's ledger
+ * holds only `SESSION_CREATED`, older than any segment of a run lasts, left
+ * by a worker that died mid-run. One count per session per pass. `outcome` is
+ * `KEPT` (the connection keeps sessions, so it is recorded kept and not
+ * deleted), the clean-up's named outcome (`DONE` and `ALREADY_GONE` are
+ * deleted and recorded DELETED; anything else is left for the next pass), why
+ * it could not be attempted (`CONNECTION_UNREADABLE`, `CONNECTION_GONE`,
+ * `SDK_AMBIENT_HEADERS_SET`), or `LEDGER_WRITE_FAILED`.
+ */
+export function recordManagedAgentsAbandonedSession(attrs: { outcome: string }): void {
+    if (!_managedAgentsAbandonedSession) {
+        _managedAgentsAbandonedSession = getMeter().createCounter('agentic.managed_agents.abandoned_session', {
+            description: 'Sessions a dead worker abandoned in a customer Anthropic workspace, settled by outcome',
+            unit: '1',
+        });
+    }
+    _managedAgentsAbandonedSession.add(1, { outcome: attrs.outcome });
 }

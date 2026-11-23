@@ -25,11 +25,16 @@
  *
  * Created with `agent_with_overrides` at the pinned version, whose `system`
  * override is the ONE place the tenant's instructions are sent; the
- * connection's environment; a dollar `budget` derived from the run's caps at
- * the tier's list price (`sessionBudgetFor`), a backstop behind the run's own
- * token count; and metadata naming the tenant and the run by id. The session
+ * connection's environment; a dollar `budget` derived from what is left of
+ * the run's caps at the tier's list price (`sessionBudgetFor`), a backstop
+ * behind the run's own token count; and metadata naming the tenant and the
+ * run by id. The session
  * id is written to the ledger AT ONCE (`SESSION_CREATED`), so a crash leaves a
- * record Step 5c can clean up by id.
+ * record Step 5c can clean up by id. A create Anthropic REFUSES settles the run
+ * with its status and error type, never its text; one that gets NO answer may
+ * still have made a session, which is found by this run's metadata on the
+ * pinned agent, recorded and settled (`settleUnrecordedSessions`, Step 5H). The
+ * create, like every POST here, is never re-sent by the SDK (`SEND_ONCE`).
  *
  * ── THE STREAM ──────────────────────────────────────────────────────────────
  *
@@ -59,6 +64,10 @@
  *   agent.tool_use,
  *   agent.mcp_tool_use     the agent reached beyond its custom tools, which an
  *                          agent Inflect provisioned cannot: the run stops.
+ *   session.updated        with a new `agent` (tools, MCP servers) or `budget`:
+ *                          someone with the workspace's key edited the session
+ *                          the drift check passed, and the run stops at once
+ *                          rather than at the first call that uses it (5H).
  *   session.status_idle    `requires_action` runs the queue; any other reason
  *                          ends the stream.
  *
@@ -141,12 +150,14 @@ import { recordWorkflowContextIntegrityHalt } from '@/lib/observability/metrics'
 import {
     MANAGED_AGENTS_GUARD_SOURCE,
     MANAGED_AGENTS_PREFIX,
+    SEND_ONCE,
     agentDrift,
     sessionBudgetFor,
     sessionMetadataFor,
     sessionSystemFor,
     type RetrievedAgent,
 } from './definition';
+import { listCrashWindow } from './cleanup';
 import { recordManagedAgentsDecision, type InflectSentInput } from './model-decision';
 import { sessionStepRecord, type SessionLifecycle } from './session-ledger';
 import type { ProvisionRecord } from './store';
@@ -196,6 +207,14 @@ export const MODEL_UNPRICED_MESSAGE =
     `${MANAGED_AGENTS_PREFIX}_model_unpriced: no list price is known for this profile's model, so no spend cap could `
     + 'be set on the session. Nothing was sent.';
 
+export const SESSION_NOT_CREATED_PREFIX = `${MANAGED_AGENTS_PREFIX}_session_not_created`;
+
+/** The provider's status and error type, never its text. A lost response has neither. */
+export function sessionNotCreatedMessage(code: { status: number | null; type: string | null }): string {
+    const what = code.status !== null ? `provider status ${code.status}${code.type ? ` (${code.type})` : ''}` : 'the provider did not answer';
+    return `${SESSION_NOT_CREATED_PREFIX}: ${what}. Nothing was run.`;
+}
+
 export const KILL_UNREADABLE_MESSAGE =
     `${MANAGED_AGENTS_PREFIX}_kill_switch_unreadable: the kill switch could not be read, so the run stopped rather `
     + 'than carry on unchecked.';
@@ -211,6 +230,11 @@ export const BREAKER_UNREADABLE_MESSAGE =
 export const BEYOND_CUSTOM_TOOLS_MESSAGE =
     `${MANAGED_AGENTS_PREFIX}_reached_beyond_custom_tools: the agent called a tool Inflect did not provision, which `
     + 'only an edit made in the Anthropic Console can add. The run stopped; no such call was answered by Inflect.';
+
+export const SESSION_EDITED_MESSAGE =
+    `${MANAGED_AGENTS_PREFIX}_session_edited: the session's tools, MCP servers or spend cap were changed in your `
+    + 'Anthropic workspace while the run was going on, which only someone holding the workspace\'s key can do. The run '
+    + 'stopped; no call after the change was run by Inflect.';
 
 export const STREAM_LOST_MESSAGE =
     `${MANAGED_AGENTS_PREFIX}_stream_lost: the session's event stream dropped ${MAX_STREAM_RECONNECTS} times, so `
@@ -349,6 +373,8 @@ export async function executeManagedAgentsRun(
         worst: StepGuardObservation['verdict'];
         worstRuleIds: readonly string[];
         beyondCustomTools: boolean;
+        /** Someone else changed the session's tools, MCP servers or spend cap mid-run (Step 5H). */
+        sessionEdited: boolean;
         /** The stop is draining the session: no latch may cut the drain's own read. */
         draining: boolean;
     } = {
@@ -362,6 +388,7 @@ export async function executeManagedAgentsRun(
         worst: 'CLEAN',
         worstRuleIds: [],
         beyondCustomTools: false,
+        sessionEdited: false,
         draining: false,
     };
     // Aborted by every stop: it ends the read of the stream, never a call the
@@ -384,7 +411,7 @@ export async function executeManagedAgentsRun(
         if (state.worst !== 'CLEAN') return { kind: 'GUARD' };
         return null;
     };
-    const isStopped = (): boolean => stopped() !== null || state.beyondCustomTools;
+    const isStopped = (): boolean => stopped() !== null || state.beyondCustomTools || state.sessionEdited;
 
     const checkKill = async (): Promise<boolean> => {
         if (state.killVerdict || state.killUnreadable || state.operatorAborted) return true;
@@ -553,10 +580,14 @@ export async function executeManagedAgentsRun(
         return { status, stepFailures: 0 };
     }
 
+    // What the run has LEFT, not its whole cap (Step 5H, #4169): a resumed
+    // run's earlier segments spent part of it, and each segment's session is a
+    // new one with a budget of its own, so a whole-cap backstop per session
+    // would let a run's sessions together spend its cap once per segment.
     const sessionBudget = sessionBudgetFor({
         model: route.model,
-        tokensLimit: caps.TOKENS.limit,
-        runtimeMsLimit: caps.RUNTIME_MS.limit,
+        tokensLimit: budget.remaining('TOKENS'),
+        runtimeMsLimit: budget.remaining('RUNTIME_MS'),
     });
     if (!sessionBudget) {
         const status = await failRun(ctx, runId, MODEL_UNPRICED_MESSAGE);
@@ -574,18 +605,42 @@ export async function executeManagedAgentsRun(
     });
 
     // ── The session ─────────────────────────────────────────────────────────
-    const session = await client.beta.sessions.create({
-        agent: {
-            type: 'agent_with_overrides',
-            id: pinned.anthropicAgentId,
-            version: pinned.anthropicAgentVersion,
-            system,
-        },
-        environment_id: pinned.environmentId,
-        budget: sessionBudget,
-        metadata: sessionMetadataFor(ctx.tenantId, runId),
-    });
-    const sessionId = session.id;
+    // A refusal is SETTLED with the provider's codes, never thrown (Step 5H,
+    // #4169): the SDK's error message carries the response body, and a throw
+    // would put it in the worker's `job failed` log line and BullMQ's stored
+    // failure, then retry the run into another session create.
+    let sessionId: string;
+    try {
+        const session = await client.beta.sessions.create({
+            agent: {
+                type: 'agent_with_overrides',
+                id: pinned.anthropicAgentId,
+                version: pinned.anthropicAgentVersion,
+                system,
+            },
+            environment_id: pinned.environmentId,
+            budget: sessionBudget,
+            metadata: sessionMetadataFor(ctx.tenantId, runId),
+        }, SEND_ONCE);
+        sessionId = session.id;
+    } catch (err) {
+        const code = providerCodeOf(err);
+        logger.warn('managed-agents: the session could not be created', {
+            component: 'agentic',
+            runId: run.runId,
+            providerStatus: code.status,
+            providerErrorType: code.type,
+        });
+        // NO ANSWER IS NOT "NOT CREATED" (Step 5H, #4169). The request may have
+        // reached Anthropic and made a session whose id never came back, and
+        // nothing would record it. Find it as the purge's crash window does:
+        // sessions listed by the pinned agent only, taken only when their
+        // metadata names this tenant AND this run. Each is recorded, then
+        // settled like any other (deleted, or recorded kept). Never throws.
+        if (code.status === null) await settleUnrecordedSessions(ctx, runId, client, pinned.anthropicAgentId, route, binding);
+        const status = await failRun(ctx, runId, sessionNotCreatedMessage(code));
+        return { status, stepFailures: 1 };
+    }
     // The wall clock: the read of the stream stops at the run's deadline.
     let wallTimer: ReturnType<typeof setTimeout> | null = null;
     const armWallClock = (): void => {
@@ -626,7 +681,7 @@ export async function executeManagedAgentsRun(
             answered.add(r.id);
             pending.delete(r.id);
         }
-        await client.beta.sessions.events.send(sessionId, { events });
+        await client.beta.sessions.events.send(sessionId, { events }, SEND_ONCE);
         for (const e of events) sent.push(e);
     };
 
@@ -746,6 +801,17 @@ export async function executeManagedAgentsRun(
                 state.beyondCustomTools = true;
                 abortRead();
                 return;
+            case 'session.updated':
+                // Inflect never updates a session (the client refuses the
+                // route), so this is someone with the workspace's key. A new
+                // `agent` (tools, MCP servers) or a changed or removed `budget`
+                // is a session the drift check never saw: stop. A title or
+                // metadata alone reaches nothing.
+                if (ev.agent !== undefined || ev.budget !== undefined) {
+                    state.sessionEdited = true;
+                    abortRead();
+                }
+                return;
             case 'session.status_idle': {
                 const reason = ev.stop_reason?.type;
                 if (reason === 'requires_action') {
@@ -846,7 +912,7 @@ export async function executeManagedAgentsRun(
             const done = await readStream(async () => {
                 if (!first) return;
                 const opening = { type: 'user.message' as const, content: [{ type: 'text' as const, text: message }] };
-                await client.beta.sessions.events.send(sessionId, { events: [opening] });
+                await client.beta.sessions.events.send(sessionId, { events: [opening] }, SEND_ONCE);
                 sent.push(opening);
                 first = false;
             }, !first);
@@ -937,6 +1003,10 @@ export async function executeManagedAgentsRun(
         const status = await failRun(ctx, runId, BEYOND_CUSTOM_TOOLS_MESSAGE);
         return { status, stepFailures: stepFailures + 1 };
     }
+    if (state.sessionEdited) {
+        const status = await failRun(ctx, runId, SESSION_EDITED_MESSAGE);
+        return { status, stepFailures: stepFailures + 1 };
+    }
     if (failure !== null) {
         const status = await failRun(ctx, runId, `${MANAGED_AGENTS_PREFIX}_run_failed: ${failure}`);
         return { status, stepFailures: stepFailures + 1 };
@@ -972,6 +1042,48 @@ async function recordSessionStep(
 }
 
 /**
+ * The sessions of THIS run that a lost `sessions.create` answer left with no
+ * id on the ledger (Step 5H, #4169): listed through the clean-up's own
+ * crash-window call (`listCrashWindow`, by the pinned agent, this tenant's
+ * metadata only) and taken only when the metadata names this run. Each is
+ * recorded `SESSION_CREATED`, then settled. Never throws: what it cannot reach
+ * is left to the purge's and a connection removal's crash window.
+ */
+async function settleUnrecordedSessions(
+    ctx: RequestContext,
+    runId: string,
+    client: Anthropic,
+    agentId: string,
+    route: ManagedAgentsRoute,
+    binding: ToolRunBinding,
+): Promise<void> {
+    try {
+        const listing = await listCrashWindow(client, agentId, ctx.tenantId, undefined);
+        if (!listing.ok) {
+            logger.warn('managed-agents: a session create had no answer, and the agent\'s sessions could not be listed', {
+                component: 'agentic', runId: binding.runId, outcome: listing.outcome,
+            });
+            return;
+        }
+        for (const found of listing.candidates.filter((c) => c.runId === runId)) {
+            await recordSessionStep(ctx, runId, binding.nextSeq(), 'SESSION_CREATED', {
+                sessionId: found.sessionId,
+                connectionId: route.connectionId,
+                agentId,
+                foundAfterLostCreate: true,
+            });
+            await settleSession(ctx, runId, client, found.sessionId, route, binding, false);
+        }
+    } catch (err) {
+        logger.error('managed-agents: a session whose create had no answer could not be settled', {
+            component: 'agentic',
+            runId: binding.runId,
+            error: err instanceof Error ? err.name : 'a non-Error value was thrown',
+        });
+    }
+}
+
+/**
  * THE SETTLE: delete the session, or record it kept (decision 4). Never
  * throws: it runs in `finally`, and a failure here must not hide the run's own
  * outcome. A deletion that fails is recorded with the provider's status, so
@@ -1004,7 +1116,7 @@ async function settleSession(
             if (status !== 'running' && status !== 'rescheduling') break;
             if (i === 0 && mayBeRunning) {
                 try {
-                    await client.beta.sessions.events.send(sessionId, { events: [{ type: 'user.interrupt' }] });
+                    await client.beta.sessions.events.send(sessionId, { events: [{ type: 'user.interrupt' }] }, SEND_ONCE);
                 } catch {
                     // The delete below says whether it worked.
                 }

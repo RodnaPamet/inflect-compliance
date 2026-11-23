@@ -51,3 +51,31 @@
  */
 export const HIT_AREA_CLASS =
     "before:content-[''] before:absolute before:-inset-px before:rounded-none";
+
+/**
+ * TOUCH_HIT_AREA_CLASS — a 44px hit area on a touch screen for a control
+ * whose painted size must stay small.
+ *
+ * `HIT_AREA_CLASS` above fills the dead corners INSIDE a rounded box; it never
+ * makes the box bigger. This one does the other job: a transparent `::after`,
+ * centred on the control, at least 44x44 on a coarse pointer (WCAG 2.5.5,
+ * Apple HIG) and exactly the control's own box everywhere else. A
+ * pseudo-element is hit-tested as part of the element that owns it, so a tap
+ * anywhere in that square lands on the control, while its layout box — and so
+ * the line, the label or the row it sits in — does not move by a pixel.
+ *
+ * Reach for it where the `pointer-coarse:min-h-11 pointer-coarse:min-w-11`
+ * floor the top-bar buttons use would push neighbours around: an inline help
+ * icon beside a label, a glyph inside a line of text.
+ *
+ * `::after`, not `::before`, so a control can wear both this and
+ * `HIT_AREA_CLASS` without the two fighting over one pseudo-element. The owner
+ * must be a positioning context (`relative`) and must not clip its overflow,
+ * for the reasons `HIT_AREA_CLASS` gives.
+ *
+ * The square can reach past the control into a neighbour's space. Where that
+ * neighbour is interactive, give the two room rather than letting one answer
+ * for the other's taps.
+ */
+export const TOUCH_HIT_AREA_CLASS =
+    "after:content-[''] after:absolute after:left-1/2 after:top-1/2 after:h-full after:w-full after:-translate-x-1/2 after:-translate-y-1/2 pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11";

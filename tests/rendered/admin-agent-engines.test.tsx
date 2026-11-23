@@ -72,6 +72,7 @@ jest.mock('@/lib/hooks/use-tenant-swr', () => ({
 
 import { AgentEnginesSection } from '@/app/t/[tenantSlug]/(app)/admin/ai-features/AgentEnginesSection';
 import {
+    MANAGED_AGENTS_REASON_MESSAGE,
     REASON_MESSAGE,
     TOOL_RUNNER_REASON_MESSAGE,
     type AgentDriverSettingPayload,
@@ -611,5 +612,137 @@ describe('the organization holds the Tool Runner switch (#4557)', () => {
         expect(screen.getByTestId('agent-engines-headline')).toHaveTextContent(COPY.reasonToolRunner.ENV_DISABLED);
         expect(screen.getByTestId('agent-engines-term-ENV')).toHaveTextContent(COPY.operatorTerm);
         expect(screen.queryByTestId('agent-engines-organization-can-enable')).toBeNull();
+    });
+});
+
+/**
+ * THE MANAGED AGENTS ENGINE (Step 5d of docs/claude-managed-agents-design.md).
+ * Offered only while its switch is on, choosable only with exactly one
+ * connected Anthropic workspace, and explained in plain words wherever it is
+ * listed: where the conversation lives and for how long (decision 4), and what
+ * Inflect cannot see of it (decision 3).
+ */
+describe('the Managed Agents engine (Step 5d)', () => {
+    type MaCopy = {
+        managedAgentsNeedsWorkspace: string;
+        managedAgentsAmbiguousWorkspace: string;
+        managedAgentsExplainer: Record<'heading' | 'where' | 'sessions' | 'controls' | 'record', string>;
+        runsOnManagedAgents: string;
+        runsOnManagedAgentsNotReady: string;
+        wiringHeadingManagedAgents: string;
+        managedAgentsStartNote: string;
+        managedAgentsTerm: Record<string, string>;
+    };
+    const MA = EN.admin.agentEngines as unknown as MaCopy & EngineCopy & {
+        engine: Record<string, { name: string; description: string }>;
+        confirmTitle: Record<string, string>;
+        confirmBody: Record<string, string>;
+    };
+    const withMa = (
+        workspace: 'CONNECTED' | 'NONE' | 'AMBIGUOUS',
+        over: Partial<AgentDriverSettingPayload> = {},
+    ): AgentDriverSettingPayload =>
+        setting({ managedAgents: { envEnabled: true, implemented: true, workspace }, ...over });
+    const MA_EFFECTIVE = withMa('CONNECTED', { mode: 'MANAGED_AGENTS', effective: { driver: 'managed-agents', reason: null } });
+
+    it('is not listed at all while its switch is off: there is no workspace card to connect one on', () => {
+        arrange({ setting: setting(), canChange: true, wiring: WIRING_BLOCKED });
+        expect(screen.queryByTestId('agent-engine-MANAGED_AGENTS')).toBeNull();
+        expect(screen.queryByTestId('agent-engines-managed-agents-explainer')).toBeNull();
+    });
+
+    it.each([
+        ['NONE', 'managedAgentsNeedsWorkspace'],
+        ['AMBIGUOUS', 'managedAgentsAmbiguousWorkspace'],
+    ] as const)('with its switch on and the workspace %s, it is listed but cannot be chosen, and says where to fix it', (workspace, key) => {
+        arrange({ setting: withMa(workspace), canChange: true, wiring: WIRING_BLOCKED });
+        expect(screen.getByTestId('agent-engine-MANAGED_AGENTS')).toBeDisabled();
+        const blocked = screen.getByTestId('agent-engines-managed-agents-blocked');
+        expect(blocked).toHaveTextContent(MA[key]);
+        expect(within(blocked).getByRole('link')).toHaveAttribute('href', '/t/acme/admin/integrations');
+        expect(typeof at(BG.admin.agentEngines, key)).toBe('string');
+    });
+
+    it('with exactly one workspace connected, an owner chooses it through the confirm dialog', async () => {
+        const user = userEvent.setup();
+        fetchMock.mockResolvedValue({ ok: true, json: async () => MA_EFFECTIVE });
+        arrange({ setting: withMa('CONNECTED'), canChange: true, wiring: WIRING_BLOCKED });
+        expect(screen.queryByTestId('agent-engines-managed-agents-blocked')).toBeNull();
+        await user.click(screen.getByTestId('agent-engine-MANAGED_AGENTS'));
+        const dialog = await screen.findByRole('dialog');
+        expect(dialog).toHaveTextContent(MA.confirmTitle.MANAGED_AGENTS);
+        expect(dialog).toHaveTextContent(MA.confirmBody.MANAGED_AGENTS);
+        await user.click(within(dialog).getByRole('button', { name: COPY.confirmLabel }));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ mode: 'MANAGED_AGENTS' });
+    });
+
+    it('explains, in plain words and both catalogues, where the conversation lives and what Inflect cannot see', () => {
+        arrange({ setting: withMa('CONNECTED'), canChange: false });
+        const explainer = screen.getByTestId('agent-engines-managed-agents-explainer');
+        for (const part of ['heading', 'where', 'sessions', 'controls', 'record'] as const) {
+            expect(explainer).toHaveTextContent(MA.managedAgentsExplainer[part]);
+            expect(typeof at(BG.admin.agentEngines, `managedAgentsExplainer.${part}`)).toBe('string');
+        }
+        // Decision 4: deleted when the run ends, unless the connection keeps it.
+        expect(MA.managedAgentsExplainer.sessions).toMatch(/until the run ends/);
+        expect(MA.managedAgentsExplainer.sessions).toContain('Keep sessions in my workspace');
+        // Decision 3: the per-call prompt is not visible to Inflect.
+        expect(MA.managedAgentsExplainer.record).toMatch(/cannot see the exact prompt/);
+        expect(MA.engine.MANAGED_AGENTS.description).not.toMatch(/Not available yet/);
+    });
+
+    it.each(['ENV_DISABLED', 'DRIVER_NOT_IMPLEMENTED', 'NO_WORKFLOW_REQUESTS_IT'] as const)(
+        '%s names the Managed Agents engine for a workspace that chose it, in both catalogues',
+        (reason) => {
+            arrange({ setting: withMa('CONNECTED', { mode: 'MANAGED_AGENTS', effective: { driver: 'static', reason } }), canChange: false });
+            expect(MANAGED_AGENTS_REASON_MESSAGE[reason]).toBe(`reasonManagedAgents.${reason}`);
+            const expected = at(EN.admin.agentEngines, MANAGED_AGENTS_REASON_MESSAGE[reason]) as string;
+            expect(screen.getByTestId('agent-engines-headline')).toHaveTextContent(expected);
+            expect(expected).toContain('Managed Agents');
+            expect(typeof at(BG.admin.agentEngines, MANAGED_AGENTS_REASON_MESSAGE[reason])).toBe('string');
+        },
+    );
+
+    it('right after the change, a checklist still about the OLD engine is not shown as this one\'s', () => {
+        // The setting refetch landed first: the workspace is on Managed Agents,
+        // and the checklist in hand is still Flue's, whose WORKFLOW and
+        // BOUND_KEY terms have no Managed Agents sentence.
+        arrange({ setting: MA_EFFECTIVE, canChange: true, wiring: WIRING_BLOCKED });
+        expect(screen.getByText(COPY.gateHeading)).toBeInTheDocument();
+        expect(screen.queryByTestId('agent-engines-term-WORKFLOW')).toBeNull();
+        expect(screen.queryByTestId('agent-engines-term-BOUND_KEY')).toBeNull();
+        expect(screen.getByTestId('agent-engines-term-WORKSPACE')).toHaveTextContent(MA.managedAgentsTerm.WORKSPACE);
+        expect(screen.getByTestId('agent-engines')).not.toHaveTextContent(/managedAgentsTerm\./);
+    });
+
+    it('an effective Managed Agents engine says so, and a workspace on it reads its own checklist', () => {
+        const { unmount } = arrange({ setting: MA_EFFECTIVE, canChange: false });
+        expect(screen.getByTestId('agent-engines-headline')).toHaveTextContent(MA.runsOnManagedAgents);
+        expect(screen.getByTestId('agent-engines-headline')).toHaveAttribute('data-tone', 'success');
+        // A viewer without the checklist reads the gate's four terms, the workspace among them.
+        expect(screen.getByTestId('agent-engines-term-WORKSPACE')).toHaveTextContent(MA.managedAgentsTerm.WORKSPACE);
+        unmount();
+
+        const wiring: FlueWiringPayload = {
+            engine: 'MANAGED_AGENTS',
+            terms: [
+                { key: 'ENV', satisfied: true, actor: 'operator' },
+                { key: 'TENANT', satisfied: true, actor: 'tenant' },
+                { key: 'BUILD', satisfied: true, actor: 'operator' },
+                { key: 'PROFILES', satisfied: true, actor: 'operator' },
+                { key: 'WORKSPACE', satisfied: false, actor: 'tenant' },
+                { key: 'REGISTERED_AGENT', satisfied: true, actor: 'tenant', count: 1 },
+            ],
+            ready: false,
+            blockedOn: 'WORKSPACE',
+        };
+        arrange({ setting: MA_EFFECTIVE, canChange: true, wiring });
+        expect(screen.getByTestId('agent-engines-headline')).toHaveTextContent(MA.runsOnManagedAgentsNotReady);
+        expect(screen.getByText(MA.wiringHeadingManagedAgents)).toBeInTheDocument();
+        const term = screen.getByTestId('agent-engines-term-WORKSPACE');
+        expect(term).toHaveAttribute('data-satisfied', 'false');
+        expect(within(term).getByRole('link')).toHaveAttribute('href', '/t/acme/admin/integrations');
+        expect(screen.getByText(MA.managedAgentsStartNote)).toBeInTheDocument();
     });
 });

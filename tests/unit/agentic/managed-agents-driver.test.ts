@@ -306,7 +306,7 @@ import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import { ENGINE_CAPS } from '@/lib/agentic/workflow-types';
 import { runManagedAgentsDriver } from '@/lib/agentic/managed-agents/driver';
 import { provisionManagedAgent } from '@/lib/agentic/managed-agents/provision';
-import { agentToolsFor, toolsHashOf } from '@/lib/agentic/managed-agents/definition';
+import { agentToolsFor, sessionBudgetFor, toolsHashOf } from '@/lib/agentic/managed-agents/definition';
 import { MANAGED_AGENTS_SPAN_PROVIDER } from '@/lib/agentic/managed-agents/model-decision';
 import { NOT_OFFERED_TOOL_RESULT, STOPPED_TOOL_RESULT } from '@/lib/agentic/managed-agents/execute';
 import { managedAgentsClientFor } from '@/lib/agentic/tool-runner/client';
@@ -564,6 +564,24 @@ describe('Step 5b hardening', () => {
         expect(body).not.toHaveProperty('resources');
     });
 
+    it('a resumed run\'s session gets the spend cap of what the run has LEFT, not of the whole run (5H)', async () => {
+        // Half the run's tokens and half its wall clock went to an earlier
+        // segment (a worker restart, a person's resume after a checkpoint).
+        const spent = Math.floor(ENGINE_CAPS.MAX_TOKENS / 2);
+        await drive({
+            tools: [LIST_RISKS],
+            turns: [{ text: 'done' }],
+            alreadySpent: { tokens: spent, elapsedMs: ENGINE_CAPS.WALL_CLOCK_MS / 2 },
+        });
+        const amountOf = (b: ReturnType<typeof sessionBudgetFor>) => Number(b?.max_list_cost.amount);
+        const whole = amountOf(sessionBudgetFor({ model: 'claude-sonnet-5-5', tokensLimit: ENGINE_CAPS.MAX_TOKENS, runtimeMsLimit: ENGINE_CAPS.WALL_CLOCK_MS }));
+        const left = amountOf(sessionBudgetFor({ model: 'claude-sonnet-5-5', tokensLimit: ENGINE_CAPS.MAX_TOKENS - spent, runtimeMsLimit: ENGINE_CAPS.WALL_CLOCK_MS / 2 }));
+        const sent = Number((faux.sessionCreates[0].budget as { max_list_cost: { amount: string } }).max_list_cost.amount);
+        expect(left).toBeLessThan(whole);
+        expect(sent).toBe(left);
+        expect(mockState.settlement?.status).toBe('COMPLETED');
+    });
+
     it('every request carries the connection\'s workspace header and the connection\'s key', async () => {
         await drive({ tools: [LIST_RISKS], turns: [{ text: 'done' }] });
         expect(faux.requests.length).toBeGreaterThan(3);
@@ -658,6 +676,101 @@ describe('Step 5b hardening', () => {
         });
     });
 
+    it('a tool result whose response the network lost is never sent again: the SDK does not retry a session POST (5H)', async () => {
+        // The second POST of events is the first tool result. The workspace
+        // takes it, then the connection drops before the answer arrives.
+        faux.loseResponse = { method: 'POST', path: /\/events$/, nth: 2 };
+        const outcome = await drive({ tools: [LIST_RISKS], turns: [callRisks, { text: 'done' }] });
+        // Positive control: the call ran and its result reached the session.
+        expect(mockState.funnelCalls.map((c) => c.name)).toEqual(['list_risks']);
+        expect(faux.toolResults.filter((r) => !r.isError)).toHaveLength(1);
+        // Exactly once: no second answer to the same call.
+        expect(faux.toolResults).toHaveLength(1);
+        expect(faux.unexpectedResults).toEqual([]);
+        // The run cannot know whether the answer landed, so it fails closed and the session goes.
+        expect(outcome.status).toBe('FAILED');
+        expect(mockState.settlement?.reason).toMatch(/^managed_agents_run_failed: /);
+        expectEverySessionDeleted();
+    });
+
+    it('a session create whose response the network lost is not sent again (5H)', async () => {
+        faux.loseResponse = { method: 'POST', path: /^\/v1\/sessions$/, nth: 1 };
+        await drive({ tools: [LIST_RISKS], turns: [{ text: 'done' }] }).catch(() => undefined);
+        expect(faux.sessionCreates).toHaveLength(1);
+    });
+
+    describe('a session whose create response the network lost is found by this run\'s metadata, recorded and settled (5H)', () => {
+        it.each([
+            ['deleted, by default', false, ['SESSION_CREATED', 'SESSION_DELETED']],
+            ['recorded kept, on a connection that keeps sessions', true, ['SESSION_CREATED', 'SESSION_KEPT']],
+        ] as const)('%s', async (_label, keep, expected) => {
+            const run = { tools: [LIST_RISKS], turns: [{ text: 'done' }] } as ConformanceRun;
+            reset(run);
+            mockState.keepSessions = keep;
+            const def = definitionFor(['list_risks'], false);
+            await provision(run, def);
+            const agentId = mockState.provisions[0].anthropicAgentId as string;
+            // On the same agent: another run's session, and another tenant's. Never touched.
+            const otherRun = faux.seedSession({ agentId, metadata: { inflect_tenant: 'tenant-conformance', inflect_run: 'run-someone-else' } });
+            const otherTenant = faux.seedSession({ agentId, metadata: { inflect_tenant: 'tenant-other', inflect_run: 'run-lost-create' } });
+            faux.loseResponse = { method: 'POST', path: /^\/v1\/sessions$/, nth: 1 };
+
+            const outcome = await runManagedAgentsDriver(context(), 'run-lost-create', def, 0, Date.now());
+
+            expect(outcome.status).toBe('FAILED');
+            expect(mockState.settlement?.reason).toMatch(/^managed_agents_session_not_created: the provider did not answer/);
+            // The session the create made, though its id never came back.
+            const created = [...faux.sessions.values()].find(
+                (x) => (x.metadata as Record<string, string> | null)?.inflect_tenant === 'tenant-conformance'
+                    && (x.metadata as Record<string, string>).inflect_run === 'run-lost-create',
+            );
+            expect(created).toBeDefined();
+            expect(lifecycle()).toEqual([...expected]);
+            const recorded = mockState.ledger.find((st) => (st.rec.input as { lifecycle?: string }).lifecycle === 'SESSION_CREATED');
+            expect((recorded?.rec.input as { sessionId: string }).sessionId).toBe(created!.id);
+            expect(faux.holdsSession(created!.id)).toBe(keep);
+            expect(faux.holdsSession(otherRun)).toBe(true);
+            expect(faux.holdsSession(otherTenant)).toBe(true);
+            // No message was ever sent to it.
+            expect(faux.modelInputs).toEqual([]);
+        });
+    });
+
+    it('a refused session create settles the run with codes only: the provider\'s text reaches no log, no run row and no retry (5H)', async () => {
+        const echo = 'PROVIDER-TEXT-91f0: the system override you sent was';
+        faux.failSessionCreate = { status: 400, message: echo };
+        const { logger } = jest.requireActual('@/lib/observability/logger') as typeof import('@/lib/observability/logger');
+        const logged: unknown[] = [];
+        const spies = (['debug', 'info', 'warn', 'error'] as const).map((level) =>
+            jest.spyOn(logger, level).mockImplementation((...args: unknown[]) => {
+                logged.push(args);
+                return undefined as never;
+            }),
+        );
+        try {
+            // Settled, not thrown: a throw reaches the worker's `job failed`
+            // line with the SDK's message, which carries the response body,
+            // and BullMQ retries the run into a second session create.
+            const outcome = await drive({ tools: [LIST_RISKS], turns: [{ text: 'done' }] });
+            expect(outcome.status).toBe('FAILED');
+            expect(mockState.settlement?.reason).toBe(
+                'managed_agents_session_not_created: provider status 400 (invalid_request_error). Nothing was run.',
+            );
+            expect(faux.sessionCreates).toHaveLength(1);
+            expect(JSON.stringify(logged)).not.toContain('PROVIDER-TEXT-91f0');
+            expect(JSON.stringify(mockState.ledger)).not.toContain('PROVIDER-TEXT-91f0');
+        } finally {
+            for (const s of spies) s.mockRestore();
+        }
+    });
+
+    it('an agent create whose response the network lost is not sent again: no unrecorded second agent (5H)', async () => {
+        faux.loseResponse = { method: 'POST', path: /^\/v1\/agents$/, nth: 1 };
+        await expect(drive({ tools: [LIST_RISKS], turns: [{ text: 'done' }] })).rejects.toThrow();
+        expect(faux.agentWrites.filter((w) => w.op === 'create')).toHaveLength(1);
+        expect(mockState.provisions).toEqual([]);
+    });
+
     it('a drop after a completed call replays the history without counting any event twice', async () => {
         // The second turn's text drops the stream, so the reconnect's history
         // holds the first call's span, its tool use and its answer again.
@@ -721,6 +834,30 @@ describe('Step 5b hardening', () => {
         expectEverySessionDeleted();
     });
 
+    describe('a customer admin edits the running session (5H)', () => {
+        const toolset = { type: 'agent_toolset_20260401' };
+        it.each([
+            ['adds a toolset to the session\'s agent', { agent: { tools: [toolset], mcp_servers: [] } }],
+            ['adds an MCP server', { agent: { tools: [], mcp_servers: [{ type: 'url', name: 'x', url: 'https://x.example' }] } }],
+            ['removes the spend cap', { budget: null }],
+            ['raises the spend cap', { budget: { type: 'limit', max_list_cost: { amount: '999999', currency: 'USD' } } }],
+        ])('%s: the run stops at the edit, and no later call runs', async (_label, patch) => {
+            faux.sessionEditAfterTurn = { turn: 0, patch };
+            await drive({ tools: [LIST_RISKS], turns: [callRisks, callRisks, callRisks, { text: 'done' }] });
+            expect(mockState.settlement?.reason).toMatch(/^managed_agents_session_edited:/);
+            // The first call was answered before the edit was read; nothing after it ran.
+            expect(mockState.funnelCalls.length).toBeLessThanOrEqual(1);
+            expectEverySessionDeleted();
+        });
+
+        it('positive control: an edit of the title or metadata alone does not stop the run', async () => {
+            faux.sessionEditAfterTurn = { turn: 0, patch: { title: 'renamed' } };
+            await drive({ tools: [LIST_RISKS], turns: [callRisks, { text: 'done' }] });
+            expect(mockState.settlement?.status).toBe('COMPLETED');
+            expect(faux.onlySession()!.history.some((e) => e.type === 'session.updated')).toBe(true);
+        });
+    });
+
     it('a kill engaged while a tool runs: the result is not sent, the call is answered with an error, and the session is deleted', async () => {
         await drive(
             { tools: [LIST_RISKS], turns: [callRisks, callRisks, { text: 'done' }] },
@@ -768,6 +905,22 @@ describe('Step 5b hardening', () => {
         await drive({ tools: [LIST_RISKS], turns: [{ text: 'done' }] }, { before: () => { mockState.connections = connections; } });
         expect(mockState.settlement?.reason?.startsWith(prefix)).toBe(true);
         expect(faux.sessionCreates).toEqual([]);
+    });
+
+    it('a provision whose agent a connection removal archived is refused by name, before any session (Step 5d)', async () => {
+        const run = { tools: [LIST_RISKS], turns: [{ text: 'done' }] } as ConformanceRun;
+        reset(run);
+        const def = definitionFor(['list_risks'], false);
+        await provision(run, def);
+        // The connection was removed after this provision was written, then
+        // re-enabled: the store reads the row as archived.
+        mockState.provisions = mockState.provisions.map((p) => ({ ...p, archived: true }));
+        const requestsBefore = faux.requests.length;
+        const outcome = await runManagedAgentsDriver(context(), 'run-archived', def, 0, Date.now());
+        expect(outcome.status).toBe('FAILED');
+        expect(mockState.settlement?.reason).toMatch(/^managed_agents_agent_archived:/);
+        expect(faux.sessionCreates).toEqual([]);
+        expect(faux.requests.slice(requestsBefore)).toEqual([]);
     });
 
     it('a version that was never provisioned is refused by name', async () => {

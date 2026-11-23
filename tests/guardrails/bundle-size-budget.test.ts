@@ -269,7 +269,15 @@ const BUDGETS_KB: Record<string, number> = {
         bump could not pass either. The owner chose on 2026-11-10 to attribute
         first and then raise to measured + ~4, the convention.
     */
-    'dashboard': 631,
+    //
+    // Raised by the mobile list-pages batch (#5850, owner request 2026-11-23
+    // to work through the mobile issues #5805). CI's webpack build of #5850
+    // on main with #5845-#5847: `controls/dashboard/page` 631.1 KB against 631 — the
+    // card "⋯" action menu, the filter toolbar's phone rows and the toggle
+    // group's scroll cue in shared primitives. The toggle group's phone
+    // select (the Combobox graph, ~10 KB) loads on demand and is not in this
+    // figure. 635 is measured + ~4, the convention.
+    'dashboard': 635,
     // Raised 653 → 654 in the Tasks list fixes (#4300, #4278; owner decision).
     // Main measured this route at 652.9 KB (0.1 KB left); the PR measured
     // 653.2. The growth is in the task form and edit panel that the risk
@@ -293,7 +301,15 @@ const BUDGETS_KB: Record<string, number> = {
     // at 664.2 KB. NOT ATTRIBUTED, by the owner's choice: this page's source
     // graph reaches none of #5782's changed modules, which again points at a
     // webpack chunk regroup rather than new route code. 668 is measured + ~4.
-    'risks': 668,
+    //
+    // Raised by the mobile list-pages batch (#5850, owner request 2026-11-23
+    // to work through the mobile issues #5805). CI's webpack build of #5850
+    // on main with #5845-#5847: `risks/[riskId]/page` 668.3 KB against 668 — the
+    // card "⋯" action menu, the filter toolbar's phone rows and the toggle
+    // group's scroll cue in shared primitives. The toggle group's phone
+    // select (the Combobox graph, ~10 KB) loads on demand and is not in this
+    // figure. 672 is measured + ~4, the convention.
+    'risks': 672,
     // Raised 645 → 650 in the i18n-kept-primitives PR (#3004): that route had
     // grown to 643.8 KB on main (ff71f42ed), and localising the shared
     // primitives (useTranslations + key lookups in ~20 components, all on this
@@ -365,7 +381,16 @@ const BUDGETS_KB: Record<string, number> = {
     // toolbar) that every tenant page loads. The later mobile batches touch
     // shared primitives too, so 0.1 KB left would trip on the next one.
     // 679 is measured + ~4, the convention.
-    'controls': 679,
+    //
+    // Raised 679 -> 683 by the mobile top-bar batch (#5847, same owner
+    // request). CI's webpack build of #5847 on main-with-#5845:
+    // `controls/.../tests/[planId]/page` 674.9 -> 677.5 KB (+2.6), and
+    // #5846 (the tab-strip cue, +1.0 here) landed between the two, so the
+    // merged figure is about 678.5 against 679. The batch adds the phone
+    // top-bar entry points (assistant and command-palette buttons), the
+    // themed toaster and tap-to-open tooltips to the shared tenant shell.
+    // 683 is measured + ~4, the convention.
+    'controls': 683,
     // Catch-all for any other tenant page.
     //
     // Raised 682 → 688 by the AI-roadmap integration (#5323, owner decision
@@ -379,7 +404,16 @@ const BUDGETS_KB: Record<string, number> = {
     // `controls` note): policies/[policyId]/page 687.3 -> 688.1 KB, +0.8,
     // shared phone-layout code in the popover, modal, sheet and selection
     // toolbar. 692 is measured + ~4, the convention.
-    'tenant-default': 692,
+    //
+    // Raised 692 -> 699 by the mobile top-bar batch (#5847; see the
+    // `controls` note). policies/[policyId]/page 688.1 -> 693.2 KB on
+    // main-with-#5845 (+5.1, against +0.6 to +2.6 on every other bucket's
+    // worst route), plus #5846's +0.7 landing in between: about 694.5
+    // merged. The +5.1 is NOT fully attributed — the route-specific share
+    // is chunk re-partitioning around the shell change, and the local
+    // attribution build ran out of memory on the shared machine. 699 is
+    // measured + ~4, the convention.
+    'tenant-default': 699,
     // Auth / public / org pages.
     //
     // RAISED 575 -> 580 on 2026-10-23, and this entry is the cautionary one.
@@ -412,7 +446,15 @@ const BUDGETS_KB: Record<string, number> = {
     // effect the `controls` note describes, not code added to this route.
     // With 0.1 KB left, any change to client code could trip this bucket.
     // 584 is measured + ~4, the convention.
-    'root': 584,
+    //
+    // Raised by the mobile list-pages batch (#5850, owner request 2026-11-23
+    // to work through the mobile issues #5805). CI's webpack build of #5850
+    // on main with #5845-#5847: `org/.../initiatives/[initiativeId]/page` 584.0 KB against 584 — the
+    // card "⋯" action menu, the filter toolbar's phone rows and the toggle
+    // group's scroll cue in shared primitives. The toggle group's phone
+    // select (the Combobox graph, ~10 KB) loads on demand and is not in this
+    // figure. 588 is measured + ~4, the convention.
+    'root': 588,
 };
 
 /** Map an app route key to a budget key. */

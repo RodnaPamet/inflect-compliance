@@ -166,6 +166,11 @@ export function EntityPrevNextNav({
                     // #75 — smaller, borderless: bare chevron buttons (no box,
                     // no background); just a subtle colour shift on hover.
                     'flex h-3.5 w-4 items-center justify-center text-content-subtle transition-colors',
+                    // 16x14 is a quarter of WCAG 2.5.5's 44x44. On a touch
+                    // screen each button gets the 44px floor (#5820); the
+                    // chevron inside stays 11px, so the glyphs look the same
+                    // and only the area that answers a finger grows.
+                    'pointer-coarse:min-h-11 pointer-coarse:min-w-11',
                     'hover:text-content-emphasis',
                     'disabled:pointer-events-none disabled:opacity-50',
                     'focus-visible:outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-ring',
@@ -182,7 +187,18 @@ export function EntityPrevNextNav({
     return (
         <div
             // #75 — no bordered/filled box; just the bare chevron column.
-            className={cn('inline-flex flex-col -my-1', className)}
+            //
+            // On a touch screen the two buttons sit SIDE BY SIDE rather than
+            // stacked (#5820). Stacked, two 44px targets make an 88px column
+            // that would stretch the title row it sits in to twice its
+            // height; a row keeps it at one 44px line. Pseudo-element hit
+            // areas would have kept the column, but each would have reached
+            // 30px above or below it — over the back link or the tab bar,
+            // and answering for their taps.
+            className={cn(
+                'inline-flex flex-col -my-1 pointer-coarse:my-0 pointer-coarse:flex-row',
+                className,
+            )}
             data-testid="entity-prev-next-nav"
         >
             {step(prevId, 'up', prevLabel)}
