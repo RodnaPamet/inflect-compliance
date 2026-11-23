@@ -74,6 +74,8 @@ jest.mock('next-auth', () => ({
 /** `next-intl/server` is ESM; resolve the real catalogue. */
 jest.mock('next-intl/server', () => ({
     __esModule: true,
+    // The pages format dates through `getDateFormatters()`, which reads it.
+    getLocale: async () => 'en',
     getTranslations: async (ns: string) => {
         const en = require('../../messages/en.json') as Record<string, unknown>;
         const bag = ns
