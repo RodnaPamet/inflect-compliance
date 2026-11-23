@@ -118,16 +118,17 @@ type Baseline = Record<MobileE2eConfig, Record<RatchetedMetric, number>>;
 /**
  * Routes in `SEED_ROUTES` failing each metric.
  *
- * englishLeaks, 5 (#5828): "Close navigation drawer" (command palette),
- * "Infrastructure" (risks), "Compliance status: Partial/Gap" (framework
- * detail), and the ISO 27001 domain names in the controls browse rail
- * ("Business continuity", …) on the controls list and its selection state.
- * The rail renders only when the shared tenant holds ISO controls, which
- * other E2E specs install before this one runs; a fresh seed has none.
+ * englishLeaks, 0 (#5828): no fixed route shows English in Bulgarian. The
+ * last five were the command palette's shortcut list ("Close navigation
+ * drawer"), the risks list's free-text owner "Infrastructure" (tenant data,
+ * now in `dataNames`), the framework explorer's "Compliance status: Partial /
+ * Gap", and the ISO 27001 domain names in the controls browse rail (the list
+ * and its selection state) — the rail renders only when the shared tenant
+ * holds ISO controls, which other E2E specs install before this one runs.
  */
 export const SEED_BASELINE: Baseline = {
-    '390-dark-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 10, englishLeaks: 5 },
-    '360-light-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 10, englishLeaks: 5 },
+    '390-dark-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 10, englishLeaks: 0 },
+    '360-light-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 10, englishLeaks: 0 },
 };
 
 /** Routes in `RECORD_ROUTES` failing each metric. */

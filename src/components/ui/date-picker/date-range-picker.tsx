@@ -135,6 +135,7 @@ export function DateRangePicker({
 }: DateRangePickerProps) {
     const { isDesktop } = useMediaQuery();
     const t = useTranslations('common.calendar');
+    const tShortcut = useTranslations('shortcutDescriptions');
     const placeholder = placeholderProp ?? t('selectDateRange');
     // A catalogue preset is named by its id in the reader's language; a
     // caller's own preset keeps the label it was given (#5309).
@@ -290,7 +291,7 @@ export function DateRangePicker({
             enabled: open,
             scope: 'overlay',
             priority: 5,
-            description: 'Apply date-range preset',
+            description: tShortcut('applyDateRangePreset'),
         },
     );
 

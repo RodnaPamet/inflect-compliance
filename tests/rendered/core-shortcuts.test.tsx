@@ -295,49 +295,49 @@ describe('Call sites carry palette-ready descriptions', () => {
     const path = require('path') as typeof import('path');
     const ROOT = path.resolve(__dirname, '../..');
 
+    // Every description flows through the catalog: the palette is read in
+    // the viewer's language (a literal one is refused repo-wide by
+    // tests/guards/bulgarian-ui-chrome-sources.test.ts).
     const sites = [
         {
             file: 'src/components/ui/filter/filter-select.tsx',
             description: 'Open filters',
+            call: 'tShortcut("openFilters")',
+            i18nKey: 'shortcutDescriptions.openFilters',
         },
         {
             file: 'src/components/ui/filter/filter-list.tsx',
             description: 'Clear all filters',
+            call: 'tShortcut("clearAllFilters")',
+            i18nKey: 'shortcutDescriptions.clearAllFilters',
         },
         {
-            // i18n: the description now flows through the catalog.
             file: 'src/components/ui/table/selection-toolbar.tsx',
             description: 'Clear selection',
+            call: 't("table.clearSelection")',
             i18nKey: 'common.table.clearSelection',
         },
-    ] as Array<{ file: string; description: string; i18nKey?: string }>;
+    ] as Array<{ file: string; description: string; call: string; i18nKey: string }>;
 
     for (const s of sites) {
         it(`${s.file} registers with description "${s.description}"`, () => {
             const src = fs.readFileSync(path.join(ROOT, s.file), 'utf-8');
-            if (s.i18nKey) {
-                // Assert the shortcut wires description through t(<key>) and
-                // that the key still resolves to the canonical English label.
-                const [ns, ...rest] = s.i18nKey.split('.');
-                const shortKey = rest.join('.');
-                expect(src).toContain(`description: t("${shortKey}")`);
-                const en = JSON.parse(
-                    fs.readFileSync(path.join(ROOT, 'messages/en.json'), 'utf-8'),
+            // The shortcut wires its description through the catalog, and the
+            // key still resolves to the canonical English label.
+            expect(src).toContain(`description: ${s.call}`);
+            const en = JSON.parse(
+                fs.readFileSync(path.join(ROOT, 'messages/en.json'), 'utf-8'),
+            );
+            const resolved = s.i18nKey
+                .split('.')
+                .reduce(
+                    (o: unknown, k: string) =>
+                        o && typeof o === 'object'
+                            ? (o as Record<string, unknown>)[k]
+                            : undefined,
+                    en,
                 );
-                const resolved = s.i18nKey
-                    .split('.')
-                    .reduce(
-                        (o: unknown, k: string) =>
-                            o && typeof o === 'object'
-                                ? (o as Record<string, unknown>)[k]
-                                : undefined,
-                        en,
-                    );
-                expect(resolved).toBe(s.description);
-                expect(ns).toBe('common');
-            } else {
-                expect(src).toContain(`description: "${s.description}"`);
-            }
+            expect(resolved).toBe(s.description);
         });
     }
 });

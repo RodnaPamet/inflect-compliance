@@ -2858,6 +2858,23 @@
       "PHYSICAL": "Physical",
       "TECHNOLOGICAL": "Technological"
     },
+    "isoDomainLabels": {
+      "GOVERNANCE": "Governance & policies",
+      "ASSET_MGMT": "Asset management",
+      "ACCESS_CONTROL": "Access control",
+      "SUPPLIER": "Supplier relationships",
+      "INCIDENT": "Incident management",
+      "CONTINUITY": "Business continuity",
+      "COMPLIANCE": "Compliance & legal",
+      "HR_SECURITY": "Human resource security",
+      "PHYSICAL": "Physical & environmental security",
+      "THREAT_VULN": "Threat & vulnerability management",
+      "OPERATIONS": "Operations security",
+      "CRYPTO": "Cryptography",
+      "NETWORK": "Network security",
+      "SECURE_DEV": "System development & secure coding",
+      "DATA_PROTECTION": "Data protection"
+    },
     "eventLabels": {
       "CONTROL_CREATED": "Created",
       "CONTROL_UPDATED": "Updated",
@@ -19573,5 +19590,31 @@
       "name": "Ad-hoc question",
       "description": "Answer the question in the run input from this workspace records, reading only what the asking person could read themselves. Cite what was read. Where the records do not answer the question, say so plainly rather than inferring — an answer with nothing behind it is worse than no answer. Read-only: propose nothing, change nothing."
     }
+  },
+  "complianceStatus": {
+    "ariaLabel": "Compliance status: {status}",
+    "compliant": "Compliant",
+    "partial": "Partial",
+    "gap": "Gap",
+    "na": "N/A",
+    "unknown": "No data"
+  },
+  "toaster": {
+    "region": "Notifications",
+    "closeButton": "Close notification"
+  },
+  "shortcutDescriptions": {
+    "openFilters": "Open filters",
+    "clearAllFilters": "Clear all filters",
+    "closeScoreExplainer": "Close the risk score explainer",
+    "unpinSankeyNode": "Unpin the diagram node",
+    "applyDateRangePreset": "Apply a date-range preset",
+    "exitDrillDown": "Exit the current drill-down level"
+  },
+  "frameworkThemes": {
+    "ORGANIZATIONAL": "Organizational controls",
+    "PEOPLE": "People controls",
+    "PHYSICAL": "Physical controls",
+    "TECHNOLOGICAL": "Technological controls"
   }
 }

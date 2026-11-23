@@ -75,6 +75,7 @@ export function RiskScoreExplainer({
     children: React.ReactNode;
 }) {
     const t = useTranslations('panels.scoreExplainer');
+    const tShortcut = useTranslations('shortcutDescriptions');
     const [open, setOpen] = useState(false);
     const [data, setData] = useState<ScoreExplanation | null>(null);
     const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
@@ -88,7 +89,8 @@ export function RiskScoreExplainer({
     useKeyboardShortcut(['Escape'], () => setOpen(false), {
         enabled: open,
         scope: 'overlay',
-        description: 'Close the risk score explainer', // dev-facing shortcut registry label, not user-visible
+        // The command palette lists every registered shortcut by this text.
+        description: tShortcut('closeScoreExplainer'),
     });
 
     // RQ3-OB-B — load fn is hoisted so the Retry affordance can

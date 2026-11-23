@@ -106,6 +106,7 @@ export function SankeyChart({
     height = DEFAULT_HEIGHT,
 }: SankeyChartProps) {
     const t = useTranslations('common.ui');
+    const tShortcut = useTranslations('shortcutDescriptions');
     const dataset = useMemo<SankeyDataset>(
         () => buildSankeyDataset(graph, { searchQuery }),
         [graph, searchQuery],
@@ -142,7 +143,7 @@ export function SankeyChart({
             if (pinnedId) setPinnedId(null);
         },
         {
-            description: 'Unpin Sankey node',
+            description: tShortcut('unpinSankeyNode'),
             enabled: pinnedId !== null,
         },
     );

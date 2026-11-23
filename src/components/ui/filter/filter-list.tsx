@@ -62,6 +62,7 @@ export function FilterList({
   className,
 }: FilterListProps) {
   const t = useTranslations("ui.filterList");
+  const tShortcut = useTranslations("shortcutDescriptions");
   // Epic 57 — Escape clears all active filters. Priority 1 so the
   // selection-toolbar clear (priority 2) wins when rows are selected,
   // and any overlay's native Radix/Vaul Escape handler wins when a
@@ -70,7 +71,7 @@ export function FilterList({
   useKeyboardShortcut("Escape", onRemoveAll, {
     priority: 1,
     scope: "global",
-    description: "Clear all filters",
+    description: tShortcut("clearAllFilters"),
   });
   const normalizedFilters = activeFilters?.map(normalizeActiveFilter) ?? [];
 

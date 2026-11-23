@@ -55,7 +55,7 @@ async function closeCelebrationToast(page: Page): Promise<void> {
         .waitFor({ state: 'visible', timeout: 3_000 })
         .then(() => true, () => false);
     if (!appeared) return;
-    await toast.getByRole('button', { name: 'Close toast' }).click();
+    await toast.getByRole('button', { name: 'Close notification' }).click();
     await expect(page.locator('[data-sonner-toast]')).toHaveCount(0, { timeout: 5_000 });
 }
 

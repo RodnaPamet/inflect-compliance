@@ -67,6 +67,29 @@ export const ISO27001_DOMAIN = {
     DATA_PROTECTION: 'Data protection',
 } as const;
 
+export type Iso27001DomainKey = keyof typeof ISO27001_DOMAIN;
+
+const ISO27001_DOMAIN_KEY_BY_VALUE: ReadonlyMap<string, Iso27001DomainKey> = new Map(
+    (Object.entries(ISO27001_DOMAIN) as [Iso27001DomainKey, string][]).map(([k, v]) => [v, k]),
+);
+
+/**
+ * The `ISO27001_DOMAIN` key of a derived category value, or null when the
+ * value is not one of the domains.
+ *
+ * The domain strings above are KEYS, not display copy: the browse rail groups
+ * and orders by them (`ISO27001_DOMAIN_ORDER`), the category filter compares
+ * against them and they ride the URL. What a reader SEES is
+ * `controls.isoDomainLabels.<key>` from the catalog, looked up through this at
+ * display time (`controlCategoryLabel`), so a Bulgarian page reads Bulgarian
+ * while every stored, grouped and filtered value stays the same (#5828).
+ * Exact match: a tenant's legacy free text ("Business Continuity", capital C)
+ * is tenant data and passes through as written.
+ */
+export function iso27001DomainKey(value: string | null | undefined): Iso27001DomainKey | null {
+    return value ? ISO27001_DOMAIN_KEY_BY_VALUE.get(value) ?? null : null;
+}
+
 /** Stable display order for the ISO 27001 domains in the browse rail. */
 export const ISO27001_DOMAIN_ORDER: string[] = [
     ISO27001_DOMAIN.GOVERNANCE,

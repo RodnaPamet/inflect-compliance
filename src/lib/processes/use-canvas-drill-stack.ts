@@ -36,6 +36,7 @@
 
 import { useCallback, useState } from "react";
 import { useKeyboardShortcut } from "@/lib/hooks/use-keyboard-shortcut";
+import { useTranslations } from "next-intl";
 
 export interface CanvasDrillState {
     /** Group ids from root → deepest. */
@@ -52,6 +53,7 @@ export interface CanvasDrillState {
 
 export function useCanvasDrillStack(): CanvasDrillState {
     const [stack, setStack] = useState<string[]>([]);
+    const tShortcut = useTranslations("shortcutDescriptions");
     const enter = useCallback((groupId: string) => {
         setStack((s) => [...s, groupId]);
     }, []);
@@ -65,7 +67,7 @@ export function useCanvasDrillStack(): CanvasDrillState {
     // Lucidchart drill-down. Disabled at root so other Escape
     // consumers (modal close, popover dismiss) keep working.
     useKeyboardShortcut("escape", exit, {
-        description: "Exit current drill-down level",
+        description: tShortcut("exitDrillDown"),
         enabled: stack.length > 0,
     });
     return {

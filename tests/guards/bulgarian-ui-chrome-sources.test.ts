@@ -73,6 +73,10 @@ import {
 } from '@/lib/agentic/agentic-check-titles';
 import { AUDIT_PROCEDURE_LIBRARY_V1, LIBRARY_V1_PROCEDURE_IDS } from '@/lib/agentic/audit-procedure-library';
 import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
+import { ISO27001_DOMAIN } from '@/lib/controls/control-taxonomy';
+import { CONTROL_CATEGORY_THEMES } from '@/lib/controls/control-categories';
+import { frameworkSectionLabel } from '@/lib/framework-tree/section-label';
+import { controlCategoryLabel } from '@/app/t/[tenantSlug]/(app)/controls/filter-defs';
 import { workflowMessageKey } from '@/lib/agentic/workflow-labels';
 import { auditCodePopulation } from '../helpers/audit-code-population';
 import { parseSchemaModels } from '../helpers/prisma-schema-models';
@@ -247,6 +251,85 @@ describe('I3: shared helpers speak through the catalog', () => {
         expect(localized.bands[0].name).toBe(bg('riskMatrixDefaults.band.Low'));
         // A display map, never a write: the stored shape is untouched.
         expect(renamed.levelLabels.likelihood[1]).toBe('Unlikely');
+    });
+});
+
+// ─── I3 — chrome the shell and the shared primitives own ─────────────
+
+describe('I3: the shell and the shared primitives speak through the catalog', () => {
+    /** `description` values written as literals inside `useKeyboardShortcut(…)` calls. */
+    function literalShortcutDescriptions(sf: ts.SourceFile): ts.PropertyAssignment[] {
+        const found: ts.PropertyAssignment[] = [];
+        const visit = (node: ts.Node): void => {
+            if (
+                ts.isCallExpression(node) &&
+                ts.isIdentifier(node.expression) &&
+                node.expression.text === 'useKeyboardShortcut'
+            ) {
+                for (const arg of node.arguments) {
+                    if (!ts.isObjectLiteralExpression(arg)) continue;
+                    for (const prop of arg.properties) {
+                        if (
+                            ts.isPropertyAssignment(prop) &&
+                            prop.name.getText(sf) === 'description' &&
+                            (ts.isStringLiteralLike(prop.initializer) || ts.isTemplateExpression(prop.initializer)) &&
+                            /[A-Za-z]/.test(prop.initializer.getText(sf))
+                        ) {
+                            found.push(prop);
+                        }
+                    }
+                }
+            }
+            ts.forEachChild(node, visit);
+        };
+        visit(sf);
+        return found;
+    }
+
+    it('no keyboard shortcut is registered with a literal description', () => {
+        // The command palette lists every registered shortcut by its
+        // description, so the description is UI copy: "Close navigation
+        // drawer" read in English on a Bulgarian dashboard (#5828). Every
+        // `useKeyboardShortcut(…, { description })` in `src/` passes a
+        // translated string, never a string or template literal.
+        const offenders: string[] = [];
+        for (const file of repoFiles({ under: 'src', extensions: ['.ts', '.tsx'] })) {
+            const text = fs.readFileSync(file, 'utf8');
+            if (!text.includes('useKeyboardShortcut(')) continue;
+            const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+            for (const prop of literalShortcutDescriptions(sf)) {
+                offenders.push(`${repoRelative(file)}:${sf.getLineAndCharacterOfPosition(prop.getStart()).line + 1}`);
+            }
+        }
+        expect(offenders).toStrictEqual([]);
+    });
+
+    it('the shortcut scan sees a literal description, and not a translated one', () => {
+        // The population above is empty on a clean tree; this proves the
+        // detector is not blind.
+        const probe = (code: string) =>
+            literalShortcutDescriptions(ts.createSourceFile('probe.tsx', code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX));
+        expect(probe("useKeyboardShortcut('Escape', close, { description: 'Close navigation drawer' });")).toHaveLength(1);
+        expect(probe('useKeyboardShortcut("f", open, { scope: "global", description: `Open ${what}` });')).toHaveLength(1);
+        expect(probe("useKeyboardShortcut('Escape', close, { description: tNav('closeNavigationDrawer') });")).toHaveLength(0);
+    });
+
+    it.each(Object.entries(ISO27001_DOMAIN))(
+        'the controls browse rail, Category column and filter label the ISO 27001 domain %s in Bulgarian',
+        (_key, domain) => {
+            // The domain strings are the taxonomy's grouping, ordering and
+            // filter keys and stay English; every surface labels them through
+            // `controlCategoryLabel` (#5828).
+            expect(latinIn(controlCategoryLabel(domain, scoped('controls')))).toStrictEqual([]);
+        },
+    );
+
+    it.each(CONTROL_CATEGORY_THEMES)('a framework tree section grouped on the ISO theme %s reads in Bulgarian', (theme) => {
+        // The framework page named its four ISO 27001 sections by the stored
+        // constant ("ORGANIZATIONAL") in every language.
+        expect(latinIn(frameworkSectionLabel(theme, (key) => bg(key)))).toStrictEqual([]);
+        // A section a framework names itself is its own text.
+        expect(frameworkSectionLabel('Annex A', (key) => bg(key))).toBe('Annex A');
     });
 });
 

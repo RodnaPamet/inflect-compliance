@@ -156,14 +156,20 @@ function SheetRoot({
                     className={cn(
                         "@container/sheet fixed z-40 flex outline-none",
                         sheetWidthVariants({ size }),
+                        // A side panel's bottom edge clears the home
+                        // indicator too: the navigation drawer is a LEFT
+                        // sheet on a phone, and with a flat `bottom-2` its
+                        // last row sat 8px above the screen edge, inside the
+                        // system-gesture zone. With no inset (every desktop)
+                        // `max(0.5rem, 0px)` is exactly `bottom-2`.
                         effectiveDirection === "right"
                             ? [
-                                  "bottom-2 right-2 top-2",
+                                  "bottom-[max(0.5rem,env(safe-area-inset-bottom))] right-2 top-2",
                                   "w-[min(var(--sheet-width),calc(100%-2*var(--sheet-margin)))] [--sheet-margin:8px]",
                               ]
                             : effectiveDirection === "left"
                               ? [
-                                    "bottom-2 left-2 top-2",
+                                    "bottom-[max(0.5rem,env(safe-area-inset-bottom))] left-2 top-2",
                                     "w-[min(var(--sheet-width),calc(100%-2*var(--sheet-margin)))] [--sheet-margin:8px]",
                                 ]
                               : [
