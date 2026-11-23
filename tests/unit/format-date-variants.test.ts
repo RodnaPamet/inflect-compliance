@@ -42,7 +42,7 @@ import {
 // String literals are KEPT, so assertions that harvest codes or ids from source
 // still see them. Every path this file reads is a TypeScript-alike, re-derived
 // per file rather than assumed from the directory.
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, declarationOf } from '../helpers/source-blocks';
 
 /** The locale + timezone the module docblock commits to. */
 const LOCALE = 'en-GB';
@@ -231,8 +231,8 @@ describe('every date in format-date.ts is read in the UTC calendar', () => {
 
     it('builds every Intl formatter through the one factory, pinned to en-GB + UTC', () => {
         expect(SOURCE.split('new Intl.DateTimeFormat(').length - 1).toBe(1);
-        expect(SOURCE).toMatch(/new Intl\.DateTimeFormat\(EN_TAG, \{ \.\.\.options, timeZone: 'UTC' \}\)/);
-        expect(SOURCE).toMatch(/^const EN_TAG = 'en-GB';$/m);
+        expect(declarationOf(SOURCE, 'intl')).toMatch(/new Intl\.DateTimeFormat\(EN_TAG, \{ \.\.\.options, timeZone: 'UTC' \}\)/);
+        expect(declarationOf(SOURCE, 'EN_TAG')).toBe("const EN_TAG = 'en-GB';");
     });
 
     it('finds every English formatter constant (the scan is not silently empty)', () => {
@@ -243,6 +243,9 @@ describe('every date in format-date.ts is read in the UTC calendar', () => {
     it('reads no local-time field of a Date', () => {
         const local = SOURCE.match(/\.get(?:Date|Day|Month|FullYear|Hours|Minutes|Seconds)\(/g) ?? [];
         expect(local).toStrictEqual([]);
-        expect(SOURCE).toMatch(/\.getUTCDate\(/);
+        // …and the Bulgarian date really is assembled from the UTC fields.
+        const bgDate = declarationOf(SOURCE, 'bgDate');
+        expect(bgDate).toMatch(/getUTCDate\(\)/);
+        expect(bgDate).toMatch(/getUTCFullYear\(\)/);
     });
 });

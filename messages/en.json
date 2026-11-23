@@ -15673,7 +15673,13 @@
       "now": "now",
       "sessionExpired": "Your session has expired.",
       "sessionExpiredAction": "Sign in again",
-      "loadFailed": "Notifications couldn't be loaded."
+      "loadFailed": "Notifications couldn't be loaded.",
+      "age": {
+        "now": "now",
+        "minutes": "{n}m",
+        "hours": "{n}h",
+        "days": "{n}d"
+      }
     },
     "sessionExpired": {
       "body": "Your session has expired. Anything on screen may be out of date.",

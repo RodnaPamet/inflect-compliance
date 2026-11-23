@@ -21,6 +21,7 @@ import {
     widgetTitleKey,
     resolveWidgetTitle,
 } from '@/app-layer/usecases/org-dashboard-widget-titles';
+import { localizedWidgetTitle } from '@/lib/org-dashboard-widget-titles';
 
 import { codeOf, commentsOf } from '../helpers/source-blocks';
 
@@ -98,8 +99,14 @@ describe('GUARDRAIL: org dashboard widget integrity', () => {
     describe('dispatcher', () => {
         const SRC = read('src/app/org/[orgSlug]/(app)/widget-dispatcher.tsx');
 
-        it('resolves titles through resolveWidgetTitle', () => {
-            expect(SRC).toMatch(/resolveWidgetTitle\(/);
+        it('resolves titles through localizedWidgetTitle (which falls back to resolveWidgetTitle)', () => {
+            expect(SRC).toMatch(/localizedWidgetTitle\(/);
+            // The fallback under it never returns a slug either.
+            for (const w of DEFAULT_ORG_DASHBOARD_PRESET) {
+                const title = localizedWidgetTitle(w.type, w.chartType, null, (key) => `[${key}]`);
+                expect(title.length).toBeGreaterThan(0);
+                expect(title).not.toBe(w.chartType);
+            }
         });
 
         it('never falls back a title to the raw chartType slug', () => {

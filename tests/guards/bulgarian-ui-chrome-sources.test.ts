@@ -28,6 +28,8 @@
  */
 import * as fs from 'node:fs';
 
+import * as ts from 'typescript';
+
 import {
     dateFormattersFor,
     type DateFormatters,
@@ -112,6 +114,39 @@ describe('I2: a Bulgarian date is written in Bulgarian', () => {
         expect(offenders).toStrictEqual([]);
     });
 
+    it('no module formats a date while it loads', () => {
+        // The ambient helpers write in the locale bound for the CURRENT render.
+        // A module-level constant (`const WEEKDAYS = … formatWeekdayShort(…)`)
+        // runs once, at import, and freezes whichever language came first —
+        // the calendar's weekday headers stayed English that way.
+        const helpers = /^format(?:Date\w*|Month\w*|Weekday\w*|RelativeTime)$/;
+        const offenders: string[] = [];
+        for (const file of repoFiles({ under: 'src', extensions: ['.ts', '.tsx'] })) {
+            const text = fs.readFileSync(file, 'utf8');
+            if (!text.includes("'@inflect/ui/lib/format-date'")) continue;
+            const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+            // A function that is DECLARED or STORED runs later, inside a
+            // render. One passed as an argument (`Array.from(…, (_, i) =>
+            // formatWeekdayShort(…))`) may run right now, so it is read.
+            const deferred = (node: ts.Node): boolean =>
+                ts.isFunctionDeclaration(node) ||
+                ts.isMethodDeclaration(node) ||
+                ts.isClassDeclaration(node) ||
+                ((ts.isArrowFunction(node) || ts.isFunctionExpression(node)) &&
+                    !ts.isCallExpression(node.parent) &&
+                    !ts.isNewExpression(node.parent));
+            const visit = (node: ts.Node): void => {
+                if (deferred(node)) return;
+                if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && helpers.test(node.expression.text)) {
+                    offenders.push(`${repoRelative(file)}:${sf.getLineAndCharacterOfPosition(node.getStart()).line + 1}`);
+                }
+                ts.forEachChild(node, visit);
+            };
+            sf.statements.forEach(visit);
+        }
+        expect(offenders).toStrictEqual([]);
+    });
+
     it('no date-fns distance or date-picker locale is chosen outside format-date', () => {
         // Relative time goes through `formatRelativeTime`; the picker takes
         // the active locale when its caller names none. A hard-coded `enUS`
@@ -144,7 +179,7 @@ describe('I3: shared helpers speak through the catalog', () => {
         // Both read the catalog; an English default or toast written back into
         // the source is what this catches.
         const toggle = codeOf(fs.readFileSync(`${__dirname}/../../src/components/ui/TreeExpandCollapseToggle.tsx`, 'utf8'));
-        expect(toggle).not.toMatch(/'(?:Expand|Collapse) all'/);
+        expect(toggle.match(/'(?:Expand|Collapse) all'/g) ?? []).toStrictEqual([]);
         expect(latinIn(bg('common.ui.expandAll'))).toStrictEqual([]);
         expect(latinIn(bg('common.ui.collapseAll'))).toStrictEqual([]);
 
