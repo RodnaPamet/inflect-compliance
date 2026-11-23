@@ -15,28 +15,114 @@
  * runtime pathname via `normalizePathname` (RQ4-1) before lookup.
  *
  * Labels are CONTEXTUAL — they name the destination ("Back to Risks",
- * "Back to Vendor"). Labels are static i18n-default English; localisation
- * threading is a follow-up — the strings are short and consistent so the
- * upgrade is mechanical.
+ * "Back to Vendor"). Each entry stores a MESSAGE KEY under the `common`
+ * namespace, never a label: `<BackAffordance>` resolves it with next-intl at
+ * render. They used to be English literals dropped into the translated
+ * "Back to {label}", so a Bulgarian page read "Обратно към Agents". The key
+ * type is the closed `BackLabelKey` union, and
+ * `tests/unit/canonical-parent-labels-translated.test.ts` fails if a key has
+ * no message in either catalogue.
  */
 import { normalizePathname } from './page-segregation';
+
+/**
+ * Every message key (relative to `common`) a canonical parent may name. Section
+ * names reuse `common.sections.*`, which the referrer-derived label reads too,
+ * so "Back to Risks" says the same thing whichever tier produced it.
+ */
+export const BACK_LABEL_KEYS = [
+    'sections.accessReviews',
+    'sections.admin',
+    'sections.agents',
+    'sections.assets',
+    'sections.audits',
+    'sections.controls',
+    'sections.dashboard',
+    'sections.frameworks',
+    'sections.incidents',
+    'sections.issues',
+    'sections.policies',
+    'sections.processes',
+    'sections.reports',
+    'sections.risks',
+    'sections.tasks',
+    'sections.tests',
+    'sections.vendors',
+    'parentLabels.a2aPeers',
+    'parentLabels.agent',
+    'parentLabels.agentRuns',
+    'parentLabels.aiSystems',
+    'parentLabels.auditCycle',
+    'parentLabels.auditCycles',
+    'parentLabels.businessContinuity',
+    'parentLabels.externalTools',
+    'parentLabels.framework',
+    'parentLabels.integrations',
+    'parentLabels.nis2',
+    'parentLabels.nis2Gap',
+    'parentLabels.riskRegister',
+    'parentLabels.soa',
+    'parentLabels.vendorTemplates',
+] as const;
+
+export type BackLabelKey = (typeof BACK_LABEL_KEYS)[number];
+
+/**
+ * Map of in-tenant section paths to their `common.sections.*` message
+ * key. `<BackAffordance>` resolves each through next-intl so the
+ * referrer-based affordance shows the localised product name (e.g.
+ * `/audits` → "Internal Audit" / "Вътрешен одит", not the raw
+ * "Audits"). A section missing here reads "previous page", never its raw
+ * URL segment.
+ */
+export const SECTION_LABEL_KEYS: Readonly<Record<string, string>> = {
+    '/access-reviews': 'accessReviews',
+    '/admin': 'admin',
+    '/agents': 'agents',
+    '/assets': 'assets',
+    '/audits': 'audits',
+    '/calendar': 'calendar',
+    '/clauses': 'clauses',
+    '/controls': 'controls',
+    '/coverage': 'coverage',
+    '/dashboard': 'dashboard',
+    '/evidence': 'evidence',
+    '/findings': 'findings',
+    '/framework-updates': 'frameworkUpdates',
+    '/frameworks': 'frameworks',
+    '/incidents': 'incidents',
+    '/issues': 'issues',
+    '/notifications': 'notifications',
+    '/policies': 'policies',
+    '/processes': 'processes',
+    '/reports': 'reports',
+    '/risks': 'risks',
+    '/security-testing': 'securityTesting',
+    '/tasks': 'tasks',
+    '/tests': 'tests',
+    '/vendors': 'vendors',
+    '/vulnerabilities': 'vulnerabilities',
+};
 
 export interface CanonicalParent {
     /** Pattern relative to `/t/[tenantSlug]` — joined at render time. */
     href: string;
-    /** Trailing portion of the affordance label: "Back to <label>". */
-    label: string;
+    /**
+     * Message key, under `common`, for the trailing portion of the affordance
+     * label: "Back to <label>".
+     */
+    labelKey: BackLabelKey;
 }
 
 const PARENT_MAP: Record<string, CanonicalParent> = {
-    '/frameworks/[frameworkKey]/readiness': { href: '/frameworks/[frameworkKey]', label: 'NIS2' },
-    '/frameworks/[frameworkKey]/self-assessment': { href: '/frameworks/[frameworkKey]', label: 'NIS2' },
+    '/frameworks/[frameworkKey]/readiness': { href: '/frameworks/[frameworkKey]', labelKey: 'parentLabels.nis2' },
+    '/frameworks/[frameworkKey]/self-assessment': { href: '/frameworks/[frameworkKey]', labelKey: 'parentLabels.nis2' },
     // Access reviews. The LIST hangs off `/tests` (#3252): that in-page button is
     // the only link to it anywhere in the UI, and it has not been a sidebar
     // destination since #1538. The label is what a user sees on the back link, so
     // it names where they came FROM rather than what they are looking at.
-    '/access-reviews': { href: '/tests', label: 'Tests' },
-    '/access-reviews/[reviewId]': { href: '/access-reviews', label: 'Access reviews' },
+    '/access-reviews': { href: '/tests', labelKey: 'sections.tests' },
+    '/access-reviews/[reviewId]': { href: '/access-reviews', labelKey: 'sections.accessReviews' },
 
     // Agent — all five hang off the /agents register (AGENTIC UI 1/4).
     //
@@ -49,45 +135,45 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     // Both added when RQ4-1 stopped accepting a wildcard match and surfaced
     // them as unlisted. A SUBPAGE owes a canonical parent, and both are
     // reached from the register exactly as their siblings are.
-    '/agents/decisions': { href: '/agents', label: 'Agents' },
-    '/agents/external-tools': { href: '/agents', label: 'Agents' },
+    '/agents/decisions': { href: '/agents', labelKey: 'sections.agents' },
+    '/agents/external-tools': { href: '/agents', labelKey: 'sections.agents' },
     // #3124 — the parent is the page the inbound link LIVES on, exactly as for
     // the external-write ladder below. An operator reaches saved parameters from
     // the tool catalogue for a specific connection, so that is where Back
     // belongs.
-    '/agents/parameter-sets': { href: '/agents/external-tools', label: 'External tools' },
-    '/agents/compose': { href: '/agents', label: 'Agents' },
+    '/agents/parameter-sets': { href: '/agents/external-tools', labelKey: 'parentLabels.externalTools' },
+    '/agents/compose': { href: '/agents', labelKey: 'sections.agents' },
     // #3679 — the peers list hangs off the register like its siblings; one
     // peer's Back goes to the list it was opened from.
-    '/agents/peers': { href: '/agents', label: 'Agents' },
-    '/agents/peers/[peerId]': { href: '/agents/peers', label: 'A2A peers' },
+    '/agents/peers': { href: '/agents', labelKey: 'sections.agents' },
+    '/agents/peers/[peerId]': { href: '/agents/peers', labelKey: 'parentLabels.a2aPeers' },
     // #3807 — the owner-orphan pass hangs off the register like its siblings.
-    '/agents/owner-orphan-pass': { href: '/agents', label: 'Agents' },
+    '/agents/owner-orphan-pass': { href: '/agents', labelKey: 'sections.agents' },
     // #3807 — the pilot auditor's set-up hangs off the register too.
-    '/agents/audit-pilot': { href: '/agents', label: 'Agents' },
-    '/agents/proposals': { href: '/agents', label: 'Agents' },
-    '/agents/reports': { href: '/agents', label: 'Agents' },
-    '/agents/runs': { href: '/agents', label: 'Agents' },
+    '/agents/audit-pilot': { href: '/agents', labelKey: 'sections.agents' },
+    '/agents/proposals': { href: '/agents', labelKey: 'sections.agents' },
+    '/agents/reports': { href: '/agents', labelKey: 'sections.agents' },
+    '/agents/runs': { href: '/agents', labelKey: 'sections.agents' },
     // Back from ONE run goes to the run list, not to the register — the
     // list is where the reader came from and what they are working through.
-    '/agents/runs/[runId]': { href: '/agents/runs', label: 'Runs' },
-    '/agents/receipts': { href: '/agents', label: 'Agents' },
-    '/agents/quarantine': { href: '/agents', label: 'Agents' },
+    '/agents/runs/[runId]': { href: '/agents/runs', labelKey: 'parentLabels.agentRuns' },
+    '/agents/receipts': { href: '/agents', labelKey: 'sections.agents' },
+    '/agents/quarantine': { href: '/agents', labelKey: 'sections.agents' },
     // The ASI09 review-quality report: a view of those agents' review queue,
     // so back goes to them.
-    '/agents/review-quality': { href: '/agents', label: 'Agents' },
+    '/agents/review-quality': { href: '/agents', labelKey: 'sections.agents' },
     // An operator who opened one agent is one step from the list of all of
     // them.
-    '/agents/[agentId]': { href: '/agents', label: 'Agents' },
+    '/agents/[agentId]': { href: '/agents', labelKey: 'sections.agents' },
 
     // The seven redirect shims keep entries so `resolveCanonicalParent` can
     // answer for a path a stale in-tab referrer still names. They point at the
     // NEW locations — a shim's parent is the surface its target belongs to,
     // not the surface it used to sit under.
-    '/agent-proposals': { href: '/agents', label: 'Agents' },
-    '/agent-runs': { href: '/agents', label: 'Agents' },
-    '/admin/mcp/agent-receipts': { href: '/agents', label: 'Agents' },
-    '/admin/mcp/quarantine': { href: '/agents', label: 'Agents' },
+    '/agent-proposals': { href: '/agents', labelKey: 'sections.agents' },
+    '/agent-runs': { href: '/agents', labelKey: 'sections.agents' },
+    '/admin/mcp/agent-receipts': { href: '/agents', labelKey: 'sections.agents' },
+    '/admin/mcp/quarantine': { href: '/agents', labelKey: 'sections.agents' },
     // The Step 4b queue's parent is the integrations list rather than the
     // connection it belongs to: these entries are STATIC route forms, and the
     // connection's own href needs the id this map cannot see. The breadcrumb
@@ -95,177 +181,177 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     // not lost — it is just not expressible here.
     '/admin/integrations/[connectionId]/reconciliation': {
         href: '/admin/integrations',
-        label: 'Integrations',
+        labelKey: 'parentLabels.integrations',
     },
-    '/admin/agents': { href: '/agents', label: 'Agents' },
-    '/admin/agents/[agentId]': { href: '/agents', label: 'Agents' },
-    '/admin/agents/review-quality': { href: '/agents', label: 'Agents' },
+    '/admin/agents': { href: '/agents', labelKey: 'sections.agents' },
+    '/admin/agents/[agentId]': { href: '/agents', labelKey: 'sections.agents' },
+    '/admin/agents/review-quality': { href: '/agents', labelKey: 'sections.agents' },
 
     // Admin subpages
-    '/admin/api-keys': { href: '/admin', label: 'Admin' },
-    '/admin/audit-log': { href: '/admin', label: 'Admin' },
-    '/admin/billing': { href: '/admin', label: 'Admin' },
-    '/admin/devices': { href: '/admin', label: 'Admin' },
-    '/admin/dsar-requests': { href: '/admin', label: 'Admin' },
-    '/admin/entra': { href: '/admin', label: 'Admin' },
+    '/admin/api-keys': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/audit-log': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/billing': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/devices': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/dsar-requests': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/entra': { href: '/admin', labelKey: 'sections.admin' },
     // Reached from the Integrations hub, where the identity connectors these
     // passes act on are configured — same structural parent as the synced
     // identity roster.
-    '/admin/identity-joiner-passes': { href: '/admin/integrations', label: 'Integrations' },
-    '/admin/identity-leaver-passes': { href: '/admin/integrations', label: 'Integrations' },
-    '/admin/identity-write-journal': { href: '/admin/integrations', label: 'Integrations' },
+    '/admin/identity-joiner-passes': { href: '/admin/integrations', labelKey: 'parentLabels.integrations' },
+    '/admin/identity-leaver-passes': { href: '/admin/integrations', labelKey: 'parentLabels.integrations' },
+    '/admin/identity-write-journal': { href: '/admin/integrations', labelKey: 'parentLabels.integrations' },
     // #2861 — the parent is the page the inbound link LIVES on, not
     // /admin/integrations. An operator reaches this from the external-tools
     // surface for a specific connection, so that is where Back belongs; the
     // breadcrumb names the same target, so the two cannot disagree.
-    '/admin/external-write-policy/[connectionId]': { href: '/agents/external-tools', label: 'External tools' },
-    '/admin/identity-write-policy': { href: '/admin/integrations', label: 'Integrations' },
-    '/admin/ai-features': { href: '/admin', label: 'Admin' },
-    '/admin/modules': { href: '/admin', label: 'Admin' },
-    '/admin/integrations': { href: '/admin', label: 'Admin' },
-    '/admin/integrations/sharepoint-health': { href: '/admin/integrations', label: 'Integrations' },
-    '/admin/integrations/[connectionId]': { href: '/admin/integrations', label: 'Integrations' },
-    '/admin/integrations/identity-accounts': { href: '/admin/integrations', label: 'Integrations' },
-    '/admin/mcp': { href: '/admin', label: 'Admin' },
-    '/admin/members': { href: '/admin', label: 'Admin' },
-    '/admin/notifications': { href: '/admin', label: 'Admin' },
-    '/admin/personnel': { href: '/admin', label: 'Admin' },
-    '/admin/privacy': { href: '/admin', label: 'Admin' },
-    '/admin/rbac': { href: '/admin', label: 'Admin' },
-    '/admin/risk-appetite': { href: '/admin', label: 'Admin' },
-    '/admin/risk-matrix': { href: '/admin', label: 'Admin' },
-    '/admin/roles': { href: '/admin', label: 'Admin' },
-    '/admin/sandbox-runtime': { href: '/admin', label: 'Admin' },
-    '/admin/scim': { href: '/admin', label: 'Admin' },
-    '/admin/security': { href: '/admin', label: 'Admin' },
-    '/admin/sso': { href: '/admin', label: 'Admin' },
-    '/admin/training': { href: '/admin', label: 'Admin' },
-    '/admin/trust-center': { href: '/admin', label: 'Admin' },
-    '/admin/vendor-assessment-reviews': { href: '/admin', label: 'Admin' },
-    '/admin/vendor-assessment-reviews/[assessmentId]': { href: '/admin', label: 'Admin' },
-    '/admin/vendor-templates': { href: '/admin', label: 'Admin' },
-    '/admin/vendor-templates/[templateId]': { href: '/admin/vendor-templates', label: 'Vendor templates' },
+    '/admin/external-write-policy/[connectionId]': { href: '/agents/external-tools', labelKey: 'parentLabels.externalTools' },
+    '/admin/identity-write-policy': { href: '/admin/integrations', labelKey: 'parentLabels.integrations' },
+    '/admin/ai-features': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/modules': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/integrations': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/integrations/sharepoint-health': { href: '/admin/integrations', labelKey: 'parentLabels.integrations' },
+    '/admin/integrations/[connectionId]': { href: '/admin/integrations', labelKey: 'parentLabels.integrations' },
+    '/admin/integrations/identity-accounts': { href: '/admin/integrations', labelKey: 'parentLabels.integrations' },
+    '/admin/mcp': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/members': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/notifications': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/personnel': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/privacy': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/rbac': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/risk-appetite': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/risk-matrix': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/roles': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/sandbox-runtime': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/scim': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/security': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/sso': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/training': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/trust-center': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/vendor-assessment-reviews': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/vendor-assessment-reviews/[assessmentId]': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/vendor-templates': { href: '/admin', labelKey: 'sections.admin' },
+    '/admin/vendor-templates/[templateId]': { href: '/admin/vendor-templates', labelKey: 'parentLabels.vendorTemplates' },
 
     // Assets
-    '/assets/[id]': { href: '/assets', label: 'Assets' },
-    '/assets/import': { href: '/assets', label: 'Assets' },
-    '/assets/new': { href: '/assets', label: 'Assets' },
+    '/assets/[id]': { href: '/assets', labelKey: 'sections.assets' },
+    '/assets/import': { href: '/assets', labelKey: 'sections.assets' },
+    '/assets/new': { href: '/assets', labelKey: 'sections.assets' },
 
     // Audits
-    '/audits/auditors': { href: '/audits', label: 'Audits' },
-    '/audits/business-continuity': { href: '/audits', label: 'Internal Audit' },
-    '/audits/business-continuity/[id]': { href: '/audits/business-continuity', label: 'Business Continuity' },
-    '/audits/cycles': { href: '/audits', label: 'Audits' },
-    '/audits/cycles/[cycleId]': { href: '/audits/cycles', label: 'Audit cycles' },
+    '/audits/auditors': { href: '/audits', labelKey: 'sections.audits' },
+    '/audits/business-continuity': { href: '/audits', labelKey: 'sections.audits' },
+    '/audits/business-continuity/[id]': { href: '/audits/business-continuity', labelKey: 'parentLabels.businessContinuity' },
+    '/audits/cycles': { href: '/audits', labelKey: 'sections.audits' },
+    '/audits/cycles/[cycleId]': { href: '/audits/cycles', labelKey: 'parentLabels.auditCycles' },
     '/audits/cycles/[cycleId]/readiness': {
         href: '/audits/cycles/[cycleId]',
-        label: 'Audit cycle',
+        labelKey: 'parentLabels.auditCycle',
     },
-    '/audits/nis2-gap': { href: '/audits', label: 'Internal Audit' },
-    '/audits/nis2-gap/respond/[assignmentId]': { href: '/audits/nis2-gap', label: 'NIS2 Gap Assessment' },
-    '/audits/new': { href: '/audits', label: 'Audits' },
-    '/audits/packs/[packId]': { href: '/audits', label: 'Audits' },
-    '/audits/readiness': { href: '/audits', label: 'Audits' },
-    '/audits/workpaper-reviews': { href: '/audits', label: 'Audits' },
+    '/audits/nis2-gap': { href: '/audits', labelKey: 'sections.audits' },
+    '/audits/nis2-gap/respond/[assignmentId]': { href: '/audits/nis2-gap', labelKey: 'parentLabels.nis2Gap' },
+    '/audits/new': { href: '/audits', labelKey: 'sections.audits' },
+    '/audits/packs/[packId]': { href: '/audits', labelKey: 'sections.audits' },
+    '/audits/readiness': { href: '/audits', labelKey: 'sections.audits' },
+    '/audits/workpaper-reviews': { href: '/audits', labelKey: 'sections.audits' },
 
     // Auth
-    '/auth/mfa': { href: '/dashboard', label: 'Dashboard' },
+    '/auth/mfa': { href: '/dashboard', labelKey: 'sections.dashboard' },
 
     // Controls
-    '/controls/[controlId]': { href: '/controls', label: 'Controls' },
+    '/controls/[controlId]': { href: '/controls', labelKey: 'sections.controls' },
     // Incidents (NIS2 Article 23) — subpage of Internal Audit
-    '/incidents': { href: '/audits', label: 'Internal Audit' },
-    '/incidents/[incidentId]': { href: '/incidents', label: 'Incidents' },
+    '/incidents': { href: '/audits', labelKey: 'sections.audits' },
+    '/incidents/[incidentId]': { href: '/incidents', labelKey: 'sections.incidents' },
     // Test-plan detail lives URL-wise under a control, but the user's
     // mental model is "I'm working on a test"; the canonical parent is
     // the Tests list. The in-tab referrer still wins — drilling in from
     // a control detail shows "Back to Control" via the smart referrer.
     '/controls/[controlId]/tests/[planId]': {
         href: '/tests',
-        label: 'Tests',
+        labelKey: 'sections.tests',
     },
-    '/controls/dashboard': { href: '/controls', label: 'Controls' },
-    '/controls/new': { href: '/controls', label: 'Controls' },
-    '/controls/sankey': { href: '/controls', label: 'Controls' },
-    '/controls/templates': { href: '/controls', label: 'Controls' },
+    '/controls/dashboard': { href: '/controls', labelKey: 'sections.controls' },
+    '/controls/new': { href: '/controls', labelKey: 'sections.controls' },
+    '/controls/sankey': { href: '/controls', labelKey: 'sections.controls' },
+    '/controls/templates': { href: '/controls', labelKey: 'sections.controls' },
 
     // Frameworks — a subpage of Internal Audit (frameworks are the
     // standards an audit is conducted against; not a top-level section).
-    '/frameworks': { href: '/audits', label: 'Internal Audit' },
-    '/frameworks/[frameworkKey]': { href: '/frameworks', label: 'Frameworks' },
+    '/frameworks': { href: '/audits', labelKey: 'sections.audits' },
+    '/frameworks/[frameworkKey]': { href: '/frameworks', labelKey: 'sections.frameworks' },
     '/frameworks/[frameworkKey]/diff': {
         href: '/frameworks/[frameworkKey]',
-        label: 'Framework',
+        labelKey: 'parentLabels.framework',
     },
     '/frameworks/[frameworkKey]/install': {
         href: '/frameworks/[frameworkKey]',
-        label: 'Framework',
+        labelKey: 'parentLabels.framework',
     },
     '/frameworks/[frameworkKey]/templates': {
         href: '/frameworks/[frameworkKey]',
-        label: 'Framework',
+        labelKey: 'parentLabels.framework',
     },
 
     // Issues
-    '/issues/[issueId]': { href: '/issues', label: 'Issues' },
-    '/issues/dashboard': { href: '/issues', label: 'Issues' },
-    '/issues/new': { href: '/issues', label: 'Issues' },
+    '/issues/[issueId]': { href: '/issues', labelKey: 'sections.issues' },
+    '/issues/dashboard': { href: '/issues', labelKey: 'sections.issues' },
+    '/issues/new': { href: '/issues', labelKey: 'sections.issues' },
 
     // Onboarding
-    '/onboarding': { href: '/dashboard', label: 'Dashboard' },
+    '/onboarding': { href: '/dashboard', labelKey: 'sections.dashboard' },
 
     // Policies
-    '/policies/[policyId]': { href: '/policies', label: 'Policies' },
-    '/policies/new': { href: '/policies', label: 'Policies' },
-    '/policies/templates': { href: '/policies', label: 'Policies' },
+    '/policies/[policyId]': { href: '/policies', labelKey: 'sections.policies' },
+    '/policies/new': { href: '/policies', labelKey: 'sections.policies' },
+    '/policies/templates': { href: '/policies', labelKey: 'sections.policies' },
 
     // Processes
-    '/processes/governance': { href: '/processes', label: 'Processes' },
-    '/processes/agents/[agentId]': { href: '/agents', label: 'Agents' },
+    '/processes/governance': { href: '/processes', labelKey: 'sections.processes' },
+    '/processes/agents/[agentId]': { href: '/agents', labelKey: 'sections.agents' },
     // The flow editor's parent is the agent itself, as its breadcrumbs say.
-    '/processes/agents/[agentId]/flow': { href: '/agents/[agentId]', label: 'Agent' },
+    '/processes/agents/[agentId]/flow': { href: '/agents/[agentId]', labelKey: 'parentLabels.agent' },
 
     // Reports
-    '/reports/soa': { href: '/reports', label: 'Reports' },
-    '/reports/soa/print': { href: '/reports/soa', label: 'SoA' },
+    '/reports/soa': { href: '/reports', labelKey: 'sections.reports' },
+    '/reports/soa/print': { href: '/reports/soa', labelKey: 'parentLabels.soa' },
 
     // Risks
-    '/risks/[riskId]': { href: '/risks', label: 'Risks' },
-    '/risks/ai': { href: '/risks', label: 'Risks' },
-    '/risks/ai-systems': { href: '/risks', label: 'Risks' },
-    '/risks/ai-systems/[systemId]': { href: '/risks/ai-systems', label: 'AI Systems' },
-    '/risks/board': { href: '/risks', label: 'Risks' },
-    '/risks/correlations': { href: '/risks', label: 'Risks' },
-    '/risks/dashboard': { href: '/risks', label: 'Risks' },
-    '/risks/hierarchy': { href: '/risks', label: 'Risks' },
-    '/risks/information-registry': { href: '/risks', label: 'Risks' },
-    '/risks/import': { href: '/risks', label: 'Risks' },
-    '/risks/kri': { href: '/risks', label: 'Risks' },
-    '/risks/loss-events': { href: '/risks', label: 'Risks' },
-    '/risks/new': { href: '/risks', label: 'Risks' },
-    '/risks/reports': { href: '/risks', label: 'Risks' },
-    '/risks/scenarios': { href: '/risks', label: 'Risks' },
+    '/risks/[riskId]': { href: '/risks', labelKey: 'sections.risks' },
+    '/risks/ai': { href: '/risks', labelKey: 'sections.risks' },
+    '/risks/ai-systems': { href: '/risks', labelKey: 'sections.risks' },
+    '/risks/ai-systems/[systemId]': { href: '/risks/ai-systems', labelKey: 'parentLabels.aiSystems' },
+    '/risks/board': { href: '/risks', labelKey: 'sections.risks' },
+    '/risks/correlations': { href: '/risks', labelKey: 'sections.risks' },
+    '/risks/dashboard': { href: '/risks', labelKey: 'sections.risks' },
+    '/risks/hierarchy': { href: '/risks', labelKey: 'sections.risks' },
+    '/risks/information-registry': { href: '/risks', labelKey: 'sections.risks' },
+    '/risks/import': { href: '/risks', labelKey: 'sections.risks' },
+    '/risks/kri': { href: '/risks', labelKey: 'sections.risks' },
+    '/risks/loss-events': { href: '/risks', labelKey: 'sections.risks' },
+    '/risks/new': { href: '/risks', labelKey: 'sections.risks' },
+    '/risks/reports': { href: '/risks', labelKey: 'sections.risks' },
+    '/risks/scenarios': { href: '/risks', labelKey: 'sections.risks' },
 
     // Security (self-service)
-    '/security/mfa': { href: '/dashboard', label: 'Dashboard' },
-    '/security-testing': { href: '/audits', label: 'Internal Audit' },
-    '/vulnerabilities': { href: '/risks', label: 'Risk Register' },
+    '/security/mfa': { href: '/dashboard', labelKey: 'sections.dashboard' },
+    '/security-testing': { href: '/audits', labelKey: 'sections.audits' },
+    '/vulnerabilities': { href: '/risks', labelKey: 'parentLabels.riskRegister' },
 
     // Tasks
-    '/tasks/[taskId]': { href: '/tasks', label: 'Tasks' },
-    '/tasks/dashboard': { href: '/tasks', label: 'Tasks' },
-    '/tasks/new': { href: '/tasks', label: 'Tasks' },
+    '/tasks/[taskId]': { href: '/tasks', labelKey: 'sections.tasks' },
+    '/tasks/dashboard': { href: '/tasks', labelKey: 'sections.tasks' },
+    '/tasks/new': { href: '/tasks', labelKey: 'sections.tasks' },
 
     // Tests
-    '/tests/dashboard': { href: '/tests', label: 'Tests' },
-    '/tests/due': { href: '/tests', label: 'Tests' },
-    '/tests/plans/[planId]': { href: '/tests', label: 'Tests' },
-    '/tests/runs/[runId]': { href: '/tests', label: 'Tests' },
+    '/tests/dashboard': { href: '/tests', labelKey: 'sections.tests' },
+    '/tests/due': { href: '/tests', labelKey: 'sections.tests' },
+    '/tests/plans/[planId]': { href: '/tests', labelKey: 'sections.tests' },
+    '/tests/runs/[runId]': { href: '/tests', labelKey: 'sections.tests' },
 
     // Vendors
-    '/vendors/[vendorId]': { href: '/vendors', label: 'Vendors' },
-    '/vendors/dashboard': { href: '/vendors', label: 'Vendors' },
-    '/vendors/new': { href: '/vendors', label: 'Vendors' },
+    '/vendors/[vendorId]': { href: '/vendors', labelKey: 'sections.vendors' },
+    '/vendors/dashboard': { href: '/vendors', labelKey: 'sections.vendors' },
+    '/vendors/new': { href: '/vendors', labelKey: 'sections.vendors' },
 };
 
 /**
@@ -343,7 +429,7 @@ export function resolveCanonicalParent(
     const expandedHref = expandDynamicSegments(parent.href, pattern, pathname);
     return {
         href: `/t/${tenantSlug}${expandedHref}`,
-        label: parent.label,
+        labelKey: parent.labelKey,
     };
 }
 

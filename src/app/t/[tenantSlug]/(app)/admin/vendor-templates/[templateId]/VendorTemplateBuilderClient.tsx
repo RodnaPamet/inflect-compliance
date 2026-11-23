@@ -51,7 +51,8 @@ import { SkeletonDetailPage } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { useToastWithUndo } from '@/components/ui/hooks';
-import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { PrimaryAction } from '@/components/layout/PageActions';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
@@ -588,20 +589,20 @@ export function VendorTemplateBuilderClient({
             data-testid="vendor-template-builder"
         >
             <BackAffordance />
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <PageBreadcrumbs
-                        items={[
-                            { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
-                            { label: t('crumb.admin'), href: tenantHref('/admin') },
-                            { label: t('crumb.vendorTemplates'), href: tenantHref('/admin/vendor-templates') },
-                            { label: tree.name },
-                        ]}
-                        className="mb-1"
-                    />
-                    <Heading level={1}>{tree.name}</Heading>
-                    <div className="flex items-center gap-tight mt-1 text-xs text-content-subtle">
+            {/* Header — the shared PageHeader (#5815). This was a hand-rolled
+                `flex items-center justify-between` row with no wrap, so on a
+                phone the title squeezed and Publish was clipped at the right
+                edge. PageHeader stacks below `sm` with Publish first. */}
+            <PageHeader
+                breadcrumbs={[
+                    { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
+                    { label: t('crumb.admin'), href: tenantHref('/admin') },
+                    { label: t('crumb.vendorTemplates'), href: tenantHref('/admin/vendor-templates') },
+                    { label: tree.name },
+                ]}
+                title={tree.name}
+                meta={
+                    <span className="flex flex-wrap items-center gap-tight text-xs text-content-subtle">
                         <span>{tree.key}</span>
                         <span>·</span>
                         <span>{t('templateBuilder.version', { version: tree.version })}</span>
@@ -609,39 +610,45 @@ export function VendorTemplateBuilderClient({
                         <StatusBadge variant={tree.isPublished ? 'success' : 'warning'} size="sm">
                             {tree.isPublished ? t('templateBuilder.published') : t('templateBuilder.draft')}
                         </StatusBadge>
-                    </div>
-                </div>
-                <div className="flex items-center gap-tight">
-                    {dirty && editable && (
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => void saveOrder()}
-                            disabled={saving}
-                            loading={saving}
-                            id="save-order-btn"
-                        >
-                            {saving ? t('templateBuilder.saving') : t('templateBuilder.saveOrder')}
-                        </Button>
-                    )}
-                    {canAuthor &&
-                        !tree.isPublished &&
-                        questionCount > 0 && (
-                            <Button
-                                variant="primary"
-                                size="sm"
-                                onClick={() => setConfirmingPublish(true)}
-                                disabled={publishing}
-                                loading={publishing}
-                                id="publish-template-btn"
-                            >
-                                {publishing
-                                    ? t('templateBuilder.publishing')
-                                    : t('templateBuilder.publish')}
-                            </Button>
-                        )}
-                </div>
-            </div>
+                    </span>
+                }
+                actions={
+                    (dirty && editable) || (canAuthor && !tree.isPublished && questionCount > 0) ? (
+                        <>
+                            {dirty && editable && (
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => void saveOrder()}
+                                    disabled={saving}
+                                    loading={saving}
+                                    id="save-order-btn"
+                                >
+                                    {saving ? t('templateBuilder.saving') : t('templateBuilder.saveOrder')}
+                                </Button>
+                            )}
+                            {canAuthor &&
+                                !tree.isPublished &&
+                                questionCount > 0 && (
+                                    <PrimaryAction>
+                                        <Button
+                                            variant="primary"
+                                            size="sm"
+                                            onClick={() => setConfirmingPublish(true)}
+                                            disabled={publishing}
+                                            loading={publishing}
+                                            id="publish-template-btn"
+                                        >
+                                            {publishing
+                                                ? t('templateBuilder.publishing')
+                                                : t('templateBuilder.publish')}
+                                        </Button>
+                                    </PrimaryAction>
+                                )}
+                        </>
+                    ) : undefined
+                }
+            />
 
             {tree.isPublished && (
                 <div

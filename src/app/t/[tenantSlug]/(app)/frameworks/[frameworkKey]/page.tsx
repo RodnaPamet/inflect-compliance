@@ -19,6 +19,7 @@ import { Heading, Caption } from '@/components/ui/typography';
 import { KPIStat } from '@/components/ui/metric';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
+import { OverflowAction, PrimaryAction } from '@/components/layout/PageActions';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
@@ -310,24 +311,34 @@ export default function FrameworkDetailPage() {
                 />
             }
             actions={
+                // On a phone (#5815): Install pack first, the three links in
+                // the "⋯" menu. Desktop keeps four buttons, primary rightmost.
                 <>
                     {frameworkHasClauseTracker(frameworkKey) && (
-                        <Link href={tenantHref('/clauses')} className={buttonVariants({ variant: 'secondary' })} id="clause-tracker-link">
-                            {t('detail.clauseTracker')}
-                        </Link>
+                        <OverflowAction label={t('detail.clauseTracker')} href={tenantHref('/clauses')} data-testid="clause-tracker-menu-item">
+                            <Link href={tenantHref('/clauses')} className={buttonVariants({ variant: 'secondary' })} id="clause-tracker-link">
+                                {t('detail.clauseTracker')}
+                            </Link>
+                        </OverflowAction>
                     )}
-                    <Link href={tenantHref(`/frameworks/${frameworkKey}/templates`)} className={buttonVariants({ variant: 'secondary' })} id="browse-templates-cta">
-                        {t('detail.browseTemplates')}
-                    </Link>
-                    {/* #4732 — the requirements diff had no way in but a typed URL. */}
-                    <Link href={tenantHref(`/frameworks/${frameworkKey}/diff`)} className={buttonVariants({ variant: 'secondary' })} id="compare-requirements-cta">
-                        {t('detail.compareRequirements')}
-                    </Link>
-                    <RequirePermission resource="frameworks" action="install">
-                        <Link href={tenantHref(`/frameworks/${frameworkKey}/install`)} className={buttonVariants({ variant: 'primary' })} id="install-pack-cta">
-                            {t('detail.installPack')}
+                    <OverflowAction label={t('detail.browseTemplates')} href={tenantHref(`/frameworks/${frameworkKey}/templates`)} data-testid="browse-templates-menu-item">
+                        <Link href={tenantHref(`/frameworks/${frameworkKey}/templates`)} className={buttonVariants({ variant: 'secondary' })} id="browse-templates-cta">
+                            {t('detail.browseTemplates')}
                         </Link>
-                    </RequirePermission>
+                    </OverflowAction>
+                    {/* #4732 — the requirements diff had no way in but a typed URL. */}
+                    <OverflowAction label={t('detail.compareRequirements')} href={tenantHref(`/frameworks/${frameworkKey}/diff`)} data-testid="compare-requirements-menu-item">
+                        <Link href={tenantHref(`/frameworks/${frameworkKey}/diff`)} className={buttonVariants({ variant: 'secondary' })} id="compare-requirements-cta">
+                            {t('detail.compareRequirements')}
+                        </Link>
+                    </OverflowAction>
+                    <PrimaryAction>
+                        <RequirePermission resource="frameworks" action="install">
+                            <Link href={tenantHref(`/frameworks/${frameworkKey}/install`)} className={buttonVariants({ variant: 'primary' })} id="install-pack-cta">
+                                {t('detail.installPack')}
+                            </Link>
+                        </RequirePermission>
+                    </PrimaryAction>
                 </>
             }
             tabs={tabs}

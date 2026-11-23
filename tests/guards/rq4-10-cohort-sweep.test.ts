@@ -103,8 +103,16 @@ function fileMountsBackAffordance(file: string): boolean {
         const shared = path.join(
             APP_PAGES, '../../../../components/test-plans/TestPlanDetailView.tsx',
         );
-        if (fs.existsSync(shared) && /<BackAffordance\b/.test(fs.readFileSync(shared, 'utf-8'))) {
-            return true;
+        // Either form: since the phone header work (#5830) the view mounts
+        // the affordance through `<PageHeader back={{ smart: true }}>`.
+        if (fs.existsSync(shared)) {
+            const sharedSource = fs.readFileSync(shared, 'utf-8');
+            if (
+                /<BackAffordance\b/.test(sharedSource) ||
+                /\bback=\{\{\s*smart:\s*true\s*\}\}/.test(sharedSource)
+            ) {
+                return true;
+            }
         }
     }
     if (!/@\/components\/nav\/BackAffordance/.test(source)) return false;

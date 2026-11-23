@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 
+import { OverflowAction } from '@/components/layout/PageActions';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/hooks';
 import { apiErrorMessage } from '@/lib/api-error';
@@ -50,14 +51,23 @@ export function InteractiveAgentAction({
         }
     };
 
+    const label = designated ? t('agentDetail.interactive.stop') : t('agentDetail.interactive.use');
+    // In the "⋯" menu on a phone (#5815); a button where it stands on desktop.
     return (
-        <Button
-            variant="secondary"
-            size="sm"
+        <OverflowAction
+            label={label}
+            onSelect={() => void change()}
             disabled={busy}
-            onClick={() => void change()}
-            data-testid="agent-interactive-action"
-            text={designated ? t('agentDetail.interactive.stop') : t('agentDetail.interactive.use')}
-        />
+            data-testid="agent-interactive-menu-item"
+        >
+            <Button
+                variant="secondary"
+                size="sm"
+                disabled={busy}
+                onClick={() => void change()}
+                data-testid="agent-interactive-action"
+                text={label}
+            />
+        </OverflowAction>
     );
 }

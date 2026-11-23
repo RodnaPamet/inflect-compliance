@@ -3,6 +3,7 @@
 import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
+import { OverflowAction, PrimaryAction } from '@/components/layout/PageActions';
 import { MetaStrip, type MetaItem } from '@/components/ui/meta-strip';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { ServicePrincipalLinkCard } from './tabs/ServicePrincipalLinkCard';
@@ -320,14 +321,20 @@ export function AgentDetailClient({
                         rather than about one of its tabs — and because autonomy
                         lives in here, which is the dial somebody turns DOWN in
                         the same minute they consider stopping it. */}
+                    {/* On a phone (#5815) the row is Amend, then Stop agent,
+                        then a "⋯" menu holding the three <OverflowAction>s —
+                        the stop is never in the menu: it is the control an
+                        operator must find in a hurry. Desktop is unchanged. */}
                     {perms.canManageRegistry && (
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => setAmending(true)}
-                            data-testid="agent-amend-action"
-                            text={t('agentDetail.amend.action')}
-                        />
+                        <PrimaryAction>
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => setAmending(true)}
+                                data-testid="agent-amend-action"
+                                text={t('agentDetail.amend.action')}
+                            />
+                        </PrimaryAction>
                     )}
                     {/* USE FOR ASK (#4629). Register authority, so behind the
                         same flag as Amend. A retired agent cannot answer, so it
@@ -344,21 +351,33 @@ export function AgentDetailClient({
                         sheet explains why a person without the api-keys
                         permission cannot connect, rather than the product
                         appearing not to have the feature. */}
-                    <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setConnecting(true)}
-                        data-testid="agent-connect-action"
-                        text={t('agentDetail.connect.action')}
-                    />
+                    <OverflowAction
+                        label={t('agentDetail.connect.action')}
+                        onSelect={() => setConnecting(true)}
+                        data-testid="agent-connect-menu-item"
+                    >
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setConnecting(true)}
+                            data-testid="agent-connect-action"
+                            text={t('agentDetail.connect.action')}
+                        />
+                    </OverflowAction>
                     {canvasHref !== null && (
-                        <Link
+                        <OverflowAction
+                            label={tCanvas('openOnCanvas')}
                             href={canvasHref}
-                            id="agent-open-on-canvas"
-                            className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+                            data-testid="agent-open-on-canvas-menu-item"
                         >
-                            {tCanvas('openOnCanvas')}
-                        </Link>
+                            <Link
+                                href={canvasHref}
+                                id="agent-open-on-canvas"
+                                className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+                            >
+                                {tCanvas('openOnCanvas')}
+                            </Link>
+                        </OverflowAction>
                     )}
                     <AgentKillSwitchAction
                         agentId={agent.id}

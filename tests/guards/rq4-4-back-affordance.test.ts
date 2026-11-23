@@ -78,7 +78,7 @@ describe('rq4-4 back affordance', () => {
         );
         expect(parent).toEqual({
             href: '/t/acme/frameworks/nis2',
-            label: 'NIS2',
+            labelKey: 'parentLabels.nis2',
         });
     });
 

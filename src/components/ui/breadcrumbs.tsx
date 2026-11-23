@@ -116,7 +116,13 @@ export function Breadcrumbs({
                             {item.href && !isCurrent ? (
                                 <Link
                                     href={item.href}
-                                    className="text-content-muted hover:text-content-emphasis transition truncate max-w-trunc-loose"
+                                    // On touch the link's box grows to 44 px
+                                    // (14 px of padding each side of the 16 px
+                                    // line) and the equal negative margin keeps
+                                    // the trail's layout where it was. Padding,
+                                    // not a pseudo-element: `truncate` clips
+                                    // overflow, which would clip a `::before`.
+                                    className="text-content-muted hover:text-content-emphasis transition truncate max-w-trunc-loose pointer-coarse:py-3.5 pointer-coarse:-my-3.5"
                                     data-testid={item["data-testid"]}
                                 >
                                     {item.label}

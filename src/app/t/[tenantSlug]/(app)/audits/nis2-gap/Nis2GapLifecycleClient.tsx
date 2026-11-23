@@ -18,6 +18,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { UserCombobox } from '@/components/ui/user-combobox';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { BackAffordance } from '@/components/nav/BackAffordance';
+import { OverflowAction, PrimaryAction } from '@/components/layout/PageActions';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 import {
@@ -306,14 +307,24 @@ export function Nis2GapLifecycleClient({
                 title={tx('nav.nis2Gap')}
                 description={tx('nis2Gap.description')}
                 actions={
-                    <div className="flex items-center gap-tight">
-                        <Link
+                    // A fragment, not a `flex` div: a wrapper made the group one
+                    // flex item that could not wrap, so a phone clipped
+                    // "Повторна оценка" (#5815). On a phone: re-run first, then
+                    // "continue answering" when offered, readiness in "⋯".
+                    <>
+                        <OverflowAction
+                            label={tx('nis2Gap.viewReadiness')}
                             href={`/t/${tenantSlug}/frameworks/NIS2/readiness`}
-                            className={cn(buttonVariants({ variant: 'secondary' }))}
-                            id="nis2-gap-coverage-link"
+                            data-testid="nis2-gap-coverage-menu-item"
                         >
-                            {tx('nis2Gap.viewReadiness')}
-                        </Link>
+                            <Link
+                                href={`/t/${tenantSlug}/frameworks/NIS2/readiness`}
+                                className={cn(buttonVariants({ variant: 'secondary' }))}
+                                id="nis2-gap-coverage-link"
+                            >
+                                {tx('nis2Gap.viewReadiness')}
+                            </Link>
+                        </OverflowAction>
                         {/* The self-assessment page answers the latest run. Offered
                             while that run takes answers, to the roles it admits,
                             so it is reachable at all (#4734). */}
@@ -327,12 +338,14 @@ export function Nis2GapLifecycleClient({
                             </Link>
                         ) : null}
                         {canStartRun ? (
-                            <Button variant="secondary" onClick={handleRerun} disabled={rerunning} id="nis2-gap-rerun-btn">
-                                {rerunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                                {tx('nis2Gap.rerun')}
-                            </Button>
+                            <PrimaryAction>
+                                <Button variant="secondary" onClick={handleRerun} disabled={rerunning} id="nis2-gap-rerun-btn">
+                                    {rerunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                                    {tx('nis2Gap.rerun')}
+                                </Button>
+                            </PrimaryAction>
                         ) : null}
-                    </div>
+                    </>
                 }
             />
 

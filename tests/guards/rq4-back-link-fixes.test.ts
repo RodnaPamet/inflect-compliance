@@ -2,9 +2,8 @@
  * RQ4 back-link fixes — locks the three concrete behaviour changes:
  *
  *   1. `labelFromPathname` resolves `/audits` to "Internal Audit" (the
- *      product display name), not the raw "Audits". The lookup is a
- *      static map in `BackAffordance.tsx` so the regex check is
- *      stable against future renames.
+ *      product display name), not the raw "Audits". The lookup is the
+ *      `SECTION_LABEL_KEYS` map in `canonical-parents.ts`, read as data.
  *   2. `<BackAffordance noFallback />` is a real prop on the
  *      primitive AND its branch logic skips the canonical-parent
  *      fallback. Source-scan confirms both.
@@ -17,31 +16,25 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { resolveBackDestination } from '@/lib/nav/back-destination';
-import { resolveCanonicalParent } from '@/lib/nav/canonical-parents';
+import {
+    resolveCanonicalParent,
+    SECTION_LABEL_KEYS,
+} from '@/lib/nav/canonical-parents';
 import {
     REFERRER_ONLY_BACK_MAIN_PAGES,
 } from '@/lib/nav/page-segregation';
 
-// #2246 Class A — `codeOf` masks comments at the READ SEAM. Reads whose result
-// is JSON.parse'd are left RAW on purpose: a catalogue is parsed as DATA, never
-// matched as text, so masking it would only corrupt the parse.
-import { codeOf } from '../helpers/source-blocks';
-
-const BACK_AFFORDANCE_PATH = path.resolve(
-    __dirname,
-    '../../src/components/nav/BackAffordance.tsx',
-);
+// The catalogue read below is JSON.parse'd, so it is left RAW: it is parsed as
+// DATA, never matched as text.
 
 describe('rq4 back-link fixes', () => {
-    it('BackAffordance carries a SECTION_LABELS map mapping /audits to "Internal Audit"', () => {
-        // Post-i18n: SECTION_LABELS maps `/audits` to the
-        // `common.sections.audits` message KEY, and the English catalog
-        // resolves that key to the product display name "Internal Audit"
-        // (not the raw "Audits"). Both halves are asserted so a rename
-        // still fails CI.
-        const source = codeOf(fs.readFileSync(BACK_AFFORDANCE_PATH, 'utf-8'));
-        expect(source).toMatch(/SECTION_LABELS/);
-        expect(source).toMatch(/'\/audits':\s*'audits'/);
+    it('the section map sends /audits to "Internal Audit"', () => {
+        // SECTION_LABEL_KEYS maps `/audits` to the `common.sections.audits`
+        // message KEY, and the English catalog resolves that key to the
+        // product display name "Internal Audit" (not the raw "Audits"). Both
+        // halves are asserted so a rename still fails CI. The map moved out of
+        // the component into `canonical-parents.ts`, so it is read as data.
+        expect(SECTION_LABEL_KEYS['/audits']).toBe('audits');
         const en = JSON.parse(
             fs.readFileSync(
                 path.resolve(__dirname, '../../messages/en.json'),
@@ -62,6 +55,7 @@ describe('rq4 back-link fixes', () => {
                 tenantSlug: 'acme',
                 noFallback: true,
                 labelFor: (x) => x,
+                labelForKey: (k) => k,
             }),
         ).toBeNull();
         // …while the same page WITH a referrer still offers it.
@@ -72,6 +66,7 @@ describe('rq4 back-link fixes', () => {
                 tenantSlug: 'acme',
                 noFallback: true,
                 labelFor: (x) => x,
+                labelForKey: (k) => k,
             })?.href,
         ).toBe('/t/acme/audits');
     });
@@ -85,6 +80,7 @@ describe('rq4 back-link fixes', () => {
             referrer: '/t/acme/assets/a1',
             tenantSlug: 'acme',
             labelFor: (x) => x,
+            labelForKey: (k) => k,
         });
         expect(dest?.href).not.toBe('/t/acme/assets/a1');
         expect(dest?.href).toBe('/t/acme/assets');
@@ -96,6 +92,7 @@ describe('rq4 back-link fixes', () => {
             referrer: '/t/acme/frameworks/nis2/install',
             tenantSlug: 'acme',
             labelFor: (x) => x,
+            labelForKey: (k) => k,
         });
         expect(dest?.href).not.toBe('/t/acme/frameworks/nis2/install');
         expect(dest?.href).toBe('/t/acme/frameworks');
@@ -103,14 +100,14 @@ describe('rq4 back-link fixes', () => {
         // tests/guards/back-affordance-no-cycles.test.ts.
     });
 
-    it('canonical parent for /controls/[controlId]/tests/[planId] is /tests with label "Tests"', () => {
+    it('canonical parent for /controls/[controlId]/tests/[planId] is /tests, labelled as the Tests section', () => {
         const parent = resolveCanonicalParent(
             '/t/acme/controls/c1/tests/p1',
             'acme',
         );
         expect(parent).toEqual({
             href: '/t/acme/tests',
-            label: 'Tests',
+            labelKey: 'sections.tests',
         });
     });
 

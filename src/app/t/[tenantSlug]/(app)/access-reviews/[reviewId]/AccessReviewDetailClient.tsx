@@ -42,6 +42,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
+import { OverflowAction } from '@/components/layout/PageActions';
 import { CAMPAIGN_MODIFY_ROLES, TENANT_ROLES, type CampaignModifyRole } from '@/lib/roles';
 import { apiErrorMessage } from '@/lib/api-error';
 import { MEMBER_DECISION_REFUSAL } from '@/lib/access-review/member-decision-rules';
@@ -1470,8 +1471,12 @@ export function AccessReviewDetailClient({
                 />
             }
             actions={
-                <div className="flex flex-col items-end gap-tight">
-                    <div className="flex items-center gap-tight">
+                // A fragment (#5815): the nested non-wrapping rows this was
+                // clipped the buttons at 360 px. On a phone the progress takes
+                // its own row, "Close campaign" sits under it, and the two
+                // evidence actions are in the "⋯" menu.
+                <>
+                    <div className="flex items-center gap-tight max-sm:w-full">
                         <ProgressBar
                             value={pct}
                             variant={pct >= 100 ? 'success' : pct >= 50 ? 'info' : 'brand'}
@@ -1482,8 +1487,12 @@ export function AccessReviewDetailClient({
                             {decided}/{decisionsTotal}
                         </span>
                     </div>
-                    <div className="flex gap-tight">
-                        {review.evidenceFileRecordId ? (
+                    {review.evidenceFileRecordId ? (
+                        <OverflowAction
+                            label={t('downloadEvidence')}
+                            onSelect={() => window.open(`${apiBase}/evidence`, '_blank')}
+                            data-testid="access-review-evidence-download-menu-item"
+                        >
                             <Button
                                 variant="secondary"
                                 onClick={() =>
@@ -1491,31 +1500,39 @@ export function AccessReviewDetailClient({
                                 }
                                 data-testid="access-review-download-evidence"
                             >{t('downloadEvidence')}</Button>
-                        ) : null}
-                        {canRegenerate ? (
+                        </OverflowAction>
+                    ) : null}
+                    {canRegenerate ? (
+                        <OverflowAction
+                            label={regenerating ? t('regenerating') : t('regenerateEvidence')}
+                            onSelect={() => void regenerateEvidence()}
+                            disabled={regenerating}
+                            data-testid="access-review-evidence-regenerate-menu-item"
+                        >
                             <Button
                                 variant="secondary"
                                 onClick={() => void regenerateEvidence()}
                                 disabled={regenerating}
                                 data-testid="access-review-regenerate-evidence"
                             >{regenerating ? t('regenerating') : t('regenerateEvidence')}</Button>
-                        ) : null}
-                        {canClose ? (
-                            // Secondary (#4130): it only OPENS the close dialog,
-                            // whose "Close + generate evidence" is this region's
-                            // primary — the trigger precedent of #3687/#3807. That
-                            // demotion pays for the settings dialog's save, which
-                            // `modal-action-order` requires to be primary, so the
-                            // product-wide primary count is unchanged.
-                            <Button
-                                variant="secondary"
-                                onClick={() => setClosing(true)}
-                                disabled={!everySubjectDecided || !agentCloseReady}
-                                data-testid="access-review-close-button"
-                            >{t('closeCampaign')}</Button>
-                        ) : null}
-                    </div>
-                </div>
+                        </OverflowAction>
+                    ) : null}
+                    {canClose ? (
+                        // Secondary (#4130): it only OPENS the close dialog,
+                        // whose "Close + generate evidence" is this region's
+                        // primary — the trigger precedent of #3687/#3807. That
+                        // demotion pays for the settings dialog's save, which
+                        // `modal-action-order` requires to be primary, so the
+                        // product-wide primary count is unchanged. It is the
+                        // only visible button on a phone, under the progress.
+                        <Button
+                            variant="secondary"
+                            onClick={() => setClosing(true)}
+                            disabled={!everySubjectDecided || !agentCloseReady}
+                            data-testid="access-review-close-button"
+                        >{t('closeCampaign')}</Button>
+                    ) : null}
+                </>
             }
         >
             {/* Description + meta data list — preserved as the first body
