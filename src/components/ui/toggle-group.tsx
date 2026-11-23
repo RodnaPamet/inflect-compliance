@@ -14,9 +14,9 @@ import {
     useLayoutEffect,
     useMemo,
     useRef,
+    useState,
 } from "react";
 import { HIT_AREA_CLASS } from "./hit-area";
-import { useMediaQuery } from "@inflect/ui/components/ui/hooks/use-media-query";
 import dynamic from "next/dynamic";
 
 /**
@@ -162,12 +162,34 @@ export interface ToggleGroupProps extends VariantProps<typeof toggleGroupVariant
     ariaLabel?: string;
 }
 
+/**
+ * True only on a POSITIVE `(max-width: 639.98px)` match, i.e. below Tailwind's
+ * `sm`. Not `useMediaQuery().isMobile`, which reads "mobile" whenever neither
+ * of its `min-width` queries matches — so an environment without real media
+ * queries (jsdom, and any non-browser renderer) counted as a phone and every
+ * 4+ option group turned into a select. False on the server and the first
+ * client render, so hydration sees the segmented group either way.
+ */
+const BELOW_SM_QUERY = "(max-width: 639.98px)";
+function useBelowSm(): boolean {
+    const [below, setBelow] = useState(false);
+    useEffect(() => {
+        if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+        const mql = window.matchMedia(BELOW_SM_QUERY);
+        const update = () => setBelow(mql.matches);
+        update();
+        mql.addEventListener?.("change", update);
+        return () => mql.removeEventListener?.("change", update);
+    }, []);
+    return below;
+}
+
 export function ToggleGroup(props: ToggleGroupProps) {
     // `isMobile` is below `sm` (640px). It starts false on SSR and the first
     // client render, so the server, jsdom and a desktop all render the
     // segmented group, and a phone swaps once on mount.
-    const { isMobile } = useMediaQuery();
-    if (isMobile && props.options.length >= SELECT_MIN_OPTIONS) {
+    const belowSm = useBelowSm();
+    if (belowSm && props.options.length >= SELECT_MIN_OPTIONS) {
         return <ToggleGroupSelect {...props} />;
     }
     return <ToggleGroupSegments {...props} />;

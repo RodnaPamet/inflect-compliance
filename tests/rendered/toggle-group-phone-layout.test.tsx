@@ -21,14 +21,19 @@ jest.mock('next/navigation', () => ({
 }));
 
 let mockIsMobile = false;
-jest.mock('@inflect/ui/components/ui/hooks/use-media-query', () => ({
-    useMediaQuery: () => ({
-        device: mockIsMobile ? 'mobile' : 'desktop',
-        isMobile: mockIsMobile,
-        isTablet: false,
-        isDesktop: !mockIsMobile,
-    }),
-}));
+// The group asks for a POSITIVE below-sm match, so the stub answers the
+// max-width query with the test's switch and every other query with false.
+// The shared setup defines matchMedia writable (not configurable): assign it.
+window.matchMedia = ((query: string) => ({
+        matches: mockIsMobile && query.includes('max-width'),
+        media: query,
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
 
 import { SELECT_MIN_OPTIONS, ToggleGroup } from '@/components/ui/toggle-group';
 
