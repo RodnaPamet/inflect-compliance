@@ -115,10 +115,19 @@ export const DRIFT_ALLOWANCE = 0;
 
 type Baseline = Record<MobileE2eConfig, Record<RatchetedMetric, number>>;
 
-/** Routes in `SEED_ROUTES` failing each metric. */
+/**
+ * Routes in `SEED_ROUTES` failing each metric.
+ *
+ * englishLeaks, 5 (#5828): "Close navigation drawer" (command palette),
+ * "Infrastructure" (risks), "Compliance status: Partial/Gap" (framework
+ * detail), and the ISO 27001 domain names in the controls browse rail
+ * ("Business continuity", …) on the controls list and its selection state.
+ * The rail renders only when the shared tenant holds ISO controls, which
+ * other E2E specs install before this one runs; a fresh seed has none.
+ */
 export const SEED_BASELINE: Baseline = {
-    '390-dark-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 10, englishLeaks: 3 },
-    '360-light-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 10, englishLeaks: 3 },
+    '390-dark-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 10, englishLeaks: 5 },
+    '360-light-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 10, englishLeaks: 5 },
 };
 
 /** Routes in `RECORD_ROUTES` failing each metric. */
