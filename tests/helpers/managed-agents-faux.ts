@@ -156,6 +156,12 @@ export class ManagedAgentsFaux {
     private loseResponseSeen = 0;
     /** Add a built-in tool use to the turn with this index (a reach beyond custom tools). */
     builtinToolUseOnTurn: number | null = null;
+    /**
+     * A customer admin edits the running session (`POST /v1/sessions/{id}`)
+     * while it waits for the custom calls of the turn with this index: the
+     * workspace emits `session.updated` with the patch, after the idle.
+     */
+    sessionEditAfterTurn: { turn: number; patch: Record<string, unknown> } | null = null;
     private modelCallCount = 0;
     private eventPosts = 0;
     private readonly originalFetch = global.fetch;
@@ -526,6 +532,7 @@ export class ManagedAgentsFaux {
         if (calls.length > 0) {
             s.pending = new Set(calls);
             this.emit(s, { type: 'session.status_idle', stop_reason: { type: 'requires_action', event_ids: calls }, stop_details: null });
+            if (this.sessionEditAfterTurn?.turn === n) this.emit(s, { type: 'session.updated', ...this.sessionEditAfterTurn.patch });
         } else {
             this.emit(s, { type: 'session.status_idle', stop_reason: { type: 'end_turn' }, stop_details: null });
         }

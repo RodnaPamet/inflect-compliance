@@ -779,6 +779,30 @@ describe('Step 5b hardening', () => {
         expectEverySessionDeleted();
     });
 
+    describe('a customer admin edits the running session (5H)', () => {
+        const toolset = { type: 'agent_toolset_20260401' };
+        it.each([
+            ['adds a toolset to the session\'s agent', { agent: { tools: [toolset], mcp_servers: [] } }],
+            ['adds an MCP server', { agent: { tools: [], mcp_servers: [{ type: 'url', name: 'x', url: 'https://x.example' }] } }],
+            ['removes the spend cap', { budget: null }],
+            ['raises the spend cap', { budget: { type: 'limit', max_list_cost: { amount: '999999', currency: 'USD' } } }],
+        ])('%s: the run stops at the edit, and no later call runs', async (_label, patch) => {
+            faux.sessionEditAfterTurn = { turn: 0, patch };
+            await drive({ tools: [LIST_RISKS], turns: [callRisks, callRisks, callRisks, { text: 'done' }] });
+            expect(mockState.settlement?.reason).toMatch(/^managed_agents_session_edited:/);
+            // The first call was answered before the edit was read; nothing after it ran.
+            expect(mockState.funnelCalls.length).toBeLessThanOrEqual(1);
+            expectEverySessionDeleted();
+        });
+
+        it('positive control: an edit of the title or metadata alone does not stop the run', async () => {
+            faux.sessionEditAfterTurn = { turn: 0, patch: { title: 'renamed' } };
+            await drive({ tools: [LIST_RISKS], turns: [callRisks, { text: 'done' }] });
+            expect(mockState.settlement?.status).toBe('COMPLETED');
+            expect(faux.onlySession()!.history.some((e) => e.type === 'session.updated')).toBe(true);
+        });
+    });
+
     it('a kill engaged while a tool runs: the result is not sent, the call is answered with an error, and the session is deleted', async () => {
         await drive(
             { tools: [LIST_RISKS], turns: [callRisks, callRisks, { text: 'done' }] },

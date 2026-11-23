@@ -59,6 +59,10 @@
  *   agent.tool_use,
  *   agent.mcp_tool_use     the agent reached beyond its custom tools, which an
  *                          agent Inflect provisioned cannot: the run stops.
+ *   session.updated        with a new `agent` (tools, MCP servers) or `budget`:
+ *                          someone with the workspace's key edited the session
+ *                          the drift check passed, and the run stops at once
+ *                          rather than at the first call that uses it (5H).
  *   session.status_idle    `requires_action` runs the queue; any other reason
  *                          ends the stream.
  *
@@ -221,6 +225,11 @@ export const BEYOND_CUSTOM_TOOLS_MESSAGE =
     `${MANAGED_AGENTS_PREFIX}_reached_beyond_custom_tools: the agent called a tool Inflect did not provision, which `
     + 'only an edit made in the Anthropic Console can add. The run stopped; no such call was answered by Inflect.';
 
+export const SESSION_EDITED_MESSAGE =
+    `${MANAGED_AGENTS_PREFIX}_session_edited: the session's tools, MCP servers or spend cap were changed in your `
+    + 'Anthropic workspace while the run was going on, which only someone holding the workspace\'s key can do. The run '
+    + 'stopped; no call after the change was run by Inflect.';
+
 export const STREAM_LOST_MESSAGE =
     `${MANAGED_AGENTS_PREFIX}_stream_lost: the session's event stream dropped ${MAX_STREAM_RECONNECTS} times, so `
     + 'the run stopped rather than leave a call unanswered.';
@@ -358,6 +367,8 @@ export async function executeManagedAgentsRun(
         worst: StepGuardObservation['verdict'];
         worstRuleIds: readonly string[];
         beyondCustomTools: boolean;
+        /** Someone else changed the session's tools, MCP servers or spend cap mid-run (Step 5H). */
+        sessionEdited: boolean;
         /** The stop is draining the session: no latch may cut the drain's own read. */
         draining: boolean;
     } = {
@@ -371,6 +382,7 @@ export async function executeManagedAgentsRun(
         worst: 'CLEAN',
         worstRuleIds: [],
         beyondCustomTools: false,
+        sessionEdited: false,
         draining: false,
     };
     // Aborted by every stop: it ends the read of the stream, never a call the
@@ -393,7 +405,7 @@ export async function executeManagedAgentsRun(
         if (state.worst !== 'CLEAN') return { kind: 'GUARD' };
         return null;
     };
-    const isStopped = (): boolean => stopped() !== null || state.beyondCustomTools;
+    const isStopped = (): boolean => stopped() !== null || state.beyondCustomTools || state.sessionEdited;
 
     const checkKill = async (): Promise<boolean> => {
         if (state.killVerdict || state.killUnreadable || state.operatorAborted) return true;
@@ -772,6 +784,17 @@ export async function executeManagedAgentsRun(
                 state.beyondCustomTools = true;
                 abortRead();
                 return;
+            case 'session.updated':
+                // Inflect never updates a session (the client refuses the
+                // route), so this is someone with the workspace's key. A new
+                // `agent` (tools, MCP servers) or a changed or removed `budget`
+                // is a session the drift check never saw: stop. A title or
+                // metadata alone reaches nothing.
+                if (ev.agent !== undefined || ev.budget !== undefined) {
+                    state.sessionEdited = true;
+                    abortRead();
+                }
+                return;
             case 'session.status_idle': {
                 const reason = ev.stop_reason?.type;
                 if (reason === 'requires_action') {
@@ -961,6 +984,10 @@ export async function executeManagedAgentsRun(
     }
     if (state.beyondCustomTools) {
         const status = await failRun(ctx, runId, BEYOND_CUSTOM_TOOLS_MESSAGE);
+        return { status, stepFailures: stepFailures + 1 };
+    }
+    if (state.sessionEdited) {
+        const status = await failRun(ctx, runId, SESSION_EDITED_MESSAGE);
         return { status, stepFailures: stepFailures + 1 };
     }
     if (failure !== null) {
