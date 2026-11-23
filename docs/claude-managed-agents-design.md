@@ -154,7 +154,7 @@ puts at Anthropic:
   (Step 6a drafts).** `docs/sub-processors.md` carries it as Anthropic (g),
   marked PROPOSED, NOT IN EFFECT, and the customer notice is drafted at
   `docs/notices/2026-11-23-anthropic-hosted-managed-agents.md` and not issued.
-  Decision 6 and the notice dates are OPEN (see "MA-C1", "Notice"). No hosted
+  Decision 6 (recorded on #5865) and the notice dates are OPEN (see "MA-C1", "Notice"). No hosted
   path exists in the code.
 
 ## What Managed Agents is, as documented on 2026-10-24
@@ -439,7 +439,8 @@ marked PROPOSED, NOT IN EFFECT. The customer notice is drafted at
 - Date the 30-day window closes: **OPEN** (repo owner).
 - Decision 6 — the transfer mechanism, whether a transfer impact assessment is
   obtained, and, if not, who accepted proceeding without one: **OPEN**,
-  recorded by the repo owner on the Step 6a pull request.
+  recorded by the repo owner on #5865, once for every use of Anthropic as
+  Inflect's sub-processor (owner decision, 2026-11-23).
 
 ## Decisions for the owner
 
@@ -487,6 +488,13 @@ marked PROPOSED, NOT IN EFFECT. The customer notice is drafted at
 
    The owner's decision to host is a product decision, and it does not answer
    these.
+
+   **Where they are recorded (owner, 2026-11-23):** once, on #5865, for every
+   use of Anthropic as Inflect's sub-processor. The Messages API engines and the
+   assistant already carry personal data there, and their register entry says
+   only "per its terms". The Step 6a pull request cites that record and holds
+   only what is specific to hosting: the notice, its dates and the objection
+   address. The notice still waits for all three to be recorded.
 7. **What a purge does when it cannot reach the customer's workspace, and whom
    a DSAR erasure reaches.** Step 5c found that the remote clean-up's retry
    could authenticate after a tenant purge only by keeping the customer's

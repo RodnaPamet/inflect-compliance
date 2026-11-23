@@ -5,9 +5,10 @@
      OPEN until the notice is actually posted and emailed. -->
 
 > **DRAFT — NOT ISSUED.** This notice has not been posted or sent to anyone.
-> It is issued only after the repo owner has recorded, on its pull request, the
-> compliance approval, the transfer mechanism and the decision on a transfer
-> impact assessment, and has filled in the dates below.
+> It is issued only after the repo owner has recorded the compliance approval on
+> its pull request, and the data processing agreement, the transfer mechanism
+> and the decision on a transfer impact assessment on #5865, and has filled in
+> the dates below.
 
 **Issued:** OPEN — the date the notice is posted and emailed, entered by the repo owner.
 **Objection window closes:** OPEN — 30 days after the issue date, entered by the repo owner.

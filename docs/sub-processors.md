@@ -315,13 +315,14 @@ sustained objection. The common terms of (a) to (f) above do not apply to (g).
   runs there instead. A `LOCAL_ONLY` workspace is refused, as the driver
   already refuses it today before it reads anything
   (`MANAGED_AGENTS_LOCAL_ONLY_UNSERVED`, `src/lib/agentic/managed-agents/driver.ts`).
-- **Transfer mechanism:** **OPEN** — recorded on the Step 6a pull request by the
-  repo owner (decision 6; *Sub-processors: who confirms which half of step 2*
-  in [`docs/change-management-policy.md`](./change-management-policy.md)).
-- **Transfer impact assessment obtained?** **OPEN** — recorded on the same pull
-  request by the repo owner.
-- **If no transfer impact assessment, who accepted proceeding without one:**
-  **OPEN** — recorded on the same pull request, naming the person.
+- **Data processing agreement, transfer mechanism and transfer impact
+  assessment:** **OPEN**. These are recorded ONCE, for every use of Anthropic
+  as Inflect's sub-processor (the Messages API engines and the assistant above,
+  and this entry), on #5865, by the repo owner, naming each person (owner
+  decision, 2026-11-23; decision 6; *Sub-processors: who confirms which half of
+  step 2* in [`docs/change-management-policy.md`](./change-management-policy.md)).
+  They are not specific to hosting, so this entry cites that record rather
+  than holding its own.
 - **Live terms read:** 2026-11-23, quoted in "MA-C1" of
   `docs/claude-managed-agents-design.md`, from
   https://platform.claude.com/docs/en/managed-agents/overview ·
@@ -345,9 +346,10 @@ sustained objection. The common terms of (a) to (f) above do not apply to (g).
 [policy](./sub-processor-change-policy.md):
 
 - Step 1, engineering proposes: this entry, drafted 2026-11-23 (Step 6a).
-- Step 2, compliance / legal review: **OPEN** — the approval, the transfer
-  mechanism and the transfer impact assessment decision are recorded on the
-  Step 6a pull request by the repo owner.
+- Step 2, compliance / legal review: **OPEN** — the agreement, the transfer
+  mechanism and the transfer impact assessment decision are recorded on #5865
+  for all of Inflect's use of Anthropic; the approval of this change is
+  recorded on the Step 6a pull request by the repo owner.
 - Step 3, customer notice (30 days): **OPEN** — not issued. Date sent: **OPEN**.
   Window closes: **OPEN**.
 - Step 4, activation: not started. The hosted path is not built (Step 6b), and
