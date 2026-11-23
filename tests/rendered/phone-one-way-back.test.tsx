@@ -104,7 +104,9 @@ describe('a subpage on a phone shows exactly one way back', () => {
 
     it('the back link is a 44 px target on touch', () => {
         render(<HeaderSlotPage />);
-        expect(backLinks()[0].className).toContain('pointer-coarse:min-h-11');
+        // The shared 44 px touch hit area (a pseudo-element, layout untouched).
+        expect(backLinks()[0].className).toContain('pointer-coarse:after:min-h-11');
+        expect(backLinks()[0].className).toContain('relative');
     });
 });
 

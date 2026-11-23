@@ -60,6 +60,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@inflect/ui/lib/cn";
+import { TOUCH_HIT_AREA_CLASS } from "@inflect/ui/components/ui/hit-area";
 import { classifyRoute } from "@/lib/nav/page-segregation";
 import {
     Breadcrumbs,
@@ -233,7 +234,11 @@ export function PageHeader({
                 ) : back ? (
                     <Link
                         href={back.href}
-                        className="inline-flex items-center text-content-muted text-xs hover:text-content-emphasis transition-colors duration-150 ease-out pointer-coarse:min-h-11"
+                        className={cn(
+                            "relative inline-flex items-center text-content-muted text-xs hover:text-content-emphasis transition-colors duration-150 ease-out",
+                            // A 44 px tap target on a phone, layout untouched.
+                            TOUCH_HIT_AREA_CLASS,
+                        )}
                         data-testid="page-header-back"
                     >
                         ← {back.label}

@@ -42,7 +42,9 @@ trail. They ask a slot, `PhoneBreadcrumbsPolicy` in `breadcrumbs-store.tsx`
 `<PhoneWayfindingPolicy>` from `ClientProviders`; the back link, which every subpage mounts first above its title, is the
 only way back, in one place. The trail is still pushed to the top chrome, so
 desktop is unchanged. Main pages and the exempt subpages keep their inline
-trail. Back link and breadcrumb links get a 44 px hit area on touch.
+trail. The back link gets `TOUCH_HIT_AREA_CLASS` (#5847); breadcrumb links,
+which `truncate` and so would clip a pseudo-element, get 44 px through
+touch-only padding and an equal negative margin.
 
 **Translated back links (#5823).** `PARENT_MAP` stores `labelKey`, a closed
 `BackLabelKey` union of keys under `common` (`sections.*`, plus the new

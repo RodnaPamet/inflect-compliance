@@ -23,6 +23,8 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { usePathname } from 'next/navigation';
 import { ArrowLeft } from '@inflect/ui/components/ui/icons/glyphs';
+import { TOUCH_HIT_AREA_CLASS } from '@inflect/ui/components/ui/hit-area';
+import { cn } from '@inflect/ui/lib/cn';
 import {
     usePreviousPath,
     tenantSlugFromPath,
@@ -108,11 +110,14 @@ export function BackAffordance({ override, noFallback }: BackAffordanceProps) {
     return (
         <Link
             href={destination.href}
-            // `pointer-coarse:min-h-11` — on a phone this is the way out of
-            // the page, so it gets a 44 px row (WCAG 2.5.5) rather than the
-            // 16 px line a mouse is happy with. Height, not width: the label
-            // is always wider than 44 px.
-            className="inline-flex items-center gap-1 text-content-muted text-xs hover:text-content-emphasis motion-safe:transition-colors motion-safe:duration-150 motion-safe:ease-out print:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-default rounded-sm pointer-coarse:min-h-11"
+            // On a phone this is the way out of the page, so a tap gets a
+            // 44 px target (WCAG 2.5.5) rather than the 16 px line a mouse is
+            // happy with — through `TOUCH_HIT_AREA_CLASS`, which grows the
+            // hit area and leaves the row's layout exactly where it was.
+            className={cn(
+                'relative inline-flex items-center gap-1 text-content-muted text-xs hover:text-content-emphasis motion-safe:transition-colors motion-safe:duration-150 motion-safe:ease-out print:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-default rounded-sm',
+                TOUCH_HIT_AREA_CLASS,
+            )}
             data-testid="page-header-back"
             aria-label={t('ui.backTo', { label: destination.label })}
         >
