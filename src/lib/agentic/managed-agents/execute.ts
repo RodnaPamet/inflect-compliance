@@ -1152,11 +1152,13 @@ async function settleUnrecordedSessions(
     binding: ToolRunBinding,
     search: UnrecordedSessionSearch,
 ): Promise<void> {
+    // Log fields are read off this object, so each value's name is its own.
+    const look = { search } as const;
     try {
         const listing = await listCrashWindow(client, agentId, ctx.tenantId, undefined);
         if (!listing.ok) {
             logger.warn('managed-agents: the agent\'s sessions could not be listed for an unrecorded session of this run', {
-                component: 'agentic', runId: binding.runId, search, outcome: listing.outcome,
+                component: 'agentic', runId: binding.runId, search: look.search, outcome: listing.outcome,
             });
             return;
         }
@@ -1165,7 +1167,7 @@ async function settleUnrecordedSessions(
         const ledger = await readRecordedSessionIds(ctx, runId);
         if (ledger.truncated) {
             logger.warn('managed-agents: the run\'s ledger is longer than one read; no unrecorded session is settled', {
-                component: 'agentic', runId: binding.runId, search,
+                component: 'agentic', runId: binding.runId, search: look.search,
             });
             return;
         }
@@ -1174,7 +1176,7 @@ async function settleUnrecordedSessions(
                 sessionId: found.sessionId,
                 connectionId: route.connectionId,
                 agentId,
-                foundUnrecorded: search,
+                foundUnrecorded: look.search,
             });
             await settleSession(ctx, runId, client, found.sessionId, route, binding, search === 'AT_SEGMENT_START');
         }
@@ -1182,7 +1184,7 @@ async function settleUnrecordedSessions(
         logger.error('managed-agents: an unrecorded session of this run could not be settled', {
             component: 'agentic',
             runId: binding.runId,
-            search,
+            search: look.search,
             error: err instanceof Error ? err.name : 'a non-Error value was thrown',
         });
     }
