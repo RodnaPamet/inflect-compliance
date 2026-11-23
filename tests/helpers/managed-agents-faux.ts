@@ -94,6 +94,14 @@ export interface FauxDrop {
 
 const encoder = new TextEncoder();
 
+/**
+ * Ids are unique across every faux in a test file, not per instance: a suite
+ * that makes a new faux per test keeps the ledger rows of earlier tests, and a
+ * pass over every tenant (the data-lifecycle reconciliation) would otherwise
+ * read an earlier test's recorded id as naming this test's object.
+ */
+let fauxIdSeq = 0;
+
 function json(body: unknown, status = 200): Response {
     return new Response(JSON.stringify(body), {
         status,
@@ -139,7 +147,6 @@ export class ManagedAgentsFaux {
     drop: FauxDrop | null = null;
     /** Add a built-in tool use to the turn with this index (a reach beyond custom tools). */
     builtinToolUseOnTurn: number | null = null;
-    private seq = 0;
     private modelCallCount = 0;
     private eventPosts = 0;
     private readonly originalFetch = global.fetch;
@@ -159,8 +166,8 @@ export class ManagedAgentsFaux {
     }
 
     private nextId(prefix: string): string {
-        this.seq += 1;
-        return `${prefix}_${String(this.seq).padStart(4, '0')}`;
+        fauxIdSeq += 1;
+        return `${prefix}_${String(fauxIdSeq).padStart(4, '0')}`;
     }
 
     private async serve(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {

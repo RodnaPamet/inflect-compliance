@@ -21,7 +21,7 @@ import {
 } from '@/lib/agentic/managed-agents/cleanup';
 import { sessionMetadataFor } from '@/lib/agentic/managed-agents/definition';
 import { managedAgentsClientFor } from '@/lib/agentic/tool-runner/client';
-import { sessionIsPending } from '@/app-layer/usecases/managed-agents-cleanup';
+import { awaitsDeleteRetry, sessionIsPending } from '@/app-layer/usecases/managed-agents-cleanup';
 import { ManagedAgentsFaux } from '../../helpers/managed-agents-faux';
 
 const KEY = 'sk-ant-faux-key'; // pragma: allowlist secret -- a placeholder for the faux
@@ -66,6 +66,24 @@ describe('sessionIsPending', () => {
         [['SESSION_CREATED', 'SESSION_DELETE_FAILED'], true, false],
     ])('%j (kept only: %s) is pending: %s', (lifecycles, keptOnly, pending) => {
         expect(sessionIsPending(new Set(lifecycles), keptOnly)).toBe(pending);
+    });
+});
+
+describe('awaitsDeleteRetry (the reconciliation\'s failed-delete retry, #5843)', () => {
+    it.each([
+        // Steps in the order the ledger recorded them; the last is the latest.
+        [['SESSION_CREATED', 'SESSION_DELETE_FAILED'], true],
+        // A later pass deleted it: its latest step is DELETED, so it is not retried again.
+        [['SESSION_CREATED', 'SESSION_DELETE_FAILED', 'SESSION_DELETED'], false],
+        // Two failed attempts are still one session awaiting a retry.
+        [['SESSION_CREATED', 'SESSION_DELETE_FAILED', 'SESSION_DELETE_FAILED'], true],
+        // Kept (decision 4): never this path's, whatever came after.
+        [['SESSION_CREATED', 'SESSION_KEPT'], false],
+        [['SESSION_CREATED', 'SESSION_KEPT', 'SESSION_DELETE_FAILED'], false],
+        [['SESSION_CREATED'], false],
+        [['SESSION_CREATED', 'SESSION_DELETED'], false],
+    ])('%j awaits a retry: %s', (steps, expected) => {
+        expect(awaitsDeleteRetry({ latest: steps[steps.length - 1], lifecycles: new Set(steps) })).toBe(expected);
     });
 });
 

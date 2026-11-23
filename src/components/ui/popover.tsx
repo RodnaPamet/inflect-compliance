@@ -147,7 +147,13 @@ function PopoverRoot({
             // KEYBOARD AVOIDANCE. This sheet is bottom-anchored, so the soft
             // keyboard opens directly over it. See use-keyboard-inset.ts.
             style={keyboardAvoidanceStyle(keyboard)}
-            className="surface-popup-texture fixed bottom-0 left-0 right-0 z-50 mt-24 rounded-t-[10px]"
+            //
+            // A COLUMN capped at the DYNAMIC viewport height (`dvh`, with a
+            // `vh` fallback for a browser without it). `vh` is the viewport
+            // with the browser chrome hidden, so a sheet sized in it is taller
+            // than the screen while the chrome shows and its last rows sit
+            // off the bottom. The body below scrolls inside the cap.
+            className="surface-popup-texture fixed bottom-0 left-0 right-0 z-50 mt-24 flex max-h-[85vh] flex-col rounded-t-[10px] supports-[height:100dvh]:max-h-[85dvh]"
             // The caller's focus handlers apply to the sheet too. They used to
             // reach only the desktop popover, so a Combobox that puts focus in
             // its search box on open did so on desktop and left it on the
@@ -176,10 +182,33 @@ function PopoverRoot({
               <Drawer.Title>{t("menu")}</Drawer.Title>
               <Drawer.Description>{t("popoverContentDesc")}</Drawer.Description>
             </VisuallyHidden.Root>
-            <div className="sticky top-0 z-20 flex w-full items-center justify-center rounded-t-[10px] bg-inherit">
+            <div className="z-20 flex w-full shrink-0 items-center justify-center rounded-t-[10px] bg-inherit">
               <div className="bg-border-default my-3 h-1 w-12 rounded-full" />
             </div>
-            <div className="bg-bg-default flex w-full items-center justify-center overflow-hidden pb-4 align-middle shadow-xl">
+            {/* The body STACKS what it is given, and scrolls it.
+
+                It used to be `flex items-center justify-center
+                overflow-hidden` — a ROW — so a caller passing several root
+                nodes (the user menu passes a fragment: identity header, theme
+                row, language row, menu) had them laid side by side and clipped
+                at both edges. A bottom sheet is a column whose rows span its
+                width; a caller that wants a narrower child sizes that child.
+
+                The bottom padding clears the home indicator
+                (`env(safe-area-inset-bottom)`; the viewport is
+                `viewport-fit=cover`, so it is non-zero on a phone that has
+                one) — except while the soft keyboard is open, when the
+                keyboard style above already lifts the sheet clear and the
+                indicator is under the keyboard anyway. */}
+            <div
+              data-popover-drawer-body
+              className={cn(
+                "bg-bg-default flex min-h-0 w-full flex-col items-stretch overflow-y-auto overscroll-contain shadow-xl",
+                keyboard.isOpen
+                  ? "pb-4"
+                  : "pb-[calc(1rem+env(safe-area-inset-bottom))]",
+              )}
+            >
               {/* This popover IS a bottom sheet. Anything inside it is nested,
                   so a Combobox in here must present as a dropdown, not a second
                   sheet. */}
@@ -367,6 +396,9 @@ const Item = forwardRef<HTMLButtonElement, PopoverItemProps>(function Item(
             disabled={disabled}
             className={cn(
                 "flex w-full cursor-pointer select-none items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left",
+                // A finger needs 44 px (WCAG 2.5.5 / Apple HIG); a mouse keeps
+                // the dense row. Same rule as the Button primitive.
+                "pointer-coarse:min-h-11",
                 "transition-colors duration-100 ease-out motion-reduce:transition-none",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 "disabled:cursor-not-allowed disabled:opacity-50",
