@@ -103,8 +103,8 @@ DATABASE_URL=… npm run mobile:audit -- --base-url http://localhost:3006 --crea
   ignores): `metrics.json` with every page's counts and samples, `summary.md`
   with the pages failing each check per configuration plus the worst pages per
   check, and a screenshot per page.
-- **`--routes <regex>`** narrows the run, for example
-  `--routes 'risks|controls'`.
+- **`--routes <fragments>`** narrows the run to routes whose pattern contains
+  one of the comma-separated fragments, for example `--routes risks,controls`.
 
 ### Checking the whole product in a pull request
 

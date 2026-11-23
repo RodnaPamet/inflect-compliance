@@ -458,17 +458,21 @@ export function collectInPage(opts: CollectOptions): RawMeasurement {
 /**
  * Run `collectInPage` in `page`.
  *
- * The function is sent as source text with a `__name` shim in front: `tsx`
- * compiles with esbuild's `keepNames`, which wraps every inner function in a
+ * A `__name` shim is installed in the page first: `tsx` compiles with
+ * esbuild's `keepNames`, which wraps every inner function in a
  * `__name(fn, "name")` call that exists only in Node. Without the shim the
  * harness would throw `__name is not defined` in the page, while the E2E
  * runner (which compiles differently) would not — the same function would
- * work in one caller and not the other.
+ * work in one caller and not the other. The shim is a fixed string and the
+ * options travel as a Playwright argument, so no code is built from data.
  */
 export async function measurePage(page: Page, opts: Partial<CollectOptions> = {}): Promise<RawMeasurement> {
     const full: CollectOptions = { maxSamples: 8, scrollToEnd: true, ...opts };
-    const source = `(() => { var __name = (f) => f; return (${collectInPage.toString()})(${JSON.stringify(full)}); })()`;
-    return (await page.evaluate(source)) as RawMeasurement;
+    // A fixed string: installs the shim, nothing from the caller is in it.
+    await page.evaluate('globalThis.__name = globalThis.__name || ((f) => f)');
+    // Playwright serialises the function and passes `full` as an argument, so
+    // no source text is built from data here.
+    return (await page.evaluate(collectInPage, full)) as RawMeasurement;
 }
 
 /**

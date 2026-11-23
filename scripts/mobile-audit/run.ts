@@ -14,7 +14,7 @@
  * Flags:
  *   --base-url <url>      the running app (default http://localhost:3000)
  *   --database-url <url>  the database the app reads (default $DATABASE_URL)
- *   --routes <regex>      only routes whose pattern matches, e.g. 'risks|controls'
+ *   --routes <a,b,...>    only routes whose pattern contains one of these fragments, e.g. 'risks,controls'
  *   --configs <ids>       comma-separated (default 390-dark-bg,390-light-en,360-dark-bg)
  *   --out <dir>           report directory (default tmp/mobile-audit/<timestamp>)
  *   --concurrency <n>     pages measured at once per configuration (default 2)
@@ -53,7 +53,7 @@ const BENIGN_CONSOLE = [/^Failed to load resource/, /Failed to fetch RSC payload
 interface Options {
     baseUrl: string;
     databaseUrl: string;
-    routeFilter: RegExp | null;
+    routeFilter: ((pattern: string) => boolean) | null;
     configs: PhoneConfig[];
     out: string;
     concurrency: number;
@@ -62,6 +62,15 @@ interface Options {
     compare: string | null;
     chromium: string | null;
     createRecords: boolean;
+}
+
+/**
+ * `--routes` is a list of plain fragments, matched as substrings — never a
+ * regular expression built from the command line.
+ */
+function routeFragmentFilter(arg: string): (pattern: string) => boolean {
+    const fragments = arg.split(',').map((f) => f.trim()).filter(Boolean);
+    return (pattern) => fragments.some((f) => pattern.includes(f));
 }
 
 function parseArgs(argv: readonly string[]): Options {
@@ -77,7 +86,7 @@ function parseArgs(argv: readonly string[]): Options {
     return {
         baseUrl: (readValueFlag(argv, 'base-url') ?? 'http://localhost:3000').replace(/\/$/, ''),
         databaseUrl,
-        routeFilter: routes ? new RegExp(routes) : null,
+        routeFilter: routes ? routeFragmentFilter(routes) : null,
         configs: configIds.map((id) => PHONE_CONFIGS[id]),
         out: path.resolve(readValueFlag(argv, 'out') ?? path.join(REPO_ROOT, 'tmp', 'mobile-audit', stamp)),
         concurrency: Math.max(1, Number(readValueFlag(argv, 'concurrency') ?? 2)),
@@ -178,7 +187,7 @@ async function main(): Promise<void> {
     const catalog = await loadLeakCatalog(REPO_ROOT);
     const db = connectDb(opts.databaseUrl);
     const allRoutes = enumerateRoutes(REPO_ROOT);
-    const routes = opts.routeFilter ? allRoutes.filter((r) => opts.routeFilter!.test(r.pattern)) : allRoutes;
+    const routes = opts.routeFilter ? allRoutes.filter((r) => opts.routeFilter!(r.pattern)) : allRoutes;
     let resolved: ResolvedRoute[];
     let names = new Set<string>();
     let stateJobs: Array<Job | UncapturedPage> = [];
@@ -194,7 +203,7 @@ async function main(): Promise<void> {
         resolved = await Promise.all(routes.map((r) => resolveRoute(r, ctx)));
         names = await dataNames(db);
         if (opts.states) {
-            stateJobs = await Promise.all(OPEN_STATES.filter((s) => !opts.routeFilter || opts.routeFilter.test(s.route)).map(async (s) => {
+            stateJobs = await Promise.all(OPEN_STATES.filter((s) => !opts.routeFilter || opts.routeFilter(s.route)).map(async (s) => {
                 const route = allRoutes.find((r) => r.pattern === s.route);
                 if (!route) return { kind: 'state' as const, id: `state:${s.id}`, config: '*', reason: `route ${s.route} does not exist` };
                 const r = await resolveRoute(route, ctx);
