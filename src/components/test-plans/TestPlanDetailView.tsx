@@ -289,6 +289,9 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
                 back={{ smart: true }}
                 title={plan.name}
                 titleId="test-plan-title"
+                // A long plan name wraps the actions onto their own line on
+                // desktop; keep them at the right edge, where they sat before.
+                actionsClassName="sm:ml-auto"
                 // The stepper is a SIBLING of the <h1>, never inside it (the
                 // accname spec would fold its labels into the heading's name).
                 // `testPlan` is its own registered stepper slug — NOT
