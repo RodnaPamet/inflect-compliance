@@ -25,6 +25,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { RequestContext } from '@/app-layer/types';
 
 import {
+    SEND_ONCE,
     agentBodyFor,
     environmentBodyFor,
     systemHashOf,
@@ -57,13 +58,13 @@ export async function provisionManagedAgent(
 
     const environmentId =
         (await readConnectionEnvironment(ctx, input.connectionId)) ??
-        (await client.beta.environments.create(environmentBodyFor(input.connectionId))).id;
+        (await client.beta.environments.create(environmentBodyFor(input.connectionId), SEND_ONCE)).id;
 
     const body = agentBodyFor({ profileId: input.profileId, model: input.model, tools: input.tools });
     const prior = await readProfileAgent(ctx, input.profileId, input.connectionId);
     const agent = prior
-        ? await client.beta.agents.update(prior.anthropicAgentId, { ...body, version: prior.anthropicAgentVersion })
-        : await client.beta.agents.create(body);
+        ? await client.beta.agents.update(prior.anthropicAgentId, { ...body, version: prior.anthropicAgentVersion }, SEND_ONCE)
+        : await client.beta.agents.create(body, SEND_ONCE);
 
     const record: ProvisionRecord = {
         profileId: input.profileId,

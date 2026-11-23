@@ -713,7 +713,11 @@ export function DataTable<T extends TableRowData>({
   if (belowMd && collapsesToCards && data.length > 0 && !error && !loading) {
     return (
       <div id={dataTestId} data-testid={dataTestId} className={cn(wrapperClassName, "relative")}>
-        <DataTableCards<T> table={table} onRowClick={onRowClick} />
+        <DataTableCards<T>
+          table={table}
+          onRowClick={onRowClick}
+          selectable={!!effectiveOnRowSelectionChange || !!effectiveSelectionControls}
+        />
         {onReachEnd && (
           <InfiniteScrollSentinel
             onReachEnd={onReachEnd}

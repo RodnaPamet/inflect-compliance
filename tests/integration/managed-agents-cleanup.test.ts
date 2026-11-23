@@ -529,6 +529,54 @@ describeFn('Step 5c — the remote clean-up (real DB, faux workspace)', () => {
         expect(held(a)).toEqual({ ...ALL_HELD, deleteFailed: false });
     });
 
+    it('the reconciliation settles a session a dead worker abandoned (only CREATED, older than any run segment): deleted and recorded DELETED, or recorded KEPT on a connection that keeps sessions; a younger one is left (Step 5H)', async () => {
+        // A deletes sessions; B keeps them (decision 4).
+        const a = await seedWorld('aban-a');
+        const b = await seedWorld('aban-b');
+        await prisma.integrationConnection.update({
+            where: { id: a.connectionId },
+            data: { configJson: { workspaceId: 'wrkspc_aban-a', keepSessions: false } },
+        });
+        // A run a worker died in: its first segment's session has CREATED and
+        // nothing else, and was created before the segment's wall clock ran out.
+        const abandon = async (w: World): Promise<{ runId: string; sessionId: string }> => {
+            const runId = await newRun(w.tenantId);
+            const sessionId = faux.seedSession({ agentId: w.agentId, metadata: sessionMetadataFor(w.tenantId, runId) });
+            await recordLifecycle(w, runId, sessionId, ['SESSION_CREATED']);
+            await prisma.workflowStep.updateMany({ where: { tenantId: w.tenantId, runId }, data: { at: new Date(Date.now() - 2 * 3_600_000) } });
+            return { runId, sessionId };
+        };
+        const oldA = await abandon(a);
+        const oldB = await abandon(b);
+        const abandonedSpy = jest.spyOn(metrics, 'recordManagedAgentsAbandonedSession');
+
+        const tally = await reconcileLostSessionDeletes();
+
+        // A: the abandoned session is deleted and the run's ledger says so.
+        expect(faux.holdsSession(oldA.sessionId)).toBe(false);
+        expect(faux.deletes).toContain(oldA.sessionId);
+        expect(await lifecyclesOf(a.tenantId, oldA.runId, oldA.sessionId)).toEqual(['SESSION_CREATED', 'SESSION_DELETED']);
+        // B: kept, not deleted, and now recorded KEPT, so a DSAR erasure reaches it.
+        expect(faux.holdsSession(oldB.sessionId)).toBe(true);
+        expect(faux.requests.filter((r) => r.method === 'DELETE' && r.path.endsWith(oldB.sessionId))).toEqual([]);
+        expect(await lifecyclesOf(b.tenantId, oldB.runId, oldB.sessionId)).toEqual(['SESSION_CREATED', 'SESSION_KEPT']);
+        // A session recorded CREATED a moment ago may still have a live run: left alone in both.
+        expect(faux.holdsSession(a.createdOnly)).toBe(true);
+        expect(faux.holdsSession(b.createdOnly)).toBe(true);
+        expect(await lifecyclesOf(a.tenantId, a.runId, a.createdOnly)).toEqual(['SESSION_CREATED']);
+        expect(abandonedSpy).toHaveBeenCalledWith({ outcome: 'DONE' });
+        expect(abandonedSpy).toHaveBeenCalledWith({ outcome: 'KEPT' });
+        expect(tally.abandonedDeleted).toBeGreaterThanOrEqual(1);
+        expect(tally.abandonedKept).toBeGreaterThanOrEqual(1);
+
+        // A second pass settles neither again.
+        await reconcileLostSessionDeletes();
+        expect(await lifecyclesOf(a.tenantId, oldA.runId, oldA.sessionId)).toEqual(['SESSION_CREATED', 'SESSION_DELETED']);
+        expect(await lifecyclesOf(b.tenantId, oldB.runId, oldB.sessionId)).toEqual(['SESSION_CREATED', 'SESSION_KEPT']);
+        expect(faux.requests.filter((r) => r.method === 'DELETE' && r.path.endsWith(oldA.sessionId))).toHaveLength(1);
+        abandonedSpy.mockRestore();
+    });
+
     it('two tenants: RLS binds the records to their tenant, and one tenant\'s purge leaves the other\'s open record open', async () => {
         const a = await seedWorld('iso-a');
         const b = await seedWorld('iso-b');

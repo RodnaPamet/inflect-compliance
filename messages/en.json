@@ -9588,6 +9588,14 @@
     "tooManyRows": "This file has {count} risks; one import takes at most {max}. Split the file and import each part."
   },
   "ui": {
+    "filterList": {
+      "clearFilters": "Clear filters",
+      "removeFilter": "Remove the {label} filter"
+    },
+    "dataTableCards": {
+      "actions": "Actions",
+      "rowActions": "Row actions"
+    },
     "combobox": {
       "searchPlaceholder": "Search…",
       "placeholder": "Select…",
