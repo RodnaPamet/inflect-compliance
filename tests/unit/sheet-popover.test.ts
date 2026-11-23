@@ -95,7 +95,7 @@ describe('Sheet — responsive direction', () => {
     });
 
     it('right direction pins top/bottom/right with the width cap', () => {
-        expect(SHEET_SRC).toMatch(/bottom-\[max\(0\.5rem,env\(safe-area-inset-bottom\)\)\] right-2 top-2/);
+        expect(SHEET_SRC).toMatch(/bottom-2 right-2 top-2/);
         expect(SHEET_SRC).toMatch(/--sheet-margin:8px/);
     });
 });

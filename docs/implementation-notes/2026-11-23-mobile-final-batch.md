@@ -56,12 +56,12 @@ as 0, so a drawer with its padding and one without measure the same. The spec
 (`Emulation.setSafeAreaInsetsOverride`, 34 px), checks the page resolves
 `env()` to that value, then asserts for the new-risk modal, the assistant
 sheet, the navigation drawer and the user menu that the panel is on screen and
-its lowest control (scrolled to the end) ends above the inset. Writing it found
-one real gap: a SIDE sheet (`direction="left" | "right"`) was pinned
-`bottom-2`, so the phone's navigation drawer ended 8 px above the screen edge,
-inside the gesture zone. Side sheets now use
-`bottom-[max(0.5rem,env(safe-area-inset-bottom))]`, which is exactly
-`bottom-2` wherever there is no inset.
+its lowest reachable control (scrolled to the end, cut by every clipping
+ancestor) ends above the inset. With the padding removed from the modal, the
+bottom sheet and the popover drawer in one local build, all three fail, by name,
+in one run. The navigation drawer is a LEFT sheet pinned 8 px from the bottom;
+its last row stays clear through the scroller's own padding, so it needed no
+change and the spec holds it as it is.
 
 ## Files
 
@@ -73,7 +73,6 @@ inside the gesture zone. Side sheets now use
 | `src/lib/controls/control-taxonomy.ts` | `iso27001DomainKey`: a domain value → its stable key |
 | `src/app/t/[tenantSlug]/(app)/controls/filter-defs.ts` | `controlCategoryLabel` labels ISO domains from the catalog |
 | `src/lib/framework-tree/section-label.ts`, `src/components/frameworks/FrameworkExplorer.tsx`, `src/components/ui/FrameworkMinimap.tsx` | ISO theme sections labelled from the catalog |
-| `src/components/ui/sheet.tsx` | Side sheets clear the home indicator |
 | `scripts/mobile-audit/resolve.ts` | Risks' free-text owners are data, not UI |
 | `tests/guards/bulgarian-ui-chrome-sources.test.ts` | No literal shortcut description in `src/`; every ISO domain and theme section labels in Bulgarian |
 | `tests/rendered/i18n-kept-primitives.test.tsx` | The indicator and the toast host render Bulgarian under `bg` |

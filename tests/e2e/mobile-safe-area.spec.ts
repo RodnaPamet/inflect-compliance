@@ -15,9 +15,12 @@
  *     there would otherwise land on the system gesture.
  *
  * Covered: the create modal as a bottom sheet (new risk, its sticky Cancel /
- * Create footer), the assistant (a bottom `Sheet` with a footer), the
- * navigation drawer (a left `Sheet`) and the user menu (the `Popover` drawer).
- * Removing the safe-area padding from any one of them fails its step.
+ * Create footer), the assistant (a bottom `Sheet` with a footer) and the user
+ * menu (the `Popover` drawer) — removing the safe-area padding from the modal,
+ * the bottom sheet or the popover drawer fails its step, with every failing
+ * primitive named in one run — and the navigation drawer, a left `Sheet`
+ * pinned 8 px from the bottom, whose last row is held clear by its own
+ * scroller padding rather than by the inset.
  *
  * Read-only on the shared seeded tenant: it opens and closes overlays and
  * submits nothing.
