@@ -1219,7 +1219,13 @@ pack / narrowing / sample table), and `AgentPolicyCardVersion`,
 `IncidentEvidence` left the retained set and are removed with their parent. A
 retained model's FK to a purged table must be a column-scoped `SET NULL`;
 `tests/guardrails/tenant-purge-retained-never-cascades.test.ts` derives the
-cascade closure from the schema, with no allowlist.
+cascade closure from the schema, with no allowlist. That SET NULL is an UPDATE of
+the retained row, so an immutability trigger on the retained table must admit it
+(#5848: `ai_decision_log_immutable()` refused `aiSystemId` → NULL and no tenant
+that had run an agent could be purged); it now admits exactly the FK action's
+write, from a nested trigger with every other column unchanged.
+`tests/integration/tenant-purge-retained-set-null-admitted.test.ts` exercises
+every such FK against its table's real triggers, from the live catalogue.
 Adding a new model ⇒ classify it in the doc's inventory table (the
 `tests/guardrails/retention-policy-coverage.test.ts` ratchet fails CI until you do).
 
