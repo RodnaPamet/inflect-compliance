@@ -1366,7 +1366,8 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                     </Tooltip>
                 );
             },
-            meta: { disableTruncate: true },
+            // On a phone card, into the card's labelled "⋯" menu.
+            meta: { disableTruncate: true, cardAction: true },
         },
         // Archive — icon-only column. Toggles archive / unarchive.
         {
@@ -1400,7 +1401,8 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                     </Tooltip>
                 );
             },
-            meta: { disableTruncate: true },
+            // On a phone card, into the card's labelled "⋯" menu.
+            meta: { disableTruncate: true, cardAction: true },
         },
         // Download — icon-only column. Only file-backed evidence is
         // downloadable; non-file rows render nothing.
@@ -1452,7 +1454,8 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                     </Tooltip>
                 );
             },
-            meta: { disableTruncate: true },
+            // On a phone card, into the card's labelled "⋯" menu.
+            meta: { disableTruncate: true, cardAction: true },
         },
         // Review workflow — the remaining state-transition actions.
         {
@@ -1533,7 +1536,8 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                     </div>
                 );
             },
-            meta: { disableTruncate: true },
+            // On a phone card, into the card's labelled "⋯" menu.
+            meta: { disableTruncate: true, cardAction: true },
         },
     // R5-P3 #4 — include hydratedNow: the retention column's rendered labels
     // (getRetentionStatus) close over it, and sortAccessors already depends on

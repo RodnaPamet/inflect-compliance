@@ -294,7 +294,10 @@ describe('FilterList — primitive contract', () => {
     });
 
     it('renders a labelled Clear Filters button with an ESC keyboard hint', () => {
-        expect(src).toContain('Clear Filters');
+        // Translated, not an English literal (it read "Clear Filters" on
+        // Bulgarian pages). The rendered label is asserted in
+        // `tests/rendered/filter-toolbar-phone-layout.test.tsx`.
+        expect(src).toContain('t("clearFilters")');
         // The visible ESC kbd hint doubles as a keyboard-affordance cue.
         expect(src).toMatch(/<kbd[\s\S]*?ESC[\s\S]*?<\/kbd>/);
     });

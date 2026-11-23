@@ -41,6 +41,7 @@ import {
 // Filter trigger cannot drift from the Button beside it in this very
 // toolbar — see the comment on the `className` below.
 import { controlSize } from '@/components/ui/control-variants';
+import { cn } from '@inflect/ui/lib/cn';
 
 export interface FilterToolbarProps {
     /**
@@ -193,11 +194,11 @@ export function FilterToolbar({
         // takes the character from every speech-input user on the page.
         <div
             ref={toolbarRef}
-            className={`flex flex-wrap items-start gap-compact${className ? ` ${className}` : ''}`}
+            className={cn('flex flex-wrap items-start gap-compact', className)}
         >
             {leading ? (
                 <div
-                    className="flex items-center gap-tight"
+                    className="flex min-w-0 max-w-full flex-wrap items-center gap-tight"
                     data-testid="filter-toolbar-leading"
                 >
                     {leading}
@@ -230,7 +231,23 @@ export function FilterToolbar({
                     {triggerLabel ?? t('filter')}
                 </FilterUI.Select>
             </div>
-            <div className="flex-1 min-w-0">
+            {/*
+             * The active-filter pills. On a desktop row this slot is the
+             * `flex-1` spacer that right-pins `actions` / `primary`. On a
+             * phone it was the same spacer — squeezed to ~80px between the
+             * Filter trigger and the icon buttons, so the pills crushed and
+             * "Clear filters" was clipped. Below `md` it takes a ROW OF ITS
+             * OWN (`basis-full`, `order-last`): every pill and Clear get the
+             * full width. With no active filter it is not rendered as a row
+             * at all below `md`, so an empty toolbar adds no gap.
+             */}
+            <div
+                data-testid="filter-toolbar-active"
+                className={cn(
+                    "order-last min-w-0 basis-full md:order-none md:flex-1 md:basis-0",
+                    activeFilters.length === 0 && "hidden md:block",
+                )}
+            >
                 <FilterUI.List
                     filters={filters}
                     activeFilters={activeFilters}
@@ -249,8 +266,13 @@ export function FilterToolbar({
                 />
             </div>
             {actions ? (
+                // `flex-wrap` + `max-w-full`: on a 360px phone this cluster
+                // (columns, views, settings…) is wider than what is left
+                // beside the Filter trigger. Without wrap the last control
+                // ("Views", the settings gear) ran off the edge and the
+                // shell's `overflow-x-clip` cut it off silently.
                 <div
-                    className="flex items-center gap-tight"
+                    className="flex min-w-0 max-w-full flex-wrap items-center gap-tight"
                     data-testid="filter-toolbar-secondary"
                 >
                     {actions}
@@ -258,7 +280,7 @@ export function FilterToolbar({
             ) : null}
             {primary ? (
                 <div
-                    className="flex items-center gap-tight"
+                    className="flex min-w-0 max-w-full flex-wrap items-center gap-tight"
                     data-testid="filter-toolbar-primary"
                 >
                     {primary}

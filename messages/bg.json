@@ -9566,6 +9566,14 @@
     "tooManyRows": "Този файл съдържа {count} риска; един импорт приема най-много {max}. Разделете файла и импортирайте всяка част поотделно."
   },
   "ui": {
+    "filterList": {
+      "clearFilters": "Изчисти филтрите",
+      "removeFilter": "Премахни филтъра „{label}“"
+    },
+    "dataTableCards": {
+      "actions": "Действия",
+      "rowActions": "Действия за реда"
+    },
     "combobox": {
       "searchPlaceholder": "Търсене…",
       "placeholder": "Изберете…",
