@@ -55,6 +55,7 @@
     "test": "NODE_OPTIONS=\"${NODE_OPTIONS:---max-old-space-size=12288}\" jest",
     "test:e2e": "playwright test",
     "test:a11y": "playwright test tests/e2e/a11y.spec.ts",
+    "mobile:audit": "tsx scripts/mobile-audit/run.ts",
     "test:ci": "NODE_OPTIONS=\"${NODE_OPTIONS:---max-old-space-size=12288}\" jest --runInBand --no-coverage",
     "test:coverage": "NODE_OPTIONS=\"${NODE_OPTIONS:---max-old-space-size=12288}\" jest --coverage",
     "test:all": "NODE_OPTIONS=\"${NODE_OPTIONS:---max-old-space-size=12288}\" jest && playwright test",

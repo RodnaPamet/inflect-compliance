@@ -368,6 +368,9 @@
         "docs/mfa-session-security.md": {
             "class": "authoritative"
         },
+        "docs/mobile-audit.md": {
+            "class": "authoritative"
+        },
         "docs/mobile-roadmap.md": {
             "class": "living"
         },
