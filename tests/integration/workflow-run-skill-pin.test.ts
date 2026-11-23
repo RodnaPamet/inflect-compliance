@@ -156,7 +156,7 @@ describeFn('a run pins the skills it was taught (real DB)', () => {
         jest.mocked(enqueue).mockClear();
         const { runId, status } = await startWorkflowRun(ctx(), WF_NONE, {});
         expect(status).toBe('RUNNING');
-        expect(jest.mocked(enqueue)).toHaveBeenCalledWith('agent-run-execute', { tenantId: TENANT, runId });
+        expect(jest.mocked(enqueue)).toHaveBeenCalledWith('agent-run-execute', { tenantId: TENANT, runId }, { jobId: expect.stringMatching(/^agent-run-/) });
     });
 
     it.each([

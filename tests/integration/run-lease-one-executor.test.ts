@@ -22,7 +22,9 @@
  *      job claims it;
  *   5. an operator's Abort still wins over a held lease (#5366 unchanged);
  *   6. the reaper treats an expired lease as abandoned and a live one as a
- *      live executor.
+ *      live executor;
+ *   7. every enqueue names its segment's job, so a duplicate is BullMQ's to
+ *      drop.
  */
 const envOverride: Record<string, string | undefined> = {
     AGENT_PROFILES: '1',
@@ -59,6 +61,7 @@ import type { AgentProfileVersionInput } from '@/app-layer/schemas/agent-profile
 import { OPERATOR_ABORT_MESSAGE } from '@/lib/agentic/drivers/run-settlement';
 import { pauseInFlightRuns, _resetInFlightRunsForTesting } from '@/lib/agentic/in-flight-runs';
 import { runAgentRunReaperJob } from '@/app-layer/jobs/agent-run-reaper';
+import { agentRunExecuteJobId } from '@/app-layer/jobs/agent-run-job-id';
 import { enqueue } from '@/app-layer/jobs/queue';
 import { __resetAuditStreamForTests } from '@/app-layer/events/audit-stream';
 import type { RunLeaseTiming } from '@/lib/agentic/run-lease';
@@ -378,5 +381,27 @@ describeFn('one run executes in at most one place at a time (#5854)', () => {
         // Reaped, and the lease cleared so a holder that wakes is fenced.
         expect(await runRow(expired)).toMatchObject({ status: 'FAILED', leaseHolder: null, leaseExpiresAt: null });
         expect(await runRow(live)).toMatchObject({ status: 'RUNNING', leaseHolder: 'alive' });
+    });
+
+    it("every enqueue names its segment's job: the start by the run's start, a resume by its own claim", async () => {
+        const started = await startAgentProfileTestRun(admin(), AGENT, 1);
+        const row = await prisma.workflowRun.findUniqueOrThrow({ where: { id: started.runId }, select: { startedAt: true } });
+        const startCall = jest.mocked(enqueue).mock.calls.find(([name]) => name === 'agent-run-execute');
+        expect(startCall?.[2]).toEqual({ jobId: agentRunExecuteJobId(started.runId, row.startedAt) });
+
+        // Two resumes of one run are two segments with two ids, never one: a
+        // reused id would be a job BullMQ drops and a run nobody executes.
+        const resumeIds: string[] = [];
+        for (let i = 0; i < 2; i += 1) {
+            await prisma.workflowRun.update({ where: { id: started.runId }, data: { status: 'PAUSED' } });
+            jest.mocked(enqueue).mockClear();
+            await sleep(5);
+            await resumeWorkflowRun(owner(), started.runId);
+            const call = jest.mocked(enqueue).mock.calls.find(([name]) => name === 'agent-run-execute');
+            const jobId = (call?.[2] as { jobId?: string } | undefined)?.jobId ?? '';
+            expect(jobId).toMatch(new RegExp(`^agent-run-${started.runId}-\\d+$`));
+            resumeIds.push(jobId);
+        }
+        expect(new Set([agentRunExecuteJobId(started.runId, row.startedAt), ...resumeIds]).size).toBe(3);
     });
 });

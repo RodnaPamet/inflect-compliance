@@ -65,6 +65,7 @@ import {
     lowerRole,
 } from '@/lib/agentic/agent-authority';
 import { enqueue } from '@/app-layer/jobs/queue';
+import { agentRunExecuteJobId } from '@/app-layer/jobs/agent-run-job-id';
 import {
     failRun,
     OPERATOR_ABORT_MESSAGE,
@@ -688,7 +689,12 @@ export async function startWorkflowRun(
     // Moving BOTH would change the contract of every existing run — the route
     // returns a terminal status today — for no benefit the static engine needs.
     if (isReasoningEngine(chosenDriver)) {
-        await enqueue('agent-run-execute', { tenantId: ctx.tenantId, runId: run.id });
+        // ONE JOB PER SEGMENT (#5854): named by the run and its start, so a
+        // second enqueue of this segment is a duplicate BullMQ drops. See
+        // `agentRunExecuteJobId`.
+        await enqueue('agent-run-execute', { tenantId: ctx.tenantId, runId: run.id }, {
+            jobId: agentRunExecuteJobId(run.id, run.startedAt),
+        });
         // RUNNING is what `createSealedRun` wrote (the column's default), and
         // it is reported rather than a synthesised QUEUED. The reaper already
         // understands a RUNNING row that stops moving; a new enum value would
@@ -888,7 +894,7 @@ export async function resumeWorkflowRun(
     };
 
     // Close the pending checkpoint step (the one that paused the run).
-    const resumedFrom = await runInTenantContext(ctx, async (db) => {
+    const { resumedFrom, segmentAt } = await runInTenantContext(ctx, async (db) => {
         // CLAIM FIRST (#5119). The status check above is a read; two resumes
         // of one paused run both passed it, both moved it to RUNNING with an
         // unconditional write, and both executed the remaining steps —
@@ -906,6 +912,12 @@ export async function resumeWorkflowRun(
                 reason: 'RUN_ALREADY_RESUMED',
             });
         }
+        // THE INSTANT OF THIS CLAIM names the resumed segment's job (#5854):
+        // the claim succeeds once per pause, so no two resumes share it.
+        const claimedRow = await db.workflowRun.findFirst({
+            where: { id: runId, tenantId: ctx.tenantId },
+            select: { updatedAt: true },
+        });
         const pending = await db.workflowStep.findFirst({
             where: { runId, tenantId: ctx.tenantId, status: 'PENDING' },
             orderBy: { seq: 'desc' },
@@ -941,7 +953,7 @@ export async function resumeWorkflowRun(
         // stamp, and branching on the driver would put the engine's identity in
         // a place that does not otherwise need to know it.
         await recordDecisionOutcome(db, ctx, runId, 'ACCEPTED');
-        return pending?.seq ?? run.stepCount - 1;
+        return { resumedFrom: pending?.seq ?? run.stepCount - 1, segmentAt: claimedRow?.updatedAt ?? new Date() };
     });
 
     await appendAuditEntry({
@@ -1014,6 +1026,9 @@ export async function resumeWorkflowRun(
             // retry keeps this base and a wedged segment cannot buy a fresh
             // hour per attempt.
             clockBase: Date.now(),
+        }, {
+            // ONE JOB PER SEGMENT (#5854), named by the claim above.
+            jobId: agentRunExecuteJobId(runId, segmentAt),
         });
         // RUNNING, matching what `startWorkflowRun` returns for the same
         // engine. The transaction above already wrote it; this reports it
@@ -1665,7 +1680,7 @@ async function createSealedRun(
      * and never after: a trigger refuses any later change (Step 1a, #4143).
      */
     profilePin: { versionId: string; instructionsHash: string } | null,
-): Promise<{ id: string }> {
+): Promise<{ id: string; startedAt: Date }> {
     try {
         return await runInTenantContext(ctx, async (db) => {
             // THE EXACT CONCURRENCY GATE, inside this transaction and BEFORE
@@ -1737,7 +1752,8 @@ async function createSealedRun(
                     profileVersionId: profilePin?.versionId ?? null,
                     profileInstructionsHash: profilePin?.instructionsHash ?? null,
                 },
-                select: { id: true },
+                // `startedAt` names the run's first segment's job (#5854).
+                select: { id: true, startedAt: true },
             });
             const sealed = sealContext({
                 tenantId: ctx.tenantId,

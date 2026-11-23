@@ -38,6 +38,7 @@
  */
 import type { RequestContext } from '../types';
 import { enqueue } from '@/app-layer/jobs/queue';
+import { agentRunExecuteJobId } from '@/app-layer/jobs/agent-run-job-id';
 import { appendAuditEntry } from '@/lib/audit';
 import type { PrismaTx } from '@/lib/db-context';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
@@ -144,9 +145,15 @@ async function resumeOnDecision(
         });
         const run = await db.workflowRun.findFirst({
             where: { id: deferral.runId, tenantId: ctx.tenantId },
-            select: { startedAt: true },
+            // `updatedAt` is the instant of the claim above, which names the
+            // resumed segment's job (#5854).
+            select: { startedAt: true, updatedAt: true },
         });
-        return { kind: 'RESUMING' as const, startedAtMs: run?.startedAt.getTime() ?? now.getTime() };
+        return {
+            kind: 'RESUMING' as const,
+            startedAtMs: run?.startedAt.getTime() ?? now.getTime(),
+            segmentAt: run?.updatedAt ?? now,
+        };
     });
     if (outcome.kind !== 'RESUMING') return outcome.kind;
 
@@ -171,11 +178,16 @@ async function resumeOnDecision(
     // `now - elapsedMsAtPark`, so the wait is never charged; the same base goes
     // in the payload, so a SIGTERM retry of this segment keeps it rather than
     // falling back to the run's start (#5534). Never earlier than the start.
-    await enqueue('agent-run-execute', {
-        tenantId: ctx.tenantId,
-        runId: deferral.runId,
-        clockBase: Math.max(outcome.startedAtMs, Date.now() - deferral.elapsedMsAtPark),
-    });
+    await enqueue(
+        'agent-run-execute',
+        {
+            tenantId: ctx.tenantId,
+            runId: deferral.runId,
+            clockBase: Math.max(outcome.startedAtMs, Date.now() - deferral.elapsedMsAtPark),
+        },
+        // ONE JOB PER SEGMENT (#5854), named by the run's claim above.
+        { jobId: agentRunExecuteJobId(deferral.runId, outcome.segmentAt) },
+    );
     return 'RESUMING';
 }
 
