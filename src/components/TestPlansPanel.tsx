@@ -7,6 +7,7 @@
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
+import { useLocalizedPlanName } from '@/lib/agentic/use-localized-plan-name';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { AppIcon } from '@/components/icons/AppIcon';
@@ -52,6 +53,7 @@ export default function TestPlansPanel({ controlId }: { controlId: string }) {
     const router = useRouter();
     const { permissions } = useTenantContext();
     const t = useTranslations('panels.testPlans');
+    const planName = useLocalizedPlanName();
     const tc = useTranslations('common');
     const tr = useTranslations();
     const toast = useToast();
@@ -214,7 +216,7 @@ export default function TestPlansPanel({ controlId }: { controlId: string }) {
                                         className="text-sm font-medium text-content-emphasis hover:text-[var(--brand-default)] transition"
                                         id={`test-plan-link-${plan.id}`}
                                     >
-                                        {plan.name}
+                                        {planName(plan.name)}
                                     </Link>
                                     <div className="flex items-center gap-tight mt-0.5 flex-wrap">
                                         <StatusBadge variant={STATUS_BADGE[plan.status] || 'neutral'} size="sm">

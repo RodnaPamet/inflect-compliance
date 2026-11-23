@@ -77,6 +77,11 @@ import Anthropic, { type Middleware } from '@anthropic-ai/sdk';
 
 import { env } from '@/env';
 import { anthropicWorkspaceHeaders } from '@/lib/ai/anthropic-workspace';
+import {
+    anthropicWorkspaceE2eOrigin,
+    nextTestModeFlag,
+} from '@/app-layer/integrations/providers/anthropic-workspace/e2e-faux';
+import { MANAGED_AGENTS_PREAMBLE } from '@/lib/agentic/managed-agents/preamble';
 import { forbidden } from '@/lib/errors/types';
 import { logger } from '@/lib/observability';
 import type { ProfileModelTier } from '@/lib/agentic/agent-profile';
@@ -349,7 +354,23 @@ export type ManagedAgentsRequestRefusal =
     /** An environment that is not `cloud` with `limited` networking and no hosts. */
     | 'ENVIRONMENT_NOT_SEALED'
     /** A session list with no `agent_id`: a list of the customer's whole workspace (Step 5c). */
-    | 'SESSION_LIST_NOT_BY_AGENT';
+    | 'SESSION_LIST_NOT_BY_AGENT'
+    /**
+     * A body carrying a member the engine never sends (Step 5H, #5854): an
+     * agent's `description` or `execution_identity`, a tool member beyond the
+     * four a custom tool has, a session's `title`, an environment's
+     * `description`. Checked against an ALLOWLIST, so a member Anthropic adds
+     * later is refused until somebody lists it.
+     */
+    | 'MEMBER_NOT_ALLOWED'
+    /** An agent body whose `system` is not Inflect's preamble, byte for byte (#5854). */
+    | 'AGENT_SYSTEM_NOT_PREAMBLE'
+    /**
+     * A session events POST carrying an event the engine does not send
+     * (#5854): anything but `user.message`, `user.custom_tool_result` and
+     * `user.interrupt`, such as a `user.tool_confirmation`.
+     */
+    | 'EVENT_NOT_ENGINE_SENT';
 
 /** Archiving an agent: the one POST the engine sends without a body (Step 5c). */
 const ARCHIVE_AGENT = /^\/v1\/agents\/[A-Za-z0-9_-]+\/archive$/;
@@ -360,6 +381,8 @@ const MANAGED_AGENTS_ROUTES: ReadonlyArray<{ readonly method: string; readonly p
     { method: 'GET', path: /^\/v1\/agents\/[A-Za-z0-9_-]+$/ },
     { method: 'POST', path: /^\/v1\/agents\/[A-Za-z0-9_-]+$/ },
     { method: 'POST', path: /^\/v1\/environments$/ },
+    // A run re-reads its environment before each session (#5854).
+    { method: 'GET', path: /^\/v1\/environments\/[A-Za-z0-9_-]+$/ },
     { method: 'POST', path: /^\/v1\/sessions$/ },
     // Step 5c's crash window: a session list, which the clean-up sends only
     // with an `agent_id` Inflect recorded (`listCrashWindow` in
@@ -375,6 +398,38 @@ const MANAGED_AGENTS_ROUTES: ReadonlyArray<{ readonly method: string; readonly p
     { method: 'POST', path: ARCHIVE_AGENT },
 ];
 
+/**
+ * THE MEMBERS EACH BODY MAY CARRY (Step 5H, #5854): exactly what the engine
+ * writes (`agentBodyFor`, `environmentBodyFor`, the session create and the
+ * events it sends in `execute.ts`), and nothing else. An allowlist, not a
+ * denylist: a member nobody listed is refused, so a new one is a reviewed diff
+ * here rather than a request that leaves.
+ */
+const AGENT_CREATE_MEMBERS: ReadonlySet<string> = new Set(['name', 'model', 'system', 'tools', 'metadata']);
+/** An update names the version it replaces, for Anthropic's optimistic concurrency. */
+const AGENT_UPDATE_MEMBERS: ReadonlySet<string> = new Set([...AGENT_CREATE_MEMBERS, 'version']);
+/** A custom tool's four fields (`ManagedAgentCustomTool`). */
+const CUSTOM_TOOL_MEMBERS: ReadonlySet<string> = new Set(['type', 'name', 'description', 'input_schema']);
+const ENVIRONMENT_MEMBERS: ReadonlySet<string> = new Set(['name', 'config', 'metadata']);
+const SESSION_MEMBERS: ReadonlySet<string> = new Set(['agent', 'environment_id', 'budget', 'metadata']);
+const EVENTS_POST_MEMBERS: ReadonlySet<string> = new Set(['events']);
+/** The events the engine sends a session, and each one's members. */
+const ENGINE_SENT_EVENTS: Readonly<Record<string, ReadonlySet<string>>> = {
+    'user.message': new Set(['type', 'content']),
+    'user.custom_tool_result': new Set(['type', 'custom_tool_use_id', 'is_error', 'content']),
+    'user.interrupt': new Set(['type']),
+};
+
+/** Every key of `value` is in `allowed`. */
+function onlyMembers(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
+    return Object.keys(value).every((k) => allowed.has(k));
+}
+
+/** A plain JSON object, not an array or `null`. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 /** Present and not an empty list or `null`: what "asks for it" means for an optional body member. */
 function asksFor(value: unknown): boolean {
     if (value === undefined || value === null) return false;
@@ -386,10 +441,14 @@ function asksFor(value: unknown): boolean {
  * The reason a request may not leave a Managed Agents client, or null when it
  * may. Pure, so every branch is unit-tested without a network.
  */
-export function managedAgentsRequestRefusal(request: { method?: string; url: string; body?: unknown }): ManagedAgentsRequestRefusal | null {
+export function managedAgentsRequestRefusal(
+    request: { method?: string; url: string; body?: unknown },
+    /** The origin the client was built for: `managedAgentsOrigin()`, Anthropic's everywhere but a Playwright run. */
+    origin: string = ANTHROPIC_API_BASE_URL,
+): ManagedAgentsRequestRefusal | null {
     const url = new URL(request.url);
     const method = (request.method ?? 'GET').toUpperCase();
-    if (url.origin !== ANTHROPIC_API_BASE_URL) return 'NOT_THE_PINNED_ORIGIN';
+    if (url.origin !== origin) return 'NOT_THE_PINNED_ORIGIN';
     if (!MANAGED_AGENTS_ROUTES.some((r) => r.method === method && r.path.test(url.pathname))) {
         return 'NOT_A_MANAGED_AGENTS_CALL';
     }
@@ -420,10 +479,17 @@ export function managedAgentsRequestRefusal(request: { method?: string; url: str
                 (t: unknown) => t === null || typeof t !== 'object' || (t as { type?: unknown }).type !== 'custom',
             );
             if (notCustom) return 'AGENT_NOT_CUSTOM_TOOLS_ONLY';
+            if (tools.some((t: Record<string, unknown>) => !onlyMembers(t, CUSTOM_TOOL_MEMBERS))) return 'MEMBER_NOT_ALLOWED';
         }
+        const allowed = url.pathname === '/v1/agents' ? AGENT_CREATE_MEMBERS : AGENT_UPDATE_MEMBERS;
+        if (!onlyMembers(members, allowed)) return 'MEMBER_NOT_ALLOWED';
+        // The agent holds Inflect's text and nothing else: absent is refused
+        // too, so an update can never leave a Console-written `system` in place.
+        if (members.system !== MANAGED_AGENTS_PREAMBLE) return 'AGENT_SYSTEM_NOT_PREAMBLE';
         return null;
     }
     if (url.pathname === '/v1/environments') {
+        if (!onlyMembers(members, ENVIRONMENT_MEMBERS)) return 'MEMBER_NOT_ALLOWED';
         const config = members.config as { type?: unknown; networking?: Record<string, unknown> | null; packages?: unknown } | undefined;
         const net = config?.networking;
         const sealed =
@@ -438,6 +504,7 @@ export function managedAgentsRequestRefusal(request: { method?: string; url: str
     }
     if (url.pathname === '/v1/sessions') {
         if (asksFor(members.vault_ids) || asksFor(members.resources)) return 'SESSION_REACHES_BEYOND_SYSTEM';
+        if (!onlyMembers(members, SESSION_MEMBERS)) return 'MEMBER_NOT_ALLOWED';
         const agent = members.agent;
         if (agent === null || typeof agent !== 'object' || Array.isArray(agent)) return 'SESSION_REACHES_BEYOND_SYSTEM';
         const allowed = new Set(['type', 'id', 'version', 'system']);
@@ -447,14 +514,29 @@ export function managedAgentsRequestRefusal(request: { method?: string; url: str
         }
         return null;
     }
-    // A session's events: a user message, a tool result, an interrupt.
+    // A session's events: a user message, a tool result, an interrupt, and
+    // nothing else (#5854). A `user.tool_confirmation`, for one, would approve a
+    // built-in tool call the agent cannot hold.
+    if (!onlyMembers(members, EVENTS_POST_MEMBERS)) return 'MEMBER_NOT_ALLOWED';
+    const events = members.events;
+    if (!Array.isArray(events)) return 'BODY_UNREADABLE';
+    for (const event of events) {
+        if (!isRecord(event)) return 'BODY_UNREADABLE';
+        const type = event.type;
+        const eventMembers =
+            typeof type === 'string' && Object.prototype.hasOwnProperty.call(ENGINE_SENT_EVENTS, type)
+                ? ENGINE_SENT_EVENTS[type]
+                : undefined;
+        if (!eventMembers) return 'EVENT_NOT_ENGINE_SENT';
+        if (!onlyMembers(event, eventMembers)) return 'MEMBER_NOT_ALLOWED';
+    }
     return null;
 }
 
-function managedAgentsOnlyFor(run: { readonly runId?: string }): Middleware {
+function managedAgentsOnlyFor(run: { readonly runId?: string; readonly origin: string }): Middleware {
     return async (request, next) => {
         const url = new URL(request.url);
-        const verdict = { refusal: managedAgentsRequestRefusal(request) };
+        const verdict = { refusal: managedAgentsRequestRefusal(request, run.origin) };
         logger.info('managed-agents: request', {
             component: 'agentic',
             runId: run.runId,
@@ -470,6 +552,25 @@ function managedAgentsOnlyFor(run: { readonly runId?: string }): Middleware {
 }
 
 /**
+ * WHERE A MANAGED AGENTS CLIENT SENDS: `https://api.anthropic.com`, and in a
+ * Playwright run only, the loopback faux (Step 5d, #4167).
+ *
+ * The provider's Test (Step 5a) already dials the faux through the same seam,
+ * `anthropicWorkspaceE2eOrigin`, and this extends it to the engine's own calls
+ * so an end-to-end run can provision, run and delete against it. Nothing a
+ * tenant writes is read: the answer needs BOTH `NEXT_TEST_MODE=1` and
+ * `AUTH_TEST_MODE=1` on the process, and the faux address is a constant on
+ * loopback. No configuration names the host, as for every tenant-writable path
+ * of the provider.
+ */
+export function managedAgentsOrigin(): string {
+    return (
+        anthropicWorkspaceE2eOrigin({ nextTestMode: nextTestModeFlag(), authTestMode: env.AUTH_TEST_MODE }) ??
+        ANTHROPIC_API_BASE_URL
+    );
+}
+
+/**
  * A new client for one Managed Agents run, keyed with the customer's
  * workspace key, or the named reason there is none. Never cached.
  */
@@ -481,15 +582,16 @@ export function managedAgentsClientFor(input: {
     const apiKey = input.apiKey.trim();
     if (!apiKey) return { ok: false, reason: 'WORKSPACE_KEY_MISSING' };
     if (env.ANTHROPIC_CUSTOM_HEADERS?.trim()) return { ok: false, reason: 'SDK_AMBIENT_HEADERS_SET' };
+    const origin = managedAgentsOrigin();
     const client = new Anthropic({
         apiKey,
-        baseURL: ANTHROPIC_API_BASE_URL,
+        baseURL: origin,
         defaultHeaders: { ...anthropicWorkspaceHeaders(input.workspaceId) },
         webhookKey: null,
         logLevel: 'warn',
         logger: sdkLogger,
         openTelemetry: { propagation: false, traces: { enabled: true, contentMode: 'metadata_only' } },
-        middleware: [managedAgentsOnlyFor({ runId: input.runId })],
+        middleware: [managedAgentsOnlyFor({ runId: input.runId, origin })],
     });
     return { ok: true, client };
 }

@@ -8,6 +8,10 @@ import { ListPageShell } from '@/components/layout/ListPageShell';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { auditEntityNounKey, readableAuditCode } from '@/lib/audit/audit-log-display';
+import { activityEventToken, activitySubject, activityVerbToken } from '@/lib/audit/activity-humanize';
+import { auditActionLabel, auditEntityLabel } from '@/lib/audit/audit-code-labels';
+
+const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // listAuditLogPage → AuditLogRepository.listPage, projected by the server page
 // to what the table shows. createdAt is an ISO string; `action` and `entity`
@@ -49,13 +53,38 @@ interface AuditLogClientProps {
 export function AuditLogClient({ auditLog, olderHref, newestHref, translations: t }: AuditLogClientProps) {
     const tx = useTranslations('admin');
     const tEntity = useTranslations('dashboard.activity.entity');
+    const tChip = useTranslations('admin.auditActionChip');
+    const tCodes = useTranslations('auditCodes');
+    const actionLabel = useCallback((action: string, entity: string) => {
+        // Every code the source writes has its own label in `auditCodes`. A
+        // code the catalog does not hold falls back to composition: a
+        // whole-action event has its own label, a known verb on a known entity
+        // is composed in the catalog ("Risk created" / "Създаване на риск"), a
+        // generic bare verb (`UPDATE`) takes the row's entity. Past that, the
+        // code as words.
+        const labelled = auditActionLabel(tCodes, action);
+        if (labelled !== null) return labelled;
+        const event = activityEventToken(action);
+        if (event) return tChip(`event.${event}`);
+        const { token } = activityVerbToken(action);
+        if (token) {
+            const verb = tChip(`verb.${token}`);
+            const subject = activitySubject(action);
+            const nounKey = subject.bare ? auditEntityNounKey(entity) : subject.nounKey;
+            if (nounKey) return capitalise(tChip('composed', { entity: tEntity(nounKey), verb }));
+            if (subject.bare) return capitalise(verb);
+        }
+        return readableAuditCode(action);
+    }, [tChip, tEntity, tCodes]);
     const entityLabel = useCallback((entity: string) => {
-        // A translated noun where the dashboard feed has one, else the code as words.
+        // The catalog's label; else the dashboard feed's noun; else the code as words.
+        const labelled = auditEntityLabel(tCodes, entity);
+        if (labelled !== null) return labelled;
         const key = auditEntityNounKey(entity);
         if (key === null) return readableAuditCode(entity);
         const noun = tEntity(key);
         return noun.charAt(0).toUpperCase() + noun.slice(1);
-    }, [tEntity]);
+    }, [tEntity, tCodes]);
     const logColumns = useMemo(() => createColumns<AuditLogRow>([
         {
             id: 'time',
@@ -72,8 +101,15 @@ export function AuditLogClient({ auditLog, olderHref, newestHref, translations: 
         {
             id: 'action',
             header: t.action,
-            accessorFn: (e) => readableAuditCode(e.action),
-            cell: ({ getValue }) => <StatusBadge variant="info">{getValue()}</StatusBadge>,
+            accessorFn: (e) => actionLabel(e.action, e.entity),
+            // A label can be a long phrase ("Предоставяне на членство в
+            // работното пространство"); it wraps inside its card on a phone
+            // rather than running past it.
+            cell: ({ getValue }) => (
+                <StatusBadge variant="info" className="max-w-full whitespace-normal">
+                    {getValue()}
+                </StatusBadge>
+            ),
         },
         {
             id: 'entity',
@@ -86,7 +122,7 @@ export function AuditLogClient({ auditLog, olderHref, newestHref, translations: 
             header: t.details,
             cell: ({ getValue }) => <span className="text-content-muted max-w-xs truncate">{getValue()}</span>,
         },
-    ]), [t, entityLabel]);
+    ]), [t, entityLabel, actionLabel]);
 
     return (
         <ListPageShell.Body>

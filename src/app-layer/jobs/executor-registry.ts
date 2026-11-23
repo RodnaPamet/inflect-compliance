@@ -502,8 +502,10 @@ executorRegistry.register('data-lifecycle', async (payload) => {
     // Step 5c (#4166) — what Inflect created in customers' Anthropic
     // workspaces. The OPEN clean-ups (a removed connection, a DSAR erasure)
     // are retried with the disabled connection's key until done, or ABANDONED
-    // after 30 days; then the lost-delete reconciliation reads back the
-    // sessions recorded DELETED. Both BEFORE the tenant purge, which closes
+    // after 30 days; then the reconciliation retries the sessions whose
+    // delete failed (#5843), settles the sessions a dead worker abandoned
+    // (Step 5H, #4169) and reads back the sessions recorded DELETED.
+    // Both BEFORE the tenant purge, which closes
     // the open records of the tenants it purges. A dry run sends nothing.
     const managedAgentsCleanup = payload.dryRun
         ? null

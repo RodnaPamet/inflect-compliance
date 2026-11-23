@@ -6,6 +6,8 @@ import { ClientProviders } from '@/components/layout/ClientProviders';
 import { NavigationTracker } from '@/components/nav/NavigationTracker';
 import { isAiFeatureEnabled, isAIRiskEnabled } from '@/app-layer/ai/risk-assessment/feature-gate';
 import { AssistantLauncher } from '@/components/assistant/AssistantLauncher';
+import { AssistantTopBarButton } from '@/components/assistant/AssistantTopBarButton';
+import { CommandPaletteTopBarButton } from '@/components/command-palette';
 import { AssistantPageContextProvider } from '@/components/assistant/assistant-page-context';
 
 /**
@@ -106,6 +108,15 @@ export default async function AppLayout({
                 orgMemberships: session.user.orgMemberships,
             }}
             appName={tc('appName')}
+            // Phone-only entry points in the top bar (#5813, #5821). Both
+            // render `md:hidden`; the assistant's also renders nothing unless
+            // the launcher below registered it — the same gate, read once.
+            topBarActions={
+                <>
+                    <CommandPaletteTopBarButton />
+                    {assistantEnabled ? <AssistantTopBarButton /> : null}
+                </>
+            }
         >
             <ClientProviders userId={session.user.id ?? null}>
                 <NavigationTracker />

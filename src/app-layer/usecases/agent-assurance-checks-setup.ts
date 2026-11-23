@@ -57,6 +57,7 @@ import {
 } from '@/app-layer/services/agent-control-tests';
 import { frameworkFamilyId, requirementCodeSpellings } from '@/app-layer/domain/framework-representation';
 import { ASI_LIBRARY_URN } from '@/lib/agentic/evidence-artefact';
+import { ASSURANCE_PLAN_PREFIX } from '@/lib/agentic/agentic-check-titles';
 
 /** Daily at 06:40 UTC: after the 06:00 kill-switch drill (owner decision, 2026-11-10). */
 export const ASSURANCE_CHECK_CRON = '40 6 * * *';
@@ -97,6 +98,13 @@ export type AssuranceSetupResult =
           readonly ok: false;
           readonly refusal: AssuranceSetupRefusal;
           readonly detail: string;
+          /**
+           * The facts `detail` is written from, so a page can say the same in
+           * the reader's language (`agentChecks.refusal.<message>`). `message`
+           * names the sentence; the rest fill it. `detail` stays the English
+           * for API callers.
+           */
+          readonly message?: AssuranceRefusalMessage;
           /** Which check the refusal is about, when it is about one. */
           readonly check?: AgenticCheckId;
           /** For CONTROL_AMBIGUOUS: the controls the check maps to. */
@@ -110,11 +118,23 @@ export interface AssuranceSetupOptions {
     readonly controls?: Readonly<Record<string, string>>;
 }
 
+/** A refusal's sentence and its facts — see `AssuranceSetupResult.message`. */
+export type AssuranceRefusalMessage =
+    | { readonly key: 'UNKNOWN_CHECK'; readonly check: string }
+    | { readonly key: 'LACKS_PERMISSION'; readonly permissions: string }
+    | { readonly key: 'CONTROL_MISSING_NAMED'; readonly controlId: string }
+    | { readonly key: 'CONTROL_MISSING'; readonly codes: string }
+    | { readonly key: 'CONTROL_AMBIGUOUS'; readonly code: string; readonly count: number };
+
 class AssuranceSetupRefused extends Error {
     constructor(
         readonly refusal: AssuranceSetupRefusal,
         detail: string,
-        readonly about: { check?: AgenticCheckId; candidates?: readonly AssuranceStepControl[] } = {},
+        readonly about: {
+            check?: AgenticCheckId;
+            candidates?: readonly AssuranceStepControl[];
+            message?: AssuranceRefusalMessage;
+        } = {},
     ) {
         super(detail);
     }
@@ -122,7 +142,7 @@ class AssuranceSetupRefused extends Error {
 
 /** The plan name, which is also how a crash-orphaned plan is recognised. */
 export function assurancePlanName(check: AgenticCheckId): string {
-    return `Agent assurance: ${AGENTIC_CHECKS[check].title}`;
+    return `${ASSURANCE_PLAN_PREFIX}${AGENTIC_CHECKS[check].title}`;
 }
 
 function isAgenticCheckId(value: string): value is AgenticCheckId {
@@ -160,6 +180,7 @@ async function setUp(ctx: RequestContext, opts: AssuranceSetupOptions): Promise<
             throw new AssuranceSetupRefused(
                 'UNKNOWN_CHECK',
                 `"${check}" is not an agent assurance check (${AGENTIC_CHECK_IDS.join(', ')}).`,
+                { message: { key: 'UNKNOWN_CHECK', check } },
             );
         }
         explicit.set(check, controlId);
@@ -171,7 +192,9 @@ async function setUp(ctx: RequestContext, opts: AssuranceSetupOptions): Promise<
         ctx.appPermissions.tests.create ? null : 'tests.create',
     ].filter((k): k is string => k !== null);
     if (missing.length > 0) {
-        throw new AssuranceSetupRefused('LACKS_PERMISSION', `Scheduling these checks needs ${missing.join(' and ')}.`);
+        throw new AssuranceSetupRefused('LACKS_PERMISSION', `Scheduling these checks needs ${missing.join(' and ')}.`, {
+            message: { key: 'LACKS_PERMISSION', permissions: missing.join(', ') },
+        });
     }
 
     const state = await runInTenantContext(ctx, async (db) => {
@@ -278,7 +301,7 @@ async function setUp(ctx: RequestContext, opts: AssuranceSetupOptions): Promise<
                 throw new AssuranceSetupRefused(
                     'CONTROL_MISSING',
                     `The control named for ${check}, "${namedId}", is not a live control of this workspace.`,
-                    { check },
+                    { check, message: { key: 'CONTROL_MISSING_NAMED', controlId: namedId } },
                 );
             }
             targets.set(check, control);
@@ -293,7 +316,7 @@ async function setUp(ctx: RequestContext, opts: AssuranceSetupOptions): Promise<
                 throw new AssuranceSetupRefused(
                     'CONTROL_AMBIGUOUS',
                     `${AGENTIC_CHECKS[check].title}: ${code} is discharged by ${hits.length} controls; name the one this check's plan should run on.`,
-                    { check, candidates: hits },
+                    { check, candidates: hits, message: { key: 'CONTROL_AMBIGUOUS', code, count: hits.length } },
                 );
             }
             chosen = hits[0];
@@ -304,7 +327,7 @@ async function setUp(ctx: RequestContext, opts: AssuranceSetupOptions): Promise<
                 'CONTROL_MISSING',
                 `${AGENTIC_CHECKS[check].title}: no live control of this workspace is linked to ${covers.join(' or ')} ` +
                     'in the OWASP Agentic Top 10. Install that framework and map a control to it, or name the control.',
-                { check },
+                { check, message: { key: 'CONTROL_MISSING', codes: covers.join(', ') } },
             );
         }
         targets.set(check, chosen);

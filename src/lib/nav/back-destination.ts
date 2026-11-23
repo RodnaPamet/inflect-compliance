@@ -23,8 +23,15 @@
 import {
     resolveCanonicalParent,
     referrerIsDescendant,
-    type CanonicalParent,
+    type BackLabelKey,
 } from '@/lib/nav/canonical-parents';
+
+/** A resolved, display-ready destination: where back goes and what it says. */
+export interface BackDestination {
+    href: string;
+    /** Already localised — the caller renders it into "Back to {label}". */
+    label: string;
+}
 
 export interface BackDestinationInput {
     /** The page currently rendered, tenant-prefixed. */
@@ -33,11 +40,13 @@ export interface BackDestinationInput {
     referrer: string | null;
     tenantSlug: string | null;
     /** Explicit destination, wins over everything. */
-    override?: CanonicalParent;
+    override?: BackDestination;
     /** When true, no canonical fallback — referrer or nothing. */
     noFallback?: boolean;
     /** Produces the label for a referrer-derived destination. */
     labelFor: (pathname: string) => string;
+    /** Localises a canonical parent's message key. */
+    labelForKey: (key: BackLabelKey) => string;
 }
 
 export function resolveBackDestination({
@@ -47,7 +56,8 @@ export function resolveBackDestination({
     override,
     noFallback,
     labelFor,
-}: BackDestinationInput): CanonicalParent | null {
+    labelForKey,
+}: BackDestinationInput): BackDestination | null {
     if (override) return override;
     if (!tenantSlug) return null;
 
@@ -77,5 +87,7 @@ export function resolveBackDestination({
     ) {
         return { href: referrer, label: labelFor(referrer) };
     }
-    return canonical;
+    return canonical
+        ? { href: canonical.href, label: labelForKey(canonical.labelKey) }
+        : null;
 }

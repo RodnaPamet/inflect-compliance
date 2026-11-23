@@ -23,7 +23,7 @@ import {
     type ChartRendererProps,
 } from '@/components/ui/dashboard-widgets';
 import type { OrgDashboardWidgetDto } from '@/app-layer/schemas/org-dashboard-widget.schemas';
-import { resolveWidgetTitle } from '@/lib/org-dashboard-widget-titles';
+import { localizedWidgetTitle } from '@/lib/org-dashboard-widget-titles';
 import type { OrgThreatLevelDto } from '@/app-layer/usecases/org-threat-level';
 import { OrgThreatLevelWidget } from './OrgThreatLevelWidget';
 import type { OrgMaturityDto } from '@/app-layer/usecases/org-maturity';
@@ -43,28 +43,11 @@ import {
 
 type OrgTranslate = ReturnType<typeof useTranslations>;
 
-// Localized widget title — prefers the widget's own title, then a
-// catalog key for the known preset widgets, then the canonical
-// (English) fallback so a title is always present.
-const TITLE_KEY: Record<string, string> = {
-    'KPI/coverage': 'widgets.coverage',
-    'KPI/critical-risks': 'widgets.criticalRisks',
-    'KPI/overdue-evidence': 'widgets.overdueEvidence',
-    'KPI/tenants': 'widgets.tenants',
-    'DONUT/rag-distribution': 'widgets.tenantHealthDistribution',
-    'TREND/risks-open': 'widgets.trendRisksOpen',
-    'TREND/controls-coverage': 'widgets.trendControlsCoverage',
-    'TREND/evidence-overdue': 'widgets.trendEvidenceOverdue',
-    'TENANT_LIST/coverage': 'widgets.coverageByTenant',
-    'DRILLDOWN_CTAS/default': 'widgets.drilldown',
-};
-
-function localizedWidgetTitle(t: OrgTranslate, widget: OrgDashboardWidgetDto): string {
-    const own = widget.title?.trim();
-    if (own) return own;
-    const key = TITLE_KEY[`${widget.type}/${widget.chartType}`];
-    if (key) return t(key);
-    return resolveWidgetTitle(widget.type, widget.chartType, widget.title);
+// Localized widget title — the org's own title when it renamed the widget,
+// else the catalog's title in the reader's language. A stored title equal to
+// its stock English title (what the create path saves) is NOT a rename.
+function widgetTitle(t: OrgTranslate, widget: OrgDashboardWidgetDto): string {
+    return localizedWidgetTitle(widget.type, widget.chartType, widget.title, (key) => t(`widgets.${key}`));
 }
 
 // ─── Public types ───────────────────────────────────────────────────
@@ -179,7 +162,7 @@ function resolveKpiContent(
             return {
                 chartType: 'kpi',
                 config: {
-                    label: widget.title ?? t('widgets.coverage'),
+                    label: widgetTitle(t, widget),
                     value: data.summary.controls.coveragePercent,
                     format,
                     gradient,
@@ -196,7 +179,7 @@ function resolveKpiContent(
             return {
                 chartType: 'kpi',
                 config: {
-                    label: widget.title ?? t('widgets.criticalRisks'),
+                    label: widgetTitle(t, widget),
                     value: data.summary.risks.critical,
                     format,
                     gradient,
@@ -213,7 +196,7 @@ function resolveKpiContent(
             return {
                 chartType: 'kpi',
                 config: {
-                    label: widget.title ?? t('widgets.overdueEvidence'),
+                    label: widgetTitle(t, widget),
                     value: data.summary.evidence.overdue,
                     format,
                     gradient,
@@ -229,7 +212,7 @@ function resolveKpiContent(
             return {
                 chartType: 'kpi',
                 config: {
-                    label: widget.title ?? t('widgets.tenants'),
+                    label: widgetTitle(t, widget),
                     value: data.summary.tenants.total,
                     format,
                     gradient,
@@ -246,7 +229,7 @@ function resolveKpiContent(
         chartType: 'kpi',
         config: {
             // Never the raw chartType slug — resolve a guaranteed human title.
-            label: localizedWidgetTitle(t, widget),
+            label: widgetTitle(t, widget),
             value: null,
             format,
         },
@@ -336,7 +319,7 @@ function resolveTrendContent(
             seriesId: widget.chartType,
             seriesColorClassName:
                 cfg.colorClassName ?? colorMap[widget.chartType] ?? 'text-brand-default',
-            seriesLabel: localizedWidgetTitle(t, widget),
+            seriesLabel: widgetTitle(t, widget),
             // Epic 41 prompt 5 — forward the optional target line so
             // <TargetLine> actually renders (schema + renderer + component
             // all supported it; only this forward was missing).
@@ -424,7 +407,7 @@ export function DispatchedWidget({
     // Guaranteed human title — never undefined / a raw slug. The DONUT /
     // TREND arms (and any future chart widget) rely on this so a null-title
     // widget renders titled, not as an untitled chart.
-    let title: string = localizedWidgetTitle(t, widget);
+    let title: string = widgetTitle(t, widget);
     const domId = widgetDomId(widget);
 
     switch (widget.type) {
@@ -492,7 +475,7 @@ export function DispatchedWidget({
                 sortBy?: 'rag' | 'name' | 'coverage';
                 limit?: number;
             };
-            title = widget.title ?? t('widgets.coverageByTenant');
+            title = widgetTitle(t, widget);
             body = (
                 <div className="overflow-y-auto h-full -mx-2 px-2">
                     <TenantCoverageList
@@ -509,7 +492,7 @@ export function DispatchedWidget({
             const cfg = widget.config as {
                 entries?: ReadonlyArray<'controls' | 'risks' | 'evidence'>;
             };
-            title = widget.title ?? t('widgets.drilldown');
+            title = widgetTitle(t, widget);
             body = (
                 <DrillDownCtas
                     summary={data.summary}

@@ -1,7 +1,7 @@
 # New-subsystem checklist
 
-A checklist for adding a new **provider**, **tenant-scoped model**, or
-**background job** so it inherits the platform's runtime-verification
+A checklist for adding a new **provider**, **tenant-scoped model**,
+**background job** or **page** so it inherits the platform's runtime-verification
 conventions *by construction* — the hardening wave (H1–H6, GAP-1..4) learned
 each of these the hard way, and each item is now backed by a **structural
 ratchet that fails CI** until the item is satisfied.
@@ -98,6 +98,44 @@ alertable signal.
       directory, list its Graph client and usecase in `IDENTITY_WRITE_PATH` in
       `tests/guards/identity-log-identifier-scrub.test.ts`.
 - **Ratchet:** an untriaged route fails `api-route-has-some-authorization`.
+
+## 6. Renders on a 360 px phone (new page or UI surface)
+
+A page designed for a wide screen silently breaks on a phone: the app shell
+clips horizontal overflow instead of scrolling it, so a control past the edge
+just vanishes. The owner decisions behind these rules are in
+[the mobile audit and plan](mobile-roadmap.md#owner-decisions-2026-11-22).
+
+- [ ] Open the page at 360 px (touch, Bulgarian) and check that every action is
+      reachable and nothing is cut at the right edge.
+- [ ] Split phone from desktop at Tailwind `md:`, the shell's breakpoint
+      (`sm:` is fine for stacking a header).
+- [ ] Header actions go through `PageActions` (`src/components/layout/PageActions.tsx`,
+      which `PageHeader` applies). On a phone it shows the primary action
+      (`PrimaryAction`) plus at most one more as buttons. The rest go in its "⋯"
+      menu through `OverflowAction`. A destructive action stays a visible
+      destructive button. Never wrap the actions in your own non-wrapping `flex` div.
+- [ ] A tab strip uses `ScrollCueStrip` (`src/components/ui/scroll-cue-strip.tsx`;
+      `EntityDetailLayout` already does). It gives the strip edge fades, a
+      chevron, the active tab in view and stickiness on a phone.
+- [ ] Rows that carry actions wrap (`flex-wrap`, or stack below `sm`). No
+      fixed-width row or picker (`w-64` beside buttons) that never wraps.
+- [ ] Fields are 16 px on touch. The coarse-pointer rule in
+      `src/app/globals.css` does this for `<Input>`, `<Textarea>`, `.input` and
+      plain fields; do not override it with a smaller size.
+- [ ] Use the shared primitives (`DataTable` cards, `Modal`/`Sheet`,
+      `ToggleGroup`, `FilterToolbar`, `Combobox`), never a hand-rolled overlay,
+      table or segmented row. Nothing may depend on hover.
+- [ ] No page reserves space for a floating assistant button: on a phone the
+      assistant is a top-bar icon.
+- [ ] Load a heavy phone-only branch (a second chart, an editor) lazily, so
+      the desktop bundle does not carry it.
+- **Checks:** the mobile E2E project (`--project=mobile`) holds the fixed route
+  set at zero clipped controls, zero small fields, zero covered controls and
+  zero cueless tab bars, and ratchets the remaining counts with no slack. The
+  whole-product audit (`npm run mobile:audit`) measures every route. Both are
+  described in [docs/mobile-audit.md](mobile-audit.md). Add a new shared
+  primitive or P0-class page to `SEED_ROUTES` in `tests/e2e/mobile-ratchet.ts`.
 
 ---
 

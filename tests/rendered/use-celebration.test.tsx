@@ -50,8 +50,12 @@ import {
     celebrationDedupeKey,
     clearCelebrated,
     MILESTONES,
+    milestoneCopy,
     scopedMilestone,
 } from '@/lib/celebrations';
+import { catalogTranslator } from '../helpers/catalog-translator';
+
+const frameworkCopy = milestoneCopy('framework-100', catalogTranslator('en'));
 
 // ─── Test harness ───────────────────────────────────────────────────
 
@@ -286,7 +290,7 @@ describe('useCelebration — the live celebrationDedupe', () => {
 
         const h = mount(celebrationDedupe);
         await act(async () => {
-            h.api.celebrate(scopedMilestone('framework-100', 'iso27001'));
+            h.api.celebrate(scopedMilestone('framework-100', 'iso27001', frameworkCopy));
         });
         await flush(700);
         const firstCount = calls.length;
@@ -299,7 +303,7 @@ describe('useCelebration — the live celebrationDedupe', () => {
 
         // Second call in the same tab is a no-op.
         await act(async () => {
-            h.api.celebrate(scopedMilestone('framework-100', 'iso27001'));
+            h.api.celebrate(scopedMilestone('framework-100', 'iso27001', frameworkCopy));
         });
         await flush(700);
         expect(calls.length).toBe(firstCount);
@@ -326,13 +330,14 @@ describe('useCelebration — the live celebrationDedupe', () => {
         expect(calls.length).toBeGreaterThan(firstCount);
     });
 
-    it('a registry record carries its own toast copy through', async () => {
+    it("a registry record's translated copy carries through to the toast", async () => {
         const { stub } = makeConfettiStub();
         __setConfettiForTest(stub);
 
         const h = mount(celebrationDedupe);
+        const def = MILESTONES['framework-100'];
         await act(async () => {
-            h.api.celebrate(MILESTONES['framework-100']);
+            h.api.celebrate({ preset: def.preset, key: def.key, ...frameworkCopy });
         });
         await flush(0);
         expect(toastSuccessMock).toHaveBeenCalledTimes(1);

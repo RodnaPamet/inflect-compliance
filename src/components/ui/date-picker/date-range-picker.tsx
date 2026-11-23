@@ -44,7 +44,6 @@
  */
 
 import { cn } from '@inflect/ui/lib/cn';
-import { enUS } from 'date-fns/locale';
 import { useTranslations } from 'next-intl';
 import { X } from 'lucide-react';
 import {
@@ -122,7 +121,7 @@ export function DateRangePicker({
     disabled,
     disabledDays,
     showYearNavigation = false,
-    locale = enUS,
+    locale,
     placeholder: placeholderProp,
     hasError,
     invalid,

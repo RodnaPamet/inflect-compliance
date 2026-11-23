@@ -84,8 +84,19 @@ export default defineConfig({
         },
         {
             name: 'e2e',
-            testIgnore: /a11y\.spec\.ts$/,
+            testIgnore: [/a11y\.spec\.ts$/, /mobile-[a-z-]+\.spec\.ts$/],
             use: { ...devices['Desktop Chrome'] },
+        },
+        {
+            // Phone layout (docs/mobile-audit.md): the fixed route set at 390
+            // and 360 px, both themes, Bulgarian, measured by the same module
+            // as the whole-product audit (scripts/mobile-audit/measure.ts).
+            // iPhone 14's profile (touch, so `pointer: coarse` matches) on
+            // Chromium, the only browser CI installs. Rides the same server
+            // and the same `npx playwright test` invocation as the others.
+            name: 'mobile',
+            testMatch: /mobile-[a-z-]+\.spec\.ts$/,
+            use: { ...devices['iPhone 14'], browserName: 'chromium' },
         },
     ],
     webServer: [{

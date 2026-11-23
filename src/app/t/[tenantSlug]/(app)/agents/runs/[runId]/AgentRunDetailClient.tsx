@@ -869,6 +869,23 @@ export function AgentRunDetailClient({
                                             {t('runs.detail.decisionLink')}
                                         </a>
                                     )}
+                                    {/* A SPAN-DERIVED ROW (Step 5d, owner
+                                        decision 3). The Managed Agents engine
+                                        runs the model in the customer's own
+                                        Anthropic workspace, so this call's
+                                        prompt was never visible to Inflect and
+                                        its decision row digests what Inflect
+                                        sent. Said in words beside the link, so
+                                        a reviewer reading the row does not take
+                                        it for a full record of the prompt. */}
+                                    {s.spanDerivedDecision && (
+                                        <span
+                                            className="text-xs text-content-subtle"
+                                            data-testid={`step-${s.seq}-span-derived`}
+                                        >
+                                            {t('runs.detail.spanDerived')}
+                                        </span>
+                                    )}
                                     {s.label && (
                                         <span className="text-xs text-content-subtle">{s.label}</span>
                                     )}

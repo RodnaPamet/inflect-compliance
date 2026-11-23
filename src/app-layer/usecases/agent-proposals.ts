@@ -86,6 +86,7 @@ import {
 import { assertMayApproveRecordProposal } from '@/app-layer/usecases/proposal-kind-approval';
 import type { RequestContext } from '@/app-layer/types';
 import { settleDeferralForProposal } from '@/app-layer/usecases/workflow-run-deferrals';
+import { AGENTIC_SUBJECT } from '@/lib/notifications/agentic-bodies';
 
 /**
  * The reason both PROCESS_MAP refusals carry in `details.reason` (#5053), so the
@@ -1176,7 +1177,7 @@ export async function createAgentProposal(
                     // injection attempt is a burst, and one bell per refused
                     // proposal would bury the first one.
                     entityId: ctx.agentId ?? 'unattributed-credential',
-                    subject: agentName ?? 'an unattributed credential',
+                    subject: agentName ?? AGENTIC_SUBJECT.UNATTRIBUTED_CREDENTIAL,
                     recipientUserIds,
                     actorUserId: ctx.userId,
                 });

@@ -4,6 +4,7 @@ import { formatDate } from '@inflect/ui/lib/format-date';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { useLocalizedPlanName } from '@/lib/agentic/use-localized-plan-name';
 import Link from 'next/link';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
@@ -258,6 +259,7 @@ function TestsRollupContent() {
     // Hydration-safe clock — see the note on isOverdue above.
     const hydratedNow = useHydratedNow();
     const t = useTranslations('controlTests');
+    const planName = useLocalizedPlanName();
     const FREQ_LABELS = useMemo(() => freqLabels(t), [t]);
     // PR-R — localized enum→label maps for the plan-status + last-result badges.
     // PR-DD moved the builders into `@/components/test-plans/test-plan-labels` so the plan
@@ -693,7 +695,7 @@ function TestsRollupContent() {
                             href={tenantHref(`/tests/plans/${row.original.id}`)}
                             className="text-content-emphasis font-medium hover:text-[var(--brand-default)] transition"
                         >
-                            {row.original.name}
+                            {planName(row.original.name)}
                         </Link>
                     ),
                 },
@@ -789,7 +791,7 @@ function TestsRollupContent() {
                         ) : null,
                 },
             ])),
-        [t, tenantHref, orderColumns, FREQ_LABELS, PLAN_STATUS_LABELS, RESULT_LABELS, canRunTests, hydratedNow, handleQuickRun],
+        [t, tenantHref, orderColumns, FREQ_LABELS, PLAN_STATUS_LABELS, RESULT_LABELS, canRunTests, hydratedNow, handleQuickRun, planName],
     );
 
     // R3-P1 — columns for the Automated checks view.
@@ -847,8 +849,12 @@ function TestsRollupContent() {
                     ]}
                     className="mb-1"
                 />
-                <div className="flex items-start justify-between gap-default">
-                    <div>
+                {/* `flex-wrap` + `min-w-0`: on a phone the plans/checks toggle
+                    (whose labels never wrap) and the create button do not fit
+                    one row, and without these the button was pushed past the
+                    edge. */}
+                <div className="flex flex-wrap items-start justify-between gap-default">
+                    <div className="min-w-0">
                         {/* U4 — sr-only, matching risks / assets / evidence /
                             vendors / tasks. The visible page title is the
                             breadcrumb trail; a second visible H1 directly under

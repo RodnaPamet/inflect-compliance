@@ -143,7 +143,12 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
 //   `k8s-runbook-coverage.test.ts` pinned a Helm/EKS/RDS runbook in
 //   `docs/deployment.md` for a cluster that never existed; it was deleted with
 //   that section, and its two unbounded interior spans went with it.
-const UNBOUNDED_INTERIOR_SPAN_BASELINE = 139;
+// 139 -> 138 (2026-11-23, #5821). `r14-mobile-parity-discipline`'s
+//   `/NavBarMobileMenu[\s\S]+?NAV_BAR_SLOT_PRESS/` over the whole of
+//   `nav-bar.tsx` became two bounded reads (`functionBodyOf` /
+//   `declarationOf`) when the hamburger's class moved into the shared
+//   `NAV_BAR_ICON_BUTTON_CLASS`. Measured.
+const UNBOUNDED_INTERIOR_SPAN_BASELINE = 138;
 
 /**
  * Interior spans of ANY boundedness, including `[\s\S]{0,200}`.
@@ -212,7 +217,9 @@ const UNBOUNDED_INTERIOR_SPAN_BASELINE = 139;
 //   read the delivered fixtures as data, when the templates moved to
 //   prisma/fixtures/risk-templates-*.json. All five were bounded, so the
 //   unbounded baseline does not move.
-const INTERIOR_SPAN_BASELINE = 295;
+// 295 -> 294 (2026-11-23, #5821): the same span as the unbounded baseline's
+//   139 -> 138, counted here too.
+const INTERIOR_SPAN_BASELINE = 294;
 
 /**
  * `toMatch` arguments whose pattern this detector could not recover.
@@ -247,7 +254,7 @@ const INTERIOR_SPAN_BASELINE = 295;
  *     which reads 0 today. Recorded because the DEFINITION moved even though
  *     the number did not.
  */
-const UNANALYSABLE_TOMATCH_BASELINE = 56;
+const UNANALYSABLE_TOMATCH_BASELINE = 55;
 
 /**
  * Floor on the share of `toMatch` sites whose pattern is recovered.

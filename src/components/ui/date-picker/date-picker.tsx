@@ -36,7 +36,6 @@
  */
 
 import { cn } from '@inflect/ui/lib/cn';
-import { enUS } from 'date-fns/locale';
 import { X } from 'lucide-react';
 import {
     useCallback,
@@ -137,7 +136,7 @@ export function DatePicker({
     disabled,
     disabledDays,
     showYearNavigation = false,
-    locale = enUS,
+    locale,
     placeholder: placeholderProp,
     hasError,
     invalid,

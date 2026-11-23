@@ -355,6 +355,10 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // nothing else. The Integrations tab on `/agents/reports` reads the scans
     // server-side through the usecase, so no page calls it either way.
     't/[tenantSlug]/admin/agents/integration-scans/route.ts',
+    // The agent-surface rules ingest (`scanent-agent-rules/1`), the same MACHINE
+    // surface: a scanner POSTs with a key scoped to `admin:agent_rules_ingest`;
+    // the Agent surface tab reads the scans server-side through the usecase.
+    't/[tenantSlug]/admin/agents/agent-rule-scans/route.ts',
     // #4472 — the discovered agents a person can start a discovered-agent
     // review with. GET only, the inventory read; the runs page's start form
     // calls it for its picker, offered only to a caller who can load it.
@@ -871,6 +875,13 @@ describe('the harness register half is called from the tab; the machine surface 
     it('no page calls the scan ingest — it is a scanner\'s, behind its own API-key scope', () => {
         const pageCallers = SOURCES.filter(
             (s) => s.rel.startsWith(APP) && s.code.includes('/admin/agents/harness-scans'),
+        ).map((s) => s.rel);
+        expect(pageCallers).toEqual([]);
+    });
+
+    it('no page calls the agent-surface rules ingest either — the same reason, its own scope', () => {
+        const pageCallers = SOURCES.filter(
+            (s) => s.rel.startsWith(APP) && s.code.includes('/admin/agents/agent-rule-scans'),
         ).map((s) => s.rel);
         expect(pageCallers).toEqual([]);
     });

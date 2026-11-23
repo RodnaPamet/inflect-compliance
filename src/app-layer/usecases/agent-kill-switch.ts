@@ -70,6 +70,7 @@ import {
     requestSpendingSuspensionInTx,
     type SpendingSuspensionRequest,
 } from './agent-spending-authority';
+import { AGENTIC_SUBJECT, agentIdSubject } from '@/lib/notifications/agentic-bodies';
 
 /** How a kill row is reported to an operator surface. */
 export interface KillSwitchRecord {
@@ -365,8 +366,8 @@ export async function engageKillSwitch(
                 // not restart anything while the tenant arm stands.
                 subject:
                     agentId === null
-                        ? 'Every agent in this workspace'
-                        : (agentName ?? `Agent ${agentId}`),
+                        ? AGENTIC_SUBJECT.EVERY_AGENT
+                        : (agentName ?? agentIdSubject(agentId)),
                 recipientUserIds,
                 actorUserId: ctx.userId,
             });

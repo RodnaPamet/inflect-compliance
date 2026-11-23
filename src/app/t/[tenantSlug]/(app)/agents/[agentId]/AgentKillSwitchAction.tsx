@@ -264,13 +264,15 @@ export function AgentKillSwitchAction({
                         : t('agentDetail.kill.liftAction')}
                 </Button>
             ) : (
-                // A ghost tinted with the error content token rather than the
-                // filled destructive variant: this button only OPENS a dialog.
-                // The red fill is spent on the control that commits, inside it.
+                // The destructive variant (owner decision, 2026-11-22). It was
+                // a ghost tinted with the error token — "this only OPENS a
+                // dialog" — and on a phone it read as a stray line of red text
+                // beside four buttons. Stopping an agent is the one action on
+                // this page that must be found in a hurry, so it looks like
+                // what it does, and it is never moved into the "⋯" menu.
                 <Button
-                    variant="ghost"
+                    variant="destructive"
                     size="sm"
-                    className="text-content-error"
                     id="agent-kill-engage-btn"
                     data-testid="agent-kill-engage-open"
                     onClick={openEngage}

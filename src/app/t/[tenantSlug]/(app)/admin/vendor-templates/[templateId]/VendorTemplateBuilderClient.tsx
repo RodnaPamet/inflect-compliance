@@ -51,7 +51,8 @@ import { SkeletonDetailPage } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { useToastWithUndo } from '@/components/ui/hooks';
-import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { PrimaryAction } from '@/components/layout/PageActions';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
@@ -588,20 +589,20 @@ export function VendorTemplateBuilderClient({
             data-testid="vendor-template-builder"
         >
             <BackAffordance />
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <PageBreadcrumbs
-                        items={[
-                            { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
-                            { label: t('crumb.admin'), href: tenantHref('/admin') },
-                            { label: t('crumb.vendorTemplates'), href: tenantHref('/admin/vendor-templates') },
-                            { label: tree.name },
-                        ]}
-                        className="mb-1"
-                    />
-                    <Heading level={1}>{tree.name}</Heading>
-                    <div className="flex items-center gap-tight mt-1 text-xs text-content-subtle">
+            {/* Header — the shared PageHeader (#5815). This was a hand-rolled
+                `flex items-center justify-between` row with no wrap, so on a
+                phone the title squeezed and Publish was clipped at the right
+                edge. PageHeader stacks below `sm` with Publish first. */}
+            <PageHeader
+                breadcrumbs={[
+                    { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
+                    { label: t('crumb.admin'), href: tenantHref('/admin') },
+                    { label: t('crumb.vendorTemplates'), href: tenantHref('/admin/vendor-templates') },
+                    { label: tree.name },
+                ]}
+                title={tree.name}
+                meta={
+                    <span className="flex flex-wrap items-center gap-tight text-xs text-content-subtle">
                         <span>{tree.key}</span>
                         <span>·</span>
                         <span>{t('templateBuilder.version', { version: tree.version })}</span>
@@ -609,39 +610,45 @@ export function VendorTemplateBuilderClient({
                         <StatusBadge variant={tree.isPublished ? 'success' : 'warning'} size="sm">
                             {tree.isPublished ? t('templateBuilder.published') : t('templateBuilder.draft')}
                         </StatusBadge>
-                    </div>
-                </div>
-                <div className="flex items-center gap-tight">
-                    {dirty && editable && (
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => void saveOrder()}
-                            disabled={saving}
-                            loading={saving}
-                            id="save-order-btn"
-                        >
-                            {saving ? t('templateBuilder.saving') : t('templateBuilder.saveOrder')}
-                        </Button>
-                    )}
-                    {canAuthor &&
-                        !tree.isPublished &&
-                        questionCount > 0 && (
-                            <Button
-                                variant="primary"
-                                size="sm"
-                                onClick={() => setConfirmingPublish(true)}
-                                disabled={publishing}
-                                loading={publishing}
-                                id="publish-template-btn"
-                            >
-                                {publishing
-                                    ? t('templateBuilder.publishing')
-                                    : t('templateBuilder.publish')}
-                            </Button>
-                        )}
-                </div>
-            </div>
+                    </span>
+                }
+                actions={
+                    (dirty && editable) || (canAuthor && !tree.isPublished && questionCount > 0) ? (
+                        <>
+                            {dirty && editable && (
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => void saveOrder()}
+                                    disabled={saving}
+                                    loading={saving}
+                                    id="save-order-btn"
+                                >
+                                    {saving ? t('templateBuilder.saving') : t('templateBuilder.saveOrder')}
+                                </Button>
+                            )}
+                            {canAuthor &&
+                                !tree.isPublished &&
+                                questionCount > 0 && (
+                                    <PrimaryAction>
+                                        <Button
+                                            variant="primary"
+                                            size="sm"
+                                            onClick={() => setConfirmingPublish(true)}
+                                            disabled={publishing}
+                                            loading={publishing}
+                                            id="publish-template-btn"
+                                        >
+                                            {publishing
+                                                ? t('templateBuilder.publishing')
+                                                : t('templateBuilder.publish')}
+                                        </Button>
+                                    </PrimaryAction>
+                                )}
+                        </>
+                    ) : undefined
+                }
+            />
 
             {tree.isPublished && (
                 <div
@@ -736,8 +743,10 @@ export function VendorTemplateBuilderClient({
 
 // ─── Small pieces ──────────────────────────────────────────────────
 
+// A 24px icon button with a mouse; on a touch screen it grows to the 44px
+// floor, centred, so a finger can hit move / edit / remove.
 const ICON_BUTTON =
-    'text-content-muted hover:text-content-default disabled:opacity-50 p-1 rounded';
+    'inline-flex items-center justify-center text-content-muted hover:text-content-default disabled:opacity-50 p-1 rounded pointer-coarse:min-h-11 pointer-coarse:min-w-11';
 
 function RowActions({
     isFirst,
@@ -761,7 +770,7 @@ function RowActions({
     removeLabel: string;
 }) {
     return (
-        <div className="flex items-center gap-0.5 flex-shrink-0">
+        <div className="ml-auto flex items-center gap-0.5 flex-shrink-0" data-testid="row-actions">
             <button type="button" className={ICON_BUTTON} onClick={() => onMove(-1)} disabled={isFirst} aria-label={moveUpLabel}>
                 <ChevronUp className="w-4 h-4" aria-hidden="true" />
             </button>
@@ -867,11 +876,16 @@ function SectionCard({
                     }}
                 />
             ) : (
-                <div className="flex items-start justify-between gap-compact mb-3">
+                // Below `sm` the edit controls go under the title rather than
+                // beside it, so the title keeps the card's width.
+                <div
+                    className="flex flex-col gap-compact mb-3 sm:flex-row sm:items-start sm:justify-between"
+                    data-testid={`section-header-${section.id}`}
+                >
                     <div className="flex items-start gap-tight min-w-0">
                         {editable && (
                             <GripDotsVertical
-                                className="w-4 h-4 mt-1 text-content-subtle cursor-grab flex-shrink-0"
+                                className="hidden w-4 h-4 mt-1 text-content-subtle cursor-grab flex-shrink-0 sm:block"
                                 aria-hidden="true"
                             />
                         )}
@@ -920,9 +934,15 @@ function SectionCard({
                             />
                         </div>
                     ) : (
+                        // Below `sm` the row WRAPS: the prompt takes the first
+                        // line at full width, and the badges, weight and edit
+                        // controls follow it. They used to sit beside the
+                        // prompt, which left it a sliver one word wide. A rule
+                        // under each wrapped question keeps its edit buttons
+                        // reading as its own, not the next one's.
                         <div
                             key={q.id}
-                            className="flex items-center gap-compact px-2 py-1.5 rounded hover:bg-bg-muted/50"
+                            className="flex flex-wrap items-center gap-x-compact gap-y-tight px-2 py-1.5 rounded hover:bg-bg-muted/50 max-sm:rounded-none max-sm:border-b max-sm:border-border-subtle max-sm:pb-compact max-sm:last:border-b-0 sm:flex-nowrap"
                             draggable={editable}
                             onDragStart={(e) => {
                                 e.stopPropagation();
@@ -936,13 +956,19 @@ function SectionCard({
                             data-testid={`question-${q.id}`}
                         >
                             {editable && (
+                                // Dragging is a mouse affordance (HTML5 drag
+                                // and drop does not fire on touch); a phone
+                                // reorders with the move buttons instead.
                                 <GripDotsVertical
-                                    className="w-3.5 h-3.5 text-content-subtle cursor-grab flex-shrink-0"
+                                    className="hidden w-3.5 h-3.5 text-content-subtle cursor-grab flex-shrink-0 sm:block"
                                     aria-hidden="true"
                                 />
                             )}
-                            <div className="flex-1 min-w-0 flex flex-col">
-                                <span className="text-sm">{q.prompt}</span>
+                            <div
+                                className="w-full min-w-0 flex flex-col sm:w-auto sm:flex-1"
+                                data-testid={`prompt-of-${q.id}`}
+                            >
+                                <span className="text-sm break-words">{q.prompt}</span>
                                 <QuestionDetail question={q} />
                             </div>
                             <StatusBadge variant="info" size="sm">

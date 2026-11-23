@@ -200,6 +200,12 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // tenant id, a closed outcome code, a status, a grade and counts.
     'src/app-layer/usecases/agent-harness-attribution.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-risk-assessment.ts — identifier bound elsewhere',
+    // The agent-surface rules ingest (`scanent-agent-rules/1`). Read line by
+    // line: its log line carries a closed refusal code (`reason`, parsed off
+    // the refusal prefix) and its audit rows carry ids, codes, rule ids,
+    // server and tool references and counts. The report it ingests carries no
+    // text of a tool definition, and no model is called.
+    'src/app-layer/usecases/agent-rule-scans.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-tool-exposure.ts — identifier bound elsewhere',
     // The execution walk moved out of `workflow-runs.ts` into the static
     // driver, and its log sinks went with it. Both files appear because both
@@ -892,7 +898,12 @@ const SINK_FLOOR = 30;
 // logs, and the clean-up's error message. The clean-up is the sandbox
 // deletion; its error comes from the delete call and its transport, never
 // from the tool's output, which is already captured and is not on the error.
-const MEASURED_HOLES = 231;
+// 231 -> 235 on 2026-11-22: four holes in the new agent-surface rules ingest
+// (`agent-rule-scans.ts`), recorded with its KNOWN_UNANALYSABLE entry above —
+// the refusal warn's closed `reason` code and its audit rows' ids, finding
+// codes and references. The report it ingests carries no text of a tool
+// definition, and it calls no model.
+const MEASURED_HOLES = 235;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field

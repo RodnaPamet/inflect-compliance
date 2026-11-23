@@ -19,6 +19,7 @@ import { ArrowUpRight } from '@inflect/ui/components/ui/icons/glyphs/arrow-up-ri
 import { Plus } from '@inflect/ui/components/ui/icons/glyphs/plus';
 import { PenWriting } from '@inflect/ui/components/ui/icons/glyphs/pen-writing';
 import { EntityListPage } from '@/components/layout/EntityListPage';
+import { PrimaryAction } from '@/components/layout/PageActions';
 import { FilterProvider, useFilterContext, useFilters } from '@/components/ui/filter';
 import { createColumns } from '@/components/ui/table';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
@@ -673,7 +674,9 @@ function VulnerabilitiesInner({ initialRows, truncated, cap, scope, tenantSlug, 
     // or "CVE sync: disabled". Rendered in the header actions slot; only
     // appears once the lazy status has resolved.
     const syncStrip = syncStatus ? (
-        <div className="flex items-center gap-tight text-xs text-content-muted">
+        // A span that wraps, so on a phone the strip folds under the button
+        // instead of pushing it off-screen (#5815).
+        <span className="inline-flex flex-wrap items-center gap-tight text-xs text-content-muted">
             <span className="text-content-subtle">{t('cveSyncLabel')}</span>
             {syncStatus.syncEnabled ? (
                 <StatusBadge variant="success">{t('cveSyncOn')}</StatusBadge>
@@ -686,26 +689,31 @@ function VulnerabilitiesInner({ initialRows, truncated, cap, scope, tenantSlug, 
                 </span>
             )}
             <InfoTooltip content={t('cveSyncHelp')} aria-label={t('cveSyncLabel')} />
-        </div>
+        </span>
     ) : undefined;
 
     // Header actions: the sync strip plus a manual "Link CVE" affordance
     // (write users only) that opens the AssetVulnerability create modal.
+    // A fragment, not a non-wrapping `flex` div: the wrapper made the pair one
+    // flex item, and a phone clipped "Свържи CVE" (#5815). The button is the
+    // primary, so a phone shows it first.
     const headerActions = (syncStrip || canTriage) ? (
-        <div className="flex items-center gap-default">
+        <>
             {syncStrip}
             {canTriage && (
-                <Button
-                    id="vuln-link-cve-trigger"
-                    variant="secondary"
-                    size="sm"
-                    icon={<Plus className="h-4 w-4" />}
-                    onClick={() => setLinkOpen(true)}
-                >
-                    {t('linkCve')}
-                </Button>
+                <PrimaryAction>
+                    <Button
+                        id="vuln-link-cve-trigger"
+                        variant="secondary"
+                        size="sm"
+                        icon={<Plus className="h-4 w-4" />}
+                        onClick={() => setLinkOpen(true)}
+                    >
+                        {t('linkCve')}
+                    </Button>
+                </PrimaryAction>
             )}
-        </div>
+        </>
     ) : undefined;
 
     // "Show all" from a one-asset view: the same page and filters, without

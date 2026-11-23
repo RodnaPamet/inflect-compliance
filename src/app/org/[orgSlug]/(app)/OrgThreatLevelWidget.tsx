@@ -106,7 +106,10 @@ export function OrgThreatLevelWidget({
                 </div>
             </div>
 
-            <p className="text-sm text-content-default font-medium">{data.summary}</p>
+            {/* The unset default is the product's sentence, not an admin's summary. */}
+            <p className="text-sm text-content-default font-medium">
+                {data.isDefault ? t('widgets.noThreatAssessment') : data.summary}
+            </p>
             {data.detail && <p className="text-xs text-content-muted">{data.detail}</p>}
 
             {/* Provenance */}

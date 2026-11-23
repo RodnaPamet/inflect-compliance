@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@inflect/ui/lib/cn';
+import { localizedNotificationTitle } from '@/lib/notifications/agentic-titles';
 
 interface NotificationSettings {
     enabled: boolean;
@@ -32,10 +33,9 @@ interface NotificationSettings {
 /**
  * One toggle-able in-app type, as the SERVER lists it.
  *
- * `title` arrives from the emitter's own copy rather than from `messages/`,
- * and that asymmetry is deliberate — see `listInAppNotificationTypes`. The
- * bell's rows are written at emit time and stored, so a translated label here
- * would promise a Bulgarian bell the emitter does not deliver.
+ * `title` arrives as the emitter's stored English (`listInAppNotificationTypes`)
+ * and is shown through `localizedNotificationTitle`, exactly as the bell shows
+ * the same title on a row — so the label here names what the bell displays.
  */
 interface InAppNotificationType {
     type: string;
@@ -80,6 +80,7 @@ function refusedFields(body: unknown): FieldErrors {
 
 export default function NotificationSettingsPage() {
     const t = useTranslations('admin');
+    const tTitles = useTranslations('notificationTitles');
     const toast = useToast();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
@@ -407,7 +408,7 @@ export default function NotificationSettingsPage() {
                                             <Switch
                                                 id={switchId}
                                                 checked={!muted}
-                                                aria-label={t('notifications.inAppToggleAria', { type: info.title })}
+                                                aria-label={t('notifications.inAppToggleAria', { type: localizedNotificationTitle(info.type, info.title, tTitles) })}
                                                 data-testid={`in-app-type-${info.type}`}
                                                 onCheckedChange={(on) => setSettings({
                                                     ...settings,
@@ -416,7 +417,7 @@ export default function NotificationSettingsPage() {
                                                         : [...settings.mutedInAppTypes, info.type],
                                                 })}
                                             />
-                                            <Label htmlFor={switchId} className="text-sm font-normal">{info.title}</Label>
+                                            <Label htmlFor={switchId} className="text-sm font-normal">{localizedNotificationTitle(info.type, info.title, tTitles)}</Label>
                                         </div>
                                     );
                                 })}

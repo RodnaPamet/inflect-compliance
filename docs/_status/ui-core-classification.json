@@ -62,12 +62,17 @@
  "src/components/layout/PageActions.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "A 20-line layout cluster: one div, one `cn()` call, `flex flex-wrap-reverse items-center justify-end gap-tight min-h-9`. `@inflect/ui/lib/cn` is the only import. No strings, no GRC nouns, no brands, no storage, no brand tokens. Safe to vendor byte-identical."
+  "reason": "The page-header action cluster plus its phone overflow (#5815): `<OverflowAction>` entries register through a local context and become items of a \"⋯\" menu below md, `<PrimaryAction>` orders the primary first. The menu itself is the sibling `PageActionsMenu`. Imports are `react`, `@inflect/ui/lib/cn` and `./PageActionsMenu` — no `src/app-layer` or domain `src/lib`; the page passes its own buttons as children. No strings, no GRC nouns, no storage, no brand tokens."
+ },
+ "src/components/layout/PageActionsMenu.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "The phone \"⋯\" trigger and menu of `<PageActions>`, split out of the cluster for readability. Renders caller-supplied entries as `Popover.Item` rows or `next/link` menu items. Imports are `react`, `next/link`, `next-intl`, `lucide-react`, `@inflect/ui/lib/cn`, the sibling shared primitives `@/components/ui/button` and `popover`, and a type from `./PageActions`. Its one string, the trigger's accessible name, goes through `common.ui.moreActions`. No GRC nouns, no storage, no brand tokens."
  },
  "src/components/layout/PageBreadcrumbs.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "A thin wrapper: pushes items into the local `breadcrumbs-store` context and renders `<Breadcrumbs>` inside a `md:hidden` div. Imports only `@/components/ui/breadcrumbs` and the sibling store. No copy (items come from the caller), no GRC vocabulary, no storage key, no brand token."
+  "reason": "A thin wrapper: pushes items into the local `breadcrumbs-store` context and renders `<Breadcrumbs>` inside a phone-only div whose `PHONE_TRAIL_CLASS` (from the same store) also hides it, in CSS, inside a `<main>` that holds a back link — one way back on a phone (#5822). No route registry. Imports only `@/components/ui/breadcrumbs` and the sibling store. No copy (items come from the caller), no GRC vocabulary, no storage key, no brand token."
  },
  "src/components/layout/PageHeader.tsx": {
   "classification": "MIXED",
@@ -1999,6 +2004,11 @@
   "derivation": "audited",
   "reason": "35-line scroll wrapper with a tokenised bottom fade driven by useScrollProgress. Imports only @inflect/ui/lib/cn and the local ./hooks/use-scroll-progress. No copy, no domain, no storage, no brand tokens."
  },
+ "src/components/ui/scroll-cue-strip.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Horizontally scrolling strip with edge fades, chevrons, active-item scroll-into-view, an end spacer and an optional phone-sticky wrapper. Content is the caller's children; the two chevron labels come from the 'ui.scrollCueStrip' catalog. Semantic tokens only (text-content-*, bg-bg-page), the fade is a CSS mask with no colour of its own. Imports only @inflect/ui/lib/cn, lucide-react and next-intl. No storage, no domain props, no brand tokens."
+ },
  "src/components/ui/selection-summary-panel.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
@@ -2178,6 +2188,11 @@
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Generic relative-time + exact-tooltip primitive with a real hydration-safety contract. `empty = '\u2014'` is a glyph, not English copy, so not reported. `@/lib/format-date` and `@/lib/hooks/use-hydrated-now` are generic utils, not domain modules \u2014 the first is on the `NEUTRAL_LIB` allowlist as of #3046 batch 2, which cleared the mechanical `domain-import` this entry carried. Its judgement coupling was two domain nouns in the JSDoc usage examples (`ev.updatedAt` for evidence, `control.createdAt`); all three example lines now read `row.*`, so the primitive names no entity."
+ },
+ "src/components/ui/toggle-group-select.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "The below-sm rendering of a long ToggleGroup, split out so toggle-group.tsx can load it with next/dynamic: it wraps the local ./combobox, whose cmdk + virtualised list would otherwise sit in the First Load JS of every page with a toggle group. Copy goes through useTranslations(\"common.ui\"); options are the caller's. Imports @inflect/ui/lib/cn, next-intl, next/navigation and local ./combobox. No domain, no storage, no brand tokens."
  },
  "src/components/ui/toggle-group.tsx": {
   "classification": "GENERIC",

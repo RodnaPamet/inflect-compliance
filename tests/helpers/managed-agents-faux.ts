@@ -94,6 +94,14 @@ export interface FauxDrop {
 
 const encoder = new TextEncoder();
 
+/**
+ * Ids are unique across every faux in a test file, not per instance: a suite
+ * that makes a new faux per test keeps the ledger rows of earlier tests, and a
+ * pass over every tenant (the data-lifecycle reconciliation) would otherwise
+ * read an earlier test's recorded id as naming this test's object.
+ */
+let fauxIdSeq = 0;
+
 function json(body: unknown, status = 200): Response {
     return new Response(JSON.stringify(body), {
         status,
@@ -136,16 +144,43 @@ export class ManagedAgentsFaux {
     failEventsFrom: { nth: number; status: number } | null = null;
     /** The delete answers with this status. */
     failDelete: number | null = null;
+    /** `sessions.create` is refused with this status and error message. */
+    failSessionCreate: { status: number; message: string } | null = null;
     drop: FauxDrop | null = null;
+    /**
+     * An unreliable network: the Nth request matching (1-based) is TAKEN by the
+     * workspace, and then the connection drops before its response arrives. The
+     * client sees a network failure for a request that was processed.
+     */
+    loseResponse: { method: string; path: RegExp; nth: number } | null = null;
+    private loseResponseSeen = 0;
     /** Add a built-in tool use to the turn with this index (a reach beyond custom tools). */
     builtinToolUseOnTurn: number | null = null;
-    private seq = 0;
+    /**
+     * A customer admin edits the running session (`POST /v1/sessions/{id}`)
+     * while it waits for the custom calls of the turn with this index: the
+     * workspace emits `session.updated` with the patch, after the idle.
+     */
+    sessionEditAfterTurn: { turn: number; patch: Record<string, unknown> } | null = null;
     private modelCallCount = 0;
     private eventPosts = 0;
     private readonly originalFetch = global.fetch;
 
     install(): void {
-        global.fetch = ((input: RequestInfo | URL, init?: RequestInit) => this.serve(input, init)) as typeof fetch;
+        global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+            const response = await this.serve(input, init);
+            const lose = this.loseResponse;
+            if (lose) {
+                const url = new URL(typeof input === 'string' || input instanceof URL ? String(input) : input.url);
+                if ((init?.method ?? 'GET').toUpperCase() === lose.method && lose.path.test(url.pathname)) {
+                    this.loseResponseSeen += 1;
+                    if (this.loseResponseSeen === lose.nth) {
+                        throw new TypeError('faux: the connection dropped after the workspace took the request');
+                    }
+                }
+            }
+            return response;
+        }) as typeof fetch;
     }
 
     uninstall(): void {
@@ -159,8 +194,8 @@ export class ManagedAgentsFaux {
     }
 
     private nextId(prefix: string): string {
-        this.seq += 1;
-        return `${prefix}_${String(this.seq).padStart(4, '0')}`;
+        fauxIdSeq += 1;
+        return `${prefix}_${String(fauxIdSeq).padStart(4, '0')}`;
     }
 
     private async serve(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -185,7 +220,13 @@ export class ManagedAgentsFaux {
         if (method === 'POST' && p === '/v1/environments') {
             const env = { id: this.nextId('env'), type: 'environment', ...(body ?? {}) };
             this.environments.push(env);
-            return json(env);
+            return json(this.environmentObject(env));
+        }
+        const envMatch = /^\/v1\/environments\/([^/]+)$/.exec(p);
+        if (envMatch && method === 'GET') {
+            const env = this.environments.find((e) => e.id === envMatch[1]);
+            if (!env) return apiError(404, 'not_found_error', 'no such environment');
+            return json(this.environmentObject(env));
         }
         if (method === 'POST' && p === '/v1/sessions') return this.createSession(body ?? {});
         m = /^\/v1\/sessions\/([^/]+)$/.exec(p);
@@ -280,10 +321,78 @@ export class ManagedAgentsFaux {
     private archiveAgent(id: string): Response {
         const versions = this.agents.get(id);
         if (!versions) return apiError(404, 'not_found_error', 'no such agent');
-        const latest = versions[versions.length - 1];
-        latest.archived_at = new Date().toISOString();
+        this.stampArchived(versions);
         this.archives.push(id);
-        return json(latest);
+        return json(versions[versions.length - 1]);
+    }
+
+    /** Archiving is a property of the agent: every version reads archived after it. */
+    private stampArchived(versions: Array<Record<string, unknown>>): void {
+        const at = new Date().toISOString();
+        for (const v of versions) v.archived_at = at;
+    }
+
+    /**
+     * A CUSTOMER ADMIN EDITS THE AGENT IN THE CONSOLE (#5854): a new version
+     * with the patch, as Anthropic makes one on every edit. The version a
+     * session pins is unchanged; the next update naming it is refused 409.
+     */
+    consoleEditAgent(id: string, patch: Record<string, unknown>): number {
+        const versions = this.agents.get(id);
+        if (!versions) throw new Error(`faux: no agent ${id}`);
+        const latest = versions[versions.length - 1];
+        const next = { ...latest, ...patch, version: Number(latest.version) + 1 };
+        versions.push(next);
+        return Number(next.version);
+    }
+
+    /**
+     * The environment as Anthropic returns it: the configuration as written,
+     * with the defaults Inflect left out filled in (`allowed_hosts: []`, every
+     * package list empty), so the run's comparison is held to the real shape.
+     */
+    private environmentObject(env: Record<string, unknown>): Record<string, unknown> {
+        const config = (env.config ?? {}) as Record<string, unknown>;
+        const networking = (config.networking ?? null) as Record<string, unknown> | null;
+        const packages = (config.packages ?? {}) as Record<string, unknown>;
+        return {
+            id: env.id,
+            type: 'environment',
+            name: env.name,
+            description: env.description ?? null,
+            metadata: env.metadata ?? {},
+            archived_at: env.archived_at ?? null,
+            created_at: '2026-11-23T00:00:00Z',
+            updated_at: '2026-11-23T00:00:00Z',
+            config: {
+                ...config,
+                ...(networking?.type === 'limited'
+                    ? { networking: { allowed_hosts: [], allow_mcp_servers: false, allow_package_managers: false, ...networking } }
+                    : {}),
+                packages: { type: 'packages', apt: [], cargo: [], gem: [], go: [], npm: [], pip: [], ...packages },
+            },
+        };
+    }
+
+    /** A customer admin edits the environment in the Console (#5854). */
+    consoleEditEnvironment(id: string, edit: (config: Record<string, unknown>) => Record<string, unknown>): void {
+        const env = this.environments.find((e) => e.id === id);
+        if (!env) throw new Error(`faux: no environment ${id}`);
+        env.config = edit({ ...((env.config ?? {}) as Record<string, unknown>) });
+    }
+
+    /** A customer admin archives the environment in the Console (#5854). */
+    consoleArchiveEnvironment(id: string): void {
+        const env = this.environments.find((e) => e.id === id);
+        if (!env) throw new Error(`faux: no environment ${id}`);
+        env.archived_at = new Date().toISOString();
+    }
+
+    /** A customer admin archives the agent in the Console: not one of Inflect's archives. */
+    consoleArchiveAgent(id: string): void {
+        const versions = this.agents.get(id);
+        if (!versions) throw new Error(`faux: no agent ${id}`);
+        this.stampArchived(versions);
     }
 
     private agentObject(id: string, version: number, body: Record<string, unknown>): Record<string, unknown> {
@@ -333,6 +442,9 @@ export class ManagedAgentsFaux {
 
     private createSession(body: Record<string, unknown>): Response {
         this.sessionCreates.push(body);
+        if (this.failSessionCreate) {
+            return apiError(this.failSessionCreate.status, 'invalid_request_error', this.failSessionCreate.message);
+        }
         const agent = (body.agent ?? {}) as Record<string, unknown>;
         const s: FauxSession = {
             id: this.nextId('sesn'),
@@ -494,6 +606,7 @@ export class ManagedAgentsFaux {
         if (calls.length > 0) {
             s.pending = new Set(calls);
             this.emit(s, { type: 'session.status_idle', stop_reason: { type: 'requires_action', event_ids: calls }, stop_details: null });
+            if (this.sessionEditAfterTurn?.turn === n) this.emit(s, { type: 'session.updated', ...this.sessionEditAfterTurn.patch });
         } else {
             this.emit(s, { type: 'session.status_idle', stop_reason: { type: 'end_turn' }, stop_details: null });
         }

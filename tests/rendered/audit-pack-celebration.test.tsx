@@ -26,7 +26,8 @@ import {
     useCelebration,
     __setConfettiForTest,
 } from '@inflect/ui/components/ui/hooks/use-celebration';
-import { celebrationDedupe, scopedMilestone } from '@/lib/celebrations';
+import { celebrationDedupe, milestoneCopy, scopedMilestone } from '@/lib/celebrations';
+import { catalogTranslator } from '../helpers/catalog-translator';
 
 interface ConfettiCall {
     options: import('canvas-confetti').Options | undefined;
@@ -65,7 +66,7 @@ function PackHarness({
     React.useEffect(() => {
         if (!packComplete) return;
         celebrate(
-            scopedMilestone('audit-pack-complete', packId, {
+            scopedMilestone('audit-pack-complete', packId, milestoneCopy('audit-pack-complete', catalogTranslator('en')), {
                 descriptionOverride: packName
                     ? `${packName} — frozen and shareable with your auditor.`
                     : undefined,

@@ -768,3 +768,42 @@ describe('task detail — delete, comments and the reviewer (owner decisions, 20
         expect(document.getElementById('assign-reviewer-btn')).toBeNull();
     });
 });
+
+/**
+ * On a phone the assignment rows must wrap. They were a fixed `w-64` picker
+ * in a row that never wrapped, so Assign and Set reviewer were pushed past
+ * the right edge of a 390px screen, where the shell's `overflow-x-clip` hid
+ * them and a task could not be assigned from a phone.
+ */
+describe('task detail — the assignee and reviewer buttons stay on a phone screen', () => {
+    beforeEach(() => {
+        fetchMock.mockReset();
+        fetchMock.mockImplementation(async (url: string) => baseGet(url));
+        (global as unknown as { fetch: jest.Mock }).fetch = fetchMock;
+    });
+
+    it.each([
+        ['assign-task-btn', 'task-assign-row'],
+        ['assign-reviewer-btn', 'task-reviewer-row'],
+    ])('%s sits in a wrapping row, full width below sm beside a full-width picker', async (buttonId, rowId) => {
+        renderPage();
+        await waitForTaskLoaded();
+
+        const button = await waitFor(() => {
+            const el = document.getElementById(buttonId);
+            expect(el).not.toBeNull();
+            return el as HTMLElement;
+        });
+        const row = button.parentElement as HTMLElement;
+        expect(row.id).toBe(rowId);
+        expect(row).toHaveClass('flex', 'flex-wrap');
+
+        expect(button).toHaveClass('w-full', 'sm:w-auto');
+
+        // The picker is the button's sibling: full width on a phone, the old
+        // fixed 16rem only from `sm`. A bare `w-64` here is the regression.
+        const picker = button.previousElementSibling as HTMLElement;
+        expect(picker).toHaveClass('w-full', 'sm:w-64');
+        expect(picker).not.toHaveClass('w-64');
+    });
+});

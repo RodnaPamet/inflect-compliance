@@ -9,6 +9,7 @@ import {
 import { oversightReadsFor } from '@/app-layer/usecases/agent-oversight-settings';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
+import { localizedWorkflowName } from '@/lib/agentic/workflow-labels';
 import { mayReadAgentActivity } from '@/lib/permissions';
 
 import { DecisionsClient } from './DecisionsClient';
@@ -62,6 +63,7 @@ export default async function AgentDecisionsPage({
 }) {
     const resolved = await params;
     const ctx = await getTenantCtx(resolved);
+    const tWorkflows = await getTranslations('agentWorkflows');
 
     // The register key, or the inventory view key while an owner lets Auditors
     // read the log (`agent-oversight-settings.ts`, #4896). Not a read for
@@ -98,7 +100,9 @@ export default async function AgentDecisionsPage({
             // The workflow names, so a run's rows read "Agent run: Posture
             // review" rather than the registry key (#4896). Read here because
             // the registry is server code.
-            workflowNames={Object.fromEntries(listWorkflowDefinitions().map((w) => [w.key, w.name]))}
+            workflowNames={Object.fromEntries(
+                listWorkflowDefinitions().map((w) => [w.key, localizedWorkflowName(w.key, w.name, tWorkflows)]),
+            )}
             // Echoed back so the page can say it is showing a NARROWED view.
             // Without it a digest that matches nothing renders as "no
             // decisions yet", which is a different and wrong claim.

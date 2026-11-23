@@ -71,7 +71,9 @@ const REPO = path.resolve(__dirname, '../..');
 const ALLOWED: Readonly<Record<string, string>> = {
     'src/components/assistant/AssistantLauncher.tsx':
         'the launcher itself — the corner is its home (#3836), at z-30, which is ' +
-        'deliberately the lowest of the residents so every overlay covers it',
+        'deliberately the lowest of the residents so every overlay covers it. ' +
+        'From md up only: below md it is not rendered and the assistant opens ' +
+        'from the top bar (#5813)',
     'src/components/ui/popover.tsx':
         'the MOBILE drawer variant: a full-width bottom sheet at z-50. Transient, ' +
         'and above the launcher, so it covers rather than collides — the same ' +
@@ -185,11 +187,17 @@ describe('the bottom-right corner has one resident', () => {
 
     it('toasts stay out of the corner', () => {
         // The first of #3836's three prose facts, encoded. Moving the Toaster to
-        // a bottom position would put countdown bars under the launcher.
-        const providers = codeOf(
-            fs.readFileSync(path.join(REPO, 'src/app/providers.tsx'), 'utf8'),
+        // a bottom-RIGHT position would put countdown bars under the launcher.
+        //
+        // Since #5821 the host is `AppToaster`, which puts toasts bottom-CENTRE
+        // below md — where the launcher is not rendered — and top-right from md
+        // up. Which position applies at which width is asserted by rendering
+        // it (`app-toaster.test.tsx`); what this pins is the corner itself: no
+        // width at which the Toaster is asked for it.
+        const toaster = codeOf(
+            fs.readFileSync(path.join(REPO, 'src/components/theme/AppToaster.tsx'), 'utf8'),
         );
-        expect(providers).toContain('position="top-right"');
+        expect(toaster).not.toMatch(/bottom-right/);
     });
 });
 

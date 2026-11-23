@@ -999,7 +999,7 @@ export default function MembersAdminPage() {
                 accessorKey: 'status',
                 cell: ({ row }) => (
                     <StatusBadge variant={STATUS_VARIANT[row.original.status] || 'neutral'} icon={null} size="sm">
-                        {row.original.status}
+                        {row.original.status in STATUS_VARIANT ? t(`rbac.status.${row.original.status}`) : row.original.status}
                     </StatusBadge>
                 ),
             },

@@ -3,6 +3,7 @@ import { pluralize, truncate } from "@/lib/text-utils";
 import { Command } from "cmdk";
 import { X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { ReactNode, isValidElement, useCallback, useState } from "react";
 import { AnimatedSizeContainer } from "../animated-size-container";
@@ -60,6 +61,7 @@ export function FilterList({
   isAdvancedFilter = false,
   className,
 }: FilterListProps) {
+  const t = useTranslations("ui.filterList");
   // Epic 57 — Escape clears all active filters. Priority 1 so the
   // selection-toolbar clear (priority 2) wins when rows are selected,
   // and any overlay's native Radix/Vaul Escape handler wins when a
@@ -88,7 +90,10 @@ export function FilterList({
           className,
         )}
       >
-        <div className="flex grow flex-wrap gap-x-4 gap-y-2">
+        {/* `min-w-0 max-w-full`: a pill is never wider than the row, so a
+            long value ellipsises inside it instead of pushing the pill past
+            the phone's edge. */}
+        <div className="flex min-w-0 max-w-full grow flex-wrap gap-x-4 gap-y-2">
           <AnimatePresence>
             {normalizedFilters.map(({ key, values, operator }) => {
               if (key === "loader") {
@@ -216,7 +221,7 @@ export function FilterList({
                 return (
                   <div
                     className={cn(
-                      "flex items-center gap-2.5 px-3 py-2",
+                      "flex min-w-0 items-center gap-2.5 px-3 py-2",
                       className,
                     )}
                   >
@@ -225,12 +230,14 @@ export function FilterList({
                       <Link
                         href={permalinkDisplay}
                         target="_blank"
-                        className="cursor-alias decoration-dotted underline-offset-2 hover:underline"
+                        className="min-w-0 truncate cursor-alias decoration-dotted underline-offset-2 hover:underline"
                       >
                         {truncate(displayLabel, 30)}
                       </Link>
                     ) : (
-                      truncate(displayLabel, 30)
+                      <span className="min-w-0 truncate">
+                        {truncate(displayLabel, 30)}
+                      </span>
                     )}
                   </div>
                 );
@@ -257,8 +264,13 @@ export function FilterList({
         {normalizedFilters.length !== 0 && (
           <button
             type="button"
+            data-testid="filter-list-clear"
             className={cn(
-              "group mt-px flex h-[38px] items-center gap-tight whitespace-nowrap rounded-lg border border-transparent px-3 py-2 text-sm text-content-muted",
+              // `shrink-0`: the one control that must never be squeezed. It
+              // was clipped to "Clear l" on a phone, and it is the only way
+              // to clear every filter there (Escape needs a keyboard).
+              // `pointer-coarse:min-h-11`: a 44px tap target on touch.
+              "group mt-px flex h-[38px] shrink-0 items-center gap-tight whitespace-nowrap rounded-lg border border-transparent px-3 py-2 text-sm text-content-muted pointer-coarse:h-auto pointer-coarse:min-h-11",
               "transition-[color,border-color,background-color,transform] duration-150 ease-out motion-reduce:transition-none",
               "hover:border-border-emphasis hover:bg-bg-muted hover:text-content-emphasis [@media(hover:none)]:hover:border-transparent [@media(hover:none)]:hover:bg-transparent",
               "active:scale-[0.98] motion-reduce:active:scale-100",
@@ -266,8 +278,9 @@ export function FilterList({
             )}
             onClick={onRemoveAll}
           >
-            Clear Filters
-            <kbd className="rounded-md border border-border-subtle px-1.5 py-0.5 text-xs text-content-emphasis group-hover:bg-bg-muted">
+            {t("clearFilters")}
+            {/* The Escape hint means nothing without a keyboard. */}
+            <kbd className="rounded-md border border-border-subtle px-1.5 py-0.5 text-xs text-content-emphasis group-hover:bg-bg-muted pointer-coarse:hidden">
               ESC
             </kbd>
           </button>
@@ -303,6 +316,7 @@ function OperatorFilterPill({
   onToggleOperator?: (key: string) => void;
   isAdvancedFilter?: boolean;
 }) {
+  const t = useTranslations("ui.filterList");
   const [operatorDropdownOpen, setOperatorDropdownOpen] = useState(false);
   const [valueDropdownOpen, setValueDropdownOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -428,8 +442,9 @@ function OperatorFilterPill({
 
         <button
           type="button"
+          aria-label={t("removeFilter", { label: filter.label })}
           className={cn(
-            "h-full rounded-r-md p-2 text-content-muted ring-inset ring-border-emphasis",
+            "flex h-auto shrink-0 items-center justify-center rounded-r-md p-2 text-content-muted ring-inset ring-border-emphasis pointer-coarse:min-w-11",
             "transition-[color,background-color,transform] duration-150 ease-out motion-reduce:transition-none",
             "hover:bg-bg-muted hover:text-content-emphasis [@media(hover:none)]:hover:bg-transparent",
             "active:scale-[0.97] motion-reduce:active:scale-100",
@@ -453,9 +468,13 @@ function OperatorFilterPill({
     <motion.div
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
-      className="flex items-center divide-x divide-border-default rounded-lg border border-border-default bg-bg-default text-sm text-content-emphasis"
+      data-testid={`filter-pill-${filterKey}`}
+      // `min-w-0 max-w-full`: the pill fits the row it is in, and its VALUE
+      // segment is the part that gives way (an ellipsis), never the remove
+      // button. `pointer-coarse:min-h-11`: every segment is a 44px target.
+      className="flex min-w-0 max-w-full items-stretch divide-x divide-border-default rounded-lg border border-border-default bg-bg-default text-sm text-content-emphasis pointer-coarse:min-h-11"
     >
-      <div className="flex items-center gap-2.5 px-3 py-2">
+      <div className="flex shrink-0 items-center gap-2.5 px-3 py-2">
         <span className="shrink-0 text-content-muted">
           {isReactNode(filter.icon) ? (
             filter.icon
@@ -473,7 +492,7 @@ function OperatorFilterPill({
           openPopover={operatorDropdownOpen}
           setOpenPopover={setOperatorDropdownOpen}
           content={
-            <div className="w-32 p-1">
+            <div className="w-full p-1 sm:w-32">
               <button
                 type="button"
                 className={cn(
@@ -517,7 +536,7 @@ function OperatorFilterPill({
           <button
             type="button"
             className={cn(
-              "px-3 py-2 text-content-muted",
+              "flex items-center px-3 py-2 text-content-muted",
               "transition-[color,background-color,transform] duration-150 ease-out motion-reduce:transition-none",
               "hover:bg-bg-muted hover:text-content-default [@media(hover:none)]:hover:bg-transparent",
               "active:scale-[0.98] motion-reduce:active:scale-100",
@@ -527,7 +546,7 @@ function OperatorFilterPill({
           </button>
         </Popover>
       ) : (
-        <div className="px-3 py-2 text-content-muted">is</div>
+        <div className="flex items-center px-3 py-2 text-content-muted">is</div>
       )}
 
       <Popover
@@ -681,7 +700,7 @@ function OperatorFilterPill({
           onClick={openValueDropdown}
           disabled={filter.options?.length === 0}
           className={cn(
-            "flex items-center",
+            "flex min-w-0 items-center",
             filter.options?.length &&
               "transition-[background-color,transform] duration-150 ease-out hover:bg-bg-muted active:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100 [@media(hover:none)]:hover:bg-transparent",
           )}
@@ -698,8 +717,9 @@ function OperatorFilterPill({
 
       <button
         type="button"
+        aria-label={t("removeFilter", { label: filter.label })}
         className={cn(
-          "h-full rounded-r-lg p-2 text-content-muted ring-inset ring-border-emphasis",
+          "flex h-auto shrink-0 items-center justify-center rounded-r-lg p-2 text-content-muted ring-inset ring-border-emphasis pointer-coarse:min-w-11",
           "transition-[color,background-color,transform] duration-150 ease-out motion-reduce:transition-none",
           "hover:bg-bg-muted hover:text-content-emphasis [@media(hover:none)]:hover:bg-transparent",
           "active:scale-[0.97] motion-reduce:active:scale-100",

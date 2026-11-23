@@ -72,7 +72,10 @@ const modalContentVariants = cva(
         // with independent body scroll. Header/footer pinned via the slot
         // components below.
         "fixed inset-0 z-40 m-auto h-fit w-full",
-        "flex max-h-[min(85vh,680px)] flex-col",
+        // `dvh` (the viewport as it is NOW, browser chrome included) where
+        // the browser has it; `vh` — the viewport with the chrome hidden,
+        // so taller than what is visible — only as the fallback.
+        "flex max-h-[min(85vh,680px)] flex-col supports-[height:100dvh]:max-h-[min(85dvh,680px)]",
         // B3 — brand-tinted focal-glow texture + elegant border + glass-edge
         // highlight (the class provides bg, border, and shadow; see
         // globals.css `.surface-popup-texture`).
@@ -345,6 +348,21 @@ function ModalRoot({
                             // glass edge) for parity — replaces the flat
                             // bg-bg-default/border-border-subtle.
                             "surface-popup-texture max-h-[92vh] rounded-t-[10px] text-content-emphasis",
+                            // `dvh`, not `vh`: `vh` is the viewport with the
+                            // browser chrome HIDDEN, so while the chrome shows
+                            // a 92vh sheet is taller than the screen and its
+                            // footer sits below the bottom edge. `vh` stays as
+                            // the fallback for a browser without `dvh`.
+                            "supports-[height:100dvh]:max-h-[92dvh]",
+                            // The sticky Cancel / Create footer must clear the
+                            // home indicator, or a tap on it lands on the
+                            // system gesture. The padding is on the sheet, not
+                            // the footer, so `Modal.Footer` stays one recipe
+                            // for both surfaces. While the soft keyboard is
+                            // open the keyboard style's inline `paddingBottom`
+                            // replaces it — the indicator is under the
+                            // keyboard then, and the lift is the larger one.
+                            "pb-[env(safe-area-inset-bottom)]",
                             className,
                         )}
                     >

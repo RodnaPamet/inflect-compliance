@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { cn } from '@inflect/ui/lib/cn';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
+import { OverflowAction, PrimaryAction } from '@/components/layout/PageActions';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { MetaStrip, type MetaItem } from '@/components/ui/meta-strip';
@@ -83,9 +84,14 @@ const CRITICALITY_VARIANT: Record<string, StatusBadgeVariant> = {
 
 const hrs = (v: number | null) => (v != null ? `${v}h` : '—');
 
+/**
+ * A titled section card. It was `density: 'none'`, so every section's text
+ * touched its border. Compact, the card's own dense rung: the page stacks
+ * seven of these, and a phone has no room to spare for the comfortable one.
+ */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
     return (
-        <div className={cn(cardVariants({ density: 'none' }), 'space-y-default')}>
+        <div className={cn(cardVariants({ density: 'compact' }), 'space-y-default')} data-testid="bia-section">
             <Heading level={2}>{title}</Heading>
             {children}
         </div>
@@ -264,14 +270,29 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
             meta={<MetaStrip items={metaItems} />}
             actions={
                 canWrite ? (
+                // On a phone (#5815): Edit first, Delete stays a visible
+                // button (a destructive action is never hidden in the menu),
+                // and "Mark reviewed" moves into "⋯".
                 <>
-                    <Button variant="secondary" size="sm" onClick={markReviewed} disabled={busy} id="bia-mark-reviewed-btn">
-                        {tx('biaDetail.markReviewed')}
-                    </Button>
-                    <Button variant="secondary" size="sm" onClick={() => setEditing(true)} id="bia-edit-btn">
-                        {tx('biaDetail.edit')}
-                    </Button>
-                    <Button variant="ghost" size="sm" className="text-content-error" onClick={() => setDeleting(true)} id="bia-delete-btn">
+                    <OverflowAction
+                        label={tx('biaDetail.markReviewed')}
+                        onSelect={() => void markReviewed()}
+                        disabled={busy}
+                        data-testid="bia-mark-reviewed-menu-item"
+                    >
+                        <Button variant="secondary" size="sm" onClick={markReviewed} disabled={busy} id="bia-mark-reviewed-btn">
+                            {tx('biaDetail.markReviewed')}
+                        </Button>
+                    </OverflowAction>
+                    <PrimaryAction>
+                        <Button variant="secondary" size="sm" onClick={() => setEditing(true)} id="bia-edit-btn">
+                            {tx('biaDetail.edit')}
+                        </Button>
+                    </PrimaryAction>
+                    {/* The destructive variant (owner decision, 2026-11-22):
+                        a destructive action stays visible as a destructive
+                        button, not a ghost tinted red. */}
+                    <Button variant="destructive" size="sm" onClick={() => setDeleting(true)} id="bia-delete-btn">
                         {tx('biaDetail.delete')}
                     </Button>
                 </>
@@ -298,7 +319,14 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
                         <p className="text-sm text-content-default">
                             {tx.rich('biaDetail.recoversSeq', { rank: bia.recovery.rank, b: (c) => <span className="font-semibold">{c}</span> })}
                         </p>
-                        <p className="text-sm text-content-muted">{bia.recovery.rationale}</p>
+                        <p className="text-sm text-content-muted">
+                            {tx('biaDetail.recoveryRationale', {
+                                criticality: critLabels[bia.criticality] ?? bia.criticality,
+                                mtpd: bia.mtpdHours ?? 'none',
+                                rto: bia.rtoHours ?? 'none',
+                                rank: bia.recovery.rank,
+                            })}
+                        </p>
                     </Section>
                 )}
 

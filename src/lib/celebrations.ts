@@ -62,15 +62,21 @@ export type MilestoneKey =
 
 // ─── Definition shape ──────────────────────────────────────────────
 
+/**
+ * A milestone's toast copy lives in the message catalogs, never here: the
+ * toast is read in the viewer's language, and this registry is shared code
+ * with no locale. The keys are full catalog paths, so a milestone can point
+ * at copy a page already owns (`evidence.list.allCurrent*`).
+ */
 export interface MilestoneDefinition {
     /** Stable identifier — also the dedupe key in sessionStorage. */
     key: MilestoneKey;
     /** Confetti preset chosen to match the milestone's emotional weight. */
     preset: CelebrationPreset;
-    /** Toast title — short, present-tense ("Audit pack ready!"). */
-    message: string;
-    /** Optional toast description shown under `message`. */
-    description?: string;
+    /** Catalog key of the toast title — short, present-tense ("Audit pack ready"). */
+    messageKey: string;
+    /** Catalog key of the toast description shown under the title. */
+    descriptionKey: string;
 }
 
 // ─── Registry ───────────────────────────────────────────────────────
@@ -79,31 +85,47 @@ export const MILESTONES: Record<MilestoneKey, MilestoneDefinition> = {
     'framework-100': {
         key: 'framework-100',
         preset: 'fireworks',
-        message: '100% framework coverage 🎯',
-        description: 'Every applicable control is implemented.',
+        messageKey: 'celebrations.framework100.message',
+        descriptionKey: 'celebrations.framework100.description',
     },
     'evidence-all-current': {
         key: 'evidence-all-current',
         preset: 'rain',
-        message: 'All evidence is current ✨',
         // The trigger is the tenant-wide aggregate's expired, expiring-soon
         // (30 days) and needs-review buckets all at zero — not a week. The
-        // page shows the catalogue's `evidence.list.allCurrent*` copy.
-        description: 'No evidence is expired, expiring in the next 30 days, or in need of review.',
+        // evidence page owns that copy.
+        messageKey: 'evidence.list.allCurrentMessage',
+        descriptionKey: 'evidence.list.allCurrentDescription',
     },
     'audit-pack-complete': {
         key: 'audit-pack-complete',
         preset: 'fireworks',
-        message: 'Audit pack ready 📦',
-        description: 'Frozen and shareable with your auditor.',
+        messageKey: 'celebrations.auditPackComplete.message',
+        descriptionKey: 'celebrations.auditPackComplete.description',
     },
     'first-control-mapped': {
         key: 'first-control-mapped',
         preset: 'burst',
-        message: 'First control mapped 🚀',
-        description: "You're on your way — keep going.",
+        messageKey: 'celebrations.firstControlMapped.message',
+        descriptionKey: 'celebrations.firstControlMapped.description',
     },
 };
+
+/** A milestone's toast copy, in the viewer's language. */
+export interface MilestoneCopy {
+    message: string;
+    description?: string;
+}
+
+/**
+ * Resolve a milestone's toast copy through a ROOT translator
+ * (`useTranslations()` with no namespace), so the registry's full keys
+ * resolve as written.
+ */
+export function milestoneCopy(key: MilestoneKey, t: (catalogKey: string) => string): MilestoneCopy {
+    const def = MILESTONES[key];
+    return { message: t(def.messageKey), description: t(def.descriptionKey) };
+}
 
 // ─── Dedupe-key derivation ─────────────────────────────────────────
 
@@ -189,8 +211,9 @@ export const celebrationDedupe: CelebrationDedupe = {
  *
  * Example — framework detail page:
  *
- *   celebrate(scopedMilestone('framework-100', frameworkKey, {
- *     descriptionOverride: `${frameworkName} — ${MILESTONES['framework-100'].description}`,
+ *   const copy = milestoneCopy('framework-100', useTranslations());
+ *   celebrate(scopedMilestone('framework-100', frameworkKey, copy, {
+ *     descriptionOverride: `${frameworkName} — ${copy.description}`,
  *   }));
  *
  * Without a scope, all frameworks share the `framework-100` dedupe
@@ -204,17 +227,21 @@ export const celebrationDedupe: CelebrationDedupe = {
  * sense — `evidence-all-current`, `first-control-mapped`), pass the
  * `MILESTONES[key]` record's fields to `celebrate()` instead of going through
  * this builder.
+ *
+ * `copy` is the translated toast (`milestoneCopy`): the builder never
+ * supplies words of its own.
  */
 export function scopedMilestone(
     key: MilestoneKey,
     scope: string,
+    copy: MilestoneCopy,
     options: { descriptionOverride?: string } = {},
 ): CelebrateInput {
     const def = MILESTONES[key];
     return {
         preset: def.preset,
         key: `${key}:${scope}`,
-        message: def.message,
-        description: options.descriptionOverride ?? def.description,
+        message: copy.message,
+        description: options.descriptionOverride ?? copy.description,
     };
 }

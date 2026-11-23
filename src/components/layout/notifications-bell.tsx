@@ -46,6 +46,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { localizedNotificationTitle } from '@/lib/notifications/agentic-titles';
+import { localizedNotificationBody } from '@/lib/notifications/agentic-bodies';
 import { Bell, CheckCheck } from 'lucide-react';
 
 import { Popover } from '@/components/ui/popover';
@@ -95,14 +97,20 @@ const NOTIFICATIONS_FALLBACK_POLL_INTERVAL_MS = 5 * 60_000;
 // `HIT_AREA_CLASS`: a 22px `rounded-full` bell is a circle in a square —
 // 14% of its box rendered as bell but did not answer to `:hover`. See
 // `hit-area.ts` for the measurements.
+//
+// `pointer-coarse:min-h-11 min-w-11`: 22px is half of WCAG 2.5.5's 44 on a
+// touch screen. The floor is the hamburger's and the avatar's, so the three
+// controls of the bar answer a finger the same; on a mouse nothing moves.
 const BELL_BUTTON_CLASS =
-    `relative inline-flex items-center justify-center h-[22px] w-[22px] rounded-full text-content-muted transition-colors hover:bg-bg-muted/50 hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${NAV_BAR_SLOT_PRESS} ${HIT_AREA_CLASS}`;
+    `relative inline-flex items-center justify-center h-[22px] w-[22px] pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-full text-content-muted transition-colors hover:bg-bg-muted/50 hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${NAV_BAR_SLOT_PRESS} ${HIT_AREA_CLASS}`;
 
 const BADGE_OVERLAY_CLASS =
     // Pill chip pinned to the bell's top-right corner. Negative
     // inset puts it slightly outside the bell's bounding box so
-    // the bell glyph remains uncluttered.
-    'absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-bg-error-emphasis text-[10px] font-semibold text-content-inverted tabular-nums leading-none';
+    // the bell glyph remains uncluttered. On a touch screen the box is
+    // 44px with the 22px bell centred in it, so the chip moves in by the
+    // 11px between them and stays on the bell, not in the box's corner.
+    'absolute -top-0.5 -right-0.5 pointer-coarse:top-[9px] pointer-coarse:right-[9px] flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-bg-error-emphasis text-[10px] font-semibold text-content-inverted tabular-nums leading-none';
 
 const ROW_CLASS =
     'flex flex-col gap-tight rounded-md px-2.5 py-2 transition-colors hover:bg-bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]';
@@ -112,21 +120,22 @@ const ROW_UNREAD_CLASS = 'bg-bg-subtle';
 // ─── Helpers ───────────────────────────────────────────────────────
 
 /**
- * Relative-time formatter. Returns "5m", "2h", "3d", "Mar 12".
- * Avoids dependency on date-fns / dayjs — this is the only place in
- * the bell that needs date formatting.
+ * Compact age: "5m", "2h", "3d", then "12 Mar" — in the reader's language
+ * (`panels.bell.age.*`; "5 мин", "2 ч", "3 д" in Bulgarian). Avoids a
+ * dependency on date-fns / dayjs: this is the only place in the bell that
+ * needs date formatting.
  */
-function formatRelativeTime(iso: string): string {
+function formatRelativeTime(iso: string, t: (key: string, values?: Record<string, number>) => string): string {
     const then = new Date(iso).getTime();
     if (Number.isNaN(then)) return '';
     const diff = Date.now() - then;
     const minutes = Math.floor(diff / 60_000);
-    if (minutes < 1) return 'now';
-    if (minutes < 60) return `${minutes}m`;
+    if (minutes < 1) return t('age.now');
+    if (minutes < 60) return t('age.minutes', { n: minutes });
     const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h`;
+    if (hours < 24) return t('age.hours', { n: hours });
     const days = Math.floor(hours / 24);
-    if (days < 7) return `${days}d`;
+    if (days < 7) return t('age.days', { n: days });
     return formatDateCompact(iso);
 }
 
@@ -156,6 +165,8 @@ function markReadRequest(tenantSlug: string | null): RequestInit {
 
 export function NotificationsBell() {
     const t = useTranslations('panels.bell');
+    const tTitles = useTranslations('notificationTitles');
+    const tBodies = useTranslations('notificationBodies');
     // The CURRENT workspace, from the URL rather than `useTenantHref`: the bell
     // is also mounted in the org chrome, which has no tenant context (and so
     // no workspace to resolve a legacy tenant path against).
@@ -522,14 +533,14 @@ export function NotificationsBell() {
                                     <>
                                         <div className="flex items-center justify-between gap-tight">
                                             <p className="min-w-0 flex-1 break-words text-sm font-medium text-content-emphasis">
-                                                {n.title}
+                                                {localizedNotificationTitle(n.type, n.title, tTitles)}
                                             </p>
                                             <span className="flex-shrink-0 text-[10px] text-content-subtle tabular-nums">
-                                                {formatRelativeTime(n.createdAt)}
+                                                {formatRelativeTime(n.createdAt, t)}
                                             </span>
                                         </div>
                                         <p className="text-xs text-content-muted line-clamp-2">
-                                            {n.message}
+                                            {localizedNotificationBody(n.type, n.message, tBodies)}
                                         </p>
                                     </>
                                 );

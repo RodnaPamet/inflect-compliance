@@ -40,5 +40,11 @@ declare module "@tanstack/react-table" {
         disableTruncate?: boolean;
         /** Optional tooltip text rendered next to the column header label. */
         headerTooltip?: string;
+        /**
+         * On a phone card (`DataTableCards`), put this cell in the card's
+         * "⋯" menu instead of a row of its own. For icon-only row actions:
+         * each control's `aria-label` becomes its visible menu-item text.
+         */
+        cardAction?: boolean;
     }
 }

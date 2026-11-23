@@ -62,6 +62,7 @@ export const ADMIN_KEYS_ON_ANY_BASE: Readonly<Record<string, string>> = {
     agent_external_tools: 'Agent governance floor: tier OR key.',
     agent_harness_ingest: 'Agent governance floor: tier OR key.',
     integrations_ingest: 'The third-party application scan ingest checks the key, not the tier, as the harness ingest does.',
+    agent_rules_ingest: 'The agent-surface rules scan ingest checks the key, not the tier, as the harness ingest does.',
     agent_ownership: 'Agent governance floor: tier OR key; the built-in AI admin, on a Reader rung, holds it.',
     agent_skill_review: 'Agent governance floor: tier OR key.',
     agent_skill_author: 'Agent governance floor: tier OR key.',

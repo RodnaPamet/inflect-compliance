@@ -101,6 +101,8 @@ const EXEMPTIONS: Record<string, string> = {
         '(a) sub-component — two detail-tab sub-tables (kill history, signed messages) with fixed columns; the receipt column is the point of the table, so per-column hide/show is not meaningful.',
     'agents/reports/integrations/IntegrationsSection.tsx':
         '(b) multi-section — one card per scanner on the Integrations tab of /agents/reports, fixed columns (application, privilege, publisher, owners, last sign-in, open findings); hiding a column would hide a conclusion, or a "not known", the report exists to show.',
+    'agents/reports/agent-surface/AgentSurfaceTab.tsx':
+        '(b) multi-section — one card per scanner on the Agent surface tab of /agents/reports, fixed columns (severity, finding, where); hiding a column would hide where a rule fired, which is all the report says.',
     'agents/reports/harness/ScannerKeysCard.tsx':
         '(b) multi-section — the scanner-key register, a short fixed-column list (scanner, fingerprint, added, status, revoke); per-column hide/show not meaningful.',
     'admin/api-keys/page.tsx':

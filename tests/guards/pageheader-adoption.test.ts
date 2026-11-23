@@ -123,8 +123,8 @@ const PAGES: PageEntry[] = [
     },
     {
         file: "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/VendorTemplateBuilderClient.tsx",
-        adopted: false,
-        note: "Vendor template builder. Pending migration — wizard-shaped page.",
+        adopted: true,
+        note: "Vendor template builder. Migrated with the phone header work (#5815): the hand-rolled row clipped Publish on a phone.",
     },
     {
         file: "src/app/t/[tenantSlug]/(app)/admin/rbac/page.tsx",

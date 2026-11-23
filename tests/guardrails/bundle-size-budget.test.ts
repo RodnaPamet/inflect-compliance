@@ -269,7 +269,42 @@ const BUDGETS_KB: Record<string, number> = {
         bump could not pass either. The owner chose on 2026-11-10 to attribute
         first and then raise to measured + ~4, the convention.
     */
-    'dashboard': 631,
+    //
+    // Raised by the mobile list-pages batch (#5850, owner request 2026-11-23
+    // to work through the mobile issues #5805). CI's webpack build of #5850
+    // on main with #5845-#5847: `controls/dashboard/page` 631.1 KB against 631 — the
+    // card "⋯" action menu, the filter toolbar's phone rows and the toggle
+    // group's scroll cue in shared primitives. The toggle group's phone
+    // select (the Combobox graph, ~10 KB) loads on demand and is not in this
+    // figure. 635 is measured + ~4, the convention.
+    //
+    // Raised by the mobile Bulgarian-chrome batch (#5858, owner request
+    // 2026-11-23 to work through the mobile issues #5805). CI's webpack build
+    // of #5858: `controls/dashboard/page` 634.8 KB against the 635 budget. The shared
+    // date helpers now carry the Bulgarian month/weekday tables and the
+    // date-fns `bg` locale on every page, so dates and relative times render
+    // in the reader's language. 639 is measured + ~4, the convention.
+    //
+    // Raised 635 -> 639 by the mobile page-header batch (#5853, same owner
+    // request). Local `next build --webpack` runs, main (3c3b192b0) against
+    // the branch: `controls/dashboard/page` 631.7 -> 635.4 KB (+3.7). What the
+    // page now loads is the header's phone overflow: `PageActions`' registry,
+    // `OverflowAction`/`PrimaryAction` and the "⋯" menu (about 2.3 KB of
+    // module code together), plus translated back-link keys (+0.1). Attributed
+    // with single-variable builds, same route, KB:
+    //       first push: trail rule as a JS context in ClientProviders  639.3 (CI)
+    //       trail rule moved to CSS (no JS at all)                     638.2
+    //       "⋯" menu loaded with next/dynamic                          638.2
+    //       ... and PageActions importing no button of its own          644.5
+    //       menu imported statically instead                           635.4
+    // Lazy-loading the menu was measured WORSE (its async chunk regrouped the
+    // shared split chunks around it), so it is a static import. 639 is
+    // measured + ~4, the convention.
+    //
+    // Combined when #5853 merged after #5858: 634.8 (#5858 on CI) + 3.7 (this
+    // batch, measured locally above) = about 638.5 against 639, so 643 is the
+    // combined measured + ~4. Re-measured on CI for the merge commit.
+    'dashboard': 643,
     // Raised 653 → 654 in the Tasks list fixes (#4300, #4278; owner decision).
     // Main measured this route at 652.9 KB (0.1 KB left); the PR measured
     // 653.2. The growth is in the task form and edit panel that the risk
@@ -293,7 +328,22 @@ const BUDGETS_KB: Record<string, number> = {
     // at 664.2 KB. NOT ATTRIBUTED, by the owner's choice: this page's source
     // graph reaches none of #5782's changed modules, which again points at a
     // webpack chunk regroup rather than new route code. 668 is measured + ~4.
-    'risks': 668,
+    //
+    // Raised by the mobile list-pages batch (#5850, owner request 2026-11-23
+    // to work through the mobile issues #5805). CI's webpack build of #5850
+    // on main with #5845-#5847: `risks/[riskId]/page` 668.3 KB against 668 — the
+    // card "⋯" action menu, the filter toolbar's phone rows and the toggle
+    // group's scroll cue in shared primitives. The toggle group's phone
+    // select (the Combobox graph, ~10 KB) loads on demand and is not in this
+    // figure. 672 is measured + ~4, the convention.
+    //
+    // Raised by the mobile Bulgarian-chrome batch (#5858, owner request
+    // 2026-11-23 to work through the mobile issues #5805). CI's webpack build
+    // of #5858: `risks/[riskId]/page` 671.6 KB against the 672 budget. The shared
+    // date helpers now carry the Bulgarian month/weekday tables and the
+    // date-fns `bg` locale on every page, so dates and relative times render
+    // in the reader's language. 676 is measured + ~4, the convention.
+    'risks': 676,
     // Raised 645 → 650 in the i18n-kept-primitives PR (#3004): that route had
     // grown to 643.8 KB on main (ff71f42ed), and localising the shared
     // primitives (useTranslations + key lookups in ~20 components, all on this
@@ -355,7 +405,46 @@ const BUDGETS_KB: Record<string, number> = {
     // Raised 670 -> 675 by the production group bump (#5010, owner decision):
     // 668.9 -> 670.5 KB, about 1.0 KB of it react-window, lucide-react and
     // react-hook-form. Measured and attributed in the `dashboard` note.
-    'controls': 675,
+    //
+    // Raised 675 -> 679 by the mobile roadmap's overlay batch (#5845, owner
+    // request 2026-11-23 to work through the mobile issues #5805). CI's
+    // webpack build, main (960503a11) against #5845 (c1eaca25d):
+    // `controls/.../tests/[planId]/page` 674.2 -> 674.9 KB, +0.7, and every
+    // bucket moved by 0.6-0.8 KB: the change is the phone layout of shared
+    // primitives (popover sheet, modal and sheet insets, the bulk-selection
+    // toolbar) that every tenant page loads. The later mobile batches touch
+    // shared primitives too, so 0.1 KB left would trip on the next one.
+    // 679 is measured + ~4, the convention.
+    //
+    // Raised 679 -> 683 by the mobile top-bar batch (#5847, same owner
+    // request). CI's webpack build of #5847 on main-with-#5845:
+    // `controls/.../tests/[planId]/page` 674.9 -> 677.5 KB (+2.6), and
+    // #5846 (the tab-strip cue, +1.0 here) landed between the two, so the
+    // merged figure is about 678.5 against 679. The batch adds the phone
+    // top-bar entry points (assistant and command-palette buttons), the
+    // themed toaster and tap-to-open tooltips to the shared tenant shell.
+    // 683 is measured + ~4, the convention.
+    //
+    // Raised by the mobile Bulgarian-chrome batch (#5858, owner request
+    // 2026-11-23 to work through the mobile issues #5805). CI's webpack build
+    // of #5858: `controls/.../tests/[planId]/page` 682.2 KB against the 683 budget. The shared
+    // date helpers now carry the Bulgarian month/weekday tables and the
+    // date-fns `bg` locale on every page, so dates and relative times render
+    // in the reader's language. 686 is measured + ~4, the convention.
+    //
+    // Raised 683 -> 689 by the mobile page-header batch (#5853, same owner
+    // request). Local `next build --webpack` runs, main (3c3b192b0) against
+    // the branch: `controls/.../tests/[planId]/page` 681.5 -> 685.3 KB
+    // (+3.8). This route is the batch's P0 page (#5830): its hand-rolled,
+    // non-wrapping header — which clipped "Run test" off a phone — became the
+    // shared `<PageHeader>`, so it now loads the header and the phone overflow
+    // (`PageActions` and its "⋯" menu, ~2.3 KB) that other detail pages
+    // already had. Attributed in the `dashboard` note. 689 is measured + ~4.
+    //
+    // Combined when #5853 merged after #5858: 682.2 (#5858 on CI) + 3.8 (this
+    // batch, measured locally above) = about 686.0, so 690 is the combined
+    // measured + ~4. Re-measured on CI for the merge commit.
+    'controls': 690,
     // Catch-all for any other tenant page.
     //
     // Raised 682 → 688 by the AI-roadmap integration (#5323, owner decision
@@ -364,7 +453,28 @@ const BUDGETS_KB: Record<string, number> = {
     // the 0.6-0.9 KB every route grew. NOT ATTRIBUTED, by the owner's choice;
     // see the `risks` note for the same build and the same inference. 688 is
     // measured + ~4, the convention.
-    'tenant-default': 688,
+    //
+    // Raised 688 -> 692 by the same mobile overlay batch (#5845; see the
+    // `controls` note): policies/[policyId]/page 687.3 -> 688.1 KB, +0.8,
+    // shared phone-layout code in the popover, modal, sheet and selection
+    // toolbar. 692 is measured + ~4, the convention.
+    //
+    // Raised 692 -> 699 by the mobile top-bar batch (#5847; see the
+    // `controls` note). policies/[policyId]/page 688.1 -> 693.2 KB on
+    // main-with-#5845 (+5.1, against +0.6 to +2.6 on every other bucket's
+    // worst route), plus #5846's +0.7 landing in between: about 694.5
+    // merged. The +5.1 is NOT fully attributed — the route-specific share
+    // is chunk re-partitioning around the shell change, and the local
+    // attribution build ran out of memory on the shared machine. 699 is
+    // measured + ~4, the convention.
+    //
+    // Raised by the mobile Bulgarian-chrome batch (#5858, owner request
+    // 2026-11-23 to work through the mobile issues #5805). CI's webpack build
+    // of #5858: `policies/[policyId]/page` 703.0 KB against the 699 budget. The shared
+    // date helpers now carry the Bulgarian month/weekday tables and the
+    // date-fns `bg` locale on every page, so dates and relative times render
+    // in the reader's language. 707 is measured + ~4, the convention.
+    'tenant-default': 707,
     // Auth / public / org pages.
     //
     // RAISED 575 -> 580 on 2026-10-23, and this entry is the cautionary one.
@@ -397,7 +507,29 @@ const BUDGETS_KB: Record<string, number> = {
     // effect the `controls` note describes, not code added to this route.
     // With 0.1 KB left, any change to client code could trip this bucket.
     // 584 is measured + ~4, the convention.
-    'root': 584,
+    //
+    // Raised by the mobile list-pages batch (#5850, owner request 2026-11-23
+    // to work through the mobile issues #5805). CI's webpack build of #5850
+    // on main with #5845-#5847: `org/.../initiatives/[initiativeId]/page` 584.0 KB against 584 — the
+    // card "⋯" action menu, the filter toolbar's phone rows and the toggle
+    // group's scroll cue in shared primitives. The toggle group's phone
+    // select (the Combobox graph, ~10 KB) loads on demand and is not in this
+    // figure. 588 is measured + ~4, the convention.
+    //
+    // Raised by the mobile Bulgarian-chrome batch (#5858, owner request
+    // 2026-11-23 to work through the mobile issues #5805). CI's webpack build
+    // of #5858: `org/.../initiatives/[initiativeId]/page` 589.9 KB against the 588 budget. The shared
+    // date helpers now carry the Bulgarian month/weekday tables and the
+    // date-fns `bg` locale on every page, so dates and relative times render
+    // in the reader's language. 594 is measured + ~4, the convention.
+    //
+    // Raised 594 -> 598 when the mobile page-header batch (#5853) merged after
+    // #5858 and #5859 (owner request 2026-11-23 to work through the mobile
+    // issues #5805). CI's webpack build of the merge commit: `org/.../
+    // initiatives/[initiativeId]/page` 594.3 KB — the Bulgarian catalog
+    // labels #5859 added and the header's phone overflow registry, both in
+    // the shared shell. 598 is measured + ~4, the convention.
+    'root': 598,
 };
 
 /** Map an app route key to a budget key. */

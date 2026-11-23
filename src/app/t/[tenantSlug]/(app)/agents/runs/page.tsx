@@ -7,6 +7,7 @@ import { authOptions } from '@/auth';
 import { listWorkflowRuns } from '@/app-layer/usecases/workflow-runs';
 import { getWorkflowDefinition, listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import { profileRunLabel } from '@/lib/agentic/agent-profile';
+import { localizedWorkflowDescription, localizedWorkflowName } from '@/lib/agentic/workflow-labels';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { checkAdminAccess } from '@/lib/auth/guard';
 import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
@@ -51,6 +52,7 @@ export default async function AgentRunsPage({
         );
     }
     const tAgents = await getTranslations('agents');
+    const tWorkflows = await getTranslations('agentWorkflows');
     const listed = await listWorkflowRuns(ctx, { take: RUN_LIST_CAP + 1 });
     const truncated = listed.length > RUN_LIST_CAP;
 
@@ -62,7 +64,7 @@ export default async function AgentRunsPage({
     // row the list ever shows comes through here.
     const runName = (workflowKey: string): string => {
         const def = getWorkflowDefinition(workflowKey);
-        if (def) return def.name;
+        if (def) return localizedWorkflowName(workflowKey, def.name, tWorkflows);
         const profile = profileRunLabel(workflowKey);
         return profile ? tAgents(profile.key, profile.values) : workflowKey;
     };
@@ -105,8 +107,8 @@ export default async function AgentRunsPage({
     // start form from the definition's own declaration (`startPlanFor`).
     const workflows = listWorkflowDefinitions().map((w) => ({
         key: w.key,
-        name: w.name,
-        description: w.description,
+        name: localizedWorkflowName(w.key, w.name, tWorkflows),
+        description: localizedWorkflowDescription(w.key, w.description, tWorkflows),
         requiredInput: [...(w.requiredInput ?? [])],
     }));
 

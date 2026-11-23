@@ -35,6 +35,7 @@ import { cn } from "@inflect/ui/lib/cn";
 import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
 import { useIsBelowMd } from "@/components/ui/hooks";
 import { cardVariants } from "@/components/ui/card";
+import { ScrollCueStrip } from "@/components/ui/scroll-cue-strip";
 import { StatusBadge, type StatusBadgeVariant } from "@/components/ui/status-badge";
 import { RulesTab } from "./RulesTab";
 import { AnalyticsTab } from "./AnalyticsTab";
@@ -165,10 +166,17 @@ export function ProcessesClient({
 
     return (
         <div className="flex h-full min-h-0 flex-col">
-            <nav
-                className="flex gap-1 border-b border-border-default overflow-x-auto"
+            {/* The shared scroll-cue strip (fades, chevrons, active tab in
+                view, end padding) — the same behaviour as the detail-page
+                tab bar. The governance link scrolls with the tabs, as it
+                always has: pinned outside the strip it took more than half
+                of a phone's width from them. */}
+            <ScrollCueStrip
+                className="border-b border-border-default"
+                listClassName="gap-1"
                 role="tablist"
                 aria-label={t("tabsAria")}
+                activeKey={tab}
             >
                 {TABS.map((t) => {
                     const isActive = tab === t.key;
@@ -201,7 +209,7 @@ export function ProcessesClient({
                 >
                     {t("governanceLink")}
                 </Link>
-            </nav>
+            </ScrollCueStrip>
             <div className="flex min-h-0 flex-1 flex-col pt-3">
                 {tab === "rules" ? (
                     <RulesTab tenantSlug={tenantSlug} canManage={canManageRules} />
@@ -360,7 +368,7 @@ function ProcessListMobile({
                                     variant={PROCESS_STATUS_BADGE[p.status]}
                                     size="sm"
                                 >
-                                    {p.status}
+                                    {t(`mapStatus.${p.status}`)}
                                 </StatusBadge>
                             </div>
                             {p.description && (

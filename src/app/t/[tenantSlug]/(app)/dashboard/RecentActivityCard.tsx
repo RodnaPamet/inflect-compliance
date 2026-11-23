@@ -1,14 +1,16 @@
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 
-import { formatDateTime } from '@inflect/ui/lib/format-date';
+import { getDateFormatters } from '@/lib/i18n/date-format-server';
 import { getTenantCtx } from '@/app-layer/context';
 import { getDashboardRecentActivity } from '@/app-layer/usecases/dashboard';
 import {
     activityEntityMeta,
+    activityEventToken,
     activityVerbToken,
     humanizeSnakeCase,
 } from '@/lib/audit/activity-humanize';
+import { auditActionLabel, auditEntityLabel } from '@/lib/audit/audit-code-labels';
 import { Heading } from '@/components/ui/typography';
 import { Card } from '@/components/ui/card';
 
@@ -42,6 +44,12 @@ export default async function RecentActivityCard({
 }: RecentActivityCardProps) {
     const ctx = await getTenantCtx({ tenantSlug });
     const t = await getTranslations('dashboard.activity');
+    const tCodes = await getTranslations('auditCodes');
+    // A label read mid-sentence: lower-case its first letter unless it opens
+    // an acronym ("MCP инструмент" stays as it is).
+    const midSentence = (label: string) =>
+        /^\p{Lu}\p{Ll}/u.test(label) ? label.charAt(0).toLowerCase() + label.slice(1) : label;
+    const { formatDateTime } = await getDateFormatters();
 
     const recentActivity = await getDashboardRecentActivity(ctx);
 
@@ -65,13 +73,24 @@ export default async function RecentActivityCard({
             >
                 {recentActivity.map((log) => {
                     const meta = activityEntityMeta(log.entity);
+                    const event = activityEventToken(log.action);
                     const verb = activityVerbToken(log.action);
+                    // The long tail (an action with no known verb, an entity
+                    // with no noun) goes through the catalog too: English
+                    // shows the de-snaked code, other languages a generic
+                    // phrase rather than English words.
                     const verbText = verb.token
                         ? t(`verb.${verb.token}`)
-                        : verb.fallback;
+                        : t('verbFallback', { action: verb.fallback });
+                    const entityLabel = meta ? null : auditEntityLabel(tCodes, log.entity);
                     const nounText = meta
                         ? t(`entity.${meta.nounKey}`)
-                        : humanizeSnakeCase(log.entity);
+                        : entityLabel !== null
+                          ? midSentence(entityLabel)
+                          : t('entityFallback', { entity: humanizeSnakeCase(log.entity) });
+                    // An action with no verb the feed can phrase still has a
+                    // label of its own; the row reads "actor: label".
+                    const actionLabel = event || verb.token ? null : auditActionLabel(tCodes, log.action);
                     const href =
                         meta?.path && log.entityId
                             ? `/t/${tenantSlug}${meta.path(log.entityId)}`
@@ -81,11 +100,38 @@ export default async function RecentActivityCard({
                     // have one, otherwise the noun stands in as the
                     // link target. `linkPart` is what carries the href.
                     const linkPart = log.title ?? nounText;
-                    const body = (
+                    const actor = (
+                        <span className="text-content-default font-medium">
+                            {log.actorName ?? t('systemActor')}
+                        </span>
+                    );
+                    // A whole-action event ("signed in") is the sentence on
+                    // its own; its entity is bookkeeping, not an object.
+                    const body = event ? (
                         <>
-                            <span className="text-content-default font-medium">
-                                {log.actorName ?? t('systemActor')}
-                            </span>{' '}
+                            {actor} {t(`event.${event}`)}
+                        </>
+                    ) : actionLabel !== null ? (
+                        <>
+                            {actor}: {actionLabel}
+                            {log.title ? (
+                                <>
+                                    {' '}
+                                    <span
+                                        className={
+                                            href
+                                                ? 'text-content-link hover:underline'
+                                                : 'text-content-default'
+                                        }
+                                    >
+                                        “{log.title}”
+                                    </span>
+                                </>
+                            ) : null}
+                        </>
+                    ) : (
+                        <>
+                            {actor}{' '}
                             {verbText} {log.title ? nounText + ' ' : ''}
                             <span
                                 className={

@@ -10,16 +10,31 @@
  * the several consumers share one request) and always resolves to a
  * fully-populated shape — it falls back to `DEFAULT_RISK_MATRIX_CONFIG`
  * while loading or on error, so callers never branch on `undefined`.
+ *
+ * The config it returns is for DISPLAY: the default vocabulary reads in the
+ * viewer's language (`localizeRiskMatrixConfig`), and a name the tenant chose
+ * reads as stored. The admin editor reads the stored config server-side and
+ * does not go through here.
  */
+
+import { useMemo } from 'react';
+import { useTranslations } from 'next-intl';
 
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { DEFAULT_RISK_MATRIX_CONFIG } from '@/lib/risk-matrix/defaults';
+import { localizeRiskMatrixConfig } from '@/lib/risk-matrix/localize';
 import type { RiskMatrixConfigShape } from '@/lib/risk-matrix/types';
 
 export interface UseRiskMatrixConfigResult {
     config: RiskMatrixConfigShape;
     /** True until the tenant's real config has resolved (default is served meanwhile). */
     isLoading: boolean;
+}
+
+/** A stored config, with the default vocabulary in the viewer's language. */
+export function useLocalizedRiskMatrixConfig(config: RiskMatrixConfigShape): RiskMatrixConfigShape {
+    const t = useTranslations('riskMatrixDefaults');
+    return useMemo(() => localizeRiskMatrixConfig(config, (key) => t(key)), [config, t]);
 }
 
 /**
@@ -37,8 +52,9 @@ export function useRiskMatrixConfig(enabled: boolean = true): UseRiskMatrixConfi
         data && typeof data === 'object' && typeof (data as RiskMatrixConfigShape).likelihoodLevels === 'number'
             ? (data as RiskMatrixConfigShape)
             : DEFAULT_RISK_MATRIX_CONFIG;
+    const config = useLocalizedRiskMatrixConfig(resolved);
     return {
-        config: resolved,
+        config,
         isLoading: enabled && isLoading && resolved === DEFAULT_RISK_MATRIX_CONFIG,
     };
 }

@@ -181,6 +181,32 @@ describe('EntityPrevNextNav — renders for a real list payload', () => {
     });
 });
 
+describe('EntityPrevNextNav — a finger can hit it (#5820)', () => {
+    // Asserted on classes: jsdom has no layout, so a measured box is 0x0
+    // whatever the classes say. The real sizes were checked in a browser.
+    it('each chevron is 44px on a coarse pointer and 16x14 everywhere else', () => {
+        const { getByTestId } = mount(['a1', 'a2', 'a3'], 'a2');
+        for (const id of ['entity-nav-prev', 'entity-nav-next']) {
+            const cls = getByTestId(id).className.split(/\s+/);
+            expect(cls).toContain('pointer-coarse:min-h-11');
+            expect(cls).toContain('pointer-coarse:min-w-11');
+            // POSITIVE CONTROL: the mouse-size box is the one it always was.
+            expect(cls).toContain('h-3.5');
+            expect(cls).toContain('w-4');
+        }
+    });
+
+    it('on a coarse pointer the pair sits in a row, so the title line does not double', () => {
+        const { getByTestId } = mount(['a1', 'a2', 'a3'], 'a2');
+        const cls = getByTestId('entity-prev-next-nav').className.split(/\s+/);
+        expect(cls).toContain('flex-col');
+        expect(cls).toContain('pointer-coarse:flex-row');
+        // The negative margin that tucks the 28px column into a text line
+        // would pull a 44px row over its neighbours.
+        expect(cls).toContain('pointer-coarse:my-0');
+    });
+});
+
 describe('EntityPrevNextNav — arrow keys need alt, so the page still scrolls', () => {
     const ids = ['a1', 'a2', 'a3'];
 

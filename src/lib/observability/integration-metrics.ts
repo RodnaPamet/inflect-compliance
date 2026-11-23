@@ -45,6 +45,7 @@ let _scannerFindingsTruncated: ReturnType<ReturnType<typeof getMeter>['createCou
 let _harnessScan: Counter | null = null;
 let _anthropicWorkspaceValidation: Counter | null = null;
 let _thirdPartyAppScan: Counter | null = null;
+let _agentRuleScan: Counter | null = null;
 let _deviceReport: Counter | null = null;
 let _aiGeneration: Counter | null = null;
 let _aiTokens: Histogram | null = null;
@@ -437,6 +438,28 @@ export function recordThirdPartyAppScanOutcome(attrs:
         });
     }
     _thirdPartyAppScan.add(1, attrs.outcome === 'ingested'
+        ? { outcome: attrs.outcome, complete: String(attrs.complete), empty: String(attrs.empty) }
+        : { outcome: attrs.outcome, reason: attrs.reason });
+}
+
+/**
+ * One agent-surface rules scan submission (`scanent-agent-rules/1`), by how it
+ * ended: the scanner's third report, the integrations metric's twin. `empty`
+ * is a read of no tool definition, which is never a clean result; a refusal
+ * carries its stable reason code, never anything from the report.
+ *
+ * No tenant label.
+ */
+export function recordAgentRuleScanOutcome(attrs:
+    | { outcome: 'ingested'; complete: boolean; empty: boolean }
+    | { outcome: 'refused'; reason: string }): void {
+    if (!_agentRuleScan) {
+        _agentRuleScan = getMeter().createCounter('agent_rule.scan.outcome', {
+            description: 'Agent-surface rules scan submissions by outcome',
+            unit: '1',
+        });
+    }
+    _agentRuleScan.add(1, attrs.outcome === 'ingested'
         ? { outcome: attrs.outcome, complete: String(attrs.complete), empty: String(attrs.empty) }
         : { outcome: attrs.outcome, reason: attrs.reason });
 }
@@ -2137,6 +2160,8 @@ export function recordAuditPackSnapshotEncryption(attrs: {
 
 let _managedAgentsCleanup: Counter | undefined;
 let _managedAgentsLostDelete: Counter | undefined;
+let _managedAgentsFailedDeleteRetry: Counter | undefined;
+let _managedAgentsAbandonedSession: Counter | undefined;
 
 /**
  * One remote clean-up record settled or retried: the purge's one attempt, or a
@@ -2178,4 +2203,46 @@ export function recordManagedAgentsLostDelete(attrs: { outcome: 'deleted' | 'del
         });
     }
     _managedAgentsLostDelete.add(1, { outcome: attrs.outcome });
+}
+
+/**
+ * The failed-delete retry (#5843): a session whose latest ledger step is
+ * `SESSION_DELETE_FAILED`, retried by the data-lifecycle reconciliation, one
+ * count per session per pass. `outcome` is the clean-up's named outcome
+ * (`CleanupItemOutcome`: `DONE` and `ALREADY_GONE` are deleted, and the run's
+ * `SESSION_DELETED` step is written; anything else is left for the next
+ * pass), or why the session could not be attempted (`CONNECTION_UNREADABLE`,
+ * `CONNECTION_GONE`, `SDK_AMBIENT_HEADERS_SET`), or `LEDGER_TRUNCATED` once per
+ * tenant whose failed deletes were more than one pass reads, or
+ * `LEDGER_WRITE_FAILED` when the session went but its step could not be
+ * written (the next pass reads it back as gone and writes it).
+ */
+export function recordManagedAgentsFailedDeleteRetry(attrs: { outcome: string }): void {
+    if (!_managedAgentsFailedDeleteRetry) {
+        _managedAgentsFailedDeleteRetry = getMeter().createCounter('agentic.managed_agents.failed_delete_retry', {
+            description: 'Sessions whose delete had failed, retried in a customer Anthropic workspace, by outcome',
+            unit: '1',
+        });
+    }
+    _managedAgentsFailedDeleteRetry.add(1, { outcome: attrs.outcome });
+}
+
+/**
+ * The abandoned-session pass (Step 5H, #4169): a session whose run's ledger
+ * holds only `SESSION_CREATED`, older than any segment of a run lasts, left
+ * by a worker that died mid-run. One count per session per pass. `outcome` is
+ * `KEPT` (the connection keeps sessions, so it is recorded kept and not
+ * deleted), the clean-up's named outcome (`DONE` and `ALREADY_GONE` are
+ * deleted and recorded DELETED; anything else is left for the next pass), why
+ * it could not be attempted (`CONNECTION_UNREADABLE`, `CONNECTION_GONE`,
+ * `SDK_AMBIENT_HEADERS_SET`), or `LEDGER_WRITE_FAILED`.
+ */
+export function recordManagedAgentsAbandonedSession(attrs: { outcome: string }): void {
+    if (!_managedAgentsAbandonedSession) {
+        _managedAgentsAbandonedSession = getMeter().createCounter('agentic.managed_agents.abandoned_session', {
+            description: 'Sessions a dead worker abandoned in a customer Anthropic workspace, settled by outcome',
+            unit: '1',
+        });
+    }
+    _managedAgentsAbandonedSession.add(1, { outcome: attrs.outcome });
 }

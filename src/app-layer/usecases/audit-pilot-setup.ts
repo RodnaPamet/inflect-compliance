@@ -90,6 +90,7 @@ import {
     isLibraryV1Procedure,
     type LibraryV1ProcedureId,
 } from '@/lib/agentic/audit-procedure-library';
+import { PROCEDURE_PLAN_PREFIX } from '@/lib/agentic/agentic-check-titles';
 
 export const DEFAULT_AUDITOR_NAME = 'Pilot auditor (library v1)';
 
@@ -219,7 +220,7 @@ function desiredPlan(procedure: LibraryV1ProcedureId, auditorAgentId: string): D
     const parameters = PILOT_PARAMETERS[procedure];
     return {
         procedure,
-        name: `Audit procedure: ${def.title} (${procedure})`,
+        name: `${PROCEDURE_PLAN_PREFIX}${def.title} (${procedure})`,
         schedule: CRON[def.periodKind],
         frequency: FREQUENCY[def.periodKind],
         config: {

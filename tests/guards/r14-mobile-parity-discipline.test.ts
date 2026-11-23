@@ -56,7 +56,7 @@ import * as path from 'node:path';
 // EVERY read here is wrapped because every path this file reads is a
 // TypeScript-alike — re-derived per file, not assumed from the directory — so
 // there is no second language needing its own reader. String literals are KEPT.
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, declarationOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const NAV_BAR_SRC = codeOf(fs.readFileSync(
@@ -127,8 +127,16 @@ describe('Roadmap-14 PR-12 — Mobile parity (unify dual chrome)', () => {
             // R14-PR11 invariant — every clickable chrome slot
             // composes NAV_BAR_SLOT_PRESS. The mobile menu button
             // is no exception.
-            expect(NAV_BAR_SRC).toMatch(
-                /NavBarMobileMenu[\s\S]+?NAV_BAR_SLOT_PRESS/,
+            //
+            // Since #5813/#5821 it composes it through
+            // `NAV_BAR_ICON_BUTTON_CLASS`, the recipe it shares with the phone
+            // search and assistant icons — so the button must wear that
+            // recipe, and the recipe must carry the press.
+            expect(functionBodyOf(NAV_BAR_SRC, 'NavBarMobileMenu')).toMatch(
+                /NAV_BAR_ICON_BUTTON_CLASS/,
+            );
+            expect(declarationOf(NAV_BAR_SRC, 'NAV_BAR_ICON_BUTTON_CLASS')).toMatch(
+                /NAV_BAR_SLOT_PRESS/,
             );
         });
     });
