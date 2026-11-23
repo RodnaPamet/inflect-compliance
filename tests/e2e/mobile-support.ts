@@ -47,6 +47,7 @@ export async function measureRoute(
     url: string,
     stateId: string | undefined,
     dataNames: ReadonlySet<string>,
+    libraryTexts: ReadonlySet<string> = new Set(),
 ): Promise<RouteMeasurement> {
     const res = await safeGoto(page, url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     if (res && res.status() >= 500) throw new Error(`${url} answered HTTP ${res.status()}`);
@@ -58,7 +59,7 @@ export async function measureRoute(
         await state.open(page);
     }
     const raw = await measurePage(page, { scrollToEnd: !stateId });
-    const leaks = findEnglishLeaks(raw, await leakCatalog(), dataNames);
+    const leaks = findEnglishLeaks(raw, await leakCatalog(), dataNames, libraryTexts);
     return { raw, counts: countsOf(raw, { englishLeaks: leaks.length, consoleErrors: 0 }) };
 }
 

@@ -104,6 +104,101 @@ test.describe('the tap-target metric', () => {
     });
 });
 
+test.describe('the tap-target metric measures what a tap lands on', () => {
+    // The list card's selection circle: a 16px checkbox that ignores pointer
+    // events inside the button-sized wrapper that takes the tap.
+    const circle = (wrapper: string) => shell(
+        `<div style="${wrapper};display:flex;align-items:center;justify-content:center" onclick="">` +
+        '<button role="checkbox" aria-label="Избери ред" style="pointer-events:none;min-height:0;min-width:0;width:16px;height:16px;padding:0"></button></div>',
+    );
+
+    test('does not count a circle that ignores pointer events inside a 44px wrapper', async ({ page }) => {
+        const m = await measure(page, circle('width:44px;height:44px'));
+        expect(m.tapUnder24.count).toBe(0);
+        expect(m.tapUnder44.count).toBe(0);
+    });
+    test('counts the same circle when its wrapper is as small as it is', async ({ page }) => {
+        expect((await measure(page, circle('width:16px;height:16px'))).tapUnder24.count).toBe(1);
+    });
+    test('counts a small control that does receive pointer events', async ({ page }) => {
+        const m = await measure(page, shell(
+            '<div style="width:44px;height:44px"><button aria-label="Малък" style="min-height:0;min-width:0;width:16px;height:16px;padding:0"></button></div>',
+        ));
+        expect(m.tapUnder24.count).toBe(1);
+    });
+
+    test('does not count a focusable radio-group root, only its radios', async ({ page }) => {
+        // Radix puts tabindex=0 on a RadioGroup's root so roving focus can
+        // hand it to a radio; the root is not a control. Its 20px-high radios are.
+        const radio = (label: string) =>
+            `<button role="radio" aria-checked="false" style="min-height:0;min-width:0;height:20px;padding:0 4px">${label}</button>`;
+        const m = await measure(page, shell(`<div role="radiogroup" tabindex="0" style="display:flex;gap:8px;height:20px">${radio('Приложимо')}${radio('Неприложимо')}</div>`));
+        expect(m.tapUnder24.samples.map((s) => s.el.split('.')[0])).toEqual(['button[role=radio]', 'button[role=radio]']);
+    });
+    test('counts a focusable element with a control role of its own', async ({ page }) => {
+        const m = await measure(page, shell('<div role="button" tabindex="0" style="height:20px;width:120px">Действие</div>'));
+        expect(m.tapUnder24.count).toBe(1);
+    });
+
+    const link = (display: string, sentence: boolean) => shell(
+        `<p>${sentence ? 'Прочетете ' : ''}<a href="#x" style="display:${display};min-height:0;min-width:0;line-height:20px">условията →</a>${sentence ? ' преди да продължите.' : ''}</p>`,
+    );
+    for (const display of ['inline-flex', 'inline-block']) {
+        test(`does not count an ${display} link inside a sentence`, async ({ page }) => {
+            expect((await measure(page, link(display, true))).tapUnder24.count).toBe(0);
+        });
+        test(`counts an ${display} link standing alone`, async ({ page }) => {
+            expect((await measure(page, link(display, false))).tapUnder24.count).toBe(1);
+        });
+    }
+    test('does not exempt an inline-block BUTTON inside a sentence: only links flow as text', async ({ page }) => {
+        const m = await measure(page, shell(
+            '<p>Ключът е TSK-1 <button style="display:inline-block;min-height:0;min-width:0;height:16px;padding:0">копирай</button> и го споделете.</p>',
+        ));
+        expect(m.tapUnder24.count).toBe(1);
+    });
+});
+
+test.describe('the textUnder12 metric', () => {
+    const topBar = (badge: string) => shell('').replace(
+        '<body>',
+        `<body><header role="banner" style="display:flex;gap:8px;height:56px;align-items:center">${badge}` +
+        '<button aria-label="Известия" style="position:relative">🔔<span style="font-size:10px">3</span></button></header>',
+    );
+    test('skips the environment badge and still counts the bell\'s count badge beside it', async ({ page }) => {
+        const m = await measure(page, topBar('<span data-testid="top-chrome-env-badge" style="font-size:10px">DEV</span>'));
+        expect(m.textUnder12.samples.map((s) => s.text)).toEqual(['3']);
+    });
+    test('counts the same 10px text when it is not the environment badge', async ({ page }) => {
+        const m = await measure(page, topBar('<span data-testid="top-chrome-status" style="font-size:10px">DEV</span>'));
+        expect(m.textUnder12.count).toBe(2);
+    });
+});
+
+test.describe('the buttonWraps metric counts button groups only', () => {
+    const wrapRow = (children: string, extra = '') => shell(`<div style="display:flex;flex-wrap:wrap;gap:8px;${extra}">${children}</div>`);
+    const buttons = (n: number) => Array.from({ length: n }, (_, i) => `<button style="width:200px">Действие ${i}</button>`).join('');
+
+    test('counts a row of buttons wrapped in tooltip triggers no bigger than the buttons', async ({ page }) => {
+        const wrapped = Array.from({ length: 4 }, (_, i) => `<span style="display:inline-flex"><button style="width:200px">Действие ${i}</button></span>`).join('');
+        expect((await measure(page, wrapRow(wrapped))).buttonWraps.count).toBe(1);
+    });
+    test('does not count stacked form fields, each a label around one picker', async ({ page }) => {
+        const field = (label: string) =>
+            `<label style="display:block;width:300px"><span style="font-size:12px">${label}</span><button style="display:block;width:100%">Изберете…</button></label>`;
+        expect((await measure(page, wrapRow(field('Посока') + field('Честота') + field('Собственик'), 'align-items:flex-end'))).buttonWraps.count).toBe(0);
+    });
+    test('does not count link-pill navigation that carries a caption', async ({ page }) => {
+        const pill = (t: string) => `<a href="#${t}" style="width:200px">${t}</a>`;
+        const nav = `<nav aria-label="Идентичност" style="display:flex;flex-wrap:wrap;gap:8px"><span style="width:150px">Идентичност:</span>` +
+            `<span aria-current="page" style="width:150px">SSO</span>${pill('SCIM')}${pill('Entra')}${pill('Интеграции')}</nav>`;
+        expect((await measure(page, shell(nav))).buttonWraps.count).toBe(0);
+    });
+    test('still counts the action row once it is a row of buttons', async ({ page }) => {
+        expect((await measure(page, wrapRow(buttons(5)))).buttonWraps.count).toBe(1);
+    });
+});
+
 test.describe('the remaining metrics', () => {
     test('textUnder12 counts 11px text', async ({ page }) => {
         expect((await measure(page, shell('<span style="font-size:11px">ОБЩО</span><span>Нормален</span>'))).textUnder12.count).toBe(1);

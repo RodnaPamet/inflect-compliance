@@ -6,7 +6,7 @@
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { buildLeakCatalog, findEnglishLeaks } from '../../scripts/mobile-audit/leaks';
+import { buildLeakCatalog, findEnglishLeaks, optionLabels } from '../../scripts/mobile-audit/leaks';
 
 const en = {
     nav: { back: 'Back to {section}', agents: 'Agents', controls: 'Controls' },
@@ -74,8 +74,76 @@ describe('findEnglishLeaks', () => {
         expect(leaksIn(['User Endpoint Devices'])).toEqual([]);
     });
 
+    describe('library content (owner decision 2026-11-23: content, not interface text)', () => {
+        const libCatalog = buildLeakCatalog(
+            {
+                severity: { high: 'High' },
+                category: { rm: 'Risk Management' },
+                nav: { back: 'Back to {section}', risks: 'Risks' },
+                filters: { clear: 'Clear filters' },
+            },
+            {
+                severity: { high: 'Висок' },
+                category: { rm: 'Управление на риска' },
+                nav: { back: 'Обратно към {section}', risks: 'Рискове' },
+                filters: { clear: 'Изчисти филтрите' },
+            },
+        );
+        const library = new Set([
+            'Logging and Monitoring', // a control template title: the word heuristic would call it chrome
+            'Risk Management', // a template category the catalog also holds
+            'The operating rules for drones, as amended up to 29 November 2026', // a framework description with a date
+            'High', // a questionnaire option that is also the severity label
+        ]);
+        const leaksWithLibrary = (texts: string[], chromeTexts: string[] = []) =>
+            findEnglishLeaks({ texts, chromeTexts }, libCatalog, new Set(), library);
+
+        it('does not call a library title, a multi-word category or a library description a leak', () => {
+            expect(
+                leaksWithLibrary(
+                    ['Logging and Monitoring', 'Risk Management', 'The operating rules for drones, as amended up to 29 November 2026'],
+                    ['Logging and Monitoring', 'Risk Management'],
+                ),
+            ).toEqual([]);
+        });
+
+        it('still judges the same strings when no library row holds them', () => {
+            const without = findEnglishLeaks(
+                { texts: ['Logging and Monitoring', 'Risk Management'], chromeTexts: ['Logging and Monitoring'] },
+                libCatalog,
+            );
+            expect(without.map((l) => l.reason).sort()).toEqual(['CATALOG', 'CHROME']);
+        });
+
+        it('still judges interface strings on a page full of library content', () => {
+            expect(leaksWithLibrary(['Logging and Monitoring', 'Clear filters', 'Обратно към Risks'])).toEqual([
+                { text: 'Clear filters', reason: 'CATALOG' },
+                { text: 'Обратно към Risks', reason: 'EMBEDDED' },
+            ]);
+        });
+
+        it('still judges a one-word library value that is also a catalog label, as the interface string', () => {
+            expect(leaksWithLibrary(['High'])).toEqual([{ text: 'High', reason: 'CATALOG' }]);
+        });
+
+        it('does not call a multi-word library phrase inside a Bulgarian sentence a leak', () => {
+            expect(leaksWithLibrary(['Категория: Risk Management'])).toEqual([]);
+        });
+    });
+
     it('skips ICU plurals, whose literal text is not one string', () => {
         expect(catalog.patterns.some((p) => p.literal.includes('item'))).toBe(false);
+    });
+});
+
+describe('optionLabels (the seeded questionnaires\' option text, for the library set)', () => {
+    it('reads object options, plain-string options and a scale\'s labels, and nothing else', () => {
+        expect(optionLabels([{ label: 'Yes', value: 'yes', points: 1 }, { label: 'No', value: 'no' }])).toEqual(['Yes', 'No']);
+        expect(optionLabels(['Manual', 'Automated'])).toEqual(['Manual', 'Automated']);
+        expect(optionLabels({ min: 1, max: 5, labels: ['Poor', 'Excellent'] })).toEqual(['Poor', 'Excellent']);
+        expect(optionLabels(null)).toEqual([]);
+        expect(optionLabels({ value: 'x' })).toEqual([]);
+        expect(optionLabels([{ value: 'no-label' }, 3])).toEqual([]);
     });
 });
 
