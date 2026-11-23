@@ -316,7 +316,10 @@ sustained objection. The common terms of (a) to (f) above do not apply to (g).
   already refuses it today before it reads anything
   (`MANAGED_AGENTS_LOCAL_ONLY_UNSERVED`, `src/lib/agentic/managed-agents/driver.ts`).
 - **Data processing agreement, transfer mechanism and transfer impact
-  assessment:** **OPEN**. These are recorded ONCE, for every use of Anthropic
+  assessment:** recorded 2026-11-23 (Commercial Terms with the incorporated DPA;
+  the EU SCCs in it; no transfer impact assessment, the repo owner accepting
+  proceeding without one — see the Anthropic (Claude API) entry above). They are
+  recorded ONCE, for every use of Anthropic
   as Inflect's sub-processor (the Messages API engines and the assistant above,
   and this entry), on #5865, by the repo owner, naming each person (owner
   decision, 2026-11-23; decision 6; *Sub-processors: who confirms which half of
@@ -346,10 +349,10 @@ sustained objection. The common terms of (a) to (f) above do not apply to (g).
 [policy](./sub-processor-change-policy.md):
 
 - Step 1, engineering proposes: this entry, drafted 2026-11-23 (Step 6a).
-- Step 2, compliance / legal review: **OPEN** — the agreement, the transfer
-  mechanism and the transfer impact assessment decision are recorded on #5865
-  for all of Inflect's use of Anthropic; the approval of this change is
-  recorded on the Step 6a pull request by the repo owner.
+- Step 2, compliance / legal review: done 2026-11-23. The agreement, the
+  transfer mechanism and the transfer impact assessment decision are recorded on
+  #5865 for all of Inflect's use of Anthropic; the repo owner approved this
+  change and the notice on the Step 6a pull request.
 - Step 3, customer notice (30 days): **OPEN** — not issued. Date sent: **OPEN**.
   Window closes: **OPEN**.
 - Step 4, activation: not started. The hosted path is not built (Step 6b), and

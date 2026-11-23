@@ -209,7 +209,7 @@ puts at Anthropic:
   (Step 6a drafts).** `docs/sub-processors.md` carries it as Anthropic (g),
   marked PROPOSED, NOT IN EFFECT, and the customer notice is drafted at
   `docs/notices/2026-11-23-anthropic-hosted-managed-agents.md` and not issued.
-  Decision 6 (recorded on #5865) and the notice dates are OPEN (see "MA-C1", "Notice"). No hosted
+  Decision 6 is recorded on #5865 and the change approved; the notice dates are OPEN (see "MA-C1", "Notice"). No hosted
   path exists in the code.
 
 ## What Managed Agents is, as documented on 2026-10-24
@@ -492,10 +492,12 @@ marked PROPOSED, NOT IN EFFECT. The customer notice is drafted at
 
 - Date the notice was sent: **OPEN** (repo owner).
 - Date the 30-day window closes: **OPEN** (repo owner).
-- Decision 6 — the transfer mechanism, whether a transfer impact assessment is
-  obtained, and, if not, who accepted proceeding without one: **OPEN**,
-  recorded by the repo owner on #5865, once for every use of Anthropic as
-  Inflect's sub-processor (owner decision, 2026-11-23).
+- Decision 6 — recorded by the repo owner on #5865 on 2026-11-23, once for
+  every use of Anthropic as Inflect's sub-processor: the EU SCCs incorporated in
+  Anthropic's DPA; no transfer impact assessment, the repo owner accepting
+  proceeding without one.
+- Approval of the change and the notice (policy step 2): the repo owner,
+  2026-11-23. Objection address: privacy@inflect.bg.
 
 ## Decisions for the owner
 
