@@ -12,6 +12,8 @@ import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { appendAuditEntry } from '@/lib/audit';
 import type { ContentProvenance } from '@/lib/agentic/content-provenance';
 import type { PrismaTx } from '@/lib/db-context';
+import { holdsRunLeaseInTx } from '@/lib/agentic/run-lease';
+import { logger } from '@/lib/observability/logger';
 
 /**
  * THE ONE PLACE A `WorkflowStep` IS WRITTEN.
@@ -109,9 +111,18 @@ export async function recordStep(
      */
     alsoInTx?: (db: PrismaTx) => Promise<void>,
 ): Promise<void> {
-    await runInTenantContext(ctx, async (db) => {
+    const fenced = await runInTenantContext(ctx, async (db): Promise<'LEASE_LOST' | undefined> => {
+        // THE FENCE (#5854). A worker holding a run lease writes a step only
+        // while the row still names its token, checked under a row lock in
+        // this transaction so no claim can land between the check and the
+        // insert: a successor that claims the run waits for this write and
+        // then reads the ledger with it in. A worker that lost the run writes
+        // NOTHING here, the step and anything `alsoInTx` carries alike; its
+        // next check (`isRunAborted`) stops it. A context with no lease
+        // passes straight through, with no extra query.
+        if (!(await holdsRunLeaseInTx(db, ctx, runId))) return 'LEASE_LOST';
         if (alsoInTx) await alsoInTx(db);
-        return db.workflowStep.create({
+        await db.workflowStep.create({
             data: {
                 runId, tenantId: ctx.tenantId, seq, kind,
                 contextSeq: contextSeq ?? null,
@@ -139,7 +150,16 @@ export async function recordStep(
                 subagentName: rec.subagent ?? null,
             },
         });
+        return undefined;
     });
+    if (fenced === 'LEASE_LOST') {
+        logger.warn('workflow step: not written, this worker no longer holds the run', {
+            component: 'agentic',
+            tenantId: ctx.tenantId,
+            runId,
+        });
+        return;
+    }
     await appendAuditEntry({
         tenantId: ctx.tenantId,
         userId: ctx.userId,
