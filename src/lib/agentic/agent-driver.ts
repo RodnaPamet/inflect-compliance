@@ -230,12 +230,14 @@ export const DRIVER_IMPLEMENTED: Readonly<Record<AgentDriver, boolean>> = {
     // operator's `AGENT_DRIVER_TOOL_RUNNER` switch and the tenant's choice of
     // TOOL_RUNNER still each refuse. Revert this line to turn the engine off.
     'tool-runner': true,
-    // FALSE until Step 5d of `docs/claude-managed-agents-design.md` (#4167)
-    // flips it, in a commit of its own. The engine is built and
-    // conformance-proven (`src/lib/agentic/managed-agents/`) and MANAGED_AGENTS
-    // is writable, but no input selects the engine: a stored `MANAGED_AGENTS`
-    // resolves to static with `DRIVER_NOT_IMPLEMENTED`.
-    'managed-agents': false,
+    // TRUE since Step 5d of `docs/claude-managed-agents-design.md` (#4167),
+    // flipped in a commit of its own once production ran 5c's purge path
+    // (`960503a11`). Like the others it enables nothing alone: the operator's
+    // `AGENT_MANAGED_AGENTS` switch and a workspace that chose MANAGED_AGENTS
+    // (which needs a connected Anthropic workspace) still each refuse. Revert
+    // this line to turn the engine off: a stored MANAGED_AGENTS then reads
+    // static with `DRIVER_NOT_IMPLEMENTED`.
+    'managed-agents': true,
 };
 
 /**
