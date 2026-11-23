@@ -73,9 +73,12 @@ export const STATIC_DRIVER: AgentDriver = 'static';
  * NOT necessarily every value the enum declares. A new value ships in two
  * deploys (#4241, `tests/unit/agent-driver-mode-rollout.test.ts`): first
  * READ_ONLY, in {@link STORED_DRIVER_MODES} only, and then here. `TOOL_RUNNER`
- * made that move in Step 2c, once production ran an image that read it.
+ * made that move in Step 2c, once production ran an image that read it, and
+ * `MANAGED_AGENTS` in Step 5d of `docs/claude-managed-agents-design.md`
+ * (#4167), once production ran `960503a11`, the image that carried Step 5b's
+ * READ_ONLY value (confirmed 2026-11-23).
  */
-export const AGENT_DRIVER_MODES = ['STATIC', 'FLUE', 'TOOL_RUNNER'] as const;
+export const AGENT_DRIVER_MODES = ['STATIC', 'FLUE', 'TOOL_RUNNER', 'MANAGED_AGENTS'] as const;
 
 export type AgentDriverMode = (typeof AGENT_DRIVER_MODES)[number];
 
@@ -84,11 +87,11 @@ export type AgentDriverMode = (typeof AGENT_DRIVER_MODES)[number];
  * understands. {@link AGENT_DRIVER_MODES} plus the READ_ONLY values, which
  * join here first and there one deploy later.
  *
- * `MANAGED_AGENTS` is READ_ONLY since Step 5b of
- * `docs/claude-managed-agents-design.md` (#4165): a stored value reads as
- * itself, and no writer accepts it. Step 5d moves it to the writable list.
+ * No value is READ_ONLY today: `MANAGED_AGENTS` was, from Step 5b (#4165), and
+ * moved to the writable list in Step 5d (#4167). The next value the enum gains
+ * is added here first, as `[...AGENT_DRIVER_MODES, 'NEW_VALUE']`.
  */
-export const STORED_DRIVER_MODES = [...AGENT_DRIVER_MODES, 'MANAGED_AGENTS'] as const;
+export const STORED_DRIVER_MODES = [...AGENT_DRIVER_MODES] as const;
 
 export type StoredDriverMode = (typeof STORED_DRIVER_MODES)[number];
 
@@ -227,12 +230,11 @@ export const DRIVER_IMPLEMENTED: Readonly<Record<AgentDriver, boolean>> = {
     // operator's `AGENT_DRIVER_TOOL_RUNNER` switch and the tenant's choice of
     // TOOL_RUNNER still each refuse. Revert this line to turn the engine off.
     'tool-runner': true,
-    // FALSE in Step 5b of `docs/claude-managed-agents-design.md` (#4165). The
-    // engine is built and conformance-proven (`src/lib/agentic/managed-agents/`)
-    // and no input selects it: a stored `MANAGED_AGENTS` resolves to static with
-    // `DRIVER_NOT_IMPLEMENTED`, and `MANAGED_AGENTS` is a READ_ONLY mode no
-    // writer accepts. Step 5d flips this line in a commit of its own, once 5c's
-    // purge path is deployed.
+    // FALSE until Step 5d of `docs/claude-managed-agents-design.md` (#4167)
+    // flips it, in a commit of its own. The engine is built and
+    // conformance-proven (`src/lib/agentic/managed-agents/`) and MANAGED_AGENTS
+    // is writable, but no input selects the engine: a stored `MANAGED_AGENTS`
+    // resolves to static with `DRIVER_NOT_IMPLEMENTED`.
     'managed-agents': false,
 };
 
@@ -281,9 +283,10 @@ const RECORDED_MODE: Readonly<Record<AgentDriver, StoredDriverMode>> = {
     // WRITTEN since Step 2c (#4512): the driver is implemented and chosen, so
     // its runs record it. The rollout test holds the stage to that.
     'tool-runner': 'TOOL_RUNNER',
-    // READ_ONLY in Step 5b (#4165). Allowed because the driver is not
-    // implemented, so `selectRunDriver` never chooses it and no run records
-    // it; the rollout test holds that pairing.
+    // WRITTEN since Step 5d (#4167): the engine is implemented and chosen,
+    // so its runs record it. It was READ_ONLY in Step 5b, while the driver was
+    // not implemented and no run could record it; the rollout test holds the
+    // pairing either way.
     'managed-agents': 'MANAGED_AGENTS',
 };
 
@@ -318,8 +321,9 @@ export interface AgentDriverTerms {
     /**
      * The Managed Agents engine's switch, `AGENT_MANAGED_AGENTS`, read through
      * `managedAgentsEnabled` (Step 5b). Optional, and absent reads as OFF, as
-     * the Tool Runner's does. It answers only a tenant that stored
-     * `MANAGED_AGENTS`, and even then `DRIVER_IMPLEMENTED` refuses until 5d.
+     * the Tool Runner's does. It answers only a tenant that chose
+     * `MANAGED_AGENTS`, and only while `DRIVER_IMPLEMENTED` says the build has
+     * the engine (Step 5d).
      */
     readonly managedAgentsEnvEnabled?: boolean;
     /**
@@ -348,13 +352,12 @@ export interface AgentDriverTerms {
  *                             deploy, and something an operator should see.
  *   DRIVER_NOT_IMPLEMENTED  — both switches name an engine this build cannot
  *                             execute. The loudest of the four: it means
- *                             configuration is ahead of code. Reachable today
- *                             for one driver: a stored `MANAGED_AGENTS` with
- *                             `AGENT_MANAGED_AGENTS` on, which only a build
- *                             that wrote it could have left (Step 5b, #4165).
- *                             It stays as the answer for the next engine
- *                             declared ahead of its implementation, or a flag
- *                             reverted to false.
+ *                             configuration is ahead of code. It is the answer
+ *                             for an engine declared ahead of its
+ *                             implementation, or one whose flag was reverted to
+ *                             false to turn it off (the Managed Agents flip of
+ *                             Step 5d is one commit, so reverting it lands a
+ *                             stored `MANAGED_AGENTS` here).
  */
 export type StaticDriverReason =
     | 'ENV_DISABLED'
@@ -400,10 +403,12 @@ export interface AgentDriverDecision {
 export function resolveAgentDriver(terms: AgentDriverTerms): AgentDriverDecision {
     const raw = terms.tenantSetting;
 
-    // MANAGED AGENTS, under its own switch and its own build flag (Step 5b).
-    // A value only a build that wrote it could have stored: no writer accepts
-    // it in this build, and `DRIVER_IMPLEMENTED` refuses it whatever the
-    // switch says. Never degraded to another engine: static, with the reason.
+    // MANAGED AGENTS, under its own switch and its own build flag (Step 5b,
+    // writable since Step 5d). Answered by its terms alone, as the Tool
+    // Runner's below is, and never degraded to another engine: static, with
+    // the reason. That the workspace is connected is not a term here: the
+    // setting refuses the choice without one, and a run without one refuses
+    // by name (`managed_agents_no_workspace`) rather than moving engine.
     if (coerceStoredDriverMode(raw) === 'MANAGED_AGENTS') {
         if (terms.managedAgentsEnvEnabled !== true) {
             return { driver: STATIC_DRIVER, reason: 'ENV_DISABLED' };

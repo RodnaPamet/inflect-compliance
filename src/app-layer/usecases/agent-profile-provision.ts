@@ -5,10 +5,17 @@
  *
  * Called by `approveAgentProfileVersion` once its transaction has committed.
  * It provisions ONLY for a tenant whose engine is in force as Managed Agents,
- * asked through `resolveDriverForTenant`, the same resolver a run asks. In this
- * build that is no tenant: `DRIVER_IMPLEMENTED['managed-agents']` is false and
- * `MANAGED_AGENTS` is a READ_ONLY mode no writer accepts, so every call answers
- * `ENGINE_NOT_IN_FORCE` and nothing is created or written. Step 5d turns it on.
+ * asked through `resolveDriverForTenant`, the same resolver a run asks: a
+ * workspace that chose MANAGED_AGENTS (Step 5d), with `AGENT_MANAGED_AGENTS`
+ * on and `DRIVER_IMPLEMENTED['managed-agents']` true. Every other tenant gets
+ * `ENGINE_NOT_IN_FORCE`, and nothing is created or written.
+ *
+ * After a connection is removed and re-enabled, the profile's recorded agent
+ * is ARCHIVED (Step 5c's clean-up), and `readProfileAgent` skips it, so the
+ * next approved version gets a NEW agent rather than an update to one Anthropic
+ * would refuse (Step 5d). The version in force when the connection was removed
+ * keeps its archived row, and a run of it is refused
+ * `managed_agents_agent_archived`.
  *
  * It NEVER THROWS into the approval: the version is approved whatever happens
  * here, and a run of a version that was not provisioned is refused by name

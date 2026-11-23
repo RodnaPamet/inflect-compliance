@@ -85,6 +85,7 @@ import {
     PROFILE_TRIGGERS,
     parseStoredDeferredToolNames,
     parseStoredProfileSubagents,
+    profileEngineRequestFor,
     runsDeferrals,
     runsFlows,
     runsProfiles,
@@ -95,6 +96,7 @@ import {
 } from '@/lib/agentic/agent-profile';
 import { compileFlow, flowToolsAgree, parseStoredAgentFlow, type CompiledFlow } from '@/lib/agentic/agent-flow';
 import { runMessage } from '@/lib/agentic/flue/run-message';
+import { readRecordedRunDriver, readStoredDriverMode } from '@/lib/agentic/agent-driver-stored-mode';
 import { agentProfilesOn, assertMayManageProfiles, profileContentHash } from './agent-profiles';
 
 export type ProfileRunRefusal =
@@ -200,7 +202,15 @@ interface VersionRow {
 function compileProfileDefinition(
     workflowKey: string,
     row: VersionRow,
-    opts: { testRun: boolean },
+    opts: {
+        testRun: boolean;
+        /**
+         * The engine the definition asks for (Step 5d): `profileEngineRequestFor`
+         * over the workspace's chosen mode at admission, or the run's recorded
+         * one in the worker. Required, so no caller defaults it.
+         */
+        engine: AgentDriver;
+    },
 ): WorkflowDefinition | null {
     const modelTier = oneOf(row.modelTier, PROFILE_MODEL_TIERS);
     const effort = oneOf(row.effort, PROFILE_EFFORTS);
@@ -272,10 +282,11 @@ function compileProfileDefinition(
             ? `Agent profile, version ${row.version} (Test run)`
             : `Agent profile, version ${row.version}`,
         description: PROFILE_RUN_DESCRIPTION,
-        // A REQUEST for the Tool Runner engine, the one engine that runs a
-        // profile (Step 2c), intersected by `selectRunDriver` with what the
-        // deployment and the tenant permit, as for any definition.
-        driver: 'tool-runner',
+        // A REQUEST for an engine that runs a profile: the Tool Runner (Step
+        // 2c), or Managed Agents in a workspace that chose it (Step 5d).
+        // Intersected by `selectRunDriver` with what the deployment and the
+        // tenant permit, as for any definition.
+        driver: opts.engine,
         // A Test run is read-only whatever the profile would do in force: it
         // is how a person tries a version, and a try must not queue proposals.
         // So is a flow with no propose node: what the person drew proposes
@@ -396,7 +407,11 @@ export async function resolveRunDefinition(
         );
     }
 
-    const def = compileProfileDefinition(workflowKey, row, { testRun });
+    // The engine the workspace chose decides which reasoning engine the
+    // profile asks for (Step 5d). Read as TEXT, through the reader the gate
+    // uses, so a value this build does not know asks for the Tool Runner.
+    const storedMode = await runInTenantContext(ctx, (db) => readStoredDriverMode(db, ctx.tenantId));
+    const def = compileProfileDefinition(workflowKey, row, { testRun, engine: profileEngineRequestFor(storedMode) });
     if (!def) {
         throw refuse('PROFILE_VERSION_NOT_APPROVED', 'This version carries a setting this build does not recognise.');
     }
@@ -415,7 +430,7 @@ export async function resolveRunDefinition(
  */
 export async function resolvePinnedRunDefinition(
     ctx: RequestContext,
-    run: { workflowKey: string; profileVersionId: string | null; profileInstructionsHash: string | null },
+    run: { id: string; workflowKey: string; profileVersionId: string | null; profileInstructionsHash: string | null },
 ): Promise<WorkflowDefinition | undefined> {
     if (!isProfileRunKey(run.workflowKey)) return getWorkflowDefinition(run.workflowKey);
     const parsed = parseProfileRunKey(run.workflowKey);
@@ -428,7 +443,14 @@ export async function resolvePinnedRunDefinition(
     );
     if (!row || row.profile.id !== parsed.profileId || row.version !== parsed.version) return undefined;
     if (profileContentHash(row.instructions, row.flowJson, row.subagentsJson) !== run.profileInstructionsHash) return undefined;
-    const def = compileProfileDefinition(run.workflowKey, row, { testRun: parsed.testRun });
+    // The engine the run RECORDED at admission (Step 5d), not the workspace's
+    // choice now: the worker executes what admission pinned. Read as text
+    // (#4241), so a value this build does not know asks for the Tool Runner.
+    const recorded = await runInTenantContext(ctx, (db) => readRecordedRunDriver(db, ctx.tenantId, run.id));
+    const def = compileProfileDefinition(run.workflowKey, row, {
+        testRun: parsed.testRun,
+        engine: profileEngineRequestFor(recorded),
+    });
     // Admission refuses a flow version on every engine; a run carrying one was
     // not admitted by this build, so it continues as nothing.
     if (!def || (def.profile?.flow && !runsFlows(def.driver ?? 'static'))) return undefined;
@@ -549,7 +571,12 @@ export async function previewProfileRunMessage(
     const inForce = row.status === 'APPROVED' && row.profile.currentApprovedVersion === row.version;
     const runAs = inForce ? 'RUN' : row.status === 'SUBMITTED' ? 'TEST_RUN' : null;
     const testRun = runAs === 'TEST_RUN';
-    const def = compileProfileDefinition(profileRunKey(row.profile.id, row.version, { testRun }), row, { testRun });
+    // The engine does not change what the panel shows (the message and
+    // whether the run is read-only), and the refusal below asks every engine.
+    const def = compileProfileDefinition(profileRunKey(row.profile.id, row.version, { testRun }), row, {
+        testRun,
+        engine: 'tool-runner',
+    });
     if (!def || !def.profile) return { state: 'UNRUNNABLE' };
     return {
         state: 'SHOWN',

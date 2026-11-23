@@ -77,6 +77,10 @@ import Anthropic, { type Middleware } from '@anthropic-ai/sdk';
 
 import { env } from '@/env';
 import { anthropicWorkspaceHeaders } from '@/lib/ai/anthropic-workspace';
+import {
+    anthropicWorkspaceE2eOrigin,
+    nextTestModeFlag,
+} from '@/app-layer/integrations/providers/anthropic-workspace/e2e-faux';
 import { forbidden } from '@/lib/errors/types';
 import { logger } from '@/lib/observability';
 import type { ProfileModelTier } from '@/lib/agentic/agent-profile';
@@ -386,10 +390,14 @@ function asksFor(value: unknown): boolean {
  * The reason a request may not leave a Managed Agents client, or null when it
  * may. Pure, so every branch is unit-tested without a network.
  */
-export function managedAgentsRequestRefusal(request: { method?: string; url: string; body?: unknown }): ManagedAgentsRequestRefusal | null {
+export function managedAgentsRequestRefusal(
+    request: { method?: string; url: string; body?: unknown },
+    /** The origin the client was built for: `managedAgentsOrigin()`, Anthropic's everywhere but a Playwright run. */
+    origin: string = ANTHROPIC_API_BASE_URL,
+): ManagedAgentsRequestRefusal | null {
     const url = new URL(request.url);
     const method = (request.method ?? 'GET').toUpperCase();
-    if (url.origin !== ANTHROPIC_API_BASE_URL) return 'NOT_THE_PINNED_ORIGIN';
+    if (url.origin !== origin) return 'NOT_THE_PINNED_ORIGIN';
     if (!MANAGED_AGENTS_ROUTES.some((r) => r.method === method && r.path.test(url.pathname))) {
         return 'NOT_A_MANAGED_AGENTS_CALL';
     }
@@ -451,10 +459,10 @@ export function managedAgentsRequestRefusal(request: { method?: string; url: str
     return null;
 }
 
-function managedAgentsOnlyFor(run: { readonly runId?: string }): Middleware {
+function managedAgentsOnlyFor(run: { readonly runId?: string; readonly origin: string }): Middleware {
     return async (request, next) => {
         const url = new URL(request.url);
-        const verdict = { refusal: managedAgentsRequestRefusal(request) };
+        const verdict = { refusal: managedAgentsRequestRefusal(request, run.origin) };
         logger.info('managed-agents: request', {
             component: 'agentic',
             runId: run.runId,
@@ -470,6 +478,25 @@ function managedAgentsOnlyFor(run: { readonly runId?: string }): Middleware {
 }
 
 /**
+ * WHERE A MANAGED AGENTS CLIENT SENDS: `https://api.anthropic.com`, and in a
+ * Playwright run only, the loopback faux (Step 5d, #4167).
+ *
+ * The provider's Test (Step 5a) already dials the faux through the same seam,
+ * `anthropicWorkspaceE2eOrigin`, and this extends it to the engine's own calls
+ * so an end-to-end run can provision, run and delete against it. Nothing a
+ * tenant writes is read: the answer needs BOTH `NEXT_TEST_MODE=1` and
+ * `AUTH_TEST_MODE=1` on the process, and the faux address is a constant on
+ * loopback. No configuration names the host, as for every tenant-writable path
+ * of the provider.
+ */
+export function managedAgentsOrigin(): string {
+    return (
+        anthropicWorkspaceE2eOrigin({ nextTestMode: nextTestModeFlag(), authTestMode: env.AUTH_TEST_MODE }) ??
+        ANTHROPIC_API_BASE_URL
+    );
+}
+
+/**
  * A new client for one Managed Agents run, keyed with the customer's
  * workspace key, or the named reason there is none. Never cached.
  */
@@ -481,15 +508,16 @@ export function managedAgentsClientFor(input: {
     const apiKey = input.apiKey.trim();
     if (!apiKey) return { ok: false, reason: 'WORKSPACE_KEY_MISSING' };
     if (env.ANTHROPIC_CUSTOM_HEADERS?.trim()) return { ok: false, reason: 'SDK_AMBIENT_HEADERS_SET' };
+    const origin = managedAgentsOrigin();
     const client = new Anthropic({
         apiKey,
-        baseURL: ANTHROPIC_API_BASE_URL,
+        baseURL: origin,
         defaultHeaders: { ...anthropicWorkspaceHeaders(input.workspaceId) },
         webhookKey: null,
         logLevel: 'warn',
         logger: sdkLogger,
         openTelemetry: { propagation: false, traces: { enabled: true, contentMode: 'metadata_only' } },
-        middleware: [managedAgentsOnlyFor({ runId: input.runId })],
+        middleware: [managedAgentsOnlyFor({ runId: input.runId, origin })],
     });
     return { ok: true, client };
 }

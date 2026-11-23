@@ -36,7 +36,7 @@
 import type { RequestContext } from '@/app-layer/types';
 import { someWorkflowRequestsFlue, somethingRequestsToolRunner } from '@/lib/agentic/agent-driver-policy';
 import { switchActor } from '@/lib/agentic/agent-switches';
-import { agentProfilesDecisionFor } from '@/lib/agentic/agent-switches-policy';
+import { agentProfilesDecisionFor, agentProfilesOnFor } from '@/lib/agentic/agent-switches-policy';
 import { runInTenantContext } from '@/lib/db-context';
 import { env } from '@/env';
 
@@ -78,9 +78,26 @@ export const TOOL_RUNNER_WIRING_TERMS = [
     'REGISTERED_AGENT',
 ] as const;
 
+/**
+ * The Managed Agents engine's checklist (Step 5d, #4167), shown to a workspace
+ * that chose it. Its own switch and build flag, the profile surface (a profile
+ * is the only thing that asks for it), and the one thing only it needs: exactly
+ * one enabled Anthropic workspace connection, whose key the run uses. No
+ * `MODEL_KEY`: the deployment's Anthropic key is not used by this engine.
+ */
+export const MANAGED_AGENTS_WIRING_TERMS = [
+    'ENV',
+    'TENANT',
+    'BUILD',
+    'PROFILES',
+    'WORKSPACE',
+    'REGISTERED_AGENT',
+] as const;
+
 export type FlueWiringTermKey =
     | (typeof FLUE_WIRING_TERMS)[number]
-    | (typeof TOOL_RUNNER_WIRING_TERMS)[number];
+    | (typeof TOOL_RUNNER_WIRING_TERMS)[number]
+    | (typeof MANAGED_AGENTS_WIRING_TERMS)[number];
 
 export interface FlueWiringTerm {
     key: FlueWiringTermKey;
@@ -98,11 +115,12 @@ export interface FlueWiringTerm {
 
 export interface FlueWiringState {
     /**
-     * Which engine's checklist this is: the Tool Runner's for a workspace that
-     * chose it, Flue's otherwise (the built-in engine needs none, and Flue's was
-     * the only checklist before Step 2c).
+     * Which engine's checklist this is: the Tool Runner's or the Managed
+     * Agents engine's for a workspace that chose one, Flue's otherwise (the
+     * built-in engine needs none, and Flue's was the only checklist before
+     * Step 2c).
      */
-    engine: 'FLUE' | 'TOOL_RUNNER';
+    engine: 'FLUE' | 'TOOL_RUNNER' | 'MANAGED_AGENTS';
     /** What the tenant has asked for, and what a run would ACTUALLY get. */
     mode: string;
     effective: { driver: string; reason: string | null };
@@ -137,15 +155,28 @@ export async function getFlueWiringState(ctx: RequestContext): Promise<FlueWirin
         ]),
     );
 
-    const engine = driver.mode === 'TOOL_RUNNER' ? 'TOOL_RUNNER' : 'FLUE';
+    const engine =
+        driver.mode === 'TOOL_RUNNER' || driver.mode === 'MANAGED_AGENTS' ? driver.mode : 'FLUE';
     // The gate's own call, so the checklist and the run path cannot disagree;
     // the profile decision beside it says WHO can turn it on (#4557).
     const [profilesRequested, profiles] =
         engine === 'TOOL_RUNNER'
             ? await Promise.all([somethingRequestsToolRunner(ctx.tenantSlug), agentProfilesDecisionFor(ctx.tenantSlug)])
-            : [false, null];
+            : engine === 'MANAGED_AGENTS'
+              ? await Promise.all([agentProfilesOnFor(ctx.tenantSlug), agentProfilesDecisionFor(ctx.tenantSlug)])
+              : [false, null];
     const terms: FlueWiringTerm[] =
-        engine === 'TOOL_RUNNER'
+        engine === 'MANAGED_AGENTS'
+            ? [
+                  { key: 'ENV', satisfied: driver.managedAgents.envEnabled, actor: 'operator' },
+                  { key: 'TENANT', satisfied: true, actor: 'tenant' },
+                  { key: 'BUILD', satisfied: driver.managedAgents.implemented, actor: 'operator' },
+                  { key: 'PROFILES', satisfied: profilesRequested, actor: profiles ? switchActor(profiles.basis) : 'operator' },
+                  // The setting's own read: exactly one enabled connection.
+                  { key: 'WORKSPACE', satisfied: driver.managedAgents.workspace === 'CONNECTED', actor: 'tenant' },
+                  { key: 'REGISTERED_AGENT', satisfied: agents > 0, actor: 'tenant', count: agents },
+              ]
+            : engine === 'TOOL_RUNNER'
             ? [
                   { key: 'ENV', satisfied: driver.toolRunner.envEnabled, actor: switchActor(driver.toolRunner.basis) },
                   { key: 'TENANT', satisfied: true, actor: 'tenant' },

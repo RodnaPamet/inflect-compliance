@@ -3,8 +3,8 @@ inflect · claude managed agents · design v1 · 2026-10-24
 # Claude Managed Agents in Inflect: hosted agents, and what hosting costs the tenant's data
 
 > **Status: living design** — research into Claude Managed Agents and a
-> recommendation for how, and how far, they enter Inflect's agent stack. None
-> of it is built. The **Current state** section is true today. The **Roadmap**
+> recommendation for how, and how far, they enter Inflect's agent stack. Phase
+> 5 is built through Step 5d. The **Current state** section is true today. The **Roadmap**
 > section is the plan, one pull request per step, and its later steps wait on
 > owner decisions about data that no code can make. Companion documents:
 > `docs/claude-agent-sdk-design.md` (the agent builder, and Route B: customer-
@@ -121,8 +121,14 @@ puts at Anthropic:
   ledger step is `SESSION_DELETE_FAILED` (a run's delete that Anthropic refused
   or could not take), by its recorded id and never a KEPT one, writing
   `SESSION_DELETED` on the run's ledger once it goes (#5843); and it deletes a
-  session recorded DELETED that still exists. Nothing
-  has been created in a customer's workspace yet: the engine runs from Step 5d.
+  session recorded DELETED that still exists. Nothing has been created in a
+  customer's workspace in production yet: the engine runs from Step 5d, and
+  `AGENT_MANAGED_AGENTS` is off there (#5797).
+  - **Known limit (#5802).** A DSAR erasure finds the person's tenants from
+    their own audit rows, so a tenant where they held a membership and never
+    acted (added by SCIM, SSO or org provisioning) is not reached, and a KEPT
+    session there stays. The fix belongs with the erasure's operator entry
+    point, which does not exist yet.
 - **A customer can connect its own Anthropic workspace (Step 5a, #4164),
   behind the opt-in `AGENT_MANAGED_AGENTS` switch.** The `anthropic-workspace`
   provider (`src/app-layer/integrations/providers/anthropic-workspace/`) stores
@@ -136,24 +142,40 @@ puts at Anthropic:
   nothing in the workspace and never calls `markAuthFailure`. The Admin →
   Integrations card says what Inflect will create there and offers "Keep sessions
   in my workspace", off by default (decision 4). With the switch unset the
-  provider is not registered and the card does not render. Nothing runs in the
-  workspace yet: no agent, environment or session is created until Step 5d.
-- **The Managed Agents engine is built and cannot run (Step 5b, #4165).** The
-  driver (`src/lib/agentic/managed-agents/`) provisions an approved profile
-  version as one agent per profile (Inflect's preamble as `system`, custom tools
-  only) in one environment per connection (`cloud`, `limited`, no allowed hosts),
-  recorded in `AgentProfileProvision`; checks the agent for drift before each
-  session; runs the session with the tenant's instructions only in its
-  `agent_with_overrides` override, a dollar budget derived from the run's caps
-  and metadata naming the tenant and run by id; bridges every custom tool call
-  through `runGuardedTool`; writes one `MODEL_CALL` and one span-derived Art 12
-  row per `span.model_request_end`; resumes a dropped stream without answering a
-  call twice; and deletes the session in `finally`, or records it kept when the
-  connection keeps sessions. It passes the driver conformance suite on a faux
-  SSE transport with two declared variances (decision 3). No input selects it:
-  `DRIVER_IMPLEMENTED['managed-agents']` is false, and `MANAGED_AGENTS` is a
-  READ_ONLY driver mode no writer accepts, so approval provisions nothing and no
-  run reaches it.
+  provider is not registered and the card does not render.
+- **The Managed Agents engine is built (Step 5b, #4165) and turned on
+  (Step 5d, #4167).** The driver (`src/lib/agentic/managed-agents/`) provisions
+  an approved profile version as one agent per profile (Inflect's preamble as
+  `system`, custom tools only) in one environment per connection (`cloud`,
+  `limited`, no allowed hosts), recorded in `AgentProfileProvision`; checks the
+  agent for drift before each session; runs the session with the tenant's
+  instructions only in its `agent_with_overrides` override, a dollar budget
+  derived from the run's caps and metadata naming the tenant and run by id;
+  bridges every custom tool call through `runGuardedTool`; writes one
+  `MODEL_CALL` and one span-derived Art 12 row per `span.model_request_end`;
+  resumes a dropped stream without answering a call twice; and deletes the
+  session in `finally`, or records it kept when the connection keeps sessions.
+  It passes the driver conformance suite on a faux SSE transport with two
+  declared variances (decision 3).
+  - **What selects it.** `DRIVER_IMPLEMENTED['managed-agents']` is true (its own
+    commit, so reverting it is the rollback) and `MANAGED_AGENTS` is a WRITTEN
+    driver mode. A workspace can choose it on Admin → AI features only while
+    `AGENT_MANAGED_AGENTS` is on and exactly one Anthropic workspace is
+    connected and enabled; the setting refuses it otherwise
+    (`MANAGED_AGENTS_NO_WORKSPACE`, `MANAGED_AGENTS_AMBIGUOUS_WORKSPACE`). The
+    page explains the engine in plain words: the conversation exists in the
+    customer's workspace until the run ends, unless the connection keeps it
+    (decision 4), and Inflect cannot see each call's prompt (decision 3).
+    `AGENT_MANAGED_AGENTS` stays off in production until #5797 is settled.
+  - **What runs on it.** A profile of a workspace that chose it asks for it.
+    Approval provisions the version's agent, so a Test run tries the approved
+    version in force (`TEST_RUN_NEEDS_APPROVED_VERSION` for one under review).
+  - **A removed, then re-enabled connection.** Its provision rows name agents
+    the removal archived. A run of such a version is refused
+    `managed_agents_agent_archived` before a session exists, and the next
+    approved version is provisioned as a NEW agent.
+  - **The run timeline** says, beside each span-derived decision row, that the
+    call's prompt was not visible to Inflect.
 
 ## What Managed Agents is, as documented on 2026-10-24
 
@@ -714,6 +736,21 @@ Deliver per the Definition of done. This step is Significant.
 **Exit.** Anything Inflect creates in a customer's workspace can be removed, and is removed when the tenant or the connection goes.
 
 #### Step 5d — Turn the Managed Agents engine on
+
+Built for #4167; the Current state section above describes the result, and
+`docs/implementation-notes/2026-11-23-step-5d-managed-agents-on.md` the
+decisions. Production ran `960503a11` (the Step 5c merge, which carries 5b's
+READ_ONLY value) before `MANAGED_AGENTS` was written, confirmed on
+`/api/health` on 2026-11-23. Three things the prompt below does not say were
+decided while building it:
+
+- **Re-enabling a removed connection** refuses a run of an archived agent by
+  name and provisions a new agent on the next approval; it does not
+  re-provision the version in force in place.
+- **A Test run tries the approved version only** on this engine: approval is
+  what provisions.
+- **The E2E executes the queued run with the worker's own job body**
+  (`tests/e2e/run-queued-agent-run.ts`): the harness has no worker.
 
 **Goal.** One deploy after 5c, let a tenant with a connected workspace run a profile
 on this engine.

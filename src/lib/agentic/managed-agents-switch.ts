@@ -9,6 +9,11 @@
  * `'true'` (case-insensitive, trimmed) turn it on; anything else, a typo
  * included, leaves it off. One parser for every agent switch: `flueEnvEnabled`.
  *
+ * It is also the Managed Agents ENGINE's operator switch (Step 5d): the gate
+ * (`resolveAgentDriver`) permits the engine only while it is on, and the engine
+ * settings page offers the engine only while it is on and a workspace is
+ * connected.
+ *
  * Read at registration, which happens once per process. Changing it takes a
  * restart, as every other registry decision does.
  */

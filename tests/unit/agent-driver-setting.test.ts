@@ -39,7 +39,17 @@ const findUnique = jest.fn(async (_args: unknown): Promise<unknown> => row);
  * `tests/integration/agent-driver-unknown-stored-mode.test.ts`.
  */
 const queryRaw = jest.fn(async (): Promise<unknown> => (row ? [row] : []));
-const mockDb = { tenantSecuritySettings: { findUnique, upsert }, $queryRaw: queryRaw };
+/**
+ * The workspace's ENABLED `anthropic-workspace` connections (Step 5d), as the
+ * engine setting reads them: none unless a test sets some.
+ */
+let workspaceConnections: Array<{ id: string }> = [];
+const connectionFindMany = jest.fn(async (_args: unknown): Promise<unknown> => workspaceConnections);
+const mockDb = {
+    tenantSecuritySettings: { findUnique, upsert },
+    integrationConnection: { findMany: connectionFindMany },
+    $queryRaw: queryRaw,
+};
 
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) => fn(mockDb)),
@@ -102,6 +112,7 @@ beforeEach(() => {
     row = { agentDriver: 'STATIC' };
     for (const k of Object.keys(envBag)) delete envBag[k];
     mockDefinitions = [];
+    workspaceConnections = [];
 });
 
 describe('what the tenant has asked for', () => {
@@ -356,5 +367,108 @@ describe('the Tool Runner engine (Step 2c)', () => {
                 ? { driver: 'tool-runner', reason: null }
                 : { driver: 'static', reason: 'DRIVER_NOT_IMPLEMENTED' },
         );
+    });
+});
+
+describe('the Managed Agents engine (Step 5d)', () => {
+    async function refusalOf(p: Promise<unknown>): Promise<{ status?: number; reason?: string }> {
+        try {
+            await p;
+        } catch (err) {
+            const e = err as { status?: number; details?: { reason?: string } };
+            return { status: e.status, reason: e.details?.reason };
+        }
+        throw new Error('expected a refusal');
+    }
+
+    it('cannot be chosen without a connected workspace, by name, and nothing is written', async () => {
+        workspaceConnections = [];
+        expect(await refusalOf(setAgentDriverSetting(ctx, 'MANAGED_AGENTS'))).toEqual({
+            status: 409,
+            reason: 'MANAGED_AGENTS_NO_WORKSPACE',
+        });
+        expect(upsert).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+
+    it('cannot be chosen with two enabled workspaces, because a run never chooses between them', async () => {
+        workspaceConnections = [{ id: 'c1' }, { id: 'c2' }];
+        expect(await refusalOf(setAgentDriverSetting(ctx, 'MANAGED_AGENTS'))).toEqual({
+            status: 409,
+            reason: 'MANAGED_AGENTS_AMBIGUOUS_WORKSPACE',
+        });
+        expect(upsert).not.toHaveBeenCalled();
+    });
+
+    it('asks only about ENABLED connections of the workspace provider, one past the answer', async () => {
+        await getAgentDriverSetting(ctx);
+        expect(connectionFindMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { tenantId: ctx.tenantId, provider: 'anthropic-workspace', isEnabled: true },
+                take: 2,
+            }),
+        );
+    });
+
+    it('is written with exactly one connected workspace, recorded as a grant with its terms', async () => {
+        workspaceConnections = [{ id: 'c1' }];
+        envBag.AGENT_MANAGED_AGENTS = '1';
+        await setAgentDriverSetting(ctx, 'MANAGED_AGENTS');
+        expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { agentDriver: 'MANAGED_AGENTS' } }));
+        expect(logEvent).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            expect.objectContaining({
+                detailsJson: expect.objectContaining({ operation: 'grant' }),
+                metadata: expect.objectContaining({
+                    to: 'MANAGED_AGENTS',
+                    managedAgentsEnvEnabled: true,
+                    managedAgentsWorkspace: 'CONNECTED',
+                }),
+            }),
+        );
+    });
+
+    it('moving AWAY never needs a workspace: the narrow stays instant', async () => {
+        row = { agentDriver: 'MANAGED_AGENTS' };
+        workspaceConnections = [];
+        await setAgentDriverSetting(ctx, 'STATIC');
+        expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { agentDriver: 'STATIC' } }));
+    });
+
+    it('reports its own switch, build flag and workspace', async () => {
+        workspaceConnections = [{ id: 'c1' }];
+        envBag.AGENT_MANAGED_AGENTS = '1';
+        const view = await getAgentDriverSetting(ctx);
+        expect(view.managedAgents).toEqual({
+            envEnabled: true,
+            implemented: DRIVER_IMPLEMENTED['managed-agents'],
+            workspace: 'CONNECTED',
+        });
+    });
+
+    it('is in force for a workspace that chose it, with its switch on and profiles on', async () => {
+        // The setting's read passes the engine's own switch to the gate: before
+        // Step 5d it did not, and reported ENV_DISABLED while runs used it.
+        workspaceConnections = [{ id: 'c1' }];
+        envBag.AGENT_MANAGED_AGENTS = '1';
+        envBag.AGENT_PROFILES_TENANTS = ctx.tenantSlug ?? '';
+        row = { agentDriver: 'MANAGED_AGENTS' };
+        const view = await getAgentDriverSetting(ctx);
+        expect(view.effective).toEqual(
+            DRIVER_IMPLEMENTED['managed-agents']
+                ? { driver: 'managed-agents', reason: null }
+                : { driver: 'static', reason: 'DRIVER_NOT_IMPLEMENTED' },
+        );
+    });
+
+    it('reads static, naming why, when the profile surface is off for the workspace', async () => {
+        envBag.AGENT_MANAGED_AGENTS = '1';
+        row = { agentDriver: 'MANAGED_AGENTS' };
+        const view = await getAgentDriverSetting(ctx);
+        expect(view.effective).toEqual({
+            driver: 'static',
+            reason: DRIVER_IMPLEMENTED['managed-agents'] ? 'NO_WORKFLOW_REQUESTS_IT' : 'DRIVER_NOT_IMPLEMENTED',
+        });
     });
 });

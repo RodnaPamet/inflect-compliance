@@ -437,7 +437,15 @@ describe('Test run (Step 2c)', () => {
         expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it.each(['ENGINE_NOT_IN_FORCE', 'AGENT_NOT_READY'] as const)('%s: disabled, with its own sentence', (reason) => {
+    it('on the Managed Agents engine: only the approved version can be tried, the one under review says why (Step 5d)', () => {
+        renderTab(view([SUBMITTED(), version()], { testRun: { available: true, approvedVersionOnly: true } }));
+        expect((screen.getByTestId('behaviour-test-run-2-button') as HTMLButtonElement).disabled).toBe(true);
+        expect(screen.getByTestId('behaviour-test-run-2-reason').textContent).toBe(copy('testRun.reason.NEEDS_APPROVED_VERSION'));
+        expect((screen.getByTestId('behaviour-test-run-1-button') as HTMLButtonElement).disabled).toBe(false);
+        expect(screen.queryByTestId('behaviour-test-run-1-reason')).toBeNull();
+    });
+
+    it.each(['ENGINE_NOT_IN_FORCE', 'MANAGED_AGENTS_NOT_IN_FORCE', 'AGENT_NOT_READY'] as const)('%s: disabled, with its own sentence', (reason) => {
         renderTab(view([version()], { testRun: { available: false, reason } }));
         expect((screen.getByTestId('behaviour-test-run-1-button') as HTMLButtonElement).disabled).toBe(true);
         expect(screen.getByTestId('behaviour-test-run-1-reason').textContent).toBe(copy(`testRun.reason.${reason}`));

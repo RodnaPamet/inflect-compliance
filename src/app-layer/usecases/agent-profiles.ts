@@ -163,6 +163,7 @@ export type AgentProfileRefusal =
     | 'TEST_RUN_VERSION_NOT_ELIGIBLE'
     | 'TEST_RUN_TRIGGER_NOT_ALLOWED'
     | 'TEST_RUN_NO_READ_TOOL'
+    | 'TEST_RUN_NEEDS_APPROVED_VERSION'
     | 'AGENT_KILL_SWITCHED'
     | 'AGENT_BREAKER_LATCHED'
     | AgentFlowRefusal
@@ -205,6 +206,7 @@ const REFUSAL_STATUS: Record<AgentProfileRefusal, 400 | 403 | 404 | 409> = {
     TEST_RUN_VERSION_NOT_ELIGIBLE: 409,
     TEST_RUN_TRIGGER_NOT_ALLOWED: 409,
     TEST_RUN_NO_READ_TOOL: 409,
+    TEST_RUN_NEEDS_APPROVED_VERSION: 409,
     AGENT_KILL_SWITCHED: 409,
     AGENT_BREAKER_LATCHED: 409,
     FLOW_INVALID: 400,
@@ -1389,6 +1391,8 @@ export interface AgentProfileView {
  *     not run a profile, named, so the page can say which and where to change it;
  *   • `ENGINE_NOT_IN_FORCE`: it chose the Tool Runner, and the engine is not in
  *     force (the deployment's switch, or the build), so a run would refuse;
+ *   • `MANAGED_AGENTS_NOT_IN_FORCE`: the same, for the Managed Agents engine
+ *     (Step 5d), whose own switch, build and profile surface decide it;
  *   • `AGENT_NOT_READY`: the agent is not ACTIVE and risk-assessed, which a
  *     reasoning-engine run requires of the agent it runs as.
  *
@@ -1396,9 +1400,16 @@ export interface AgentProfileView {
  * third time: this state is for the button, not the gate.
  */
 export type ProfileTestRunState =
-    | { available: true }
+    /**
+     * `approvedVersionOnly` on the Managed Agents engine (Step 5d): approving a
+     * version is what provisions its agent in the customer's workspace, so a
+     * Test run there tries the approved version in force and never the one
+     * submitted for review, which has no agent to run.
+     */
+    | { available: true; approvedVersionOnly?: true }
     | { available: false; reason: 'ENGINE_DOES_NOT_RUN_PROFILES'; engine: 'STATIC' | 'FLUE' }
     | { available: false; reason: 'ENGINE_NOT_IN_FORCE' }
+    | { available: false; reason: 'MANAGED_AGENTS_NOT_IN_FORCE' }
     | { available: false; reason: 'AGENT_NOT_READY' };
 
 /** The Test run state from the engine setting and the agent. */
@@ -1406,6 +1417,11 @@ export function profileTestRunState(
     engine: { mode: string; effectiveDriver: string },
     agent: { status: string; riskTier: string | null },
 ): ProfileTestRunState {
+    if (engine.mode === 'MANAGED_AGENTS') {
+        if (engine.effectiveDriver !== 'managed-agents') return { available: false, reason: 'MANAGED_AGENTS_NOT_IN_FORCE' };
+        if (agent.status !== 'ACTIVE' || agent.riskTier === null) return { available: false, reason: 'AGENT_NOT_READY' };
+        return { available: true, approvedVersionOnly: true };
+    }
     if (engine.mode !== 'TOOL_RUNNER') {
         return { available: false, reason: 'ENGINE_DOES_NOT_RUN_PROFILES', engine: engine.mode === 'FLUE' ? 'FLUE' : 'STATIC' };
     }
@@ -1683,6 +1699,18 @@ export async function startAgentProfileTestRun(
                 'A Test run tries the approved version in force or the version submitted for review.',
             );
         }
+        // ON THE MANAGED AGENTS ENGINE, ONLY THE VERSION IN FORCE (Step 5d).
+        // Approval provisions a version's agent in the customer's workspace; a
+        // version submitted for review has none, and its run could only refuse
+        // `managed_agents_not_provisioned` after a run row existed. Refused
+        // here, by name, before one does.
+        if (!inForce && state.approvedVersionOnly === true) {
+            throw refuse(
+                'TEST_RUN_NEEDS_APPROVED_VERSION',
+                'On the Managed Agents engine a Test run tries the approved version in force: approving a version ' +
+                    'is what creates its agent in your Anthropic workspace. Approve this version, then try it.',
+            );
+        }
         if (!row.allowedTriggers.includes('TEST_RUN')) {
             throw refuse(
                 'TEST_RUN_TRIGGER_NOT_ALLOWED',
@@ -1727,6 +1755,8 @@ const TEST_RUN_UNAVAILABLE_MESSAGE: Record<Exclude<ProfileTestRunState, { availa
         'Tool Runner engine under Admin, AI features, Agent engines.',
     ENGINE_NOT_IN_FORCE:
         'This workspace has chosen the Tool Runner engine, but it is not running on this deployment yet.',
+    MANAGED_AGENTS_NOT_IN_FORCE:
+        'This workspace has chosen the Managed Agents engine, but it is not running on this deployment yet.',
     AGENT_NOT_READY: 'A Test run runs as the agent, so the agent must be active and risk-assessed.',
 };
 

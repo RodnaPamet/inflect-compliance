@@ -58,13 +58,13 @@ describe('the operator switch is opt-in, not opt-out', () => {
 
 describe('the stored tenant value is coerced at the read boundary', () => {
     it('passes through the values this build knows', () => {
-        expect(AGENT_DRIVER_MODES.map(coerceStoredDriverMode)).toEqual(['STATIC', 'FLUE', 'TOOL_RUNNER']);
+        expect(AGENT_DRIVER_MODES.map(coerceStoredDriverMode)).toEqual(['STATIC', 'FLUE', 'TOOL_RUNNER', 'MANAGED_AGENTS']);
     });
 
-    it('every stored value reads as itself, and only MANAGED_AGENTS is read-only (Step 5b)', () => {
+    it('every stored value reads as itself, and none is read-only since Step 5d wrote MANAGED_AGENTS', () => {
         expect(STORED_DRIVER_MODES.map(coerceStoredDriverMode)).toEqual(['STATIC', 'FLUE', 'TOOL_RUNNER', 'MANAGED_AGENTS']);
         expect(isAgentDriverMode('TOOL_RUNNER')).toBe(true);
-        expect(isAgentDriverMode('MANAGED_AGENTS')).toBe(false);
+        expect(isAgentDriverMode('MANAGED_AGENTS')).toBe(true);
     });
 
     it.each([
@@ -100,13 +100,20 @@ describe('the gate now that the flue driver is built', () => {
     });
 
     it('holds the implemented flag that makes that true', () => {
-        // The one line that moved. Pinned so that turning it back off is also
-        // deliberate and visible in the diff that does it.
-        expect(DRIVER_IMPLEMENTED).toEqual({ static: true, flue: true, 'tool-runner': true, 'managed-agents': false });
+        // The lines that moved, pinned so that turning one back off is also
+        // deliberate and visible in the diff that does it. Managed Agents is
+        // NOT pinned here: Step 5d flips it in a commit that touches nothing
+        // else, so reverting that one commit is the engine's rollback, and
+        // `managed-agents-selection.test.ts` holds the gate to the flag on
+        // both sides of it.
+        const { 'managed-agents': _managedAgents, ...pinned } = DRIVER_IMPLEMENTED;
+        expect(pinned).toEqual({ static: true, flue: true, 'tool-runner': true });
     });
 
-    it('every engine but Managed Agents is built (Step 5b builds it behind a false flag), which is why each veto below swaps its flag off', () => {
-        expect(Object.entries(DRIVER_IMPLEMENTED).filter(([, built]) => !built).map(([d]) => d)).toEqual(['managed-agents']);
+    it('every engine but Managed Agents is built whatever its flag says, which is why each veto below swaps its flag off', () => {
+        expect(
+            Object.entries(DRIVER_IMPLEMENTED).filter(([d, built]) => !built && d !== 'managed-agents').map(([d]) => d),
+        ).toEqual([]);
     });
 });
 

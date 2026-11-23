@@ -74,9 +74,10 @@ export interface ProfileView {
     options: { tools: string[]; skills: ProfileSkillOption[] };
     /** The server's `ProfileTestRunState` (Step 2c): available, or why not. */
     testRun:
-        | { available: true }
+        | { available: true; approvedVersionOnly?: true }
         | { available: false; reason: 'ENGINE_DOES_NOT_RUN_PROFILES'; engine: 'STATIC' | 'FLUE' }
         | { available: false; reason: 'ENGINE_NOT_IN_FORCE' }
+        | { available: false; reason: 'MANAGED_AGENTS_NOT_IN_FORCE' }
         | { available: false; reason: 'AGENT_NOT_READY' };
     limits: {
         instructionsMaxChars: number;
