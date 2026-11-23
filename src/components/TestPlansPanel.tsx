@@ -161,7 +161,7 @@ export default function TestPlansPanel({ controlId }: { controlId: string }) {
                 {permissions.canWrite && (
                     <Button
                         variant="primary"
-                        icon={showForm ? undefined : <Plus className="-ml-0.5 -mr-2.5" />}
+                        icon={showForm ? undefined : <Plus />}
                         onClick={() => setShowForm(!showForm)}
                         id="create-test-plan-btn"
                     >

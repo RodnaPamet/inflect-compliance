@@ -301,7 +301,7 @@ export default function AuditCyclesPage() {
                 {/* #4129 — the roles the server lets create a cycle (Owner,
                     Admin, Editor), not `audits.manage`, which Editors lack. */}
                 {access.manageCycles && (
-                    <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setShowForm(true)} id="create-cycle-btn">
+                    <Button variant="primary" icon={<Plus />} onClick={() => setShowForm(true)} id="create-cycle-btn">
                         {tx('cycles.cycle')}
                     </Button>
                 )}

@@ -469,7 +469,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
 
                         {canWrite && (
                             <PrimaryAction>
-                                <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setIsCreateOpen(true)} id="new-audit-btn">{t.newAudit}</Button>
+                                <Button variant="primary" icon={<Plus />} onClick={() => setIsCreateOpen(true)} id="new-audit-btn">{t.newAudit}</Button>
                             </PrimaryAction>
                         )}
                     </>
@@ -727,7 +727,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                         <Button
                                             variant="secondary"
                                             size="sm"
-                                            icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                                            icon={<Plus />}
                                             onClick={() => setIsFindingOpen(true)}
                                             id="new-audit-finding-btn"
                                         >

@@ -69,5 +69,6 @@ module.exports = {
         'vector-store-single-seam': require('./rules/vector-store-single-seam'),
         'web-bot-auth-single-seam': require('./rules/web-bot-auth-single-seam'),
         'shaded-list-rows': require('./rules/shaded-list-rows'),
+        'no-negative-margin-icon': require('./rules/no-negative-margin-icon'),
     },
 };
