@@ -29,6 +29,21 @@
  * the word heuristic, and the caller passes the record names (tenants, orgs,
  * controls) as `dataNames` — "Acme Corp" is both the seeded tenant and an
  * English placeholder in the catalog.
+ *
+ * LIBRARY CONTENT is content too (owner decision, 2026-11-23): the English
+ * text the product ships as a library — control and policy templates,
+ * framework names and descriptions, requirement titles and sections, ISO
+ * clause names, the seeded vendor questionnaires' sections, prompts and
+ * options. Translating it is a content project, not an interface defect. The
+ * caller passes those values as `libraryTexts` (`resolve.ts` reads them from
+ * the library tables), and a page string that IS one of them is not a leak.
+ * The exclusion is by exact value, never by kind of text, so an interface
+ * string is still judged — with one rule where the two meet: a library value
+ * that is also a SINGLE-WORD English catalog message ("High", "Planning",
+ * "Security") is still judged as the interface string, because a one-word
+ * label is far likelier to be the product's own ("High" is a severity) than
+ * a coincidence. A multi-word value ("Risk Management", "Information Security
+ * Policy") is the library's phrase wherever it appears.
  */
 
 export type LeakReason = 'CATALOG' | 'EMBEDDED' | 'EN_IN_BG' | 'CHROME' | 'DATE';
@@ -149,12 +164,16 @@ export function findEnglishLeaks(
     catalog: LeakCatalog,
     /** Record names that are data, not UI: the seeded tenant, org and people. */
     dataNames: ReadonlySet<string> = new Set(),
+    /** Values of the shipped English library: content, not UI (see the module docblock). */
+    libraryTexts: ReadonlySet<string> = new Set(),
 ): Leak[] {
     const chrome = new Set(page.chromeTexts.map(squash));
     const leaks = new Map<string, LeakReason>();
+    const isLibrary = (s: string): boolean =>
+        libraryTexts.has(s) && (s.includes(' ') || !catalogHas(catalog, s));
     for (const raw of page.texts) {
         const s = squash(raw);
-        if (s.length < 3 || leaks.has(s) || dataNames.has(s)) continue;
+        if (s.length < 3 || leaks.has(s) || dataNames.has(s) || isLibrary(s)) continue;
         const cyr = CYRILLIC.test(s);
         if (!cyr && catalogHas(catalog, s)) {
             leaks.set(s, 'CATALOG');
@@ -166,7 +185,8 @@ export function findEnglishLeaks(
         }
         if (cyr) {
             const runs = s.match(LATIN_RUN) ?? [];
-            const english = (r: string) => r.length >= 4 && !dataNames.has(r) && !catalog.keptInBg.has(r) && catalog.exact.has(r);
+            const english = (r: string) =>
+                r.length >= 4 && !dataNames.has(r) && !isLibrary(r) && !catalog.keptInBg.has(r) && catalog.exact.has(r);
             if (runs.some(english)) leaks.set(s, 'EMBEDDED');
             continue;
         }
@@ -174,6 +194,18 @@ export function findEnglishLeaks(
         if (chrome.has(s) && s.split(' ').length <= 3 && looksLikeEnglishProse(s) && hasCommonEnglish(s)) leaks.set(s, 'CHROME');
     }
     return Array.from(leaks, ([text, reason]) => ({ text, reason }));
+}
+
+/** The labels of a library question's options: `[{ label }]`, `["Yes", "No"]`, or a scale's `{ labels: [...] }`. */
+export function optionLabels(json: unknown): string[] {
+    const list = Array.isArray(json)
+        ? json
+        : json && typeof json === 'object' && Array.isArray((json as { labels?: unknown }).labels)
+          ? (json as { labels: unknown[] }).labels
+          : [];
+    return list.flatMap((o) =>
+        typeof o === 'string' ? [o] : o && typeof o === 'object' && typeof (o as { label?: unknown }).label === 'string' ? [(o as { label: string }).label] : [],
+    );
 }
 
 /** Load the catalog from the repository's message files. */

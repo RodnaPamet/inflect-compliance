@@ -17,19 +17,19 @@ The audit that started this work, its findings and the plan to fix them are in
 Each metric is counted per element. A page FAILS a check when its count is
 above zero. The definitions live in the docblock of `measure.ts`. In short:
 
-| Metric | A page fails it when |
-|---|---|
-| `clipped` | Something interactive, or a run of text, extends past the screen edge and no ancestor scrolls sideways to reveal it. The app shell clips horizontal overflow instead of scrolling it, so this is the real overflow signal. Text cut inside a smaller box (an ellipsis) is not counted. |
-| `overlayCoversControl` / `overlayCoversText` | With the page scrolled to its end, an element fixed in the lower half of the screen is the topmost thing over a control, or over text. |
-| `tapUnder24` / `tapUnder44` | An interactive element in the page body (the top bar is excluded) has a hit area under 24 / 44 px on its short side. A positioned `::before`/`::after` counts towards the hit area (`TOUCH_HIT_AREA_CLASS`). A link inside a sentence is exempt. |
-| `textUnder12` | Text renders under 12 px. |
-| `inputUnder16` | A text field, select, textarea or editable region renders under 16 px, which makes iOS Safari zoom on focus. |
-| `tabsNoCue` | A `role="tablist"` overflows and shows no cue: no `ScrollCueStrip` overflow marker, no fade mask, no visible scrollbar. |
-| `buttonWraps` | A wrapping row of three or more buttons or links lays out on three or more lines. |
-| `wideTables` | A `<table>` is wider than the screen. |
-| `englishLeaks` | English UI text on a Bulgarian page. `scripts/mobile-audit/leaks.ts` decides, from `messages/en.json` and `messages/bg.json`, English dates, and short hard-coded control labels. Seeded data is never judged by the word heuristic. |
-| `docScrollsSideways` | The document itself scrolls horizontally. |
-| `consoleErrors` | The page logged a console error (audit only; never ratcheted). |
+| Metric | A page fails it when | What it ignores |
+|---|---|---|
+| `clipped` | Something interactive, or a run of text, extends past the screen edge and no ancestor scrolls sideways to reveal it. The app shell clips horizontal overflow instead of scrolling it, so this is the real overflow signal. | Text cut inside a smaller box (an ellipsis, a card's `overflow-hidden`). Anything inside a container that scrolls sideways. A closed off-canvas drawer that is still mounted. A focusable group container (see `tapUnder24`). |
+| `overlayCoversControl` / `overlayCoversText` | With the page scrolled to its end, an element fixed in the lower half of the screen is the topmost thing over a control, or over text. | Fixed elements in the top half (the top bar), and sheets or backdrops that cover more than 40% of the screen. |
+| `tapUnder24` / `tapUnder44` | An interactive element in the page body has a hit area under 24 / 44 px on its short side. A positioned `::before`/`::after` counts towards the hit area (`TOUCH_HIT_AREA_CLASS`). | The top bar. A link inside a sentence, laid out `inline`, `inline-flex` or `inline-block`: WCAG 2.5.8 exempts it. Other controls are exempt in a sentence only when `inline`. A focusable group container (`radiogroup`, `group`, `tablist`, `toolbar`, `menubar`): Radix gives the root `tabindex=0` for roving focus, and its items are measured instead. An element with `pointer-events: none`, such as a list card's selection circle, is not measured itself: the nearest ancestor that receives the tap is. |
+| `textUnder12` | Text renders under 12 px. | The environment badge in the top bar (`top-chrome-env-badge`), which shows only on localhost and staging. Every other small text counts, including the bell's count badge. |
+| `inputUnder16` | A text field, select, textarea or editable region renders under 16 px, which makes iOS Safari zoom on focus. | Checkboxes, radios, ranges and other inputs that take no typed text. |
+| `tabsNoCue` | A `role="tablist"` overflows and shows no cue: no `ScrollCueStrip` overflow marker, no fade mask, no visible scrollbar. | Tab bars that fit. |
+| `buttonWraps` | A wrapping row of three or more buttons or links lays out on three or more lines. | A row whose children are not all buttons. A child counts as a button when it is one, or when it wraps exactly one button and is no bigger than it (a tooltip or permission wrapper). So a form row of labelled fields, and a navigation strip with a caption or a current-page marker, are not counted: they wrap by design. |
+| `wideTables` | A `<table>` is wider than the screen. | Nothing. A table inside a sideways scroller still counts. |
+| `englishLeaks` | English UI text on a Bulgarian page. `scripts/mobile-audit/leaks.ts` decides, from `messages/en.json` and `messages/bg.json`, English dates, and short hard-coded control labels. | Seeded data: it is never judged by the word heuristic, and record names (tenants, organisations, controls, a risk's free-text owner) are skipped. The shipped English **library**, which is content rather than interface text (owner decision, 2026-11-23): framework names and descriptions, requirement titles, categories and sections, ISO clause names, control and policy templates, and the seeded vendor questionnaires' sections, prompts and options (`libraryTexts` in `resolve.ts`). The exclusion is by exact value, so interface strings are still judged. A library value that is also a one-word English catalog message ("High", "Planning") is still counted, because a one-word label is more likely to be the product's own. |
+| `docScrollsSideways` | The document itself scrolls horizontally. | Nothing. |
+| `consoleErrors` | The page logged a console error (audit only; never ratcheted). | The benign messages listed in `run.ts`. |
 
 `tests/e2e/mobile-measure.spec.ts` proves each metric against the defect it
 names: every case renders a small page WITH the defect and the same page with

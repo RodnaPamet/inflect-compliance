@@ -33,16 +33,29 @@
  *                      excluded) whose hit area is under 24 / 44 CSS px on its
  *                      short side. The hit area includes a positioned
  *                      `::before` / `::after` (`TOUCH_HIT_AREA_CLASS` grows a
- *                      22px icon's hit area to 44px that way). An inline link
- *                      inside a sentence is exempt, as WCAG 2.5.8 exempts it.
- *   textUnder12        an element whose own text is rendered under 12px.
+ *                      22px icon's hit area to 44px that way). An element that
+ *                      ignores pointer events (`pointer-events: none`, the
+ *                      list card's selection circle) is not what a tap lands
+ *                      on: the nearest ancestor that receives them is, so that
+ *                      ancestor's box is measured. A link inside a sentence is
+ *                      exempt, as WCAG 2.5.8 exempts it, whether it is laid
+ *                      out `inline`, `inline-flex` or `inline-block`.
+ *   textUnder12        an element whose own text is rendered under 12px. The
+ *                      environment badge in the top bar (`top-chrome-env-badge`,
+ *                      shown on localhost and staging only) is skipped; every
+ *                      other small text, the bell's count badge included, counts.
  *   inputUnder16       a text field, select, textarea or editable region under
  *                      16px: iOS Safari zooms the page when one takes focus.
  *   tabsNoCue          a `role="tablist"` whose tabs do not fit and which shows
  *                      no cue that there is more: no `ScrollCueStrip` overflow
  *                      marker, no mask fade, no visible scrollbar.
  *   buttonWraps        a wrapping flex row of three or more buttons/links laid
- *                      out on three or more lines.
+ *                      out on three or more lines, where the row's children are
+ *                      the buttons themselves (a button, or a wrapper that is
+ *                      nothing but one button, such as a tooltip trigger). A
+ *                      row with any other child — a form row of labelled
+ *                      fields, a navigation strip with a caption — is not a
+ *                      button group, and wraps by design.
  *   wideTables         a `<table>` wider than the screen.
  *   englishLeaks       (Bulgarian only) English UI text on the page — see
  *                      `leaks.ts`, which runs Node-side over the texts this
@@ -116,6 +129,15 @@ export function collectInPage(opts: CollectOptions): RawMeasurement {
         '[role="switch"]', '[role="menuitem"]', '[role="combobox"]', '[contenteditable="true"]',
         '[tabindex]:not([tabindex="-1"])',
     ].join(',');
+    /**
+     * Containers that take focus so a roving-focus group can hand it to an
+     * item (Radix sets `tabindex=0` on a RadioGroup, ToggleGroup, Tabs list
+     * and Toolbar root). The container is not a control: its items are, and
+     * they are measured on their own.
+     */
+    const GROUP_CONTAINER = '[role="radiogroup"],[role="group"],[role="tablist"],[role="toolbar"],[role="menubar"]';
+    const NATIVE_CONTROL = 'a[href],button,input,select,textarea,summary,[contenteditable="true"]';
+    const isGroupContainer = (el: Element): boolean => el.matches(GROUP_CONTAINER) && !el.matches(NATIVE_CONTROL);
     const CHROME = [
         'button', '[role="button"]', '[role="tab"]', '[role="menuitem"]', '[role="option"]', 'th',
         '[role="columnheader"]', 'label', 'legend', 'option', 'summary',
@@ -229,7 +251,7 @@ export function collectInPage(opts: CollectOptions): RawMeasurement {
     };
 
     // ── Collect the populations once ──────────────────────────────────────
-    const shownInteractive = Array.from(document.querySelectorAll(INTERACTIVE)).filter(isShown);
+    const shownInteractive = Array.from(document.querySelectorAll(INTERACTIVE)).filter((el) => !isGroupContainer(el) && isShown(el));
 
     type TextRun = { node: Text; el: Element; box: Box };
     const textRuns: TextRun[] = [];
@@ -277,6 +299,8 @@ export function collectInPage(opts: CollectOptions): RawMeasurement {
         for (const run of textRuns) {
             if (seen.has(run.el)) continue;
             seen.add(run.el);
+            // A development/staging marker in the top bar, never shown in production.
+            if (run.el.closest('[data-testid="top-chrome-env-badge"]')) continue;
             if (parseFloat(getComputedStyle(run.el).fontSize) < 12 - 0.01) {
                 record(out.textUnder12, run.el, run.box, squash(run.node.data).slice(0, 80));
             }
@@ -302,20 +326,42 @@ export function collectInPage(opts: CollectOptions): RawMeasurement {
         const h = Math.max(parseFloat(cs.height) || 0, parseFloat(cs.minHeight) || 0);
         return [w, h];
     };
+    /**
+     * Inside a sentence: the parent's text is the element's plus more. Any
+     * control laid out `inline` qualifies; a LINK also qualifies as
+     * `inline-flex` / `inline-block` (an arrow icon beside its words), which
+     * still flows in the line of text. A flex or grid child is never inline:
+     * its parent blockifies it.
+     */
     const isInlineSentenceLink = (el: Element): boolean => {
-        if (getComputedStyle(el).display !== 'inline') return false;
+        const display = getComputedStyle(el).display;
+        const inline =
+            display === 'inline' ||
+            ((display === 'inline-flex' || display === 'inline-block') && el.matches('a[href],[role="link"]'));
+        if (!inline) return false;
         const parent = el.parentElement;
         if (!parent) return false;
         const own = squash((el as HTMLElement).innerText);
         const around = squash(parent.innerText);
         return around.length > own.length + 3;
     };
+    /**
+     * What a tap on `el` lands on: `el`, or — when it ignores pointer events,
+     * as the list card's 16px selection circle does inside its 44px button
+     * wrapper — the nearest ancestor that receives them.
+     */
+    const hitTarget = (el: Element): Element => {
+        let a: Element | null = el;
+        while (a && a !== document.body && getComputedStyle(a).pointerEvents === 'none') a = a.parentElement;
+        return a && a !== document.body ? a : el;
+    };
     for (const el of shownInteractive) {
         if (el.closest('[role="banner"]')) continue;
         if (isInlineSentenceLink(el)) continue;
-        const r = el.getBoundingClientRect();
-        const [bw, bh] = pseudoSize(el, '::before');
-        const [aw, ah] = pseudoSize(el, '::after');
+        const target = hitTarget(el);
+        const r = target.getBoundingClientRect();
+        const [bw, bh] = pseudoSize(target, '::before');
+        const [aw, ah] = pseudoSize(target, '::after');
         const side = Math.min(Math.max(r.width, bw, aw), Math.max(r.height, bh, ah));
         if (side < 24 - 0.01) record(out.tapUnder24, el, r);
         if (side < 44 - 0.01) record(out.tapUnder44, el, r);
@@ -348,16 +394,28 @@ export function collectInPage(opts: CollectOptions): RawMeasurement {
 
     // ── buttonWraps ───────────────────────────────────────────────────────
     const BUTTONISH = 'button,a[href],[role="button"]';
+    /**
+     * A child that IS a button: the button itself, or a wrapper holding one
+     * button and nothing beside it (a tooltip or permission wrapper), which
+     * the box test tells: the wrapper is no bigger than its button. A label
+     * holding a caption and a picker, or a field holding an input, is not.
+     */
+    const isButtonChild = (c: Element): boolean => {
+        if (c.matches(BUTTONISH)) return true;
+        const inner = c.querySelectorAll(BUTTONISH);
+        if (inner.length !== 1) return false;
+        const cr = c.getBoundingClientRect();
+        const ir = inner[0].getBoundingClientRect();
+        return cr.width - ir.width <= 4 && cr.height - ir.height <= 4;
+    };
     for (const row of Array.from(document.querySelectorAll('*'))) {
         if (row.children.length < 3) continue;
         const cs = getComputedStyle(row);
         if ((cs.display !== 'flex' && cs.display !== 'inline-flex') || cs.flexWrap === 'nowrap') continue;
         if (cs.flexDirection.startsWith('column')) continue;
         if (!isShown(row)) continue;
-        const items = Array.from(row.children).filter(
-            (c) => isShown(c) && (c.matches(BUTTONISH) || c.querySelectorAll(BUTTONISH).length === 1),
-        );
-        if (items.length < 3) continue;
+        const items = Array.from(row.children).filter(isShown);
+        if (items.length < 3 || !items.every(isButtonChild)) continue;
         const centres = items.map((c) => {
             const r = c.getBoundingClientRect();
             return r.top + r.height / 2;

@@ -16,6 +16,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import type { AppRoute } from './routes';
 import { fillPattern } from './routes';
+import { optionLabels } from './leaks';
 
 export const SEED_TENANT_SLUG = 'acme-corp';
 export const SEED_ORG_SLUG = 'acme-org';
@@ -173,6 +174,54 @@ export async function dataNames(db: PrismaClient): Promise<Set<string>> {
             .map((n) => n.trim())
             .filter(Boolean),
     );
+}
+
+/**
+ * Every value of the English LIBRARY the product ships, which the leak
+ * detector treats as content rather than interface text (owner decision,
+ * 2026-11-23; see `leaks.ts`): framework names and descriptions, requirement
+ * titles, categories, sections and themes, ISO clause names, control and
+ * policy templates, and the seeded vendor questionnaires — the global
+ * `QuestionnaireTemplate` and every `VendorAssessmentTemplate` seeded as a
+ * global (`isGlobal`), with their sections, prompts and option labels.
+ *
+ * Only the library tables are read. A record a tenant created or edited is
+ * not library content: tenant data is `dataNames`' business, and a tenant's
+ * own questionnaire (not `isGlobal`) is judged like any other text.
+ */
+export async function libraryTexts(db: PrismaClient): Promise<Set<string>> {
+    const [frameworks, requirements, clauses, controlTemplates, templateTasks, policyTemplates, questionnaires, questions, vendorTemplates, vendorSections, vendorQuestions] =
+        await Promise.all([
+            db.framework.findMany({ select: { name: true, description: true }, take: 1000 }),
+            db.frameworkRequirement.findMany({ select: { title: true, description: true, category: true, section: true, theme: true }, take: 50_000 }),
+            db.clause.findMany({ select: { title: true, description: true }, take: 1000 }),
+            db.controlTemplate.findMany({ select: { title: true, description: true, category: true, defaultOwnerHint: true }, take: 10_000 }),
+            db.controlTemplateTask.findMany({ select: { title: true }, distinct: ['title'], take: 10_000 }),
+            db.policyTemplate.findMany({ select: { title: true, category: true }, take: 5000 }),
+            db.questionnaireTemplate.findMany({ select: { name: true, description: true }, take: 1000 }),
+            db.questionnaireQuestion.findMany({ select: { section: true, prompt: true, optionsJson: true }, take: 10_000 }),
+            db.vendorAssessmentTemplate.findMany({ where: { isGlobal: true }, select: { name: true, description: true }, take: 1000 }),
+            db.vendorAssessmentTemplateSection.findMany({ where: { template: { isGlobal: true } }, select: { title: true, description: true }, take: 10_000 }),
+            db.vendorAssessmentTemplateQuestion.findMany({
+                where: { template: { isGlobal: true } },
+                select: { prompt: true, optionsJson: true, scaleConfigJson: true },
+                take: 20_000,
+            }),
+        ]);
+    const values: Array<string | null | undefined> = [
+        ...frameworks.flatMap((r) => [r.name, r.description]),
+        ...requirements.flatMap((r) => [r.title, r.description, r.category, r.section, r.theme]),
+        ...clauses.flatMap((r) => [r.title, r.description]),
+        ...controlTemplates.flatMap((r) => [r.title, r.description, r.category, r.defaultOwnerHint]),
+        ...templateTasks.map((r) => r.title),
+        ...policyTemplates.flatMap((r) => [r.title, r.category]),
+        ...questionnaires.flatMap((r) => [r.name, r.description]),
+        ...questions.flatMap((r) => [r.section, r.prompt, ...optionLabels(r.optionsJson)]),
+        ...vendorTemplates.flatMap((r) => [r.name, r.description]),
+        ...vendorSections.flatMap((r) => [r.title, r.description]),
+        ...vendorQuestions.flatMap((r) => [r.prompt, ...optionLabels(r.optionsJson), ...optionLabels(r.scaleConfigJson)]),
+    ];
+    return new Set(values.map((v) => (v ?? '').replace(/\s+/g, ' ').trim()).filter(Boolean));
 }
 
 export type ResolvedRoute =

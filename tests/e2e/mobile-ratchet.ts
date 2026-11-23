@@ -125,10 +125,16 @@ type Baseline = Record<MobileE2eConfig, Record<RatchetedMetric, number>>;
  * Gap", and the ISO 27001 domain names in the controls browse rail (the list
  * and its selection state) — the rail renders only when the shared tenant
  * holds ISO controls, which other E2E specs install before this one runs.
+ *
+ * tapUnder24, 9 (#5869): 10 until the harness stopped counting what is not a
+ * defect. The create sheet's only small "control" was the Radix RadioGroup
+ * root, which takes focus for its radios and is not a control itself. On the
+ * controls list the selection circles are now measured by the 44px wrapper
+ * that takes the tap; the page still fails on its card title buttons.
  */
 export const SEED_BASELINE: Baseline = {
-    '390-dark-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 10, englishLeaks: 0 },
-    '360-light-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 10, englishLeaks: 0 },
+    '390-dark-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 9, englishLeaks: 0 },
+    '360-light-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 9, englishLeaks: 0 },
 };
 
 /** Routes in `RECORD_ROUTES` failing each metric. */
