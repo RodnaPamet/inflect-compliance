@@ -15,7 +15,9 @@
  * next approved version gets a NEW agent rather than an update to one Anthropic
  * would refuse (Step 5d). The version in force when the connection was removed
  * keeps its archived row, and a run of it is refused
- * `managed_agents_agent_archived`.
+ * `managed_agents_agent_archived`. An agent edited or archived in the Console
+ * is replaced the same way at the next approval (#5854), and the audit row
+ * names the agent it replaced.
  *
  * It NEVER THROWS into the approval: the version is approved whatever happens
  * here, and a run of a version that was not provisioned is refused by name
@@ -97,7 +99,7 @@ export async function provisionApprovedProfileVersion(
         const choice = managedAgentsClientFor({ apiKey: read.connection.apiKey, workspaceId: read.connection.workspaceId });
         if (!choice.ok) return { provisioned: false, reason: choice.reason };
 
-        const { record, created } = await provisionManagedAgent(ctx, choice.client, {
+        const { record, created, replaced } = await provisionManagedAgent(ctx, choice.client, {
             profileId: version.profileId,
             profileVersionId: version.id,
             connectionId: read.connection.connectionId,
@@ -122,6 +124,11 @@ export async function provisionApprovedProfileVersion(
                             environmentId: record.environmentId,
                             systemHash: record.systemHash,
                             toolsHash: record.toolsHash,
+                            // The profile's earlier agent, edited or archived in
+                            // the Console, that this new agent replaces (#5854).
+                            // It stays recorded on the earlier versions' rows.
+                            replacedAnthropicAgentId: replaced?.anthropicAgentId ?? null,
+                            replacedBecause: replaced?.drift ?? null,
                         },
                     },
                 }),

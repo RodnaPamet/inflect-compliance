@@ -193,17 +193,31 @@ export async function readProvision(
     return { ...record, archived: removedUntil !== null && createdAt <= removedUntil };
 }
 
+/** The profile's agent as its latest provision recorded it: the next version's update starts here. */
+export interface ProfileAgentRecord {
+    readonly anthropicAgentId: string;
+    readonly anthropicAgentVersion: number;
+    /** What Inflect wrote at that version, which the next provisioning compares (#5854). */
+    readonly systemHash: string;
+    readonly toolsHash: string;
+}
+
 /**
  * The profile's LIVE agent in this workspace, from its latest provision that no
  * removal of the connection has archived, or null before the first or after a
  * removal (Step 5d): an archived agent cannot be updated, so the next version
  * creates a new one.
+ *
+ * LATEST BY WHEN IT WAS RECORDED, never by agent version (#5854). A profile's
+ * agent can be REPLACED by a new one, whose versions start again at 1, when the
+ * old one was edited or archived in the Console (`provisionManagedAgent`); the
+ * old agent's higher version number must not make it the one updated next.
  */
 export async function readProfileAgent(
     ctx: RequestContext,
     profileId: string,
     connectionId: string,
-): Promise<{ anthropicAgentId: string; anthropicAgentVersion: number } | null> {
+): Promise<ProfileAgentRecord | null> {
     const removedUntil = await connectionRemovedUntil(ctx, connectionId);
     return runInTenantContext(ctx, (db) =>
         db.agentProfileProvision.findFirst({
@@ -213,8 +227,8 @@ export async function readProfileAgent(
                 connectionId,
                 ...(removedUntil ? { createdAt: { gt: removedUntil } } : {}),
             },
-            orderBy: [{ anthropicAgentVersion: 'desc' }, { createdAt: 'desc' }],
-            select: { anthropicAgentId: true, anthropicAgentVersion: true },
+            orderBy: [{ createdAt: 'desc' }, { anthropicAgentVersion: 'desc' }],
+            select: { anthropicAgentId: true, anthropicAgentVersion: true, systemHash: true, toolsHash: true },
         }),
     );
 }

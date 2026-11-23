@@ -12,7 +12,16 @@
  *      networking, no allowed hosts (`environmentBodyFor`);
  *   3. creates the profile's agent, or UPDATES the one an earlier version made,
  *      passing its version for Anthropic's optimistic concurrency. The body is
- *      `agentBodyFor`'s: Inflect's preamble as `system`, custom tools only;
+ *      `agentBodyFor`'s: Inflect's preamble as `system`, custom tools only.
+ *      Before an update the earlier agent is read at its latest version, and
+ *      one that is no longer what Inflect recorded (edited in the Console, so
+ *      ahead of the record, or archived there) is REPLACED by a new agent
+ *      rather than updated (#5854): Anthropic refuses an update naming a stale
+ *      version, and an archived agent starts no session, so an update would
+ *      fail for this version and every later one. The old agent's id stays on
+ *      the earlier versions' rows, so a connection removal's and a purge's
+ *      clean-up (Step 5c) still archive it; the new row is written now, after
+ *      any clean-up already opened, so none of those archives the new agent;
  *   4. records the agent's id and version and the hashes of the `system` and
  *      `tools` it WROTE (`recordProvision`), which a run compares before every
  *      session.
@@ -27,10 +36,13 @@ import type { RequestContext } from '@/app-layer/types';
 import {
     SEND_ONCE,
     agentBodyFor,
+    agentDrift,
     environmentBodyFor,
     systemHashOf,
     toolsHashOf,
+    type AgentDrift,
     type ManagedAgentCustomTool,
+    type RetrievedAgent,
 } from './definition';
 import {
     readConnectionEnvironment,
@@ -48,13 +60,19 @@ export interface ProvisionInput {
     readonly tools: readonly ManagedAgentCustomTool[];
 }
 
+/** The earlier agent a provisioning replaced with a new one, and why (#5854). */
+export interface ReplacedAgent {
+    readonly anthropicAgentId: string;
+    readonly drift: AgentDrift;
+}
+
 export async function provisionManagedAgent(
     ctx: RequestContext,
     client: Anthropic,
     input: ProvisionInput,
-): Promise<{ record: ProvisionRecord; created: boolean }> {
+): Promise<{ record: ProvisionRecord; created: boolean; replaced: ReplacedAgent | null }> {
     const existing = await readProvision(ctx, input.profileVersionId, input.connectionId);
-    if (existing) return { record: existing, created: false };
+    if (existing) return { record: existing, created: false, replaced: null };
 
     const environmentId =
         (await readConnectionEnvironment(ctx, input.connectionId)) ??
@@ -62,7 +80,15 @@ export async function provisionManagedAgent(
 
     const body = agentBodyFor({ profileId: input.profileId, model: input.model, tools: input.tools });
     const prior = await readProfileAgent(ctx, input.profileId, input.connectionId);
-    const agent = prior
+    // The earlier agent at its LATEST version: still the one Inflect recorded?
+    // A read that fails throws, as the update would have: nothing is created.
+    let replaced: ReplacedAgent | null = null;
+    if (prior) {
+        const latest = (await client.beta.agents.retrieve(prior.anthropicAgentId)) as unknown as RetrievedAgent;
+        const drift = agentDrift(latest, prior);
+        if (drift) replaced = { anthropicAgentId: prior.anthropicAgentId, drift };
+    }
+    const agent = prior && !replaced
         ? await client.beta.agents.update(prior.anthropicAgentId, { ...body, version: prior.anthropicAgentVersion }, SEND_ONCE)
         : await client.beta.agents.create(body, SEND_ONCE);
 
@@ -78,5 +104,5 @@ export async function provisionManagedAgent(
         toolsHash: toolsHashOf(body.tools),
     };
     await recordProvision(ctx, record);
-    return { record, created: true };
+    return { record, created: true, replaced };
 }

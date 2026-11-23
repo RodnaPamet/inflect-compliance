@@ -315,10 +315,36 @@ export class ManagedAgentsFaux {
     private archiveAgent(id: string): Response {
         const versions = this.agents.get(id);
         if (!versions) return apiError(404, 'not_found_error', 'no such agent');
-        const latest = versions[versions.length - 1];
-        latest.archived_at = new Date().toISOString();
+        this.stampArchived(versions);
         this.archives.push(id);
-        return json(latest);
+        return json(versions[versions.length - 1]);
+    }
+
+    /** Archiving is a property of the agent: every version reads archived after it. */
+    private stampArchived(versions: Array<Record<string, unknown>>): void {
+        const at = new Date().toISOString();
+        for (const v of versions) v.archived_at = at;
+    }
+
+    /**
+     * A CUSTOMER ADMIN EDITS THE AGENT IN THE CONSOLE (#5854): a new version
+     * with the patch, as Anthropic makes one on every edit. The version a
+     * session pins is unchanged; the next update naming it is refused 409.
+     */
+    consoleEditAgent(id: string, patch: Record<string, unknown>): number {
+        const versions = this.agents.get(id);
+        if (!versions) throw new Error(`faux: no agent ${id}`);
+        const latest = versions[versions.length - 1];
+        const next = { ...latest, ...patch, version: Number(latest.version) + 1 };
+        versions.push(next);
+        return Number(next.version);
+    }
+
+    /** A customer admin archives the agent in the Console: not one of Inflect's archives. */
+    consoleArchiveAgent(id: string): void {
+        const versions = this.agents.get(id);
+        if (!versions) throw new Error(`faux: no agent ${id}`);
+        this.stampArchived(versions);
     }
 
     private agentObject(id: string, version: number, body: Record<string, unknown>): Record<string, unknown> {

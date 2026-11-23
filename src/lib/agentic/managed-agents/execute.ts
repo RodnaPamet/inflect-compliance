@@ -193,11 +193,18 @@ const SETTLE_POLL_MS = 200;
 
 export const AGENT_DRIFTED_PREFIX = `${MANAGED_AGENTS_PREFIX}_agent_drifted`;
 
+/**
+ * The remedy is the one that works (#5854): a version is approved once, and
+ * approving the NEXT version provisions a new agent in place of one edited or
+ * archived in the Console (`provisionManagedAgent`). The old agent stays
+ * recorded, so removing the connection or purging the workspace archives it.
+ */
 export function agentDriftedMessage(drift: string): string {
     return (
         `${AGENT_DRIFTED_PREFIX}: the agent in your Anthropic workspace no longer matches what Inflect provisioned for `
-        + `this profile version (${drift}). Nothing was sent. Someone may have edited it in the Anthropic Console; `
-        + 'approve the version again to re-provision it.'
+        + `this profile version (${drift}). Nothing was sent. Someone may have edited or archived it in the Anthropic `
+        + 'Console. Approve a new version of this profile: approval provisions a new agent for it, and the old agent is '
+        + 'archived when the connection is removed.'
     );
 }
 

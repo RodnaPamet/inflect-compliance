@@ -82,7 +82,12 @@ describeFn('AgentProfileProvision — tenant isolation', () => {
         expect(await readProvision(ctxOf(A), 'version-a', connectionA)).toEqual(
             expect.objectContaining({ anthropicAgentId: 'agent_a', anthropicAgentVersion: 1, environmentId: 'env_a' }),
         );
-        expect(await readProfileAgent(ctxOf(A), 'profile-a', connectionA)).toEqual({ anthropicAgentId: 'agent_a', anthropicAgentVersion: 1 });
+        expect(await readProfileAgent(ctxOf(A), 'profile-a', connectionA)).toEqual({
+            anthropicAgentId: 'agent_a',
+            anthropicAgentVersion: 1,
+            systemHash: HASH,
+            toolsHash: HASH,
+        });
         expect(await readConnectionEnvironment(ctxOf(A), connectionA)).toBe('env_a');
         const read = await readWorkspaceConnection(ctxOf(A));
         expect(read).toEqual({ ok: true, connection: { connectionId: connectionA, workspaceId: 'wrkspc_tenantA', keepSessions: false, apiKey: KEY_A } });
