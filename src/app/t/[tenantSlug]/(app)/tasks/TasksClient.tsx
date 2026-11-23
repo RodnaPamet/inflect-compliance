@@ -1080,6 +1080,8 @@ function TasksPageInner({
                 id: 'quick-edit',
                 header: '',
                 enableHiding: false,
+                // On a phone card, into the card's labelled "⋯" menu.
+                meta: { cardAction: true },
                 cell: ({ row }) => (
                     <button
                         type="button"

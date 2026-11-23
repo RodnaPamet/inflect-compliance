@@ -847,8 +847,12 @@ function TestsRollupContent() {
                     ]}
                     className="mb-1"
                 />
-                <div className="flex items-start justify-between gap-default">
-                    <div>
+                {/* `flex-wrap` + `min-w-0`: on a phone the plans/checks toggle
+                    (whose labels never wrap) and the create button do not fit
+                    one row, and without these the button was pushed past the
+                    edge. */}
+                <div className="flex flex-wrap items-start justify-between gap-default">
+                    <div className="min-w-0">
                         {/* U4 — sr-only, matching risks / assets / evidence /
                             vendors / tasks. The visible page title is the
                             breadcrumb trail; a second visible H1 directly under

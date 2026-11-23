@@ -2184,6 +2184,11 @@
   "derivation": "audited",
   "reason": "Generic relative-time + exact-tooltip primitive with a real hydration-safety contract. `empty = '\u2014'` is a glyph, not English copy, so not reported. `@/lib/format-date` and `@/lib/hooks/use-hydrated-now` are generic utils, not domain modules \u2014 the first is on the `NEUTRAL_LIB` allowlist as of #3046 batch 2, which cleared the mechanical `domain-import` this entry carried. Its judgement coupling was two domain nouns in the JSDoc usage examples (`ev.updatedAt` for evidence, `control.createdAt`); all three example lines now read `row.*`, so the primitive names no entity."
  },
+ "src/components/ui/toggle-group-select.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "The below-sm rendering of a long ToggleGroup, split out so toggle-group.tsx can load it with next/dynamic: it wraps the local ./combobox, whose cmdk + virtualised list would otherwise sit in the First Load JS of every page with a toggle group. Copy goes through useTranslations(\"common.ui\"); options are the caller's. Imports @inflect/ui/lib/cn, next-intl, next/navigation and local ./combobox. No domain, no storage, no brand tokens."
+ },
  "src/components/ui/toggle-group.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
