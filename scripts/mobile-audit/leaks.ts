@@ -26,8 +26,8 @@
  *
  * Seeded records are English (control and risk titles), so free text in the
  * page body is judged only against the catalog and the date patterns, never by
- * the word heuristic, and the caller passes the seeded names (tenant, org,
- * people) as `dataNames` — "Acme Corp" is both the seeded tenant and an
+ * the word heuristic, and the caller passes the record names (tenants, orgs,
+ * controls) as `dataNames` — "Acme Corp" is both the seeded tenant and an
  * English placeholder in the catalog.
  */
 

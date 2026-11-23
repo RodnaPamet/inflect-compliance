@@ -136,16 +136,24 @@ export async function resolveContext(
 }
 
 /**
- * Names of records that appear on many pages as data, not UI text: every
- * tenant's and organisation's name. The leak detector skips them ("Acme Corp"
- * is the seeded tenant AND an English placeholder in the catalog).
+ * Names of records that appear on pages as data, not UI text: every tenant's
+ * and organisation's name, and every control's. The leak detector skips them
+ * ("Acme Corp" is the seeded tenant AND an English placeholder in the catalog).
+ *
+ * Controls are here because a phone renders each list card's title as the
+ * card's own label, which the detector reads as chrome. A tenant's controls
+ * are its own record, often copied from an English library ("Return of
+ * assets", "Segregation of duties"), and which of them a tenant holds depends
+ * on what else ran against the database first, so without them the count
+ * moved between a fresh seed and the E2E run.
  */
 export async function dataNames(db: PrismaClient): Promise<Set<string>> {
-    const [tenants, orgs] = await Promise.all([
+    const [tenants, orgs, controls] = await Promise.all([
         db.tenant.findMany({ select: { name: true }, take: 1000 }),
         db.organization.findMany({ select: { name: true }, take: 1000 }),
+        db.control.findMany({ select: { name: true }, distinct: ['name'], take: 5000 }),
     ]);
-    return new Set([...tenants, ...orgs].map((r) => r.name.trim()).filter(Boolean));
+    return new Set([...tenants, ...orgs, ...controls].map((r) => r.name.trim()).filter(Boolean));
 }
 
 export type ResolvedRoute =
