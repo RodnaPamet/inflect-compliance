@@ -356,7 +356,8 @@ export function AgentEnginesSection() {
                 {/* WHAT THE MANAGED AGENTS ENGINE DOES WITH THE WORKSPACE'S
                     DATA, in plain words (Step 5d, decision 4), wherever the
                     engine is listed: where the conversation lives, for how
-                    long, and what Inflect cannot see of it. */}
+                    long, what Inflect cannot see of it, and that it does not
+                    watch for events from someone else holding the key. */}
                 {listedEngines(state).includes('MANAGED_AGENTS') && (
                     <div className="space-y-tight" data-testid="agent-engines-managed-agents-explainer">
                         <p className="text-sm font-medium text-content-emphasis">{t('managedAgentsExplainer.heading')}</p>
@@ -364,6 +365,8 @@ export function AgentEnginesSection() {
                         <p className="text-sm text-content-muted">{t('managedAgentsExplainer.sessions')}</p>
                         <p className="text-sm text-content-muted">{t('managedAgentsExplainer.controls')}</p>
                         <p className="text-sm text-content-muted">{t('managedAgentsExplainer.record')}</p>
+                        {/* Owner decision 8 (2026-11-23): accepted, and said. */}
+                        <p className="text-sm text-content-muted">{t('managedAgentsExplainer.keyHolders')}</p>
                     </div>
                 )}
             </Card>
