@@ -42,7 +42,7 @@ import { EMPTY_TOOLSET_MESSAGE } from '@/lib/agentic/flue/empty-toolset-message'
 import { KNOWLEDGE_SEARCH_NOT_EVALUATED } from '@/lib/agentic/knowledge-search-not-evaluated';
 
 /** The engine whose run settled, which names the message's code. */
-export type EmptyCatalogueEngine = 'flue' | 'tool_runner';
+export type EmptyCatalogueEngine = 'flue' | 'tool_runner' | 'managed_agents';
 
 /**
  * Why a granted tool did not reach the run. The offer's own reasons, plus the

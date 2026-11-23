@@ -28,6 +28,7 @@ import { KPIStat } from '@/components/ui/metric';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@inflect/ui/components/ui/icons/loading-spinner';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 // Required attribution — AISVS is CC-BY-SA-4.0; rendered wherever questions
 // show via `onboarding.aiGov.attribution` / `.disclaimer`.
@@ -299,13 +300,10 @@ export function AiGovSelfAssessmentStep({
                                         const current = answers[q.id]?.answer;
                                         const naByArch = !q.applicable;
                                         return (
-                                            <div
+                                            <ShadedRow
                                                 key={q.id}
                                                 data-testid={`ai-gov-question-${q.id}`}
-                                                className={
-                                                    'rounded-lg border border-border-subtle p-3 space-y-tight ' +
-                                                    (naByArch ? 'opacity-60' : '')
-                                                }
+                                                className={'space-y-tight ' + (naByArch ? 'opacity-60' : '')}
                                             >
                                                 <div className="flex items-start gap-tight flex-wrap">
                                                     <span className="text-sm text-content-default flex-1 min-w-[12rem]">
@@ -349,7 +347,7 @@ export function AiGovSelfAssessmentStep({
                                                         />
                                                     </>
                                                 )}
-                                            </div>
+                                            </ShadedRow>
                                         );
                                     })}
                                 </div>

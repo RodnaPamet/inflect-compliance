@@ -58,6 +58,7 @@ import {
 } from '@/lib/fair-calibration';
 import { riskCategoryMessageKey } from '@/lib/risk/categories';
 import { apiErrorMessage } from '@/lib/api-error';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 type Conf = 'LOW' | 'MEDIUM' | 'HIGH';
 
@@ -315,7 +316,7 @@ export function FairAnalysisPanel({
         const reflection = reflectTriple(k, triples[k], words);
         const mean = derived.means[k];
         return (
-            <div key={k} className="space-y-tight rounded-md border border-border-subtle p-3">
+            <ShadedRow key={k} className="space-y-tight">
                 <div className="flex items-baseline justify-between gap-default">
                     <p className="text-xs font-medium text-content-emphasis">
                         {factorLabel(k)} <span className="font-normal text-content-subtle">({meta.unit})</span>
@@ -343,7 +344,7 @@ export function FairAnalysisPanel({
                         {reflection}
                     </span>
                 )}
-            </div>
+            </ShadedRow>
         );
     };
 

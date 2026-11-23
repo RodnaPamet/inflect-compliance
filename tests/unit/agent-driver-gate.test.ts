@@ -61,9 +61,10 @@ describe('the stored tenant value is coerced at the read boundary', () => {
         expect(AGENT_DRIVER_MODES.map(coerceStoredDriverMode)).toEqual(['STATIC', 'FLUE', 'TOOL_RUNNER']);
     });
 
-    it('every stored value is writable once TOOL_RUNNER made its second deploy (Step 2c)', () => {
-        expect(STORED_DRIVER_MODES.map(coerceStoredDriverMode)).toEqual(['STATIC', 'FLUE', 'TOOL_RUNNER']);
+    it('every stored value reads as itself, and only MANAGED_AGENTS is read-only (Step 5b)', () => {
+        expect(STORED_DRIVER_MODES.map(coerceStoredDriverMode)).toEqual(['STATIC', 'FLUE', 'TOOL_RUNNER', 'MANAGED_AGENTS']);
         expect(isAgentDriverMode('TOOL_RUNNER')).toBe(true);
+        expect(isAgentDriverMode('MANAGED_AGENTS')).toBe(false);
     });
 
     it.each([
@@ -101,11 +102,11 @@ describe('the gate now that the flue driver is built', () => {
     it('holds the implemented flag that makes that true', () => {
         // The one line that moved. Pinned so that turning it back off is also
         // deliberate and visible in the diff that does it.
-        expect(DRIVER_IMPLEMENTED).toEqual({ static: true, flue: true, 'tool-runner': true });
+        expect(DRIVER_IMPLEMENTED).toEqual({ static: true, flue: true, 'tool-runner': true, 'managed-agents': false });
     });
 
-    it('every engine is built since Step 2c, which is why each veto below swaps its flag off', () => {
-        expect(Object.entries(DRIVER_IMPLEMENTED).filter(([, built]) => !built).map(([d]) => d)).toEqual([]);
+    it('every engine but Managed Agents is built (Step 5b builds it behind a false flag), which is why each veto below swaps its flag off', () => {
+        expect(Object.entries(DRIVER_IMPLEMENTED).filter(([, built]) => !built).map(([d]) => d)).toEqual(['managed-agents']);
     });
 });
 

@@ -27,6 +27,7 @@ import { useAgentViewNodeText } from '@/components/processes/agent-view/agent-vi
 import type { AgentCanvasProjection } from '@/lib/agentic/agent-canvas-projection';
 import { buildAgentViewGraph } from '@/lib/processes/agent-view/agent-canvas-graph';
 import type { AgentViewDiff } from '@/lib/processes/agent-view/agent-canvas-diff';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 /** tldraw needs `window`; the editor loads in the browser only, inside this segment. */
 const AgentCanvasView = dynamic(
@@ -160,12 +161,12 @@ export function AgentCanvasClient({
                             const text = textFor(n);
                             const change = diff?.changeOf[n.id];
                             return (
-                                <li
+                                <ShadedRow as="li" padding="none"
                                     key={n.id}
                                     data-testid={`agent-canvas-element-${n.id}`}
                                     data-kind={n.kind}
                                     data-change={change ?? 'none'}
-                                    className="rounded-md border border-border-subtle px-3 py-2"
+                                    className="px-3 py-2"
                                 >
                                     <span className="text-xs uppercase text-content-subtle">{t(`kind.${n.kind}`)}</span>{' '}
                                     <span className="font-medium text-content-emphasis">{n.label}</span>
@@ -183,7 +184,7 @@ export function AgentCanvasClient({
                                             {text.reason}
                                         </span>
                                     )}
-                                </li>
+                                </ShadedRow>
                             );
                         })}
                     </ul>

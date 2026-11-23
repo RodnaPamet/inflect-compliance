@@ -7,6 +7,7 @@ import { cn } from '@inflect/ui/lib/cn';
 import { isDiffReviewable, type ProposalDiff } from '@/lib/agentic/proposal-diff-status';
 import { proposalFieldLabelKey } from '@/lib/agentic/proposal-labels';
 import { ProcessMapProposalPreview } from '@/components/agentic/ProcessMapProposalPreview';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 /**
  * A field's name as a reviewer reads it ("Treatment notes"), not as it is stored
@@ -235,10 +236,9 @@ function ProposedOnlyList({
             className="space-y-tight"
         >
             {diff.fields.map((f) => (
-                <li
+                <ShadedRow as="li" padding="sm"
                     key={f.field}
                     data-testid={`proposal-diff-field-${proposalId}-${f.field}`}
-                    className="rounded border border-border-subtle bg-bg-subtle p-2"
                 >
                     <span className="block text-xs font-medium text-content-subtle">{fieldLabel(f.field)}</span>
                     <span
@@ -247,7 +247,7 @@ function ProposedOnlyList({
                     >
                         {f.after ?? t('proposals.diff.emptyValue')}
                     </span>
-                </li>
+                </ShadedRow>
             ))}
         </ul>
     );

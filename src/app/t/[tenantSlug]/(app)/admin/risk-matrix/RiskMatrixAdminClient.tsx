@@ -53,6 +53,7 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { apiErrorMessage } from '@/lib/api-error';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 interface RiskMatrixAdminClientProps {
     tenantSlug: string;
@@ -536,9 +537,9 @@ export function RiskMatrixAdminClient({
                         </p>
                         <ul className="space-y-tight">
                             {config.bands.map((band, idx) => (
-                                <li
+                                <ShadedRow as="li" padding="sm"
                                     key={`band-${idx}`}
-                                    className="grid grid-cols-12 items-center gap-tight rounded-md border border-border-default bg-bg-subtle p-2"
+                                    className="grid grid-cols-12 items-center gap-tight"
                                     data-testid={`rm-band-row-${idx}`}
                                 >
                                     <input
@@ -611,7 +612,7 @@ export function RiskMatrixAdminClient({
                                     >
                                         {t('riskMatrix.remove')}
                                     </Button>
-                                </li>
+                                </ShadedRow>
                             ))}
                         </ul>
                     </Card>

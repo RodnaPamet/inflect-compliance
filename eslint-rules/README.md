@@ -434,3 +434,37 @@ route, which needs no import at all.
 
 **What it cannot see.** A computed module specifier, and a token assembled from
 pieces at run time. Comments are not literals, so prose may name the token.
+
+### `shaded-list-rows`
+
+Under `src/app` and `src/components`, an intrinsic `li`, `div`, `section` or
+`article` whose class is a neutral box — a `rounded` radius, a bare `border`
+and a `border-border-subtle` / `border-border-default` tone — is refused when
+it is a ROW: any `<li>`, or the element a `.map(…)` / `.flatMap(…)` callback
+returns. The remedy is `<ShadedRow>` from `@/components/ui/shaded-row`.
+
+**Why.** Owner request, 2026-11-22: every card that lists two or more boxed
+rows draws each row as its own shaded box, through one shared style, with the
+detail-page tab bar's look (`--bg-shaded` and `border-border-strong`). A
+hand-rolled row looks fine in review; it is only wrong beside its neighbours.
+
+**What it leaves alone, on purpose.** A box with a state (a `hover:` / `focus:`
+/ `aria-` / `data-` variant, a `ring`, a state tone), a chip (`inline-flex`), a
+pill (`rounded-full`), a skeleton (`animate-pulse`), a map root inside a
+`grid` (tiles, not rows), and a class with a part it cannot read (an
+identifier or a call, which may be a tone). A deliberate exception carries an
+`eslint-disable-next-line local/shaded-list-rows -- <reason>`; there are two
+(an edit-state box, a loading skeleton).
+
+**What it cannot see.** A row component whose root is a `div` (an `li` root is
+seen), a class held in a constant, and a box built with `cardVariants`.
+
+**Option cards (owner decision, 2026-11-22).** A `<label>` (or a `.map(…)`
+root `div`) that wraps a radio or checkbox and draws a padded `rounded border`
+box with a neutral tone in any branch is reported as `handRolledOption`: the
+remedy is `<ShadedRow as="label" interactive selected={…}>`, which keeps
+every option shaded and swaps only the chosen one's border, to the brand
+outline on every site (owner decision, 2026-11-22). A
+`<button>` choice with no radio inside is invisible to this check. Grid tiles
+stay unshaded by owner decision (readiness tiles, org drill-down CTAs, api-keys
+scope groups).

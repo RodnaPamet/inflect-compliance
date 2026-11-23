@@ -151,9 +151,9 @@ describe('5. with AGENT_PROFILES unset, the workspace\'s organization decides (#
     });
 });
 
-describe('2. only the Tool Runner engine runs a profile (Step 2c)', () => {
+describe('2. the Tool Runner engine runs a profile (Step 2c), and the Managed Agents engine is built to (Step 5b)', () => {
     it('answers for each driver there is', () => {
-        expect(Object.fromEntries(AGENT_DRIVERS.map((d) => [d, runsProfiles(d)]))).toEqual({ static: false, flue: false, 'tool-runner': true });
+        expect(Object.fromEntries(AGENT_DRIVERS.map((d) => [d, runsProfiles(d)]))).toEqual({ static: false, flue: false, 'tool-runner': true, 'managed-agents': true });
     });
 });
 

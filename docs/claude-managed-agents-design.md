@@ -101,10 +101,28 @@ puts at Anthropic:
   2026-11-22), while an Agent SDK program on the same wizard path did connect and
   was held to its grants (`docs/claude-agent-sdk-design.md`, "Operational
   evidence", Phase 3).
-- **The tenant purge and DSAR flows reach only Inflect's own database.** No
-  provider today holds tenant content that a purge would need to delete
-  remotely; the `anthropic-workspace` connection holds a key, and nothing has
-  been created with it.
+- **The tenant purge, connection removal and DSAR erasure reach the customer's
+  workspace (Step 5c, #4166).** What Inflect created there is removed by the
+  ids Inflect recorded (`usecases/managed-agents-cleanup.ts`, the calls in
+  `src/lib/agentic/managed-agents/cleanup.ts`). The tenant purge, before any row
+  goes, makes ONE bounded attempt with the connection's key: it deletes every
+  session the run ledger records (kept ones included) and any a crash left
+  unrecorded, found by listing sessions only by a recorded agent and taking only
+  those whose metadata names the tenant and one of its runs, and archives every
+  agent in `AgentProfileProvision`. Inflect keeps no key past the purge
+  (decision 7), so what that attempt cannot finish ends, ids only, on a retained
+  `ManagedAgentsCleanup` row in the terminal `PURGED_KEY_DESTROYED_UNFINISHED`,
+  with an alert, for a person. Removing the connection makes the same clean-up,
+  and a DSAR erasure deletes every KEPT session in every tenant where the person
+  held a membership; both read the connection's key, which stays (a removed
+  connection is disabled, not deleted), and are retried by `data-lifecycle`
+  until done, or end `ABANDONED` after 30 days. A periodic
+  reconciliation, run by `data-lifecycle`, retries every session whose latest
+  ledger step is `SESSION_DELETE_FAILED` (a run's delete that Anthropic refused
+  or could not take), by its recorded id and never a KEPT one, writing
+  `SESSION_DELETED` on the run's ledger once it goes (#5843); and it deletes a
+  session recorded DELETED that still exists. Nothing
+  has been created in a customer's workspace yet: the engine runs from Step 5d.
 - **A customer can connect its own Anthropic workspace (Step 5a, #4164),
   behind the opt-in `AGENT_MANAGED_AGENTS` switch.** The `anthropic-workspace`
   provider (`src/app-layer/integrations/providers/anthropic-workspace/`) stores
@@ -119,7 +137,23 @@ puts at Anthropic:
   Integrations card says what Inflect will create there and offers "Keep sessions
   in my workspace", off by default (decision 4). With the switch unset the
   provider is not registered and the card does not render. Nothing runs in the
-  workspace yet: no agent, environment or session is created until Steps 5b–5d.
+  workspace yet: no agent, environment or session is created until Step 5d.
+- **The Managed Agents engine is built and cannot run (Step 5b, #4165).** The
+  driver (`src/lib/agentic/managed-agents/`) provisions an approved profile
+  version as one agent per profile (Inflect's preamble as `system`, custom tools
+  only) in one environment per connection (`cloud`, `limited`, no allowed hosts),
+  recorded in `AgentProfileProvision`; checks the agent for drift before each
+  session; runs the session with the tenant's instructions only in its
+  `agent_with_overrides` override, a dollar budget derived from the run's caps
+  and metadata naming the tenant and run by id; bridges every custom tool call
+  through `runGuardedTool`; writes one `MODEL_CALL` and one span-derived Art 12
+  row per `span.model_request_end`; resumes a dropped stream without answering a
+  call twice; and deletes the session in `finally`, or records it kept when the
+  connection keeps sessions. It passes the driver conformance suite on a faux
+  SSE transport with two declared variances (decision 3). No input selects it:
+  `DRIVER_IMPLEMENTED['managed-agents']` is false, and `MANAGED_AGENTS` is a
+  READ_ONLY driver mode no writer accepts, so approval provisions nothing and no
+  run reaches it.
 
 ## What Managed Agents is, as documented on 2026-10-24
 
@@ -393,6 +427,24 @@ before the window closes, but tenant data may not reach the new processing.
 
    The owner's decision to host is a product decision, and it does not answer
    these.
+7. **What a purge does when it cannot reach the customer's workspace, and whom
+   a DSAR erasure reaches.** Step 5c found that the remote clean-up's retry
+   could authenticate after a tenant purge only by keeping the customer's
+   Anthropic key past the purge, which is a retention question.
+   **Decided (owner, 2026-11-22):**
+   - **Inflect never keeps the customer's key past the purge.** The purge makes
+     its remote clean-up ONCE, before any of the tenant's rows are deleted, with
+     the connection's key as it stands then. What that attempt cannot finish is
+     written, ids only (workspace, connection, session and agent ids, a named
+     reason, timestamps, and no key or ciphertext of one), to a retained record
+     that is never marked done: it ends in a named terminal outcome
+     (`PURGED_KEY_DESTROYED_UNFINISHED`), raises an operator alert and emits a
+     metric, so a person can finish the job in the customer's workspace. Step
+     5c's item 2 ("retried by the existing data-lifecycle job until it
+     succeeds") therefore does NOT hold for the purge path.
+   - **A DSAR erasure reaches every tenant where the erased person held a
+     membership**: after the erasure commits, every KEPT session in each of
+     those tenants is deleted.
 
 ## Roadmap (future direction)
 
@@ -499,6 +551,10 @@ Deliver per the Definition of done. This step is Significant.
 
 #### Step 5b — Managed Agents driver, reader-only
 
+Built for #4165; the Current state section above describes the result, and
+`docs/implementation-notes/2026-11-22-step-5b-managed-agents-driver.md` the
+decisions.
+
 **Goal.** Build the whole engine behind `DRIVER_IMPLEMENTED = false`. It covers
 provisioning, the drift check, the session job and the custom-tool bridge, and
 ships the `MANAGED_AGENTS` enum value with no writer.
@@ -581,6 +637,28 @@ Deliver per the Definition of done. This step is Significant.
 
 #### Step 5c — Purge and DSAR reach the provider
 
+Built for #4166; the Current state section above describes the result, and
+`docs/implementation-notes/2026-11-22-step-5c-managed-agents-purge.md` the
+decisions. Two things in the prompt below changed while it was built, and a
+third after:
+
+- **The purge is attempted once and never retried** (decision 7). Item 2's
+  retry holds for connection removal and DSAR erasure, whose connection row,
+  and so whose key, stays; it does not hold for the tenant purge.
+- **The reconciliation also retries a failed delete** (#5843, after 5c
+  merged). Item 4 named only the lost delete, so a session whose delete failed
+  at the end of its run was retried only by a purge, a connection removal or
+  (when kept) an erasure. The same reconciliation now retries every session
+  whose latest step is `SESSION_DELETE_FAILED`, never a KEPT one, and records
+  `SESSION_DELETED` when it goes; a 401/403, an unreachable provider or a
+  running session leaves it for the next pass.
+- **A retried clean-up does not live for ever.** A connection-removal or DSAR
+  record still not done 30 days after it opened ends `ABANDONED`, with the same
+  alert as an unfinished purge (`CLEANUP_ABANDON_AFTER_DAYS`). This is an
+  implementation decision of Step 5c, not an owner decision: a 401/403 stays a
+  retryable outcome, and without a limit a revoked key would keep a record open
+  indefinitely.
+
 **Goal.** Before any tenant data reaches a workspace, make deleting a tenant, or
 disconnecting its workspace, delete what Inflect created there.
 
@@ -607,6 +685,8 @@ what remains.
 2. A provider that cannot be reached does not block the rest of the purge. The
    remote clean-up is recorded with a named outcome and retried by the existing
    data-lifecycle job until it succeeds. It is never reported done when it is not.
+   (Superseded for the tenant purge by decision 7: one attempt, then a terminal
+   record with an alert. Still true for connection removal and DSAR erasure.)
 3. docs/data-retention.md records what remains at Anthropic after a purge (the
    archived agent objects with Inflect's preamble and tool schemas, and nothing
    tenant-authored) and why.
@@ -623,9 +703,13 @@ Deliver per the Definition of done. This step is Significant.
 **Hardening**
 
 - [ ] The clean-up touches only recorded ids. A test with a foreign session in the faux workspace proves it is left alone.
-- [ ] An unreachable provider never marks the clean-up done, and the retry succeeds once it is reachable (test).
+- [ ] An unreachable provider never marks the clean-up done (test). On connection removal and DSAR erasure the retry succeeds once it is reachable (test); on the tenant purge the attempt is made once and ends in `PURGED_KEY_DESTROYED_UNFINISHED` with no key kept (test, decision 7).
+- [ ] The crash window: a session on a recorded agent with this tenant's metadata and no step is deleted; one naming another tenant, or a run the tenant does not hold, is not (test).
+- [ ] Disconnecting a workspace triggers the same clean-up, and a DSAR erasure deletes kept sessions only, after the erasure commits (tests).
+- [ ] Two tenants in one workspace: the clean-up of one never touches the other's sessions, agents or records (test).
 - [ ] `docs/data-retention.md` and `tenant-purge-retained-never-cascades` agree with the new table's retention class.
 - [ ] The reconciliation deletes a lost session and emits its metric (test).
+- [ ] The reconciliation retries a session whose delete failed, records it deleted, leaves a KEPT one alone, and leaves one the provider cannot take for the next pass (tests, #5843).
 
 **Exit.** Anything Inflect creates in a customer's workspace can be removed, and is removed when the tenant or the connection goes.
 

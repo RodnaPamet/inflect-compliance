@@ -109,10 +109,10 @@ describe('EntityDetailLayout — tabs', () => {
     it('draws the tab bar as one shaded, outlined band with no dividers between tabs', () => {
         renderWithTabs('overview');
         const bar = screen.getByTestId('entity-detail-tabs');
-        // Shaded (warm in light, cool blue in dark, via --bg-tab-bar) so the
+        // Shaded (warm in light, cool blue in dark, via --bg-shaded) so the
         // active tab's brand underline reads against it, and outlined at the
         // strong tone so the bar's edge is visible.
-        expect(bar.className).toContain('bg-[var(--bg-tab-bar)]');
+        expect(bar.className).toContain('bg-bg-shaded');
         expect(bar.className).toContain('border-border-strong');
         expect(bar.className).toMatch(/(^|\s)border(\s|$)/);
         // No tab draws a side or top rule: the only line a tab carries is the

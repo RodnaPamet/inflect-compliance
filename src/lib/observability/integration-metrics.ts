@@ -2155,3 +2155,73 @@ export function recordAuditPackSnapshotEncryption(attrs: {
         _snapshotEncryptionRows.add(attrs.encrypted);
     }
 }
+
+// ── Managed Agents: the remote clean-up (Step 5c, #4166) ───────────────────
+
+let _managedAgentsCleanup: Counter | undefined;
+let _managedAgentsLostDelete: Counter | undefined;
+let _managedAgentsFailedDeleteRetry: Counter | undefined;
+
+/**
+ * One remote clean-up record settled or retried: the purge's one attempt, or a
+ * pass at a connection-removal or DSAR record
+ * (`usecases/managed-agents-cleanup.ts`).
+ *
+ * `status` is the record's: `DONE`, `OPEN` (retried later), `ABANDONED`,
+ * `PURGED_KEY_DESTROYED_UNFINISHED`. `reason` is its named outcome (`NONE`
+ * when there is none), a closed set of codes.
+ *
+ * ALERT ON — any `status="PURGED_KEY_DESTROYED_UNFINISHED"` or
+ * `status="ABANDONED"`: something Inflect created in a customer's workspace is
+ * still there and nothing will retry it. A person finishes it in the
+ * customer's workspace, reading the record's ids
+ * (`AgenticManagedAgentsCleanupUnfinished`).
+ */
+export function recordManagedAgentsCleanup(attrs: { trigger: string; status: string; reason: string }): void {
+    if (!_managedAgentsCleanup) {
+        _managedAgentsCleanup = getMeter().createCounter('agentic.managed_agents.cleanup', {
+            description: 'Remote clean-ups of a customer Anthropic workspace, by trigger, record status and reason',
+            unit: '1',
+        });
+    }
+    _managedAgentsCleanup.add(1, { trigger: attrs.trigger, status: attrs.status, reason: attrs.reason });
+}
+
+/**
+ * The lost-delete reconciliation: a session the ledger records DELETED, read
+ * back. `deleted` — it still existed and was deleted now; `delete_failed` — it
+ * still exists; `unverified` — the read-back did not answer.
+ *
+ * ALERT ON — any `outcome="delete_failed"`.
+ */
+export function recordManagedAgentsLostDelete(attrs: { outcome: 'deleted' | 'delete_failed' | 'unverified' }): void {
+    if (!_managedAgentsLostDelete) {
+        _managedAgentsLostDelete = getMeter().createCounter('agentic.managed_agents.lost_delete', {
+            description: 'Sessions recorded deleted that still existed in a customer Anthropic workspace, by outcome',
+            unit: '1',
+        });
+    }
+    _managedAgentsLostDelete.add(1, { outcome: attrs.outcome });
+}
+
+/**
+ * The failed-delete retry (#5843): a session whose latest ledger step is
+ * `SESSION_DELETE_FAILED`, retried by the data-lifecycle reconciliation, one
+ * count per session per pass. `outcome` is the clean-up's named outcome
+ * (`CleanupItemOutcome`: `DONE` and `ALREADY_GONE` are deleted, and the run's
+ * `SESSION_DELETED` step is written; anything else is left for the next
+ * pass), or why the session could not be attempted (`CONNECTION_UNREADABLE`,
+ * `CONNECTION_GONE`, `SDK_AMBIENT_HEADERS_SET`), or `LEDGER_TRUNCATED` once per
+ * tenant whose failed deletes were more than one pass reads, or
+ * `LEDGER_WRITE_FAILED` when the session went but its step could not be
+ * written (the next pass reads it back as gone and writes it).
+ */
+export function recordManagedAgentsFailedDeleteRetry(attrs: { outcome: string }): void {
+    if (!_managedAgentsFailedDeleteRetry) {
+        _managedAgentsFailedDeleteRetry = getMeter().createCounter('agentic.managed_agents.failed_delete_retry', {
+            description: 'Sessions whose delete had failed, retried in a customer Anthropic workspace, by outcome',
+            unit: '1',
+        });
+    }
+    _managedAgentsFailedDeleteRetry.add(1, { outcome: attrs.outcome });
+}

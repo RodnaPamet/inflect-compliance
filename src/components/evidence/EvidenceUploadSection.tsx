@@ -22,6 +22,7 @@ import { uploadWithProgress } from '@/lib/upload/upload-with-progress';
 import { EVIDENCE_ACCEPT, EVIDENCE_MAX_FILE_MB, EVIDENCE_UPLOAD_HINT } from '@/lib/evidence-upload-limits';
 import { apiErrorMessage } from '@/lib/api-error';
 import { normaliseHref } from '@/lib/security/safe-url';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 // Mirrors the evidence upload modal's accept list + hint copy so every
 // evidence surface advertises the same supported types + size cap.
@@ -367,9 +368,9 @@ export function EvidenceUploadSection({
                             : normaliseHref(it.externalUrl); // an unsafe address is shown as text
                         const isFile = Boolean(it.downloadId);
                         return (
-                            <li
+                            <ShadedRow as="li" padding="none"
                                 key={it.id}
-                                className="flex items-center gap-tight rounded-md border border-border-subtle bg-bg-default px-2.5 py-1.5 text-xs text-content-default"
+                                className="flex items-center gap-tight px-2.5 py-1.5 text-xs text-content-default"
                             >
                                 {href ? (
                                     <a
@@ -393,7 +394,7 @@ export function EvidenceUploadSection({
                                         {it.name}
                                     </span>
                                 )}
-                            </li>
+                            </ShadedRow>
                         );
                     })}
                 </ul>

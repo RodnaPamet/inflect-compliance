@@ -36,6 +36,7 @@ import {
     buildGapSuggestions,
     type SelfAssessmentAnswers,
 } from '@/lib/self-assessments/scoring';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 type SovereigntyT = ReturnType<typeof useTranslations>;
 
@@ -209,10 +210,10 @@ export function SovereigntySelfAssessmentStep({
                                     {dim.questions.map((q) => {
                                         const current = answers[q.id];
                                         return (
-                                            <div
+                                            <ShadedRow
                                                 key={q.id}
                                                 data-testid={`sovereignty-question-${q.id}`}
-                                                className="rounded-lg border border-border-subtle p-3 space-y-tight"
+                                                className="space-y-tight"
                                             >
                                                 <div className="flex items-start gap-tight flex-wrap">
                                                     <span className="text-sm text-content-default flex-1 min-w-[12rem]">
@@ -235,7 +236,7 @@ export function SovereigntySelfAssessmentStep({
                                                         </label>
                                                     ))}
                                                 </RadioGroup>
-                                            </div>
+                                            </ShadedRow>
                                         );
                                     })}
                                 </div>
@@ -253,7 +254,7 @@ export function SovereigntySelfAssessmentStep({
                         {gaps.map((g) => {
                             const a = approvalFor(g.dimensionId);
                             return (
-                                <div key={g.dimensionId} className="rounded-md border border-border-subtle p-3 space-y-tight" data-testid={`sovereignty-suggestion-${g.dimensionId}`}>
+                                <ShadedRow key={g.dimensionId} className="space-y-tight" data-testid={`sovereignty-suggestion-${g.dimensionId}`}>
                                     <div className="flex items-center gap-tight flex-wrap">
                                         <span className="text-sm font-medium">{dimensionLabels[g.labelKey] ?? g.labelKey}</span>
                                         <StatusBadge variant="neutral" size="sm">{g.clauseRef}</StatusBadge>
@@ -276,7 +277,7 @@ export function SovereigntySelfAssessmentStep({
                                         />
                                         <span>{t('sovereignty.controlPrefix')}<span className="text-content-muted">{g.controlName}</span></span>
                                     </label>
-                                </div>
+                                </ShadedRow>
                             );
                         })}
                     </div>

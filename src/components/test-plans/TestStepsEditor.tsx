@@ -10,6 +10,7 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Plus, ChevronUp, Xmark } from '@inflect/ui/components/ui/icons/glyphs';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 export interface TestStepDraft {
     instruction: string;
@@ -47,7 +48,7 @@ export function TestStepsEditor({
                 <p className="text-xs text-content-subtle">{t('steps.empty')}</p>
             )}
             {steps.map((step, i) => (
-                <div key={i} className="flex gap-compact items-start rounded border border-border-subtle p-compact">
+                <ShadedRow padding="none" key={i} className="flex gap-compact items-start p-compact">
                     <span className="w-5 h-5 rounded-full bg-[var(--brand-subtle)] text-[var(--brand-default)] text-xs flex items-center justify-center flex-shrink-0 mt-1.5">
                         {i + 1}
                     </span>
@@ -76,7 +77,7 @@ export function TestStepsEditor({
                             <Xmark className="w-4 h-4" aria-hidden="true" />
                         </button>
                     </div>
-                </div>
+                </ShadedRow>
             ))}
             <Button variant="secondary" size="sm" icon={<Plus />} onClick={() => onChange([...steps, emptyStep()])} id="add-test-step-btn">
                 {t('steps.add')}

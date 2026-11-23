@@ -12,6 +12,7 @@ import { apiRefusalMessage } from '@/lib/api-error';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import type { AgentOversightKey, AgentOversightSettings } from '@/app-layer/usecases/agent-oversight-settings';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 /**
  * The OWNER's agent oversight switches (round 15: #4895, #4900, #4896–#4898).
@@ -84,9 +85,9 @@ export function AgentOversightSection() {
                         {group.keys.map((key) => {
                             const on = data?.settings[key];
                             return (
-                                <div
+                                <ShadedRow padding="xl"
                                     key={key}
-                                    className="flex items-start justify-between gap-default rounded-lg border border-border-subtle p-5"
+                                    className="flex items-start justify-between gap-default"
                                     data-testid={`agent-oversight-${key}`}
                                 >
                                     <div className="space-y-tight">
@@ -112,7 +113,7 @@ export function AgentOversightSection() {
                                     >
                                         {on ? t('agentOversight.turnOff') : t('agentOversight.turnOn')}
                                     </Button>
-                                </div>
+                                </ShadedRow>
                             );
                         })}
                     </div>

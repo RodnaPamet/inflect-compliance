@@ -302,7 +302,11 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // `docs/keyboard-shortcuts.md` ('ke' < 'kn'). Two textual inserts,
         // +6/-0 against main; the previous digest was recomputed over main's
         // file first and matched.
-        keyOrderSha: '4774bd42cb20e315ca4c2bbc0e366613f9dc0a0df0fce474fe5dabf28064bf46',
+        //
+        // Moved 2026-11-22 by one sorted ADDITION, docs/mobile-roadmap.md (the
+        // mobile-view audit and roadmap), +3/-0 against main; the previous
+        // digest matched main's file before the insert.
+        keyOrderSha: '63d0ec3c8bd53ed3973a4dac16b76ff97e767b810c7b54b9d6e45716a3c23bc2',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in

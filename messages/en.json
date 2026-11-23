@@ -8972,6 +8972,10 @@
         "TOOL_RUNNER": {
           "name": "Tool Runner engine",
           "description": "A model chooses which of the agent's tools to call, following the instructions on the agent's Behaviour tab. Every call still goes through the agent's grants and controls. Powered by Claude."
+        },
+        "MANAGED_AGENTS": {
+          "name": "Managed Agents engine",
+          "description": "A model in your own Anthropic workspace chooses which of the agent's tools to call. Every call still comes back to Inflect and goes through the agent's grants and controls. Not available yet. Powered by Claude."
         }
       },
       "gateHeading": "What decides the engine",
@@ -8999,7 +9003,7 @@
       "operatorTerm": "Set on the deployment",
       "fix": "Set up →",
       "boundKeyNote": "A Flue run must be started by an API key bound to an active agent — a browser session carries no agent identity, so a Flue run cannot be started from the runs page by hand.",
-      "runsOnToolRunner": "In this workspace, agent profiles run on the Tool Runner engine when a Test run starts them.",
+      "runsOnToolRunner": "In this workspace, agent profiles run on the Tool Runner engine.",
       "runsOnToolRunnerNotReady": "This workspace has chosen the Tool Runner engine, but no Tool Runner run can start yet. The checklist below shows what is missing.",
       "reasonToolRunner": {
         "ENV_DISABLED": "Runs use the built-in engine because the Tool Runner engine is not turned on for this deployment. Only the deployment's operator can turn it on.",
@@ -9017,7 +9021,7 @@
         "MODEL_KEY": "The deployment has an Anthropic API key",
         "REGISTERED_AGENT": "An active, risk-assessed agent is registered"
       },
-      "toolRunnerStartNote": "A Tool Runner run starts from an agent's Behaviour tab, as a Test run of one of its profile versions. It runs read-only and as that agent, under the agent's own grants and controls.",
+      "toolRunnerStartNote": "A Tool Runner run starts in two ways: a Test run from an agent's Behaviour tab, which is always read-only, or an automation rule's Invoke agent action on a profile version that allows automation starts. Either way it runs as that agent, under the agent's own grants and controls.",
       "organizationTerm": "Set by your organization",
       "deploymentOffOrganization": "Your organization can turn on the Tool Runner engine for its workspaces in the organization's settings."
     },
@@ -12389,6 +12393,7 @@
         "STATIC": "Static engine",
         "FLUE": "Flue engine",
         "TOOL_RUNNER": "Tool Runner engine",
+        "MANAGED_AGENTS": "Managed Agents engine",
         "UNRECOGNISED": "Unrecognised engine"
       },
       "detail": {

@@ -48,6 +48,7 @@ import { formatBytes } from '@/lib/evidence-upload-limits';
 import { mayDownloadEvidenceFile } from '@/lib/evidence-download-access';
 import { apiErrorMessage } from '@/lib/api-error';
 import { extractMutationError } from '@/lib/mutations';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 // formatBytes now comes from @/lib/evidence-upload-limits. Its comment used
 // to say it mirrored FileDropzone's local helper — which it did, and a third
@@ -1208,9 +1209,9 @@ function EvidenceFileVersions({
             ) : (
                 <ul className="space-y-tight">
                     {prior.map((v) => (
-                        <li
+                        <ShadedRow as="li" padding="none"
                             key={v.id}
-                            className="flex items-center justify-between gap-tight rounded border border-border-subtle px-2 py-1.5"
+                            className="flex items-center justify-between gap-tight px-2 py-1.5"
                             data-testid={`evidence-file-version-${v.version}`}
                         >
                             <span className="min-w-0">
@@ -1232,7 +1233,7 @@ function EvidenceFileVersions({
                                 <Download className="size-4" />
                             </a>
                             )}
-                        </li>
+                        </ShadedRow>
                     ))}
                 </ul>
             )}

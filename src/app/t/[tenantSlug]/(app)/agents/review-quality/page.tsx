@@ -16,6 +16,7 @@ import { SAMPLE_AUDIT_DISSENT_CODES } from '@/lib/agentic/proposal-sampling';
 import { SampleAuditQueue } from './SampleAuditQueue';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 export const dynamic = 'force-dynamic';
 
@@ -345,9 +346,9 @@ export default async function AgentReviewQualityPage({
                         ) : (
                             <ul className="space-y-default">
                                 {report.signals.map((s) => (
-                                    <li
+                                    <ShadedRow as="li" padding="lg"
                                         key={`${s.code}:${s.subjectId ?? '-'}`}
-                                        className="flex flex-col gap-tight rounded-lg border border-border-subtle bg-bg-default p-4"
+                                        className="flex flex-col gap-tight"
                                     >
                                         <span className="flex items-center gap-compact">
                                             <StatusBadge variant="warning">
@@ -366,7 +367,7 @@ export default async function AgentReviewQualityPage({
                                                 sample: s.sampleSize,
                                             })}
                                         </span>
-                                    </li>
+                                    </ShadedRow>
                                 ))}
                             </ul>
                         )}
@@ -378,9 +379,9 @@ export default async function AgentReviewQualityPage({
                         </Heading>
                         <ul className="space-y-default">
                             {report.reviewers.map((r) => (
-                                <li
+                                <ShadedRow as="li" padding="lg"
                                     key={r.reviewerUserId}
-                                    className="flex flex-col gap-tight rounded-lg border border-border-subtle bg-bg-default p-4"
+                                    className="flex flex-col gap-tight"
                                 >
                                     <span className="font-medium text-content-emphasis" data-testid="review-quality-reviewer">
                                         {reviewerName(r.reviewerUserId)}
@@ -408,7 +409,7 @@ export default async function AgentReviewQualityPage({
                                             ? ` · ${t('reviewQuality.burstCount', { count: r.bursts.length })}`
                                             : ''}
                                     </span>
-                                </li>
+                                </ShadedRow>
                             ))}
                         </ul>
                     </section>
@@ -419,9 +420,9 @@ export default async function AgentReviewQualityPage({
                         </Heading>
                         <ul className="space-y-default">
                             {report.agents.map((a) => (
-                                <li
+                                <ShadedRow as="li" padding="lg"
                                     key={a.agentId ?? 'unattributed'}
-                                    className="flex flex-col gap-tight rounded-lg border border-border-subtle bg-bg-default p-4"
+                                    className="flex flex-col gap-tight"
                                 >
                                     <span className="font-medium text-content-emphasis" data-testid="review-quality-agent">
                                         {a.agentId && names.agents[a.agentId] ? (
@@ -459,7 +460,7 @@ export default async function AgentReviewQualityPage({
                                             })}
                                         </span>
                                     )}
-                                </li>
+                                </ShadedRow>
                             ))}
                         </ul>
                     </section>

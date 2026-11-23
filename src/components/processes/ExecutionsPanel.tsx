@@ -28,6 +28,7 @@ import {
     buildExecutionStatusLabels,
     buildTriggerSourceLabels,
 } from '@/lib/automation/execution-status-labels';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 interface ExecutionRow {
     id: string;
@@ -87,7 +88,7 @@ export function ExecutionsPanel({ ruleId }: { ruleId: string }) {
             ) : (
                 <ul className="space-y-tight" data-testid="executions-list">
                     {items.map((e) => (
-                        <li key={e.id} className="rounded-md border border-border-subtle p-2">
+                        <ShadedRow as="li" padding="sm" key={e.id}>
                             <button
                                 type="button"
                                 className="flex w-full items-center justify-between gap-compact text-left"
@@ -115,7 +116,7 @@ export function ExecutionsPanel({ ruleId }: { ruleId: string }) {
                                     )}
                                 </div>
                             )}
-                        </li>
+                        </ShadedRow>
                     ))}
                 </ul>
             )}

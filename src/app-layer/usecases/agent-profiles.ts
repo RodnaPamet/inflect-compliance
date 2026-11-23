@@ -114,6 +114,7 @@ import {
     type ProfileDeferredToolRefusal,
 } from '@/lib/agentic/agent-profile';
 import { compactionThresholdFor } from '@/lib/agentic/tool-runner/compaction';
+import { provisionApprovedProfileVersion } from './agent-profile-provision';
 import { COMPACTION_THRESHOLD_TOKENS } from '@/lib/agentic/tool-runner/params';
 import { ENGINE_RUN_CAPS } from '@/lib/agentic/run-caps';
 import type { AgentProfileVersionInput } from '../schemas/agent-profile.schemas';
@@ -1069,7 +1070,7 @@ export async function approveAgentProfileVersion(
     input: { instructionsHash: string },
 ): Promise<{ status: 'APPROVED'; instructionsHash: string; runKey: string; supersededVersion: number | null }> {
     await assertMayManageProfiles(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const approved = await runInTenantContext(ctx, async (db) => {
         const agent = await findAgent(db, ctx, agentId);
         assertAgentNotRetired(agent);
         const profile = await findProfile(db, ctx, agentId);
@@ -1172,12 +1173,25 @@ export async function approveAgentProfileVersion(
             },
         });
         return {
+            versionId: v.id,
             status: 'APPROVED' as const,
             instructionsHash: v.instructionsHash,
             runKey: profileRunKey(profile.id, version),
             supersededVersion: inForce?.version ?? null,
         };
     });
+    // AFTER the approval committed (Step 5b of
+    // `docs/claude-managed-agents-design.md`): provision the version as a
+    // Managed Agent in the tenant's own Anthropic workspace, for a tenant whose
+    // engine is in force as Managed Agents. No tenant is, in this build, and
+    // it never throws: the approval stands whatever happens there.
+    await provisionApprovedProfileVersion(ctx, approved.versionId);
+    return {
+        status: approved.status,
+        instructionsHash: approved.instructionsHash,
+        runKey: approved.runKey,
+        supersededVersion: approved.supersededVersion,
+    };
 }
 
 /**

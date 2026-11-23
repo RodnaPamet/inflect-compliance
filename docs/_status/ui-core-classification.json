@@ -2004,6 +2004,11 @@
   "derivation": "audited",
   "reason": "Deliberately resource-agnostic in shape — the caller passes `resourceLabel: {singular, plural}` precisely so the panel carries no entity noun. Two hardcoded English strings and one compliance example in the JSDoc are what remain."
  },
+ "src/components/ui/shaded-row.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Polymorphic shaded list-row box (`as`, `padding`, className passthrough) over semantic tokens (`bg-bg-shaded`, `border-border-strong`). No owned strings, no storage, no domain props; the docblock names only the detail-page tab bar it shares its look with."
+ },
  "src/components/ui/sheet.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",

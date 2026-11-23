@@ -51,7 +51,7 @@
  */
 
 /** The engines a run can be executed by. */
-export const AGENT_DRIVERS = ['static', 'flue', 'tool-runner'] as const;
+export const AGENT_DRIVERS = ['static', 'flue', 'tool-runner', 'managed-agents'] as const;
 
 export type AgentDriver = (typeof AGENT_DRIVERS)[number];
 
@@ -81,10 +81,14 @@ export type AgentDriverMode = (typeof AGENT_DRIVER_MODES)[number];
 
 /**
  * Every value the `AgentDriverMode` Prisma enum declares, which every READER
- * understands. Equal to {@link AGENT_DRIVER_MODES} while no value is READ_ONLY;
- * the next new value joins here first and there one deploy later.
+ * understands. {@link AGENT_DRIVER_MODES} plus the READ_ONLY values, which
+ * join here first and there one deploy later.
+ *
+ * `MANAGED_AGENTS` is READ_ONLY since Step 5b of
+ * `docs/claude-managed-agents-design.md` (#4165): a stored value reads as
+ * itself, and no writer accepts it. Step 5d moves it to the writable list.
  */
-export const STORED_DRIVER_MODES = [...AGENT_DRIVER_MODES] as const;
+export const STORED_DRIVER_MODES = [...AGENT_DRIVER_MODES, 'MANAGED_AGENTS'] as const;
 
 export type StoredDriverMode = (typeof STORED_DRIVER_MODES)[number];
 
@@ -223,6 +227,13 @@ export const DRIVER_IMPLEMENTED: Readonly<Record<AgentDriver, boolean>> = {
     // operator's `AGENT_DRIVER_TOOL_RUNNER` switch and the tenant's choice of
     // TOOL_RUNNER still each refuse. Revert this line to turn the engine off.
     'tool-runner': true,
+    // FALSE in Step 5b of `docs/claude-managed-agents-design.md` (#4165). The
+    // engine is built and conformance-proven (`src/lib/agentic/managed-agents/`)
+    // and no input selects it: a stored `MANAGED_AGENTS` resolves to static with
+    // `DRIVER_NOT_IMPLEMENTED`, and `MANAGED_AGENTS` is a READ_ONLY mode no
+    // writer accepts. Step 5d flips this line in a commit of its own, once 5c's
+    // purge path is deployed.
+    'managed-agents': false,
 };
 
 /**
@@ -242,6 +253,10 @@ const REASONING_ENGINE: Readonly<Record<AgentDriver, boolean>> = {
     static: false,
     flue: true,
     'tool-runner': true,
+    // A model chooses its own calls, in Anthropic's loop rather than ours: the
+    // run is vouched, its skills pinned and it runs in the worker, as every
+    // reasoning engine's does (Step 5b).
+    'managed-agents': true,
 };
 
 export function isReasoningEngine(driver: AgentDriver): boolean {
@@ -266,6 +281,10 @@ const RECORDED_MODE: Readonly<Record<AgentDriver, StoredDriverMode>> = {
     // WRITTEN since Step 2c (#4512): the driver is implemented and chosen, so
     // its runs record it. The rollout test holds the stage to that.
     'tool-runner': 'TOOL_RUNNER',
+    // READ_ONLY in Step 5b (#4165). Allowed because the driver is not
+    // implemented, so `selectRunDriver` never chooses it and no run records
+    // it; the rollout test holds that pairing.
+    'managed-agents': 'MANAGED_AGENTS',
 };
 
 export function recordedModeOf(driver: AgentDriver): StoredDriverMode {
@@ -297,6 +316,13 @@ export interface AgentDriverTerms {
      */
     readonly toolRunnerEnvEnabled?: boolean;
     /**
+     * The Managed Agents engine's switch, `AGENT_MANAGED_AGENTS`, read through
+     * `managedAgentsEnabled` (Step 5b). Optional, and absent reads as OFF, as
+     * the Tool Runner's does. It answers only a tenant that stored
+     * `MANAGED_AGENTS`, and even then `DRIVER_IMPLEMENTED` refuses until 5d.
+     */
+    readonly managedAgentsEnvEnabled?: boolean;
+    /**
      * The tenant's stored setting, exactly as it came out of the database —
      * `TenantSecuritySettings.agentDriver`, or `null`/`undefined` when the row
      * does not exist. Passed RAW on purpose: coercion happens here, so there is
@@ -322,13 +348,13 @@ export interface AgentDriverTerms {
  *                             deploy, and something an operator should see.
  *   DRIVER_NOT_IMPLEMENTED  — both switches name an engine this build cannot
  *                             execute. The loudest of the four: it means
- *                             configuration is ahead of code. Reachable for no
- *                             driver today: every `DRIVER_IMPLEMENTED` entry is
- *                             true, and `TOOL_RUNNER` is written, chosen and
- *                             recorded by runs since Step 2c (#4150). It stays
- *                             as the answer for the next engine declared ahead
- *                             of its implementation, or a flag reverted to
- *                             false.
+ *                             configuration is ahead of code. Reachable today
+ *                             for one driver: a stored `MANAGED_AGENTS` with
+ *                             `AGENT_MANAGED_AGENTS` on, which only a build
+ *                             that wrote it could have left (Step 5b, #4165).
+ *                             It stays as the answer for the next engine
+ *                             declared ahead of its implementation, or a flag
+ *                             reverted to false.
  */
 export type StaticDriverReason =
     | 'ENV_DISABLED'
@@ -373,6 +399,20 @@ export interface AgentDriverDecision {
  */
 export function resolveAgentDriver(terms: AgentDriverTerms): AgentDriverDecision {
     const raw = terms.tenantSetting;
+
+    // MANAGED AGENTS, under its own switch and its own build flag (Step 5b).
+    // A value only a build that wrote it could have stored: no writer accepts
+    // it in this build, and `DRIVER_IMPLEMENTED` refuses it whatever the
+    // switch says. Never degraded to another engine: static, with the reason.
+    if (coerceStoredDriverMode(raw) === 'MANAGED_AGENTS') {
+        if (terms.managedAgentsEnvEnabled !== true) {
+            return { driver: STATIC_DRIVER, reason: 'ENV_DISABLED' };
+        }
+        if (!DRIVER_IMPLEMENTED['managed-agents']) {
+            return { driver: STATIC_DRIVER, reason: 'DRIVER_NOT_IMPLEMENTED' };
+        }
+        return { driver: 'managed-agents', reason: null };
+    }
 
     // THE TOOL RUNNER, under its own switch and its own build flag (Step 2b).
     // First, because a tenant that chose it is answered by its terms alone; the

@@ -42,6 +42,13 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     // the global client: on the global client the insert's `WITH CHECK` would
     // refuse it, so a passing test there would prove nothing about isolation.
     OpenShellSandboxLease: 'tests/unit/agentic/openshell-sandbox-lease.test.ts',
+    // Step 5b (#4165): through the engine's real store with RLS live, B reads
+    // none of A's provisions or A's workspace connection, and cannot write one.
+    AgentProfileProvision: 'tests/integration/agent-profile-provision-two-tenant.test.ts',
+    // Step 5c (#4166): through the real clean-up with RLS live, B reads none of
+    // A's clean-up records and cannot write one for A; A's purge, removal and
+    // DSAR clean-ups never touch B's sessions, agents or records.
+    ManagedAgentsCleanup: 'tests/integration/managed-agents-cleanup.test.ts',
     // A control node's link to its Control: B cannot link to A's control, its
     // RLS-bound read sees none of A's rows, and the facts read and the reverse
     // lookup learn nothing about A's control.

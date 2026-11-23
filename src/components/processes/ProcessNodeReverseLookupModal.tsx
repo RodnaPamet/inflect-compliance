@@ -20,6 +20,7 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@inflect/ui/components/ui/icons/loading-spinner";
 import { apiErrorMessage } from "@/lib/api-error";
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 type EntityType = "risk" | "asset";
 
@@ -160,10 +161,10 @@ export function ProcessNodeReverseLookupModal({
                     {!loading && !error && groups.length > 0 && (
                         <ul className="flex flex-col gap-tight">
                             {groups.map((g) => (
-                                <li
+                                <ShadedRow as="li" padding="none"
                                     key={g.mapId}
                                     data-testid="process-node-reverse-lookup-row"
-                                    className="flex items-center justify-between rounded-[8px] border border-border-subtle px-default py-2"
+                                    className="flex items-center justify-between px-default py-2"
                                 >
                                     <div className="flex flex-col">
                                         <Link
@@ -183,7 +184,7 @@ export function ProcessNodeReverseLookupModal({
                                             })}
                                         </span>
                                     </div>
-                                </li>
+                                </ShadedRow>
                             ))}
                         </ul>
                     )}

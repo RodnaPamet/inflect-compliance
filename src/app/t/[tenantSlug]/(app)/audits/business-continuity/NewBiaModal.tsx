@@ -37,6 +37,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { buildBiaCriticalityLabels } from './filter-defs';
 import { DependencyPickerRow, useDepTypeLabel, type DependencyDraft } from './BiaDependencyControls';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 
 const optionalHours = z.number().int().min(0).max(100_000).optional();
@@ -203,9 +204,9 @@ export function NewBiaModal({ tenantSlug, processNodeId, onClose, onCreated }: P
                                 ) : (
                                     <ul className="space-y-tight">
                                         {dependencies.map((d) => (
-                                            <li
+                                            <ShadedRow as="li" padding="none"
                                                 key={`${d.dependsOnType}:${d.dependsOnId}`}
-                                                className="flex items-center justify-between rounded-lg border border-border-subtle px-3 py-1.5 text-sm"
+                                                className="flex items-center justify-between px-3 py-1.5 text-sm"
                                             >
                                                 <span className="text-content-default">
                                                     <span className="text-content-subtle">{depTypeLabel(d.dependsOnType)}</span> · {d.label}
@@ -218,7 +219,7 @@ export function NewBiaModal({ tenantSlug, processNodeId, onClose, onCreated }: P
                                                 >
                                                     {tx('bia.depRemove')}
                                                 </button>
-                                            </li>
+                                            </ShadedRow>
                                         ))}
                                     </ul>
                                 )}

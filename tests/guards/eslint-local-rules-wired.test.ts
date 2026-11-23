@@ -44,6 +44,7 @@ const LOCAL_RULES = [
     'no-positional-comment-strip',
     'vector-store-single-seam',
     'web-bot-auth-single-seam',
+    'shaded-list-rows',
 ] as const;
 
 describe('local ESLint rules are wired at error', () => {

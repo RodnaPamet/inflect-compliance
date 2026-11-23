@@ -342,6 +342,14 @@ assertion.
   > call. It constructs no provider, so it is not counted among the five
   > (`docs/ai-architecture/inspect.md`).
   >
+  > Two more branch on residency ahead of the engine that will use them: the
+  > Managed Agents driver, `src/lib/agentic/managed-agents/driver.ts`, refuses a
+  > `LOCAL_ONLY` run before the customer's workspace connection is read, and the
+  > provisioning usecase, `src/app-layer/usecases/agent-profile-provision.ts`,
+  > refuses to provision for one. Neither runs: the engine is not implemented in
+  > this build (`docs/claude-managed-agents-design.md`, Step 5b), so they honour
+  > nothing yet and are not counted among the five.
+  >
   > The last two features arrived with steps 6c and 3b and the
   > bullet was not updated, which is criterion 11 unmet for those steps — the
   > same silent-staleness this section suffered in #3480, in the opposite

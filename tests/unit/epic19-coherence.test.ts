@@ -188,6 +188,12 @@ describe('Epic 19 Coherence: alert rules', () => {
         'AgenticWorkflowContextIntegrityHalt',
         'AgenticKillSwitchDrillFailed',
         'AgenticKillSwitchDrillUnverified',
+        // Step 5c (#4166): a clean-up of what Inflect created in a customer's
+        // Anthropic workspace that did not finish, and a lost delete that
+        // could not be repaired. Data left at a third party is a control
+        // failing, not agentic work slowing down.
+        'AgenticManagedAgentsCleanupUnfinished',
+        'AgenticManagedAgentsLostDeleteFailed',
         'AgenticCircuitBreakerTripped',
         'AgenticFanOutHalted',
     ];

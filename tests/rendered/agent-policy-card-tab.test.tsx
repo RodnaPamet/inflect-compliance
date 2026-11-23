@@ -777,6 +777,23 @@ describe('the version history reads newest first', () => {
         expect(screen.queryByText(s('historyWindowEdge'))).not.toBeInTheDocument();
     });
 
+    it('draws each version as its own shaded box (owner request 2026-11-22)', () => {
+        renderTab(cardPayload());
+
+        // Every row, not just the first: the request is "each option needs its
+        // own shaded box", and the shade is what tells one row from the next.
+        // The shade and the strong outline are the tab bar's; the faint
+        // `border-border-subtle` outline the rows carried before is gone.
+        for (const label of ['v3', 'v2', 'v1']) {
+            const row = versionRow(label);
+            expect(row.className).toContain('bg-bg-shaded');
+            expect(row.className).toContain('border-border-strong');
+            expect(row.className).toMatch(/(^|\s)border(\s|$)/);
+            expect(row.className).toContain('rounded-lg');
+            expect(row.className).not.toContain('border-border-subtle');
+        }
+    });
+
     it('a trail whose oldest listed row is not v1 says the window cut it', () => {
         renderTab(cardPayload({ versions: [V3, V2] }));
 

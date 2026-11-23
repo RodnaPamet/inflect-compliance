@@ -31,6 +31,7 @@ import { Loader2 } from 'lucide-react';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { isFinalizedNis2Run } from '@/lib/nis2-run-status';
 import { nis2QuestionLanguage, nis2Text } from '@/lib/nis2/question-language';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 // Required CC BY 4.0 attribution — MUST render wherever the questions show.
 export const NIS2_ATTRIBUTION_TEXT =
@@ -257,13 +258,10 @@ export function Nis2SelfAssessmentStep({
                                         });
                                         const dimmed = q.dependsOn.length > 0 && !prereqMet;
                                         return (
-                                            <div
+                                            <ShadedRow
                                                 key={q.id}
                                                 data-testid={`nis2-question-${q.id}`}
-                                                className={
-                                                    'rounded-lg border border-border-subtle p-3 space-y-tight ' +
-                                                    (dimmed ? 'opacity-60' : '')
-                                                }
+                                                className={'space-y-tight ' + (dimmed ? 'opacity-60' : '')}
                                             >
                                                 <div className="flex items-start gap-tight flex-wrap">
                                                     <span className="text-sm text-content-default flex-1 min-w-[12rem]">
@@ -326,7 +324,7 @@ export function Nis2SelfAssessmentStep({
                                                     }
                                                     disabled={!current || finalised}
                                                 />
-                                            </div>
+                                            </ShadedRow>
                                         );
                                     })}
                                 </div>

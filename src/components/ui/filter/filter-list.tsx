@@ -473,7 +473,7 @@ function OperatorFilterPill({
           openPopover={operatorDropdownOpen}
           setOpenPopover={setOperatorDropdownOpen}
           content={
-            <div className="w-32 p-1">
+            <div className="w-full p-1 sm:w-32">
               <button
                 type="button"
                 className={cn(

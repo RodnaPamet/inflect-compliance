@@ -47,6 +47,7 @@ import {
     type RuntimeRowDisplay,
     type RuntimeRowKind,
 } from './sandbox-runtime-display';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 /**
  * The declaration as it crosses the server/client boundary: `appliedAt` travels
@@ -138,9 +139,9 @@ export function SandboxRuntimeClient({
         detail: ReactNode,
     ) {
         return (
-            <section
+            <ShadedRow as="section" padding="xl"
                 key={key}
-                className="space-y-compact rounded-lg border border-border-subtle p-5"
+                className="space-y-compact"
                 data-testid={`sandbox-row-${key}`}
                 data-display-kind={display.kind}
             >
@@ -154,7 +155,7 @@ export function SandboxRuntimeClient({
                     </div>
                 </div>
                 {detail}
-            </section>
+            </ShadedRow>
         );
     }
 

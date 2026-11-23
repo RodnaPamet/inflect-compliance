@@ -35,6 +35,7 @@ import {
     type NewTaskFormFields,
     type NewTaskFormReturn,
 } from './useNewTaskForm';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 type Tr = (key: string) => string;
 const optsFrom = (t: Tr, prefix: string, values: readonly string[]): ComboboxOption[] =>
@@ -368,9 +369,9 @@ export function NewTaskFields({
                 {form.pendingLinks.length > 0 && (
                     <div className="space-y-1" id="pending-links-list">
                         {form.pendingLinks.map((l, i) => (
-                            <div
+                            <ShadedRow padding="none"
                                 key={i}
-                                className="flex items-center gap-tight text-sm text-content-default bg-bg-default/50 rounded px-3 py-1.5"
+                                className="flex items-center gap-tight text-sm text-content-default px-3 py-1.5"
                             >
                                 <StatusBadge variant="info">
                                     {form.linkTypeLabel(l.entityType)}
@@ -388,7 +389,7 @@ export function NewTaskFields({
                                         ×
                                     </button>
                                 </Tooltip>
-                            </div>
+                            </ShadedRow>
                         ))}
                     </div>
                 )}

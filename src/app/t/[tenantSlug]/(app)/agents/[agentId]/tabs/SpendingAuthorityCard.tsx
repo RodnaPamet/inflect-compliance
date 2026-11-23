@@ -53,6 +53,7 @@ import {
 } from '@/lib/agentic/spending-authority';
 
 import type { AgentTabProps } from './types';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 type Status = 'DECLARED' | 'REVIEWED' | 'SUSPENDED_REQUESTED' | 'WITHDRAWN';
 type ReviewWithheld =
@@ -315,9 +316,9 @@ export function SpendingAuthorityCard({
             ) : (
                 <ul className="space-y-default">
                     {envelopes.map((e) => (
-                        <li
+                        <ShadedRow as="li" padding="lg"
                             key={e.rail}
-                            className="space-y-compact rounded-lg border border-border-subtle p-4"
+                            className="space-y-compact"
                             data-testid={`agent-spending-${e.rail}`}
                         >
                             <div className="flex flex-wrap items-center gap-compact">
@@ -447,7 +448,7 @@ export function SpendingAuthorityCard({
                                     )}
                                 </div>
                             )}
-                        </li>
+                        </ShadedRow>
                     ))}
                 </ul>
             )}

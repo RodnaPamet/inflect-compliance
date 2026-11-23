@@ -142,7 +142,21 @@ const ROOT = path.resolve(__dirname, '../..');
 // CLAUDE.md — 507/510 are the drop area's own outer boundary and 573 a
 // discrete file-row chip, all three "this is a discrete surface" statements.
 // So the budget absorbs them rather than a migration removing them.
-const BORDER_DEFAULT_BUDGET = 108;
+//
+// 108 → 103 (2026-11-22): −5, boxed list rows moved to `<ShadedRow>`
+// (owner request: every row its own shaded box, the tab bar's shade and
+// `border-border-strong`). The five were row boxes, not surfaces: the risk
+// matrix's band rows, the audit checklist and findings rows, the per-framework
+// blocks on the tests dashboard, and FileDropzone's file row (the 573 chip
+// above). FileDropzone's drop area keeps its two.
+//
+// 103 → 98 (2026-11-22): −5, option cards moved to `<ShadedRow as="label"
+// interactive selected>` (owner decision: every radio / checkbox option
+// shaded, the chosen one keeps its selected border): the unselected / hover
+// tones of the MFA-policy cards, the single-pack install cards, the
+// policy-template picker and the widget-type picker. Re-seated to the live
+// count the sentinel reported (98).
+const BORDER_DEFAULT_BUDGET = 98;
 
 // Tolerance before the drift sentinel reports the budget as unseated.
 //

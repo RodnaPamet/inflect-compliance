@@ -3760,6 +3760,102 @@ are each one careless edit from being undone:
   key for another workspace, or an answer naming none, is invalid. Anthropic's
   error text is used to classify and is never shown.
 
+**The Managed Agents engine is built and cannot run** (Step 5b, #4165;
+`src/lib/agentic/managed-agents/`). `DRIVER_IMPLEMENTED['managed-agents']` is
+false and `MANAGED_AGENTS` is a READ_ONLY `AgentDriverMode` (deploy 1 of 2): a
+stored value reads as itself, `resolveAgentDriver` answers it static with
+`DRIVER_NOT_IMPLEMENTED`, and no writer accepts it. Step 5d flips the flag.
+Rules that are each one careless edit from being undone:
+
+- **The tenant's instructions never go on the agent.** An agent can only be
+  archived, never deleted, so `agentBodyFor` writes `system` = Inflect's
+  preamble and custom tools only (no toolset, MCP, skills, sub-agents); the
+  instructions travel only in the session's `agent_with_overrides` `system`, and
+  the session is deleted at settle. `activate_skill` on the agent names no skill.
+  Provisioning does not even read the version's instructions.
+- **One constructor.** `managedAgentsClientFor` in `tool-runner/client.ts` (the
+  one file that may load the SDK) builds a client per run from the CONNECTION's
+  decrypted key with its workspace header, under `managedAgentsRequestRefusal`.
+  Only the engine's driver, `agent-profile-provision.ts` and Step 5c's
+  `managed-agents-cleanup.ts` call it, and no file of the engine reaches
+  `clientForRun` (`managed-agents-client.test.ts`).
+- **Every call goes through `runGuardedTool`** with the prefix
+  `managed-agents`, through the Tool Runner's runnables. A turn's custom calls
+  are QUEUED and run after its `span.model_request_end`, so the token cap and
+  the text scan come first. Each is answered once; a dropped stream is reopened
+  after reading the history, deduplicated by event id.
+- **Every session is deleted in `finally`**, after its status leaves `running`,
+  and the ledger says so (`SYNTHESIS` steps labelled `managed-agents-session`:
+  `SESSION_CREATED`, written first, then `SESSION_DELETED`,
+  `SESSION_DELETE_FAILED` or, when the connection keeps sessions (decision 4),
+  `SESSION_KEPT`). 5c finds them by id there.
+- **Drift refuses before a session exists**: the agent at the pinned version
+  must hash to what Inflect wrote (`AgentProfileProvision`) and hold nothing but
+  custom tools.
+- **Each `span.model_request_end` is one `MODEL_CALL` and one Art 12 row marked
+  span-derived** (provider `anthropic-managed-agents:span-derived`), whose digest
+  covers what Inflect SENT (decision 3). The conformance adapter declares two
+  variances, both citing decision 3: the kill switch (Anthropic stops at a safe
+  boundary; asserted instead: no tool runs after it and the session is deleted)
+  and the decision-row digest.
+
+**What Inflect created in a customer's workspace is removed by recorded id on
+purge, connection removal and DSAR erasure** (Step 5c, #4166;
+`usecases/managed-agents-cleanup.ts`, the calls in
+`managed-agents/cleanup.ts`). Rules that are each one careless edit from being
+undone:
+
+- **Recorded ids only.** Sessions come from 5b's `managed-agents-session`
+  steps (CREATED with no DELETED, KEPT, or DELETE_FAILED; a DSAR takes KEPT
+  only), agents from `AgentProfileProvision`. The crash window is found by
+  `sessions.list` filtered by a RECORDED `agent_id` and nothing else, and a
+  listed session is taken only when its metadata names this tenant AND a run
+  this tenant holds. `managedAgentsRequestRefusal` refuses a session list
+  without `agent_id` (`SESSION_LIST_NOT_BY_AGENT`) and admits the body-less
+  agent archive by its exact path only. Never list the customer's workspace to
+  match by name.
+- **The purge attempts once and keeps no key** (owner decision 7 of
+  `docs/claude-managed-agents-design.md`). `purgeSoftDeletedTenants` calls
+  `cleanUpManagedAgentsBeforePurge` BEFORE its transaction, under a 60 s
+  deadline, and it never throws. What it leaves is a retained
+  `ManagedAgentsCleanup` row in `PURGED_KEY_DESTROYED_UNFINISHED`, ids only,
+  with the `AgenticManagedAgentsCleanupUnfinished` alert; nothing retries it (a
+  CHECK keeps a purge record from being OPEN). Do not add a retry that needs a
+  key: there is none after the purge, by decision.
+- **Done is removed or 404, and nothing else.** A 401/403 is `AUTH_REFUSED`, a
+  running session `SESSION_STILL_RUNNING`, a cut-off pass `DEADLINE`; each keeps
+  the record open. A removal or DSAR record is retried by `data-lifecycle`,
+  which reads the DISABLED connection row's key through the clean-up's own
+  reader (the engine's reader takes enabled rows only), until DONE, or ends
+  `ABANDONED` after `CLEANUP_ABANDON_AFTER_DAYS` (30; Step 5c's choice, not an
+  owner decision). An empty ledger is DONE with the outcome `NOTHING_RECORDED`,
+  never a bare DONE, and a truncated ledger read is `LEDGER_TRUNCATED`.
+- **The DSAR clean-up runs after `eraseUser`'s transaction commits, never inside
+  it**, over the tenants named by the subject's own audit rows (a membership is
+  a RESTRICT blocker, so none survives to erasure), and its records name
+  tenants and connections, never the person.
+- **The record's outcome column is `outcome`, not `reason`.** A write to a model
+  outside the encryption manifest encrypts EVERY manifest field name it
+  carries, and `reason` is one: a CHECK on it then refuses ciphertext. Name a
+  new plaintext column on any model away from the manifest's field names.
+- **The reconciliation** (`reconcileLostSessionDeletes`, run by
+  `data-lifecycle` over every tenant that is not soft-deleted, disabled
+  connections included) does two things, and is the ONE periodic retry of a
+  session: do not open a second. It retries every session whose LATEST step is
+  `SESSION_DELETE_FAILED` (#5843) through the clean-up's own `deleteSession`,
+  and on done or a 404 writes `SESSION_DELETED` on the run's ledger through
+  `sessionStepRecord` (`managed-agents/session-ledger.ts`, the shape the run
+  writes); any other outcome leaves it for the next pass, metered
+  (`agentic.managed_agents.failed_delete_retry`). A session that was ever KEPT
+  is never this path's (decision 4). The failed steps are found by their
+  plaintext `FAILED` status, because the lifecycle is in the encrypted
+  `inputJson`; per tenant per pass it reads the newest
+  `FAILED_DELETE_READ_CAP` (1,000; more is `LEDGER_TRUNCATED`) and attempts at
+  most `FAILED_DELETE_RETRY_BATCH` (100), oldest first, under the 60 s deadline.
+  It also reads back every session recorded DELETED in the last seven days,
+  deletes one that still exists, and meters it
+  (`agentic.managed_agents.lost_delete`).
+
 ## Testing Conventions
 
 - **Unit tests**: Mock dependencies with `jest.mock()` declared **before** imports. Use the `makeRequestContext(role, overrides)` helper from `tests/helpers/make-context.ts` to construct test contexts.

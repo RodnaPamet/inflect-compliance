@@ -34,6 +34,7 @@ import { useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
+import { ShadedRow } from '@/components/ui/shaded-row';
 
 interface GatedDocument {
     id: string;
@@ -224,7 +225,7 @@ export function GatedDocumentsAdmin({ tenantSlug }: { tenantSlug: string }) {
                 ) : (
                     <ul className="space-y-tight" id="trust-gated-list">
                         {documents.map((d) => (
-                            <li key={d.id} className="flex items-center justify-between gap-default rounded-md border border-border-subtle px-3 py-2" id={`trust-gated-row-${d.id}`}>
+                            <ShadedRow as="li" padding="none" key={d.id} className="flex items-center justify-between gap-default px-3 py-2" id={`trust-gated-row-${d.id}`}>
                                 <span className="font-medium text-content-default">{d.label}</span>
                                 <span className="flex items-center gap-default">
                                     <span className="text-xs text-content-subtle">{t('addedOn', { date: formatDate(d.createdAt) })}</span>
@@ -238,7 +239,7 @@ export function GatedDocumentsAdmin({ tenantSlug }: { tenantSlug: string }) {
                                         {t('remove')}
                                     </Button>
                                 </span>
-                            </li>
+                            </ShadedRow>
                         ))}
                     </ul>
                 )}
@@ -296,7 +297,7 @@ export function GatedDocumentsAdmin({ tenantSlug }: { tenantSlug: string }) {
                 ) : (
                     <ul className="space-y-tight" id="trust-requests-list">
                         {requests.map((r) => (
-                            <li key={r.id} className="space-y-tight rounded-md border border-border-subtle px-3 py-2" id={`trust-request-row-${r.id}`}>
+                            <ShadedRow as="li" padding="none" key={r.id} className="space-y-tight px-3 py-2" id={`trust-request-row-${r.id}`}>
                                 <div className="flex flex-wrap items-center justify-between gap-default">
                                     <span className="font-medium text-content-default">{r.document.label}</span>
                                     <StatusBadge variant={STATUS_TONE[r.status] ?? 'neutral'}>{t(`status.${r.status}`)}</StatusBadge>
@@ -355,7 +356,7 @@ export function GatedDocumentsAdmin({ tenantSlug }: { tenantSlug: string }) {
                                         {approving === r.id ? t('approving') : t('reissue')}
                                     </Button>
                                 )}
-                            </li>
+                            </ShadedRow>
                         ))}
                     </ul>
                 )}
