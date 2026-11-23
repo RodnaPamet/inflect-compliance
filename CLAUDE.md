@@ -3803,9 +3803,22 @@ undone:
   outside the encryption manifest encrypts EVERY manifest field name it
   carries, and `reason` is one: a CHECK on it then refuses ciphertext. Name a
   new plaintext column on any model away from the manifest's field names.
-- **The lost-delete reconciliation** (`reconcileLostSessionDeletes`, run by
-  `data-lifecycle`) reads back every session recorded DELETED in the last seven
-  days, deletes one that still exists, and meters it
+- **The reconciliation** (`reconcileLostSessionDeletes`, run by
+  `data-lifecycle` over every tenant that is not soft-deleted, disabled
+  connections included) does two things, and is the ONE periodic retry of a
+  session: do not open a second. It retries every session whose LATEST step is
+  `SESSION_DELETE_FAILED` (#5843) through the clean-up's own `deleteSession`,
+  and on done or a 404 writes `SESSION_DELETED` on the run's ledger through
+  `sessionStepRecord` (`managed-agents/session-ledger.ts`, the shape the run
+  writes); any other outcome leaves it for the next pass, metered
+  (`agentic.managed_agents.failed_delete_retry`). A session that was ever KEPT
+  is never this path's (decision 4). The failed steps are found by their
+  plaintext `FAILED` status, because the lifecycle is in the encrypted
+  `inputJson`; per tenant per pass it reads the newest
+  `FAILED_DELETE_READ_CAP` (1,000; more is `LEDGER_TRUNCATED`) and attempts at
+  most `FAILED_DELETE_RETRY_BATCH` (100), oldest first, under the 60 s deadline.
+  It also reads back every session recorded DELETED in the last seven days,
+  deletes one that still exists, and meters it
   (`agentic.managed_agents.lost_delete`).
 
 ## Testing Conventions

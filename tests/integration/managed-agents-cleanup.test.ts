@@ -10,7 +10,8 @@
  * and its session, a session naming another tenant, a session naming a run the
  * tenant does not hold. Then the real triggers run: `purgeSoftDeletedTenants`,
  * `removeIntegrationConnection`, `eraseUser`, and the data-lifecycle passes
- * (`retryOpenManagedAgentsCleanups`, `reconcileLostSessionDeletes`).
+ * (`retryOpenManagedAgentsCleanups`, `reconcileLostSessionDeletes`, which also
+ * retries a session whose delete failed, #5843).
  *
  * Two tenants share one faux workspace throughout, so "the clean-up of one
  * never touches the other's sessions, agents or records" is asserted on every
@@ -55,6 +56,7 @@ const ctxOf = (tenantId: string) => makeRequestContext('OWNER', { tenantId, tena
 let faux: ManagedAgentsFaux;
 const cleanupSpy = jest.spyOn(metrics, 'recordManagedAgentsCleanup');
 const lostDeleteSpy = jest.spyOn(metrics, 'recordManagedAgentsLostDelete');
+const failedDeleteSpy = jest.spyOn(metrics, 'recordManagedAgentsFailedDeleteRetry');
 
 /** One tenant's world: its connection, its recorded agent, and named sessions. */
 interface World {
@@ -192,6 +194,22 @@ function held(w: World): Record<string, boolean> {
 
 const ALL_HELD = { kept: true, createdOnly: true, deleteFailed: true, crashWindow: true, unheldRun: true };
 
+/** A run's session steps as the ledger holds them, decrypted, in order. */
+async function sessionSteps(tenantId: string, runId: string): Promise<Array<{ seq: number; status: string; lifecycle: unknown; sessionId: unknown }>> {
+    const steps = await runInTenantContext(ctxOf(tenantId), (db) =>
+        db.workflowStep.findMany({ where: { runId, kind: 'SYNTHESIS' }, orderBy: { seq: 'asc' }, select: { seq: true, status: true, inputJson: true } }),
+    );
+    return steps.map((st) => {
+        const input = JSON.parse(st.inputJson ?? '{}') as Record<string, unknown>;
+        return { seq: st.seq, status: st.status, lifecycle: input.lifecycle, sessionId: input.sessionId };
+    });
+}
+
+/** The lifecycles a session's steps record, in order. */
+async function lifecyclesOf(tenantId: string, runId: string, sessionId: string): Promise<unknown[]> {
+    return (await sessionSteps(tenantId, runId)).filter((st) => st.sessionId === sessionId).map((st) => st.lifecycle);
+}
+
 async function records(tenantId: string) {
     return prisma.managedAgentsCleanup.findMany({ where: { tenantId }, orderBy: { createdAt: 'asc' } });
 }
@@ -205,6 +223,7 @@ beforeEach(() => {
     faux.install();
     cleanupSpy.mockClear();
     lostDeleteSpy.mockClear();
+    failedDeleteSpy.mockClear();
 });
 
 afterEach(() => {
@@ -414,9 +433,100 @@ describeFn('Step 5c — the remote clean-up (real DB, faux workspace)', () => {
         expect(faux.holdsSession(lost)).toBe(false);
         expect(tally.deleted).toBeGreaterThanOrEqual(1);
         expect(lostDeleteSpy).toHaveBeenCalledWith({ outcome: 'deleted' });
-        // Nothing recorded otherwise is touched by it.
-        expect(held(a)).toEqual(ALL_HELD);
+        // Nothing else recorded is touched by it, but the session whose delete
+        // failed, which the same reconciliation now retries (#5843).
+        expect(held(a)).toEqual({ ...ALL_HELD, deleteFailed: false });
+        expect(held(b)).toEqual({ ...ALL_HELD, deleteFailed: false });
+    });
+
+    it('the reconciliation retries a session whose delete failed: it is deleted and SESSION_DELETED is written on its run\'s ledger; KEPT, unrecorded and foreign sessions, and a tenant whose key cannot be read, are left alone', async () => {
+        const a = await seedWorld('fdel-a');
+        const b = await seedWorld('fdel-b');
+        const foreign = seedForeign(a);
+        // B's key cannot be read. Its failed delete is in the SAME workspace,
+        // which A's key opens: A's pass must not reach it.
+        await prisma.integrationConnection.update({ where: { id: b.connectionId }, data: { secretEncrypted: null } });
+        const before = await sessionSteps(a.tenantId, a.runId);
+
+        const tally = await reconcileLostSessionDeletes();
+
+        // A: the failed delete is gone, and only it.
+        expect(held(a)).toEqual({ ...ALL_HELD, deleteFailed: false });
+        expect(faux.deletes).toContain(a.deleteFailed);
+        expect(await lifecyclesOf(a.tenantId, a.runId, a.deleteFailed)).toEqual(['SESSION_CREATED', 'SESSION_DELETE_FAILED', 'SESSION_DELETED']);
+        const after = await sessionSteps(a.tenantId, a.runId);
+        expect(after).toHaveLength(before.length + 1);
+        expect(after[after.length - 1]).toEqual({
+            seq: Math.max(...before.map((st) => st.seq)) + 1,
+            status: 'DONE',
+            lifecycle: 'SESSION_DELETED',
+            sessionId: a.deleteFailed,
+        });
+        // The kept session: no DELETED step either (decision 4).
+        expect(await lifecyclesOf(a.tenantId, a.runId, a.kept)).toEqual(['SESSION_CREATED', 'SESSION_KEPT']);
+        assertForeignUntouched(foreign);
+        // B: every session still there, nothing written to its ledger, the reason named.
         expect(held(b)).toEqual(ALL_HELD);
+        expect(await lifecyclesOf(b.tenantId, b.runId, b.deleteFailed)).toEqual(['SESSION_CREATED', 'SESSION_DELETE_FAILED']);
+        expect(failedDeleteSpy).toHaveBeenCalledWith({ outcome: 'DONE' });
+        expect(failedDeleteSpy).toHaveBeenCalledWith({ outcome: 'CONNECTION_UNREADABLE' });
+        expect(tally.retriedDeleted).toBeGreaterThanOrEqual(1);
+        // No DELETE reached a session of B's, and none reached anything A did not record.
+        expect(faux.deletes).not.toContain(b.deleteFailed);
+        expect(faux.deletes.filter((id) => [a.kept, a.createdOnly, a.crashWindow, a.unheldRun].includes(id))).toEqual([]);
+
+        // A second pass: A's session is no longer awaiting a retry, so no DELETE is sent for it again.
+        const deletesBefore = faux.requests.filter((r) => r.method === 'DELETE' && r.path.endsWith(a.deleteFailed)).length;
+        await reconcileLostSessionDeletes();
+        expect(faux.requests.filter((r) => r.method === 'DELETE' && r.path.endsWith(a.deleteFailed)).length).toBe(deletesBefore);
+        expect(await lifecyclesOf(a.tenantId, a.runId, a.deleteFailed)).toEqual(['SESSION_CREATED', 'SESSION_DELETE_FAILED', 'SESSION_DELETED']);
+    });
+
+    it('a failed delete the provider cannot take is left for the next pass, with its named outcome (unreachable, 401, still running), and the next pass deletes it; a 404 counts as deleted', async () => {
+        const a = await seedWorld('fretry-a');
+        const gone = `sesn_failed_gone_${SUITE}`;
+        await recordLifecycle(a, a.runId, gone, ['SESSION_CREATED', 'SESSION_DELETE_FAILED']);
+        const failedOnly = ['SESSION_CREATED', 'SESSION_DELETE_FAILED'];
+
+        faux.unreachable = true;
+        await reconcileLostSessionDeletes();
+        expect(faux.holdsSession(a.deleteFailed)).toBe(true);
+        expect(failedDeleteSpy).toHaveBeenCalledWith({ outcome: 'PROVIDER_UNREACHABLE' });
+        expect(await lifecyclesOf(a.tenantId, a.runId, a.deleteFailed)).toEqual(failedOnly);
+        expect(await lifecyclesOf(a.tenantId, a.runId, gone)).toEqual(failedOnly);
+
+        faux.unreachable = false;
+        faux.authStatus = 401;
+        failedDeleteSpy.mockClear();
+        await reconcileLostSessionDeletes();
+        expect(faux.holdsSession(a.deleteFailed)).toBe(true);
+        expect(failedDeleteSpy).toHaveBeenCalledWith({ outcome: 'AUTH_REFUSED' });
+        expect(await lifecyclesOf(a.tenantId, a.runId, a.deleteFailed)).toEqual(failedOnly);
+
+        faux.authStatus = null;
+        faux.sessions.get(a.deleteFailed)!.status = 'running';
+        failedDeleteSpy.mockClear();
+        await reconcileLostSessionDeletes();
+        expect(faux.holdsSession(a.deleteFailed)).toBe(true);
+        expect(failedDeleteSpy).toHaveBeenCalledWith({ outcome: 'SESSION_STILL_RUNNING' });
+        expect(await lifecyclesOf(a.tenantId, a.runId, a.deleteFailed)).toEqual(failedOnly);
+        // The session that is not in the workspace: a 404 once the key works again, so done.
+        expect(await lifecyclesOf(a.tenantId, a.runId, gone)).toEqual([...failedOnly, 'SESSION_DELETED']);
+        expect(failedDeleteSpy).toHaveBeenCalledWith({ outcome: 'ALREADY_GONE' });
+
+        faux.sessions.get(a.deleteFailed)!.status = 'idle';
+        failedDeleteSpy.mockClear();
+        const goneRequests = faux.requests.filter((r) => r.path.endsWith(gone)).length;
+        await reconcileLostSessionDeletes();
+        // Recorded deleted now: the failed-delete retry asks for it no more.
+        // (The lost-delete read-back reads it once more, a GET, within its week.)
+        expect(faux.requests.filter((r) => r.path.endsWith(gone) && r.method === 'DELETE').length).toBe(0);
+        expect(faux.requests.filter((r) => r.path.endsWith(gone)).length).toBeLessThanOrEqual(goneRequests + 1);
+        expect(faux.holdsSession(a.deleteFailed)).toBe(false);
+        expect(await lifecyclesOf(a.tenantId, a.runId, a.deleteFailed)).toEqual([...failedOnly, 'SESSION_DELETED']);
+        expect(failedDeleteSpy).toHaveBeenCalledWith({ outcome: 'DONE' });
+        // Nothing else of A's was touched along the way.
+        expect(held(a)).toEqual({ ...ALL_HELD, deleteFailed: false });
     });
 
     it('two tenants: RLS binds the records to their tenant, and one tenant\'s purge leaves the other\'s open record open', async () => {
