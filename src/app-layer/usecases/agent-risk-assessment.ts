@@ -77,6 +77,7 @@ import {
 import { logger } from '@/lib/observability/logger';
 import { SaveAgentAssessmentAnswerSchema } from '../schemas/agent-assessment.schemas';
 import type { RequestContext } from '../types';
+import { agentIdSubject } from '@/lib/notifications/agentic-bodies';
 
 /**
  * The agent, as the scorer and the staleness comparison need it.
@@ -752,7 +753,7 @@ export async function reassessAgentAfterChangeInTx(
                 // agent three times before lunch — each time re-assessing in
                 // between — is working on it, and is told once.
                 entityId: agentId,
-                subject: agentName ?? `Agent ${agentId}`,
+                subject: agentName ?? agentIdSubject(agentId),
                 // The axes that moved, in the words the audit row and the Risk
                 // tab already use. A bell that said only "out of date" would
                 // send the reader to the page to find out which of six things

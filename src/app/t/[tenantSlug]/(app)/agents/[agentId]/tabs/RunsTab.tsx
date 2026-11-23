@@ -14,6 +14,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
+import { localizedWorkflowName } from '@/lib/agentic/workflow-labels';
 import { runStatusLabelKey } from '@/lib/agentic/run-labels';
 import { profileRunLabel } from '@/lib/agentic/agent-profile';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
@@ -96,6 +97,7 @@ export function RunsTab({ agentId, refreshToken }: AgentTabProps) {
     // Run statuses are named under `agents`, where the runs list reads them
     // (#4532). One this build does not know shows its stored code.
     const tAgents = useTranslations('agents');
+    const tWorkflows = useTranslations('agentWorkflows');
     const statusLabel = (status: string) => {
         const key = runStatusLabelKey(status);
         return key ? tAgents(key) : status;
@@ -104,7 +106,7 @@ export function RunsTab({ agentId, refreshToken }: AgentTabProps) {
     // ("Behaviour v3 — Test run", #5374), never by its raw key.
     const runName = (workflowKey: string) => {
         const def = getWorkflowDefinition(workflowKey);
-        if (def) return def.name;
+        if (def) return localizedWorkflowName(workflowKey, def.name, tWorkflows);
         const profile = profileRunLabel(workflowKey);
         return profile ? tAgents(profile.key, profile.values) : workflowKey;
     };

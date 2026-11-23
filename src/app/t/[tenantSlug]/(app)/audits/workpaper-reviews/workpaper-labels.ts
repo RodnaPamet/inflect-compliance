@@ -9,9 +9,7 @@
  */
 import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
-
-/** A procedure id is dotted (`iam.leaver_timeliness`); a message key cannot be. */
-const procedureKey = (id: string) => id.replace(/\./g, '_');
+import { procedureNameKey } from '@/lib/agentic/agentic-check-titles';
 
 export interface WorkpaperLabels {
     procedure(id: string): string;
@@ -29,7 +27,7 @@ export function useWorkpaperLabels(): WorkpaperLabels {
         const word = (key: string, fallback: string) =>
             known(key) ? t(key as Parameters<typeof t>[0]) : fallback;
         return {
-            procedure: (id) => word(`${W}.procedureName.${procedureKey(id)}`, id),
+            procedure: (id) => word(`${W}.procedureName.${procedureNameKey(id)}`, id),
             conclusion: (conclusion, basis) =>
                 t(`${W}.conclusionValue`, {
                     conclusion: word(`${W}.conclusionLabel.${conclusion}`, conclusion),

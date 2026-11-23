@@ -24,6 +24,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { useLocalizedProcedureName } from '@/lib/agentic/use-localized-plan-name';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { AsyncCombobox, type AsyncOption } from '@/components/ui/async-combobox';
@@ -122,6 +123,8 @@ export function AuditPilotClient({
     menu?: Omit<AgentsViewsMenuProps, 'current'>;
 }) {
     const t = useTranslations('agents');
+    const localizedProcedure = useLocalizedProcedureName();
+    const procedureName = (p: AuditPilotProcedure) => localizedProcedure(p.id, p.title);
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const ready = readiness?.ready ?? true;
@@ -236,7 +239,10 @@ export function AuditPilotClient({
                 return t(`auditPilot.stepKind.${s.kind}`);
             case 'PLAN':
                 return t('auditPilot.stepKind.PLAN', {
-                    procedure: procedures.find((p) => p.id === s.procedure)?.title ?? s.procedure ?? '',
+                    procedure: (() => {
+                        const p = procedures.find((x) => x.id === s.procedure);
+                        return p ? procedureName(p) : (s.procedure ?? '');
+                    })(),
                 });
             default:
                 return s.step;
@@ -294,7 +300,7 @@ export function AuditPilotClient({
                     <ul className="space-y-compact">
                         {procedures.map((p) => (
                             <li key={p.id} className="flex flex-wrap items-center gap-compact" data-testid={`audit-pilot-procedure-${p.id}`}>
-                                <span className="w-full text-sm sm:w-64">{p.title}</span>
+                                <span className="w-full text-sm sm:w-64">{procedureName(p)}</span>
                                 <div className="w-full max-w-sm">
                                     <AsyncCombobox
                                         id={`audit-pilot-control-${p.id}`}

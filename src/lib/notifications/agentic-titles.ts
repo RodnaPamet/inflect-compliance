@@ -10,8 +10,8 @@
  * from `notificationTitles.<TYPE>`. Rows written before this existed carry the
  * same English, so they render translated too.
  *
- * The BODY is not covered: it interpolates the subject and a type-specific
- * detail into prose at emit time, and the parts are not stored separately.
+ * The BODY is one fixed sentence per type with a subject and a detail slot;
+ * `./agentic-bodies` writes it and reads a stored one back the same way.
  *
  * Client-safe on purpose — no server imports — since the bell and the
  * notifications page read it.

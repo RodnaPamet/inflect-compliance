@@ -30,6 +30,7 @@ import { UserCombobox } from '@/components/ui/user-combobox';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
+import { localizedWorkflowName } from '@/lib/agentic/workflow-labels';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { apiErrorMessage } from '@/lib/api-error';
 import {
@@ -518,11 +519,8 @@ function buildActionOptions(
 // #3471 — the workflows an agent can be started on. Static: the registry is
 // code, not tenant data, and `startWorkflowRun` rejects a key it does not hold
 // — so this list is a convenience over the server's own vocabulary, not the
-// thing that decides it.
-const workflowOptions: ComboboxOption[] = listWorkflowDefinitions().map((w) => ({
-    value: w.key,
-    label: w.name,
-}));
+// thing that decides it. Named at render, in the reader's language.
+const WORKFLOWS = listWorkflowDefinitions();
 
 const triggerOptions: ComboboxOption[] = eventOptionsByDomain().flatMap((g) =>
     g.events.map((ev) => ({ value: ev.name, label: ev.label })),
@@ -586,6 +584,7 @@ export interface RuleBuilderModalProps {
 
 export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBuilderModalProps) {
     const t = useTranslations('automation.ruleBuilder');
+    const tWorkflows = useTranslations('agentWorkflows');
     const operatorOptions = useMemo(() => buildOperatorOptions(t), [t]);
     const actionOptions = useMemo(() => buildActionOptions(t), [t]);
     const scheduleTargetOptions = useMemo(() => buildScheduleTargetOptions(t), [t]);
@@ -640,7 +639,9 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
         if (inForceRunKey && inForce !== null && inForceAllowsAutomation) {
             options.push({ value: inForceRunKey, label: t('agentProfileOption', { version: inForce }) });
         }
-        options.push(...workflowOptions);
+        options.push(
+            ...WORKFLOWS.map((w) => ({ value: w.key, label: localizedWorkflowName(w.key, w.name, tWorkflows) })),
+        );
         // A rule saved with a profile key the agent no longer has in force (a
         // newer version was approved, or the profile is not loaded yet) stays
         // selectable, labelled, so opening it for edit never drops the target.
@@ -649,7 +650,7 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
             options.push({ value: stored, label: t('agentProfileStored', { key: stored }) });
         }
         return options;
-    }, [inForceRunKey, inForce, inForceAllowsAutomation, form.agent.workflowKey, t]);
+    }, [inForceRunKey, inForce, inForceAllowsAutomation, form.agent.workflowKey, t, tWorkflows]);
     const profileNeedsAutomationTrigger = inForce !== null && inForceRunKey !== null && !inForceAllowsAutomation;
     // #5477 — the INVOKE_SUBFLOW target picker: the tenant's groups on live
     // automation canvases, labelled by map and group. The stored value stays

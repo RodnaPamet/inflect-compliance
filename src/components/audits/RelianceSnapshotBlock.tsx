@@ -13,6 +13,7 @@
  *   - every limit is shown; none is summarised away.
  */
 import { useTranslations } from 'next-intl';
+import { useLocalizedProcedureName } from '@/lib/agentic/use-localized-plan-name';
 import { StatusBadge } from '@/components/ui/status-badge';
 
 interface SamplingView {
@@ -151,6 +152,8 @@ function Limits({ limits, id }: { limits: string[]; id: string }) {
 /** The reliance part of one pack item; nothing for an item of another kind. */
 export function RelianceSnapshotBlock({ snapshot, itemId }: { snapshot: unknown; itemId: string }) {
     const t = useTranslations('external.auditShare.reliance');
+    // A procedure's name in the reader's language; the snapshot keeps its own.
+    const procedureName = useLocalizedProcedureName();
     const view = asRelianceView(snapshot);
     if (!view) return null;
 
@@ -159,7 +162,7 @@ export function RelianceSnapshotBlock({ snapshot, itemId }: { snapshot: unknown;
         return (
             <div className="mt-2 space-y-compact" data-testid={`reliance-control-${itemId}`}>
                 <p className="text-xs text-content-muted">
-                    {t('procedures', { list: r.procedures.map((p) => p.title).join(', ') || '—' })}
+                    {t('procedures', { list: r.procedures.map((p) => procedureName(p.id, p.title)).join(', ') || '—' })}
                 </p>
                 <Rate sampling={r.sampling} id={itemId} />
                 <Limits limits={r.limits} id={itemId} />
@@ -169,7 +172,7 @@ export function RelianceSnapshotBlock({ snapshot, itemId }: { snapshot: unknown;
                             <li key={w.id} data-testid={`reliance-workpaper-${w.id}`}>
                                 {t('workpaper', {
                                     period: w.periodLabel,
-                                    procedure: w.procedureId,
+                                    procedure: procedureName(w.procedureId, w.procedureId),
                                     conclusion: w.conclusion,
                                     exceptions: w.exceptionCount,
                                     state: RELIANCE_STATE_LABELS.has(w.sampling.state)
@@ -196,7 +199,7 @@ export function RelianceSnapshotBlock({ snapshot, itemId }: { snapshot: unknown;
             <ul className="text-xs space-y-tight">
                 {view.scope.map((s) => (
                     <li key={s.procedureId}>
-                        {t('scopeLine', { procedure: s.title, controls: s.controlIds.length })}
+                        {t('scopeLine', { procedure: procedureName(s.procedureId, s.title), controls: s.controlIds.length })}
                     </li>
                 ))}
             </ul>

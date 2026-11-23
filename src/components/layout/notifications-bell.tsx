@@ -47,6 +47,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { localizedNotificationTitle } from '@/lib/notifications/agentic-titles';
+import { localizedNotificationBody } from '@/lib/notifications/agentic-bodies';
 import { Bell, CheckCheck } from 'lucide-react';
 
 import { Popover } from '@/components/ui/popover';
@@ -165,6 +166,7 @@ function markReadRequest(tenantSlug: string | null): RequestInit {
 export function NotificationsBell() {
     const t = useTranslations('panels.bell');
     const tTitles = useTranslations('notificationTitles');
+    const tBodies = useTranslations('notificationBodies');
     // The CURRENT workspace, from the URL rather than `useTenantHref`: the bell
     // is also mounted in the org chrome, which has no tenant context (and so
     // no workspace to resolve a legacy tenant path against).
@@ -538,7 +540,7 @@ export function NotificationsBell() {
                                             </span>
                                         </div>
                                         <p className="text-xs text-content-muted line-clamp-2">
-                                            {n.message}
+                                            {localizedNotificationBody(n.type, n.message, tBodies)}
                                         </p>
                                     </>
                                 );

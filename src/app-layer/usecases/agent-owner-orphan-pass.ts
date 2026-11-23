@@ -92,6 +92,7 @@ import {
     servicePrincipalDisableNeedsAttention,
     type ServicePrincipalDisableRecord,
 } from '@/lib/agentic/service-principal-disable';
+import { ORPHAN_DETAIL } from '@/lib/notifications/agentic-bodies';
 
 /** What the pass decided — and, at AUTOMATIC, did — about the transfer task. */
 export type TransferTaskOutcome =
@@ -421,21 +422,11 @@ async function resolveOwnerRecipients(ctx: RequestContext): Promise<string[]> {
 function bellDetail(outcome: OrphanOutcome, failedStep: 'KILL' | 'SUSPEND' | undefined): string {
     switch (outcome) {
         case 'WOULD_SUSPEND_AND_KILL':
-            return (
-                'the owner-orphan pass is in DRY_RUN, so it was NOT stopped. At AUTOMATIC it ' +
-                'would be suspended and its kill switch engaged.'
-            );
+            return ORPHAN_DETAIL.WOULD_SUSPEND_AND_KILL;
         case 'FAILED':
-            return failedStep === 'KILL'
-                ? 'the owner-orphan pass could NOT engage its kill switch, so it may still be acting. ' +
-                      'Stop it by hand and check the pass record.'
-                : 'the owner-orphan pass engaged its kill switch (OWNER_DEPARTED) but could not suspend ' +
-                      'it. Check the pass record.';
+            return failedStep === 'KILL' ? ORPHAN_DETAIL.KILL_FAILED : ORPHAN_DETAIL.SUSPEND_FAILED;
         default:
-            return (
-                'the owner-orphan pass suspended it and engaged its kill switch (OWNER_DEPARTED). ' +
-                'The kill lifts only after a completed ownership transfer, by the new owner.'
-            );
+            return ORPHAN_DETAIL.CONTAINED;
     }
 }
 
