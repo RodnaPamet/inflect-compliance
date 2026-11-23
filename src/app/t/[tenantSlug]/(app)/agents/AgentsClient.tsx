@@ -58,6 +58,7 @@ import type { AgentKpiCounts } from '@/app-layer/repositories/RegisteredAgentRep
 import { BUDGET_RUN_TOKEN_CEILING, MAX_MONTHLY_TOKEN_BUDGET, monthlyBudgetSettingRefusal } from '@/lib/agentic/monthly-budget';
 import { isSettableConcurrencyCap, MAX_CONCURRENCY_CAP } from '@/lib/agentic/run-concurrency';
 import { apiRefusalMessage } from '@/lib/api-error';
+import { localizedCheckTitle } from '@/lib/agentic/agentic-check-titles';
 import { NumberStepper } from '@/components/ui/number-stepper';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { AgentsViewsMenu } from './AgentsViewsMenu';
@@ -776,6 +777,7 @@ export function AssurancePanel({
     const t = useTranslations('agents');
     // The control-test register's own result labels: these are control tests.
     const tTests = useTranslations('controlTests');
+    const tChecks = useTranslations('agentChecks');
     const { riskCoverage: rc, sampleAudit: sa, controlTests } = assurance;
     const unscored = rc.total - rc.scored;
     const unscheduled = controlTests.some((c) => c.scheduled === false);
@@ -807,7 +809,7 @@ export function AssurancePanel({
             <ul className="space-y-tight" data-testid="agents-assurance-checks">
                 {controlTests.map((c) => (
                     <li key={c.checkId}>
-                        <span className="text-content-default">{c.title}</span>{' '}
+                        <span className="text-content-default">{localizedCheckTitle(c.checkId, c.title, tChecks)}</span>{' '}
                         {c.result === null ? (
                             <span className="text-content-warning" data-testid={`agents-assurance-never-${c.checkId}`}>
                                 {c.scheduled === false
@@ -839,8 +841,11 @@ interface AssuranceSetupStep {
     control: { id: string; code: string | null; name: string } | null;
 }
 
+/** The facts a refusal's sentence is written from (`AssuranceRefusalMessage`). */
+type AssuranceRefusalMessage = { key: string } & Record<string, string | number>;
+
 type AssuranceSetupAnswer =
-    | { ok: false; refusal: string; detail: string }
+    | { ok: false; refusal: string; detail: string; check?: string; message?: AssuranceRefusalMessage }
     | { ok: true; applied: boolean; steps: AssuranceSetupStep[] };
 
 /**
@@ -850,6 +855,7 @@ type AssuranceSetupAnswer =
  */
 export function ScheduleAssuranceChecks({ tenantSlug }: { tenantSlug: string }) {
     const t = useTranslations('agents');
+    const tChecks = useTranslations('agentChecks');
     const router = useRouter();
     const [busy, setBusy] = useState(false);
     const [preview, setPreview] = useState<AssuranceSetupStep[] | null>(null);
@@ -877,7 +883,18 @@ export function ScheduleAssuranceChecks({ tenantSlug }: { tenantSlug: string }) 
             if (!answer) return;
             if (!answer.ok) {
                 setPreview(null);
-                setError(answer.detail);
+                // The refusal in the reader's language where the server named
+                // its sentence; the English `detail` otherwise.
+                const m = answer.message;
+                const refusalKey = m ? `refusal.${m.key}` : null;
+                setError(
+                    m && refusalKey && typeof tChecks.has === 'function' && tChecks.has(refusalKey)
+                        ? tChecks(refusalKey, {
+                              ...m,
+                              title: answer.check ? localizedCheckTitle(answer.check, answer.check, tChecks) : '',
+                          })
+                        : answer.detail,
+                );
                 return;
             }
             if (!apply) {
@@ -906,7 +923,7 @@ export function ScheduleAssuranceChecks({ tenantSlug }: { tenantSlug: string }) 
                         {preview.map((s) => (
                             <li key={s.check}>
                                 {t('register.assurance.schedule.previewLine', {
-                                    title: s.title,
+                                    title: localizedCheckTitle(s.check, s.title, tChecks),
                                     control: s.control ? `${s.control.code ?? ''} ${s.control.name}`.trim() : '',
                                 })}
                             </li>

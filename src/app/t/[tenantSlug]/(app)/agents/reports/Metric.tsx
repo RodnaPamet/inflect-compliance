@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { InfoTooltip } from '@/components/ui/tooltip';
+import { definitionText } from '@/lib/agentic/report-definition-text';
 
 /**
  * ONE FIGURE, WITH ITS DEFINITION, AND WITHOUT A FALSE ZERO (#2463).
@@ -66,11 +67,16 @@ export function Metric({
     definition: DefinitionView | undefined;
 }) {
     const t = useTranslations('agents');
+    const tMetrics = useTranslations('agentMetrics');
+    // The definition in the reader's language (`agentMetrics.<id>`), which the
+    // catalog holds for every registered metric; the payload's English is the
+    // fallback for an id it does not.
+    const text = definition ? definitionText(definition, tMetrics) : null;
 
     return (
         <div className="space-y-tight" data-testid={`metric-${id}`} data-metric-id={id}>
             <p className="text-xs uppercase tracking-wide text-content-subtle">
-                {definition?.label ?? id}
+                {text?.label ?? id}
             </p>
 
             {measure.state === 'MEASURED' ? (
@@ -84,17 +90,17 @@ export function Metric({
                 </p>
             )}
 
-            {definition ? (
+            {definition && text ? (
                 <p className="text-xs text-content-muted" data-testid={`metric-definition-${id}`}>
-                    {definition.population}
+                    {text.population}
                     {' '}
                     <InfoTooltip
-                        aria-label={t('reports.definitionAria', { label: definition.label })}
+                        aria-label={t('reports.definitionAria', { label: text.label })}
                         iconClassName="h-3 w-3"
                         content={
                             `${t('reports.moment')}: ${t(`reports.momentValue.${definition.moment}`)}. ` +
-                            `${t('reports.includes')}: ${definition.includes.join('; ')}. ` +
-                            `${t('reports.excludes')}: ${definition.excludes.join('; ')}.`
+                            `${t('reports.includes')}: ${text.includes}. ` +
+                            `${t('reports.excludes')}: ${text.excludes}.`
                         }
                     />
                 </p>

@@ -4,6 +4,7 @@ import { formatDate } from '@inflect/ui/lib/format-date';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { useLocalizedPlanName } from '@/lib/agentic/use-localized-plan-name';
 import Link from 'next/link';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
@@ -258,6 +259,7 @@ function TestsRollupContent() {
     // Hydration-safe clock — see the note on isOverdue above.
     const hydratedNow = useHydratedNow();
     const t = useTranslations('controlTests');
+    const planName = useLocalizedPlanName();
     const FREQ_LABELS = useMemo(() => freqLabels(t), [t]);
     // PR-R — localized enum→label maps for the plan-status + last-result badges.
     // PR-DD moved the builders into `@/components/test-plans/test-plan-labels` so the plan
@@ -693,7 +695,7 @@ function TestsRollupContent() {
                             href={tenantHref(`/tests/plans/${row.original.id}`)}
                             className="text-content-emphasis font-medium hover:text-[var(--brand-default)] transition"
                         >
-                            {row.original.name}
+                            {planName(row.original.name)}
                         </Link>
                     ),
                 },
@@ -789,7 +791,7 @@ function TestsRollupContent() {
                         ) : null,
                 },
             ])),
-        [t, tenantHref, orderColumns, FREQ_LABELS, PLAN_STATUS_LABELS, RESULT_LABELS, canRunTests, hydratedNow, handleQuickRun],
+        [t, tenantHref, orderColumns, FREQ_LABELS, PLAN_STATUS_LABELS, RESULT_LABELS, canRunTests, hydratedNow, handleQuickRun, planName],
     );
 
     // R3-P1 — columns for the Automated checks view.

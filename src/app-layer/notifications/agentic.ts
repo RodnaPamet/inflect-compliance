@@ -95,6 +95,7 @@ import {
     AGENTIC_NOTIFICATION_TITLES,
     type AgenticNotificationKind,
 } from '@/lib/notifications/agentic-titles';
+import { agenticBodyText } from '@/lib/notifications/agentic-bodies';
 import { insertedNotificationIds } from './inserted-ids';
 import { isInAppTypeEnabled } from './settings';
 
@@ -125,11 +126,13 @@ interface AgenticCopy {
 }
 
 /**
- * Copy, in the same shape and register as `assignment.ts`'s `COPY`. English
- * literals, matching every other notification emitter in the repo — the bell's
- * rows are written at emit time and stored. The TITLE is fixed per type, so the
- * bell renders it in the reader's language (`@/lib/notifications/agentic-titles`);
- * the body interpolates the subject at emit time and stays as stored.
+ * Copy, in the same shape and register as `assignment.ts`'s `COPY`. English,
+ * matching every other notification emitter in the repo — the bell's rows are
+ * written at emit time and stored. The TITLE is fixed per type, so the bell
+ * renders it in the reader's language (`@/lib/notifications/agentic-titles`).
+ * The BODY is one fixed sentence per type with a subject and a detail slot,
+ * written by `@/lib/notifications/agentic-bodies`, which also reads a stored
+ * body back and renders it in the reader's language.
  *
  * The link is to wherever the recipient can ACT on what they were told. For a
  * kill switch that is the register, where you lift it; for a quarantined
@@ -145,25 +148,17 @@ interface AgenticCopy {
 const COPY: Record<AgenticNotificationKind, AgenticCopy> = {
     AGENT_KILL_SWITCH_ENGAGED: {
         title: AGENTIC_NOTIFICATION_TITLES.AGENT_KILL_SWITCH_ENGAGED,
-        body: (subject) =>
-            `${subject} is stopped at the tool boundary, including runs already in flight. ` +
-            `Its registered status is unchanged — lift the kill switch to let it act again.`,
+        body: (subject, detail) => agenticBodyText('AGENT_KILL_SWITCH_ENGAGED', subject, detail),
         linkPath: (slug) => `/t/${slug}/agents`,
     },
     AGENT_PROPOSAL_QUARANTINED: {
         title: AGENTIC_NOTIFICATION_TITLES.AGENT_PROPOSAL_QUARANTINED,
-        body: (subject) =>
-            `The output guard refused a write from ${subject}. Quarantine is terminal — ` +
-            `the proposal cannot be approved. Read the attempted content before deciding ` +
-            `whether the agent should keep running.`,
+        body: (subject, detail) => agenticBodyText('AGENT_PROPOSAL_QUARANTINED', subject, detail),
         linkPath: (slug) => `/t/${slug}/agents/quarantine`,
     },
     AGENT_CIRCUIT_BREAKER_TRIPPED: {
         title: AGENTIC_NOTIFICATION_TITLES.AGENT_CIRCUIT_BREAKER_TRIPPED,
-        body: (subject, detail) =>
-            `${subject} was stopped automatically by its behavioural circuit breaker` +
-            `${detail === null ? '' : ` — firing signals: ${detail}`}. ` +
-            `It cannot act at the tool boundary until somebody closes the breaker with a reason.`,
+        body: (subject, detail) => agenticBodyText('AGENT_CIRCUIT_BREAKER_TRIPPED', subject, detail),
         // The AGENT's page, not the register: breaker state appears on the
         // detail page's breaker tab and nowhere else, and closing it — the
         // only thing that restarts the agent — is done from there.
@@ -171,11 +166,7 @@ const COPY: Record<AgenticNotificationKind, AgenticCopy> = {
     },
     AGENT_TOOL_MANIFEST_PIN_CHANGED: {
         title: AGENTIC_NOTIFICATION_TITLES.AGENT_TOOL_MANIFEST_PIN_CHANGED,
-        body: (subject, detail) =>
-            `${subject} was accepted for every agent in this workspace, clearing the ` +
-            `tool boundary's refusal${detail === null ? '' : ` (${detail})`}. ` +
-            `A tool's description is instruction text the model reads, so an approval ` +
-            `nobody expected is a supply-chain event — check who approved it and why.`,
+        body: (subject, detail) => agenticBodyText('AGENT_TOOL_MANIFEST_PIN_CHANGED', subject, detail),
         // THE SUBJECT AND BODY NAME THE TOOL AND NOTHING ELSE. Never the
         // description: the whole hazard a pin exists for is that the
         // description is instruction text, and a bell row is read by a person
@@ -192,11 +183,7 @@ const COPY: Record<AgenticNotificationKind, AgenticCopy> = {
     },
     AGENT_RISK_ASSESSMENT_STALE: {
         title: AGENTIC_NOTIFICATION_TITLES.AGENT_RISK_ASSESSMENT_STALE,
-        body: (subject, detail) =>
-            `${subject} has been widened since its risk assessment was completed` +
-            `${detail === null ? '' : ` — ${detail}`}. ` +
-            `Its tier has already been re-scored from the answers on file, so the ceiling ` +
-            `is current; what may no longer hold are the answers themselves. Re-assess it.`,
+        body: (subject, detail) => agenticBodyText('AGENT_RISK_ASSESSMENT_STALE', subject, detail),
         // The AGENT's page, like the breaker bell and for the same reason: the
         // stale notice, the triggers and the "Re-assess" action all live on
         // that page's Risk tab, and the register carries no staleness column.
@@ -208,12 +195,7 @@ const COPY: Record<AgenticNotificationKind, AgenticCopy> = {
         // do, at AUTOMATIC what it did. Signal codes only — never the departed
         // person's name or address, which the subject does not need either: the
         // agent is what the bell is about.
-        body: (subject, detail) =>
-            `The accountable owner of ${subject} is no longer an active member of this ` +
-            `workspace, or their HR record is terminated` +
-            `${detail === null ? '.' : ` — ${detail}`} ` +
-            'Its ownership moves only by a two-step transfer: an OWNER proposes the new ' +
-            'owner and the new owner accepts.',
+        body: (subject, detail) => agenticBodyText('AGENT_OWNER_DEPARTED', subject, detail),
         // The AGENT's page: it names the owner, and the transfer is about it.
         linkPath: (slug, agentId) => `/t/${slug}/agents/${agentId}`,
     },

@@ -63,6 +63,7 @@ import {
     type BreakerVerdict,
     type RejectionCounts,
 } from './circuit-breaker';
+import { agentIdSubject } from '@/lib/notifications/agentic-bodies';
 
 /** The rejection signal's recent period: one day of human review. */
 const REJECTION_RECENT_MS = 24 * 60 * 60 * 1000;
@@ -537,7 +538,7 @@ async function notifyBreakerTrip(trip: {
                 tenantId: trip.tenantId,
                 tenantSlug: tenant?.slug ?? null,
                 entityId: trip.agentId,
-                subject: recipients.agentName ?? `Agent ${trip.agentId}`,
+                subject: recipients.agentName ?? agentIdSubject(trip.agentId),
                 detail: signals.length === 0 ? null : signals.join(', '),
                 recipientUserIds: recipients.recipientUserIds,
                 actorUserId: null,

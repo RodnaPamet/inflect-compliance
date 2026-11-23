@@ -8,6 +8,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { useLocalizedPlanName } from '@/lib/agentic/use-localized-plan-name';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
@@ -54,6 +55,7 @@ export function InheritedTestPlansPanel({
     const [failed, setFailed] = useState(false);
     const t = useTranslations('panels');
     const tr = useTranslations();
+    const planName = useLocalizedPlanName();
     const entityWord = entityLabel === 'risk' ? t('inherited.entityRisk') : entityLabel === 'asset' ? t('inherited.entityAsset') : entityLabel === 'policy' ? t('inherited.entityPolicy') : entityLabel;
     const PLAN_STATUS_LABELS = useMemo<Record<string, string>>(() => ({
         ACTIVE: tr('controlTests.filterEnums.status.ACTIVE'), PAUSED: tr('controlTests.filterEnums.status.PAUSED'),
@@ -93,8 +95,8 @@ export function InheritedTestPlansPanel({
         {
             id: 'name',
             header: t('col.testPlan'),
-            accessorFn: (r) => r.name,
-            cell: ({ row }) => <span className="text-sm text-content-default">{row.original.name}</span>,
+            accessorFn: (r) => planName(r.name),
+            cell: ({ row }) => <span className="text-sm text-content-default">{planName(row.original.name)}</span>,
         },
         {
             accessorKey: 'method',

@@ -17,6 +17,7 @@
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { useState, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
+import { useLocalizedPlanName } from '@/lib/agentic/use-localized-plan-name';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
@@ -124,6 +125,7 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
     const canManagePlan = appPermissions.tests.create;
     const canRun = appPermissions.tests.execute;
     const t = useTranslations('controls');
+    const planName = useLocalizedPlanName();
     // Second binding: the plan/run enum labels live in `controlTests` (where the
     // /tests register already localized them), so reuse those keys rather than
     // duplicating the vocabulary under `controls`.
@@ -254,7 +256,7 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
         ? [
             { label: t('detailPage.breadcrumbDashboard'), href: tenantHref('/dashboard') },
             { label: t('detailPage.breadcrumbTests'), href: tenantHref('/tests') },
-            { label: plan.name },
+            { label: planName(plan.name) },
         ]
         : [
             { label: t('detailPage.breadcrumbDashboard'), href: tenantHref('/dashboard') },
@@ -270,7 +272,7 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
                 ),
                 href: tenantHref(`/controls/${plan.controlId}`),
             },
-            { label: plan.name },
+            { label: planName(plan.name) },
         ];
 
     return (
@@ -294,7 +296,7 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
                         изпълнение (n) is one execution of it, and Bulgarian
                         makes them disagree in gender as well as in meaning. */}
                     <div className="flex items-center gap-2.5">
-                        <Heading level={1} id="test-plan-title">{plan.name}</Heading>
+                        <Heading level={1} id="test-plan-title">{planName(plan.name)}</Heading>
                         <EntityPrevNextNav
                             ids={planIds}
                             currentId={planId}
