@@ -33,7 +33,10 @@
  *   as written, every version kept, so the run's drift check reads back what
  *   Inflect wrote;
  *   POST /v1/sessions, GET|DELETE /v1/sessions/{id}, GET /v1/sessions/{id}/events,
- *   POST /v1/sessions/{id}/events, GET /v1/sessions/{id}/events/stream (SSE).
+ *   POST /v1/sessions/{id}/events, GET /v1/sessions/{id}/events/stream (SSE);
+ *   GET /v1/sessions?agent_id=…, the one page of an agent's live sessions that a
+ *   run lists at its start for a session an earlier segment never recorded
+ *   (#5854).
  *
  * A session plays a fixed two-turn script, one model call each: the first calls
  * the agent's first custom tool other than `activate_skill` with `{}` and idles
@@ -278,6 +281,12 @@ const server = createServer(async (req, res) => {
             return reply(res, 200, agent);
         }
         return apiError(res, 405, 'invalid_request_error', 'method not allowed');
+    }
+    if (p === '/v1/sessions' && method === 'GET') {
+        const agentId = url.searchParams.get('agent_id');
+        if (!agentId) return apiError(res, 400, 'invalid_request_error', 'faux: a session list names an agent');
+        const data = [...ws.sessions.values()].filter((s) => !s.deleted && s.agentId === agentId).map(sessionObject);
+        return reply(res, 200, { data, next_page: null });
     }
     if (p === '/v1/sessions' && method === 'POST') {
         const agent = body?.agent ?? {};

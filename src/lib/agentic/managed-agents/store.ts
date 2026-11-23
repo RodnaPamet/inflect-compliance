@@ -17,6 +17,9 @@
  *   readProfileAgent          the profile's live agent in a workspace, for the
  *                             next version's update.
  *   readConnectionEnvironment the environment already made for a connection.
+ *   readRecordedSessionIds    the sessions this run's ledger already names
+ *                             (#5854), so a segment's start settles only the
+ *                             ones a dead segment never recorded.
  *   recordProvision           the ONE writer of `AgentProfileProvision`.
  *
  * The decrypted key leaves this module only as a field of the returned
@@ -226,6 +229,46 @@ export async function readConnectionEnvironment(ctx: RequestContext, connectionI
         }),
     );
     return row?.environmentId ?? null;
+}
+
+/** How many ledger steps one read of a run's sessions takes; one more is read so a truncation is a fact held. */
+export const RUN_SESSION_STEPS_READ_CAP = 500;
+
+/**
+ * THE SESSIONS THIS RUN'S LEDGER ALREADY NAMES (Step 5H, #5854): every session
+ * id on one of its `managed-agents-session` steps, whatever the lifecycle. On
+ * this engine every SYNTHESIS step of a run is a session step; the lifecycle
+ * is inside the encrypted `inputJson`, so each is read and parsed. A run makes
+ * one session per segment, so the read is small; `truncated` says when it was
+ * not, and the caller then settles nothing rather than settle a session that
+ * may be recorded past the cap.
+ */
+export async function readRecordedSessionIds(
+    ctx: RequestContext,
+    runId: string,
+): Promise<{ sessionIds: ReadonlySet<string>; truncated: boolean }> {
+    const steps = await runInTenantContext(ctx, (db) =>
+        db.workflowStep.findMany({
+            where: { tenantId: ctx.tenantId, runId, kind: 'SYNTHESIS' },
+            select: { inputJson: true },
+            orderBy: [{ seq: 'asc' }, { id: 'asc' }],
+            take: RUN_SESSION_STEPS_READ_CAP + 1,
+        }),
+    );
+    const sessionIds = new Set<string>();
+    for (const step of steps.slice(0, RUN_SESSION_STEPS_READ_CAP)) {
+        let input: unknown = null;
+        try {
+            input = step.inputJson ? JSON.parse(step.inputJson) : null;
+        } catch {
+            input = null;
+        }
+        const { lifecycle, sessionId } = (input ?? {}) as { lifecycle?: unknown; sessionId?: unknown };
+        if (typeof lifecycle === 'string' && lifecycle.startsWith('SESSION_') && typeof sessionId === 'string') {
+            sessionIds.add(sessionId);
+        }
+    }
+    return { sessionIds, truncated: steps.length > RUN_SESSION_STEPS_READ_CAP };
 }
 
 /** THE ONE WRITER of `AgentProfileProvision`. */

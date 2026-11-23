@@ -49,7 +49,6 @@ import { encryptField, hashForLookup } from '@/lib/security/encryption';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { DRIVER_IMPLEMENTED } from '@/lib/agentic/agent-driver';
-import { SESSION_STEP_LABEL } from '@/lib/agentic/managed-agents/execute';
 import { MANAGED_AGENTS_SPAN_PROVIDER } from '@/lib/agentic/managed-agents/model-decision';
 import { executeQueuedWorkflowRun } from '@/app-layer/usecases/workflow-runs';
 import {
@@ -207,7 +206,8 @@ describeFn('the Managed Agents engine, on (real DB, faux workspace)', () => {
         const v1 = await createAgentProfile(author(), AGENT, version());
         await submitAgentProfileVersion(author(), AGENT, 1);
         await approveAgentProfileVersion(reviewer(), AGENT, 1, { instructionsHash: v1.instructionsHash });
-        scriptRuns(4);
+        // More scripted runs than the suite makes: a turn left over is never read.
+        scriptRuns(12);
     });
 
     afterAll(async () => {
@@ -234,6 +234,26 @@ describeFn('the Managed Agents engine, on (real DB, faux workspace)', () => {
         expect(faux.deletes).toContain(steps[0].sessionId);
         // Both model calls wrote a span-derived Art 12 row.
         expect(await prisma.aiDecisionLog.count({ where: { tenantId: TENANT, provider: MANAGED_AGENTS_SPAN_PROVIDER } })).toBe(2);
+    });
+
+    it('a session a dead segment left unrecorded is found at the next segment\'s start, recorded and deleted (#5854)', async () => {
+        const started = await startAgentProfileTestRun(reviewer(), AGENT, 1);
+        const { anthropicAgentId } = await prisma.agentProfileProvision.findFirstOrThrow({
+            where: { tenantId: TENANT, connectionId },
+            select: { anthropicAgentId: true },
+        });
+        // An earlier segment's worker died after `sessions.create` answered and
+        // before `SESSION_CREATED` was written: no ledger step names it.
+        const orphan = faux.seedSession({ agentId: anthropicAgentId, metadata: { inflect_tenant: TENANT, inflect_run: started.runId } });
+
+        const outcome = await executeQueuedWorkflowRun(TENANT, started.runId);
+        expect(outcome).toMatchObject({ status: 'COMPLETED' });
+
+        const steps = await sessionSteps(started.runId);
+        expect(steps.map((s) => s.lifecycle)).toEqual(['SESSION_CREATED', 'SESSION_DELETED', 'SESSION_CREATED', 'SESSION_DELETED']);
+        expect(steps.slice(0, 2).map((s) => s.sessionId)).toEqual([orphan, orphan]);
+        expect(steps[2].sessionId).not.toBe(orphan);
+        expect(faux.holdsSession(orphan)).toBe(false);
     });
 
     it('when the connection keeps sessions, the session remains in the workspace and is recorded as kept', async () => {

@@ -15,7 +15,9 @@
  * invocation, the caps and the wall clock; the tool offer, built over the
  * engine-neutral core with this engine's guard prefix (`managed-agents`), so a
  * call is offered exactly what any engine is offered and runs through
- * `runGuardedTool`; the business-data transfer gate (#3872); and the DRIFT
+ * `runGuardedTool`; the business-data transfer gate (#3872); a look for a
+ * session of THIS run that a dead segment created and never recorded, which is
+ * recorded and settled (`settleUnrecordedSessions`, #5854); and the DRIFT
  * CHECK: the agent is read at the version the profile pinned, and a `system`
  * or `tools` that no longer hashes to what Inflect wrote refuses the run
  * `AGENT_DRIFTED`. Every refusal settles the run with a named reason and
@@ -160,7 +162,7 @@ import {
 import { listCrashWindow } from './cleanup';
 import { recordManagedAgentsDecision, type InflectSentInput } from './model-decision';
 import { sessionStepRecord, type SessionLifecycle } from './session-ledger';
-import type { ProvisionRecord } from './store';
+import { readRecordedSessionIds, type ProvisionRecord } from './store';
 
 const RANK: Record<StepGuardObservation['verdict'], number> = { CLEAN: 0, FLAGGED: 1, QUARANTINED: 2 };
 
@@ -558,8 +560,20 @@ export async function executeManagedAgentsRun(
     const skillTool = activateSkillTool(binding, skills, queue);
     const runnables = new Map([...offered.tools, ...(skillTool ? [skillTool] : [])].map((t) => [t.name, t]));
 
-    // ── DRIFT: the agent at the pinned version, before the session exists ───
     const pinned = route.provision;
+
+    // ── A DEAD SEGMENT'S UNRECORDED SESSION (Step 5H, #5854) ────────────────
+    // A worker that died after `sessions.create` answered and before
+    // `SESSION_CREATED` was written left a session no ledger names, which only
+    // a purge or a connection removal would find. This run is re-run in a new
+    // segment, so its start looks first: the pinned agent's sessions, by the
+    // crash window's own listing, taken only when their metadata names this
+    // tenant AND this run and the run's ledger does not hold them. Each is
+    // recorded, then settled. Never throws, and never blocks the run: what it
+    // cannot reach is left to the purge and a connection removal, as before.
+    await settleUnrecordedSessions(ctx, runId, client, pinned.anthropicAgentId, route, binding, 'AT_SEGMENT_START');
+
+    // ── DRIFT: the agent at the pinned version, before the session exists ───
     let agent: RetrievedAgent;
     try {
         agent = (await client.beta.agents.retrieve(pinned.anthropicAgentId, { version: pinned.anthropicAgentVersion })) as unknown as RetrievedAgent;
@@ -637,7 +651,9 @@ export async function executeManagedAgentsRun(
         // sessions listed by the pinned agent only, taken only when their
         // metadata names this tenant AND this run. Each is recorded, then
         // settled like any other (deleted, or recorded kept). Never throws.
-        if (code.status === null) await settleUnrecordedSessions(ctx, runId, client, pinned.anthropicAgentId, route, binding);
+        if (code.status === null) {
+            await settleUnrecordedSessions(ctx, runId, client, pinned.anthropicAgentId, route, binding, 'AFTER_LOST_CREATE');
+        }
         const status = await failRun(ctx, runId, sessionNotCreatedMessage(code));
         return { status, stepFailures: 1 };
     }
@@ -1042,10 +1058,19 @@ async function recordSessionStep(
 }
 
 /**
- * The sessions of THIS run that a lost `sessions.create` answer left with no
- * id on the ledger (Step 5H, #4169): listed through the clean-up's own
- * crash-window call (`listCrashWindow`, by the pinned agent, this tenant's
- * metadata only) and taken only when the metadata names this run. Each is
+ * When an unrecorded session of this run is looked for: at the start of every
+ * segment (#5854), and after a `sessions.create` that got no answer (#4169).
+ */
+type UnrecordedSessionSearch = 'AT_SEGMENT_START' | 'AFTER_LOST_CREATE';
+
+/**
+ * The sessions of THIS run that no ledger step names (Step 5H): a create whose
+ * answer the network lost (#4169), or one a dead segment's worker never got to
+ * record (#5854). Listed through the clean-up's own crash-window call
+ * (`listCrashWindow`, by the pinned agent, this tenant's metadata only), taken
+ * only when the metadata names this run and the run's ledger does not already
+ * hold the session, so a KEPT or a failed-delete session of an earlier segment
+ * is left to the settle and the reconciliation that own it. Each one taken is
  * recorded `SESSION_CREATED`, then settled. Never throws: what it cannot reach
  * is left to the purge's and a connection removal's crash window.
  */
@@ -1056,28 +1081,39 @@ async function settleUnrecordedSessions(
     agentId: string,
     route: ManagedAgentsRoute,
     binding: ToolRunBinding,
+    search: UnrecordedSessionSearch,
 ): Promise<void> {
     try {
         const listing = await listCrashWindow(client, agentId, ctx.tenantId, undefined);
         if (!listing.ok) {
-            logger.warn('managed-agents: a session create had no answer, and the agent\'s sessions could not be listed', {
-                component: 'agentic', runId: binding.runId, outcome: listing.outcome,
+            logger.warn('managed-agents: the agent\'s sessions could not be listed for an unrecorded session of this run', {
+                component: 'agentic', runId: binding.runId, search, outcome: listing.outcome,
             });
             return;
         }
-        for (const found of listing.candidates.filter((c) => c.runId === runId)) {
+        const ours = listing.candidates.filter((c) => c.runId === runId);
+        if (ours.length === 0) return;
+        const ledger = await readRecordedSessionIds(ctx, runId);
+        if (ledger.truncated) {
+            logger.warn('managed-agents: the run\'s ledger is longer than one read; no unrecorded session is settled', {
+                component: 'agentic', runId: binding.runId, search,
+            });
+            return;
+        }
+        for (const found of ours.filter((c) => !ledger.sessionIds.has(c.sessionId))) {
             await recordSessionStep(ctx, runId, binding.nextSeq(), 'SESSION_CREATED', {
                 sessionId: found.sessionId,
                 connectionId: route.connectionId,
                 agentId,
-                foundAfterLostCreate: true,
+                foundUnrecorded: search,
             });
-            await settleSession(ctx, runId, client, found.sessionId, route, binding, false);
+            await settleSession(ctx, runId, client, found.sessionId, route, binding, search === 'AT_SEGMENT_START');
         }
     } catch (err) {
-        logger.error('managed-agents: a session whose create had no answer could not be settled', {
+        logger.error('managed-agents: an unrecorded session of this run could not be settled', {
             component: 'agentic',
             runId: binding.runId,
+            search,
             error: err instanceof Error ? err.name : 'a non-Error value was thrown',
         });
     }

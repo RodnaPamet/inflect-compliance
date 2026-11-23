@@ -298,6 +298,16 @@ jest.mock('@/lib/agentic/managed-agents/store', () => ({
     recordProvision: jest.fn(async (_ctx: unknown, record: Record<string, unknown>) => {
         mockState.provisions.push({ ...record });
     }),
+    // The run's ledger is `mockState.ledger`, which the step recorder fills.
+    readRecordedSessionIds: jest.fn(async () => ({
+        sessionIds: new Set(
+            mockState.ledger
+                .filter((s) => s.rec.label === 'managed-agents-session')
+                .map((s) => (s.rec.input as { sessionId?: unknown }).sessionId)
+                .filter((id): id is string => typeof id === 'string'),
+        ),
+        truncated: false,
+    })),
 }));
 
 import type { RequestContext } from '@/app-layer/types';
@@ -733,6 +743,65 @@ describe('Step 5b hardening', () => {
             expect(faux.holdsSession(otherTenant)).toBe(true);
             // No message was ever sent to it.
             expect(faux.modelInputs).toEqual([]);
+        });
+    });
+
+    describe('a session a dead segment created and never recorded is settled at the next segment\'s start, before its own session (#5854)', () => {
+        it.each([
+            ['deleted, by default (interrupted first: it was left running)', false],
+            ['recorded kept, on a connection that keeps sessions', true],
+        ] as const)('%s', async (_label, keep) => {
+            const run = { tools: [LIST_RISKS], turns: [{ text: 'done' }] } as ConformanceRun;
+            reset(run);
+            mockState.keepSessions = keep;
+            const def = definitionFor(['list_risks'], false);
+            await provision(run, def);
+            faux.turns = [{ text: 'done' }];
+            const agentId = mockState.provisions[0].anthropicAgentId as string;
+            const ours = { inflect_tenant: 'tenant-conformance', inflect_run: 'run-resumed' };
+            // The earlier segment's worker died after `sessions.create` answered
+            // and before `SESSION_CREATED` was written: no ledger step names it.
+            const orphan = faux.seedSession({ agentId, metadata: ours, status: 'running' });
+            // An earlier segment's KEPT session IS on the ledger: its settle owns it.
+            const recorded = faux.seedSession({ agentId, metadata: ours });
+            mockState.ledger.push({
+                kind: 'SYNTHESIS',
+                rec: { label: 'managed-agents-session', input: { lifecycle: 'SESSION_KEPT', sessionId: recorded, connectionId: 'conn-workspace' } },
+            });
+            // On the same agent: another run's session, and another tenant's. Never touched.
+            const otherRun = faux.seedSession({ agentId, metadata: { inflect_tenant: 'tenant-conformance', inflect_run: 'run-someone-else' } });
+            const otherTenant = faux.seedSession({ agentId, metadata: { inflect_tenant: 'tenant-other', inflect_run: 'run-resumed' } });
+
+            const outcome = await runManagedAgentsDriver(context(), 'run-resumed', def, 0, Date.now());
+
+            expect(outcome.status).toBe('COMPLETED');
+            const created = faux.sessionCreates.length;
+            expect(created).toBe(1);
+            const fresh = [...faux.sessions.values()].find((x) => !Object.values({ orphan, recorded, otherRun, otherTenant }).includes(x.id));
+            expect(fresh).toBeDefined();
+            const settled = keep ? 'SESSION_KEPT' : 'SESSION_DELETED';
+            const steps = mockState.ledger
+                .filter((st) => st.rec.label === 'managed-agents-session')
+                .map((st) => [(st.rec.input as { lifecycle: string }).lifecycle, (st.rec.input as { sessionId: string }).sessionId]);
+            expect(steps).toEqual([
+                ['SESSION_KEPT', recorded],
+                ['SESSION_CREATED', orphan],
+                [settled, orphan],
+                ['SESSION_CREATED', fresh!.id],
+                [settled, fresh!.id],
+            ]);
+            expect(faux.holdsSession(orphan)).toBe(keep);
+            // Settled BEFORE the segment's own session was asked for.
+            const paths = faux.requests.map((r) => `${r.method} ${r.path}`);
+            if (!keep) {
+                expect(faux.interrupts).toContain(orphan);
+                expect(paths.indexOf(`DELETE /v1/sessions/${orphan}`)).toBeLessThan(paths.indexOf('POST /v1/sessions'));
+            } else {
+                expect(paths.indexOf('GET /v1/sessions')).toBeLessThan(paths.indexOf('POST /v1/sessions'));
+            }
+            for (const untouched of [recorded, otherRun, otherTenant]) expect(faux.holdsSession(untouched)).toBe(true);
+            // The recorded one was not recorded again.
+            expect(steps.filter(([, id]) => id === recorded)).toHaveLength(1);
         });
     });
 
