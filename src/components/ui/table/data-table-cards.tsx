@@ -140,17 +140,21 @@ function isRenderedValueEmpty(el: HTMLElement): boolean {
  * The value's own `truncate` spans become BLOCK-level here. Pages write
  * `<span className="truncate">` for their desktop table cells, and on an
  * inline span `truncate` never truncates: the text ran past the card's edge
- * and the shell's `overflow-x-clip` cut it off with no ellipsis.
+ * and the shell's `overflow-x-clip` cut it off with no ellipsis. The TITLE is
+ * the exception (`wrapTitle`): it is what identifies the row, so a truncating
+ * title cell wraps in full instead of ending in an ellipsis.
  */
 function CardField({
     label,
     children,
     omitWhenEmpty,
+    wrapTitle = false,
     testId,
 }: {
     label: string | null;
     children: React.ReactNode;
     omitWhenEmpty: boolean;
+    wrapTitle?: boolean;
     testId?: string;
 }) {
     const fieldRef = React.useRef<HTMLDivElement>(null);
@@ -190,7 +194,9 @@ function CardField({
                 className={cn(
                     "min-w-0 max-w-full break-words text-content-default",
                     "[&_.truncate]:block [&_.truncate]:max-w-full",
-                    label ? "sm:text-right" : "flex-1",
+                    wrapTitle &&
+                        "[&_.truncate]:whitespace-normal [&_.truncate]:[overflow-wrap:anywhere]",
+                    label && !wrapTitle ? "sm:text-right" : "flex-1",
                 )}
             >
                 {children}
@@ -411,6 +417,7 @@ export function DataTableCards<T extends TableRowData>({
                                         <CardField
                                             label={labelOf(titleCell.column.columnDef.header)}
                                             omitWhenEmpty={false}
+                                            wrapTitle
                                         >
                                             {render(titleCell)}
                                         </CardField>

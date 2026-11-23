@@ -59,6 +59,7 @@ that was a faint beige on the light theme's track.
 | `src/components/ui/table/data-table.tsx` | One prop: tells the cards whether anything acts on a selection |
 | `src/types/tanstack-table.d.ts` | `ColumnMeta.cardAction` |
 | `evidence/EvidenceClient.tsx`, `tasks/TasksClient.tsx` | Mark their icon-only action columns `cardAction` |
+| `tests/page.tsx` | Header row wraps so the create button stays on screen beside the toggle |
 | `messages/{en,bg}.json` | `ui.filterList`, `ui.dataTableCards` |
 
 ## Decisions
@@ -96,5 +97,14 @@ that was a faint beige on the light theme's track.
   false on the server and in jsdom) rather than by rendering both and hiding
   one with CSS: both in the DOM would duplicate every option label for tests
   and for the `id`s link-mode options carry.
+- **The title wraps; other fields ellipsise.** A page's `truncate` on its
+  title cell would end the one value that identifies the row in "…", so the
+  title field undoes it (`whitespace-normal`). Other fields keep the page's
+  choice, as a real ellipsis.
+- **A no-wrap toggle can push its neighbours.** On `/tests` the plans/checks
+  toggle sits in a non-wrapping header row with the create button; once its
+  labels stopped wrapping, the button left the screen at 360px. That row now
+  wraps (`flex-wrap`, `min-w-0`). Any other page that puts a toggle in a rigid
+  row needs the same.
 - **`ScrollCueStrip` (#5846) had not merged,** so the toggle group carries its
   own edge fade. Once it lands, the frame can be replaced by it.

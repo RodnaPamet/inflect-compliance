@@ -81,7 +81,14 @@ interface Ev {
 }
 
 const evColumns = createColumns<Ev>([
-    { id: "title", header: "Title", accessorKey: "title" },
+    {
+        id: "title",
+        header: "Title",
+        accessorKey: "title",
+        cell: ({ getValue }: { getValue: () => string }) => (
+            <span className="truncate">{getValue()}</span>
+        ),
+    },
     {
         id: "owner",
         header: "Owner",
@@ -205,6 +212,15 @@ describe("DataTable phone cards — layout", () => {
         expect(span).toHaveClass("truncate");
         const value = span.closest<HTMLElement>("[data-card-value]")!;
         expect(value).toHaveClass("min-w-0", "max-w-full", "[&_.truncate]:block", "[&_.truncate]:max-w-full");
+        expect(value).not.toHaveClass("[&_.truncate]:whitespace-normal");
+    });
+
+    it("the title identifies the row, so a truncating title cell wraps in full instead", () => {
+        render(<DataTable<Ev> data={evData} columns={evColumns} getRowId={(r) => r.id} />);
+        const title = within(cardFor("e1")).getByText("SOC 2 report");
+        expect(title.closest("[data-testid='data-table-card-title-row']")).not.toBeNull();
+        const value = title.closest<HTMLElement>("[data-card-value]")!;
+        expect(value).toHaveClass("[&_.truncate]:block", "[&_.truncate]:whitespace-normal");
     });
 
     it("icon-only actions collapse into a labelled ⋯ menu whose items carry their names", async () => {
