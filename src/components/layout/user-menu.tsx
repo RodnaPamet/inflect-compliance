@@ -197,7 +197,7 @@ const AVATAR_BUTTON_CLASS =
  * subtly different paddings, which is worse than not having the slot.
  */
 export const USER_MENU_ROW_CLASS =
-    'flex w-full cursor-pointer select-none items-center gap-compact rounded-md px-2.5 py-1.5 text-left text-sm text-content-default transition-colors duration-100 ease-out hover:bg-bg-muted hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]';
+    'flex w-full pointer-coarse:min-h-11 cursor-pointer select-none items-center gap-compact rounded-md px-2.5 py-1.5 text-left text-sm text-content-default transition-colors duration-100 ease-out hover:bg-bg-muted hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]';
 
 export function UserMenu({
     displayName,

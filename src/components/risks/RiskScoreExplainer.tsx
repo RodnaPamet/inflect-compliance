@@ -123,7 +123,10 @@ export function RiskScoreExplainer({
             align="start"
             content={
                 <div
-                    className="w-80 max-w-[90vw] p-3 text-xs space-y-default"
+                    // Full width in the phone's bottom sheet (below `sm`, where
+                    // the Popover presents as one); a fixed card beside the
+                    // score on a wider screen.
+                    className="w-full p-3 text-xs space-y-default sm:w-80 sm:max-w-[90vw]"
                     id={`score-explainer-${riskId}`}
                     role="region"
                     aria-label={t('regionAria')}
