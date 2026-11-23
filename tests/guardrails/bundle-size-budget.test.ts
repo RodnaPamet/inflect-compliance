@@ -522,7 +522,14 @@ const BUDGETS_KB: Record<string, number> = {
     // date helpers now carry the Bulgarian month/weekday tables and the
     // date-fns `bg` locale on every page, so dates and relative times render
     // in the reader's language. 594 is measured + ~4, the convention.
-    'root': 594,
+    //
+    // Raised 594 -> 598 when the mobile page-header batch (#5853) merged after
+    // #5858 and #5859 (owner request 2026-11-23 to work through the mobile
+    // issues #5805). CI's webpack build of the merge commit: `org/.../
+    // initiatives/[initiativeId]/page` 594.3 KB — the Bulgarian catalog
+    // labels #5859 added and the header's phone overflow registry, both in
+    // the shared shell. 598 is measured + ~4, the convention.
+    'root': 598,
 };
 
 /** Map an app route key to a budget key. */
