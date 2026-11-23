@@ -288,9 +288,27 @@
       "cellRisksIdentified": "{count} идентифицирани риска",
       "movementMore": "+{count} още"
     },
+    "parentLabels": {
+      "a2aPeers": "Партньорски агенти",
+      "agent": "агента",
+      "agentRuns": "Изпълнения",
+      "aiSystems": "ИИ системи",
+      "auditCycle": "одитния цикъл",
+      "auditCycles": "Одитни цикли",
+      "businessContinuity": "Непрекъснатост на дейността",
+      "externalTools": "Външни инструменти",
+      "framework": "рамката",
+      "integrations": "Интеграции",
+      "nis2": "NIS2",
+      "nis2Gap": "Оценка на пропуските по NIS2",
+      "riskRegister": "Регистър на рисковете",
+      "soa": "Декларация за приложимост",
+      "vendorTemplates": "Шаблони на въпросници"
+    },
     "sections": {
       "accessReviews": "Прегледи на достъпа",
       "admin": "Администриране",
+      "agents": "Агенти",
       "assets": "Активи",
       "audits": "Вътрешен одит",
       "calendar": "Календар",
@@ -301,15 +319,19 @@
       "evidence": "Доказателства",
       "findings": "Констатации",
       "frameworks": "Рамки",
+      "frameworkUpdates": "Актуализации на рамки",
+      "incidents": "Инциденти",
       "issues": "Проблеми",
       "notifications": "Известия",
       "policies": "Политики",
       "processes": "Процеси",
       "reports": "Отчети",
       "risks": "Рискове",
+      "securityTesting": "Тестове за сигурност",
       "tasks": "Задачи",
       "tests": "Тестове",
-      "vendors": "Доставчици"
+      "vendors": "Доставчици",
+      "vulnerabilities": "Уязвимости"
     },
     "retry": "Опитай отново",
     "skeleton": {

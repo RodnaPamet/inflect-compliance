@@ -53,12 +53,15 @@ describe("page-actions primitive coverage", () => {
     it("PageActions geometry contract is locked", () => {
         const src = read("src/components/layout/PageActions.tsx");
         // The recipe lives in the primitive's outer wrapper. A
-        // future PR that drops `flex-wrap-reverse` (which keeps
-        // primary visually rightmost when the cluster wraps) or
+        // future PR that drops `md:flex-wrap-reverse` (which keeps
+        // primary visually rightmost when a DESKTOP cluster wraps) or
         // tightens `gap-tight` to a different scale fails this
-        // assertion before the regression ships.
-        expect(src).toMatch(/flex\s+flex-wrap-reverse/);
-        expect(src).toMatch(/justify-end/);
+        // assertion before the regression ships. Below md the cluster
+        // wraps normally — a reversed wrap is what put a phone's
+        // actions in reverse reading order (#5815); the phone layout
+        // itself is held by tests/rendered/page-actions-phone-overflow.
+        expect(src).toMatch(/flex\s+flex-wrap\s+md:flex-wrap-reverse/);
+        expect(src).toMatch(/sm:justify-end/);
         expect(src).toMatch(/gap-tight/);
         expect(src).toMatch(/min-h-9/);
     });

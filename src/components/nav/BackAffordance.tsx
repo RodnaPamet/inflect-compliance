@@ -29,60 +29,33 @@ import {
 } from '@/lib/nav/usePreviousPath';
 import {
     resolveCanonicalParent,
-    type CanonicalParent,
+    SECTION_LABEL_KEYS,
+    type BackLabelKey,
 } from '@/lib/nav/canonical-parents';
-import { resolveBackDestination } from '@/lib/nav/back-destination';
+import {
+    resolveBackDestination,
+    type BackDestination,
+} from '@/lib/nav/back-destination';
 
 type CommonTranslate = ReturnType<typeof useTranslations<'common'>>;
 
 /**
- * Map of in-tenant section paths to their `common.sections.*` message
- * key. `buildSectionLabels` resolves each through next-intl so the
- * referrer-based affordance shows the localised product name (e.g.
- * `/audits` → "Internal Audit" / "Вътрешен одит", not the raw
- * "Audits") without forcing every section to be listed.
- */
-const SECTION_LABELS: Record<string, string> = {
-    '/access-reviews': 'accessReviews',
-    '/admin': 'admin',
-    '/assets': 'assets',
-    '/audits': 'audits',
-    '/calendar': 'calendar',
-    '/clauses': 'clauses',
-    '/controls': 'controls',
-    '/coverage': 'coverage',
-    '/dashboard': 'dashboard',
-    '/evidence': 'evidence',
-    '/findings': 'findings',
-    '/frameworks': 'frameworks',
-    '/issues': 'issues',
-    '/notifications': 'notifications',
-    '/policies': 'policies',
-    '/processes': 'processes',
-    '/reports': 'reports',
-    '/risks': 'risks',
-    '/tasks': 'tasks',
-    '/tests': 'tests',
-    '/vendors': 'vendors',
-};
-
-/**
- * Resolve the `SECTION_LABELS` path → message-key map into a path →
+ * Resolve the `SECTION_LABEL_KEYS` path → message-key map into a path →
  * localised-label map for the active locale.
  */
 function buildSectionLabels(t: CommonTranslate): Record<string, string> {
     const out: Record<string, string> = {};
-    for (const [path, key] of Object.entries(SECTION_LABELS)) {
+    for (const [path, key] of Object.entries(SECTION_LABEL_KEYS)) {
         out[path] = t(`sections.${key}`);
     }
     return out;
 }
 
 /**
- * Convert an in-tenant pathname back into a CanonicalParent shape by
- * looking up the label of the route the user came from. We don't have a
- * "label for any path" registry yet, so for now the smart label uses the
- * IA section name derived from the first segment.
+ * The label for a referrer-derived destination: the IA section name of the
+ * route the user came from, derived from its first segment. A section with no
+ * entry reads "previous page" — never the raw URL segment, which is English on
+ * a Bulgarian page ("Обратно към Onboarding").
  */
 function labelFromPathname(
     pathname: string,
@@ -92,14 +65,12 @@ function labelFromPathname(
     const stripped = pathname.replace(/^\/t\/[^/]+/, '');
     const seg = stripped.split('/').filter(Boolean)[0];
     if (!seg) return previousPageLabel;
-    const sectionKey = `/${seg}`;
-    if (sectionLabels[sectionKey]) return sectionLabels[sectionKey];
-    return seg.charAt(0).toUpperCase() + seg.slice(1);
+    return sectionLabels[`/${seg}`] ?? previousPageLabel;
 }
 
 export interface BackAffordanceProps {
     /** Optional override — used by tests + the `back` prop's static form. */
-    override?: CanonicalParent;
+    override?: BackDestination;
     /**
      * When true, render ONLY when an in-tab referrer exists. With no
      * referrer (cold load, deep link, fresh tab), the component
@@ -129,6 +100,7 @@ export function BackAffordance({ override, noFallback }: BackAffordanceProps) {
         noFallback,
         labelFor: (p) =>
             labelFromPathname(p, sectionLabels, t('ui.previousPage')),
+        labelForKey: (key: BackLabelKey) => t(key),
     });
 
     if (!destination) return null;
@@ -136,7 +108,11 @@ export function BackAffordance({ override, noFallback }: BackAffordanceProps) {
     return (
         <Link
             href={destination.href}
-            className="inline-flex items-center gap-1 text-content-muted text-xs hover:text-content-emphasis motion-safe:transition-colors motion-safe:duration-150 motion-safe:ease-out print:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-default rounded-sm"
+            // `pointer-coarse:min-h-11` — on a phone this is the way out of
+            // the page, so it gets a 44 px row (WCAG 2.5.5) rather than the
+            // 16 px line a mouse is happy with. Height, not width: the label
+            // is always wider than 44 px.
+            className="inline-flex items-center gap-1 text-content-muted text-xs hover:text-content-emphasis motion-safe:transition-colors motion-safe:duration-150 motion-safe:ease-out print:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-default rounded-sm pointer-coarse:min-h-11"
             data-testid="page-header-back"
             aria-label={t('ui.backTo', { label: destination.label })}
         >

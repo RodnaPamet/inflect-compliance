@@ -65,7 +65,10 @@ import {
     Breadcrumbs,
     type BreadcrumbItem,
 } from "@/components/ui/breadcrumbs";
-import { useBreadcrumbs } from "@/components/layout/breadcrumbs-store";
+import {
+    useBreadcrumbs,
+    usePhoneShowsBreadcrumbs,
+} from "@/components/layout/breadcrumbs-store";
 import { PageActions } from "@/components/layout/PageActions";
 import { BackAffordance } from "@/components/nav/BackAffordance";
 import {
@@ -196,17 +199,27 @@ export function PageHeader({
     // the repo's own MAIN vs SUBPAGE source of truth (page-segregation).
     const pathname = usePathname();
     const titleHidden = classifyRoute(pathname ?? "") === "main";
+    // One way back on a phone (#5822): on a subpage the back link is it, and
+    // the inline breadcrumbs collapse into it. The rule is the product's,
+    // supplied through the `PhoneBreadcrumbsPolicy` slot.
+    const phoneCrumbsAllowed = usePhoneShowsBreadcrumbs(pathname ?? "");
+    const mobileCrumbs =
+        breadcrumbs && breadcrumbs.length > 0 && phoneCrumbsAllowed;
 
     return (
         <header
             className={cn(
-                "flex items-start justify-between gap-default flex-wrap",
+                // Below `sm` the header is a column: the title block takes the
+                // full width and the actions sit under it, so a long title is
+                // never squeezed into half a phone screen beside the buttons.
+                // From `sm` up it is the row it always was.
+                "flex flex-col items-stretch gap-default sm:flex-row sm:items-start sm:justify-between sm:flex-wrap",
                 className,
             )}
             data-testid={dataTestId}
         >
             <div className="min-w-0">
-                {breadcrumbs && breadcrumbs.length > 0 && (
+                {mobileCrumbs && (
                     <div className="md:hidden">
                         <Breadcrumbs
                             items={breadcrumbs}
@@ -220,7 +233,7 @@ export function PageHeader({
                 ) : back ? (
                     <Link
                         href={back.href}
-                        className="text-content-muted text-xs hover:text-content-emphasis transition-colors duration-150 ease-out"
+                        className="inline-flex items-center text-content-muted text-xs hover:text-content-emphasis transition-colors duration-150 ease-out pointer-coarse:min-h-11"
                         data-testid="page-header-back"
                     >
                         ← {back.label}

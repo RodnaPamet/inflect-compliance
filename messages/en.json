@@ -288,9 +288,27 @@
       "cellRisksIdentified": "{count} Risks identified",
       "movementMore": "+{count} more"
     },
+    "parentLabels": {
+      "a2aPeers": "A2A peers",
+      "agent": "Agent",
+      "agentRuns": "Runs",
+      "aiSystems": "AI Systems",
+      "auditCycle": "Audit cycle",
+      "auditCycles": "Audit cycles",
+      "businessContinuity": "Business Continuity",
+      "externalTools": "External tools",
+      "framework": "Framework",
+      "integrations": "Integrations",
+      "nis2": "NIS2",
+      "nis2Gap": "NIS2 Gap Assessment",
+      "riskRegister": "Risk Register",
+      "soa": "SoA",
+      "vendorTemplates": "Vendor templates"
+    },
     "sections": {
       "accessReviews": "Access reviews",
       "admin": "Admin",
+      "agents": "Agents",
       "assets": "Assets",
       "audits": "Internal Audit",
       "calendar": "Calendar",
@@ -301,15 +319,19 @@
       "evidence": "Evidence",
       "findings": "Findings",
       "frameworks": "Frameworks",
+      "frameworkUpdates": "Framework updates",
+      "incidents": "Incidents",
       "issues": "Issues",
       "notifications": "Notifications",
       "policies": "Policies",
       "processes": "Processes",
       "reports": "Reports",
       "risks": "Risks",
+      "securityTesting": "Security testing",
       "tasks": "Tasks",
       "tests": "Tests",
-      "vendors": "Vendors"
+      "vendors": "Vendors",
+      "vulnerabilities": "Vulnerabilities"
     },
     "retry": "Retry",
     "skeleton": {

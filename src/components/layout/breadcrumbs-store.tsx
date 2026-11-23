@@ -27,6 +27,7 @@
  */
 import {
     createContext,
+    isValidElement,
     useCallback,
     useContext,
     useEffect,
@@ -90,6 +91,24 @@ export function BreadcrumbsProvider({ children }: { children: ReactNode }) {
 }
 
 /**
+ * Whether a page renders its INLINE (phone-only) breadcrumb trail, given the
+ * current pathname. A slot the host product fills: this file is shared UI and
+ * knows nothing of the product's routes, so the default shows the trail
+ * everywhere, and the product supplies its rule through
+ * `<PhoneBreadcrumbsPolicy.Provider>` (the tenant app's rule — a subpage shows
+ * its back link instead — is `src/components/nav/PhoneWayfindingPolicy.tsx`).
+ * The desktop trail in the top chrome is unaffected either way.
+ */
+export const PhoneBreadcrumbsPolicy = createContext<(pathname: string) => boolean>(
+    () => true,
+);
+
+/** The policy above, applied to `pathname`. */
+export function usePhoneShowsBreadcrumbs(pathname: string): boolean {
+    return useContext(PhoneBreadcrumbsPolicy)(pathname);
+}
+
+/**
  * Read the current breadcrumb trail. The `<TopChrome>` is the only
  * canonical caller. Returns an empty array when the provider is
  * absent (e.g. on unauth surfaces).
@@ -122,7 +141,19 @@ export function useBreadcrumbs(
     // the visible trail don't re-push. This is the right tradeoff:
     // pages typically rebuild breadcrumbs each render but the
     // CONTENT is stable.
-    const key = useMemo(() => JSON.stringify(items ?? []), [items]);
+    //
+    // A label may be a ReactNode (a loading skeleton in the test-plan trail),
+    // and a React element is not serialisable — its owner fiber is circular —
+    // so an element is keyed by its type and key, not walked.
+    const key = useMemo(
+        () =>
+            JSON.stringify(items ?? [], (_k, v: unknown) =>
+                isValidElement(v)
+                    ? `<element:${typeof v.type === 'string' ? v.type : 'component'}:${v.key ?? ''}>`
+                    : v,
+            ),
+        [items],
+    );
 
     useEffect(() => {
         if (!ctx || !items || items.length === 0) return;

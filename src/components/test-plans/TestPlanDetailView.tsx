@@ -29,12 +29,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { ApiClientError } from '@/lib/api-client';
 import { apiRefusalMessage } from '@/lib/api-error';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
-import { Breadcrumbs, type BreadcrumbItem } from '@/components/ui/breadcrumbs';
+import { type BreadcrumbItem } from '@/components/ui/breadcrumbs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TestPlanScheduleSection } from '@/components/TestPlanScheduleSection';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
-import { BackAffordance } from '@/components/nav/BackAffordance';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { PrimaryAction } from '@/components/layout/PageActions';
 import { EntityPrevNextNav } from '@/components/ui/entity-prev-next-nav';
 import { CardHeader } from '@/components/ui/card-header';
 import { KPIStat } from '@/components/ui/metric';
@@ -275,38 +276,39 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
 
     return (
         <div className="space-y-section animate-fadeIn">
-            <Breadcrumbs items={breadcrumbs} />
-            {/* Canonical parent for a test plan resolves to /tests in both
-                contexts (see canonical-parents), so the plain affordance points
-                "Back to Tests" whether reached from a control or the register. */}
-            <BackAffordance />
-
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    {/* The stepper is a SIBLING of the <h1>, never inside it:
-                        the accname spec concatenates a descendant control's
-                        aria-label into the heading's own accessible name, so
-                        folding it into the Heading would have a screen reader
-                        announce "<plan name> Previous test plan Next test
-                        plan". `testPlan` is its own registered stepper slug —
-                        NOT `testRun`: a план (m) is the standing document, an
-                        изпълнение (n) is one execution of it, and Bulgarian
-                        makes them disagree in gender as well as in meaning. */}
-                    <div className="flex items-center gap-2.5">
-                        <Heading level={1} id="test-plan-title">{plan.name}</Heading>
-                        <EntityPrevNextNav
-                            ids={planIds}
-                            currentId={planId}
-                            hrefFor={(id) =>
-                                controlScoped
-                                    ? tenantHref(`/controls/${plan.controlId}/tests/${id}`)
-                                    : tenantHref(`/tests/plans/${id}`)
-                            }
-                            labelSingular="testPlan"
-                        />
-                    </div>
-                    <div className="flex items-center gap-tight mt-1 flex-wrap">
+            {/* The shared page header (#5830, #5815). This was a hand-rolled
+                `flex items-center justify-between` row with no wrap: on a phone
+                the title squeezed to one word per line and "Run test" was
+                clipped at the right edge, so a test could not be run from a
+                phone. PageHeader stacks below `sm` — title full width, actions
+                under it with the run action first — and lifts the breadcrumbs
+                into the top chrome on desktop. The back link resolves to /tests
+                in both contexts (see canonical-parents). */}
+            <PageHeader
+                breadcrumbs={breadcrumbs}
+                back={{ smart: true }}
+                title={plan.name}
+                titleId="test-plan-title"
+                // The stepper is a SIBLING of the <h1>, never inside it (the
+                // accname spec would fold its labels into the heading's name).
+                // `testPlan` is its own registered stepper slug — NOT
+                // `testRun`: a план (m) is the standing document, an
+                // изпълнение (n) is one execution of it, and Bulgarian makes
+                // them disagree in gender as well as in meaning.
+                titleAdornment={
+                    <EntityPrevNextNav
+                        ids={planIds}
+                        currentId={planId}
+                        hrefFor={(id) =>
+                            controlScoped
+                                ? tenantHref(`/controls/${plan.controlId}/tests/${id}`)
+                                : tenantHref(`/tests/plans/${id}`)
+                        }
+                        labelSingular="testPlan"
+                    />
+                }
+                meta={
+                    <>
                         <StatusBadge variant={PLAN_STATUS_BADGE[plan.status] ?? 'neutral'} id="test-plan-status">
                             {PLAN_STATUS_LABELS[plan.status] ?? plan.status}
                         </StatusBadge>
@@ -321,23 +323,27 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
                                 </span>
                             </>
                         )}
-                    </div>
-                </div>
-                {(canManagePlan || canRun) && (
-                    <div className="flex gap-tight">
-                        {canManagePlan && (
-                            <Button variant="secondary" size="sm" onClick={() => setEditing(!editing)} id="edit-test-plan-btn">
-                                {editing ? t('testPlan.cancel') : t('testPlan.edit')}
-                            </Button>
-                        )}
-                        {canRun && plan.status === 'ACTIVE' && (
-                            <Button variant="primary" size="sm" onClick={createRun} disabled={creatingRun} id="create-test-run-btn">
-                                {creatingRun ? t('testPlan.creating') : hasPendingRun ? t('testPlan.continueRun') : t('testPlan.runTestNow')}
-                            </Button>
-                        )}
-                    </div>
-                )}
-            </div>
+                    </>
+                }
+                actions={
+                    canManagePlan || canRun ? (
+                        <>
+                            {canManagePlan && (
+                                <Button variant="secondary" size="sm" onClick={() => setEditing(!editing)} id="edit-test-plan-btn">
+                                    {editing ? t('testPlan.cancel') : t('testPlan.edit')}
+                                </Button>
+                            )}
+                            {canRun && plan.status === 'ACTIVE' && (
+                                <PrimaryAction>
+                                    <Button variant="primary" size="sm" onClick={createRun} disabled={creatingRun} id="create-test-run-btn">
+                                        {creatingRun ? t('testPlan.creating') : hasPendingRun ? t('testPlan.continueRun') : t('testPlan.runTestNow')}
+                                    </Button>
+                                </PrimaryAction>
+                            )}
+                        </>
+                    ) : undefined
+                }
+            />
 
             {/* Edit Form — extracted so its local draft state seeds from
                 the plan via useState initializers on mount. Rendered only

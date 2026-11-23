@@ -665,7 +665,10 @@ const HIGH_MULTIPLICITY = 5;
 // needles the old inline SVG repeated (`currentColor` three times,
 // `strokeWidth="1.5"` twice) for assertions naming the one lucide element.
 // Measured.
-const AMBIGUOUS_NEEDLE_BASELINE = 1120;
+// 1120 -> 1119 on 2026-11-23 (#5823). `rq4-back-link-fixes` stopped reading
+// the section map out of BackAffordance's source; the map moved to
+// `canonical-parents.ts` and is asserted as data. Measured.
+const AMBIGUOUS_NEEDLE_BASELINE = 1119;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
