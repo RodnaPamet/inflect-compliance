@@ -9078,7 +9078,8 @@
         "where": "Each run is a conversation with a model in your own Anthropic workspace, which you connected with your own key. Anthropic acts as your processor, at your direction.",
         "sessions": "The conversation (the agent's instructions, its messages and the results of its tool calls) exists in your workspace until the run ends, and Inflect deletes it then. If you tick \"Keep sessions in my workspace\" on the Anthropic workspace connection, it stays there until you delete it, or until Inflect deletes it when your Inflect workspace is purged or the connection is removed.",
         "controls": "The model runs in your workspace, but every tool call comes back to Inflect and goes through the agent's grants, policy card, autonomy ceiling and kill switch. The agent Inflect creates there holds Inflect's own fixed instructions and the tool descriptions, never yours.",
-        "record": "Inflect records what it sent and every tool call, but cannot see the exact prompt of each model call, which stays in your workspace. The run timeline marks those records."
+        "record": "Inflect records what it sent and every tool call, but cannot see the exact prompt of each model call, which stays in your workspace. The run timeline marks those records.",
+        "keyHolders": "Anyone who holds your Anthropic workspace's key can add messages to a running conversation, just as they can act anywhere else in your workspace; Inflect does not detect this, but it still checks every tool call the agent makes."
       }
     },
     "modules": {

@@ -135,6 +135,20 @@ describe('BIA analysis page — writes follow the server (#4632)', () => {
         expect(getByTestId('entity-detail-header').textContent).not.toContain('CRITICAL');
     });
 
+    // Every section card has inner padding. They were `density: 'none'`
+    // (`p-0`), so the text touched the card border on every side.
+    it('pads every section card at the compact density', () => {
+        const { getAllByTestId } = render(
+            <Wrapper><BiaDetailClient bia={DETAIL} tenantSlug="acme" canWrite={false} /></Wrapper>,
+        );
+        const sections = getAllByTestId('bia-section');
+        expect(sections.length).toBeGreaterThan(0);
+        for (const s of sections) {
+            expect(s).toHaveClass('p-4');
+            expect(s).not.toHaveClass('p-0');
+        }
+    });
+
     it("a refused save shows the server's reason", async () => {
         const { container } = render(
             <Wrapper><BiaDetailClient bia={DETAIL} tenantSlug="acme" canWrite /></Wrapper>,

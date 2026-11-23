@@ -187,6 +187,15 @@ const TERMINAL_STATUS_VERB_KEY: Record<string, string> = {
     CANCELED: 'detail.cancelVerb',
 };
 
+/**
+ * The assignee and reviewer rows: label, current name, a people picker and
+ * its button. The row wraps; below `sm` the picker and the button each take
+ * a full line, so neither can be pushed past the edge of a phone.
+ */
+const ASSIGNMENT_ROW = 'flex flex-wrap items-center gap-compact';
+const ASSIGNMENT_PICKER = 'w-full sm:w-64';
+const ASSIGNMENT_BUTTON = 'w-full sm:w-auto';
+
 type Tab = 'overview' | 'evidence' | 'links' | 'comments' | 'activity';
 
 const buildFindingSourceLabels = (t: (k: string) => string): Record<string, string> => ({
@@ -1203,12 +1212,16 @@ export default function TaskDetailPage() {
             {/* Assignment controls — `POST /tasks/:id/assign` asks `tasks.assign`. */}
             {canAssignTask && (
                 <div className={cardVariants({ density: 'compact' })}>
-                    <div className="flex items-center gap-compact">
+                    {/* The row WRAPS, and below `sm` the picker and its button
+                        each take the full width. It was a fixed-width picker in
+                        a row that never wrapped, which pushed Assign past the
+                        right edge of a phone, where the shell's clip hid it. */}
+                    <div className={ASSIGNMENT_ROW} id="task-assign-row">
                         <span className="text-sm text-content-muted">{t('detail.assigneeLabel')}</span>
-                        <span className="text-sm text-content-emphasis font-medium" id="task-assignee">
+                        <span className="min-w-0 break-words text-sm text-content-emphasis font-medium" id="task-assignee">
                             {task.assignee?.name || task.assigneeUserId || t('detail.unassigned')}
                         </span>
-                        <div className="w-64">
+                        <div className={ASSIGNMENT_PICKER}>
                             <UserCombobox
                                 id="task-assignee-input"
                                 name="assigneeUserId"
@@ -1221,7 +1234,7 @@ export default function TaskDetailPage() {
                                 forceDropdown={false}
                             />
                         </div>
-                        <Button variant="secondary" onClick={handleAssign} disabled={assigning} id="assign-task-btn">
+                        <Button variant="secondary" className={ASSIGNMENT_BUTTON} onClick={handleAssign} disabled={assigning} id="assign-task-btn">
                             {assigning ? t('detail.saving') : t('detail.assign')}
                         </Button>
                     </div>
@@ -1236,14 +1249,14 @@ export default function TaskDetailPage() {
                 only a role that can edit tasks gets the picker (owner
                 decision, 2026-10-26). */}
             <div className={cardVariants({ density: 'compact' })} id="task-reviewer-card">
-                <div className="flex items-center gap-compact">
+                <div className={ASSIGNMENT_ROW} id="task-reviewer-row">
                     <span className="text-sm text-content-muted">{t('detail.reviewerLabel')}</span>
-                    <span className="text-sm text-content-emphasis font-medium" id="task-reviewer">
+                    <span className="min-w-0 break-words text-sm text-content-emphasis font-medium" id="task-reviewer">
                         {task.reviewer?.name || task.reviewerUserId || t('detail.noReviewer')}
                     </span>
                     {canEditTask && (
                         <>
-                            <div className="w-64">
+                            <div className={ASSIGNMENT_PICKER}>
                                 <UserCombobox
                                     id="task-reviewer-input"
                                     name="reviewerUserId"
@@ -1257,7 +1270,7 @@ export default function TaskDetailPage() {
                                     forceDropdown={false}
                                 />
                             </div>
-                            <Button variant="secondary" onClick={handleAssignReviewer} disabled={savingReviewer} id="assign-reviewer-btn">
+                            <Button variant="secondary" className={ASSIGNMENT_BUTTON} onClick={handleAssignReviewer} disabled={savingReviewer} id="assign-reviewer-btn">
                                 {savingReviewer ? t('detail.saving') : t('detail.setReviewer')}
                             </Button>
                         </>

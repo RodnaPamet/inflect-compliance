@@ -413,8 +413,16 @@ export function AgentRunsClient({
                 <ul className="space-y-default">
                     {runs.map((r) => (
                         <li key={r.id} id={`run-${r.id}`} className={cn(cardVariants({ density: 'comfortable' }), 'space-y-tight')}>
-                            <div className="flex items-center justify-between gap-default">
-                                <div className="flex items-center gap-tight">
+                            {/* Below `sm` the row stacks and its left half wraps:
+                                the badges, then the workflow link on a line of
+                                its own, then steps / tokens / date. One row that
+                                never wrapped squeezed the link to a sliver and
+                                let the shell clip the metrics off the right edge. */}
+                            <div
+                                className="flex flex-col gap-tight sm:flex-row sm:items-center sm:justify-between sm:gap-default"
+                                data-testid={`agent-run-row-${r.id}`}
+                            >
+                                <div className="flex min-w-0 flex-wrap items-center gap-tight">
                                     <StatusBadge variant={STATUS_VARIANT[r.status] ?? 'neutral'}>{statusLabel(r.status)}</StatusBadge>
                                     <StatusBadge variant={DRIVER_VARIANT[r.driver] ?? 'neutral'}>
                                         {t(`runs.driver.${r.driver}`)}
@@ -426,12 +434,16 @@ export function AgentRunsClient({
                                         because two agentic pages shipped in
                                         exactly that state. */}
                                     <a
-                                        className="text-sm font-medium text-content-emphasis underline"
+                                        className="basis-full break-words text-sm font-medium text-content-emphasis underline pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center sm:basis-auto"
                                         href={tenantHref(`/agents/runs/${r.id}`)}
+                                        data-testid={`agent-run-workflow-link-${r.id}`}
                                     >
                                         {r.workflowName}
                                     </a>
-                                    <span className="text-xs text-content-subtle">
+                                    <span
+                                        className="basis-full text-xs text-content-subtle sm:basis-auto"
+                                        data-testid={`agent-run-meta-${r.id}`}
+                                    >
                                         {t('runs.stepMeta', {
                                             steps: r.stepCount,
                                             tokens: r.costTokens,
@@ -451,7 +463,7 @@ export function AgentRunsClient({
                                         </span>
                                     )}
                                 </div>
-                                <div className="flex items-center gap-tight">
+                                <div className="flex flex-wrap items-center gap-tight">
                                     {/* AWAITING_APPROVAL and PAUSED, the two
                                         statuses `resumeWorkflowRun` accepts.
                                         A PAUSED run was stopped by a shutdown

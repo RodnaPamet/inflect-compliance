@@ -120,8 +120,11 @@ puts at Anthropic:
   reconciliation, run by `data-lifecycle`, retries every session whose latest
   ledger step is `SESSION_DELETE_FAILED` (a run's delete that Anthropic refused
   or could not take), by its recorded id and never a KEPT one, writing
-  `SESSION_DELETED` on the run's ledger once it goes (#5843); and it deletes a
-  session recorded DELETED that still exists. Nothing has been created in a
+  `SESSION_DELETED` on the run's ledger once it goes (#5843); it settles a
+  session a dead worker abandoned, recorded only `SESSION_CREATED` and older
+  than any run segment can last, by deleting it, or recording it kept when the
+  connection keeps sessions (Step 5H, #4169); and it deletes a session recorded
+  DELETED that still exists. Nothing has been created in a
   customer's workspace in production yet: the engine runs from Step 5d, and
   `AGENT_MANAGED_AGENTS` is off there (#5797).
   - **Known limit (#5802).** A DSAR erasure finds the person's tenants from
@@ -174,6 +177,32 @@ puts at Anthropic:
     the removal archived. A run of such a version is refused
     `managed_agents_agent_archived` before a session exists, and the next
     approved version is provisioned as a NEW agent.
+  - **An agent edited or archived in the Console (#5854).** A run of the
+    version in force is refused `managed_agents_agent_drifted`, and the
+    sentence names the remedy that works: approve a new version. Before it
+    updates the profile's agent, provisioning reads it at its latest version,
+    and one ahead of the record or archived is replaced by a NEW agent rather
+    than updated. The old agent stays on the earlier versions' rows, so a
+    connection removal and a purge still archive it.
+  - **The environment is checked like the agent (#5854).** Before each session
+    the run reads the environment again and compares it with the hash of the
+    configuration Inflect wrote (`AgentProfileProvision.environmentHash`);
+    a changed or archived environment refuses the run
+    `managed_agents_environment_drifted` before a session exists. A row from
+    before the column is not refused for it: its first run records the hash of
+    what Inflect wrote, never what it read, and compares.
+  - **A dead segment's session is found at the next segment's start (#5854).**
+    A worker that dies after `sessions.create` answers and before the ledger
+    records the session leaves one nobody recorded. Every segment first lists
+    the pinned agent's sessions through the crash window's own call, takes
+    those whose metadata names this tenant and this run and that the run's
+    ledger does not hold, records them and settles them.
+  - **The client checks bodies against an allowlist (#5854).** Each POST may
+    carry only the members the engine writes, an agent's `system` must be
+    Inflect's preamble byte for byte, and a session's events may only be
+    `user.message`, `user.custom_tool_result` and `user.interrupt`.
+  - **Events from someone else holding the workspace's key are not detected**
+    (decision 8). Every real tool call still goes through Inflect's checks.
   - **The run timeline** says, beside each span-derived decision row, that the
     call's prompt was not visible to Inflect.
 
@@ -467,6 +496,16 @@ before the window closes, but tenant data may not reach the new processing.
    - **A DSAR erasure reaches every tenant where the erased person held a
      membership**: after the erasure commits, every KEPT session in each of
      those tenants is deleted.
+8. **Events sent into a running session by someone else holding the
+   customer's workspace key.** The Step 5H adversarial read (#5854, finding 3)
+   found that such a key holder could post a `user.message`, a
+   `user.custom_tool_result` or a `user.tool_confirmation` into a session a run
+   is driving, or attach resources to it, and the engine would not tell those
+   events from its own. **Decided (owner, 2026-11-23): accepted as a risk.**
+   Decision 5 makes the workspace the customer's own, and anyone holding its
+   key can already act in it directly. Inflect's funnel still checks every
+   real tool call the agent makes. No detection is built. The engine-settings
+   page says so in one sentence.
 
 ## Roadmap (future direction)
 

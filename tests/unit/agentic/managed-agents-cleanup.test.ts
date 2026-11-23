@@ -21,7 +21,13 @@ import {
 } from '@/lib/agentic/managed-agents/cleanup';
 import { sessionMetadataFor } from '@/lib/agentic/managed-agents/definition';
 import { managedAgentsClientFor } from '@/lib/agentic/tool-runner/client';
-import { awaitsDeleteRetry, sessionIsPending } from '@/app-layer/usecases/managed-agents-cleanup';
+import {
+    ABANDONED_SESSION_MIN_AGE_MS,
+    awaitsDeleteRetry,
+    isAbandonedSession,
+    sessionIsPending,
+} from '@/app-layer/usecases/managed-agents-cleanup';
+import { ENGINE_CAPS } from '@/lib/agentic/workflow-types';
 import { ManagedAgentsFaux } from '../../helpers/managed-agents-faux';
 
 const KEY = 'sk-ant-faux-key'; // pragma: allowlist secret -- a placeholder for the faux
@@ -84,6 +90,32 @@ describe('awaitsDeleteRetry (the reconciliation\'s failed-delete retry, #5843)',
         [['SESSION_CREATED', 'SESSION_DELETED'], false],
     ])('%j awaits a retry: %s', (steps, expected) => {
         expect(awaitsDeleteRetry({ latest: steps[steps.length - 1], lifecycles: new Set(steps) })).toBe(expected);
+    });
+});
+
+describe('isAbandonedSession (the reconciliation\'s abandoned-session pass, Step 5H)', () => {
+    const now = new Date('2026-11-23T12:00:00Z');
+    const ago = (ms: number) => new Date(now.getTime() - ms);
+    it('waits longer than a run segment can last, wall clock and settle included', () => {
+        expect(ABANDONED_SESSION_MIN_AGE_MS).toBeGreaterThan(ENGINE_CAPS.WALL_CLOCK_MS);
+    });
+    it.each([
+        // Only CREATED, older than any segment: a dead worker left it.
+        [['SESSION_CREATED'], ABANDONED_SESSION_MIN_AGE_MS, true],
+        [['SESSION_CREATED'], ABANDONED_SESSION_MIN_AGE_MS + 86_400_000, true],
+        // Within a segment's life: a live run may still settle it.
+        [['SESSION_CREATED'], ABANDONED_SESSION_MIN_AGE_MS - 1, false],
+        [['SESSION_CREATED'], ENGINE_CAPS.WALL_CLOCK_MS, false],
+        // Settled by its run, or by an earlier pass: never again.
+        [['SESSION_CREATED', 'SESSION_DELETED'], ABANDONED_SESSION_MIN_AGE_MS * 2, false],
+        [['SESSION_CREATED', 'SESSION_KEPT'], ABANDONED_SESSION_MIN_AGE_MS * 2, false],
+        [['SESSION_CREATED', 'SESSION_DELETE_FAILED'], ABANDONED_SESSION_MIN_AGE_MS * 2, false],
+    ])('%j recorded %d ms ago is abandoned: %s', (steps, age, expected) => {
+        const session = { latest: steps[steps.length - 1], lifecycles: new Set(steps), createdAt: ago(age) };
+        expect(isAbandonedSession(session, now)).toBe(expected);
+    });
+    it('a session with no CREATED time is never taken', () => {
+        expect(isAbandonedSession({ latest: 'SESSION_CREATED', lifecycles: new Set(['SESSION_CREATED']), createdAt: null }, now)).toBe(false);
     });
 });
 
