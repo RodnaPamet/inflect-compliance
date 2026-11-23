@@ -33,8 +33,10 @@
  * reconciliation (`reconcileLostSessionDeletes`) over every live tenant's
  * workspace connections. It retries a session whose latest ledger step is
  * `SESSION_DELETE_FAILED` (#5843), recording `SESSION_DELETED` on the run's
- * ledger when it goes, and reads back a session recorded DELETED in the last
- * week (a lost delete). A KEPT session is never touched by it.
+ * ledger when it goes; settles a session a dead worker abandoned with only
+ * `SESSION_CREATED` on the ledger (Step 5H, #4169); and reads back a session
+ * recorded DELETED in the last week (a lost delete). A KEPT session is never
+ * deleted by it.
  *
  * ── WHAT "RECORDED" MEANS ───────────────────────────────────────────────────
  *
@@ -67,10 +69,12 @@ import {
 // not a column, so a step is known by its kind and the lifecycle in its input.
 import { sessionStepRecord, type SessionLifecycle } from '@/lib/agentic/managed-agents/session-ledger';
 import { ANTHROPIC_WORKSPACE_PROVIDER } from '@/lib/agentic/managed-agents/store';
+import { ENGINE_CAPS } from '@/lib/agentic/workflow-types';
 import { managedAgentsClientFor } from '@/lib/agentic/tool-runner/client';
 import { runInGlobalContext, runInTenantJobContext } from '@/lib/db-context';
 import { runWithoutRls } from '@/lib/db/rls-middleware';
 import {
+    recordManagedAgentsAbandonedSession,
     recordManagedAgentsCleanup,
     recordManagedAgentsFailedDeleteRetry,
     recordManagedAgentsLostDelete,
@@ -120,6 +124,12 @@ export const RECONCILE_LOOKBACK_DAYS = 7;
 export const FAILED_DELETE_READ_CAP = 1_000;
 /** Sessions whose delete failed that one pass retries per tenant, oldest first. */
 export const FAILED_DELETE_RETRY_BATCH = 100;
+/** Past a segment's wall clock, how long its stop and settle may still take (Step 5H). */
+export const ABANDONED_SESSION_GRACE_MS = 10 * 60 * 1000;
+/** A session recorded only CREATED, this old, has no segment left to settle it (Step 5H). */
+export const ABANDONED_SESSION_MIN_AGE_MS = ENGINE_CAPS.WALL_CLOCK_MS + ABANDONED_SESSION_GRACE_MS;
+/** Abandoned sessions one pass settles per tenant, oldest first. */
+export const ABANDONED_SESSION_BATCH = 100;
 
 const DAY_MS = 86_400_000;
 
@@ -131,6 +141,8 @@ interface CleanupConnection {
     readonly workspaceId: string;
     /** Decrypted; null when it cannot be read. */
     readonly apiKey: string | null;
+    /** Decision 4, read as the engine reads it: strictly `true`. */
+    readonly keepSessions: boolean;
 }
 
 function connectionFromRow(row: { id: string; configJson: unknown; secretEncrypted: string | null }): CleanupConnection {
@@ -144,7 +156,7 @@ function connectionFromRow(row: { id: string; configJson: unknown; secretEncrypt
     } catch {
         apiKey = null;
     }
-    return { connectionId: row.id, workspaceId, apiKey };
+    return { connectionId: row.id, workspaceId, apiKey, keepSessions: config.keepSessions === true };
 }
 
 /**
@@ -193,6 +205,8 @@ interface LedgerSession {
     latest: SessionLifecycle;
     /** When the last DELETED step was recorded, for the reconciliation. */
     deletedAt: Date | null;
+    /** When the CREATED step was recorded: an abandoned session's age (Step 5H). */
+    createdAt: Date | null;
 }
 
 /**
@@ -243,12 +257,13 @@ async function readLedgerSessions(
         ) continue;
         const entry = sessions.get(sessionId) ?? {
             sessionId, connectionId, runId: step.runId, lifecycles: new Set<SessionLifecycle>(),
-            latest: lifecycle as SessionLifecycle, deletedAt: null,
+            latest: lifecycle as SessionLifecycle, deletedAt: null, createdAt: null,
         };
         entry.lifecycles.add(lifecycle as SessionLifecycle);
         // Steps are read oldest first, so the last one seen is the latest.
         entry.latest = lifecycle as SessionLifecycle;
         if (lifecycle === 'SESSION_DELETED') entry.deletedAt = step.at;
+        if (lifecycle === 'SESSION_CREATED') entry.createdAt = step.at;
         sessions.set(sessionId, entry);
     }
     return { sessions, truncated };
@@ -272,6 +287,33 @@ export function sessionIsPending(lifecycles: ReadonlySet<string>, keptOnly: bool
  */
 export function awaitsDeleteRetry(session: { readonly latest: string; readonly lifecycles: ReadonlySet<string> }): boolean {
     return session.latest === 'SESSION_DELETE_FAILED' && !session.lifecycles.has('SESSION_KEPT');
+}
+
+/**
+ * A session no live run is driving any more, whose run never settled it (Step
+ * 5H, #4169): its LATEST step is still `SESSION_CREATED`, and it was created
+ * longer ago than any segment of a run can last.
+ *
+ * A worker that dies mid-run (a SIGKILL, an OOM, a pod eviction, or a SIGTERM
+ * drain that pauses the run) never reaches the engine's `finally`, and the
+ * next segment of the run, a BullMQ retry or a person's resume, creates a NEW
+ * session: the engine never re-attaches to one. So the earlier session, which
+ * holds the tenant's instructions in its `system` override and every tool
+ * result the run had sent it, stays in the customer's workspace with nothing
+ * but `SESSION_CREATED` on the ledger.
+ *
+ * The age is the proof that no segment still drives it: a segment's wall clock
+ * runs from the run's start or a person's resume, the session is created after
+ * that, and a segment stops at `ENGINE_CAPS.WALL_CLOCK_MS` and settles within
+ * minutes, so a session older than the cap plus `ABANDONED_SESSION_GRACE_MS` is
+ * not one any segment will settle.
+ */
+export function isAbandonedSession(
+    session: { readonly latest: string; readonly lifecycles: ReadonlySet<string>; readonly createdAt: Date | null },
+    now: Date,
+): boolean {
+    if (session.latest !== 'SESSION_CREATED' || session.lifecycles.size !== 1 || session.createdAt === null) return false;
+    return session.createdAt.getTime() <= now.getTime() - ABANDONED_SESSION_MIN_AGE_MS;
 }
 
 /**
@@ -800,10 +842,23 @@ export interface ReconcileTally {
     retriedDeleted: number;
     /** Of those, left for the next pass, each with its named outcome. */
     retriedLeft: number;
+    /** Abandoned sessions (Step 5H): recorded only CREATED, older than any run segment. */
+    abandoned: number;
+    /** Of those, deleted now or already gone, with their DELETED step written. */
+    abandonedDeleted: number;
+    /** Of those, on a connection that keeps sessions: recorded KEPT, not deleted (decision 4). */
+    abandonedKept: number;
+    /** Of those, left for the next pass, each with its named outcome. */
+    abandonedLeft: number;
 }
 
 /** The ledger step a pass writes when it deletes a session: what the run writes. */
 async function recordSessionDeleted(tenantId: string, session: LedgerSession): Promise<void> {
+    await recordSessionLifecycle(tenantId, session, 'SESSION_DELETED');
+}
+
+/** A session step on the run's ledger, after its last step, in the shape the run writes. */
+async function recordSessionLifecycle(tenantId: string, session: LedgerSession, lifecycle: SessionLifecycle): Promise<void> {
     const last = await runInTenantJobContext({ tenantId, source: CLEANUP_SOURCE }, (db) =>
         db.workflowStep.findFirst({ where: { tenantId, runId: session.runId }, orderBy: { seq: 'desc' }, select: { seq: true } }),
     );
@@ -813,8 +868,77 @@ async function recordSessionDeleted(tenantId: string, session: LedgerSession): P
         session.runId,
         (last?.seq ?? 0) + 1,
         'SYNTHESIS',
-        sessionStepRecord('SESSION_DELETED', { sessionId: session.sessionId, connectionId: session.connectionId }),
+        sessionStepRecord(lifecycle, { sessionId: session.sessionId, connectionId: session.connectionId }),
     );
+}
+
+/**
+ * THE ABANDONED-SESSION PASS for one connection (Step 5H, #4169): what the
+ * run's own settle would have done. On a connection that keeps sessions
+ * (decision 4) the session is recorded `SESSION_KEPT`, with no provider call,
+ * so a DSAR erasure, which takes KEPT sessions only, reaches it; otherwise it
+ * is deleted through the clean-up's own `deleteSession` and recorded
+ * `SESSION_DELETED`. Anything else is left, as the ledger already has it, for
+ * the next pass. Never throws.
+ */
+async function settleAbandonedSessionsFor(
+    tenantId: string,
+    connection: CleanupConnection | null,
+    sessions: readonly LedgerSession[],
+    signal: AbortSignal,
+    tally: ReconcileTally,
+): Promise<void> {
+    const leave = (s: LedgerSession, outcome: string): void => {
+        tally.abandonedLeft += 1;
+        recordManagedAgentsAbandonedSession({ outcome });
+        logger.warn('managed-agents: an abandoned session is still there, and is left for the next pass', {
+            component: 'managed-agents-cleanup', tenantId, runId: s.runId, outcome,
+        });
+    };
+    const settled = async (s: LedgerSession, lifecycle: 'SESSION_DELETED' | 'SESSION_KEPT', outcome: string): Promise<boolean> => {
+        try {
+            await recordSessionLifecycle(tenantId, s, lifecycle);
+        } catch (err) {
+            leave(s, 'LEDGER_WRITE_FAILED');
+            logger.error('managed-agents: an abandoned session was settled, but its step could not be written', {
+                component: 'managed-agents-cleanup', tenantId, runId: s.runId,
+                error: err instanceof Error ? err.message : 'a non-Error value was thrown',
+            });
+            return false;
+        }
+        recordManagedAgentsAbandonedSession({ outcome });
+        logger.info('managed-agents: a session its run abandoned was settled', {
+            component: 'managed-agents-cleanup', tenantId, runId: s.runId, outcome,
+        });
+        return true;
+    };
+    let client: ManagedAgentsClient | null = null;
+    let unavailable: CleanupReason = 'CONNECTION_UNREADABLE';
+    if (!connection) unavailable = 'CONNECTION_GONE';
+    else if (!connection.keepSessions && connection.apiKey && connection.workspaceId) {
+        const choice = managedAgentsClientFor({ apiKey: connection.apiKey, workspaceId: connection.workspaceId });
+        if (choice.ok) client = choice.client;
+        else if (choice.reason === 'SDK_AMBIENT_HEADERS_SET') unavailable = 'SDK_AMBIENT_HEADERS_SET';
+    }
+    let halted: CleanupItemOutcome | null = null;
+    for (const s of sessions) {
+        tally.abandoned += 1;
+        if (connection?.keepSessions) {
+            if (await settled(s, 'SESSION_KEPT', 'KEPT')) tally.abandonedKept += 1;
+            continue;
+        }
+        if (!client) {
+            leave(s, unavailable);
+            continue;
+        }
+        const outcome: CleanupItemOutcome = halted ?? (signal.aborted ? 'DEADLINE' : await deleteSession(client, s.sessionId, signal));
+        if (HALTING_OUTCOMES.has(outcome)) halted = outcome;
+        if (!isDoneOutcome(outcome)) {
+            leave(s, outcome);
+            continue;
+        }
+        if (await settled(s, 'SESSION_DELETED', outcome)) tally.abandonedDeleted += 1;
+    }
 }
 
 /**
@@ -895,7 +1019,15 @@ async function retryFailedDeletesFor(
  *      `FAILED_DELETE_READ_CAP` failed steps are read (more is reported
  *      `LEDGER_TRUNCATED`), and at most `FAILED_DELETE_RETRY_BATCH` sessions
  *      are attempted, oldest first, under `RETRY_CLEANUP_DEADLINE_MS`.
- *   2. LOST DELETES. Every session recorded DELETED in the last
+ *   2. ABANDONED SESSIONS (Step 5H, #4169). Every session whose only step is
+ *      `SESSION_CREATED`, recorded in the last `RECONCILE_LOOKBACK_DAYS` and
+ *      longer than `ABANDONED_SESSION_MIN_AGE_MS` ago, is a session a dead
+ *      worker left behind (`isAbandonedSession`). It is settled as the run
+ *      would have: recorded KEPT on a connection that keeps sessions, else
+ *      deleted and recorded DELETED (`settleAbandonedSessionsFor`,
+ *      `agentic.managed_agents.abandoned_session`), at most
+ *      `ABANDONED_SESSION_BATCH` per pass, oldest first.
+ *   3. LOST DELETES. Every session recorded DELETED in the last
  *      `RECONCILE_LOOKBACK_DAYS` is read back, and one that still exists is
  *      deleted (`agentic.managed_agents.lost_delete`).
  *
@@ -905,7 +1037,10 @@ export async function reconcileLostSessionDeletes(
     options: { now?: Date; deadlineMs?: number } = {},
 ): Promise<ReconcileTally> {
     const now = options.now ?? new Date();
-    const tally: ReconcileTally = { checked: 0, lost: 0, deleted: 0, failed: 0, retried: 0, retriedDeleted: 0, retriedLeft: 0 };
+    const tally: ReconcileTally = {
+        checked: 0, lost: 0, deleted: 0, failed: 0, retried: 0, retriedDeleted: 0, retriedLeft: 0,
+        abandoned: 0, abandonedDeleted: 0, abandonedKept: 0, abandonedLeft: 0,
+    };
     const tenants = await runWithoutRls({ reason: 'cross-tenant-sweep' }, (db) =>
         db.integrationConnection.findMany({
             // A soft-deleted workspace is the purge's: it makes its own
@@ -932,7 +1067,9 @@ export async function reconcileLostSessionDeletes(
             // guardrail-allow: n+1 — reason: one tenant-bound read per tenant; RLS binds each to its own tenant.
             const { sessions } = await readLedgerSessions(tenantId, { since: new Date(now.getTime() - RECONCILE_LOOKBACK_DAYS * DAY_MS) });
             const deletedOnes = [...sessions.values()].filter((s) => s.lifecycles.has('SESSION_DELETED'));
-            if (deletedOnes.length === 0 && retrying.length === 0) continue;
+            // Oldest first: the read is ordered by step time, and a session's CREATED is its first step.
+            const abandoned = [...sessions.values()].filter((s) => isAbandonedSession(s, now)).slice(0, ABANDONED_SESSION_BATCH);
+            if (deletedOnes.length === 0 && retrying.length === 0 && abandoned.length === 0) continue;
             const connections = await readCleanupConnections(tenantId);
 
             // 1. Failed deletes, per recorded connection; a connection whose row is gone is named.
@@ -943,7 +1080,15 @@ export async function reconcileLostSessionDeletes(
                 await retryFailedDeletesFor(tenantId, connection, mine, timer.signal, tally);
             }
 
-            // 2. Lost deletes.
+            // 2. Abandoned sessions (Step 5H), per recorded connection, as the run's settle would have.
+            const abandonedBy = new Map<string, LedgerSession[]>();
+            for (const s of abandoned) abandonedBy.set(s.connectionId, [...(abandonedBy.get(s.connectionId) ?? []), s]);
+            for (const [connectionId, mine] of [...abandonedBy.entries()].sort(([x], [y]) => x.localeCompare(y))) {
+                const connection = connections.find((c) => c.connectionId === connectionId) ?? null;
+                await settleAbandonedSessionsFor(tenantId, connection, mine, timer.signal, tally);
+            }
+
+            // 3. Lost deletes.
             for (const connection of connections) {
                 const mine = deletedOnes.filter((s) => s.connectionId === connection.connectionId);
                 if (mine.length === 0 || !connection.apiKey) continue;
