@@ -3,14 +3,13 @@
  * #4165): `provisionApprovedProfileVersion`, which `approveAgentProfileVersion`
  * calls once its transaction has committed.
  *
- *   • In this build it provisions NOTHING: the engine is not in force for any
- *     tenant, because `DRIVER_IMPLEMENTED['managed-agents']` is false. Proved
- *     with the tenant's stored engine at MANAGED_AGENTS and every switch on,
- *     through the real pure resolver: no client is constructed and no row is
- *     written.
- *   • When the engine IS in force (the resolver stubbed to say so, as Step 5d
- *     will make it), it provisions over the faux workspace, and the version's
- *     instructions are not even read: the version query does not select them.
+ *   • Where the engine is NOT in force it provisions NOTHING. Proved with the
+ *     tenant's stored engine at MANAGED_AGENTS and the engine's own switch
+ *     off, through the real pure resolver: no client is constructed and no
+ *     row is written. (Until Step 5d the build flag refused every tenant.)
+ *   • When the engine IS in force (the resolver stubbed to say so), it
+ *     provisions over the faux workspace, and the version's instructions are
+ *     not even read: the version query does not select them.
  */
 jest.mock('@/env', () => ({ env: { NODE_ENV: 'test' } }));
 
@@ -25,7 +24,7 @@ jest.mock('@/lib/agentic/agent-driver-policy', () => ({
     resolveDriverForTenant: jest.fn(async () => {
         if (mockGate.inForce) return { driver: 'managed-agents', reason: null };
         const { resolveAgentDriver } = jest.requireActual('@/lib/agentic/agent-driver') as typeof import('@/lib/agentic/agent-driver');
-        return resolveAgentDriver({ envEnabled: true, toolRunnerEnvEnabled: true, managedAgentsEnvEnabled: true, tenantSetting: 'MANAGED_AGENTS' });
+        return resolveAgentDriver({ envEnabled: true, toolRunnerEnvEnabled: true, managedAgentsEnvEnabled: false, tenantSetting: 'MANAGED_AGENTS' });
     }),
 }));
 
@@ -81,7 +80,7 @@ beforeEach(() => {
 afterEach(() => faux.uninstall());
 
 describe('provisionApprovedProfileVersion', () => {
-    it('provisions nothing in this build: a stored MANAGED_AGENTS with every switch on is not in force', async () => {
+    it('provisions nothing where the engine is not in force: a stored MANAGED_AGENTS with its switch off', async () => {
         await expect(provisionApprovedProfileVersion(ctx, 'pv-1')).resolves.toEqual({ provisioned: false, reason: 'ENGINE_NOT_IN_FORCE' });
         expect(sdk.default).not.toHaveBeenCalled();
         expect(faux.requests).toEqual([]);

@@ -52,14 +52,18 @@ const ROLLOUT: Readonly<Record<string, Stage>> = {
     // READ_ONLY in Step 2b (#4149), WRITTEN in Step 2c (#4150), once
     // production ran an image that read it (a8ba6717, confirmed 2026-10-29).
     TOOL_RUNNER: 'WRITTEN',
-    // READ_ONLY in Step 5b (#4165): every reader understands it and no writer
-    // accepts it. Step 5d makes it WRITTEN once production reads it.
-    MANAGED_AGENTS: 'READ_ONLY',
+    // READ_ONLY in Step 5b (#4165), WRITTEN in Step 5d (#4167), once
+    // production ran an image that read it (960503a11, the Step 5c merge,
+    // which carries 5b; confirmed 2026-11-23T08:15Z on /api/health).
+    MANAGED_AGENTS: 'WRITTEN',
 };
 
 const upsert = jest.fn(async (_args: unknown): Promise<unknown> => ({}));
 const mockDb = {
     tenantSecuritySettings: { upsert, findUnique: jest.fn(async () => null) },
+    // One connected Anthropic workspace, so the Managed Agents engine's own
+    // precondition (Step 5d) is met and only its rollout stage decides.
+    integrationConnection: { findMany: jest.fn(async () => [{ id: 'conn-1' }]) },
     $queryRaw: jest.fn(async () => []),
 };
 

@@ -263,6 +263,9 @@ const ADMIN_ONLY_ROUTES = [
     // has its own rule, `admin.integrations_ingest`, and its GET the inventory
     // read, both above the subtree rule, as the harness scan route's are.
     'admin/agents/integration-scans/route.ts',
+    // The agent-surface rules ingest (`scanent-agent-rules/1`): the same shape,
+    // its POST on `admin.agent_rules_ingest` and its GET the inventory read.
+    'admin/agents/agent-rule-scans/route.ts',
     'admin/agents/harness-scanner-keys/route.ts',
     'admin/agents/harness-scanner-keys/[keyId]/route.ts',
     'admin/agents/harness-acceptances/route.ts',

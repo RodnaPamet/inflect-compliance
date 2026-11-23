@@ -208,6 +208,8 @@ export const ACTIVITY_DOMAIN_ENTITIES = {
         // The third-party application scans: read on the Integrations tab of
         // `/agents/reports`, under the same inventory rule as the harness scans.
         'ThirdPartyAppScan', 'DiscoveredThirdPartyApp', 'ThirdPartyAppScanItem',
+        // The agent-surface rules scans: the Agent surface tab, the same rule.
+        'AgentRuleScan', 'AgentRuleScanItem',
         'AgentOwnershipTransfer', 'AgentSpendingAuthority', 'OpenShellSandboxLease',
         'PeerAgent', 'PeerAgentMessage', 'PeerAgentReplyDelivery', 'PeerAgentKillSwitch',
         'PeerAgentInboundCredential', 'PeerInvitation', 'TenantA2aSigningKey',

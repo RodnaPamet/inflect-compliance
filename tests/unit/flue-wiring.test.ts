@@ -18,6 +18,7 @@ type SettingsRow = { agentDriver: string | null } | null;
 let row: SettingsRow = { agentDriver: 'FLUE' };
 let agentCount = 1;
 let keyCount = 1;
+let workspaceConnections: Array<{ id: string }> = [];
 
 const registeredAgentCount = jest.fn(async (_args: unknown) => agentCount);
 const tenantApiKeyCount = jest.fn(async (_args: unknown) => keyCount);
@@ -25,6 +26,8 @@ const mockDb = {
     tenantSecuritySettings: { findUnique: jest.fn(async () => row) },
     registeredAgent: { count: registeredAgentCount },
     tenantApiKey: { count: tenantApiKeyCount },
+    // The workspace's enabled Anthropic workspace connections (Step 5d).
+    integrationConnection: { findMany: jest.fn(async () => workspaceConnections) },
     // The TEXT read of `agentDriver` (#4224), in the shape
     // `SELECT "agentDriver"::text` returns — a row array, empty when the
     // settings row is absent. Driven off the same `row` fixture so every case
@@ -60,7 +63,12 @@ jest.mock('@/lib/agentic/workflow-registry', () => ({
     listWorkflowDefinitions: () => mockDefinitions,
 }));
 
-import { getFlueWiringState, FLUE_WIRING_TERMS, TOOL_RUNNER_WIRING_TERMS } from '@/app-layer/usecases/flue-wiring';
+import {
+    getFlueWiringState,
+    FLUE_WIRING_TERMS,
+    MANAGED_AGENTS_WIRING_TERMS,
+    TOOL_RUNNER_WIRING_TERMS,
+} from '@/app-layer/usecases/flue-wiring';
 import { DRIVER_IMPLEMENTED } from '@/lib/agentic/agent-driver';
 
 import { makeRequestContext } from '../helpers/make-context';
@@ -76,6 +84,7 @@ beforeEach(() => {
     envBag.AGENT_DRIVER_FLUE = '1';
     agentCount = 1;
     keyCount = 1;
+    workspaceConnections = [];
     mockDefinitions = [{ driver: 'flue' }];
 });
 
@@ -248,5 +257,44 @@ describe('a workspace that chose the Tool Runner gets that engine\'s checklist (
         const state = await getFlueWiringState(ctx);
         expect(state.engine).toBe('FLUE');
         expect(state.terms.map((t) => t.key)).toEqual([...FLUE_WIRING_TERMS]);
+    });
+});
+
+describe('a workspace that chose the Managed Agents engine gets that engine\'s checklist (Step 5d)', () => {
+    beforeEach(() => {
+        row = { agentDriver: 'MANAGED_AGENTS' };
+        envBag.AGENT_MANAGED_AGENTS = '1';
+        envBag.AGENT_PROFILES = '1';
+        workspaceConnections = [{ id: 'conn-1' }];
+    });
+
+    it('lists its own six terms, in order: no bound key and no deployment model key', async () => {
+        const state = await getFlueWiringState(ctx);
+        expect(state.engine).toBe('MANAGED_AGENTS');
+        expect(state.terms.map((t) => t.key)).toEqual([...MANAGED_AGENTS_WIRING_TERMS]);
+        expect(state.terms.map((t) => t.key)).not.toContain('MODEL_KEY');
+    });
+
+    it('is ready exactly when the build ships the engine and every term holds', async () => {
+        const state = await getFlueWiringState(ctx);
+        expect(await satisfiedOf()).toEqual({
+            ENV: true,
+            TENANT: true,
+            BUILD: DRIVER_IMPLEMENTED['managed-agents'],
+            PROFILES: true,
+            WORKSPACE: true,
+            REGISTERED_AGENT: true,
+        });
+        expect(state.ready).toBe(DRIVER_IMPLEMENTED['managed-agents']);
+    });
+
+    it('names a missing or ambiguous workspace as the workspace owner\'s to fix', async () => {
+        for (const connections of [[], [{ id: 'conn-1' }, { id: 'conn-2' }]]) {
+            workspaceConnections = connections;
+            const state = await getFlueWiringState(ctx);
+            const term = state.terms.find((t) => t.key === 'WORKSPACE');
+            expect(term).toMatchObject({ satisfied: false, actor: 'tenant' });
+            expect(state.ready).toBe(false);
+        }
     });
 });

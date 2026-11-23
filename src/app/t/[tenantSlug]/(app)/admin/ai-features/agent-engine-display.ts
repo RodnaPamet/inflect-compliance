@@ -23,6 +23,13 @@
  * the checklist and the stored-choice note name that engine. A workspace on the
  * built-in engine reads Flue's, as it did before the Tool Runner existed.
  *
+ * ═══ THE MANAGED AGENTS ENGINE NEEDS A WORKSPACE (Step 5d) ═══
+ *
+ * A third reasoning engine, with its own switch and build flag, and one more
+ * condition before it may be chosen: exactly one enabled Anthropic workspace
+ * connection. It is offered only when its switch is on, and can be chosen only
+ * when that workspace is connected, which is what the writer requires too.
+ *
  * @module admin/ai-features/agent-engine-display
  */
 import {
@@ -47,21 +54,39 @@ export interface AgentDriverSettingPayload {
      * organization decided it (#4557). Absent from a server that predates it.
      */
     toolRunner: { envEnabled: boolean; implemented: boolean; basis?: AgentSwitchBasis };
+    /**
+     * The Managed Agents engine's switch and build flag, and whether exactly
+     * one Anthropic workspace is connected and enabled (Step 5d). Absent from
+     * a server that predates it, which reads as the engine being off.
+     */
+    managedAgents?: { envEnabled: boolean; implemented: boolean; workspace: 'CONNECTED' | 'NONE' | 'AMBIGUOUS' };
 }
 
 /** A reasoning engine a workspace can choose. */
-export type ReasoningEngineMode = 'FLUE' | 'TOOL_RUNNER';
+export type ReasoningEngineMode = 'FLUE' | 'TOOL_RUNNER' | 'MANAGED_AGENTS';
 
 /**
  * The engine the reason sentences and the checklist talk about: the Tool Runner
- * for a workspace that chose it, Flue otherwise.
+ * or the Managed Agents engine for a workspace that chose one, Flue otherwise.
  */
 export function engineOf(setting: Pick<AgentDriverSettingPayload, 'mode'>): ReasoningEngineMode {
-    return setting.mode === 'TOOL_RUNNER' ? 'TOOL_RUNNER' : 'FLUE';
+    if (setting.mode === 'TOOL_RUNNER' || setting.mode === 'MANAGED_AGENTS') return setting.mode;
+    return 'FLUE';
+}
+
+/** Is the Managed Agents engine's operator switch on? An older server's answer reads as off. */
+function managedAgentsEnvEnabled(setting: AgentDriverSettingPayload): boolean {
+    return setting.managedAgents?.envEnabled === true;
+}
+
+/** Is exactly one Anthropic workspace connected and enabled (Step 5d)? */
+export function managedAgentsWorkspaceConnected(setting: AgentDriverSettingPayload): boolean {
+    return setting.managedAgents?.workspace === 'CONNECTED';
 }
 
 /** Is this engine's operator switch on? */
 function engineEnvEnabled(setting: AgentDriverSettingPayload, engine: ReasoningEngineMode): boolean {
+    if (engine === 'MANAGED_AGENTS') return managedAgentsEnvEnabled(setting);
     return engine === 'TOOL_RUNNER' ? setting.toolRunner.envEnabled : setting.envEnabled;
 }
 
@@ -74,7 +99,8 @@ export type EngineTermKey =
     | 'REGISTERED_AGENT'
     | 'BOUND_KEY'
     | 'PROFILES'
-    | 'MODEL_KEY';
+    | 'MODEL_KEY'
+    | 'WORKSPACE';
 
 export interface EngineTerm {
     key: EngineTermKey;
@@ -116,6 +142,15 @@ export const TOOL_RUNNER_REASON_MESSAGE = {
     NO_WORKFLOW_REQUESTS_IT: 'reasonToolRunner.NO_WORKFLOW_REQUESTS_IT',
 } as const satisfies Record<StaticDriverReason, string>;
 
+/** The same for a workspace that chose the Managed Agents engine (Step 5d). */
+export const MANAGED_AGENTS_REASON_MESSAGE = {
+    ENV_DISABLED: 'reasonManagedAgents.ENV_DISABLED',
+    TENANT_NOT_OPTED_IN: 'reason.TENANT_NOT_OPTED_IN',
+    UNRECOGNISED_SETTING: 'reason.UNRECOGNISED_SETTING',
+    DRIVER_NOT_IMPLEMENTED: 'reasonManagedAgents.DRIVER_NOT_IMPLEMENTED',
+    NO_WORKFLOW_REQUESTS_IT: 'reasonManagedAgents.NO_WORKFLOW_REQUESTS_IT',
+} as const satisfies Record<StaticDriverReason, string>;
+
 function isStaticDriverReason(value: string): value is StaticDriverReason {
     return Object.prototype.hasOwnProperty.call(REASON_MESSAGE, value);
 }
@@ -124,6 +159,7 @@ function isStaticDriverReason(value: string): value is StaticDriverReason {
 export function effectiveEngineNameFor(setting: AgentDriverSettingPayload): string {
     if (setting.effective.driver === 'flue') return 'engine.FLUE.name';
     if (setting.effective.driver === 'tool-runner') return 'engine.TOOL_RUNNER.name';
+    if (setting.effective.driver === 'managed-agents') return 'engine.MANAGED_AGENTS.name';
     return 'engine.STATIC.name';
 }
 
@@ -148,9 +184,13 @@ export function headlineFor(setting: AgentDriverSettingPayload, wiring?: FlueWir
         if (driver === 'tool-runner') {
             return wiring && !wiring.ready ? 'runsOnToolRunnerNotReady' : 'runsOnToolRunner';
         }
+        if (driver === 'managed-agents') {
+            return wiring && !wiring.ready ? 'runsOnManagedAgentsNotReady' : 'runsOnManagedAgents';
+        }
         return 'reason.UNKNOWN';
     }
     if (!isStaticDriverReason(reason)) return 'reason.UNKNOWN';
+    if (engineOf(setting) === 'MANAGED_AGENTS') return MANAGED_AGENTS_REASON_MESSAGE[reason];
     if (engineOf(setting) !== 'TOOL_RUNNER') return REASON_MESSAGE[reason];
     // The organization holds the switch (#4557): name it, not the operator,
     // who cannot help a workspace whose organization left the engine off.
@@ -169,7 +209,7 @@ export type HeadlineTone = 'success' | 'warning' | 'info';
  */
 export function headlineToneFor(setting: AgentDriverSettingPayload, wiring?: FlueWiringPayload): HeadlineTone {
     const driver = setting.effective.driver;
-    if (driver !== 'flue' && driver !== 'tool-runner') return 'info';
+    if (driver !== 'flue' && driver !== 'tool-runner' && driver !== 'managed-agents') return 'info';
     return wiring && !wiring.ready ? 'warning' : 'success';
 }
 
@@ -197,7 +237,9 @@ export type EngineControl = 'read-only' | 'deployment-off' | 'editable';
 
 export function engineControlFor(setting: AgentDriverSettingPayload, canChange: boolean): EngineControl {
     if (!canChange) return 'read-only';
-    if (!setting.envEnabled && !setting.toolRunner.envEnabled) return 'deployment-off';
+    if (!setting.envEnabled && !setting.toolRunner.envEnabled && !managedAgentsEnvEnabled(setting)) {
+        return 'deployment-off';
+    }
     return 'editable';
 }
 
@@ -211,6 +253,14 @@ export function engineControlFor(setting: AgentDriverSettingPayload, canChange: 
  * serve both.
  */
 export function gateTermsFor(setting: AgentDriverSettingPayload): EngineTerm[] {
+    if (engineOf(setting) === 'MANAGED_AGENTS') {
+        return [
+            { key: 'ENV', satisfied: managedAgentsEnvEnabled(setting), actor: 'operator' },
+            { key: 'TENANT', satisfied: true, actor: 'tenant' },
+            { key: 'BUILD', satisfied: setting.managedAgents?.implemented === true, actor: 'operator' },
+            { key: 'WORKSPACE', satisfied: managedAgentsWorkspaceConnected(setting), actor: 'tenant' },
+        ];
+    }
     if (engineOf(setting) === 'TOOL_RUNNER') {
         return [
             {
@@ -231,6 +281,32 @@ export function gateTermsFor(setting: AgentDriverSettingPayload): EngineTerm[] {
 
 /** The engines the API accepts today, in the order they are offered. */
 export const OFFERED_ENGINES: readonly AgentDriverMode[] = AGENT_DRIVER_MODES;
+
+/**
+ * The engines the section lists (Step 5d). Every writable mode, except the
+ * Managed Agents engine on a deployment whose switch is off: there is no
+ * Anthropic workspace card to connect one on, so the option would be a choice
+ * nobody could ever make. A workspace that already holds it still sees it,
+ * so the control names the stored choice.
+ */
+export function listedEngines(setting: AgentDriverSettingPayload): readonly AgentDriverMode[] {
+    return OFFERED_ENGINES.filter(
+        (mode) => mode !== 'MANAGED_AGENTS' || managedAgentsEnvEnabled(setting) || setting.mode === 'MANAGED_AGENTS',
+    );
+}
+
+/**
+ * Why the Managed Agents engine cannot be chosen although its switch is on, as
+ * a key under `admin.agentEngines`, or null when it can (Step 5d). The writer
+ * refuses the same two states by name.
+ */
+export function managedAgentsChoiceBlockedBy(setting: AgentDriverSettingPayload): string | null {
+    if (!managedAgentsEnvEnabled(setting)) return null;
+    const workspace = setting.managedAgents?.workspace;
+    if (workspace === 'NONE') return 'managedAgentsNeedsWorkspace';
+    if (workspace === 'AMBIGUOUS') return 'managedAgentsAmbiguousWorkspace';
+    return null;
+}
 
 /**
  * Whether one engine can be chosen under a control.
@@ -254,5 +330,8 @@ export function choiceEnabled(
     if (control === 'read-only') return false;
     if (option === 'STATIC') return true;
     if (control === 'deployment-off') return false;
+    // The Managed Agents engine also needs its workspace (Step 5d): offered
+    // only when exactly one is connected, as the writer requires.
+    if (option === 'MANAGED_AGENTS') return managedAgentsEnvEnabled(setting) && managedAgentsWorkspaceConnected(setting);
     return engineEnvEnabled(setting, option);
 }

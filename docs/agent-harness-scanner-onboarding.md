@@ -50,6 +50,17 @@ scanner signed it, so each estate has a scanner of its own.
    minted with `admin:harness_ingest` alone cannot post it, and the other way
    round (owner decision). Bind it to the scanner agent too. Its results are the
    Integrations tab on `/agents/reports`.
+6. **For the agent-surface rules report, issue a third key.** A scanner with an
+   MCP source, or a code source (which reads the agent skills under its roots
+   unless it says `skills: false`), signs a third report,
+   `scanent-agent-rules/1` (what static rules found in the MCP tool definitions
+   and the skills it read), with the SAME signing key, and
+   posts it to `POST /api/t/{slug}/admin/agents/agent-rule-scans` when its
+   configuration names `inflect.agentRulesApiKeyEnv`. That route takes
+   `admin.agent_rules_ingest`, which an API key gets from the
+   `admin:agent_rules_ingest` scope; a key minted for either other report
+   cannot post it. Bind it to the scanner agent too. Its results are the Agent
+   surface tab on `/agents/reports`.
 
 ## 2. In the estate
 

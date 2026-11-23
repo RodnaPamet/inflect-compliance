@@ -5,10 +5,10 @@
 // the top of the client entry. See src/lib/zod-jitless.ts.
 import '@/lib/zod-jitless';
 import { useEffect, useMemo, useState } from 'react';
-import { Toaster } from 'sonner';
 import { AssistantOpenProvider } from '@/components/assistant/assistant-open-context';
 import { SWRConfig } from 'swr';
 import { ThemeProvider } from '@/components/theme/ThemeProvider';
+import { AppToaster } from '@/components/theme/AppToaster';
 import { SessionExpiredNotice } from '@/components/layout/session-expired-notice';
 import { isSessionExpired, noteUnauthorized, subscribe } from '@/lib/auth/session-expiry';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -188,14 +188,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
                              * Global toast host. CopyButton / CopyText and the
                              * optimistic-update hook emit into this Toaster;
                              * without it, every `toast()` call is a silent no-op.
+                             * Inside `ThemeProvider` so it follows the theme
+                             * (#5821) — see `AppToaster`.
                              */}
-                            <Toaster
-                                theme="dark"
-                                position="top-right"
-                                richColors
-                                closeButton
-                                duration={3000}
-                            />
+                            <AppToaster />
                         </TooltipProvider>
                     </ThemeProvider>
                 </CommandPaletteProvider>

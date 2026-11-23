@@ -100,9 +100,12 @@ describe('the surface reports the whole gate, not just its own half', () => {
         // settings page ends up reporting a capability the runtime refuses —
         // the identity write-policy route's `honoured` block exists for the
         // same reason and cost a real incident to learn.
-        // Both engines' switches go in (Step 2b), so the page and the run path
-        // answer a stored TOOL_RUNNER the same way.
-        expect(usecase).toContain('resolveAgentDriver({ envEnabled, toolRunnerEnvEnabled, tenantSetting: mode })');
+        // Every engine's switch goes in (Step 2b; the Managed Agents engine's
+        // since Step 5d, which found it missing), so the page and the run path
+        // answer a stored TOOL_RUNNER or MANAGED_AGENTS the same way.
+        expect(usecase).toContain(
+            'resolveAgentDriver({ envEnabled, toolRunnerEnvEnabled, managedAgentsEnvEnabled, tenantSetting: mode })',
+        );
     });
 
     it('reads the operator switch and the build flag rather than restating them', () => {

@@ -189,13 +189,30 @@ const RUNS_PROFILES: Readonly<Record<AgentDriver, boolean>> = {
     'tool-runner': true,
     // TRUE since Step 5b (#4165): the driver sends the pinned instructions in
     // the session's `system` override, fenced as the operator's block, and
-    // only `profileTools` are dispatched. The engine is not implemented in
-    // this build (`DRIVER_IMPLEMENTED`), so no profile runs on it yet.
+    // only `profileTools` are dispatched. A profile reaches it from Step 5d
+    // (#4167), in a workspace that chose it (`profileEngineRequestFor`).
     'managed-agents': true,
 };
 
 export function runsProfiles(driver: AgentDriver): boolean {
     return RUNS_PROFILES[driver];
+}
+
+/**
+ * WHICH ENGINE A PROFILE'S DEFINITION ASKS FOR (Step 5d of
+ * `docs/claude-managed-agents-design.md`, #4167), given the engine mode the
+ * workspace chose (at admission) or the run recorded (in the worker).
+ *
+ * The Managed Agents engine for a workspace that chose it, the Tool Runner for
+ * every other. A REQUEST, as every definition's `driver` is: `selectRunDriver`
+ * still intersects it with what the deployment and the tenant permit, so a
+ * workspace that chose MANAGED_AGENTS on a deployment whose switch is off gets
+ * the static engine and admission refuses the profile by name
+ * (`PROFILE_NEEDS_REASONING_ENGINE`), exactly as before this engine existed.
+ * Every other mode keeps the answer every profile had before Step 5d.
+ */
+export function profileEngineRequestFor(mode: string | null | undefined): AgentDriver {
+    return mode === 'MANAGED_AGENTS' ? 'managed-agents' : 'tool-runner';
 }
 
 /**

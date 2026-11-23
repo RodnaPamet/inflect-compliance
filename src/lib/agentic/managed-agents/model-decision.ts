@@ -12,9 +12,11 @@
  * prompt is held in the customer's workspace.
  *
  * The marker is the row's `provider`, `MANAGED_AGENTS_SPAN_PROVIDER`: a value
- * no other writer uses, read by Step 5d's run timeline to label the row. No
- * column is added to `AiDecisionLog`, an append-only table this step has no
- * reason to migrate.
+ * no other writer uses. No column is added to `AiDecisionLog`, an append-only
+ * table this step has no reason to migrate. The run timeline (Step 5d) labels
+ * the row from the MODEL_CALL step the engine writes beside it in the same
+ * handler (`spanDerived: true`, `inputBasis: 'INFLECT_SENT'`), which every
+ * surface that projects steps can read without a join to this table.
  */
 import { logAiDecision } from '@/app-layer/ai/decision-log';
 import type { RequestContext } from '@/app-layer/types';

@@ -15,8 +15,9 @@
  *     R14-PR6 originally filled this with the `<SearchAnchor>`
  *     pill; the searchbar-kill sweep retired it. The ⌘K palette
  *     stays globally accessible via the keyboard shortcut that
- *     `<CommandPaletteProvider>` registers — no visual surface
- *     in the chrome.
+ *     `<CommandPaletteProvider>` registers. A phone has no keyboard,
+ *     so below md the host puts a search icon in the right slot
+ *     through `actions` (#5821) — beside the assistant icon (#5813).
  *
  *   • Right slot  — context identity pill (tenant or org name).
  *     R14-PR4 replaces this with the workspace switcher.
@@ -37,6 +38,7 @@
  * R14-PR12 unifies the two; until then the mobile bar is the
  * authoritative mobile surface.
  */
+import type { ReactNode } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -71,6 +73,17 @@ interface TopChromeProps {
      * passes the setter through.
      */
     onMobileMenuClick: () => void;
+    /**
+     * Icon buttons the HOST puts in the right slot, before the bell — on a
+     * phone, the command-palette search and the assistant (#5813, #5821).
+     *
+     * A slot rather than imports because this file is shared UI recorded
+     * GENERIC (`docs/_status/ui-core-classification.json`): the palette and
+     * the assistant are product modules, and importing them here would make
+     * the chrome carry a product. The tenant and org layouts supply the
+     * nodes; each button owns its own gating and breakpoint.
+     */
+    actions?: ReactNode;
     /**
      * R14-hotfix — user data threaded from the server-side layout
      * (`session.user`). Replaces the `useSession()` calls that
@@ -113,7 +126,7 @@ interface TopChromeProps {
  * variant + URL params: tenant → `/t/<slug>/dashboard`,
  * org → `/org/<slug>` (org root).
  */
-export function TopChrome({ variant, user, onMobileMenuClick, onLogout }: TopChromeProps) {
+export function TopChrome({ variant, user, onMobileMenuClick, onLogout, actions }: TopChromeProps) {
     const t = useTranslations('nav');
     const tSecurity = useTranslations('account.security');
     const tProfile = useTranslations('account.profile');
@@ -203,6 +216,7 @@ export function TopChrome({ variant, user, onMobileMenuClick, onLogout }: TopChr
             right={
                 <>
                     {renderIdentity()}
+                    {actions}
                     <NotificationsBell />
                     <UserMenu
                         displayName={user.name ?? null}

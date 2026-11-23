@@ -12,9 +12,10 @@
  *                             read. None, or more than one, is a refusal by
  *                             name: a run never chooses between workspaces.
  *   readProvision             what was provisioned for one version in one
- *                             workspace.
- *   readProfileAgent          the profile's agent in a workspace, for the next
- *                             version's update.
+ *                             workspace, and whether a removal of that
+ *                             connection has since archived its agent.
+ *   readProfileAgent          the profile's live agent in a workspace, for the
+ *                             next version's update.
  *   readConnectionEnvironment the environment already made for a connection.
  *   recordProvision           the ONE writer of `AgentProfileProvision`.
  *
@@ -22,6 +23,8 @@
  * connection, which the driver hands to `managedAgentsClientFor` and drops.
  * It is never logged and never stored anywhere else.
  */
+import type { Prisma } from '@prisma/client';
+
 import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { decryptField } from '@/lib/security/encryption';
@@ -83,6 +86,60 @@ export async function readWorkspaceConnection(
     };
 }
 
+/**
+ * Whether the tenant has a workspace a run could use: exactly ONE enabled
+ * `anthropic-workspace` connection (`CONNECTED`), none, or more than one
+ * (Step 5d). The same rows `readWorkspaceConnection` reads, and the same "one
+ * past the answer", without decrypting anything: the engine setting asks this
+ * before it lets a workspace choose the engine, and needs no key to ask it.
+ */
+export type WorkspaceConnectionState = 'CONNECTED' | 'NONE' | 'AMBIGUOUS';
+
+/**
+ * Takes the caller's tenant-bound client rather than opening its own context,
+ * so the engine setting reads it inside the context it already holds.
+ */
+export async function readWorkspaceConnectionState(
+    db: Pick<Prisma.TransactionClient, 'integrationConnection'>,
+    tenantId: string,
+): Promise<WorkspaceConnectionState> {
+    const rows = await db.integrationConnection.findMany({
+        where: { tenantId, provider: ANTHROPIC_WORKSPACE_PROVIDER, isEnabled: true },
+        select: { id: true },
+        take: 2,
+    });
+    if (rows.length === 0) return 'NONE';
+    return rows.length > 1 ? 'AMBIGUOUS' : 'CONNECTED';
+}
+
+/**
+ * WHEN A REMOVAL OF THIS CONNECTION ARCHIVED WHAT IT HAD (Step 5d, #4167).
+ *
+ * Removing an `anthropic-workspace` connection disables the row and opens a
+ * `CONNECTION_REMOVED` clean-up (Step 5c) that archives every agent recorded in
+ * `AgentProfileProvision` at or before its `coversUntil`. The provision rows
+ * stay. Re-enabling the same row (the card's Enable) therefore leaves rows that
+ * name ARCHIVED agents, which can start no session.
+ *
+ * So a provision is STALE when a removal of its connection covers it: a
+ * `CONNECTION_REMOVED` record whose `coversUntil` is at or after the
+ * provision's `createdAt`. The latest such instant is returned, or null when
+ * the connection was never removed. It is the clean-up's own scope rule, read
+ * from its own record, so "archived" here and "archived" there cannot disagree.
+ * Whether the clean-up has finished does not matter: once it is opened, the
+ * agent is on its way out, and a run must not race it.
+ */
+async function connectionRemovedUntil(ctx: RequestContext, connectionId: string): Promise<Date | null> {
+    const removal = await runInTenantContext(ctx, (db) =>
+        db.managedAgentsCleanup.findFirst({
+            where: { tenantId: ctx.tenantId, connectionId, trigger: 'CONNECTION_REMOVED' },
+            orderBy: { coversUntil: 'desc' },
+            select: { coversUntil: true },
+        }),
+    );
+    return removal?.coversUntil ?? null;
+}
+
 /** One provision row, as the engine reads it. */
 export interface ProvisionRecord {
     readonly profileId: string;
@@ -93,6 +150,16 @@ export interface ProvisionRecord {
     readonly environmentId: string;
     readonly systemHash: string;
     readonly toolsHash: string;
+}
+
+/**
+ * A provision as a run reads it: the record, and whether a removal of its
+ * connection has archived its agent since it was written (Step 5d). An
+ * archived provision is never run and never updated; the next approval of a
+ * version writes a new agent instead.
+ */
+export interface ReadProvision extends ProvisionRecord {
+    readonly archived: boolean;
 }
 
 const PROVISION_SELECT = {
@@ -110,24 +177,39 @@ export async function readProvision(
     ctx: RequestContext,
     profileVersionId: string,
     connectionId: string,
-): Promise<ProvisionRecord | null> {
-    return runInTenantContext(ctx, (db) =>
+): Promise<ReadProvision | null> {
+    const row = await runInTenantContext(ctx, (db) =>
         db.agentProfileProvision.findFirst({
             where: { tenantId: ctx.tenantId, profileVersionId, connectionId },
-            select: PROVISION_SELECT,
+            select: { ...PROVISION_SELECT, createdAt: true },
         }),
     );
+    if (!row) return null;
+    const { createdAt, ...record } = row;
+    const removedUntil = await connectionRemovedUntil(ctx, connectionId);
+    return { ...record, archived: removedUntil !== null && createdAt <= removedUntil };
 }
 
-/** The profile's agent in this workspace, from its latest provision, or null before the first. */
+/**
+ * The profile's LIVE agent in this workspace, from its latest provision that no
+ * removal of the connection has archived, or null before the first or after a
+ * removal (Step 5d): an archived agent cannot be updated, so the next version
+ * creates a new one.
+ */
 export async function readProfileAgent(
     ctx: RequestContext,
     profileId: string,
     connectionId: string,
 ): Promise<{ anthropicAgentId: string; anthropicAgentVersion: number } | null> {
+    const removedUntil = await connectionRemovedUntil(ctx, connectionId);
     return runInTenantContext(ctx, (db) =>
         db.agentProfileProvision.findFirst({
-            where: { tenantId: ctx.tenantId, profileId, connectionId },
+            where: {
+                tenantId: ctx.tenantId,
+                profileId,
+                connectionId,
+                ...(removedUntil ? { createdAt: { gt: removedUntil } } : {}),
+            },
             orderBy: [{ anthropicAgentVersion: 'desc' }, { createdAt: 'desc' }],
             select: { anthropicAgentId: true, anthropicAgentVersion: true },
         }),

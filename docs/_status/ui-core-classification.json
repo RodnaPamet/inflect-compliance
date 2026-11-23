@@ -1999,6 +1999,11 @@
   "derivation": "audited",
   "reason": "35-line scroll wrapper with a tokenised bottom fade driven by useScrollProgress. Imports only @inflect/ui/lib/cn and the local ./hooks/use-scroll-progress. No copy, no domain, no storage, no brand tokens."
  },
+ "src/components/ui/scroll-cue-strip.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Horizontally scrolling strip with edge fades, chevrons, active-item scroll-into-view, an end spacer and an optional phone-sticky wrapper. Content is the caller's children; the two chevron labels come from the 'ui.scrollCueStrip' catalog. Semantic tokens only (text-content-*, bg-bg-page), the fade is a CSS mask with no colour of its own. Imports only @inflect/ui/lib/cn, lucide-react and next-intl. No storage, no domain props, no brand tokens."
+ },
  "src/components/ui/selection-summary-panel.tsx": {
   "classification": "MIXED",
   "derivation": "audited",

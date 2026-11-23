@@ -5,6 +5,7 @@ import { auth } from '@/auth';
 import { getOrgServerContext } from '@/lib/server/org-context.server';
 import { OrgProvider } from '@/lib/org-context-provider';
 import { AppShell } from '@/components/layout/AppShell';
+import { CommandPaletteTopBarButton } from '@/components/command-palette';
 import { ClientProviders } from '@/components/layout/ClientProviders';
 
 /**
@@ -84,6 +85,9 @@ export default async function OrgLayout({
                     memberships: session.user.memberships,
                 }}
                 appName={tc('appName')}
+                // The palette's touch trigger (#5821), phone-only. No assistant
+                // here: it is mounted by the tenant layout alone.
+                topBarActions={<CommandPaletteTopBarButton />}
             >
                 <ClientProviders>{children}</ClientProviders>
             </AppShell>

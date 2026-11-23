@@ -1308,7 +1308,11 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 152;
 // 1370 -> 1367 on 2026-11-15 (scanent #26). The in-repo harness scanner and its
 // suites were deleted, and three unanalysable whole-file reads went with them.
 // Measured.
-const UNANALYSABLE_READ_BASELINE = 1367;
+// 1367 -> 1366 on 2026-11-23 (#5821). The guards this diff re-pointed when the
+// Toaster left `providers.tsx` and the hamburger's class became the shared
+// `NAV_BAR_ICON_BUTTON_CLASS` (bottom-right-corner, r14-mobile-parity) dropped
+// one un-analysable whole-file read between them. Measured.
+const UNANALYSABLE_READ_BASELINE = 1366;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

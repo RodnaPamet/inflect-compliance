@@ -641,6 +641,7 @@ function tenantPathTemplate(pathname: string): string | null {
  */
 export const AGENT_ADMIN_API_STATIC_SEGMENTS: readonly string[] = [
     'a2a-signing-key',
+    'agent-rule-scans',
     'assurance-checks',
     'audit-pilot',
     'budget',
@@ -680,6 +681,8 @@ export const AGENT_ADMIN_API_STATIC_SEGMENTS: readonly string[] = [
  *   - `/api/t/[slug]/admin/agents/integration-scans` the third-party
  *     application scan list, the harness list's twin; its POST is the
  *     scanner's ingest key, which AUDITOR does not hold
+ *   - `/api/t/[slug]/admin/agents/agent-rule-scans` the agent-surface rules
+ *     scan list, the same twin; its POST is the scanner's third ingest key
  *   - `/api/t/[slug]/admin/agents/reports`        the governance pack
  *   - `/api/t/[slug]/admin/mcp/quarantine`        the quarantine triage read
  *     (#4898). Its route takes the view key and its usecase refuses an AUDITOR
@@ -697,6 +700,7 @@ export const AUDITOR_ADMIN_READ_PATHS: readonly string[] = [
     '/api/t/[slug]/admin/agents/harness-scans',
     '/api/t/[slug]/admin/agents/harness-estates',
     '/api/t/[slug]/admin/agents/integration-scans',
+    '/api/t/[slug]/admin/agents/agent-rule-scans',
     '/api/t/[slug]/admin/agents/reports',
     // The quarantine triage read (#4898). Admitted at the edge so the usecase
     // can apply the Owner's switch: an AUDITOR reads it only while an owner has

@@ -834,7 +834,8 @@ flags — is re-checked at runtime by `permissionsExceeding`.
 `AI_ADMIN` (#3699) runs the agent register and can own and receive agents: every
 agent key in `AGENT_ADMIN_KEYS` (`src/lib/permissions.ts` — register, register
 view, tool exposure, policy card, kill switch, external tools, harness ingest,
-third-party application scan ingest (`integrations_ingest`), agent ownership,
+third-party application scan ingest (`integrations_ingest`), agent-surface rules
+scan ingest (`agent_rules_ingest`), agent ownership,
 skill review, skill authoring) on top of READER's set, and
 NONE of the tenant-wide admin keys (no `view`, `manage`, members, SSO, SCIM,
 lifecycle, owner management or DSAR). It sits on READER's rung of the coarse
@@ -996,21 +997,22 @@ new tenant-membership creation path).
   role's base. Same NOT VALID shape; `deleteCustomRole` moves a legacy row's
   base to READER in the soft-delete write, or the deletion would fail it.
 - **Only an ADMIN membership carries a custom role built on ADMIN, or one
-  granting one of eleven admin keys** (owner decisions, 2026-10-30). The edge
+  granting one of twelve admin keys** (owner decisions, 2026-10-30). The edge
   admits `/api/t/:slug/admin/**` by the membership's BUILT-IN role, and an
-  ADMIN base sets the coarse tier (`effectiveRole`) everywhere else. The eleven are
+  ADMIN base sets the coarse tier (`effectiveRole`) everywhere else. The twelve are
   `ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS` in `src/lib/roles.ts`, in two parts.
   `ADMIN_API_ONLY_KEYS` (`sso` and the tool-exposure, policy-card, ownership and
   two skill keys) are consumed only behind the admin API, so on an EDITOR,
   READER or AUDITOR membership they granted nothing but buttons the edge
   refused. `SIDE_DOOR_ADMIN_KEYS` (`scim`, `compliance_dsar_manage`,
-  `agent_harness_ingest`, `agent_external_tools`, and `integrations_ingest`,
-  the third-party application scan's twin of the harness key) are NOT dead elsewhere: an
+  `agent_harness_ingest`, `agent_external_tools`, `integrations_ingest`,
+  the third-party application scan's twin of the harness key, and
+  `agent_rules_ingest`, the agent-surface rules scan's) are NOT dead elsewhere: an
   agent-bound API key acting for the membership reaches their admin routes past
   the edge, and a run the membership starts or a key at `/api/mcp` reaches
   `get_harness_register` and every external tool call. They are refused BY
   DECISION, because that path is a side door around the edge's role gate — so
-  for these five the rule DOES take something away. The other nine admin keys
+  for these six the rule DOES take something away. The other nine admin keys
   are left alone. ONE predicate, `customRoleCarriageRefusal(after, before)`,
   refuses only what a change ADDS (a save that narrows, a clear, a move among
   EDITOR/READER/AUDITOR all pass) with a 409 and
@@ -1026,8 +1028,9 @@ new tenant-membership creation path).
   once by migration `20261030170000_admin_membership_only_keys_off_for_non_admin_custom_roles`:
   a role carried ONLY by non-ADMIN memberships (any status) has the ten stated
   `false`, base unchanged (`integrations_ingest`, added later, by
-  `20261114120100_integrations_ingest_off_for_non_admin_custom_roles`, the same
-  scope: on an ADMIN base the new key would otherwise read ADMIN's `true`); a role with any ADMIN carrier, a role nobody carries
+  `20261114120100_integrations_ingest_off_for_non_admin_custom_roles`, and
+  `agent_rules_ingest` by `20261122120100_agent_rules_ingest_off_for_non_admin_custom_roles`,
+  the same scope: on an ADMIN base a new key would otherwise read ADMIN's `true`); a role with any ADMIN carrier, a role nobody carries
   and a legacy OWNER- or AI_ADMIN-based row (the NOT VALID #3734 CHECK refuses
   its update) were left alone. It is orthogonal to the Admin-base rule (#4536,
   #4595: `ADMIN_BASE_ONLY_PERMISSIONS` in `src/lib/custom-role-admin-base-rule.ts`),
@@ -1037,7 +1040,7 @@ new tenant-membership creation path).
   `PERMISSION_NEEDS_ADMIN_BASE`) is asked first: it reads only the request.
   `tests/guardrails/admin-membership-only-keys-are-dead-elsewhere.test.ts`
   fails when one of the six gains a consumer outside the admin API, and when
-  one of the five stops having one.
+  one of the six side-door keys stops having one.
 - **An admin page offers a write only where the server takes it** (#4467,
   #4466, generalised from #4471's agent register). Three gates, each asked as
   the server asks it: the edge (#4587's `membershipOpensAdminConsole` over
@@ -2062,6 +2065,38 @@ are easy to undo:
   mismatch is no link, and the only hosts produced are `github.com`,
   `entra.microsoft.com` and an Okta org's `-admin` host. Deactivation happens
   there and the next scan shows it: do not add a write path or a permission.
+
+**The agent-surface rules ingest** (`usecases/agent-rule-scans.ts`) is the
+same ingest for the scanner's third signed report, `scanent-agent-rules/1`:
+what static rules (re-authored from Cisco AI Defense's MCP and skill scanners
+and the Agent Threat Rules) found written into the MCP tool definitions and the
+agent skills (each `SKILL.md` and the scripts beside it) a scanner read.
+It is the only writer of `AgentRuleScan` and `AgentRuleScanItem` (the
+single-write-seam guard holds them); its results are the Agent surface tab on
+`/agents/reports` (`getAgentRuleInventory`). Rules that are easy to undo:
+
+- **Its own key, `admin.agent_rules_ingest`** (scope `admin:agent_rules_ingest`;
+  owner decision 3 of `scanent`'s agent-surface rules design), held and
+  classified exactly as `integrations_ingest`, side-door list included.
+- **A finding closes only on positive evidence about its ORIGIN** (owner
+  decision, 2026-11-22): a later scan by the SAME scanner read the place it was
+  found — an MCP server (`mcp:<URL>`) or a code root (`code:<label>`) — in full
+  (`originsReadInFull`) and the rule did not fire again. An origin absent from a
+  scan or read in part closes nothing. The origin of a stored finding is read
+  from `AgentRuleScanItem.originRef` (one reference names one field of one
+  subject at one origin, so every item of it names the same origin), and the
+  finding's reference ends `@<scannerAgentId>`, so one scanner never closes
+  another's. Do not "simplify" to closing on any complete scan: a tool or a
+  skill nobody read is not concluded clean.
+- **Zero is never clean.** The planner's `NOTHING_READ` (a complete read of no
+  tool and no skill) is stored as the scan's `outcome` and shown as an alert,
+  never as "no rule fired".
+- **A finding is a suggestion, and carries no text.** It is an `OBSERVATION`,
+  its severity is the report's (at most HIGH; `INFO` stored `LOW`, which
+  `FindingSeverity` has), and its title and description are built from the code
+  table and identifiers alone: the report carries no text of a definition, a
+  skill or a script. A new contract code needs a title in `CODE_TITLE`, or the
+  usecase does not compile.
 
 **The stale-estate alert** (`usecases/agent-harness-estate-staleness.ts`, a
 daily job since #3741) judges each estate with `computeEstateHealth` and nothing
@@ -3717,7 +3752,10 @@ are each one careless edit from being undone:
 - **The only other destination is the Playwright faux** (`e2e-faux.ts`): a
   constant loopback port, chosen only when `NEXT_TEST_MODE` AND `AUTH_TEST_MODE`
   are both `1`. It is a deployment decision no tenant value reaches. Do not make
-  the port or the origin configurable.
+  the port or the origin configurable. Since Step 5d the engine's client takes
+  the same seam (`managedAgentsOrigin` in `tool-runner/client.ts`), and its
+  middleware pins whichever origin the client was built for, so a client built
+  for Anthropic still refuses the faux and the reverse.
 - **Test is one `GET /v1/agents?limit=1`** through `safeFetch`, never calls
   `markAuthFailure` and creates nothing in the workspace. It sends
   `anthropic-workspace-id` (so an organisation-level key works) and passes only
@@ -3725,12 +3763,14 @@ are each one careless edit from being undone:
   key for another workspace, or an answer naming none, is invalid. Anthropic's
   error text is used to classify and is never shown.
 
-**The Managed Agents engine is built and cannot run** (Step 5b, #4165;
-`src/lib/agentic/managed-agents/`). `DRIVER_IMPLEMENTED['managed-agents']` is
-false and `MANAGED_AGENTS` is a READ_ONLY `AgentDriverMode` (deploy 1 of 2): a
-stored value reads as itself, `resolveAgentDriver` answers it static with
-`DRIVER_NOT_IMPLEMENTED`, and no writer accepts it. Step 5d flips the flag.
-Rules that are each one careless edit from being undone:
+**The Managed Agents engine runs a profile in the customer's own workspace**
+(built in Step 5b, #4165, `src/lib/agentic/managed-agents/`; turned on in Step
+5d, #4167). `DRIVER_IMPLEMENTED['managed-agents']` is true, flipped in a commit
+of its own so that reverting it is the rollback, and `MANAGED_AGENTS` is
+WRITTEN (deploy 2 of 2, once production ran `960503a11`). It still runs nothing
+unless the operator sets `AGENT_MANAGED_AGENTS`, which stays OFF in production
+until #5797 is settled, and an owner chooses it. Rules that are each one
+careless edit from being undone:
 
 - **The tenant's instructions never go on the agent.** An agent can only be
   archived, never deleted, so `agentBodyFor` writes `system` = Inflect's
@@ -3763,6 +3803,55 @@ Rules that are each one careless edit from being undone:
   variances, both citing decision 3: the kill switch (Anthropic stops at a safe
   boundary; asserted instead: no tool runs after it and the session is deleted)
   and the decision-row digest.
+
+**Choosing the engine, and what a run of it may assume** (Step 5d, #4167).
+Rules that are each one careless edit from being undone:
+
+- **The choice needs exactly one enabled `anthropic-workspace` connection.**
+  `setAgentDriverSetting` refuses the move TO `MANAGED_AGENTS` with a 409,
+  `MANAGED_AGENTS_NO_WORKSPACE` or `MANAGED_AGENTS_AMBIGUOUS_WORKSPACE`, before
+  anything is written; every move away stays instant. The page lists the engine
+  only while `AGENT_MANAGED_AGENTS` is on (or the workspace already holds it),
+  and offers it only with the workspace `CONNECTED`
+  (`readWorkspaceConnectionState`, the run's own where clause, no decrypt).
+- **A profile asks for the engine its workspace chose** (`profileEngineRequestFor`
+  in `agent-profile.ts`): Managed Agents for `MANAGED_AGENTS`, the Tool Runner
+  for everything else. Admission reads the workspace's stored mode; the worker
+  and resume read the run's RECORDED driver (`readRecordedRunDriver`), never the
+  current choice, because the worker executes what admission pinned. It is a
+  request: `selectRunDriver` still intersects it with what the gate permits.
+- **Every switch is read before the short-circuit.** `resolveDriverForTenant`
+  used to return `ENV_DISABLED` when Flue's and the Tool Runner's switches were
+  both off, so a deployment that turned on only `AGENT_MANAGED_AGENTS` ran every
+  chosen tenant static. A fourth engine's switch goes into both short-circuits.
+- **A Test run on this engine tries the approved version in force.** Approval
+  is what provisions a version's agent, so a version under review has none: the
+  start refuses it `TEST_RUN_NEEDS_APPROVED_VERSION` before a run row exists, and
+  the Behaviour tab disables its button (`approvedVersionOnly`).
+- **A removed-then-re-enabled connection runs nothing it archived.** A provision
+  is ARCHIVED when a `CONNECTION_REMOVED` clean-up of its connection covers it
+  (`coversUntil >= createdAt`, the clean-up's own scope rule, read in
+  `readProvision`). A run of it is refused `managed_agents_agent_archived` before
+  any client exists, and `readProfileAgent` skips archived rows, so the NEXT
+  approved version creates a new agent instead of updating one Anthropic would
+  refuse. The version in force is not re-provisioned in place: its row is unique
+  per (version, connection), and rewriting it would either drop the archived
+  agent's id or put the new agent inside an open clean-up's scope.
+- **The run timeline labels span-derived decision rows**
+  (`spanDerivedDecisionOf` in `run-step-projection.ts`): a MODEL_CALL carrying
+  `spanDerived: true` AND `inputBasis: 'INFLECT_SENT'` and a decision digest,
+  which the engine writes beside its `anthropic-managed-agents:span-derived` row,
+  gets the sentence that the call's prompt was not visible to Inflect (decision 3).
+- **The E2E runs the queued job with the worker's own body.** The harness has no
+  worker (owner decision 2026-10-29 on #4150), so
+  `tests/e2e/managed-agents-engine.spec.ts` runs `tests/e2e/run-queued-agent-run.ts`
+  for its one run id, with both seam flags set; the faux keeps each workspace id
+  apart (`/__faux/sessions?workspace=…`), so specs never see each other's objects.
+- **Known limit: a DSAR erasure misses a tenant where the person never acted**
+  (#5802). It finds the person's tenants from their own audit rows, so a member
+  added by SCIM, SSO or org provisioning who never acted keeps any KEPT session
+  there. The fix belongs with the erasure's operator entry point, which does not
+  exist yet (`eraseUser` has no caller in `src/`).
 
 **What Inflect created in a customer's workspace is removed by recorded id on
 purge, connection removal and DSAR erasure** (Step 5c, #4166;

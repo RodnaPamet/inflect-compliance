@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import { SidebarContent } from '@/components/layout/SidebarNav';
@@ -82,6 +82,13 @@ interface AppShellProps {
      * that omit the prop.
      */
     variant?: AppShellVariant;
+    /**
+     * Icon buttons for the top bar's right slot, supplied by the layout that
+     * owns the product modules they open (the command palette, the
+     * assistant). Forwarded to `<TopChrome actions>`; see there for why this
+     * is a slot rather than an import.
+     */
+    topBarActions?: ReactNode;
     children: React.ReactNode;
 }
 
@@ -111,6 +118,7 @@ export function AppShell({
     // no longer rendered anywhere — see the AppShellProps doc comment.
     appName: _appName,
     variant = 'tenant',
+    topBarActions,
     children,
 }: AppShellProps) {
     const handleLogout = useCallback(async () => {
@@ -160,6 +168,7 @@ export function AppShell({
                     variant={variant}
                     user={user}
                     onMobileMenuClick={onMobileMenuClick}
+                    actions={topBarActions}
                     // T08 (#3003) — sign-out is handed down, not imported.
                     // `UserMenu` no longer pulls `signOut` from
                     // `next-auth/react`, so a vendoring product does not

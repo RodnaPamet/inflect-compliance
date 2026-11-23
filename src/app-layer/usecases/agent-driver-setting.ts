@@ -44,11 +44,38 @@ import {
 import { narrowToWhatAWorkflowAsksFor } from '@/lib/agentic/agent-driver-policy';
 import type { AgentSwitchBasis } from '@/lib/agentic/agent-switches';
 import { toolRunnerDecisionFor } from '@/lib/agentic/agent-switches-policy';
+import { managedAgentsEnabled } from '@/lib/agentic/managed-agents-switch';
+import {
+    readWorkspaceConnectionState,
+    type WorkspaceConnectionState,
+} from '@/lib/agentic/managed-agents/store';
 import { runInTenantContext } from '@/lib/db-context';
 import { readStoredDriverMode } from '@/lib/agentic/agent-driver-stored-mode';
 import { env } from '@/env';
-import { badRequest } from '@/lib/errors/types';
+import { ConflictError, badRequest } from '@/lib/errors/types';
 import { logger } from '@/lib/observability';
+
+/**
+ * Why a workspace may not choose the Managed Agents engine (Step 5d, #4167).
+ * The engine runs in the workspace's own Anthropic workspace, and a run never
+ * chooses between two, so the choice needs exactly one enabled
+ * `anthropic-workspace` connection.
+ */
+export type ManagedAgentsChoiceRefusal = 'MANAGED_AGENTS_NO_WORKSPACE' | 'MANAGED_AGENTS_AMBIGUOUS_WORKSPACE';
+
+const MANAGED_AGENTS_CHOICE_REFUSAL: Record<Exclude<WorkspaceConnectionState, 'CONNECTED'>, ManagedAgentsChoiceRefusal> = {
+    NONE: 'MANAGED_AGENTS_NO_WORKSPACE',
+    AMBIGUOUS: 'MANAGED_AGENTS_AMBIGUOUS_WORKSPACE',
+};
+
+const MANAGED_AGENTS_CHOICE_MESSAGE: Record<ManagedAgentsChoiceRefusal, string> = {
+    MANAGED_AGENTS_NO_WORKSPACE:
+        'The Managed Agents engine runs in your own Anthropic workspace, and none is connected. Connect one under ' +
+        'Admin, Integrations, Anthropic workspace, then choose the engine.',
+    MANAGED_AGENTS_AMBIGUOUS_WORKSPACE:
+        'More than one Anthropic workspace is connected and enabled, and a run never chooses between them. ' +
+        'Disable all but one under Admin, Integrations, then choose the engine.',
+};
 
 export interface AgentDriverSetting {
     /**
@@ -82,6 +109,14 @@ export interface AgentDriverSetting {
      * says who did, so the page can name the person to ask.
      */
     toolRunner: { envEnabled: boolean; implemented: boolean; basis: AgentSwitchBasis };
+    /**
+     * The same two terms for the Managed Agents engine (Step 5d, #4167), whose
+     * operator switch is `AGENT_MANAGED_AGENTS`, and the one thing only it
+     * needs before it may be chosen: exactly one enabled Anthropic workspace
+     * connection (`workspace`). The page offers the engine only when the switch
+     * is on and the workspace is `CONNECTED`; the writer refuses it without one.
+     */
+    managedAgents: { envEnabled: boolean; implemented: boolean; workspace: WorkspaceConnectionState };
 }
 
 /** Read the stored mode and, more importantly, what it will actually do. */
@@ -103,6 +138,8 @@ export async function getAgentDriverSetting(ctx: RequestContext): Promise<AgentD
     const envEnabled = flueEnvEnabled(env.AGENT_DRIVER_FLUE);
     const toolRunnerSwitch = await toolRunnerDecisionFor({ tenantId: ctx.tenantId });
     const toolRunnerEnvEnabled = toolRunnerSwitch.on;
+    const managedAgentsEnvEnabled = managedAgentsEnabled();
+    const workspace = await runInTenantContext(ctx, (db) => readWorkspaceConnectionState(db, ctx.tenantId));
     // FOUR terms, not three. `resolveAgentDriver` ANDs env, tenant and the
     // build flag; `narrowToWhatAWorkflowAsksFor` applies the fourth — no
     // registered WorkflowDefinition asks for the engine, so `selectRunDriver`
@@ -110,7 +147,10 @@ export async function getAgentDriverSetting(ctx: RequestContext): Promise<AgentD
     // reported `flue` with `reason: null` on a deployment that runs every
     // workflow on the static engine.
     const decision = await narrowToWhatAWorkflowAsksFor(
-        resolveAgentDriver({ envEnabled, toolRunnerEnvEnabled, tenantSetting: mode }),
+        // The Managed Agents switch too (Step 5d). Without it a workspace that
+        // chose the engine read ENV_DISABLED here whatever the deployment said,
+        // while the run path, which passes it, ran the engine.
+        resolveAgentDriver({ envEnabled, toolRunnerEnvEnabled, managedAgentsEnvEnabled, tenantSetting: mode }),
         ctx.tenantSlug,
     );
 
@@ -123,6 +163,11 @@ export async function getAgentDriverSetting(ctx: RequestContext): Promise<AgentD
             envEnabled: toolRunnerEnvEnabled,
             implemented: DRIVER_IMPLEMENTED['tool-runner'],
             basis: toolRunnerSwitch.basis,
+        },
+        managedAgents: {
+            envEnabled: managedAgentsEnvEnabled,
+            implemented: DRIVER_IMPLEMENTED['managed-agents'],
+            workspace,
         },
     };
 }
@@ -153,6 +198,17 @@ export async function setAgentDriverSetting(
 
     const before = await getAgentDriverSetting(ctx);
 
+    // THE MANAGED AGENTS ENGINE NEEDS A WORKSPACE TO RUN IN (Step 5d). Refused
+    // by name, before anything is written, unless exactly one enabled
+    // `anthropic-workspace` connection exists: with none a run could only
+    // refuse, and with two it would refuse too, because a run never chooses.
+    // Only the move TO this engine is refused; every move away stays instant,
+    // for the reason the docblock gives.
+    if (next === 'MANAGED_AGENTS' && before.managedAgents.workspace !== 'CONNECTED') {
+        const reason = MANAGED_AGENTS_CHOICE_REFUSAL[before.managedAgents.workspace];
+        throw new ConflictError(`${reason}: ${MANAGED_AGENTS_CHOICE_MESSAGE[reason]}`, { reason });
+    }
+
     await runInTenantContext(ctx, (db) =>
         db.tenantSecuritySettings.upsert({
             where: { tenantId: ctx.tenantId },
@@ -177,7 +233,7 @@ export async function setAgentDriverSetting(
             // is the audience.
             detailsJson: {
                 category: 'access',
-                // Either reasoning engine is a grant: each hands the walk of a
+                // Every reasoning engine is a grant: each hands the walk of a
                 // run to code this repository did not write. Only the move back
                 // to the built-in engine takes that away.
                 operation: next === 'STATIC' ? 'revoke' : 'grant',
@@ -195,6 +251,9 @@ export async function setAgentDriverSetting(
                 toolRunnerEnvEnabled: before.toolRunner.envEnabled,
                 toolRunnerBasis: before.toolRunner.basis,
                 toolRunnerImplemented: before.toolRunner.implemented,
+                managedAgentsEnvEnabled: before.managedAgents.envEnabled,
+                managedAgentsImplemented: before.managedAgents.implemented,
+                managedAgentsWorkspace: before.managedAgents.workspace,
             },
         }),
     );
