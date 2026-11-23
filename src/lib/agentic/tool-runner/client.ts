@@ -81,6 +81,7 @@ import {
     anthropicWorkspaceE2eOrigin,
     nextTestModeFlag,
 } from '@/app-layer/integrations/providers/anthropic-workspace/e2e-faux';
+import { MANAGED_AGENTS_PREAMBLE } from '@/lib/agentic/managed-agents/preamble';
 import { forbidden } from '@/lib/errors/types';
 import { logger } from '@/lib/observability';
 import type { ProfileModelTier } from '@/lib/agentic/agent-profile';
@@ -353,7 +354,23 @@ export type ManagedAgentsRequestRefusal =
     /** An environment that is not `cloud` with `limited` networking and no hosts. */
     | 'ENVIRONMENT_NOT_SEALED'
     /** A session list with no `agent_id`: a list of the customer's whole workspace (Step 5c). */
-    | 'SESSION_LIST_NOT_BY_AGENT';
+    | 'SESSION_LIST_NOT_BY_AGENT'
+    /**
+     * A body carrying a member the engine never sends (Step 5H, #5854): an
+     * agent's `description` or `execution_identity`, a tool member beyond the
+     * four a custom tool has, a session's `title`, an environment's
+     * `description`. Checked against an ALLOWLIST, so a member Anthropic adds
+     * later is refused until somebody lists it.
+     */
+    | 'MEMBER_NOT_ALLOWED'
+    /** An agent body whose `system` is not Inflect's preamble, byte for byte (#5854). */
+    | 'AGENT_SYSTEM_NOT_PREAMBLE'
+    /**
+     * A session events POST carrying an event the engine does not send
+     * (#5854): anything but `user.message`, `user.custom_tool_result` and
+     * `user.interrupt`, such as a `user.tool_confirmation`.
+     */
+    | 'EVENT_NOT_ENGINE_SENT';
 
 /** Archiving an agent: the one POST the engine sends without a body (Step 5c). */
 const ARCHIVE_AGENT = /^\/v1\/agents\/[A-Za-z0-9_-]+\/archive$/;
@@ -378,6 +395,38 @@ const MANAGED_AGENTS_ROUTES: ReadonlyArray<{ readonly method: string; readonly p
     // before the body checks below (`ARCHIVE_AGENT`).
     { method: 'POST', path: ARCHIVE_AGENT },
 ];
+
+/**
+ * THE MEMBERS EACH BODY MAY CARRY (Step 5H, #5854): exactly what the engine
+ * writes (`agentBodyFor`, `environmentBodyFor`, the session create and the
+ * events it sends in `execute.ts`), and nothing else. An allowlist, not a
+ * denylist: a member nobody listed is refused, so a new one is a reviewed diff
+ * here rather than a request that leaves.
+ */
+const AGENT_CREATE_MEMBERS: ReadonlySet<string> = new Set(['name', 'model', 'system', 'tools', 'metadata']);
+/** An update names the version it replaces, for Anthropic's optimistic concurrency. */
+const AGENT_UPDATE_MEMBERS: ReadonlySet<string> = new Set([...AGENT_CREATE_MEMBERS, 'version']);
+/** A custom tool's four fields (`ManagedAgentCustomTool`). */
+const CUSTOM_TOOL_MEMBERS: ReadonlySet<string> = new Set(['type', 'name', 'description', 'input_schema']);
+const ENVIRONMENT_MEMBERS: ReadonlySet<string> = new Set(['name', 'config', 'metadata']);
+const SESSION_MEMBERS: ReadonlySet<string> = new Set(['agent', 'environment_id', 'budget', 'metadata']);
+const EVENTS_POST_MEMBERS: ReadonlySet<string> = new Set(['events']);
+/** The events the engine sends a session, and each one's members. */
+const ENGINE_SENT_EVENTS: Readonly<Record<string, ReadonlySet<string>>> = {
+    'user.message': new Set(['type', 'content']),
+    'user.custom_tool_result': new Set(['type', 'custom_tool_use_id', 'is_error', 'content']),
+    'user.interrupt': new Set(['type']),
+};
+
+/** Every key of `value` is in `allowed`. */
+function onlyMembers(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
+    return Object.keys(value).every((k) => allowed.has(k));
+}
+
+/** A plain JSON object, not an array or `null`. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
 
 /** Present and not an empty list or `null`: what "asks for it" means for an optional body member. */
 function asksFor(value: unknown): boolean {
@@ -428,10 +477,17 @@ export function managedAgentsRequestRefusal(
                 (t: unknown) => t === null || typeof t !== 'object' || (t as { type?: unknown }).type !== 'custom',
             );
             if (notCustom) return 'AGENT_NOT_CUSTOM_TOOLS_ONLY';
+            if (tools.some((t: Record<string, unknown>) => !onlyMembers(t, CUSTOM_TOOL_MEMBERS))) return 'MEMBER_NOT_ALLOWED';
         }
+        const allowed = url.pathname === '/v1/agents' ? AGENT_CREATE_MEMBERS : AGENT_UPDATE_MEMBERS;
+        if (!onlyMembers(members, allowed)) return 'MEMBER_NOT_ALLOWED';
+        // The agent holds Inflect's text and nothing else: absent is refused
+        // too, so an update can never leave a Console-written `system` in place.
+        if (members.system !== MANAGED_AGENTS_PREAMBLE) return 'AGENT_SYSTEM_NOT_PREAMBLE';
         return null;
     }
     if (url.pathname === '/v1/environments') {
+        if (!onlyMembers(members, ENVIRONMENT_MEMBERS)) return 'MEMBER_NOT_ALLOWED';
         const config = members.config as { type?: unknown; networking?: Record<string, unknown> | null; packages?: unknown } | undefined;
         const net = config?.networking;
         const sealed =
@@ -446,6 +502,7 @@ export function managedAgentsRequestRefusal(
     }
     if (url.pathname === '/v1/sessions') {
         if (asksFor(members.vault_ids) || asksFor(members.resources)) return 'SESSION_REACHES_BEYOND_SYSTEM';
+        if (!onlyMembers(members, SESSION_MEMBERS)) return 'MEMBER_NOT_ALLOWED';
         const agent = members.agent;
         if (agent === null || typeof agent !== 'object' || Array.isArray(agent)) return 'SESSION_REACHES_BEYOND_SYSTEM';
         const allowed = new Set(['type', 'id', 'version', 'system']);
@@ -455,7 +512,22 @@ export function managedAgentsRequestRefusal(
         }
         return null;
     }
-    // A session's events: a user message, a tool result, an interrupt.
+    // A session's events: a user message, a tool result, an interrupt, and
+    // nothing else (#5854). A `user.tool_confirmation`, for one, would approve a
+    // built-in tool call the agent cannot hold.
+    if (!onlyMembers(members, EVENTS_POST_MEMBERS)) return 'MEMBER_NOT_ALLOWED';
+    const events = members.events;
+    if (!Array.isArray(events)) return 'BODY_UNREADABLE';
+    for (const event of events) {
+        if (!isRecord(event)) return 'BODY_UNREADABLE';
+        const type = event.type;
+        const eventMembers =
+            typeof type === 'string' && Object.prototype.hasOwnProperty.call(ENGINE_SENT_EVENTS, type)
+                ? ENGINE_SENT_EVENTS[type]
+                : undefined;
+        if (!eventMembers) return 'EVENT_NOT_ENGINE_SENT';
+        if (!onlyMembers(event, eventMembers)) return 'MEMBER_NOT_ALLOWED';
+    }
     return null;
 }
 

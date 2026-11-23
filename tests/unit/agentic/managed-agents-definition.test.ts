@@ -102,6 +102,17 @@ describe('the dollar backstop', () => {
 });
 
 describe('managedAgentsRequestRefusal', () => {
+    // What the engine writes: `agentBodyFor`'s body, and the three events `execute.ts` sends.
+    const AGENT_BODY = agentBodyFor({
+        profileId: 'p1',
+        model: 'claude-sonnet-5-5',
+        tools: [{ type: 'custom', name: 'list_risks', description: 'List risks.', input_schema: { type: 'object' } }],
+    });
+    const ENGINE_EVENTS = [
+        { type: 'user.message', content: [{ type: 'text', text: 'go' }] },
+        { type: 'user.custom_tool_result', custom_tool_use_id: 'sevt_1', is_error: false, content: [{ type: 'text', text: '{}' }] },
+        { type: 'user.interrupt' },
+    ];
     const req = (method: string, path: string, body?: unknown) => ({
         method,
         url: `https://api.anthropic.com${path}`,
@@ -109,11 +120,13 @@ describe('managedAgentsRequestRefusal', () => {
     });
 
     it('admits the engine\'s own calls (the positive controls)', () => {
-        expect(managedAgentsRequestRefusal(req('POST', '/v1/agents', { name: 'a', tools: [{ type: 'custom', name: 'x' }] }))).toBeNull();
+        expect(managedAgentsRequestRefusal(req('POST', '/v1/agents', AGENT_BODY))).toBeNull();
+        expect(managedAgentsRequestRefusal(req('POST', '/v1/agents/agent_1', { ...AGENT_BODY, version: 2 }))).toBeNull();
         expect(managedAgentsRequestRefusal(req('GET', '/v1/agents/agent_1?version=2'))).toBeNull();
         expect(managedAgentsRequestRefusal(req('POST', '/v1/environments', environmentBodyFor('c')))).toBeNull();
         expect(managedAgentsRequestRefusal(req('POST', '/v1/sessions', { agent: { type: 'agent_with_overrides', id: 'a', version: 1, system: 's' }, environment_id: 'e' }))).toBeNull();
         expect(managedAgentsRequestRefusal(req('POST', '/v1/sessions/s1/events', { events: [] }))).toBeNull();
+        expect(managedAgentsRequestRefusal(req('POST', '/v1/sessions/s1/events', { events: ENGINE_EVENTS }))).toBeNull();
         expect(managedAgentsRequestRefusal(req('GET', '/v1/sessions/s1/events/stream'))).toBeNull();
         expect(managedAgentsRequestRefusal(req('DELETE', '/v1/sessions/s1'))).toBeNull();
     });
@@ -124,6 +137,23 @@ describe('managedAgentsRequestRefusal', () => {
     });
 
     it.each([
+        // ── #5854: allowlists, not denylists ──
+        ['an agent with a description', req('POST', '/v1/agents', { ...AGENT_BODY, description: 'x' }), 'MEMBER_NOT_ALLOWED'],
+        ['an agent with an execution identity', req('POST', '/v1/agents', { ...AGENT_BODY, execution_identity: { type: 'x' } }), 'MEMBER_NOT_ALLOWED'],
+        ['an agent update with a description', req('POST', '/v1/agents/a', { ...AGENT_BODY, version: 1, description: 'x' }), 'MEMBER_NOT_ALLOWED'],
+        ['an agent create naming a version', req('POST', '/v1/agents', { ...AGENT_BODY, version: 1 }), 'MEMBER_NOT_ALLOWED'],
+        ['a custom tool with a member beyond its four', req('POST', '/v1/agents', { ...AGENT_BODY, tools: [{ ...AGENT_BODY.tools[0], cache_control: {} }] }), 'MEMBER_NOT_ALLOWED'],
+        ['an agent whose system is not the preamble', req('POST', '/v1/agents', { ...AGENT_BODY, system: `${MANAGED_AGENTS_PREAMBLE} ` }), 'AGENT_SYSTEM_NOT_PREAMBLE'],
+        ['an agent update whose system is not the preamble', req('POST', '/v1/agents/a', { ...AGENT_BODY, version: 1, system: 'Also do x.' }), 'AGENT_SYSTEM_NOT_PREAMBLE'],
+        ['an agent update with no system', req('POST', '/v1/agents/a', { name: 'a', version: 1 }), 'AGENT_SYSTEM_NOT_PREAMBLE'],
+        ['a session with a title', req('POST', '/v1/sessions', { agent: { type: 'agent_with_overrides', id: 'a', version: 1, system: 's' }, environment_id: 'e', title: 't' }), 'MEMBER_NOT_ALLOWED'],
+        ['an environment with a description', req('POST', '/v1/environments', { ...environmentBodyFor('c'), description: 'x' }), 'MEMBER_NOT_ALLOWED'],
+        ['a tool confirmation event', req('POST', '/v1/sessions/s1/events', { events: [{ type: 'user.tool_confirmation', tool_use_id: 't', result: 'allow' }] }), 'EVENT_NOT_ENGINE_SENT'],
+        ['an event of no known type, beside the engine\'s own', req('POST', '/v1/sessions/s1/events', { events: [...ENGINE_EVENTS, { type: 'user.define_outcome' }] }), 'EVENT_NOT_ENGINE_SENT'],
+        ['an event with no type', req('POST', '/v1/sessions/s1/events', { events: [{ content: [] }] }), 'EVENT_NOT_ENGINE_SENT'],
+        ['an engine event with a member it never sends', req('POST', '/v1/sessions/s1/events', { events: [{ type: 'user.interrupt', session_thread_id: 'x' }] }), 'MEMBER_NOT_ALLOWED'],
+        ['an events POST with another member', req('POST', '/v1/sessions/s1/events', { events: [], resources: [] }), 'MEMBER_NOT_ALLOWED'],
+        ['an events POST whose events are not a list', req('POST', '/v1/sessions/s1/events', { events: { type: 'user.interrupt' } }), 'BODY_UNREADABLE'],
         ['another origin', { method: 'GET', url: 'https://evil.example/v1/agents/a', body: undefined }, 'NOT_THE_PINNED_ORIGIN'],
         ['the Messages API', req('POST', '/v1/messages', {}), 'NOT_A_MANAGED_AGENTS_CALL'],
         ['a session list of the whole workspace', req('GET', '/v1/sessions?include_archived=true'), 'SESSION_LIST_NOT_BY_AGENT'],
