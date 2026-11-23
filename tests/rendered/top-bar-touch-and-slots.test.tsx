@@ -38,7 +38,13 @@
  */
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import * as React from 'react';
-import { NavBarBrand, NavBarMobileMenu, NAV_BAR_SHELL, NAV_BAR_PADDING } from '@/components/layout/nav-bar';
+import {
+    NavBar,
+    NavBarBrand,
+    NavBarMobileMenu,
+    NAV_BAR_SHELL,
+    NAV_BAR_PADDING,
+} from '@/components/layout/nav-bar';
 import { UserMenu } from '@/components/layout/user-menu';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
@@ -64,6 +70,38 @@ describe('top bar — WCAG 2.5.5 touch targets', () => {
         // POSITIVE CONTROL: the painted size is deliberately unchanged, so a
         // "fix" that simply enlarged the button for everyone would fail here.
         expect(cls).toContain('h-[22px]');
+    });
+
+    it('the brand link reaches 44px on a coarse pointer, the mark stays 22px', () => {
+        // #5820. The mark used to BE the link, so the floor could not be added
+        // without painting a 44px gradient square. The link is now the hit
+        // area and the mark sits inside it, unchanged.
+        render(<NavBarBrand href="/x" initials="IC" />);
+        const link = screen.getByTestId('nav-bar-brand').className.split(/\s+/);
+        expect(link).toContain('pointer-coarse:min-h-11');
+        expect(link).toContain('pointer-coarse:min-w-11');
+        expect(link).toContain('h-[22px]');
+        const mark = screen.getByTestId('nav-bar-brand-mark').className.split(/\s+/);
+        expect(mark).toContain('h-[22px]');
+        expect(mark).toContain('w-[22px]');
+        // The floor is the LINK's alone: a mark that grew with it would be the
+        // visual change this split exists to avoid.
+        expect(mark).not.toContain('pointer-coarse:min-h-11');
+    });
+
+    it('on a touch screen the outer slots drop their gap, so seven 44px controls fit 360px', () => {
+        // #5813/#5821 added a search and an assistant icon to the phone bar.
+        // Each 44px box already carries 11px of breath around its 22px glyph;
+        // with the 8px gap on top, hamburger + brand + environment badge +
+        // search + assistant + bell + avatar ran past a 360px screen.
+        render(<NavBar left={<span />} right={<span />} />);
+        const banner = screen.getByRole('banner');
+        for (const slot of ['left', 'right']) {
+            const cls = banner.querySelector(`[data-slot="${slot}"]`)!.className.split(/\s+/);
+            expect(cls).toContain('pointer-coarse:gap-0');
+            // POSITIVE CONTROL: the mouse spacing is the one it was.
+            expect(cls).toContain('gap-default');
+        }
     });
 
     it('the bar clears the status bar and the landscape notch', () => {

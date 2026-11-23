@@ -71,7 +71,7 @@ describe('KeyboardShortcutProvider — root layout integration', () => {
             '<CommandPaletteProvider>',
             '<ThemeProvider>',
             '<TooltipProvider>',
-            '<Toaster',
+            '<AppToaster',
         ];
         for (const token of otherProviders) {
             const idx = providers.indexOf(token);
