@@ -42,7 +42,7 @@ A notice reminds you: **{{ui:incidents.detail.notLegalStrong}}** {{ui:incidents.
 - **{{ui:incidents.detail.responsePhase}}**: the incident's place in a seven-phase response, from detection to lessons learned.
 - **{{ui:incidents.detail.containmentRunbook}}**: a checklist for the incident's type, such as ransomware, with each step **{{ui:incidents.detail.stepDone}}** or **{{ui:incidents.detail.stepNotDone}}**.
 - **{{ui:incidents.detail.deadlinesHeading}}**: once the incident is reportable, the **{{ui:incidents.detail.kinds.EARLY_WARNING_24H}}**, the **{{ui:incidents.detail.kinds.DETAILED_72H}}** and the **{{ui:incidents.detail.kinds.FINAL_1MONTH}}**, each with its due time and status: **{{ui:incidents.deadlineStatus.PENDING}}**, **{{ui:incidents.deadlineStatus.DUE}}**, **{{ui:incidents.deadlineStatus.OVERDUE}}**, **{{ui:incidents.deadlineStatus.SUBMITTED}}** or **{{ui:incidents.deadlineStatus.NOT_REQUIRED}}**.
-- **{{ui:incidents.detail.authorityHeading}}**: {{ui:incidents.detail.authorityText}}
+- **{{ui:incidents.detail.authorityHeading}}**: the CSIRT or competent authority to notify, which depends on your jurisdiction. An administrator names it once for the workspace, on the [{{ui:admin.security.title}}](../admin/security.md) page, and every incident shows it. An administrator also sees a link to that field here. Until one is named, the section says so.
 - **{{ui:incidents.detail.forensicHeading}}**: the kinds of evidence to capture, each with the evidence records linked to it.
 - **{{ui:incidents.detail.rolesHeading}}**: who is accountable, responsible and consulted during the response.
 

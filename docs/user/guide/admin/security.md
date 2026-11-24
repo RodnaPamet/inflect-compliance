@@ -4,7 +4,7 @@ route: /t/[tenantSlug]/admin/security
 
 # {{ui:admin.security.title}}
 
-The {{ui:admin.security.title}} page holds the workspace's sign-in rules: whether members must use multi-factor authentication (MFA), and how long a sign-in may last. It also holds two rules for agents that use API keys and the limits on how much one agent turn may do, and it revokes sessions.
+The {{ui:admin.security.title}} page holds the workspace's sign-in rules: whether members must use multi-factor authentication (MFA), and how long a sign-in may last. It also names the authority incidents are reported to, holds two rules for agents that use API keys and the limits on how much one agent turn may do, and it revokes sessions.
 
 ## Where to find it
 
@@ -50,6 +50,8 @@ Picking {{ui:admin.security.policy.REQUIRED.label}} shows a notice, **{{ui:admin
 
 **{{ui:admin.security.saveSettings}}** sits below these two cards and saves both of them, and nothing else. The cards below it have buttons of their own.
 
+**{{ui:admin.security.incidentAuthority.title}}.** The CSIRT or competent authority your workspace notifies of a significant incident under NIS2 Article 23, such as BSI in Germany. A sentence says which authority incidents name now, or that none is named. Below it, one field, **{{ui:admin.security.incidentAuthority.label}}**, takes up to 200 characters. Each incident's page shows the authority as the one to notify, and its link to this page lands on this card.
+
 **{{ui:admin.security.agentEnforcement.title}}.** Whether Inflect's agent tools accept only API keys that are bound to a registered agent. A badge reads {{ui:admin.security.agentEnforcement.on}} or {{ui:admin.security.agentEnforcement.off}}, and a sentence below it says what that means today. When some active API keys can use the agent tools but are not bound to an active registered agent, a list names each one, with the first characters of the key. The button reads **{{ui:admin.security.agentEnforcement.enableAction}}** or **{{ui:admin.security.agentEnforcement.disableAction}}**. A new workspace starts with enforcement on.
 
 **{{ui:admin.security.apiKeyRotation.title}}.** The age at which the daily key check raises a finding for an API key an agent could use. A badge shows where the age comes from: {{ui:admin.security.apiKeyRotation.defaultBadge}}, which is 90 days, or {{ui:admin.security.apiKeyRotation.customBadge}}. Below it you choose between the product default and **{{ui:admin.security.apiKeyRotation.useCustom}}**. The second choice opens a field for a whole number of days, from 7 to 730, with buttons to step it down and up.
@@ -69,6 +71,10 @@ Set up MFA for your own account before you pick {{ui:admin.security.policy.REQUI
 ### Set a session age
 
 Type a number of minutes in **{{ui:admin.security.maxSessionAgeLabel}}** and click **{{ui:admin.security.saveSettings}}**. To go back to the default, empty the field and save. A new age is set on sign-ins that start after you save. Sign-ins already under way keep the end time they started with.
+
+### Name the incident notification authority
+
+Type the authority in **{{ui:admin.security.incidentAuthority.label}}** and click **{{ui:admin.security.incidentAuthority.save}}**, which stays greyed out until you change something. The message **{{ui:admin.security.incidentAuthority.saved}}** appears. To name none, empty the field and save: the message reads **{{ui:admin.security.incidentAuthority.cleared}}**.
 
 ### Enforce agent registration
 
@@ -105,10 +111,11 @@ A session belongs to the person, not to the workspace. Revoking someone's sessio
 
 - **A new MFA policy applies at each person's next sign-in.** People already signed in carry on until they sign in again. [Turn on multi-factor authentication](../../how-to/set-up/turn-on-multi-factor-authentication.md) describes what members see.
 - **Each workspace's MFA policy applies to that workspace.** Someone who belongs to more than one workspace is asked at sign-in for the code of the first workspace they joined. Another workspace whose policy asks for a code asks for its own the first time they open it, and until they enter it, its pages and the organisation pages take them to its code page. The session age is always that of the first workspace they joined, except after a sign-in through this workspace's single sign-on, which gets this workspace's.
+- **The incident authority shows on every incident at once.**
 - **Agent registration enforcement applies at once.** Each request it refuses adds an entry to the workspace's audit log.
 - **The rotation age applies from the next daily key check.**
 - **A per-turn limit applies to agent runs that start or resume after you save.** An agent turn that tries to call more tools than the limit allows has the extra calls refused.
-- **The audit log records who did what.** Changing the MFA policy or the session age, turning agent registration enforcement on or off, changing the rotation age or an agent per-turn limit, and every revocation of sessions, each add an entry to the workspace's **{{ui:admin.auditLog}}**, naming who did it. The entries for the MFA policy and the session age give the old value and the new one.
+- **The audit log records who did what.** Changing the MFA policy or the session age, turning agent registration enforcement on or off, changing the incident authority, the rotation age or an agent per-turn limit, and every revocation of sessions, each add an entry to the workspace's **{{ui:admin.auditLog}}**, naming who did it. The entries for the MFA policy, the session age and the incident authority give the old value and the new one.
 
 ## Empty and error states
 
@@ -122,6 +129,7 @@ A session belongs to the person, not to the workspace. Revoking someone's sessio
 | The {{ui:admin.security.agentEnforcement.title}} card says you do not have permission to read the agent register | Your role cannot read the agent register | Ask an Owner |
 | **{{ui:admin.security.agentEnforcement.loadFailed}}**, or another message, on the {{ui:admin.security.agentEnforcement.title}} card | The card could not load | Reload the page |
 | **{{ui:admin.security.apiKeyRotation.unavailable}}** | The card could not load the rotation age | Reload the page. If the note stays, ask an Owner |
+| **{{ui:admin.security.incidentAuthority.unavailable}}** | The card could not load the incident authority | Reload the page. If the note stays, ask an Owner |
 | **{{ui:admin.security.agentTurnCaps.unavailable}}** | The card could not load the per-turn limits | Reload the page |
 | **{{ui:admin.security.agentTurnCaps.saveFailed}}**, or a message that the value cannot be above your organization's limit | The limit was not saved. A value above the organization's limit is refused | Choose a value up to the organization's limit, or follow the organization |
 | The button in the agent registration dialog stays greyed out | What you typed does not match the workspace's short name exactly | Type the name exactly as the field's label shows it |
