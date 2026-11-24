@@ -289,28 +289,30 @@ describe('Slider', () => {
         );
     }
 
-    it('renders a slider with the given value and aria-label', () => {
+    // The Radix part loads on demand (see "Loading" in `slider.tsx`), so the
+    // thumb is found with `findByRole`.
+    it('renders a slider with the given value and aria-label', async () => {
         render(<Harness />);
-        const slider = screen.getByRole('slider', { name: 'Volume' });
+        const slider = await screen.findByRole('slider', { name: 'Volume' });
         expect(slider).toHaveAttribute('aria-valuemin', '0');
         expect(slider).toHaveAttribute('aria-valuemax', '100');
         expect(slider).toHaveAttribute('aria-valuenow', '25');
     });
 
-    it('ArrowRight increments by step', () => {
+    it('ArrowRight increments by step', async () => {
         const onChange = jest.fn();
         render(<Harness onChange={onChange} />);
 
-        const slider = screen.getByRole('slider', { name: 'Volume' });
+        const slider = await screen.findByRole('slider', { name: 'Volume' });
         slider.focus();
         fireEvent.keyDown(slider, { key: 'ArrowRight' });
         expect(onChange).toHaveBeenCalledWith(30);
     });
 
-    it('Home jumps to min, End jumps to max', () => {
+    it('Home jumps to min, End jumps to max', async () => {
         const onChange = jest.fn();
         render(<Harness onChange={onChange} />);
-        const slider = screen.getByRole('slider', { name: 'Volume' });
+        const slider = await screen.findByRole('slider', { name: 'Volume' });
         slider.focus();
 
         fireEvent.keyDown(slider, { key: 'Home' });
@@ -325,7 +327,7 @@ describe('Slider', () => {
         expect(screen.getByText('0 — 100')).toBeInTheDocument();
     });
 
-    it('respects disabled', () => {
+    it('respects disabled', async () => {
         render(
             <Slider
                 value={50}
@@ -339,13 +341,14 @@ describe('Slider', () => {
         // Radix flags `data-disabled` on the thumb rather than
         // aria-disabled. Either is WCAG-accepted; we assert the
         // attribute Radix emits.
-        expect(screen.getByRole('slider', { name: 'Off' })).toHaveAttribute(
+        expect(await screen.findByRole('slider', { name: 'Off' })).toHaveAttribute(
             'data-disabled',
         );
     });
 
     it('passes axe', async () => {
         const { container } = render(<Harness />);
+        await screen.findByRole('slider', { name: 'Volume' });
         const results = await axe(container);
         expect(results).toHaveNoViolations();
     });

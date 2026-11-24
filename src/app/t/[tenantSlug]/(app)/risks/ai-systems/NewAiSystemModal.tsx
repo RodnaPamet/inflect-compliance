@@ -12,6 +12,7 @@ import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Modal } from '@/components/ui/modal';
 import { Combobox } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
@@ -202,8 +203,21 @@ export function NewAiSystemModal({ tenantSlug, onClose, onCreated }: Props) {
                             <FormField label={tx('aiSystems.new.annexIIILabel')}>
                                 {classificationSelect('annexIIIArea', ANNEX_III_OPTIONS, tx('aiSystems.new.noneApplicable'))}
                             </FormField>
-                            <label className="flex items-center gap-tight text-sm text-content-default">
-                                <input id="ai-annexi-input" type="checkbox" {...register('isAnnexIProductSafetyComponent')} />
+                            <label className="flex items-center gap-tight text-sm text-content-default pointer-coarse:min-h-11">
+                                <Controller
+                                    control={control}
+                                    name="isAnnexIProductSafetyComponent"
+                                    render={({ field }) => (
+                                        <Checkbox
+                                            id="ai-annexi-input"
+                                            name={field.name}
+                                            checked={field.value === true}
+                                            onCheckedChange={(next) => field.onChange(next === true)}
+                                            onBlur={field.onBlur}
+                                            ref={field.ref}
+                                        />
+                                    )}
+                                />
                                 {tx('aiSystems.new.art6Checkbox')}
                             </label>
                             <FormField label={tx('aiSystems.new.art50Label')}>

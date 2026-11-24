@@ -6,6 +6,8 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useLocalizedPlanName } from '@/lib/agentic/use-localized-plan-name';
 import Link from 'next/link';
+import { TableTitleCell } from '@/components/ui/table-title-cell';
+import { TextLink } from '@/components/ui/text-link';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
@@ -691,12 +693,12 @@ function TestsRollupContent() {
                 {
                     id: 'name', header: t('colHeaders.name'), accessorKey: 'name',
                     cell: ({ row }) => (
-                        <Link
+                        <TableTitleCell
                             href={tenantHref(`/tests/plans/${row.original.id}`)}
-                            className="text-content-emphasis font-medium hover:text-[var(--brand-default)] transition"
+                            className="hover:text-[var(--brand-default)]"
                         >
                             {planName(row.original.name)}
-                        </Link>
+                        </TableTitleCell>
                     ),
                 },
                 {
@@ -710,9 +712,9 @@ function TestsRollupContent() {
                 {
                     id: 'control', header: t('colHeaders.control'), accessorFn: (p) => p.control?.code || p.control?.name || '—',
                     cell: ({ row }) => (
-                        <Link href={tenantHref(`/controls/${row.original.control.id}`)} className="text-content-muted hover:text-content-emphasis text-xs transition">
+                        <TextLink href={tenantHref(`/controls/${row.original.control.id}`)} tone="muted" className="text-xs">
                             {row.original.control?.code || row.original.control?.name || '—'}
-                        </Link>
+                        </TextLink>
                     ),
                 },
                 {
@@ -808,9 +810,9 @@ function TestsRollupContent() {
                     id: 'control', header: t('colHeaders.control'),
                     accessorFn: (c) => c.control?.code || c.control?.name || '',
                     cell: ({ row }) => row.original.control ? (
-                        <Link href={tenantHref(`/controls/${row.original.control.id}`)} className="text-content-muted hover:text-content-emphasis text-xs transition">
+                        <TextLink href={tenantHref(`/controls/${row.original.control.id}`)} tone="muted" className="text-xs">
                             {row.original.control.code || row.original.control.name}
-                        </Link>
+                        </TextLink>
                     ) : <span className="text-content-subtle text-xs">—</span>,
                 },
                 {

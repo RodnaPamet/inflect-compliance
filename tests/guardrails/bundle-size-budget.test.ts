@@ -343,7 +343,24 @@ const BUDGETS_KB: Record<string, number> = {
     // date helpers now carry the Bulgarian month/weekday tables and the
     // date-fns `bg` locale on every page, so dates and relative times render
     // in the reader's language. 676 is measured + ~4, the convention.
-    'risks': 676,
+    //
+    // Raised 676 -> 680 by the mobile tap-target batch (#5906, owner request
+    // 2026-11-23 to work through the mobile issues #5805), after a real
+    // reduction, not instead of one. The batch first measured 684.5 KB on CI
+    // (main 675.2): the risk forms' likelihood and impact became the Radix
+    // Slider, an 8.5 KB gzipped chunk, and the risks LIST page mounts
+    // NewRiskModal statically, so it sat in that page's entry, which Next
+    // merges into the client-reference manifest of every route below
+    // /risks. The slider's Radix part now loads on demand
+    // (`slider-control.tsx`). What is left, measured with local
+    // `next build --webpack` runs of main (caf56c241) and the branch in
+    // same-length paths, is +0.9 KB (674.3 -> 675.2), all of it the batch's
+    // own shared code: TableTitleCell's button and card surfaces (+3.3 KB
+    // unminified) and the data-table cards that use them, and the slider
+    // wrapper, which this route counts twice (the list page and the edit
+    // dialog). Local builds read 0.9 KB under CI here, so CI should
+    // measure about 676.1. 680 is measured + ~4, the convention.
+    'risks': 680,
     // Raised 645 → 650 in the i18n-kept-primitives PR (#3004): that route had
     // grown to 643.8 KB on main (ff71f42ed), and localising the shared
     // primitives (useTranslations + key lookups in ~20 components, all on this

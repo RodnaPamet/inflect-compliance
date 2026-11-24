@@ -36,6 +36,7 @@
  */
 import { useTranslations } from 'next-intl';
 import { Toaster } from 'sonner';
+import { TOUCH_HIT_AREA_CLASS } from '@inflect/ui/components/ui/hit-area';
 import { useMediaQuery } from '@/components/ui/hooks';
 
 import { useTheme } from './ThemeProvider';
@@ -58,7 +59,15 @@ export function AppToaster() {
             closeButton
             duration={3000}
             containerAriaLabel={t('region')}
-            toastOptions={{ closeButtonAriaLabel: t('closeButton') }}
+            toastOptions={{
+                closeButtonAriaLabel: t('closeButton'),
+                // `sonner` paints its close button as a 20px circle on the
+                // toast's corner. On a touch screen that was the smallest
+                // target on every toast, so it wears the shared 44px hit
+                // area; the circle itself does not change. The button is
+                // already `position: absolute`, which the `::after` needs.
+                classNames: { closeButton: TOUCH_HIT_AREA_CLASS },
+            }}
         />
     );
 }

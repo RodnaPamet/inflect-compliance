@@ -24,6 +24,7 @@
 "use client";
 
 import { cn } from "@inflect/ui/lib/cn";
+import { TOUCH_HIT_AREA_CLASS } from "@inflect/ui/components/ui/hit-area";
 import { Check, Copy } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { type ReactNode, forwardRef } from "react";
@@ -99,6 +100,11 @@ export const CopyText = forwardRef<HTMLButtonElement, CopyTextProps>(
                 onClick={handleClick}
                 className={cn(
                     "group inline-flex items-center gap-1.5 rounded-md text-left font-mono text-xs",
+                    // The text is the button, and it is 16px tall: on a touch
+                    // screen it wears the shared 44px hit area, centred on the
+                    // text, without changing the line it sits in.
+                    "relative",
+                    TOUCH_HIT_AREA_CLASS,
                     "text-content-default transition-colors",
                     "hover:text-content-emphasis",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",

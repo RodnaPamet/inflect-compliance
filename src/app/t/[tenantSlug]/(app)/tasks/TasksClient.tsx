@@ -38,7 +38,7 @@ import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
-import { TableTitleCell } from '@/components/ui/table-title-cell';
+import { TableTitleButton, TableTitleCell } from '@/components/ui/table-title-cell';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
 import {
     AWAITING_REVIEW_FILTER_KEY,
@@ -995,19 +995,16 @@ function TasksPageInner({
                 // <button>, so the table's isClickOnInteractiveChild() skips
                 // the row's select/navigate handlers). Row double-click still
                 // navigates to the full detail page.
+                // On a phone card the card itself opens the task, so
+                // `TableTitleButton` renders the title as text there.
                 cell: ({ row }) => (
-                    <button
-                        type="button"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedTask(row.original);
-                        }}
-                        className="inline-block max-w-full cursor-pointer truncate text-left align-middle rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    <TableTitleButton
+                        onClick={() => setSelectedTask(row.original)}
                         id={`task-link-${row.original.id}`}
-                        data-testid={`task-title-${row.original.id}`}
+                        testId={`task-title-${row.original.id}`}
                     >
-                        <TableTitleCell tintOn="self">{row.original.title}</TableTitleCell>
-                    </button>
+                        {row.original.title}
+                    </TableTitleButton>
                 ),
             },
             {

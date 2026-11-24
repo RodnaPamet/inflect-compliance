@@ -133,6 +133,17 @@ just vanishes. The owner decisions behind these rules are in
 - [ ] Fields are 16 px on touch. The coarse-pointer rule in
       `src/app/globals.css` does this for `<Input>`, `<Textarea>`, `.input` and
       plain fields; do not override it with a smaller size.
+- [ ] Every control is at least 24 px to a finger, 44 px where it can be.
+      A stand-alone small text link ("Forgot password?", "See all", a back
+      link) is `TextLink` / `TextButton` (`src/components/ui/text-link.tsx`),
+      which wear the shared touch hit area; a link inside a sentence stays a
+      plain link. A small icon or glyph control wears `TOUCH_HIT_AREA_CLASS`
+      (`@inflect/ui/components/ui/hit-area`); leave its neighbours room. A
+      list-page title cell is `TableTitleCell` / `TableTitleButton`, which a
+      phone card renders as text on a card that opens on a tap and gives a
+      hit area on one that does not. Checkboxes, radios and ranges are
+      `Checkbox`, `RadioGroup` and `Slider` in a `<label>`, never a native
+      `<input>` (`local/no-native-choice-input`).
 - [ ] Use the shared primitives (`DataTable` cards, `Modal`/`Sheet`,
       `ToggleGroup`, `FilterToolbar`, `Combobox`), never a hand-rolled overlay,
       table or segmented row. Nothing may depend on hover.

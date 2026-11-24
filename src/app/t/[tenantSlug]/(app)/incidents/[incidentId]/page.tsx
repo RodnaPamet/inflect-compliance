@@ -15,6 +15,7 @@ import { Card, cardVariants } from '@/components/ui/card';
 import LinkedTasksPanel from '@/components/LinkedTasksPanel';
 import { useTenantContext } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Modal } from '@/components/ui/modal';
 import { Combobox } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
@@ -371,19 +372,32 @@ export default function IncidentDetailPage() {
                                         return (
                                             <li key={step.key} className="flex items-start gap-tight">
                                                 {canManage ? (
-                                                    <input
-                                                        type="checkbox"
-                                                        className="mt-1"
-                                                        checked={checked}
-                                                        disabled={busy}
-                                                        onChange={(e) =>
-                                                            post('/containment-step', {
-                                                                stepKey: step.key,
-                                                                completed: e.target.checked,
-                                                            })
-                                                        }
-                                                        aria-label={stepLabel(step)}
-                                                    />
+                                                    // A labelled row: the step's own words tick it,
+                                                    // and on a touch screen the row is 44px tall
+                                                    // with the box centred in it, so the box's
+                                                    // 44px hit area stays inside its own row.
+                                                    <label className="flex flex-1 cursor-pointer items-start gap-tight pointer-coarse:min-h-11 pointer-coarse:py-2.5">
+                                                        <Checkbox
+                                                            className="mt-0.5"
+                                                            checked={checked}
+                                                            disabled={busy}
+                                                            onCheckedChange={(next) =>
+                                                                post('/containment-step', {
+                                                                    stepKey: step.key,
+                                                                    completed: next === true,
+                                                                })
+                                                            }
+                                                        />
+                                                        <span
+                                                            className={
+                                                                checked
+                                                                    ? 'text-sm text-content-muted line-through'
+                                                                    : 'text-sm text-content-default'
+                                                            }
+                                                        >
+                                                            {stepLabel(step)}
+                                                        </span>
+                                                    </label>
                                                 ) : (
                                                     // Read-only: the step's state, without a
                                                     // box the viewer cannot tick.
@@ -396,17 +410,17 @@ export default function IncidentDetailPage() {
                                                         <span className="sr-only">
                                                             {checked ? tx('detail.stepDone') : tx('detail.stepNotDone')}
                                                         </span>
+                                                        <span
+                                                            className={
+                                                                checked
+                                                                    ? 'text-sm text-content-muted line-through'
+                                                                    : 'text-sm text-content-default'
+                                                            }
+                                                        >
+                                                            {stepLabel(step)}
+                                                        </span>
                                                     </>
                                                 )}
-                                                <span
-                                                    className={
-                                                        checked
-                                                            ? 'text-sm text-content-muted line-through'
-                                                            : 'text-sm text-content-default'
-                                                    }
-                                                >
-                                                    {stepLabel(step)}
-                                                </span>
                                             </li>
                                         );
                                     })}

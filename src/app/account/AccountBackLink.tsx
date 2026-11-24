@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import { TextLink } from '@/components/ui/text-link';
 import { getTranslations } from 'next-intl/server';
 import { ArrowLeft } from '@inflect/ui/components/ui/icons/glyphs/arrow-left';
 
@@ -12,13 +12,14 @@ import { ArrowLeft } from '@inflect/ui/components/ui/icons/glyphs/arrow-left';
 export async function AccountBackLink() {
     const t = await getTranslations('account');
     return (
-        <Link
+        <TextLink
             href="/tenants"
             id="account-back-link"
-            className="inline-flex items-center gap-tight text-sm text-content-muted hover:text-content-default"
+            tone="muted"
+            className="gap-tight text-sm hover:text-content-default"
         >
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
             {t('backToWorkspaces')}
-        </Link>
+        </TextLink>
     );
 }

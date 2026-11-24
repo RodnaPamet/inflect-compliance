@@ -45,6 +45,7 @@ const LOCAL_RULES = [
     'vector-store-single-seam',
     'web-bot-auth-single-seam',
     'shaded-list-rows',
+    'no-native-choice-input',
     'no-negative-margin-icon',
 ] as const;
 

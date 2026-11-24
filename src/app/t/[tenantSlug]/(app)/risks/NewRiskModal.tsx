@@ -51,6 +51,7 @@ import {
     type SetStateAction,
 } from 'react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Modal } from '@/components/ui/modal';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
@@ -569,17 +570,15 @@ export function NewRiskModal({
                                         {controls.map((c) => (
                                             <label
                                                 key={c.id}
-                                                className="flex cursor-pointer items-center gap-tight rounded px-1 py-1 text-sm text-content-default hover:bg-bg-muted"
+                                                className="flex cursor-pointer items-center gap-tight rounded px-1 py-1 text-sm text-content-default hover:bg-bg-muted pointer-coarse:min-h-11"
                                             >
-                                                <input
-                                                    type="checkbox"
+                                                <Checkbox
                                                     checked={selectedControlIds.has(
                                                         c.id,
                                                     )}
-                                                    onChange={() =>
+                                                    onCheckedChange={() =>
                                                         toggleControl(c.id)
                                                     }
-                                                    className="accent-brand-emphasis"
                                                     data-testid={`risk-control-opt-${c.id}`}
                                                 />
                                                 <span className="w-16 shrink-0 text-xs text-content-muted">

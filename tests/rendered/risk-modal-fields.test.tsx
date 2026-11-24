@@ -82,7 +82,7 @@ const EN_MESSAGES = JSON.parse(
 ) as { risks: { new: Record<string, string> } };
 
 describe('RiskEvaluationFields (shared, R5/R6)', () => {
-    it('renders the "Risk Evaluation" title, two range sliders, and a live score', () => {
+    it('renders the "Risk Evaluation" title, two range sliders, and a live score', async () => {
         // Pass config explicitly (no fetch). Score 12 falls in the default
         // High band (10–14) — the old hardcoded ≤12 ladder mislabelled it
         // "Medium"; config-driven scoring agrees with the tenant matrix.
@@ -96,15 +96,18 @@ describe('RiskEvaluationFields (shared, R5/R6)', () => {
             />,
         );
         expect(screen.getByText('Risk Evaluation')).not.toBeNull();
-        expect(container.querySelectorAll('input[type="range"]').length).toBe(2);
+        // The slider's Radix part loads on demand (see `slider.tsx`).
+        await screen.findAllByRole('slider');
+        expect(container.querySelectorAll('[role="slider"]').length).toBe(2);
         expect(screen.getByText('12')).not.toBeNull(); // 4 × 3
         expect(screen.getByText('High')).not.toBeNull();
     });
 
-    it('honours idPrefix for stable element ids', () => {
+    it('honours idPrefix for stable element ids', async () => {
         withClient(
             <RiskEvaluationFields idPrefix="risk-edit" likelihood={1} impact={1} onLikelihood={() => {}} onImpact={() => {}} config={DEFAULT_RISK_MATRIX_CONFIG} />,
         );
+        await screen.findAllByRole('slider');
         expect(document.getElementById('risk-edit-likelihood')).not.toBeNull();
         expect(document.getElementById('risk-edit-impact')).not.toBeNull();
     });
@@ -129,10 +132,11 @@ describe('EditRiskModal (R6/R8/R9)', () => {
         );
     }
 
-    it('uses the shared "Risk Evaluation" box (not the old NumberStepper) and renames the owner label', () => {
+    it('uses the shared "Risk Evaluation" box (not the old NumberStepper) and renames the owner label', async () => {
         renderEdit();
         expect(screen.getByText('Risk Evaluation')).not.toBeNull();
-        expect(document.querySelectorAll('input[type="range"]').length).toBe(2);
+        await screen.findAllByRole('slider');
+        expect(document.querySelectorAll('[role="slider"]').length).toBe(2);
         expect(screen.getByText('Owner')).not.toBeNull();
         expect(screen.queryByText('Assigned to')).toBeNull();
     });
