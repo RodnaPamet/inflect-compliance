@@ -46,7 +46,8 @@ owner decision (see Decisions).
 
 | File | Role |
 | --- | --- |
-| `packages/ui/src/lib/format-date.ts` | `setDateLocaleRenderScope`; the server binding is per render scope (a `WeakMap`), with the AsyncLocalStorage store as the fallback |
+| `packages/ui/src/lib/format-date.ts` | `setDateLocaleRenderScope`; requires the server half only where `window` is undefined |
+| `packages/ui/src/lib/date-locale-scope.ts` | The server half: the binding is per render scope (a `WeakMap`), with the AsyncLocalStorage store as the fallback |
 | `src/lib/i18n/use-bind-date-locale.ts` | `nextRenderScope()` (Next's work store); the hook registers it before binding |
 | `src/lib/security/csp.ts` | `img-src` allows `blob:` |
 | `tests/unit/date-locale-holds-in-resumed-ssr.test.ts` | Real React server renderer, real hook and helpers, inside Next's real request store. The dated part resumes from a flight-style thenable settled outside the render, and its output is compared with what the client writes |
@@ -63,6 +64,16 @@ owner decision (see Decisions).
   `nextRenderScope` lives next to the binding in the app, so a test can load
   both and a Next upgrade that moves the store fails that test rather than
   production.
+- **The server half is out of the browser bundle, for the bundle's sake.**
+  With it inside `format-date.ts` (or beside it as a module only it
+  imports), the pair passed webpack's 20 KB split-chunk minimum, which
+  Next sets and which counts unminified source, comments included. Webpack
+  then gave them a chunk of their own and re-partitioned the rest: every
+  one of 185 routes moved, from -6 to +10 KB, and three budget buckets
+  failed or nearly did, for code the browser never runs. `format-date.ts`
+  now requires `date-locale-scope.ts` behind `typeof window === 'undefined'`,
+  which webpack resolves at parse time for the browser build, and every
+  route measures within 0.1 KB of main.
 - **Not `suppressHydrationWarning`.** The text did not differ by time. It
   differed by locale, a request fact both sides know. Suppressing it would
   have left English on the page until the client re-rendered.

@@ -30,7 +30,7 @@
  *     next-intl's `useLocale()` (the app's root `<Providers>` does it).
  *     In the browser that is a module value: a tab has one locale. On
  *     the server it is recorded against THIS request's render scope (see
- *     `setDateLocaleRenderScope`), so two concurrent requests in different
+ *     `date-locale-scope.ts`), so two concurrent requests in different
  *     languages cannot see each other's locale. Outside any binding
  *     (jobs, API routes, PDFs, tests) the active locale is English.
  *
@@ -106,6 +106,21 @@
 import { formatDistance, type Locale as DateFnsLocale } from 'date-fns';
 import { bg as dateFnsBg, enUS as dateFnsEnUS } from 'date-fns/locale';
 
+import type * as DateLocaleScope from './date-locale-scope';
+
+export type { DateLocaleRenderScope } from './date-locale-scope';
+
+/**
+ * The server half of the active locale (`date-locale-scope.ts`). Required
+ * only where `window` is undefined: Next defines `typeof window` for the
+ * browser build, so webpack drops this branch, and the module with it, at
+ * parse time. See that module for why it must stay out of the browser graph.
+ */
+const serverScope: typeof DateLocaleScope | null =
+    typeof window === 'undefined'
+        ? (require('./date-locale-scope') as typeof DateLocaleScope)
+        : null;
+
 // ─── Locales ─────────────────────────────────────────────────────────────────
 
 /** The UI languages a date can be written in. Mirrors the app's message catalogs. */
@@ -116,74 +131,15 @@ export function resolveDateLocale(value: string | null | undefined): DateLocale 
     return typeof value === 'string' && value.trim().toLowerCase().startsWith('bg') ? 'bg' : 'en';
 }
 
-/** The subset of Node's AsyncLocalStorage this module uses. */
-interface LocaleStore {
-    getStore(): DateLocale | undefined;
-    enterWith(value: DateLocale): void;
-}
-
 const IS_BROWSER = typeof window !== 'undefined';
 
 /**
- * Names the request being server-rendered — any object that is the SAME for
- * every part of one request's render and different between requests — or
- * `undefined` outside a render.
+ * Tell the server which request is rendering, so the root's binding holds
+ * wherever React resumes that render. See `date-locale-scope.ts`.
  */
-export type DateLocaleRenderScope = () => object | undefined;
-
-let renderScope: DateLocaleRenderScope | null = null;
-
-/** Each render scope's bound locale. Weak, so a finished request's entry goes with it. */
-const scopedLocales = new WeakMap<object, DateLocale>();
-
-/**
- * Tell the server side which request is rendering, so a binding made at the
- * root still holds wherever in that render a date is formatted.
- *
- * WHY THIS AND NOT AN AsyncLocalStorage ALONE. A store entered with
- * `enterWith()` during `<Providers>`' render holds only for the async work
- * that render goes on to start. A streamed SSR render does not continue only
- * from there: React resumes a suspended part of the tree when the thing it
- * waited for settles, in the async context of whoever settled it. For a
- * client component under a server component that is Next's flight-stream
- * reader, which began reading before React rendered anything — so the
- * resumed part rendered with no locale bound, in English, and the browser
- * hydrated it in Bulgarian: React error #418 on every Bulgarian page whose
- * dates sat below such a boundary, never on an English one. (The flight
- * client's chunks are thenables it settles itself, synchronously, from that
- * reader; a native promise would have carried the binding along.)
- *
- * The scope is entered by the framework AROUND the whole request (Next's
- * work store), so every continuation of the render can name it, wherever it
- * resumed from. The app registers it next to the binding
- * (`useBindDateLocale`); this module stays framework-free.
- */
-export function setDateLocaleRenderScope(getScope: DateLocaleRenderScope | null): void {
-    renderScope = getScope;
+export function setDateLocaleRenderScope(getScope: DateLocaleScope.DateLocaleRenderScope | null): void {
+    serverScope?.setDateLocaleRenderScope(getScope);
 }
-
-function currentRenderScope(): object | undefined {
-    if (IS_BROWSER || !renderScope) return undefined;
-    try {
-        return renderScope() ?? undefined;
-    } catch {
-        return undefined;
-    }
-}
-
-/**
- * The server's fallback store, for a render with no registered scope.
- * Next.js puts Node's `AsyncLocalStorage` on `globalThis` for its own
- * request scoping, which keeps `node:async_hooks` out of this module's
- * import graph — it is bundled for the browser too. `null` in the browser
- * and wherever the global is absent (Jest, edge): the active locale then
- * falls back to English on the server side.
- */
-const serverStore: LocaleStore | null = (() => {
-    if (IS_BROWSER) return null;
-    const Ctor = (globalThis as { AsyncLocalStorage?: new () => LocaleStore }).AsyncLocalStorage;
-    return typeof Ctor === 'function' ? new Ctor() : null;
-})();
 
 let browserLocale: DateLocale = 'en';
 
@@ -192,6 +148,7 @@ let browserLocale: DateLocale = 'en';
  *
  * Called once per render, at the root, before anything that formats a date
  * renders (`useBindDateLocale()` in the app's `<Providers>`). Idempotent.
+ * The server half lives in `date-locale-scope.ts`.
  */
 export function bindDateLocale(locale: string | null | undefined): void {
     const resolved = resolveDateLocale(locale);
@@ -199,20 +156,12 @@ export function bindDateLocale(locale: string | null | undefined): void {
         browserLocale = resolved;
         return;
     }
-    const scope = currentRenderScope();
-    if (scope) {
-        scopedLocales.set(scope, resolved);
-        return;
-    }
-    if (serverStore && serverStore.getStore() !== resolved) serverStore.enterWith(resolved);
+    serverScope?.bindServerDateLocale(resolved);
 }
 
 /** The locale the bare helpers render in right now. */
 export function activeDateLocale(): DateLocale {
-    if (IS_BROWSER) return browserLocale;
-    const scope = currentRenderScope();
-    const scoped = scope ? scopedLocales.get(scope) : undefined;
-    return scoped ?? serverStore?.getStore() ?? 'en';
+    return IS_BROWSER ? browserLocale : (serverScope?.serverDateLocale() ?? 'en');
 }
 
 /** The date-fns locale for a UI locale (react-day-picker, relative time). */
