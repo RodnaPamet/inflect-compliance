@@ -22,7 +22,8 @@ primitives of the earlier batches did not reach. Each is fixed at its cause:
   draft config as stored, so the default band and axis names were English on a
   Bulgarian page; it now goes through `localizeRiskMatrixConfig`, the display
   path every other matrix uses, while the editor's fields keep the stored
-  values a save writes. The SCIM role-mapping note spelled six role names
+  values a save writes. Its band rows were one twelve-column line, which cut a
+  band's name to four letters on a phone; below `sm` they now take three lines. The SCIM role-mapping note spelled six role names
   inside its sentence; they are now values from the `roles.*` vocabulary. The
   diagnostic workflow's run summary is a fixed sentence the product builds
   from three counts; it stays stored in English as the record, and the runs

@@ -562,12 +562,16 @@ export function RiskMatrixAdminClient({
                             {config.bands.map((band, idx) => (
                                 <ShadedRow as="li" padding="sm"
                                     key={`band-${idx}`}
-                                    className="grid grid-cols-12 items-center gap-tight"
+                                    // Below `sm` a band takes three lines (name; low,
+                                    // high and colour; remove): on one twelve-column
+                                    // line a phone cut the name to four letters and
+                                    // the scores to one digit.
+                                    className="grid grid-cols-6 items-center gap-tight sm:grid-cols-12"
                                     data-testid={`rm-band-row-${idx}`}
                                 >
                                     <input
                                         type="text"
-                                        className="input col-span-4 text-sm"
+                                        className="input col-span-6 text-sm sm:col-span-4"
                                         value={band.name}
                                         onChange={(e) =>
                                             updateBand(idx, {
@@ -627,7 +631,7 @@ export function RiskMatrixAdminClient({
                                         variant="secondary"
                                         size="sm"
                                         type="button"
-                                        className="col-span-2"
+                                        className="col-span-6 justify-self-start sm:col-span-2 sm:justify-self-stretch"
                                         onClick={() => removeBand(idx)}
                                         aria-label={t('riskMatrix.removeBandAria', { n: idx + 1 })}
                                         data-testid={`rm-band-remove-${idx}`}
