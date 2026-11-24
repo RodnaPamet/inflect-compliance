@@ -32,6 +32,7 @@ import {
     listIncidents,
     getIncident,
 } from '@/app-layer/usecases/incident';
+import { updateTenantSecurityConfig } from '@/app-layer/usecases/tenant-security-settings';
 import { processIncidentNotificationDeadlines } from '@/app-layer/jobs/incident-notification-deadlines';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
@@ -86,6 +87,7 @@ describeFn('NIS2 incident-response integration', () => {
         // session_replication_role=replica bypasses the AuditLog
         // immutability trigger AND the last-OWNER guard so the fixture
         // tears down cleanly.
+        await globalPrisma.tenantSecuritySettings.deleteMany({ where: { tenantId: TENANT_ID } });
         await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
         await globalPrisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
@@ -215,5 +217,32 @@ describeFn('NIS2 incident-response integration', () => {
         ).rejects.toThrow(/permission/i);
         // READER can list (view).
         await expect(listIncidents(reader)).resolves.toBeDefined();
+    });
+
+    it('every incident reader sees the authority an admin named, and none before it is named', async () => {
+        const owner = ctxFor(ownerUserId);
+        const reader = ctxFor(readerUserId, Role.READER);
+        const incident = await createIncident(owner, {
+            title: 'Data exfiltration',
+            severity: 'HIGH',
+            incidentType: 'DATA_BREACH',
+        });
+        expect((await getIncident(reader, incident.id)).notifyAuthority).toBeNull();
+
+        await updateTenantSecurityConfig(owner, { incidentAuthority: '  <b>BSI</b>  (Germany) ' });
+        // A READER cannot read the settings route, but reads the authority
+        // through the incident: whom to notify is not an admin secret.
+        expect((await getIncident(reader, incident.id)).notifyAuthority).toBe('BSI (Germany)');
+
+        const audit = await globalPrisma.auditLog.findFirst({
+            where: { tenantId: TENANT_ID, action: 'INCIDENT_AUTHORITY_CHANGED' },
+        });
+        expect(audit?.detailsJson).toMatchObject({
+            before: { incidentAuthority: null },
+            after: { incidentAuthority: 'BSI (Germany)' },
+        });
+
+        await updateTenantSecurityConfig(owner, { incidentAuthority: null });
+        expect((await getIncident(reader, incident.id)).notifyAuthority).toBeNull();
     });
 });

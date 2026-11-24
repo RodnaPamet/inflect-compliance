@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { MAX_KEY_ROTATION_DAYS, MIN_KEY_ROTATION_DAYS } from '@/lib/agentic/credential-hygiene';
+import { MAX_INCIDENT_AUTHORITY_LENGTH } from '@/lib/incidents/authority';
 import { DELEGATIONS_PER_TURN_MIN, TOOL_CALLS_PER_TURN_MIN, TURN_CAP_MAX } from '@/lib/agentic/turn-caps';
 
 const ROTATION_DAYS_MESSAGE =
@@ -83,6 +84,19 @@ export const UpdateTenantSecuritySettingsInput = z
             .int(ROTATION_DAYS_MESSAGE)
             .min(MIN_KEY_ROTATION_DAYS, ROTATION_DAYS_MESSAGE)
             .max(MAX_KEY_ROTATION_DAYS, ROTATION_DAYS_MESSAGE)
+            .nullable()
+            .optional(),
+        /**
+         * The NIS2 Article 23 authority incidents name as the one to notify.
+         * Free text; null clears it. The usecase strips markup, trims, reads an
+         * empty value as a clear and re-checks the length after that.
+         */
+        incidentAuthority: z
+            .string()
+            .max(
+                MAX_INCIDENT_AUTHORITY_LENGTH,
+                `incidentAuthority must be at most ${MAX_INCIDENT_AUTHORITY_LENGTH} characters`,
+            )
             .nullable()
             .optional(),
         /**

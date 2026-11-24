@@ -13,6 +13,7 @@ import { useTenantApiUrl, useTenantHref, useTenantContext, usePermissions } from
 import { AgentEnforcementCard } from './AgentEnforcementCard';
 import { ApiKeyRotationCard } from './ApiKeyRotationCard';
 import { AgentTurnCapsCard } from './AgentTurnCapsCard';
+import { IncidentAuthorityCard } from './IncidentAuthorityCard';
 import { ShieldCheck, Save, AlertTriangle, LogOut, Users, UserX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { InfoTooltip } from '@/components/ui/tooltip';
@@ -392,6 +393,11 @@ export default function AdminSecurityPage() {
                     {saving ? t('security.saving') : t('security.saveSettings')}
                 </Button>
             </div>
+
+            {/* ──── NIS2 Art. 23 incident notification authority ────
+                Above the cards that render only once loaded, so the incident
+                page's link lands on it without a later shift above. */}
+            <IncidentAuthorityCard />
 
             {/* ──── Agent-registration enforcement (#2443) ──── */}
             <AgentEnforcementCard tenantSlug={tenantSlug} />

@@ -438,6 +438,109 @@ describe('apiKeyRotationDays', () => {
 });
 
 /**
+ * The NIS2 Article 23 notification authority every incident names. Free text,
+ * so it is stripped of markup (C.5), whitespace-normalised and bounded; empty
+ * means "none named"; a change gets its own event with both values.
+ */
+describe('incidentAuthority', () => {
+    const authorityEvent = () =>
+        mockLogEvent.mock.calls.map((c) => c[2] as any).find((p) => p.action === 'INCIDENT_AUTHORITY_CHANGED');
+    const written = () => mockDb.tenantSecuritySettings.upsert.mock.calls[0][0].update;
+
+    it.each(['EDITOR', 'READER'] as const)('%s cannot set it, and nothing is written or audited', async (role) => {
+        await expect(
+            updateTenantSecurityConfig(ctxFor(role), { incidentAuthority: 'BSI (Germany)' }),
+        ).rejects.toThrow(/ADMIN|OWNER/);
+        expect(mockDb.tenantSecuritySettings.upsert).not.toHaveBeenCalled();
+        expect(mockLogEvent).not.toHaveBeenCalled();
+    });
+
+    it('stores the value trimmed, with runs of whitespace collapsed, and only that key', async () => {
+        await updateTenantSecurityConfig(adminCtx, { incidentAuthority: '   CCB \n (Belgium)  ' });
+        expect(written()).toEqual({ incidentAuthority: 'CCB (Belgium)' });
+    });
+
+    it('strips markup, including entity-encoded markup, before storing', async () => {
+        await updateTenantSecurityConfig(adminCtx, {
+            incidentAuthority: '<b>BSI</b> &lt;script&gt;alert(1)&lt;/script&gt;(Germany)<img src=x onerror=alert(1)>',
+        });
+        const stored = written().incidentAuthority as string;
+        expect(stored).toBe('BSI (Germany)');
+        expect(stored).not.toMatch(/[<>]/);
+    });
+
+    it('keeps an ampersand readable rather than entity-encoded', async () => {
+        await updateTenantSecurityConfig(adminCtx, { incidentAuthority: 'CERT & CSIRT' });
+        expect(written()).toEqual({ incidentAuthority: 'CERT & CSIRT' });
+    });
+
+    it.each([null, '', '   ', '<i></i>'])('%p clears it to null', async (cleared) => {
+        await updateTenantSecurityConfig(adminCtx, { incidentAuthority: cleared });
+        expect(written()).toEqual({ incidentAuthority: null });
+    });
+
+    it('refuses a value longer than the bound once normalised, writing nothing', async () => {
+        await expect(
+            updateTenantSecurityConfig(adminCtx, { incidentAuthority: 'x'.repeat(201) }),
+        ).rejects.toThrow(/at most 200 characters/);
+        expect(mockDb.tenantSecuritySettings.upsert).not.toHaveBeenCalled();
+        expect(mockLogEvent).not.toHaveBeenCalled();
+    });
+
+    it('the schema bounds the length and admits null', () => {
+        expect(UpdateTenantSecuritySettingsInput.safeParse({ incidentAuthority: 'BSI' }).success).toBe(true);
+        expect(UpdateTenantSecuritySettingsInput.safeParse({ incidentAuthority: null }).success).toBe(true);
+        expect(UpdateTenantSecuritySettingsInput.safeParse({ incidentAuthority: 'x'.repeat(201) }).success).toBe(false);
+        expect(UpdateTenantSecuritySettingsInput.safeParse({ incidentAuthority: 42 }).success).toBe(false);
+    });
+
+    it('a change writes its own event naming both values, which passes the real validator', async () => {
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValue({ incidentAuthority: 'CCB (Belgium)' });
+        await updateTenantSecurityConfig(adminCtx, { incidentAuthority: 'BSI (Germany)' });
+
+        const event = authorityEvent();
+        expect(event).toMatchObject({
+            entityType: 'TenantSecuritySettings',
+            entityId: 'tenant-1',
+            detailsJson: {
+                changedFields: ['incidentAuthority'],
+                before: { incidentAuthority: 'CCB (Belgium)' },
+                after: { incidentAuthority: 'BSI (Germany)' },
+            },
+        });
+        expect(event.details).toBe('Incident notification authority changed from CCB (Belgium) to BSI (Germany)');
+        expect(() => validateAuditDetailsJson(event.detailsJson)).not.toThrow();
+        // And the row-level event names the field, as for every other setting.
+        const updated = mockLogEvent.mock.calls
+            .map((c) => c[2] as any)
+            .find((p) => p.action === 'SECURITY_SETTINGS_UPDATED');
+        expect(updated.detailsJson.changedFields).toEqual(['incidentAuthority']);
+    });
+
+    it('clearing is audited with the stored value as before and null as after', async () => {
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValue({ incidentAuthority: 'BSI (Germany)' });
+        await updateTenantSecurityConfig(adminCtx, { incidentAuthority: '  ' });
+        expect(authorityEvent().detailsJson).toMatchObject({
+            before: { incidentAuthority: 'BSI (Germany)' },
+            after: { incidentAuthority: null },
+        });
+    });
+
+    it('saving the value already stored (after normalising) writes no authority event', async () => {
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValue({ incidentAuthority: 'BSI (Germany)' });
+        await updateTenantSecurityConfig(adminCtx, { incidentAuthority: ' BSI  (Germany) ' });
+        expect(authorityEvent()).toBeUndefined();
+    });
+
+    it('is reported on read, null meaning none named', async () => {
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValue(null);
+        expect((await getTenantSecurityConfig(adminCtx)).incidentAuthority).toBeNull();
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValue({ incidentAuthority: 'NCSC-NL (Netherlands)' });
+        expect((await getTenantSecurityConfig(adminCtx)).incidentAuthority).toBe('NCSC-NL (Netherlands)');
+    });
+});
+
+/**
  * The workspace's narrowing of the org-level turn caps (#4594): it may only
  * narrow, a value above the organization's ceiling is refused with the ceiling
  * named, null follows the organization, and a change writes its own event.

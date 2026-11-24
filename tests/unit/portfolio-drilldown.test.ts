@@ -336,7 +336,7 @@ describe('getOverdueEvidenceAcrossOrg', () => {
         // most-overdue first
         expect(rows.map((r) => r.evidenceId)).toEqual(['e-old', 'e-mid', 'e-recent']);
         expect(rows[0].daysOverdue).toBeGreaterThanOrEqual(29);
-        expect(rows[0].drillDownUrl).toBe('/t/beta/evidence/e-old');
+        expect(rows[0].drillDownUrl).toBe('/t/beta/evidence?ev=e-old');
         expect(rows[1].daysOverdue).toBeGreaterThanOrEqual(9);
         expect(rows[2].daysOverdue).toBeGreaterThanOrEqual(4);
     });

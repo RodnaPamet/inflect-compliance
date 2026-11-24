@@ -27,7 +27,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
     const [cookieState, tenantSlug, provider] = cookie.split('.');
 
     const fail = (slug: string | undefined, reason: string) => {
-        const back = new URL(slug ? `/t/${slug}/account/calendar` : '/no-tenant', url.origin);
+        const back = new URL(slug ? `/t/${slug}/calendar` : '/no-tenant', url.origin);
         back.searchParams.set('calendar', reason);
         const res = NextResponse.redirect(back);
         res.cookies.delete('cal_oauth_state');
@@ -93,7 +93,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
         scopesGranted: (url.searchParams.get('scope') ?? '').split(' ').filter(Boolean),
     });
 
-    const back = new URL(`/t/${tenantSlug}/account/calendar`, url.origin);
+    const back = new URL(`/t/${tenantSlug}/calendar`, url.origin);
     back.searchParams.set('calendar', 'connected');
     const res = NextResponse.redirect(back);
     res.cookies.delete('cal_oauth_state');

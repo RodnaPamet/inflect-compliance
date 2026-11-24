@@ -329,7 +329,7 @@ describeFn('Epic O-3 — portfolio drill-down lifecycle (DB-backed)', () => {
             expect(r.status).not.toBe('APPROVED');
             expect(r.daysOverdue).toBeGreaterThanOrEqual(9);
             expect(r.title).toMatch(/overdue evidence$/);
-            expect(r.drillDownUrl).toBe(`/t/${r.tenantSlug}/evidence/${r.evidenceId}`);
+            expect(r.drillDownUrl).toBe(`/t/${r.tenantSlug}/evidence?ev=${r.evidenceId}`);
         }
     });
 

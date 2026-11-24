@@ -677,7 +677,7 @@ export async function getOverdueEvidenceAcrossOrg(
                         nextReviewDate: e.nextReviewDate.toISOString().slice(0, 10),
                         daysOverdue: Math.max(1, Math.floor(ms / dayMs)),
                         status: e.status as OverdueEvidenceRow['status'],
-                        drillDownUrl: `/t/${tenant.slug}/evidence/${e.id}`,
+                        drillDownUrl: `/t/${tenant.slug}/evidence?ev=${encodeURIComponent(e.id)}`,
                     };
                 });
         },
@@ -1185,7 +1185,7 @@ export async function listOverdueEvidenceAcrossOrg(
                         nextReviewDate: e.nextReviewDate.toISOString().slice(0, 10),
                         daysOverdue: Math.max(1, Math.floor(ms / dayMs)),
                         status: e.status as OverdueEvidenceRow['status'],
-                        drillDownUrl: `/t/${tenant.slug}/evidence/${e.id}`,
+                        drillDownUrl: `/t/${tenant.slug}/evidence?ev=${encodeURIComponent(e.id)}`,
                         _fullNextReviewDate: e.nextReviewDate.toISOString(),
                     };
                 });
