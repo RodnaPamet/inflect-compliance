@@ -128,6 +128,7 @@ import {
 // step constant lives.
 import { isProcessNodeKind } from './node-taxonomy';
 import { ProcessNodeShapeUtil } from './tldraw/ProcessNodeShapeUtil';
+import { TLDRAW_ASSET_URLS } from './tldraw/asset-urls';
 import {
     rowsToTldraw,
     type FreeformRecord,
@@ -946,6 +947,7 @@ export function TldrawProcessCanvas({
                 options={TLDRAW_OPTIONS}
                 overrides={TLDRAW_OVERRIDES}
                 components={TLDRAW_COMPONENTS}
+                assetUrls={TLDRAW_ASSET_URLS}
                 acceptedImageMimeTypes={NO_FILE_TYPES}
                 acceptedVideoMimeTypes={NO_FILE_TYPES}
                 hideUi={embedded}

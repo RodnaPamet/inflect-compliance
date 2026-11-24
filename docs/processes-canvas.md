@@ -41,6 +41,22 @@ never marks it dirty. Undo and redo are the editor's own history. Notes, text,
 drawings, frames and unconnected arrows are not process rows: they are saved as
 tldraw records in `ProcessMap.freeformJson` and restored on load.
 
+## Fonts come from our own origin
+
+tldraw's 16 font files (IBM Plex Sans, Serif and Mono; Shantell Sans, all
+SIL OFL 1.1) are served from `public/vendor/tldraw/<version>/fonts/`, never
+from `cdn.tldraw.com` (owner decision 2026-11-24, #5870). Every `<Tldraw>`
+mount — the process canvas, the agent view and the agent-flow canvas — passes
+`assetUrls={TLDRAW_ASSET_URLS}` from `src/components/processes/tldraw/asset-urls.ts`.
+The CSP `font-src` stays `'self' data: https://fonts.gstatic.com`; do not widen
+it for tldraw. Icons and translations still come from tldraw's own URLs.
+
+The folder is named for the tldraw version and must equal the installed one:
+`tests/rendered/tldraw-fonts-are-self-hosted-at-the-installed-version.test.tsx`
+fails on any tldraw upgrade, Dependabot's 3.x patches included, until the
+fonts are refreshed. The refresh steps are in
+`docs/implementation-notes/2026-11-24-tldraw-self-hosted-fonts.md`.
+
 ## Saving
 
 `saveProcessMap` replaces the map's graph in one transaction and writes a
