@@ -100,16 +100,30 @@ export function assignHeadingIds(html: string): { html: string; headings: Policy
     return { html: doc.body.innerHTML, headings };
 }
 
+/**
+ * The two strings the Contents block shows. The page passes them from its
+ * message catalogue, so a Bulgarian page's TOC is not labelled in English;
+ * the English default is for callers with no translator (and the tests).
+ */
+export interface PolicyTocLabels {
+    /** The visible heading above the list. */
+    title: string;
+    /** The `<nav>` landmark's accessible name. */
+    ariaLabel: string;
+}
+
+const DEFAULT_TOC_LABELS: PolicyTocLabels = { title: 'Contents', ariaLabel: 'Table of contents' };
+
 /** Build the Contents <nav> from a heading list, using the given document. */
-function buildTocNav(doc: Document, headings: PolicyHeading[]): HTMLElement {
+function buildTocNav(doc: Document, headings: PolicyHeading[], labels: PolicyTocLabels): HTMLElement {
     const nav = doc.createElement('nav');
     nav.className = 'policy-toc';
-    nav.setAttribute('aria-label', 'Table of contents');
+    nav.setAttribute('aria-label', labels.ariaLabel);
     nav.setAttribute('data-testid', 'policy-toc');
 
     const title = doc.createElement('p');
     title.className = 'policy-toc-title';
-    title.textContent = 'Contents';
+    title.textContent = labels.title;
     nav.appendChild(title);
 
     const ul = doc.createElement('ul');
@@ -137,7 +151,10 @@ function buildTocNav(doc: Document, headings: PolicyHeading[]): HTMLElement {
  * Contents): the TOC is inserted immediately after the first `<hr>`
  * page break when present, otherwise right after the first heading.
  */
-export function enrichPolicyHtml(html: string | null | undefined): string {
+export function enrichPolicyHtml(
+    html: string | null | undefined,
+    labels: PolicyTocLabels = DEFAULT_TOC_LABELS,
+): string {
     if (!html) return '';
     if (!HAS_DOM) return html;
 
@@ -149,7 +166,7 @@ export function enrichPolicyHtml(html: string | null | undefined): string {
     const eligible = headings[0]?.level === 1 ? headings.slice(1) : headings;
     if (eligible.length < 2) return body.innerHTML;
 
-    const nav = buildTocNav(doc, eligible);
+    const nav = buildTocNav(doc, eligible, labels);
 
     const firstHr = body.querySelector('hr');
     if (firstHr?.parentNode) {

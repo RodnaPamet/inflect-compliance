@@ -473,7 +473,8 @@ scope groups).
 
 Flags a JSX `<input>` whose `type` is the literal `checkbox`, `radio` or
 `range` (as a string, a string in braces or a plain template literal, any
-letter case) in a file under `src/app/`.
+letter case) in a file under `src/app/`, `src/components/` or
+`packages/ui/src/`.
 
 **Why.** The mobile re-audit of 2026-11-23 found native checkboxes, radios
 and ranges on six pages, each 13-16px: too small to tap, painted by the
@@ -483,7 +484,29 @@ which carry a 44px hit area on a touch screen and the semantic tokens. Put
 the control in a `<label>` with its words, so the whole row answers a tap.
 
 **What it cannot see.** A `type` it cannot read (`type={kind}`) and an input
-built with `createElement`. `src/components/` is outside its scope.
+built with `createElement`. Shared components came into scope with #5884,
+which converted the last native boxes there (the widget picker, the
+treatment-plan milestones, the onboarding sovereignty step, the card list's
+selection box).
+
+### `no-literal-aria-label`
+
+Under `src/` and `packages/ui/src/`, flags a JSX `aria-label` whose value is a
+string literal (quoted, in braces, or a template literal with no expression)
+containing a letter in any script. The remedy is `aria-label={t('…')}` with the
+key in both message files.
+
+**Why.** An accessible name is text a screen reader speaks, and nothing on
+screen shows it, so a literal stays English on a Bulgarian page unnoticed. The
+mobile re-audit found `aria-label="Next review date"` on the new-risk date
+picker (#5884).
+
+**What it leaves alone.** A computed value, a template with an expression, and
+a literal with no letter (a dash, an arrow).
+
+**What it cannot see.** A DOM call (`setAttribute('aria-label', …)`, as the
+policy table of contents builds its `<nav>`), and a literal passed through a
+prop of another name (`ariaLabel="…"`).
 
 ### `no-negative-margin-icon`
 

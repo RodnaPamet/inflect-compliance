@@ -126,4 +126,21 @@ describe('cycle readiness page on a phone', () => {
         expect(scores.map((s) => s.textContent)).toEqual(['40%', '50%', '100%']);
         for (const s of scores) expect(s).toHaveClass('shrink-0');
     });
+
+    it('lists the three exports full-width below sm, and lays them in a row from sm', async () => {
+        serve(() => reply(200, result));
+        render(<CycleReadinessPage />);
+        await screen.findByText(R.rec.GENERIC_COVERAGE_LOW);
+
+        // A wrapping flex row put each long Bulgarian name on a line of its
+        // own at a different width; below sm they are one column instead.
+        const exports = screen.getByTestId('readiness-exports');
+        expect(exports).toHaveClass('grid', 'grid-cols-1', 'sm:flex', 'sm:flex-wrap');
+        expect(exports).not.toHaveClass('flex');
+        expect(Array.from(exports.children).map((a) => a.textContent)).toEqual([
+            R.exportJson,
+            R.exportUnmappedCsv,
+            R.exportControlGapsCsv,
+        ]);
+    });
 });

@@ -47,6 +47,7 @@ import { useTranslations } from 'next-intl';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
+import { Checkbox } from '@/components/ui/checkbox';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 
@@ -617,12 +618,10 @@ export function WidgetPicker({
                         >
                           <div className="space-y-tight">
                             <label className="flex items-center gap-tight text-sm text-content-emphasis">
-                                <input
-                                    type="checkbox"
+                                <Checkbox
                                     checked={targetEnabled}
-                                    onChange={(e) => setTargetEnabled(e.target.checked)}
+                                    onCheckedChange={(v) => setTargetEnabled(v === true)}
                                     data-testid="widget-picker-target-enabled"
-                                    className="size-4 rounded border-border-default focus:ring-ring"
                                 />
                                 {t('showTargetLine')}
                             </label>
@@ -673,14 +672,10 @@ export function WidgetPicker({
                         <FormField label={t('options')}>
                           <div className="space-y-tight">
                             <label className="flex items-center gap-tight text-sm text-content-emphasis">
-                                <input
-                                    type="checkbox"
+                                <Checkbox
                                     checked={showLegend}
-                                    onChange={(e) =>
-                                        setShowLegend(e.target.checked)
-                                    }
+                                    onCheckedChange={(v) => setShowLegend(v === true)}
                                     data-testid="widget-picker-donut-legend"
-                                    className="size-4 rounded border-border-default focus:ring-ring"
                                 />
                                 {t('showLegend')}
                             </label>
@@ -742,12 +737,10 @@ export function WidgetPicker({
                     {type === 'ORG_THREAT_LEVEL' && (
                         <FormField label={t('options')}>
                             <label className="flex items-center gap-tight text-sm text-content-emphasis">
-                                <input
-                                    type="checkbox"
+                                <Checkbox
                                     checked={orgShowHistory}
-                                    onChange={(e) => setOrgShowHistory(e.target.checked)}
+                                    onCheckedChange={(v) => setOrgShowHistory(v === true)}
                                     data-testid="widget-picker-threat-history"
-                                    className="size-4 rounded border-border-default focus:ring-ring"
                                 />
                                 {t('showPostureHistory')}
                             </label>
@@ -774,12 +767,10 @@ export function WidgetPicker({
                             </FormField>
                             <FormField label={t('options')}>
                                 <label className="flex items-center gap-tight text-sm text-content-emphasis">
-                                    <input
-                                        type="checkbox"
+                                    <Checkbox
                                         checked={maturityCoverageHint}
-                                        onChange={(e) => setMaturityCoverageHint(e.target.checked)}
+                                        onCheckedChange={(v) => setMaturityCoverageHint(v === true)}
                                         data-testid="widget-picker-maturity-coverage-hint"
-                                        className="size-4 rounded border-border-default focus:ring-ring"
                                     />
                                     {t('showCoverageHint')}
                                 </label>
@@ -824,18 +815,16 @@ export function WidgetPicker({
                                         key={s}
                                         className="flex items-center gap-tight text-sm text-content-emphasis"
                                     >
-                                        <input
-                                            type="checkbox"
+                                        <Checkbox
                                             checked={initiativesStatus.includes(s)}
-                                            onChange={(e) =>
+                                            onCheckedChange={(v) =>
                                                 setInitiativesStatus((prev) =>
-                                                    e.target.checked
+                                                    v === true
                                                         ? [...prev, s]
                                                         : prev.filter((x) => x !== s),
                                                 )
                                             }
                                             data-testid={`widget-picker-initiatives-status-${s}`}
-                                            className="size-4 rounded border-border-default focus:ring-ring"
                                         />
                                         {t(`initiativeStatus.${s}`)}
                                     </label>

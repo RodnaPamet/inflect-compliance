@@ -159,9 +159,12 @@ describe('CardList.Card — selection', () => {
                 </CardList.Card>
             </CardList>,
         );
+        // The shared Checkbox primitive (a `role="checkbox"` button, with the
+        // 44px touch hit area), not a native input.
         const checkbox = container.querySelector('[data-card-checkbox]');
         expect(checkbox).not.toBeNull();
-        expect(checkbox?.querySelector('input[type="checkbox"]')).not.toBeNull();
+        expect(checkbox?.getAttribute('role')).toBe('checkbox');
+        expect(container.querySelector('input[type="checkbox"]')).toBeNull();
     });
 
     it('does not render the checkbox when selectable=false', () => {
@@ -191,8 +194,8 @@ describe('CardList.Card — selection', () => {
             </CardList>,
         );
         const checkbox = container.querySelector(
-            'input[type="checkbox"]',
-        ) as HTMLInputElement;
+            '[data-card-checkbox]',
+        ) as HTMLButtonElement;
         fireEvent.click(checkbox);
         expect(onSelectChange).toHaveBeenCalledWith(true);
         // Critical: the card click MUST NOT fire — picking the
