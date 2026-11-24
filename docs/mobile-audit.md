@@ -111,12 +111,24 @@ DATABASE_URL=… npm run mobile:audit -- --base-url http://localhost:3006 --crea
 - **Routes** come from the file system (`routes.ts`), so a new page is in the
   next run without anybody listing it. Dynamic segments are filled from the
   database (`resolve.ts`, one resolver per dynamic route).
-- **`--create-records`** first creates, through the product's API, the records
-  the seed lacks (`records.ts`): a vendor, an incident, a BIA, an AI system,
-  evidence, a test plan and run, an access review and an org initiative. It
-  writes to the database, so use it only on a throwaway audit database. A
-  route whose record still does not exist is listed under "Not captured" in the
-  summary, with the reason. Routes are never dropped silently.
+- **`--create-records`** first runs the fixture setup (`fixtures.ts`). It
+  creates, through the product's API, the records the seed lacks: a vendor, an
+  incident, a BIA, an AI system, evidence, a test plan and run, an access
+  review, a registered agent, a workflow run, an A2A peer and its connection, a
+  published trust center, a NIS2 gap assignment and an org initiative. It also
+  mints the tokens the public pages open with: an audit share link, a tenant
+  invite, an org invite and a vendor questionnaire link. The product stores
+  only their hashes, so each run mints its own. A record is created only when
+  the database has none, and each mint rotates or bounds what it writes, so a
+  second run adds nothing that grows. It writes to the database, so use it
+  only on a throwaway audit database. The summary's "Fixture setup" section
+  lists what was created, minted and failed.
+- **Not captured.** A route whose record still does not exist is listed under
+  "Not captured" in the summary, with the reason. When the fixture that should
+  have made it failed, the reason is `setup failed: <why>`. A page whose
+  measurement throws twice (it navigated away under the measurement) is listed
+  as `measurement failed: <why>` rather than stopping the run. Routes are never
+  dropped silently.
 - **Sign-in** works the way `tests/e2e` does: the tenant OWNER for tenant
   pages, the seeded org owner for org pages, and no session for public pages.
 - **Configurations** (`configs.ts`): 390 px dark Bulgarian, 390 px light
@@ -140,7 +152,11 @@ default configurations. It publishes `summary.md`, `metrics.json`,
 the summary on the run's page.
 
 It compares against the `metrics.json` of the previous SUCCESSFUL run on
-`main`. When any count of failing pages rose, or a route stopped rendering,
+`main`. Counts are compared over the routes both runs captured: a route
+measured for the first time (a new page, or a detail page whose record the
+setup now creates) is listed in `comparison.md` as newly measured, and is
+compared from the next night on. When any count of failing pages rose, or a
+route stopped rendering,
 the run fails and opens an issue labelled `mobile-audit` (or comments on the
 open one) quoting `comparison.md`: the counts that moved and, for each that
 rose, the routes that fail now and did not before. A failed run is never a

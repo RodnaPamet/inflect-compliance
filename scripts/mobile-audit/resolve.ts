@@ -11,12 +11,19 @@
  * workflow run under `agents/` and a test run under `tests/`). A route with no
  * resolver, or whose resolver finds no record, is reported as UNCAPTURED with
  * the reason — it is never silently dropped from the report.
+ *
+ * When the audit ran its fixture setup (`fixtures.ts`, `--create-records`), a
+ * resolver whose record is missing names the fixture that should have made it,
+ * and a fixture that FAILED turns the route's reason into "setup failed: <why>".
+ * The public token routes are filled from the tokens the setup minted: the
+ * product stores only their hashes, so no other source can hold one.
  */
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import type { AppRoute } from './routes';
 import { fillPattern } from './routes';
 import { optionLabels } from './leaks';
+import type { SetupOutcome } from './fixtures';
 
 export const SEED_TENANT_SLUG = 'acme-corp';
 export const SEED_ORG_SLUG = 'acme-org';
@@ -27,16 +34,47 @@ export interface ResolveContext {
     tenantSlug: string;
     orgId: string | null;
     orgSlug: string;
+    /** What the fixture setup did, when it ran. */
+    setup?: SetupOutcome;
 }
 
-/** The values for a route's non-slug segments, or the reason there are none. */
-type ResolverResult = Record<string, string> | { uncaptured: string };
+type Values = Record<string, string>;
+/**
+ * The values for a route's non-slug segments; or those values and a query
+ * string (a page that takes its token from `?t=`); or the reason there are
+ * none, naming the fixture that should have provided the record.
+ */
+export type ResolverResult = Values | { values: Values; search: string } | { uncaptured: string; fixture?: string };
 type Resolver = (c: ResolveContext) => Promise<ResolverResult>;
 
 const T = '/t/[tenantSlug]';
 
-const one = (param: string, what: string, id: string | null | undefined): ResolverResult =>
-    id ? { [param]: id } : { uncaptured: `the database holds no ${what}` };
+/** `fixture` names the fixture (`fixtures.ts`) that creates the record; by default it is `what`. */
+const one = (param: string, what: string, id: string | null | undefined, fixture = what): ResolverResult =>
+    id ? { [param]: id } : { uncaptured: `the database holds no ${what}`, fixture };
+
+/** A route opened with a token only the setup's mint ever holds in the clear. */
+const minted = (c: ResolveContext, param: string, fixture: string, token: string | undefined): ResolverResult => {
+    if (token) return { [param]: token };
+    return c.setup
+        ? { uncaptured: `the setup minted no ${fixture} token`, fixture }
+        : { uncaptured: `${fixture} tokens are stored hashed; only the fixture setup (--create-records) mints one`, fixture };
+};
+
+const EXTERNAL_WRITE_PROVIDERS = ['a2a-peer', 'mcp-server'];
+
+/** The connection the setup made, when there is one: every connection page then shows the same record. */
+const connectionId = async ({ db, tenantId }: ResolveContext, externalOnly: boolean) =>
+    (await db.integrationConnection.findFirst({
+        where: externalOnly ? { tenantId, provider: { in: EXTERNAL_WRITE_PROVIDERS } } : { tenantId },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+    }))?.id;
+
+/** The assessment whose link the setup minted, else any. */
+const assessmentId = async (c: ResolveContext) =>
+    c.setup?.tokens.vendorAssessment?.assessmentId
+    ?? (await c.db.vendorAssessment.findFirst({ where: { tenantId: c.tenantId }, orderBy: { createdAt: 'asc' }, select: { id: true } }))?.id;
 
 /**
  * Every dynamic route other than the bare tenant/org slug. A route missing
@@ -54,14 +92,15 @@ export const RESOLVERS: Readonly<Record<string, Resolver>> = {
         one('agentId', 'registered agent', (await db.registeredAgent.findFirst({ where: { tenantId, deletedAt: null }, select: { id: true } }))?.id),
     [`${T}/processes/agents/[agentId]/flow`]: async ({ db, tenantId }) =>
         one('agentId', 'registered agent', (await db.registeredAgent.findFirst({ where: { tenantId, deletedAt: null }, select: { id: true } }))?.id),
-    [`${T}/admin/external-write-policy/[connectionId]`]: async ({ db, tenantId }) =>
-        one('connectionId', 'integration connection', (await db.integrationConnection.findFirst({ where: { tenantId }, select: { id: true } }))?.id),
-    [`${T}/admin/integrations/[connectionId]`]: async ({ db, tenantId }) =>
-        one('connectionId', 'integration connection', (await db.integrationConnection.findFirst({ where: { tenantId }, select: { id: true } }))?.id),
-    [`${T}/admin/integrations/[connectionId]/reconciliation`]: async ({ db, tenantId }) =>
-        one('connectionId', 'integration connection', (await db.integrationConnection.findFirst({ where: { tenantId }, select: { id: true } }))?.id),
-    [`${T}/admin/vendor-assessment-reviews/[assessmentId]`]: async ({ db, tenantId }) =>
-        one('assessmentId', 'vendor assessment', (await db.vendorAssessment.findFirst({ where: { tenantId }, select: { id: true } }))?.id),
+    // The ladder is a page of the connections that write outside: an MCP server or an A2A peer.
+    [`${T}/admin/external-write-policy/[connectionId]`]: async (c) =>
+        one('connectionId', 'integration connection', await connectionId(c, true)),
+    [`${T}/admin/integrations/[connectionId]`]: async (c) =>
+        one('connectionId', 'integration connection', (await connectionId(c, true)) ?? (await connectionId(c, false))),
+    [`${T}/admin/integrations/[connectionId]/reconciliation`]: async (c) =>
+        one('connectionId', 'integration connection', (await connectionId(c, true)) ?? (await connectionId(c, false))),
+    [`${T}/admin/vendor-assessment-reviews/[assessmentId]`]: async (c) =>
+        one('assessmentId', 'vendor assessment', await assessmentId(c)),
     [`${T}/admin/vendor-templates/[templateId]`]: async ({ db, tenantId }) =>
         one('templateId', 'vendor assessment template', (await db.vendorAssessmentTemplate.findFirst({ where: { tenantId }, orderBy: { createdAt: 'asc' }, select: { id: true } }))?.id),
     [`${T}/agents/peers/[peerId]`]: async ({ db, tenantId }) =>
@@ -84,12 +123,12 @@ export const RESOLVERS: Readonly<Record<string, Resolver>> = {
         one('controlId', 'control', (await db.control.findFirst({ where: { tenantId, deletedAt: null }, orderBy: { createdAt: 'asc' }, select: { id: true } }))?.id),
     [`${T}/controls/[controlId]/tests/[planId]`]: async ({ db, tenantId }): Promise<ResolverResult> => {
         const plan = await db.controlTestPlan.findFirst({ where: { tenantId, deletedAt: null }, select: { id: true, controlId: true } });
-        return plan ? { controlId: plan.controlId, planId: plan.id } : { uncaptured: 'the database holds no control test plan' };
+        return plan ? { controlId: plan.controlId, planId: plan.id } : { uncaptured: 'the database holds no control test plan', fixture: 'control test plan and run' };
     },
     [`${T}/tests/plans/[planId]`]: async ({ db, tenantId }) =>
-        one('planId', 'control test plan', (await db.controlTestPlan.findFirst({ where: { tenantId, deletedAt: null }, select: { id: true } }))?.id),
+        one('planId', 'control test plan', (await db.controlTestPlan.findFirst({ where: { tenantId, deletedAt: null }, select: { id: true } }))?.id, 'control test plan and run'),
     [`${T}/tests/runs/[runId]`]: async ({ db, tenantId }) =>
-        one('runId', 'control test run', (await db.controlTestRun.findFirst({ where: { tenantId }, select: { id: true } }))?.id),
+        one('runId', 'control test run', (await db.controlTestRun.findFirst({ where: { tenantId }, select: { id: true } }))?.id, 'control test plan and run'),
     [`${T}/frameworks/[frameworkKey]`]: async () => ({ frameworkKey: 'ISO27001' }),
     [`${T}/frameworks/[frameworkKey]/diff`]: async () => ({ frameworkKey: 'ISO27001' }),
     [`${T}/frameworks/[frameworkKey]/install`]: async () => ({ frameworkKey: 'ISO27001' }),
@@ -112,13 +151,18 @@ export const RESOLVERS: Readonly<Record<string, Resolver>> = {
         one('vendorId', 'vendor', (await db.vendor.findFirst({ where: { tenantId, deletedAt: null }, select: { id: true } }))?.id),
     ['/org/[orgSlug]/initiatives/[initiativeId]']: async ({ db, orgId }) =>
         one('initiativeId', 'org security initiative', orgId ? (await db.orgSecurityInitiative.findFirst({ where: { organizationId: orgId }, select: { id: true } }))?.id : null),
+    // Published: an unpublished trust center is not a public page.
     ['/trust/[slug]']: async ({ db, tenantId }) =>
-        one('slug', 'trust center', (await db.trustCenter.findFirst({ where: { tenantId }, select: { slug: true } }))?.slug),
-    ['/vendor-assessment/[assessmentId]']: async ({ db, tenantId }) =>
-        one('assessmentId', 'vendor assessment', (await db.vendorAssessment.findFirst({ where: { tenantId }, select: { id: true } }))?.id),
-    ['/audit/shared/[token]']: async () => ({ uncaptured: 'share tokens are stored hashed; only the creator ever holds one' }),
-    ['/invite/[token]']: async () => ({ uncaptured: 'invite tokens are stored hashed; only the creator ever holds one' }),
-    ['/invite/org/[token]']: async () => ({ uncaptured: 'invite tokens are stored hashed; only the creator ever holds one' }),
+        one('slug', 'trust center', (await db.trustCenter.findFirst({ where: { tenantId, enabled: true }, select: { slug: true } }))?.slug),
+    // The respondent's page takes its token from `?t=`; without one it shows only an error.
+    ['/vendor-assessment/[assessmentId]']: async (c): Promise<ResolverResult> => {
+        const link = c.setup?.tokens.vendorAssessment;
+        if (link) return { values: { assessmentId: link.assessmentId }, search: `?t=${encodeURIComponent(link.token)}` };
+        return minted(c, 'assessmentId', 'vendor assessment', undefined);
+    },
+    ['/audit/shared/[token]']: async (c) => minted(c, 'token', 'audit share link', c.setup?.tokens.auditShare),
+    ['/invite/[token]']: async (c) => minted(c, 'token', 'tenant invite', c.setup?.tokens.tenantInvite),
+    ['/invite/org/[token]']: async (c) => minted(c, 'token', 'org invite', c.setup?.tokens.orgInvite),
 };
 
 export function connectDb(databaseUrl: string): PrismaClient {
@@ -233,13 +277,22 @@ export async function resolveRoute(route: AppRoute, c: ResolveContext): Promise<
     const base: Record<string, string> = { tenantSlug: c.tenantSlug, orgSlug: c.orgSlug };
     const rest = route.params.filter((p) => !(p in base));
     let values: Record<string, string> = base;
+    let search = '';
     if (rest.length) {
         const resolver = RESOLVERS[route.pattern];
         if (!resolver) return { route, uncaptured: `no resolver for [${rest.join('], [')}] in scripts/mobile-audit/resolve.ts` };
         const r = await resolver(c);
-        if ('uncaptured' in r) return { route, uncaptured: r.uncaptured };
-        values = { ...base, ...r };
+        if ('uncaptured' in r) {
+            const why = r.fixture ? c.setup?.failed.get(r.fixture) : undefined;
+            return { route, uncaptured: why ? `setup failed: ${why}` : r.uncaptured };
+        }
+        if ('search' in r && typeof r.search === 'string') {
+            values = { ...base, ...(r as { values: Values }).values };
+            search = r.search;
+        } else {
+            values = { ...base, ...(r as Values) };
+        }
     }
     const url = fillPattern(route.pattern, values);
-    return url ? { route, url } : { route, uncaptured: 'a segment could not be filled' };
+    return url ? { route, url: `${url}${search}` } : { route, uncaptured: 'a segment could not be filled' };
 }
