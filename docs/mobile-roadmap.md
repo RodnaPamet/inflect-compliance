@@ -40,10 +40,11 @@ run across the whole product before anything was fixed.
 
 ## Current state (true today)
 
-### Progress since the audit (2026-11-23)
+### Progress since the audit (2026-11-24)
 
-Phases 0, 1 and 2, and every P0 page, have shipped: epic #5805 and its 30
-issues are closed.
+Phases 0–4, every P0 page and the automated half of Phase 5 have shipped.
+Epic #5805 (Phases 0–2) and its 30 issues are closed; epic #5868 (Phases 3–5)
+has one issue left open, #5899, which waits on a person with real devices.
 
 | Work | Pull requests |
 |---|---|
@@ -51,37 +52,49 @@ issues are closed.
 | Phase 1: overlays stack and clear the home indicator, the bulk bar fits; 16 px fields on touch; the tab strip shows that it scrolls; assistant and search in the top bar, 44 px chrome targets; filter toolbar, segmented controls and list cards; page header with a "⋯" menu and one way back | #5845, #5846, #5847, #5850, #5853 |
 | Phase 2: back links, dates, helper copy, server-built text, raw enums and the shell's remaining strings in Bulgarian, with a ratchet per leak class | #5853, #5858, #5859, #5864 |
 | P0 pages: task detail, test-plan detail, integrations, agent runs, vendor template editor, audit-cycle readiness, BIA detail | #5853, #5856 |
+| Phase 3, shared fixes: harness accuracy; 12 px text everywhere (a lint rule refuses smaller); clipping; 44 px tap targets for card titles, text links, choice inputs and small controls (lint rules refuse native choice inputs and a literal `aria-label`); chart legends and marks | #5901, #5905, #5907, #5906, #5911, #5920, #5927 |
+| Phase 3, the pages: core GRC, agents and admin, vendors / audits / incidents / org | #5915, #5916, #5917 |
+| Phase 3, Bulgarian: pages hydrate in Bulgarian; the onboarding tour, the four-eyes refusals, numbers, and the tldraw canvas in the reader's language; tldraw's fonts self-hosted | #5903, #5915, #5923, #5925, #5928, #5914 |
+| Phase 4, desktop-shaped surfaces: SoA cards and print notice, calendar agenda, RBAC one role at a time; template libraries, the requirement explorer drill-in, the correlations and Sankey lists; KPI strip, Internal Audit hub list-first, vendor questionnaire, shared-audit picker, agent tabs grouped | #5902, #5908, #5909 |
+| Phase 5: six phone journeys plus the questionnaire journey in the `mobile` project; the nightly whole-product audit (`.github/workflows/mobile-audit.yml`) with fixtures for every dynamic route; the real-device checklist in `docs/mobile-audit.md` | #5922, #5926, #5928 |
+| Bugs found on the way: the vendor questionnaire could not be submitted; shared audit links showed no item content | #5918, #5922 |
 
-The `mobile` E2E project now holds the fixed route set (one route per shared
-primitive, plus the P0 pages) at 390 dark and 360 light, both in Bulgarian.
-On those routes:
-- nothing interactive is clipped;
-- no field is under 16 px;
-- no overlay covers a control;
-- every overflowing tab bar shows a cue;
-- no English string appears.
+**The fixed-route ratchet** (`tests/e2e/mobile-ratchet.ts`, `DRIFT_ALLOWANCE` 0)
+is at 0 on every metric, at 390 dark and 360 light, in Bulgarian, on both the
+seeded routes and the record routes: nothing clipped, no field under 16 px, no
+overlay over a control or text, every overflowing tab bar cued, no tap target
+under 24 px, no English string.
 
-Each count is a baseline in `tests/e2e/mobile-ratchet.ts` with
-`DRIFT_ALLOWANCE` 0. Two counts there are not zero yet: tap targets under 24 px
-(10 of the seeded routes) and one clipped text element (the integrations
-webhook URL). Bulk Apply on a phone and the home-indicator inset each have an
-E2E case of their own. See `docs/mobile-audit.md`.
-
-Across the whole product, the harness still finds what the shared fixes did not
-reach. These figures are from the Phase 0 run on 2026-11-23, before #5853 and
-#5864 landed, so the English row has fallen since. They are the starting point
-for Phase 3, which begins by re-running `npm run mobile:audit` against `main`.
+**The whole product**, from the nightly audit on `main` (run 45474207244, commit
+`ad85f7f91`), every route captured with its fixtures:
 
 | Check (pages failing) | 390 bg | 390 en | 360 bg |
 |---|---|---|---|
-| Content clipped at the right edge | 12 | 9 | 17 |
+| Routes captured / not captured | 183 / 0 | 183 / 0 | 183 / 0 |
+| Page scrolls sideways | 0 | 0 | 0 |
+| Content clipped at the screen edge | 0 | 0 | 0 |
 | Overlay covers text / a control | 0 / 0 | 0 / 0 | 0 / 0 |
-| Tap target < 24 px | 147 | 147 | 147 |
-| Text < 12 px | 152 | 152 | 152 |
+| Tap target < 24 px | 0 | 0 | 0 |
+| Tap target < 44 px (advisory) | 68 | 63 | 68 |
+| Text < 12 px | 0 | 0 | 0 |
 | Tab bar overflows with no cue | 0 | 0 | 0 |
-| Button group on 3+ lines | 13 | 11 | 14 |
+| Button group on 3+ lines | 0 | 0 | 0 |
 | Input font < 16 px | 0 | 0 | 0 |
-| Table wider than the screen | 4 | 4 | 4 |
+| Table wider than the screen | 0 | 0 | 0 |
+| English strings on a Bulgarian page | 0 | – | 0 |
+| Console errors | 0 | 0 | 0 |
+
+Every open state the harness opens (assistant sheet, command palette, create
+modal, inspector sheet, nav drawer, onboarding tour, selection toolbar, user
+menu) is at 0 too. A count that rises fails the nightly and opens an issue.
+
+Known limits, each written down where it applies:
+- **tldraw's "made with tldraw" link** stays a small target: its licence asks
+  that it stay visible and interactive. The harness leaves it out with that
+  reason (`LICENCE_BOUND` in `scripts/mobile-audit/measure.ts`).
+- **The English-leak detector** recognises interface text by its catalogue
+  template, so a stock sentence with no template reads as tenant data. #5929
+  (assignment notifications stored in English) was found that way, by hand.
 
 The sections below record the product as the audit found it on 2026-11-22.
 
@@ -279,7 +292,7 @@ pages in the tables above.
 6. The existing Bulgarian-strings ratchet is extended to the strings the audit
    found, so they cannot come back.
 
-### Phase 3 — the pages
+### Phase 3 — the pages (shipped)
 
 1. **The P0 pages first** (#3–#9 above). Shipped in #5853 and #5856.
 2. **Then the local P1s, area by area** — core GRC, agents and admin, vendors /
@@ -289,7 +302,7 @@ pages in the tables above.
    for: one primary action plus a "⋯" menu, the kill switch as a destructive
    button, and its nine tabs grouped so a phone shows them without a hunt.
 
-### Phase 4 — phone layouts for desktop-shaped surfaces
+### Phase 4 — phone layouts for desktop-shaped surfaces (shipped)
 
 For each surface in "Desktop-shaped surfaces" above, decide between a phone
 layout and an honest "open this on a larger screen" notice (the process canvas
@@ -305,7 +318,7 @@ already does the latter well). Proposed:
 - **Larger-screen notice:** the process canvas (already), the Sankey chart and
   the correlations matrix, each with a readable summary list in its place.
 
-### Phase 5 — "flawless", defined and held
+### Phase 5 — "flawless", defined and held (shipped, apart from the real-device pass)
 
 The product is mobile-flawless when, at 360 and 390 px, in both themes and
 both languages:
@@ -323,4 +336,9 @@ both languages:
 - a real-device pass on iOS Safari and Android Chrome finds nothing the
   harness missed.
 
-After that, the harness runs nightly and the new-page checklist keeps it there.
+Every criterion but the last is held by CI today: the ratchets are at zero, the
+journeys pass in the `mobile` project, and the whole-product harness runs
+nightly against `main` (`.github/workflows/mobile-audit.yml`), failing and
+opening an issue when a count rises. The real-device pass is the one criterion
+a person must do: the checklist is in `docs/mobile-audit.md`, and the result is
+recorded on #5899.
