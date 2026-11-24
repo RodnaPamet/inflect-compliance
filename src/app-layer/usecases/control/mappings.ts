@@ -1,4 +1,5 @@
 import { RequestContext } from '../../types';
+import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { ControlTemplateRepository } from '../../repositories/ControlTemplateRepository';
 import { ControlRepository } from '../../repositories/ControlRepository';
 import { FrameworkRepository } from '../../repositories/FrameworkRepository';
@@ -45,7 +46,7 @@ export async function installControlsFromTemplate(ctx: RequestContext, templateI
     });
     await assertWithinLimit(ctx, 'control', toCreate);
 
-    return runInTenantContext(ctx, async (db) => {
+    const result = await runInTenantContext(ctx, async (db) => {
         // `skipped` distinguishes a template whose control already existed
         // (idempotent no-op) from one actually installed — so the "Installed N"
         // toast counts only real installs, not skipped existing controls.
@@ -196,6 +197,13 @@ export async function installControlsFromTemplate(ctx: RequestContext, templateI
 
         return results;
     });
+    // Installing creates controls and their tasks: the cached control and task
+    // lists of this workspace are stale from here (they were read for up to
+    // the cache's TTL afterwards, so the controls page said "no controls yet"
+    // right after an install).
+    await bumpEntityCacheVersion(ctx, 'control');
+    await bumpEntityCacheVersion(ctx, 'task');
+    return result;
 }
 
 // ─── Frameworks (read-only) ───

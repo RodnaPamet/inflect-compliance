@@ -1844,7 +1844,15 @@
       "suggesting": "Suggesting…",
       "noSuggestions": "No suggestions",
       "noSuggestionsHint": "Nothing links your risks closely enough. Pairs are suggested from what risks share, such as a category or an asset.",
-      "editPairAria": "Edit the figure for {a} and {b}, now {value}"
+      "editPairAria": "Edit the figure for {a} and {b}, now {value}",
+      "phone": {
+        "notice": "The matrix is easier to read on a larger screen. Here are the correlated pairs, strongest first.",
+        "none": "No pair of risks is correlated yet.",
+        "listAria": "Correlated pairs",
+        "uncorrelated": "Pairs that are not correlated: {count}",
+        "edit": "Edit",
+        "editAria": "Change the figure for {a} and {b}, now {value}"
+      }
     },
     "hierarchy": {
       "breadcrumb": "Hierarchy",
@@ -2682,7 +2690,12 @@
       "title": "Controls flow",
       "subtitle": "How assets expose risks, how controls mitigate them, and which framework requirements each control implements.",
       "truncated": "The diagram shows up to {cap} items of each kind, and this workspace has more, so some are left out.",
-      "loadFailed": "Couldn't build the flow diagram. Reload the page to try again."
+      "loadFailed": "Couldn't build the flow diagram. Reload the page to try again.",
+      "phone": {
+        "notice": "The flow diagram is drawn for a larger screen. Here is every flow it shows, as a list.",
+        "flowCount": "Flows: {count}",
+        "targetsAria": "Linked from {name}"
+      }
     },
     "dashboard": {
       "consistencyChecking": "Running the consistency check…",
@@ -2747,6 +2760,11 @@
       "selectRow": "Select {name}",
       "unresolvedNotice": "{count, plural, one {# selected template no longer exists and was not installed.} other {# selected templates no longer exist and were not installed.}}",
       "planLimitReached": "Your plan allows {limit} controls and this workspace has {current}, so these templates would go over the limit. Install fewer, or upgrade the plan.",
+      "phone": {
+        "selectAll": "Select all ({count})",
+        "clearSelection": "Clear selection",
+        "showMore": "Show more ({remaining} left)"
+      },
       "retry": "Retry"
     },
     "testPlan": {
@@ -10524,7 +10542,11 @@
         "NO_TEMPLATE_CHOSEN": "Choose at least one template to install.",
         "TOO_MANY_TEMPLATES": "Install at most 100 templates at a time."
       },
-      "selectTemplateAria": "Select {code} {title}"
+      "selectTemplateAria": "Select {code} {title}",
+      "phone": {
+        "clearSelection": "Clear selection",
+        "showMore": "Show more ({remaining} left)"
+      }
     },
     "loadingAria": "Loading frameworks",
     "readiness": {
@@ -15664,6 +15686,7 @@
       "requirementsAria": "{name} requirements",
       "selectRequirement": "Select a requirement",
       "selectHint": "Click any requirement on the left to see its description and the controls currently mapped to it.",
+      "backToRequirements": "Back to requirements",
       "unmapped": "Unmapped",
       "section": "Section",
       "sectionCountOne": "{count} requirement in this section.",

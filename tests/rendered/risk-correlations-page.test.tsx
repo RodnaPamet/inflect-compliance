@@ -10,7 +10,7 @@
  *      refusal shows the server's reason.
  */
 import * as React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SWRConfig } from 'swr';
 
 let appPermissions: Record<string, unknown> = { risks: { edit: true } };
@@ -98,7 +98,9 @@ describe('Risk correlation matrix', () => {
     it('offers no edit without risks.edit', async () => {
         appPermissions = { risks: { edit: false } };
         mount();
-        expect((await screen.findAllByText('0.25', { selector: 'span' })).length).toBe(2);
+        // The grid's two cells (the phone list below md shows the pair once more).
+        await screen.findByRole('table');
+        expect(within(screen.getByRole('table')).getAllByText('0.25', { selector: 'span' }).length).toBe(2);
         expect(screen.queryByRole('button', { name: pairLabel })).toBeNull();
     });
 

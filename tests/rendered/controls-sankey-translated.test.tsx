@@ -4,7 +4,7 @@
  * buttons and empty states; and a capped graph says it is partial.
  */
 import * as React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 
 jest.mock('next-intl', () => {
     const bg = require('../../messages/bg.json') as Record<string, unknown>;
@@ -73,11 +73,13 @@ describe('controls flow diagram — translated (#4794)', () => {
     });
 
     it('the empty states come from the messages', () => {
+        // The chart's own empty state; the phone summary says the same below md.
+        const chart = () => within(document.getElementById('sankey-chart') as HTMLElement);
         const { unmount } = render(<ControlsSankeyClient initialGraph={graph([], [])} />);
-        expect(screen.getByText('Няма потоци на съответствие за показване.')).toBeInTheDocument();
+        expect(chart().getByText('Няма потоци на съответствие за показване.')).toBeInTheDocument();
         unmount();
         render(<ControlsSankeyClient initialGraph={graph([node('a1', 'asset'), node('r1', 'risk')], [])} />);
-        expect(screen.getByText('Има записи, но все още нито един не е свързан с друг.')).toBeInTheDocument();
+        expect(chart().getByText('Има записи, но все още нито един не е свързан с друг.')).toBeInTheDocument();
     });
 
     it('a capped graph says it is partial', () => {
