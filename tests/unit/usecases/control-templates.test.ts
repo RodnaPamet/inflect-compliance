@@ -49,6 +49,12 @@ jest.mock('@/lib/billing/entitlements', () => ({
     }),
 }));
 
+// An install writes controls and tasks, so it invalidates their cached lists.
+const mockBump = jest.fn(async (..._args: unknown[]) => undefined);
+jest.mock('@/lib/cache/list-cache', () => ({
+    bumpEntityCacheVersion: (...args: unknown[]) => mockBump(...args),
+}));
+
 jest.mock('@/app-layer/repositories/ControlRepository', () => ({
     ControlRepository: {
         listControlRequirementLinks: jest.fn(),
@@ -105,6 +111,7 @@ const mockListReqs = FrameworkRepository.listRequirements as jest.MockedFunction
 const mockListMappings = ControlRepository.listControlRequirementLinks as jest.MockedFunction<typeof ControlRepository.listControlRequirementLinks>;
 
 beforeEach(() => {
+    mockBump.mockClear();
     policyCalls.length = 0;
     auditCalls.length = 0;
     [
@@ -232,6 +239,9 @@ describe('installControlsFromTemplate', () => {
         expect(auditCalls[0].metadata).toMatchObject({
             templateId: 't-1', tasksCreated: 2, requirementsLinked: 3,
         });
+        // The controls page must not serve its cached, pre-install list.
+        expect(mockBump).toHaveBeenCalledWith(ctx, 'control');
+        expect(mockBump).toHaveBeenCalledWith(ctx, 'task');
     });
 
     it('handles a MIX of skip + happy-path templates in one call (independent branch state per row)', async () => {

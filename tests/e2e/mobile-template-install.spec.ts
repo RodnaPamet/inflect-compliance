@@ -35,11 +35,11 @@ async function expectReachable(control: Locator, name: string): Promise<void> {
     expect(height, `${name} is ${height}px tall`).toBeGreaterThanOrEqual(MIN_TARGET);
 }
 
-/** The controls list, whichever envelope the route answers with. */
+/** The controls list: `{ rows, truncated }` (`applyBackfillCap`). */
 function controlsOf(body: unknown): Array<{ code?: string | null }> {
-    if (Array.isArray(body)) return body;
-    const o = body as { items?: unknown; data?: unknown };
-    return (Array.isArray(o.items) ? o.items : Array.isArray(o.data) ? o.data : []) as Array<{ code?: string | null }>;
+    const rows = (body as { rows?: unknown }).rows;
+    if (!Array.isArray(rows)) throw new Error(`unexpected controls response: ${JSON.stringify(body).slice(0, 200)}`);
+    return rows as Array<{ code?: string | null }>;
 }
 
 for (const config of MOBILE_E2E_CONFIGS) {

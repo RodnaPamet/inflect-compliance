@@ -2,6 +2,7 @@
 import { RequestContext } from '../../types';
 import { assertCanViewFrameworks, assertCanInstallFrameworkPack } from '../../policies/framework.policies';
 import { logEvent } from '../../events/audit';
+import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { notFound, badRequest, ConflictError } from '@/lib/errors/types';
 import type { FrameworkInstallRefusal } from '@/lib/framework-install-refusals';
@@ -185,7 +186,7 @@ async function installPacksInTenant(ctx: RequestContext, packs: PackForInstall[]
     // requirement-link upserts), which is too much work for the default
     // 5 s Prisma interactive-transaction timeout. Bump it to 60 s so the
     // entire pack install runs atomically.
-    return runInTenantContext(ctx, async (tdb) => {
+    const installed = await runInTenantContext(ctx, async (tdb) => {
         const handled = new Set<string>();
         const results: PackInstallCounts[] = [];
 
@@ -306,6 +307,10 @@ async function installPacksInTenant(ctx: RequestContext, packs: PackForInstall[]
         }
         return results;
     }, { timeout: 60_000, maxWait: 10_000 });
+    // As for a template install below: the cached lists are stale from here.
+    await bumpEntityCacheVersion(ctx, 'control');
+    await bumpEntityCacheVersion(ctx, 'task');
+    return installed;
 }
 
 export async function installPack(ctx: RequestContext, packKey: string) {
@@ -546,7 +551,7 @@ export async function installSingleTemplate(ctx: RequestContext, templateCode: s
 
     await assertInstallWithinControlLimit(ctx, [tmpl.code]);
 
-    return runInTenantContext(ctx, async (tdb) => {
+    const result = await runInTenantContext(ctx, async (tdb) => {
         // Idempotent: check existing
         const existing = await tdb.control.findFirst({
             where: { tenantId: ctx.tenantId, code: tmpl.code },
@@ -603,6 +608,13 @@ export async function installSingleTemplate(ctx: RequestContext, templateCode: s
 
         return { controlId: control.id, code: tmpl.code, alreadyExisted: false, tasksCreated, mappingsCreated };
     });
+    // Installing creates controls and their tasks: the cached control and task
+    // lists of this workspace are stale from here (they were read for up to
+    // the cache's TTL afterwards, so the controls page said "no controls yet"
+    // right after an install).
+    await bumpEntityCacheVersion(ctx, 'control');
+    await bumpEntityCacheVersion(ctx, 'task');
+    return result;
 }
 
 // в”Ђв”Ђв”Ђ Bulk Map Controls в†” Requirements в”Ђв”Ђв”Ђ
@@ -692,7 +704,7 @@ export async function bulkInstallTemplates(
 
     await assertInstallWithinControlLimit(ctx, templates.map((t) => t.code));
 
-    return runInTenantContext(ctx, async (tdb) => {
+    const result = await runInTenantContext(ctx, async (tdb) => {
         // Read once, and only when a template names a related policy.
         const policyByTitle = templates.some((t) => t.relatedPolicies)
             ? await policyIdsByTitle(tdb, ctx.tenantId)
@@ -751,4 +763,11 @@ export async function bulkInstallTemplates(
 
         return { controlsCreated, tasksCreated, mappingsCreated, skipped };
     });
+    // Installing creates controls and their tasks: the cached control and task
+    // lists of this workspace are stale from here (they were read for up to
+    // the cache's TTL afterwards, so the controls page said "no controls yet"
+    // right after an install).
+    await bumpEntityCacheVersion(ctx, 'control');
+    await bumpEntityCacheVersion(ctx, 'task');
+    return result;
 }
