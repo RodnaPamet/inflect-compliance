@@ -79,11 +79,12 @@ describe('the Bulgarian tldraw translation', () => {
     it('names only keys tldraw has, and covers the menu the canvases show', () => {
         // The English tldraw renders when a key is missing: every key we
         // translate must be one of its, or the translation answers nothing.
-        // Not in tldraw's public exports, so read by path.
+        // Not in tldraw's public exports, so read beside its resolved entry point.
         const { DEFAULT_TRANSLATION } = require(
-            path.join(process.cwd(), 'node_modules/tldraw/dist-cjs/lib/ui/hooks/useTranslation/defaultTranslation.js'),
+            path.join(path.dirname(require.resolve('tldraw')), 'lib/ui/hooks/useTranslation/defaultTranslation.js'),
         ) as { DEFAULT_TRANSLATION: Record<string, string> };
         const known = new Set(Object.keys(DEFAULT_TRANSLATION));
+        expect(known.size).toBeGreaterThan(400);
         expect(Object.keys(TLDRAW_BG).filter((k) => !known.has(k))).toEqual([]);
         for (const key of ['menu.title', 'menu.edit', 'menu.view', 'menu.preferences', 'action.zoom-to-fit', 'action.zoom-in', 'action.zoom-out']) {
             expect(TLDRAW_BG).toHaveProperty([key]);
