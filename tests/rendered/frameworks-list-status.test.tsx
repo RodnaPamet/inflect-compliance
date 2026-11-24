@@ -308,7 +308,7 @@ describe('a card title link takes a touch square (#5924)', () => {
     // so the classes are what jsdom can check.
     it('wears the shared text-link hit area and still opens the framework', () => {
         render(<FrameworksClient frameworks={FRAMEWORKS} coverages={{}} tenantSlug="acme" />);
-        const link = screen.getByTestId('fw-card-link-ISO27001');
+        const link = screen.getByTestId('fw-title-link-ISO27001');
         const classes = link.className.split(/\s+/);
         expect(classes).toEqual(expect.arrayContaining(['relative', 'pointer-coarse:after:min-h-11', 'pointer-coarse:after:min-w-11']));
         expect(link).toHaveTextContent('ISO 27001');

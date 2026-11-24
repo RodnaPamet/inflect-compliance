@@ -358,7 +358,7 @@ export function FrameworksClient({
                                             <Link
                                                 href={row.href}
                                                 className={cn('text-content-emphasis hover:underline', TEXT_LINK_HIT_AREA)}
-                                                data-testid={`fw-card-link-${row.key}`}
+                                                data-testid={`fw-title-link-${row.key}`}
                                             >
                                                 {row.name}
                                             </Link>
