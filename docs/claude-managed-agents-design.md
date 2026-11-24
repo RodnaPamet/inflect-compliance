@@ -205,6 +205,13 @@ puts at Anthropic:
     (decision 8). Every real tool call still goes through Inflect's checks.
   - **The run timeline** says, beside each span-derived decision row, that the
     call's prompt was not visible to Inflect.
+- **Hosting in Inflect's own organisation (MA-C1) is proposed, not in effect
+  (Step 6a drafts).** `docs/sub-processors.md` carries it as Anthropic (g),
+  marked PROPOSED, NOT IN EFFECT, and the customer notice
+  (`docs/notices/2026-11-23-anthropic-hosted-managed-agents.md`) was issued on
+  2026-11-24; its objection window closes 2026-12-24. Decision 6 is recorded on
+  #5865 and the change approved (see "MA-C1", "Notice"). No hosted
+  path exists in the code.
 
 ## What Managed Agents is, as documented on 2026-10-24
 
@@ -432,6 +439,69 @@ switched on (6c) only after the window closes with no sustained objection. This
 is the pattern `TYPESAFE_SUBPROCESSOR_ACTIVE` already follows: code may exist
 before the window closes, but tenant data may not reach the new processing.
 
+**Anthropic's terms, re-read from the live pages on 2026-11-23 (Step 6a).** Each
+term MA-C1 relies on is unchanged; none is worse and none is better for this
+shape.
+
+- **Zero Data Retention.** "Claude Managed Agents is stateful by design …
+  Because of this, Managed Agents is not currently eligible for Zero Data
+  Retention or HIPAA Business Associate Agreement (BAA) coverage. The exception
+  for Zero Data Retention is self-hosted Claude Managed Agents, where you store
+  that data yourself"
+  ([overview](https://platform.claude.com/docs/en/managed-agents/overview)).
+  The same exception is on the
+  [API and data retention](https://platform.claude.com/docs/en/manage-claude/api-and-data-retention)
+  page, under "What ZDR does not cover".
+- **Workspace geography.** "Workspace geo is set when you create a workspace and
+  can't be changed afterward. Currently, `"us"` is the only available workspace
+  geo." Workspace geo: "Controls where data is stored at rest"
+  ([data residency](https://platform.claude.com/docs/en/manage-claude/data-residency)).
+- **How long sessions are kept.** "Claude Managed Agents is a stateful
+  resource; session transcripts persist until you delete them"
+  ([API and data retention](https://platform.claude.com/docs/en/manage-claude/api-and-data-retention)).
+  "Deleting a session is permanent. It deletes the session's record, events,
+  and associated sandbox"
+  ([session operations](https://platform.claude.com/docs/en/managed-agents/session-operations)).
+- **Deleting or archiving agents.** "Archiving makes the agent read-only and
+  cannot be undone"; the agent lifecycle lists Update, List versions and
+  Archive ([agent setup](https://platform.claude.com/docs/en/managed-agents/agent-setup)).
+  The Agents API reference lists Create, List, Get, Update and Archive, and no
+  delete ([API reference](https://platform.claude.com/docs/en/api/beta/agents)).
+- **Who sees transcripts.** "The session viewer is only accessible to
+  Developers and Admins"
+  ([observability](https://platform.claude.com/docs/en/managed-agents/observability)).
+
+Two things on those pages that this section did not record before:
+
+- **Self-hosted Claude Managed Agents** is a service an organisation runs on its
+  own infrastructure, with its own database, and it is the one form of Managed
+  Agents eligible for ZDR. It is a different shape from MA-C1, where Anthropic
+  runs the service in Inflect's organisation, so it changes none of MA-C1's
+  terms. Whether Inflect ever hosts the service itself is a separate decision,
+  and nothing here takes it.
+- **Retention regardless of arrangement.** "Even with ZDR or HIPAA arrangements
+  in place, Anthropic may retain data where required by law or where it has
+  been flagged by Anthropic's automated trust and safety systems. As a result,
+  if a chat or session is flagged, Anthropic may retain inputs and outputs for
+  up to 2 years" (API and data retention). This is general to Anthropic's API,
+  the Messages API calls already on the sub-processor row included, so it is
+  not a Managed Agents term; the register entry and the notice state it.
+
+**Notice.** The register entry is Anthropic (g) in `docs/sub-processors.md`,
+marked PROPOSED, NOT IN EFFECT. The customer notice,
+`docs/notices/2026-11-23-anthropic-hosted-managed-agents.md`, was **issued on
+2026-11-24**.
+
+- Date the notice was sent: 2026-11-24 (repo owner).
+- Date the 30-day window closes: 2026-12-24. Step 6c may not activate hosting
+  before then.
+- Decision 6 — recorded by the repo owner on #5865 on 2026-11-23, once for
+  every use of Anthropic as Inflect's sub-processor: the EU SCCs incorporated in
+  Anthropic's DPA; no transfer impact assessment, the repo owner accepting
+  proceeding without one.
+- Approval of the change and the notice (policy step 2): the repo owner,
+  2026-11-23. Objection address: privacy@inflect.bg.
+
 ## Decisions for the owner
 
 1. **MA-B now, then MA-C2 and MA-C1 once the engine is built.** The staging
@@ -478,6 +548,13 @@ before the window closes, but tenant data may not reach the new processing.
 
    The owner's decision to host is a product decision, and it does not answer
    these.
+
+   **Where they are recorded (owner, 2026-11-23):** once, on #5865, for every
+   use of Anthropic as Inflect's sub-processor. The Messages API engines and the
+   assistant already carry personal data there, and their register entry says
+   only "per its terms". The Step 6a pull request cites that record and holds
+   only what is specific to hosting: the notice, its dates and the objection
+   address. The notice still waits for all three to be recorded.
 7. **What a purge does when it cannot reach the customer's workspace, and whom
    a DSAR erasure reaches.** Step 5c found that the remote clean-up's retry
    could authenticate after a tenant purge only by keeping the customer's

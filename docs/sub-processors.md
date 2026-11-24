@@ -28,7 +28,7 @@ auditor can verify the inventory is accurate, not merely asserted.
 | Stripe | Tenant billing contact email; plan; payment method (held by Stripe — we do not store it) | Billing | US | Per Stripe agreement | Yes (self-hosted mode disables) |
 | SMTP relay (operator-chosen) | Recipient email; message body (verification tokens, notification text — may include names + tenant slug) | Email delivery | Per operator | Per operator | No (delivery surface) |
 | OpenRouter | Risk-assessment prompt text (risk titles/descriptions — business content) | AI risk suggestions | US/global | Per OpenRouter | Yes (default `stub`; off unless enabled) |
-| Anthropic (Claude API) | Posture summary: aggregate metrics only (counts + percentages — no PII, no entity text). Risk suggestions: risk-assessment prompt text (risk titles/descriptions, asset names — business content). Agent runs (Flue, tenants with `aiResidency=EXTERNAL`): the run's prompt — workflow description, declared run input and read-tool output; for `discovered-agent-review` that includes a discovered agent's source owner reference (`DiscoveredAgent.ownerRef`, a person reference from the customer's directory). Agent profile runs (Tool Runner engine, tenants with `aiResidency=EXTERNAL`): tenant-authored agent instructions, and the output of the read tools the profile names. Retrieved knowledge passages (the `search_knowledge` read tool, tenants with `aiResidency=EXTERNAL`, only once its mount gate is open): decrypted passages of the tenant's approved policy text with the citing policy's title, as a read-tool result in an agent run or an assistant turn. Assistant turns (tenants with `aiResidency=EXTERNAL`, the default): the person's question, up to six earlier exchanges of the conversation as their browser sends them, the page they are on (route, entity type, filters, selected record ids), the system prompt, and the output of the read tools the asker may call — which includes personal data: control owners' and task and finding assignees' names and work email addresses, audit-log actors' names, and a discovered agent's source owner reference | AI posture summary; AI risk suggestions; agent runtime (Flue, Tool Runner); the in-product assistant | US/global | Per Anthropic | Yes, but NOT off by default: the posture summary and risk suggestions default `stub`, while the assistant calls Anthropic wherever `ANTHROPIC_API_KEY` is set, unless `AI_ASSISTANT_ENABLED` or `AI_RISK_ENABLED` is `false` or the workspace turns it off or sets `aiResidency=LOCAL_ONLY` — see (f) |
+| Anthropic (Claude API) | Posture summary: aggregate metrics only (counts + percentages — no PII, no entity text). Risk suggestions: risk-assessment prompt text (risk titles/descriptions, asset names — business content). Agent runs (Flue, tenants with `aiResidency=EXTERNAL`): the run's prompt — workflow description, declared run input and read-tool output; for `discovered-agent-review` that includes a discovered agent's source owner reference (`DiscoveredAgent.ownerRef`, a person reference from the customer's directory). Agent profile runs (Tool Runner engine, tenants with `aiResidency=EXTERNAL`): tenant-authored agent instructions, and the output of the read tools the profile names. Retrieved knowledge passages (the `search_knowledge` read tool, tenants with `aiResidency=EXTERNAL`, only once its mount gate is open): decrypted passages of the tenant's approved policy text with the citing policy's title, as a read-tool result in an agent run or an assistant turn. Assistant turns (tenants with `aiResidency=EXTERNAL`, the default): the person's question, up to six earlier exchanges of the conversation as their browser sends them, the page they are on (route, entity type, filters, selected record ids), the system prompt, and the output of the read tools the asker may call — which includes personal data: control owners' and task and finding assignees' names and work email addresses, audit-log actors' names, and a discovered agent's source owner reference **Hosted Managed Agents runs — PROPOSED, NOT IN EFFECT (see (g)): no tenant's data reaches Inflect's own Anthropic organisation today.** As proposed, for a tenant that opts in: each run's session event history, stored at Anthropic until Inflect deletes the session when the run ends — the tenant-authored agent instructions, the run's task and declared input, the model's messages and tool calls, and every tool result (read-tool output, which includes personal data as in (f), and the instructions of any skill the run mounts); and agent objects that cannot be deleted, only archived, holding Inflect's fixed preamble and tool schemas and no tenant text | AI posture summary; AI risk suggestions; agent runtime (Flue, Tool Runner); the in-product assistant; hosted Managed Agents runs for tenants with no Anthropic account of their own (PROPOSED, NOT IN EFFECT) | US/global; hosted Managed Agents (proposed): stored in the US | Per Anthropic; hosted Managed Agents (proposed): sessions deleted when the run ends, archived agents kept indefinitely, no Zero Data Retention | Yes, but NOT off by default: the posture summary and risk suggestions default `stub`, while the assistant calls Anthropic wherever `ANTHROPIC_API_KEY` is set, unless `AI_ASSISTANT_ENABLED` or `AI_RISK_ENABLED` is `false` or the workspace turns it off or sets `aiResidency=LOCAL_ONLY` — see (f); hosted Managed Agents (proposed): operator-optional, and per-tenant opt-in only — see (g) |
 | HaveIBeenPwned | SHA-1 prefix of a chosen password (k-anonymity; no PII) | Password breach check | Global | Volatile (no log) | No (security primitive) |
 | GitHub | Repo metadata (per-tenant integration only) | Repo sync | Global | Token lifetime | Yes (per-tenant opt-in) |
 | Microsoft SharePoint | Document metadata (per-tenant integration only) | Document sync | Global | Token lifetime | Yes (per-tenant opt-in) |
@@ -161,12 +161,16 @@ enabling any of them adds a sub-processor and requires an entry above.
 
 ### Anthropic (Claude API) — AI compliance-posture summary, AI risk suggestions, agent runs and the in-product assistant (optional)
 
-Every use below shares ONE credential (`ANTHROPIC_API_KEY`) but sends a
+Uses (a) to (f) share ONE credential (`ANTHROPIC_API_KEY`) but send a
 **materially different payload**. The posture summary (a) and risk
 suggestions (b) are each enabled by their own env var, so an operator can run
 either alone. The agent runtimes (c, d) run only where an engine is switched on
 and chosen. The assistant (f) needs no switch of its own: it is on wherever the
 key is set, until it is turned off.
+
+(g), hosted Managed Agents runs, is **proposed and not in effect**. It is set
+out after the common terms of (a) to (f), with terms of its own, because it is
+the first use that would store data at Anthropic beyond a Messages API call.
 
 **(a) Compliance-posture summary** — `AI_POSTURE_PROVIDER=anthropic`
 - **PII shared:** **none** — only AGGREGATE metrics (control-coverage %, per-framework coverage counts, open-risk counts by severity, overdue evidence/task/policy counts). No entity names, free text, IDs, or account PII leave the process.
@@ -213,7 +217,7 @@ key is set, until it is turned off.
 - **Nothing stored at Anthropic beyond the Messages API call:** the provider is its own `fetch` to `https://api.anthropic.com/v1/messages`, whose body is the model, `max_tokens`, the system prompt, the messages and the tools, and nothing else — no thread, container, file or MCP server field. It does not go through `clientForRun`, so it reads no `ANTHROPIC_CUSTOM_HEADERS`; it does send the `anthropic-workspace-id` header when `ANTHROPIC_WORKSPACE_ID` is set.
 - **Codebase:** `src/app-layer/usecases/assistant.ts` (`runGoverned`, `answerFromToolLoop`), `src/app-layer/ai/assistant/` (`turn-provider.ts`, `tool-loop.ts`, `tools.ts`, `history.ts`, `limits.ts`, `page-context.ts`), routes `src/app/api/t/[tenantSlug]/assistant/{ask,stream}/route.ts`.
 
-Common to all six:
+Common to (a) to (f):
 - **Legal basis:** legitimate interest (Art. 6(1)(f)); only active when the operator opts in.
 - **Processing instructions:** generate the requested completion; per Anthropic's terms.
 - **Agreement (recorded 2026-11-23, #5865):** Anthropic's standard Commercial
@@ -233,6 +237,137 @@ Common to all six:
 - **Workspace:** an API key created inside an Anthropic workspace needs nothing more. An ORGANISATION-level key is refused by Anthropic with HTTP 400 unless each request names its workspace, so set `ANTHROPIC_WORKSPACE_ID` (a `wrkspc_…` identifier, not a secret) and every request to the Anthropic API — (a) and (b), the Flue agent runtime's external provider and the assistant, which use the same key — carries the header `anthropic-workspace-id: <id>`. Unset, no request carries it. The header names which of the operator's own workspaces the request is billed and governed under; it sends no customer data and changes nothing about what each payload contains (`src/lib/ai/anthropic-workspace.ts`).
 - **Model:** the two features above share `ANTHROPIC_MODEL` (default `claude-haiku-4-5`). The Flue agent runtime's external provider, which uses the same key, names its own model, `AGENT_FLUE_MODEL` (default `claude-sonnet-5-5`), so the agent runtime and these two features can run on different models without a second credential. The assistant names `AGENT_FLUE_MODEL` too, through the same model selection, whether or not the Flue engine is switched on. Neither variable changes what any payload contains.
 - **Env:** `AI_POSTURE_PROVIDER`, `AI_RISK_PROVIDER`, `AI_RISK_ENABLED`, `AI_ASSISTANT_ENABLED`, `AI_RISK_PLAN_REQUIRED`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_WORKSPACE_ID`, `AGENT_FLUE_MODEL`, `AGENT_FLUE_WORKER_MODEL`, `AGENT_DRIVER_TOOL_RUNNER`, `AGENT_TOOL_RUNNER_MODEL_BALANCED`, `AGENT_TOOL_RUNNER_MODEL_DEEP` (`src/env.ts`).
+
+**(g) Hosted Managed Agents runs (shape MA-C1) — PROPOSED, NOT IN EFFECT**
+
+This is step 1 of the [sub-processor change policy](./sub-processor-change-policy.md)
+for new processing by Anthropic as **Inflect's own** sub-processor: agent runs
+on Claude Managed Agents in Inflect's own Anthropic organisation, for a tenant
+that has no Anthropic account of its own (`docs/claude-managed-agents-design.md`,
+"MA-C1", Step 6a). It is a proposal. **No tenant's data reaches Inflect's
+Anthropic organisation today**, and nothing in this deployment can send it
+there: the Managed Agents engine reaches only a workspace the customer itself
+connected (the separate `anthropic-workspace` row below), with that
+connection's own key; it is not selectable at all
+(`DRIVER_IMPLEMENTED['managed-agents']` is `false`,
+`src/lib/agentic/agent-driver.ts:236`); and the deployment holds no key or
+workspace of Inflect's own for it (`src/env.ts` has none). The hosted path is
+Step 6b of that design, behind a source constant that is false, and it is
+switched on only by Step 6c, after the notice window below has closed with no
+sustained objection. The common terms of (a) to (f) above do not apply to (g).
+
+- **What is stored at Anthropic, per run** — the session's event history. A
+  session of the Step 5b engine holds exactly this:
+  - **Instructions:** Inflect's fixed preamble, the catalogue of the skills the
+    run mounts (name and short description), and the **tenant-authored agent
+    instructions** of the approved profile version, as the session's `system`
+    override (`sessionSystemFor`, `src/lib/agentic/managed-agents/definition.ts:279`).
+  - **The opening message:** the run's task and its declared run input.
+  - **The model's work:** its messages, its reasoning, and the tool calls it
+    makes, with the arguments it wrote.
+  - **Every tool result Inflect returns:** the output of the read tools the
+    profile names and the agent is granted (which includes personal data, as
+    listed for the assistant in (f): names and work email addresses of control
+    owners and assignees, audit-log actors' names, user ids, a discovered
+    agent's source owner reference), the funnel's result for a propose tool,
+    refusal sentences, and the full instructions of any skill the run
+    activates, which can be a tenant-authored skill.
+  - **Session metadata:** the tenant's id and the run's id, never a name or a
+    slug (`sessionMetadataFor`, `definition.ts:294`), and a dollar spending cap.
+  - **Not stored:** files, credentials, MCP servers, built-in tools and
+    memory. The engine's one client refuses a session that names `resources`
+    or `vault_ids` and an agent that names anything but custom tools
+    (`managedAgentsRequestRefusal`, `src/lib/agentic/tool-runner/client.ts`).
+- **What is stored at Anthropic, kept indefinitely** — **agent objects, which
+  cannot be deleted, only archived**, with every version kept. Each holds an
+  opaque name (`inflect-profile-<profile id>`), the profile id as metadata, the
+  model id, Inflect's fixed preamble as `system`, and the tool definitions
+  (name, description and input schema from Inflect's catalogue, plus
+  `activate_skill`, whose schema names no skill). **No tenant-authored text is
+  ever written to an agent** (`agentBodyFor`, `definition.ts:158`). An
+  environment object holds only an opaque name and a sealed network
+  configuration (`cloud`, `limited`, no allowed hosts; `environmentBodyFor`,
+  `definition.ts:183`).
+- **Purpose:** hosted agent runs for agent profiles, for tenants with no
+  Anthropic account of their own.
+- **Region:** **US.** Anthropic's workspace geography (where data is stored at
+  rest) is `us` only. The engine pins no `inference_geo`, so model inference
+  follows the workspace's default inference geography, which Inflect's
+  workspace configuration sets (`us` or `global`).
+- **Retention:**
+  - **Sessions:** deleted by Inflect when each run ends, in the run's `finally`,
+    after the session leaves `running` (`DELETE /v1/sessions/{id}`,
+    `src/lib/agentic/managed-agents/execute.ts:1020`); Anthropic's delete
+    removes the session's record, events and sandbox. There is no option to
+    keep a session in Inflect's organisation: "Keep sessions in my workspace"
+    (owner decision 4) applies only to a customer's own workspace. A delete
+    that fails is recorded (`SESSION_DELETE_FAILED`) and stays Inflect's to
+    delete; today the clean-up takes such a session again on tenant purge
+    (`src/app-layer/usecases/managed-agents-cleanup.ts`), and a periodic
+    reconciliation deletes any session recorded deleted in the last seven
+    days that still exists.
+  - **Agents:** archived on tenant purge, never deleted.
+  - **No Zero Data Retention.** Anthropic lists Managed Agents as not
+    eligible for ZDR. Anthropic also states that, under any arrangement, it may
+    keep data where the law requires it, and inputs and outputs of a session
+    its trust and safety systems flag for up to 2 years.
+- **Who can see it:**
+  - **In the Claude Console**, the session viewer shows the whole transcript,
+    and is "only accessible to Developers and Admins": the members of
+    Inflect's Anthropic organisation who hold the Developer or Admin role. Step
+    6c lists the people who hold those roles, on its pull request.
+  - **Inflect's application** reads sessions through the API with the
+    deployment's own key, by the ids it recorded.
+- **Operator-optional, and per-tenant opt-in only**, as Step 6b proposes it: a
+  deployment without a workspace key of Inflect's own offers no hosting (the
+  self-hosted case); in one that has it, a workspace is hosted only after one
+  of its Owners opts in, and nothing of a workspace that has not opted in is
+  sent or stored. A workspace that has connected its own Anthropic workspace
+  runs there instead. A `LOCAL_ONLY` workspace is refused, as the driver
+  already refuses it today before it reads anything
+  (`MANAGED_AGENTS_LOCAL_ONLY_UNSERVED`, `src/lib/agentic/managed-agents/driver.ts`).
+- **Data processing agreement, transfer mechanism and transfer impact
+  assessment:** recorded 2026-11-23 (Commercial Terms with the incorporated DPA;
+  the EU SCCs in it; no transfer impact assessment, the repo owner accepting
+  proceeding without one — see the Anthropic (Claude API) entry above). They are
+  recorded ONCE, for every use of Anthropic
+  as Inflect's sub-processor (the Messages API engines and the assistant above,
+  and this entry), on #5865, by the repo owner, naming each person (owner
+  decision, 2026-11-23; decision 6; *Sub-processors: who confirms which half of
+  step 2* in [`docs/change-management-policy.md`](./change-management-policy.md)).
+  They are not specific to hosting, so this entry cites that record rather
+  than holding its own.
+- **Live terms read:** 2026-11-23, quoted in "MA-C1" of
+  `docs/claude-managed-agents-design.md`, from
+  https://platform.claude.com/docs/en/managed-agents/overview ·
+  https://platform.claude.com/docs/en/manage-claude/api-and-data-retention ·
+  https://platform.claude.com/docs/en/manage-claude/data-residency ·
+  https://platform.claude.com/docs/en/managed-agents/agent-setup ·
+  https://platform.claude.com/docs/en/managed-agents/session-operations ·
+  https://platform.claude.com/docs/en/managed-agents/observability
+- **Codebase:** the Step 5b engine this entry describes, in
+  `src/lib/agentic/managed-agents/`: `definition.ts` (`MANAGED_AGENTS_PREAMBLE`
+  :56, `agentBodyFor` :158, `environmentBodyFor` :183, `sessionSystemFor` :279,
+  `sessionMetadataFor` :294), `provision.ts` (`provisionManagedAgent`),
+  `execute.ts` (`sessions.create` :578, the delete at settle :1020),
+  `driver.ts` (`runManagedAgentsDriver`), `cleanup.ts` (purge: session delete
+  and agent archive by recorded id); the one client constructor,
+  `managedAgentsClientFor` (`src/lib/agentic/tool-runner/client.ts:476`).
+- **Customer notice (issued 2026-11-24):**
+  [`docs/notices/2026-11-23-anthropic-hosted-managed-agents.md`](./notices/2026-11-23-anthropic-hosted-managed-agents.md).
+
+**Policy progress for (g)** — recorded as a list, one line per step of the
+[policy](./sub-processor-change-policy.md):
+
+- Step 1, engineering proposes: this entry, drafted 2026-11-23 (Step 6a).
+- Step 2, compliance / legal review: done 2026-11-23. The agreement, the
+  transfer mechanism and the transfer impact assessment decision are recorded on
+  #5865 for all of Inflect's use of Anthropic; the repo owner approved this
+  change and the notice on the Step 6a pull request.
+- Step 3, customer notice (30 days): issued 2026-11-24; the objection window
+  closes 2026-12-24.
+- Step 4, activation: not started. The hosted path is not built (Step 6b), and
+  is switched on only by Step 6c.
 
 ### HaveIBeenPwned — password breach check
 - **PII shared:** **none** — only the first 5 hex chars of the SHA-1 of a candidate password (k-anonymity range query). The full hash/password never leaves the server.
@@ -259,7 +394,7 @@ Common to all six:
 - **Codebase:** `src/app-layer/integrations/providers/sharepoint/` (`client.ts`, `docx.ts`).
 
 ### Anthropic — the customer's own workspace (per-tenant, optional)
-- **Framing (owner decision 5, 2026-10-30):** Anthropic acts as the customer's own processor, used at the customer's direction, listed as an opt-in per-tenant integration like GitHub and SharePoint. It is a separate relationship from the Anthropic row above, which is Inflect's own sub-processor for the Messages API.
+- **Framing (owner decision 5, 2026-10-30):** Anthropic acts as the customer's own processor, used at the customer's direction, listed as an opt-in per-tenant integration like GitHub and SharePoint. It is a separate relationship from the Anthropic row above, which is Inflect's own sub-processor for the Messages API and, proposed and not in effect, for hosted Managed Agents runs in Inflect's own organisation ((g)).
 - **PII shared today (Step 5a):** none. The connection stores the customer's workspace API key, encrypted at rest through the connection-secret path, and the workspace ID. Testing the connection sends one `GET /v1/agents?limit=1` with that key and the `anthropic-workspace-id` header, keeps nothing it reads, and creates nothing in the workspace.
 - **Once the Managed Agents engine is on (Steps 5b to 5d):** agents holding Inflect's fixed preamble and tool schemas, one environment, and sessions holding the run's tenant-authored instructions and read-tool output. Sessions are deleted at settle unless the customer keeps them (owner decision 4); kept sessions are deleted on tenant purge, connection removal and a DSAR erasure (Step 5c).
 - **Host:** `api.anthropic.com`, fixed. The connection's host field is a `vendorOrigin` rule naming that one host, and no surface offers it for typing.

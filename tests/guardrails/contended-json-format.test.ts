@@ -310,11 +310,13 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // mobile-view audit and roadmap), +3/-0 against main; the previous
         // digest matched main's file before the insert.
         //
-        // Moved 2026-11-23 by one sorted ADDITION, docs/mobile-audit.md (the
+        // Moved 2026-11-23 by two sorted ADDITIONS: docs/mobile-audit.md (the
         // mobile audit harness and E2E project), before `docs/mobile-roadmap.md`
-        // ('au' < 'ro'), +3/-0 against main; the previous digest matched
-        // main's file before the insert.
-        keyOrderSha: 'fb9f015299e7f5c1d41dd18ac98c3143ca4549d026882e65f414adbdacf0d62f',
+        // ('au' < 'ro'), and the drafted Step 6a customer notice
+        // docs/notices/2026-11-23-anthropic-hosted-managed-agents.md, after the
+        // TypeSafe notice ('2026-10' < '2026-11'). Recomputed with this guard's
+        // own `keyOrder` over the merged file.
+        keyOrderSha: 'e212fccbf33756a9873437dcfd62eaa56a15f0f06c77cc355b917b1ddc87b8b1',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in
