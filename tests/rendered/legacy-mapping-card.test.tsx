@@ -23,6 +23,7 @@ jest.mock('next/navigation', () => ({
 
 jest.mock('next-intl', () => ({
     useTranslations: () => (key: string) => key,
+    useLocale: () => 'en',
 }));
 
 jest.mock('@/lib/tenant-context-provider', () => ({

@@ -16,6 +16,7 @@
 
 import { ShieldCheck, AlertTriangle, Paperclip, Building2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { activeDateLocale } from '@inflect/ui/lib/format-date';
 
 // From their own modules, not the barrel, which also re-exports the widget
 // picker (PortfolioDashboard loads that on demand).
@@ -155,6 +156,9 @@ function resolveKpiContent(
     // Prior-period value + sparkline from the portfolio trend series so
     // the ▲/▼ arrow + inline sparkline actually render.
     const trend = resolveKpiTrend(widget.chartType, data.trends.dataPoints);
+    // Counts in the reader's language, never the runtime default (the server's
+    // and the browser's locale can disagree, which is a hydration mismatch).
+    const count = (n: number) => n.toLocaleString(activeDateLocale());
 
     switch (widget.chartType) {
         case 'coverage':
@@ -167,8 +171,8 @@ function resolveKpiContent(
                     gradient,
                     icon: KPI_ICONS.coverage,
                     subtitle: t('widgets.coverageSubtitle', {
-                        implemented: data.summary.controls.implemented.toLocaleString(),
-                        applicable: data.summary.controls.applicable.toLocaleString(),
+                        implemented: count(data.summary.controls.implemented),
+                        applicable: count(data.summary.controls.applicable),
                     }),
                     trendPolarity: 'up-good',
                     ...trend,
@@ -184,8 +188,8 @@ function resolveKpiContent(
                     gradient,
                     icon: KPI_ICONS['critical-risks'],
                     subtitle: t('widgets.criticalRisksSubtitle', {
-                        open: data.summary.risks.open.toLocaleString(),
-                        high: data.summary.risks.high.toLocaleString(),
+                        open: count(data.summary.risks.open),
+                        high: count(data.summary.risks.high),
                     }),
                     trendPolarity: 'down-good',
                     ...trend,
@@ -201,7 +205,7 @@ function resolveKpiContent(
                     gradient,
                     icon: KPI_ICONS['overdue-evidence'],
                     subtitle: t('widgets.overdueEvidenceSubtitle', {
-                        dueSoon: data.summary.evidence.dueSoon7d.toLocaleString(),
+                        dueSoon: count(data.summary.evidence.dueSoon7d),
                     }),
                     trendPolarity: 'down-good',
                     ...trend,
@@ -217,7 +221,7 @@ function resolveKpiContent(
                     gradient,
                     icon: KPI_ICONS.tenants,
                     subtitle: t('widgets.tenantsSubtitle', {
-                        snapshotted: data.summary.tenants.snapshotted.toLocaleString(),
+                        snapshotted: count(data.summary.tenants.snapshotted),
                     }),
                     trendPolarity: 'neutral',
                     ...trend,
