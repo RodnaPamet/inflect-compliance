@@ -24,9 +24,10 @@
  *                         exit 1 if any count of failing pages went up, and
  *                         write comparison.md + comparison.json beside the report
  *   --chromium <path>     a Chromium binary, when Playwright's own is not installed
- *   --create-records      first create, through the app's API, the records the
- *                         seed lacks (records.ts). WRITES to the database: use a
- *                         throwaway audit database only
+ *   --create-records      first run the fixture setup (fixtures.ts): create, through
+ *                         the app's API, the records the seed lacks, and mint the
+ *                         tokens the public pages open with. WRITES to the
+ *                         database: use a throwaway audit database only
  *
  * See docs/mobile-audit.md for what each metric means and how this relates to
  * the mobile E2E project's ratchet.
@@ -42,7 +43,7 @@ import { findEnglishLeaks, loadLeakCatalog, type LeakCatalog } from './leaks';
 import { countsOf, measurePage, settlePage, type RawMeasurement } from './measure';
 import { compareReports, renderComparison, renderSummary, type AuditReport, type CapturedPage, type UncapturedPage } from './report';
 import { connectDb, dataNames, libraryTexts, resolveContext, resolveRoute, type ResolvedRoute } from './resolve';
-import { createAuditRecords } from './records';
+import { apiFor, setUpAuditFixtures, type SetupOutcome } from './fixtures';
 import { enumerateRoutes, routeSlug, type RouteAudience } from './routes';
 import { OPEN_STATES, StateUnavailable, type OpenState } from './states';
 
@@ -154,7 +155,23 @@ async function capture(
     if (status !== null && status >= 500) {
         return { kind: job.kind, id: job.id, config: config.id, reason: `HTTP ${status}` };
     }
-    const m: RawMeasurement = await measurePage(page, { scrollToEnd: job.kind === 'route' });
+    // A page that navigates while it is measured (a client redirect, a
+    // refresh) loses its document under the measurement. Measure once more on
+    // the settled page; if it still fails, the page is NOT CAPTURED with the
+    // reason. One page must never take the whole report down with it.
+    let m: RawMeasurement;
+    try {
+        m = await measurePage(page, { scrollToEnd: job.kind === 'route' });
+    } catch {
+        try {
+            await settlePage(page);
+            m = await measurePage(page, { scrollToEnd: job.kind === 'route' });
+        } catch (e) {
+            const why = (e instanceof Error ? e.message : String(e)).split('\n')[0];
+            console.warn(`[mobile-audit] ${config.id} ${job.id}: measurement failed: ${why}`);
+            return { kind: job.kind, id: job.id, config: config.id, reason: `measurement failed: ${why}` };
+        }
+    }
     const leaks = config.locale === 'bg' ? findEnglishLeaks(m, leakInputs.catalog, leakInputs.names, leakInputs.library) : [];
     let screenshot: string | undefined;
     if (opts.screenshots) {
@@ -193,15 +210,23 @@ async function main(): Promise<void> {
     let names = new Set<string>();
     let library = new Set<string>();
     let stateJobs: Array<Job | UncapturedPage> = [];
+    let setup: SetupOutcome | undefined;
     const browser = await chromium.launch(opts.chromium ? { executablePath: opts.chromium } : {});
     try {
-        const ctx = await resolveContext(db);
+        const seeded = await resolveContext(db);
         if (opts.createRecords) {
+            // SETUP: the fixtures the detail and token routes need, before anything is measured.
             const { contexts } = await openContexts(browser, opts.configs[0], opts);
-            const made = await createAuditRecords(contexts.get('tenant')!.request, contexts.get('org')!.request, ctx);
-            console.log(`[mobile-audit] created: ${made.length ? made.join(', ') : 'nothing (every kind already exists)'}`);
-            for (const c of new Set(contexts.values())) await c.close();
+            try {
+                setup = await setUpAuditFixtures(apiFor(contexts.get('tenant')!.request), apiFor(contexts.get('org')!.request), seeded);
+            } finally {
+                for (const c of new Set(contexts.values())) await c.close();
+            }
+            console.log(`[mobile-audit] setup: created ${setup.created.join(', ') || 'nothing (every record already exists)'}; ` +
+                `minted ${setup.minted.join(', ') || 'nothing'}; ` +
+                `${setup.failed.size ? `FAILED ${[...setup.failed.keys()].join(', ')}` : 'nothing failed'}`);
         }
+        const ctx = { ...seeded, setup };
         resolved = await Promise.all(routes.map((r) => resolveRoute(r, ctx)));
         names = await dataNames(db);
         library = await libraryTexts(db);
@@ -282,6 +307,7 @@ async function main(): Promise<void> {
         routeCount: routes.length,
         captured: captured.sort((a, b) => sortKey(a).localeCompare(sortKey(b))),
         uncaptured: uncaptured.sort((a, b) => sortKey(a).localeCompare(sortKey(b))),
+        ...(setup ? { setup: { created: setup.created, minted: setup.minted, failed: Object.fromEntries(setup.failed) } } : {}),
     };
     writeFileSync(path.join(opts.out, 'metrics.json'), `${JSON.stringify(report, null, 2)}\n`);
     const summary = renderSummary(report);

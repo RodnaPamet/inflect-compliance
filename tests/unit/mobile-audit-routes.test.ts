@@ -73,6 +73,18 @@ describe('compareReports', () => {
         expect(regressions.map((r) => r.metric)).toEqual(['inputUnder16']);
     });
 
+    it('does not count a route measured for the first time as a regression, and compares it from the next run on', () => {
+        const ref = report([page('/a', { clipped: 1 })], 1);
+        const now = report([page('/a', { clipped: 1 }), page('/new', { tapUnder24: 3, clipped: 1 })]);
+        const first = compareReports(ref, now);
+        expect(first.regressions).toEqual([]);
+        expect(first.rows.map((r) => `${r.metric}:${r.reference}->${r.current}`)).toEqual(['uncaptured:1->0']);
+        expect(renderComparison(ref, now)).toContain('- 390-dark-bg: `/new`');
+        // The next night, `/new` is in both reports: a rise on it is a regression.
+        const next = report([page('/a', { clipped: 1 }), page('/new', { tapUnder24: 3, clipped: 1, inputUnder16: 1 })]);
+        expect(compareReports(now, next).regressions.map((r) => r.metric)).toEqual(['inputUnder16']);
+    });
+
     it('flags a route that stopped rendering, so it cannot lower a count unnoticed', () => {
         const ref = report([page('/a', { clipped: 1 }), page('/b', {})]);
         const now = report([page('/b', {})], 1);
