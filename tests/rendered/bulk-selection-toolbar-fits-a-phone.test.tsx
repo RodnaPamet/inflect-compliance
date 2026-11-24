@@ -97,6 +97,23 @@ describe('on a phone (the card list)', () => {
         expect(classesOf(screen.getByTestId('selection-toolbar'))).toContain('hidden');
     });
 
+    // #5924: React 19 reads `inert=""` as false, so the idle bar was never
+    // inert and every list page logged a boolean-attribute warning.
+    it('is inert while nothing is selected, and not once something is, with no React warning', () => {
+        const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            renderTable();
+            const bar = screen.getByTestId('selection-toolbar');
+            expect(bar.hasAttribute('inert')).toBe(true);
+            tickFirstCard();
+            expect(bar.hasAttribute('inert')).toBe(false);
+            const inertWarnings = error.mock.calls.filter((c) => String(c[0]).includes('inert'));
+            expect(inertWarnings).toEqual([]);
+        } finally {
+            error.mockRestore();
+        }
+    });
+
     it('wraps onto two rows: count and Clear, then the controls across the whole width', () => {
         renderTable();
         tickFirstCard();
