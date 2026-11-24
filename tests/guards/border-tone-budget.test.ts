@@ -156,7 +156,11 @@ const ROOT = path.resolve(__dirname, '../..');
 // tones of the MFA-policy cards, the single-pack install cards, the
 // policy-template picker and the widget-type picker. Re-seated to the live
 // count the sentinel reported (98).
-const BORDER_DEFAULT_BUDGET = 98;
+//
+// 98 → 92 (2026-11-24, #5884): −6, the widget picker's five native
+// checkboxes and the card list's hand-drawn selection box are the Checkbox
+// primitive, whose edge is `border-border-strong`.
+const BORDER_DEFAULT_BUDGET = 92;
 
 // Tolerance before the drift sentinel reports the budget as unseated.
 //
