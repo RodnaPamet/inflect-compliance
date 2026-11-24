@@ -57,7 +57,7 @@ export function PostureLadder({ ratings, className }: PostureLadderProps) {
                     // `min-w-0` is what makes the label's `truncate` work:
                     // without it a grid item takes its content's min-content
                     // width and the row overflows its column instead.
-                    className="flex min-w-0 items-baseline justify-between gap-tight text-[11px]"
+                    className="flex min-w-0 items-baseline justify-between gap-tight text-xs"
                     data-posture-axis={r.key}
                     data-posture-axis-level={r.level}
                 >
