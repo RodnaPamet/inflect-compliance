@@ -37,6 +37,7 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
+import { SettingRow } from '@/components/layout/SettingRow';
 import { CircleCheck, CircleDotted } from '@inflect/ui/components/ui/icons/glyphs';
 import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
@@ -163,15 +164,15 @@ export function AgentEnginesSection() {
     return (
         <section id="agent-engines" data-testid="agent-engines" data-control={control}>
             <Card className="space-y-default p-6">
-                <div className="flex items-start justify-between gap-default">
-                    <div className="space-y-tight">
-                        <Heading level={2}>{t('title')}</Heading>
-                        <p className="max-w-3xl text-sm text-content-muted">{t('description')}</p>
-                    </div>
-                    <StatusBadge variant={tone === 'info' ? 'neutral' : tone}>
-                        {t(effectiveEngineNameFor(state))}
-                    </StatusBadge>
-                </div>
+                <SettingRow
+                    title={<Heading level={2}>{t('title')}</Heading>}
+                    description={t('description')}
+                    control={
+                        <StatusBadge variant={tone === 'info' ? 'neutral' : tone}>
+                            {t(effectiveEngineNameFor(state))}
+                        </StatusBadge>
+                    }
+                />
 
                 {/* The headline, and the reason the section exists: what runs
                     TODAY, which the stored choice alone does not tell you. */}

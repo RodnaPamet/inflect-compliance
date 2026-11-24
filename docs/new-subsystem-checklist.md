@@ -120,6 +120,16 @@ just vanishes. The owner decisions behind these rules are in
       chevron, the active tab in view and stickiness on a phone.
 - [ ] Rows that carry actions wrap (`flex-wrap`, or stack below `sm`). No
       fixed-width row or picker (`w-64` beside buttons) that never wraps.
+- [ ] A title (and description) with a trailing button, toggle or status is a
+      `SettingRow` (`src/components/layout/SettingRow.tsx`), not a hand-rolled
+      `flex justify-between`. Below `sm` it stacks the control under the text
+      and lets it wrap; from `sm` it is the usual row, with a text column that
+      can shrink (`min-w-0`), so a long word never pushes the control out.
+- [ ] Long unbroken strings (URLs, redirect URIs, environment variable names,
+      digests) go in `<code>` or `font-mono`: the global rule in
+      `src/app/globals.css` breaks them anywhere rather than letting them run
+      off the screen. Anything else that can hold one (a raw identifier as a
+      label) carries `wrap-anywhere`.
 - [ ] Fields are 16 px on touch. The coarse-pointer rule in
       `src/app/globals.css` does this for `<Input>`, `<Textarea>`, `.input` and
       plain fields; do not override it with a smaller size.

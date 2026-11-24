@@ -54,6 +54,7 @@ import { BackAffordance } from '@/components/nav/BackAffordance';
 import { apiErrorMessage } from '@/lib/api-error';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { SettingRow } from '@/components/layout/SettingRow';
 
 interface RiskMatrixAdminClientProps {
     tenantSlug: string;
@@ -300,8 +301,20 @@ export function RiskMatrixAdminClient({
             className="animate-fadeIn space-y-section p-6"
         >
             <BackAffordance />
-            <header className="flex flex-wrap items-end justify-between gap-compact">
-                <div>
+            {/* A title-plus-controls row: below `sm` the two buttons sit under
+                the description and wrap, where a row that never wrapped pushed
+                Save off the screen (#5874). From `sm` it wraps as it always
+                did: the text keeps its own width (`flex-initial`), so the long
+                description takes the line and the buttons go under it. */}
+            <SettingRow
+                as="header"
+                align="end"
+                gap="compact"
+                className="sm:flex-wrap"
+                textSpacing="micro"
+                textClassName="sm:flex-initial"
+                descriptionClassName="max-w-none"
+                title={<>
                     <PageBreadcrumbs
                         items={[
                             { label: t('crumb.dashboard'), href: `/t/${tenantSlug}/dashboard` },
@@ -313,11 +326,9 @@ export function RiskMatrixAdminClient({
                     <Heading level={1}>
                         {t('riskMatrix.title')}
                     </Heading>
-                    <p className="mt-1 text-sm text-content-muted">
-                        {t('riskMatrix.description')}
-                    </p>
-                </div>
-                <div className="flex gap-tight">
+                </>}
+                description={t('riskMatrix.description')}
+                control={<>
                     <Button
                         variant="secondary"
                         size="sm"
@@ -339,8 +350,8 @@ export function RiskMatrixAdminClient({
                     >
                         {saving ? t('riskMatrix.saving') : t('riskMatrix.saveChanges')}
                     </Button>
-                </div>
-            </header>
+                </>}
+            />
 
             {(validationIssues.length > 0 || serverError) && (
                 <div
