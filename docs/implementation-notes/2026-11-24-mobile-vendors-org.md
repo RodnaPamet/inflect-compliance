@@ -53,7 +53,8 @@ started; the rest are fixed here, each at the narrowest seam that removes it:
 | `src/components/command-palette/command-palette.tsx` | full-height search field |
 | `src/components/ui/dashboard-widgets/WidgetPicker.tsx`, `risks/RiskTreatmentPlanCard.tsx`, `onboarding/SovereigntySelfAssessmentStep.tsx`, `ui/card-list/card-list-card.tsx` | `Checkbox` primitive |
 | `eslint-rules/rules/no-literal-aria-label.js`, `eslint.config.mjs` | the new rule; the native-choice rule's wider scope |
-| `tests/e2e/mobile-ratchet.ts` | `tapUnder24` baseline as measured |
+| `src/app/org/[orgSlug]/(app)/PortfolioDashboard.tsx`, `widget-dispatcher.tsx` | the widget picker loads on demand; grid and widgets imported from their own modules |
+| `tests/e2e/mobile-ratchet.ts` | `tapUnder24` baseline 3 → 1, as measured |
 
 ## Decisions
 
@@ -73,4 +74,14 @@ started; the rest are fixed here, each at the narrowest seam that removes it:
   minimum.** The bar was already 47px; moving its padding onto the input makes
   the whole bar the field at every pointer with no visual change, where a
   `min-h-11` would have grown the bar on touch.
-- **The dashboard's chart marks (#5877) are left to that issue.**
+- **The org widget picker loads on demand.** With its five checkboxes on the
+  `Checkbox` primitive, the Radix checkbox moved into the chunk every org route
+  shares: +2.4 KB on each org page and +6.8 KB on the org dashboard and
+  settings, which would have left `org/initiatives/[initiativeId]` about
+  0.4 KB under its 598 KB budget. The picker is a modal opened from the edit
+  bar, so `next/dynamic` costs one fetch on first open; the org routes now
+  measure at or below main. The dashboard imports `DashboardGrid` (and the
+  dispatcher `ChartRenderer` / `DashboardWidget`) from their own modules,
+  because the barrel also re-exports the picker.
+- **The dashboard's chart marks (#5877) are left to that issue.** They are the
+  one route `tapUnder24` still counts.
