@@ -324,7 +324,7 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     // file of why the unit had to become the string.
     'src/app/t/[tenantSlug]/(app)/admin/entra/page.tsx': 2, // partial; step 1 translated (#4869)
     'src/app/t/[tenantSlug]/(app)/admin/integrations/identity-accounts/page.tsx': 2, // partial, 2 prop
-    'src/app/t/[tenantSlug]/(app)/admin/sso/page.tsx': 9, // partial, 9 prop
+    'src/app/t/[tenantSlug]/(app)/admin/sso/page.tsx': 8, // partial, 8 prop
     'src/app/t/[tenantSlug]/(app)/admin/trust-center/TrustCenterAdminClient.tsx': 3, // partial, 3 prop
     'src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx': 1, // partial, 1 prop
     'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx': 2, // partial, 1 jsx + 1 prop

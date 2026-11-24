@@ -47,6 +47,7 @@ const LOCAL_RULES = [
     'shaded-list-rows',
     'no-native-choice-input',
     'no-negative-margin-icon',
+    'no-sub-12px-text',
     'no-literal-aria-label',
 ] as const;
 
