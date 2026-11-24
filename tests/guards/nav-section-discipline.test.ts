@@ -9,7 +9,7 @@
  *      "Govern" / "Comply" / "Manage").
  *
  *   2. The recipe is tightened from the page-level Eyebrow:
- *        - `text-[10px]` (one click smaller; the section title is
+ *        - `text-xs` (the 12 px small-text floor; the section title is
  *           a whisper, not a headline)
  *        - `tracking-[0.12em]` (deliberate, not stretched)
  *        - `text-content-subtle` (one rung quieter than the
@@ -20,8 +20,8 @@
  *      so the very top of the sidebar doesn't pick up an
  *      accidental rule (handled via the `isFirst` prop).
  *
- * The values themselves can be tuned by future PRs (10px → 11px,
- * 0.12em → 0.14em, etc.) — but the SHAPE of the recipe is locked.
+ * The values themselves can be tuned by future PRs (0.12em → 0.14em,
+ * etc.; never under 12 px) — but the SHAPE of the recipe is locked.
  * A future PR that drops `select-none` or reaches for a `<p>` has
  * to argue against the ratchet.
  */
@@ -93,7 +93,7 @@ describe('Roadmap-12 PR-3 — NavSection discipline', () => {
             );
             expect(headerLine).not.toBeNull();
             const recipe = headerLine![1];
-            expect(recipe).toMatch(/text-\[10px\]/);
+            expect(recipe).toMatch(/\btext-xs\b/);
             expect(recipe).toMatch(/tracking-\[0\.12em\]/);
             expect(recipe).toMatch(/font-semibold/);
             expect(recipe).toMatch(/uppercase/);

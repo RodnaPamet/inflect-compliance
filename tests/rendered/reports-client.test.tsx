@@ -121,6 +121,32 @@ describe('ReportsClient — honest metrics + unified risk reporting (PR-I)', () 
         // still be visible in the DOM.
         expect(list.textContent).not.toMatch(/riskTpl(Portfolio|DeepDive|Bia)/);
     });
+
+    it('names a stock template from the catalog and a tenant’s own as written (#5924)', async () => {
+        // The stock rows are stored in English; on a Bulgarian page they read
+        // "Portfolio Risk Summary". The catalog is mocked to echo keys, so the
+        // stock row shows its key and the tenant's row its stored name.
+        const originalFetch = global.fetch;
+        global.fetch = jest.fn(async () => ({
+            ok: true,
+            status: 200,
+            json: async () => ({
+                templates: [
+                    { id: 't1', name: 'Portfolio Risk Summary', type: 'PORTFOLIO_SUMMARY', description: 'Executive VaR + top risks + appetite + BIA.', isSystem: true },
+                    { id: 't2', name: 'Board pack', type: 'PORTFOLIO_SUMMARY', description: null, isSystem: false },
+                ],
+            }),
+        })) as any;
+        try {
+            renderClient([ISO], 'ISO27001');
+            const list = screen.getByTestId('risk-report-templates');
+            await waitFor(() => expect(list.textContent).toContain('PORTFOLIO_SUMMARY.name'));
+            expect(list.textContent).toContain('Board pack');
+            expect(list.textContent).not.toContain('Portfolio Risk Summary');
+        } finally {
+            global.fetch = originalFetch;
+        }
+    });
 });
 
 describe('ReportsClient — the last framework picked wins (#5313)', () => {

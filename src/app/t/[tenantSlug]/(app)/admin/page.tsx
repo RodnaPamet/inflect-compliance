@@ -3,6 +3,7 @@ import { Sparkles, Shield, CreditCard, KeyRound, ShieldCheck, ShieldPlus, Users,
 import { Cube, Robot } from '@inflect/ui/components/ui/icons/glyphs';
 import Link from 'next/link';
 import { buttonVariants } from '@/components/ui/button-variants';
+import { cn } from '@inflect/ui/lib/cn';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Eyebrow } from '@/components/ui/typography';
@@ -172,12 +173,16 @@ export default async function AdminPage({
             {sections.map((section) => (
                 <section key={section.title} className="space-y-default" aria-label={section.title}>
                     <Eyebrow>{section.title}</Eyebrow>
-                    <div className="flex gap-tight flex-wrap">
+                    {/* Below `sm` a section is a list of full-width rows, one
+                        destination per line: a cloud of up to six pills
+                        wrapped onto three or four ragged lines on a phone
+                        (#5924). From `sm` up the pills sit in a wrapping row. */}
+                    <div className="flex flex-col gap-tight sm:flex-row sm:flex-wrap" data-testid="admin-hub-section-links">
                         {section.pills.map((pill) => (
                             <Link
                                 key={pill.id}
                                 href={tenantHref(pill.href)}
-                                className={buttonVariants({ variant: 'secondary' })}
+                                className={cn(buttonVariants({ variant: 'secondary' }), 'max-sm:w-full max-sm:justify-start')}
                                 id={pill.id}
                             >
                                 {pill.icon}

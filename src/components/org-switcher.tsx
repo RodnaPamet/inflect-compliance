@@ -190,7 +190,7 @@ export function OrgSwitcher({
             popoverContentClassName="w-[260px] max-w-[calc(100vw-1rem)] p-1"
             content={
                 <Popover.Menu aria-label={t('switcher.switchContextAria')}>
-                    <p className="px-2.5 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-widest text-content-subtle">
+                    <p className="px-2.5 pt-1.5 pb-1 text-xs font-semibold uppercase tracking-widest text-content-subtle">
                         {orgName}
                     </p>
 
@@ -216,7 +216,7 @@ export function OrgSwitcher({
 
                     <Popover.Separator />
 
-                    <p className="px-2.5 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-widest text-content-subtle">
+                    <p className="px-2.5 pt-1.5 pb-1 text-xs font-semibold uppercase tracking-widest text-content-subtle">
                         {t('switcher.tenantWorkspaces')}
                     </p>
 
@@ -303,7 +303,7 @@ export function OrgSwitcher({
                     <p className="text-sm font-semibold text-content-emphasis truncate">
                         {orgName}
                     </p>
-                    <p className="text-[10px] uppercase tracking-widest text-content-subtle">
+                    <p className="text-xs uppercase tracking-widest text-content-subtle">
                         {tagline}
                     </p>
                 </div>

@@ -181,7 +181,7 @@ export function GanttTimeline({
                         return (
                             <span
                                 key={tick.date.toISOString()}
-                                className="absolute top-0 -translate-x-1/2 text-[10px] text-content-muted"
+                                className="absolute top-0 -translate-x-1/2 text-xs text-content-muted"
                                 style={{ left: `${clamp(left, 0, 100)}%` }}
                             >
                                 {tick.label}
@@ -256,7 +256,7 @@ export function GanttTimeline({
                                         href={ev.href}
                                         aria-label={barLabel}
                                         className={cn(
-                                            'absolute top-1 bottom-1 rounded border px-1 flex items-center text-[10px] font-medium text-content-emphasis truncate min-w-[8px]',
+                                            'absolute top-1 bottom-1 rounded border px-1 flex items-center text-xs font-medium text-content-emphasis truncate min-w-[8px]',
                                             'hover:ring-1 hover:ring-content-emphasis/40 transition-colors duration-150 ease-out',
                                             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]',
                                             // Polish PR-7 — getCategoryTone gives the

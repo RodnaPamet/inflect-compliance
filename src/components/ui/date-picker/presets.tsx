@@ -79,7 +79,7 @@ export function Presets<TPreset extends Preset>({
                                     className={cn(
                                         'hidden shrink-0 items-center rounded border',
                                         'border-border-subtle bg-bg-muted px-1.5 py-0.5',
-                                        'text-[10px] font-medium text-content-muted',
+                                        'text-xs font-medium text-content-muted',
                                         'md:inline-flex',
                                     )}
                                 >

@@ -241,7 +241,7 @@ function Group({
                             {row.keys.map((k, i) => (
                                 <kbd
                                     key={`${row.id}-${i}`}
-                                    className="rounded border border-border-subtle bg-bg-subtle px-2 py-0.5 font-mono text-[11px] text-content-emphasis"
+                                    className="rounded border border-border-subtle bg-bg-subtle px-2 py-0.5 font-mono text-xs text-content-emphasis"
                                 >
                                     {prettyKey(k, isMac)}
                                 </kbd>

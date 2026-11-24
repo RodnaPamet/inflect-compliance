@@ -176,7 +176,7 @@ export function FrameworkMinimap({
                 className,
             )}
         >
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-content-subtle px-1 mb-1">
+            <p className="text-xs font-semibold uppercase tracking-wider text-content-subtle px-1 mb-1">
                 Sections
             </p>
             {sections.map((section) => (
@@ -225,7 +225,7 @@ function MinimapRow({
                 labelled={false}
             />
             <span className="truncate flex-1 min-w-0">{frameworkSectionLabel(section.label, tRoot)}</span>
-            <span className="text-[10px] text-content-subtle tabular-nums">
+            <span className="text-xs text-content-subtle tabular-nums">
                 {section.descendantCount}
             </span>
         </button>

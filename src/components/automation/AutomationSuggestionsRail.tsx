@@ -131,7 +131,7 @@ export function AutomationSuggestionsRail() {
                         </div>
                         <p className="text-xs text-content-muted">{s.rationale}</p>
                         <div className="flex items-center gap-tight">
-                            <span className="inline-flex items-center rounded-[4px] border border-border-subtle px-1.5 py-0.5 text-[10px] text-content-muted">
+                            <span className="inline-flex items-center rounded-[4px] border border-border-subtle px-1.5 py-0.5 text-xs text-content-muted">
                                 {eventLabel(s.triggerEvent)}
                             </span>
                             {/* confidence bar */}
@@ -144,7 +144,7 @@ export function AutomationSuggestionsRail() {
                         </div>
                         <div className="flex items-center gap-tight pt-1">
                             {applied.has(s.id) ? (
-                                <span className="text-[11px] text-content-success">{t('draftCreated')}</span>
+                                <span className="text-xs text-content-success">{t('draftCreated')}</span>
                             ) : (
                                 <>
                                     {canCreateRule && (
@@ -159,7 +159,7 @@ export function AutomationSuggestionsRail() {
                                     )}
                                     <button
                                         type="button"
-                                        className="text-[11px] text-content-subtle hover:text-content-muted"
+                                        className="text-xs text-content-subtle hover:text-content-muted"
                                         onClick={() =>
                                             setDismissed((prev) => new Set(prev).add(s.id))
                                         }
@@ -170,7 +170,7 @@ export function AutomationSuggestionsRail() {
                             )}
                         </div>
                         {failed?.id === s.id && (
-                            <p role="alert" className="text-[11px] text-content-error">
+                            <p role="alert" className="text-xs text-content-error">
                                 {failed.message}
                             </p>
                         )}

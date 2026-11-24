@@ -173,7 +173,7 @@ export function ProcessNodeReverseLookupModal({
                                         >
                                             {g.mapName}
                                         </Link>
-                                        <span className="text-[11px] text-content-subtle">
+                                        <span className="text-xs text-content-subtle">
                                             {t("mapMeta", {
                                                 status: g.mapStatus,
                                                 count: g.nodeCount,

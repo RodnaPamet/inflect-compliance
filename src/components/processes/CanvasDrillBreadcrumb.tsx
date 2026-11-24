@@ -64,7 +64,7 @@ export function CanvasDrillBreadcrumb({
     });
     return (
         <nav
-            className="flex items-center gap-1 border-b border-canvas-border bg-canvas-frame px-default py-1 text-[11px]"
+            className="flex items-center gap-1 border-b border-canvas-border bg-canvas-frame px-default py-1 text-xs"
             aria-label={t("trailAria")}
             data-testid="canvas-drill-breadcrumb"
         >

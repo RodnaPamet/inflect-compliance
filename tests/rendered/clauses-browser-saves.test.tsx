@@ -104,4 +104,19 @@ describe('ClausesBrowser', () => {
         expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ status: 'IN_PROGRESS', notes: 'Scope drafted.' });
         expect(document.getElementById('clause-notes-save')).toBeNull();
     });
+
+    // #5924: the clause titles and guidance are the ISO library's English —
+    // content, not interface text (owner decision 2026-11-23). They are marked
+    // as English so a screen reader reads them in English on a Bulgarian page;
+    // the page's own words ("Clause", the status, the labels) are not.
+    it('marks the library text as English, and only the library text', () => {
+        open(false);
+        const lang = (text: string) => screen.getAllByText(text).map((el) => el.closest('[lang]')?.getAttribute('lang'));
+        expect(lang('Context of the organization')).toEqual(['en', 'en']);
+        expect(lang('Understand the organization and its context.')).toEqual(['en']);
+        expect(lang('Scope statement')).toEqual(['en']);
+        expect(lang('Define the scope')).toEqual(['en']);
+        expect(screen.getByText(EN.clauses.requiredArtifacts).closest('[lang]')).toBeNull();
+        expect(screen.getByText(EN.clauses.checklist).closest('[lang]')).toBeNull();
+    });
 });

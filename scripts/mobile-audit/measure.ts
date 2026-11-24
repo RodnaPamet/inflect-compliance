@@ -37,7 +37,9 @@
  *                      ignores pointer events (`pointer-events: none`, the
  *                      list card's selection circle) is not what a tap lands
  *                      on: the nearest ancestor that receives them is, so that
- *                      ancestor's box is measured. A link inside a sentence is
+ *                      ancestor's box is measured. When none does (the page
+ *                      behind the product tour's overlay), no tap reaches the
+ *                      element and it is not counted. A link inside a sentence is
  *                      exempt, as WCAG 2.5.8 exempts it, whether it is laid
  *                      out `inline`, `inline-flex` or `inline-block`.
  *   textUnder12        an element whose own text is rendered under 12px. The
@@ -59,7 +61,9 @@
  *   wideTables         a `<table>` wider than the screen.
  *   englishLeaks       (Bulgarian only) English UI text on the page — see
  *                      `leaks.ts`, which runs Node-side over the texts this
- *                      module collects.
+ *                      module collects. Text the page declares to be in
+ *                      another language (`lang="en"`) or code (`<code>`) is
+ *                      not collected.
  *   docScrollsSideways the document itself scrolls horizontally.
  *
  * Console errors are counted by the caller (they are page events, not layout).
@@ -348,17 +352,23 @@ export function collectInPage(opts: CollectOptions): RawMeasurement {
     /**
      * What a tap on `el` lands on: `el`, or — when it ignores pointer events,
      * as the list card's 16px selection circle does inside its 44px button
-     * wrapper — the nearest ancestor that receives them.
+     * wrapper — the nearest ancestor that receives them. `null` when nothing
+     * from `el` up to the body receives them: a tap there lands on nothing of
+     * the page. That is the page behind the product tour (#5924): driver.js
+     * sets `pointer-events: none` on everything outside the step it shows, so
+     * the radar's 8px marks — which take no taps on a touch screen anyway —
+     * were measured on their own boxes as if a finger could reach them.
      */
-    const hitTarget = (el: Element): Element => {
+    const hitTarget = (el: Element): Element | null => {
         let a: Element | null = el;
         while (a && a !== document.body && getComputedStyle(a).pointerEvents === 'none') a = a.parentElement;
-        return a && a !== document.body ? a : el;
+        return a && a !== document.body ? a : null;
     };
     for (const el of shownInteractive) {
         if (el.closest('[role="banner"]')) continue;
         if (isInlineSentenceLink(el)) continue;
         const target = hitTarget(el);
+        if (!target) continue;
         const r = target.getBoundingClientRect();
         const [bw, bh] = pseudoSize(target, '::before');
         const [aw, ah] = pseudoSize(target, '::after');
@@ -436,14 +446,31 @@ export function collectInPage(opts: CollectOptions): RawMeasurement {
     {
         const all = new Set<string>();
         const chrome = new Set<string>();
+        /**
+         * Text the page does not offer in its own language, on purpose, and
+         * says so: an element inside a `lang` other than the page's (the
+         * English library's clause titles and template names, marked as WCAG
+         * 3.1.2 asks, so a screen reader reads them in English), or code — a
+         * CSV column name the importer reads literally, in `<code>`. Neither
+         * is interface text that missed the catalog.
+         */
+        const pageLang = (document.documentElement.getAttribute('lang') ?? '').toLowerCase().split('-')[0];
+        const declaredNotPageText = (el: Element): boolean => {
+            if (el.closest('code,kbd,samp')) return true;
+            const tagged = el.closest('[lang]');
+            const lang = (tagged?.getAttribute('lang') ?? '').toLowerCase().split('-')[0];
+            return Boolean(pageLang && lang && lang !== pageLang);
+        };
         for (const run of textRuns) {
             const s = squash(run.node.data);
             if (!s) continue;
+            if (declaredNotPageText(run.el)) continue;
             all.add(s);
             if (run.el.closest(CHROME)) chrome.add(s);
         }
         for (const el of Array.from(document.querySelectorAll('[placeholder],[aria-label],[title]'))) {
             if (!isShown(el)) continue;
+            if (declaredNotPageText(el)) continue;
             for (const attr of ['placeholder', 'aria-label', 'title']) {
                 const s = squash(el.getAttribute(attr));
                 if (!s) continue;

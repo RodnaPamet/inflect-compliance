@@ -252,7 +252,11 @@ export default function AssetImportPage() {
             {/* Format info */}
             <div className={cn(cardVariants({ density: 'compact' }), 'border-border-emphasis/50')}>
                 <Heading level={3} className="mb-2">{t('import.csvFormat')}</Heading>
-                <p className="text-xs text-content-muted">{t('import.csvDesc')}</p>
+                {/* The column names are what the importer reads, literally, so they
+                    are code, not words to translate (#5924). */}
+                <p className="text-xs text-content-muted">
+                    {t.rich('import.csvDesc', { code: (chunks) => <code className="font-mono">{chunks}</code> })}
+                </p>
                 <pre className="mt-2 text-xs text-content-subtle bg-bg-page/50 p-2 rounded overflow-x-auto">
                     {/* Template-literal so the quoted-CSV example's `"` stay plain
                         text (react/no-unescaped-entities) — and it doubles as a

@@ -179,7 +179,7 @@ export function ApprovalBanner({
                             {tone.label}
                         </Heading>
                         {approval.versionNumber != null && (
-                            <span className="text-[11px] text-content-muted">
+                            <span className="text-xs text-content-muted">
                                 · {t('version', { number: approval.versionNumber })}
                             </span>
                         )}
@@ -247,7 +247,7 @@ export function ApprovalBanner({
                                 // Follows the REJECT gate: a requester who can
                                 // still withdraw must be able to say why.
                                 disabled={!canRejectNow}
-                                className="text-[11px] text-content-muted hover:text-content-emphasis disabled:opacity-50"
+                                className="text-xs text-content-muted hover:text-content-emphasis disabled:opacity-50"
                                 aria-label={t('addCommentAria')}
                                 data-testid="approval-banner-add-comment"
                             >

@@ -298,7 +298,7 @@ export function LeftAccordionRail({
                                 </span>
                                 {typeof section.count === 'number' && (
                                     <span
-                                        className="rounded-full bg-bg-subtle px-1.5 py-0.5 text-[10px] tabular-nums text-content-subtle"
+                                        className="rounded-full bg-bg-subtle px-1.5 py-0.5 text-xs tabular-nums text-content-subtle"
                                         aria-hidden="true"
                                     >
                                         {section.count}

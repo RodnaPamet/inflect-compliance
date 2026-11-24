@@ -143,7 +143,7 @@ export function ControlTaskRows({
                     <span className="inline-flex items-center gap-1.5">
                         <span
                             aria-hidden
-                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-bg-elevated text-[10px] font-medium text-content-emphasis"
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-bg-elevated text-xs font-medium text-content-emphasis"
                         >
                             {initial}
                         </span>

@@ -90,8 +90,8 @@ function TrendIndicator({ trend, size }: { trend: MetricTrend; size: 'md' | 'sm'
     return (
         <span
             className={cn(
-                'inline-flex items-center gap-0.5 font-medium tabular-nums',
-                size === 'md' ? 'text-xs' : 'text-[10px]',
+                // 12 px at both sizes: the small-text floor (#5924).
+                'inline-flex items-center gap-0.5 text-xs font-medium tabular-nums',
                 TONE_VALUE_CLASS[tone],
             )}
             aria-label={trend.ariaLabel}

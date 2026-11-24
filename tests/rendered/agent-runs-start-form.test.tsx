@@ -430,3 +430,27 @@ describe('the discovered-agent review picks its agent from the inventory', () =>
         expect(screen.getByTestId('workflow-start-ad-hoc-question').tagName).toBe('BUTTON');
     });
 });
+
+describe('on a phone the workflows are a list, one per line (#5924)', () => {
+    // jsdom applies no media query, so the classes that make the layout are
+    // what can be asserted: a column below `sm`, a wrapping row from `sm` up,
+    // and every start control a full-width row below `sm`. Ten buttons in a
+    // wrapping row landed on six to ten ragged lines at 360-390px.
+    it.each([
+        ['an operator', true],
+        ['a reader, whose controls are disabled with a reason', false],
+    ])('for %s', (_who, canOperate) => {
+        renderRuns({ canOperate, startAbilities: ALL });
+        const list = screen.getByTestId('workflow-start-list');
+        const classes = list.className.split(/\s+/);
+        expect(classes).toEqual(expect.arrayContaining(['flex-col', 'sm:flex-row', 'sm:flex-wrap']));
+        expect(classes).not.toContain('flex-wrap');
+        for (const key of [ONE_CLICK, PERIOD_FORM, FRAMEWORK_FORM, NOT_HERE, ASK, PICKER_FORM].map((w) => w.key)) {
+            const control = screen.getByTestId(`workflow-start-${key}`);
+            expect(control.className.split(/\s+/)).toEqual(expect.arrayContaining(['max-sm:w-full', 'max-sm:justify-start']));
+            // Each control, or the gate around a disabled one, is an item of the list.
+            const item = control.closest('[data-testid="permission-gated"]') ?? control;
+            expect(item.parentElement).toBe(list);
+        }
+    });
+});

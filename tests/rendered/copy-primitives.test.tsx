@@ -241,7 +241,9 @@ describe('Badge', () => {
             </Badge>,
         );
         const badge = screen.getByText('New');
-        expect(badge.className).toMatch(/text-\[10px\]/);
+        // The small size is the 12 px floor (owner decision, #5924), not 10 px.
+        expect(badge).toHaveClass('text-xs');
+        expect(badge.className).not.toMatch(/text-\[\d+px\]/);
         expect(badge).toHaveClass('uppercase');
     });
 

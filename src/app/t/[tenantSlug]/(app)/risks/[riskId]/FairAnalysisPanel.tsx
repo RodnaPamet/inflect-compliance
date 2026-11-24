@@ -300,7 +300,7 @@ export function FairAnalysisPanel({
 
     const bound = (k: FairFactorKey, b: Bound, label: string) => (
         <label className="block flex-1 min-w-0">
-            <span className="text-[10px] uppercase tracking-wide text-content-subtle">{label}</span>
+            <span className="text-xs uppercase tracking-wide text-content-subtle">{label}</span>
             <Input
                 type="text"
                 inputMode="decimal"
@@ -324,13 +324,13 @@ export function FairAnalysisPanel({
                     {/* RQ3-2 — the point estimate is derived (PERT
                         mean), shown, never asked. */}
                     {mean != null && (
-                        <span className="text-[10px] tabular-nums text-content-subtle" data-testid={`fair-derived-${k}`}>
+                        <span className="text-xs tabular-nums text-content-subtle" data-testid={`fair-derived-${k}`}>
                             {t('fair.derivedApprox')} {meta.isMoney ? money(mean) : Math.round(mean * 1000) / 1000}
                         </span>
                     )}
                 </div>
                 {meta.ghost && (
-                    <p className="text-[10px] italic text-content-subtle" data-testid="fair-prior-hint">
+                    <p className="text-xs italic text-content-subtle" data-testid="fair-prior-hint">
                         {meta.ghost}
                     </p>
                 )}
@@ -340,7 +340,7 @@ export function FairAnalysisPanel({
                     {bound(k, 'max', t('fair.max'))}
                 </div>
                 {reflection && (
-                    <span className="block text-[10px] text-content-subtle" data-testid={`fair-reflection-${k}`}>
+                    <span className="block text-xs text-content-subtle" data-testid={`fair-reflection-${k}`}>
                         {reflection}
                     </span>
                 )}

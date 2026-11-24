@@ -68,7 +68,12 @@ describe("Epic P6-PR-B — touch / mobile ergonomics", () => {
         });
 
         it("wraps the coarse-pointer rules in `@media (pointer: coarse)`", () => {
-            expect(src).toMatch(/@media \(pointer:\s*coarse\)/);
+            // The canvas rules open the block. A bare `@media (pointer: coarse)`
+            // is not unique in globals.css (the policy Contents rows have one
+            // too), so the needle names the block that holds the canvas rules.
+            expect(src).toMatch(
+                /@media \(pointer:\s*coarse\) \{\s*\[data-process-canvas="true"\] \.react-flow__handle \{/,
+            );
         });
 
         it("folds the vertical palette to a horizontal strip below the md breakpoint", () => {

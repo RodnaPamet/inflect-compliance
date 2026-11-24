@@ -11,9 +11,12 @@
  * Three fields carry the weight, and each answers a question that has actually
  * been asked of a compliance report:
  *
- *   • `population` — which ROWS. Not "agents" but "rows in `RegisteredAgent`
- *     for this tenant". The table is the only unambiguous name for a
- *     population.
+ *   • `population` — which RECORDS, in words a reader can check: not "12
+ *     agents" but "the agents in this workspace’s register that are active".
+ *     It is written for the person reading the report, so it names things,
+ *     states and other figures in words, never a table, a column, an enum
+ *     value or a metric id (owner decision, #5924). The query that counts
+ *     the figure is where the table is named.
  *   • `moment` — WHEN it is true of. `AS_OF_GENERATION` is a snapshot that
  *     changes under you; `OVER_WINDOW` is a period, and a period-scoped number
  *     compared against a snapshot one is a category error.
@@ -53,13 +56,12 @@ export interface MetricDefinition {
 
 /** Shared exclusions, written once so two metrics cannot drift apart. */
 const AGENT_ROW_EXCLUSIONS = [
-    'soft-deleted agents (RegisteredAgent.deletedAt IS NOT NULL)',
-    'the legacy placeholder row (isLegacyPlaceholder = true), which adopts ' +
-        'pre-register proposals and is never a real agent',
+    'deleted agents',
+    'the placeholder entry that holds proposals made before the register existed, which is never a real agent',
 ] as const;
 
 function agentPopulation(qualifier: string): string {
-    return `rows in RegisteredAgent for this tenant${qualifier ? `, ${qualifier}` : ''}`;
+    return `the agents in this workspace’s register${qualifier ? ` ${qualifier}` : ''}`;
 }
 
 /**
@@ -74,63 +76,60 @@ export const METRIC_DEFINITIONS = {
         population: agentPopulation(''),
         moment: 'AS_OF_GENERATION',
         includes: [
-            'every lifecycle status — DRAFT, ACTIVE, SUSPENDED and RETIRED',
-            'agents currently stopped by a kill switch (the row still exists)',
+            'every lifecycle state — draft, active, suspended and retired',
+            'agents currently stopped by a kill switch (the agent is still in the register)',
         ],
         excludes: AGENT_ROW_EXCLUSIONS,
     },
     'inventory.active_agents': {
         id: 'inventory.active_agents',
-        label: 'Agents in ACTIVE status',
-        population: agentPopulation('status = ACTIVE'),
+        label: 'Active agents',
+        population: agentPopulation('that are active'),
         moment: 'AS_OF_GENERATION',
         includes: [
-            'agents an unlifted kill switch is currently stopping — status is ' +
-                'the register’s state, the kill is a separate axis reported ' +
-                'per row as killState',
+            'agents a kill switch is stopping right now — being active is the register’s ' +
+                'state, and a kill is a separate fact, reported for each agent',
         ],
         excludes: [
             ...AGENT_ROW_EXCLUSIONS,
-            'DRAFT agents, which have never been admitted',
-            'SUSPENDED and RETIRED agents',
+            'draft agents, which have never been admitted',
+            'suspended and retired agents',
         ],
     },
     'inventory.retired_agents': {
         id: 'inventory.retired_agents',
-        label: 'Agents in RETIRED status',
-        population: agentPopulation('status = RETIRED'),
+        label: 'Retired agents',
+        population: agentPopulation('that are retired'),
         moment: 'AS_OF_GENERATION',
         includes: ['agents retired at any time, however long ago'],
         excludes: [
             ...AGENT_ROW_EXCLUSIONS,
-            'soft-deleted agents, which are a different end state from retirement',
+            'deleted agents, which are a different end state from retirement',
         ],
     },
     'inventory.unscored_agents': {
         id: 'inventory.unscored_agents',
         label: 'Agents with no risk tier',
-        population: agentPopulation('riskTier IS NULL'),
+        population: agentPopulation('that have no risk tier'),
         moment: 'AS_OF_GENERATION',
         includes: [
-            'agents registered but never assessed — the state between insert ' +
-                'and the first completed scoring run',
+            'agents registered but never assessed — the state between registration and the ' +
+                'first completed risk assessment',
         ],
         excludes: [
             ...AGENT_ROW_EXCLUSIONS,
-            'agents whose assessment is COMPLETED but has since gone stale — ' +
-                'those carry a tier and are counted by inventory.stale_assessments',
+            'agents whose completed assessment has since gone out of date — those carry a ' +
+                'tier and are counted under “Agents whose assessment is stale”',
         ],
     },
     'inventory.stale_assessments': {
         id: 'inventory.stale_assessments',
         label: 'Agents whose assessment is stale',
-        population: agentPopulation(
-            'with a COMPLETED AgentRiskAssessment whose staleAt IS NOT NULL',
-        ),
+        population: agentPopulation('whose completed risk assessment is out of date'),
         moment: 'AS_OF_GENERATION',
         includes: [
-            'agents whose autonomy, tool grants, data scope, reversibility or ' +
-                'declared model moved after the tier was scored',
+            'agents whose autonomy, tool grants, data scope, reversibility or declared ' +
+                'model changed after the tier was scored',
         ],
         excludes: [
             ...AGENT_ROW_EXCLUSIONS,
@@ -140,75 +139,78 @@ export const METRIC_DEFINITIONS = {
     'inventory.unattended_agents': {
         id: 'inventory.unattended_agents',
         label: 'Agents at unattended autonomy',
-        population: agentPopulation('autonomyLevel >= UNATTENDED_AUTONOMY (5)'),
+        population: agentPopulation('registered at autonomy level 5 or above, where nobody watches each step'),
         moment: 'AS_OF_GENERATION',
         includes: [
-            'the REGISTERED autonomy level, which is a declaration by the ' +
-                'operator, not an observation of what the agent did',
+            'the registered autonomy level, which is what the operator declared, not an ' +
+                'observation of what the agent did',
         ],
         excludes: [
             ...AGENT_ROW_EXCLUSIONS,
-            'any narrowing a policy card’s autonomy ceiling imposes at the ' +
-                'tool boundary — the ceiling is enforcement, this column is the claim',
+            'any narrowing a policy card’s autonomy ceiling imposes when the agent calls a ' +
+                'tool — the ceiling is what is enforced, the registered level is the claim',
         ],
     },
     'inventory.third_party_agents': {
         id: 'inventory.third_party_agents',
         label: 'Third-party agents',
-        population: agentPopulation('provenance = THIRD_PARTY'),
+        population: agentPopulation('that a third party supplies'),
         moment: 'AS_OF_GENERATION',
-        includes: ['agents supplied by a named vendor (the schema requires one)'],
-        excludes: [...AGENT_ROW_EXCLUSIONS, 'FIRST_PARTY agents'],
+        includes: [
+            'agents supplied by a named vendor (the register requires one)',
+        ],
+        excludes: [
+            ...AGENT_ROW_EXCLUSIONS,
+            'agents built in-house',
+        ],
     },
     'inventory.agents_without_policy_card': {
         id: 'inventory.agents_without_policy_card',
         label: 'Agents with no policy card',
-        population: agentPopulation('with no AgentPolicyCard row'),
+        population: agentPopulation('that have no policy card'),
         moment: 'AS_OF_GENERATION',
         includes: [
-            'agents registered before the policy card existed, for which the ' +
-                'tool boundary contributes no card term',
+            'agents registered before policy cards existed, whose tool calls no card ' +
+                'constrains',
         ],
         excludes: [
             ...AGENT_ROW_EXCLUSIONS,
-            'agents holding a card whose current version grants nothing — that ' +
-                'is a card, and a restrictive one',
+            'agents holding a card whose current version grants nothing — that is a card, ' +
+                'and a restrictive one',
         ],
     },
 
     'inventory.agents_with_spending_authority': {
         id: 'inventory.agents_with_spending_authority',
         label: 'Agents with declared spending authority',
-        population: agentPopulation('with at least one AgentSpendingAuthority row not WITHDRAWN'),
+        population: agentPopulation('with at least one spending limit that has not been withdrawn'),
         moment: 'AS_OF_GENERATION',
         includes: [
-            'envelopes awaiting review, reviewed, and those a kill asked to be ' +
-                'suspended — a suspension is a request to the token requestor, ' +
-                'not proof the token stopped',
-            'retired agents whose envelope was never withdrawn',
+            'limits awaiting review, reviewed limits, and those a kill asked to be ' +
+                'suspended — a suspension is a request to the token provider, not proof the ' +
+                'token stopped',
+            'retired agents whose limit was never withdrawn',
         ],
         excludes: [
             ...AGENT_ROW_EXCLUSIONS,
-            'withdrawn envelopes',
-            'agents whose code can pay but on which nobody declared an envelope — ' +
-                'the harness raises SPENDING_AGENT_UNDECLARED for those, and a ' +
-                'register count cannot see them',
+            'withdrawn limits',
+            'agents whose code can pay but for which nobody declared a limit — the scanner ' +
+                'reports those as an undeclared spending agent, and a count of the register ' +
+                'cannot see them',
         ],
     },
     'inventory.agents_with_unreviewed_spending_authority': {
         id: 'inventory.agents_with_unreviewed_spending_authority',
         label: 'Agents with spending authority nobody else has reviewed',
-        population: agentPopulation(
-            'with an AgentSpendingAuthority row that is DECLARED, or SUSPENDED_REQUESTED with no review',
-        ),
+        population: agentPopulation('with a spending limit that is declared and not yet reviewed, or that a kill asked to suspend before anybody reviewed it'),
         moment: 'AS_OF_GENERATION',
         includes: [
-            'an envelope a kill moved to SUSPENDED_REQUESTED before anybody ' +
-                'reviewed it — the same rule that holds the agent back from activation',
+            'a limit a kill asked to suspend before anybody reviewed it — the same rule ' +
+                'that holds the agent back from activation',
         ],
         excludes: [
             ...AGENT_ROW_EXCLUSIONS,
-            'withdrawn envelopes, and envelopes a second person reviewed',
+            'withdrawn limits, and limits a second person reviewed',
         ],
     },
 
@@ -218,19 +220,18 @@ export const METRIC_DEFINITIONS = {
         label: 'Agents the coverage matrix covers',
         population: agentPopulation(''),
         moment: 'AS_OF_GENERATION',
-        includes: ['every registered agent, whatever its status'],
+        includes: ['every registered agent, whatever its state'],
         excludes: AGENT_ROW_EXCLUSIONS,
     },
     'asi.risks_in_framework': {
         id: 'asi.risks_in_framework',
         label: 'Distinct agentic risks in the installed framework',
         population:
-            'distinct FrameworkRequirement.code rows across EVERY installed ' +
-            'representation of the OWASP Agentic Top 10 (the seeded and the ' +
-            'library-synced framework rows are one family)',
+            'the distinct risk codes across every installed copy of the OWASP Agentic Top 10 ' +
+            '(the seeded framework and the one synced from the library are one family)',
         moment: 'AS_OF_GENERATION',
-        includes: ['codes present in either representation'],
-        excludes: ['deprecated requirement rows (deprecatedAt IS NOT NULL)'],
+        includes: ['codes present in either copy'],
+        excludes: ['requirements the framework has withdrawn'],
     },
     'asi.agents_fully_covered': {
         id: 'asi.agents_fully_covered',
@@ -238,32 +239,34 @@ export const METRIC_DEFINITIONS = {
         population: agentPopulation('scored against the installed framework'),
         moment: 'AS_OF_GENERATION',
         includes: [
-            'agents for which every risk resolves to covered or partially ' +
-                'covered by a direct or inherited control',
+            'agents for which every risk is covered or partly covered by a direct or ' +
+                'inherited control',
         ],
         excludes: [
             ...AGENT_ROW_EXCLUSIONS,
-            'agents with any risk in the review-needed bucket — a route that ' +
-                'needs a human decision is not coverage',
-            'risks the register shows do not apply to that agent (zero tool ' +
-                'grants for ASI02, autonomy 0 for ASI08) — they are neither ' +
-                'covered nor a gap, so they cannot keep an agent out of this count',
+            'agents with any risk that needs review — a route that needs a human decision ' +
+                'is not coverage',
+            'risks the register shows do not apply to that agent (no tool grants for ' +
+                'ASI02, autonomy 0 for ASI08) — they are neither covered nor a gap, so they ' +
+                'cannot keep an agent out of this count',
         ],
     },
     'asi.risks_covered_by_no_agent': {
         id: 'asi.risks_covered_by_no_agent',
         label: 'Agentic risks no agent covers',
-        population: 'the distinct risk codes counted by asi.risks_in_framework',
+        population:
+            'the distinct risk codes counted under “Distinct agentic risks in the installed ' +
+            'framework”',
         moment: 'AS_OF_GENERATION',
         includes: [
-            'a risk that is uncovered or review-needed for every agent it ' +
-                'applies to, and applies to at least one of them',
+            'a risk that is uncovered or needs review for every agent it applies to, and ' +
+                'applies to at least one of them',
         ],
         excludes: [
-            'risks covered for at least one agent, however many others leave ' +
-                'them open — this is a floor, not an average',
-            'risks that apply to no agent in the population — nobody covering ' +
-                'a risk nobody is exposed to is not a gap',
+            'risks covered for at least one agent, however many others leave them open — ' +
+                'this is a floor, not an average',
+            'risks that apply to no agent — nobody covering a risk nobody is exposed to is ' +
+                'not a gap',
         ],
     },
 
@@ -272,28 +275,32 @@ export const METRIC_DEFINITIONS = {
         id: 'approvals.decided',
         label: 'Proposals a human decided',
         population:
-            'rows in AgentProposal with status in (ACCEPTED, EDITED, REJECTED), ' +
-            'reviewedByUserId set and reviewedAt inside the window',
+            'agent proposals a person accepted, accepted with edits, or rejected, with the ' +
+            'decision made inside the window',
         moment: 'OVER_WINDOW',
-        includes: ['decisions on proposals from any agent, including unattributed ones'],
+        includes: [
+            'decisions on proposals from any agent, including proposals no agent is named ' +
+                'on',
+        ],
         excludes: [
-            'PENDING proposals, which nobody has decided',
-            'EXPIRED proposals, which closed without a decision',
-            'decisions beyond the report row cap, which the payload flags as truncated',
+            'pending proposals, which nobody has decided',
+            'expired proposals, which closed without a decision',
+            'decisions beyond the report’s row limit, which the report marks as cut short',
         ],
     },
     'approvals.approved': {
         id: 'approvals.approved',
         label: 'Proposals approved',
-        population: 'the decided proposals above with status in (ACCEPTED, EDITED)',
+        population:
+            'the decided proposals above that a person accepted, with or without edits',
         moment: 'OVER_WINDOW',
-        includes: ['EDITED, where the human changed the payload before accepting it'],
-        excludes: ['REJECTED proposals'],
+        includes: ['proposals the person edited before accepting them'],
+        excludes: ['rejected proposals'],
     },
     'approvals.rejected': {
         id: 'approvals.rejected',
         label: 'Proposals rejected',
-        population: 'the decided proposals above with status = REJECTED',
+        population: 'the decided proposals above that a person rejected',
         moment: 'OVER_WINDOW',
         includes: ['every rejection, whatever the reason'],
         excludes: ['proposals that expired unreviewed'],
@@ -301,97 +308,102 @@ export const METRIC_DEFINITIONS = {
     'approvals.approval_rate': {
         id: 'approvals.approval_rate',
         label: 'Share of decisions that approved',
-        population: 'approvals.approved over approvals.decided',
+        population: 'proposals approved, divided by proposals a human decided',
         moment: 'OVER_WINDOW',
-        includes: ['a value in 0..1'],
+        includes: ['a value between 0 and 1'],
         excludes: [
-            'any figure at all when nothing was decided — an empty denominator ' +
-                'reports NO_POPULATION rather than 0, which would read as ' +
-                '"everything was rejected"',
+            'any figure at all when nothing was decided — an empty denominator is reported ' +
+                'as having no population rather than as 0, which would read as “everything was ' +
+                'rejected”',
         ],
     },
     'approvals.fastest_decision_seconds': {
         id: 'approvals.fastest_decision_seconds',
         label: 'Fastest decision in the window',
-        population: 'the minimum decision latency across every reviewer in the window',
+        population: 'the shortest time any reviewer took to decide a proposal in the window',
         moment: 'OVER_WINDOW',
         includes: [
-            'a single OBSERVATION, reported at any sample size — unlike the ' +
-                'per-reviewer estimates, which the engine refuses below its floor',
+            'a single observation, reported at any sample size — unlike the per-reviewer ' +
+                'estimates, which are withheld below a minimum number of decisions',
         ],
         excludes: ['reviewers with no decision in the window'],
     },
     'approvals.reviewers': {
         id: 'approvals.reviewers',
         label: 'Distinct humans who decided something',
-        population: 'distinct AgentProposal.reviewedByUserId inside the window',
+        population:
+            'the different people who decided at least one agent proposal in the window',
         moment: 'OVER_WINDOW',
         includes: ['anyone who decided at least one proposal'],
         excludes: [
-            'people with permission to review who did not — the queue records ' +
-                'decisions, not eligibility',
+            'people with permission to review who did not — the queue records decisions, ' +
+                'not eligibility',
         ],
     },
     'approvals.reviewers_below_reportable_sample': {
         id: 'approvals.reviewers_below_reportable_sample',
         label: 'Reviewers with too few decisions to estimate',
-        population: 'reviewers whose decision count is under the engine’s minimum sample',
+        population: 'reviewers whose number of decisions is under the minimum sample',
         moment: 'OVER_WINDOW',
         includes: [
-            'reviewers for whom rate and median estimates are visibly REFUSED ' +
-                'rather than computed from a handful of decisions',
+            'reviewers for whom the approval rate and the median time are shown as ' +
+                'withheld rather than computed from a handful of decisions',
         ],
-        excludes: ['reviewers at or above the floor'],
+        excludes: ['reviewers at or above the minimum'],
     },
     'approvals.bias_signals': {
         id: 'approvals.bias_signals',
         label: 'Automation-bias patterns that fired',
-        population: 'signals returned by the automation-bias engine over the window',
+        population: 'the signs of automation bias detected in the window',
         moment: 'OVER_WINDOW',
         includes: [
-            'bulk-approval bursts, implausibly fast decisions, fast medians, ' +
-                'never-rejected reviewers and declared-but-unrecorded second approvers',
+            'bursts of bulk approvals, implausibly fast decisions, fast medians, reviewers ' +
+                'who never reject, and second approvers that were required but not recorded',
         ],
         excludes: [
-            'whether the proposal content was ever actually read — the queue ' +
-                'records decisions, never attention, and the payload names that ' +
-                'question as unobservable rather than approximating it',
+            'whether the proposal was ever actually read — the queue records decisions, ' +
+                'never attention, and the report names that question as unobservable rather ' +
+                'than guessing at it',
         ],
     },
     'approvals.pending_now': {
         id: 'approvals.pending_now',
         label: 'Proposals awaiting a decision',
-        population: 'rows in AgentProposal with status = PENDING',
+        population: 'agent proposals waiting for a decision now',
         moment: 'AS_OF_GENERATION',
         includes: [
-            'every pending row regardless of age — this is a snapshot and NOT ' +
-                'scoped to the report window, because queue depth now is what ' +
-                'drives rubber-stamping now',
+            'every waiting proposal regardless of age — this is a snapshot, not limited to ' +
+                'the report window, because the length of the queue now is what drives ' +
+                'rubber-stamping now',
         ],
-        excludes: ['proposals already moved to EXPIRED by the expiry sweep'],
+        excludes: ['proposals already closed as expired'],
     },
     'approvals.sample_audits_answered': {
         id: 'approvals.sample_audits_answered',
         label: 'Retrospective sample audits answered',
         population:
-            'rows in AgentProposalSampleAudit sampled inside the window whose ' +
-            'outcome has left PENDING',
+            'decided proposals drawn for a second look inside the window whose second look has ' +
+            'been answered',
         moment: 'OVER_WINDOW',
-        includes: ['CONCURRED, DISSENTED and INDETERMINATE answers'],
+        includes: ['answers that agreed, disagreed or could not conclude'],
         excludes: [
-            'drawn-but-unanswered audits — counting them would improve the ' +
-                'disagreement rate every time the sampler ran and nobody did the work',
+            'drawn but unanswered audits — counting them would improve the disagreement ' +
+                'rate every time the sample was drawn and nobody did the work',
         ],
     },
     'approvals.sample_audit_disagreement_rate': {
         id: 'approvals.sample_audit_disagreement_rate',
         label: 'Share of answered sample audits that dissented',
-        population: 'DISSENTED over answered, inside the window',
+        population:
+            'answered sample audits that disagreed, divided by all answered sample audits, ' +
+            'inside the window',
         moment: 'OVER_WINDOW',
-        includes: ['a value in 0..1 — the number the approval queue is judged on'],
+        includes: [
+            'a value between 0 and 1 — the number the approval queue is judged on',
+        ],
         excludes: [
-            'any figure when nothing was answered — a tenant with a perfect ' +
-                'record and a tenant nobody reviewed both produce zero dissents',
+            'any figure when nothing was answered — a workspace with a perfect record and ' +
+                'one nobody reviewed both produce zero disagreements',
         ],
     },
 
@@ -400,52 +412,52 @@ export const METRIC_DEFINITIONS = {
     'approvals.guard_flagged': {
         id: 'approvals.guard_flagged',
         label: 'Proposals the content guard refused',
-        population: "rows in AgentProposal whose guardVerdict is not CLEAN",
+        population: 'agent proposals the content guard objected to',
         moment: 'AS_OF_GENERATION',
         includes: [
-            'both non-clean verdicts — FLAGGED (surfaced to a reviewer with its ' +
-                'rule ids) and QUARANTINED (withheld from the review queue ' +
-                'entirely). Both mean the guard looked and objected',
-            'proposals since decided by a human — the guard\u2019s verdict is a ' +
-                'record of what it saw, not of what happened next',
+            'both kinds of objection — flagged (shown to a reviewer with the rules that ' +
+                'matched) and quarantined (held out of the review queue entirely). Both mean ' +
+                'the guard looked and objected',
+            'proposals since decided by a human — the guard’s verdict is a record of what ' +
+                'it saw, not of what happened next',
         ],
         excludes: [
-            'proposals written before the guard existed, which carry the column ' +
-                'default CLEAN and no guardInputDigest — those are counted ' +
-                'separately by approvals.guard_unscanned',
+            'proposals written before the guard existed, which read as passed but were ' +
+                'never scanned — those are counted under “Proposals no content guard ever ' +
+                'scanned”',
         ],
     },
     'approvals.guard_unscanned': {
         id: 'approvals.guard_unscanned',
         label: 'Proposals no content guard ever scanned',
         population:
-            'rows in AgentProposal with guardVerdict = CLEAN and guardInputDigest IS NULL',
+            'agent proposals that read as passed by the content guard but carry no record of a ' +
+            'scan',
         moment: 'AS_OF_GENERATION',
         includes: [
-            'every proposal that entered the queue before the guard shipped — the ' +
-                'column is NOT NULL DEFAULT CLEAN and the migration ran no ' +
-                'backfill, so CLEAN on these rows means "not refused", never ' +
-                '"scanned and found clean"',
+            'every proposal that entered the queue before the guard shipped — such a ' +
+                'proposal reads as passed because that was the default, and no earlier record ' +
+                'was filled in, so “passed” on it means “not refused”, never “scanned and ' +
+                'found clean”',
         ],
         excludes: [
-            'scanned proposals, whichever way the scan went — the digest is the ' +
-                'discriminator, and it is written on every proposal the guard decides',
+            'scanned proposals, whichever way the scan went — the record of the scan is ' +
+                'what tells them apart, and it is written on every proposal the guard decides',
         ],
     },
     'approvals.guard_clean': {
         id: 'approvals.guard_clean',
         label: 'Proposals the content guard scanned and passed',
-        population:
-            'rows in AgentProposal with guardVerdict = CLEAN and a non-null guardInputDigest',
+        population: 'agent proposals the content guard scanned and let through',
         moment: 'AS_OF_GENERATION',
         includes: [
-            'the remainder: total proposals minus refused minus unscanned, so the ' +
-                'three guard figures always sum to the population rather than ' +
-                'being three counts that can disagree under a concurrent write',
+            'the remainder: all proposals minus those refused minus those never scanned, ' +
+                'so the three guard figures always add up to the whole rather than being three ' +
+                'counts that can disagree when proposals arrive at the same time',
         ],
         excludes: [
-            'pre-guard rows, which look identical in the column and are counted ' +
-                'by approvals.guard_unscanned instead',
+            'proposals from before the guard, which look the same as passed ones and are ' +
+                'counted under “Proposals no content guard ever scanned”',
         ],
     },
 
@@ -454,24 +466,20 @@ export const METRIC_DEFINITIONS = {
         id: 'incidents.guard_blocks',
         label: 'Guard blocks',
         population:
-            'QUARANTINED verdicts inside the window, across BOTH places one ' +
-            'can land: AgentProposal rows the guard quarantined, and ' +
-            'WorkflowStep rows a run was stopped at',
+            'times inside the window the content guard quarantined something, in both places ' +
+            'that can happen: an agent proposal it quarantined, and a step of a run it stopped',
         moment: 'OVER_WINDOW',
         includes: [
-            'blocks that produced a proposal, and blocks on a reasoning run ' +
-                'that produced no proposal at all — the second is the only ' +
-                'trace a Flue block leaves',
-            'blocks on a run that began before the window; the step carries ' +
-                'its own stamp, and a run blocked inside the window was ' +
-                'blocked inside it',
+            'blocks that produced a proposal, and blocks on a reasoning run that produced ' +
+                'no proposal at all — the second is the only trace a block on a Flue run leaves',
+            'blocks on a run that began before the window; each step carries its own time, ' +
+                'and a run blocked inside the window was blocked inside it',
         ],
         excludes: [
-            'FLAGGED verdicts, which pause for review rather than stop — those ' +
-                'are counted by approvals.guard_flagged',
-            'runs the circuit breaker then latched; the trip is counted ' +
-                'separately by incidents.breaker_trips, and one cause can ' +
-                'produce both',
+            'flagged proposals, which pause for review rather than stop — those are ' +
+                'counted under “Proposals the content guard refused”',
+            'runs the circuit breaker then stopped; the trip is counted separately under ' +
+                '“Circuit breakers that tripped”, and one cause can produce both',
         ],
     },
     // ── RUNS BY STATUS (#3484, point 10's third outstanding item) ────
@@ -497,140 +505,145 @@ export const METRIC_DEFINITIONS = {
     'runs.completed': {
         id: 'runs.completed',
         label: 'Runs completed',
-        population: 'WorkflowRun rows that reached COMPLETED, started inside the window',
+        population: 'agent runs started inside the window that completed',
         moment: 'OVER_WINDOW',
-        includes: ['runs started by a person and runs started by an automation rule'],
+        includes: [
+            'runs started by a person and runs started by an automation rule',
+        ],
         excludes: [
-            'runs still in flight, which are counted by the three AT_GENERATION ' +
-                'measures below',
-            'runs started before the window, however they ended — the window is ' +
-                'on startedAt, so a quarter reports the runs it began',
+            'runs still in progress, which are counted by the three “now” measures below',
+            'runs started before the window, however they ended — the window is on the ' +
+                'start time, so a quarter reports the runs it began',
         ],
     },
     'runs.failed': {
         id: 'runs.failed',
         label: 'Runs failed',
-        population: 'WorkflowRun rows that reached FAILED, started inside the window',
+        population: 'agent runs started inside the window that failed',
         moment: 'OVER_WINDOW',
         includes: [
-            'runs the reaper settled as having no executor — a deploy that ' +
-                'stranded a run looks like a failure here, which is honest: it ' +
-                'did not complete',
+            'runs closed as failed because nothing was left to execute them — a deploy ' +
+                'that stranded a run looks like a failure here, which is honest: it did not ' +
+                'complete',
         ],
         excludes: [
-            'runs ABORTED by a guard block or a kill, counted separately — the ' +
+            'runs stopped by a guard block or a kill, counted separately as aborted — the ' +
                 'cause is different and so is what an operator does about it',
         ],
     },
     'runs.aborted': {
         id: 'runs.aborted',
         label: 'Runs aborted',
-        population: 'WorkflowRun rows that reached ABORTED, started inside the window',
+        population: 'agent runs started inside the window that were aborted',
         moment: 'OVER_WINDOW',
         includes: [
-            'runs a guard BLOCKED, runs a kill switch stopped, and runs an ' +
-                'operator aborted by hand',
+            'runs a guard blocked, runs a kill switch stopped, and runs an operator ' +
+                'aborted by hand',
         ],
         excludes: [
-            'runs that FAILED, which nothing stopped deliberately',
-            'the reason for each abort; this is a count, and the trail carries ' +
-                'the cause per run',
+            'runs that failed, which nothing stopped deliberately',
+            'the reason for each abort; this is a count, and the trail carries the cause ' +
+                'for each run',
         ],
     },
     'runs.in_flight': {
         id: 'runs.in_flight',
         label: 'Runs in flight now',
-        population: 'WorkflowRun rows in RUNNING, at the moment the pack was generated',
+        population: 'agent runs executing at the moment the pack was generated',
         moment: 'AS_OF_GENERATION',
-        includes: ['runs this deployment is executing and runs stranded by a deploy'],
+        includes: [
+            'runs this deployment is executing and runs stranded by a deploy',
+        ],
         excludes: [
-            'runs AWAITING_APPROVAL or PAUSED, which are in flight in the ' +
-                'concurrent-run cap\'s sense but are waiting on a person rather ' +
-                'than executing — those are their own measures',
+            'runs awaiting approval or paused, which count against the limit on runs at ' +
+                'once but are waiting on a person rather than executing — those are their own ' +
+                'measures',
         ],
     },
     'runs.awaiting_approval': {
         id: 'runs.awaiting_approval',
         label: 'Runs awaiting approval',
         population:
-            'WorkflowRun rows in AWAITING_APPROVAL, at the moment the pack was generated',
+            'agent runs waiting for a person’s approval at the moment the pack was generated',
         moment: 'AS_OF_GENERATION',
         includes: [
-            'runs parked at a human checkpoint, and runs a guard FLAGGED for ' +
-                'review',
+            'runs stopped at a human checkpoint, and runs the guard flagged for review',
         ],
         excludes: [
-            'runs whose approval window has EXPIRED but whose status has not ' +
-                'moved; the status is what this counts, and expiry is a ' +
-                'separate question the approval-window measures answer',
+            'runs whose approval window has expired but which have not moved on; this ' +
+                'counts where the run stands, and expiry is a separate question the ' +
+                'approval-window measures answer',
         ],
     },
     'runs.paused': {
         id: 'runs.paused',
         label: 'Runs paused',
-        population: 'WorkflowRun rows in PAUSED, at the moment the pack was generated',
+        population: 'agent runs paused at the moment the pack was generated',
         moment: 'AS_OF_GENERATION',
         includes: [
-            'runs a SIGTERM paused on the way out of a deploy, which is the ' +
-                'state that makes them resumable rather than reaped',
+            'runs paused as a deploy shut the worker down, which is what makes them ' +
+                'resumable rather than closed as failed',
         ],
         excludes: ['runs awaiting a person, which are their own measure above'],
     },
     'incidents.kill_engagements': {
         id: 'incidents.kill_engagements',
         label: 'Kill switches engaged',
-        population: 'rows in AgentKillSwitch engaged inside the window',
+        population: 'kill switches engaged inside the window',
         moment: 'OVER_WINDOW',
         includes: [
-            'both scopes — a tenant-wide kill (agentId IS NULL) and a per-agent one',
-            'kills that have since been lifted; the row is the record of the window',
+            'both scopes — a kill for the whole workspace and one for a single agent',
+            'kills that have since been lifted; the engagement is the record of the window',
         ],
         excludes: [
-            'the scheduled drill’s canary kills, which are exercises against ' +
-                'an id no credential resolves to and are counted separately',
-            'OWNER_DEPARTED kills (reasonCode = OWNER_DEPARTED), which the ' +
-                'owner-orphan pass engages because an agent’s accountable owner ' +
-                'left — a lifecycle containment, not an incident, counted ' +
-                'separately as incidents.owner_departed_engagements',
-            'the platform-wide kill, which is global and has no tenant to scope to',
+            'the scheduled drill’s practice kills, which are exercises against an agent no ' +
+                'credential belongs to and are counted separately',
+            'kills engaged because an agent’s accountable owner left, which the owner ' +
+                'check engages — a lifecycle containment, not an incident, counted separately ' +
+                'under “Kills engaged because an agent’s owner left”',
+            'the platform-wide kill, which is global and belongs to no workspace',
         ],
     },
     'incidents.owner_departed_engagements': {
         id: 'incidents.owner_departed_engagements',
         label: 'Kills engaged because an agent’s owner left',
         population:
-            'rows in AgentKillSwitch engaged inside the window with reasonCode = ' +
-            'OWNER_DEPARTED',
+            'kill switches engaged inside the window because an agent’s accountable owner left',
         moment: 'OVER_WINDOW',
         includes: [
-            'every OWNER_DEPARTED kill the owner-orphan pass engaged, as the system ' +
-                'actor system:agent-owner-orphan-pass, whether or not it has since been ' +
-                'lifted after a completed ownership transfer',
+            'every such kill the scheduled owner check engaged, whether or not it has ' +
+                'since been lifted after a completed ownership transfer',
         ],
         excludes: [
-            'kills a person engaged, whatever their reason text says — the code is a ' +
-                'column only the system writes, never the free-text reason',
-            'agents the pass found at DRY_RUN, which it recorded and did not stop',
-            'the drill canary’s kills',
+            'kills a person engaged, whatever their stated reason says — only the system ' +
+                'records this cause, never the free-text reason',
+            'agents the check found while it was running as a dry run, which it recorded ' +
+                'and did not stop',
+            'the drill’s practice kills',
         ],
     },
     'incidents.owner_departed_in_force_now': {
         id: 'incidents.owner_departed_in_force_now',
-        label: 'OWNER_DEPARTED kills currently in force',
+        label: 'Kills for a departed owner currently in force',
         population:
-            'rows in AgentKillSwitch with reasonCode = OWNER_DEPARTED and liftedAt IS NULL',
+            'kill switches engaged because an agent’s accountable owner left that have not ' +
+            'been lifted',
         moment: 'AS_OF_GENERATION',
         includes: [
-            'kills engaged before the report window and still in force — each is an ' +
-                'agent waiting for an ownership transfer to complete',
+            'kills engaged before the report window and still in force — each is an agent ' +
+                'waiting for an ownership transfer to complete',
         ],
-        excludes: ['kills a person engaged', 'drill canary kills', 'the global platform kill'],
+        excludes: [
+            'kills a person engaged',
+            'the drill’s practice kills',
+            'the global platform kill',
+        ],
     },
     'incidents.drill_canary_engagements': {
         id: 'incidents.drill_canary_engagements',
         label: 'Drill canary kills',
         population:
-            'rows in AgentKillSwitch inside the window naming the drill canary agent id',
+            'kill switches engaged inside the window against the drill’s practice agent',
         moment: 'OVER_WINDOW',
         includes: ['exercises the scheduled drill engaged and lifted itself'],
         excludes: ['kills a human engaged against a real agent'],
@@ -638,106 +651,107 @@ export const METRIC_DEFINITIONS = {
     'incidents.kills_in_force_now': {
         id: 'incidents.kills_in_force_now',
         label: 'Kill switches currently in force',
-        population: 'rows in AgentKillSwitch with liftedAt IS NULL',
+        population: 'kill switches that have not been lifted',
         moment: 'AS_OF_GENERATION',
         includes: [
-            'kills engaged before the report window — a stop still in force is a ' +
-                'fact about now, not about the window',
+            'kills engaged before the report window — a stop still in force is a fact ' +
+                'about now, not about the window',
         ],
         excludes: [
-            'drill canary kills',
-            'OWNER_DEPARTED kills, counted as incidents.owner_departed_in_force_now',
+            'the drill’s practice kills',
+            'kills for a departed owner, counted under “Kills for a departed owner ' +
+                'currently in force”',
             'the global platform kill',
         ],
     },
     'incidents.longest_kill_minutes': {
         id: 'incidents.longest_kill_minutes',
         label: 'Longest kill window in the report window',
-        population: 'engaged-to-lifted duration of the kills counted above',
+        population: 'how long each kill counted above lasted, from engaged to lifted',
         moment: 'OVER_WINDOW',
         includes: [
-            'a kill still in force, measured to the report generation instant ' +
-                'and flagged per row as unlifted',
+            'a kill still in force, measured to the moment the report was generated and ' +
+                'marked as not lifted',
         ],
         excludes: [
-            'drill canary kills',
-            'OWNER_DEPARTED kills, which last as long as an ownership transfer takes ' +
+            'the drill’s practice kills',
+            'kills for a departed owner, which last as long as an ownership transfer takes ' +
                 'and are not an incident’s duration',
         ],
     },
     'incidents.drills_run': {
         id: 'incidents.drills_run',
         label: 'Kill-switch drills run',
-        population: 'rows in AgentKillSwitchDrill started inside the window',
+        population: 'kill-switch drills started inside the window',
         moment: 'OVER_WINDOW',
-        includes: ['every outcome — PASSED, FAILED and ERROR'],
+        includes: ['every outcome — passed, failed and could not run'],
         excludes: ['drills started before the window'],
     },
     'incidents.drills_failed': {
         id: 'incidents.drills_failed',
-        label: 'Drills that FAILED',
-        population: 'the drills above with outcome = FAILED',
+        label: 'Drills that failed',
+        population: 'the drills above that failed',
         moment: 'OVER_WINDOW',
         includes: ['drills where the stop control did not stop something'],
         excludes: [
-            'ERROR drills, which proved nothing rather than proving the control ' +
-                'broken — collapsing the two would raise a finding about the wrong thing',
+            'drills that could not run, which proved nothing rather than proving the ' +
+                'control broken — counting the two together would raise a finding about the ' +
+                'wrong thing',
         ],
     },
     'incidents.drills_errored': {
         id: 'incidents.drills_errored',
         label: 'Drills that could not run',
-        population: 'the drills above with outcome = ERROR',
+        population: 'the drills above that could not run',
         moment: 'OVER_WINDOW',
-        includes: ['drills that could not complete, and so evidence nothing'],
-        excludes: ['FAILED drills'],
+        includes: [
+            'drills that could not complete, and so are evidence of nothing',
+        ],
+        excludes: ['drills that failed'],
     },
     'incidents.tool_calls_after_kill': {
         id: 'incidents.tool_calls_after_kill',
         label: 'Tool calls that got through after a kill',
         population:
-            'sum of AgentKillSwitchDrill.toolCallsAfterKill over the drills above ' +
-            'that actually MEASURED something — a drill whose outcome is ERROR ' +
-            'could not run and measured nothing',
+            'the tool calls that got through after the kill, added up over the drills above ' +
+            'that actually measured something — a drill that could not run measured nothing',
         moment: 'OVER_WINDOW',
         includes: [
-            'every call the boundary admitted while a kill was in force; anything ' +
-                'other than zero is the control failing',
+            'every call let through while a kill was in force; anything other than zero is ' +
+                'the control failing',
         ],
         excludes: [
-            'any figure at all when no drill ran — summing an empty list to zero ' +
-                'would make a tenant that never tested its stop control ' +
-                'indistinguishable from one whose control is proven',
-            'drills whose outcome is ERROR. Such a drill is a ROW but not a ' +
-                'MEASUREMENT: it could not run, so it proves nothing either way, ' +
-                'and `toolCallsAfterKill` is left at its column default of 0. ' +
-                'Counting it summed that default into the strongest claim this ' +
-                'product makes, so a tenant whose only drill BROKE read exactly ' +
-                'like one whose stop control is proven. "Never drilled" and ' +
-                '"drilled and the drill broke" demand different actions and now ' +
-                'carry different bases',
+            'any figure at all when no drill ran — adding up an empty list to zero would ' +
+                'make a workspace that never tested its stop control look the same as one ' +
+                'whose control is proven',
+            'drills that could not run. Such a drill is recorded but measured nothing: it ' +
+                'could not run, so it proves nothing either way, and its count of calls is ' +
+                'left at zero. Counting it added that zero to the strongest claim this product ' +
+                'makes, so a workspace whose only drill broke read exactly like one whose stop ' +
+                'control is proven. “Never drilled” and “drilled and the drill broke” demand ' +
+                'different actions and are reported differently',
         ],
     },
     'incidents.breaker_trips': {
         id: 'incidents.breaker_trips',
         label: 'Circuit breakers that tripped',
-        population: 'rows in AgentCircuitBreaker whose trippedAt falls inside the window',
+        population: 'circuit breakers that tripped inside the window',
         moment: 'OVER_WINDOW',
         includes: ['a breaker that tripped and has since been closed'],
         excludes: [
-            'breakers that have never tripped, and agents with no breaker row at all',
+            'breakers that have never tripped, and agents that have no breaker',
         ],
     },
     'incidents.breakers_open_now': {
         id: 'incidents.breakers_open_now',
         label: 'Circuit breakers currently open',
-        population: 'rows in AgentCircuitBreaker with state = OPEN',
+        population: 'circuit breakers that are open now',
         moment: 'AS_OF_GENERATION',
         includes: [
-            'breakers tripped before the window — nothing closes itself, so an ' +
-                'open breaker is open until a human closes it',
+            'breakers tripped before the window — nothing closes itself, so an open ' +
+                'breaker is open until a human closes it',
         ],
-        excludes: ['closed breakers, whatever their close reason'],
+        excludes: ['closed breakers, whatever the reason they were closed'],
     },
 
     // The monthly token budget — the third stop control, alongside the kill
@@ -747,50 +761,52 @@ export const METRIC_DEFINITIONS = {
         id: 'incidents.monthly_token_budget',
         label: 'Monthly agent token budget',
         population:
-            'TenantSecuritySettings.agentMonthlyTokenBudget for this tenant, the ' +
-            'ceiling every run start is checked against',
+            'the monthly token budget set for this workspace’s agents, the ceiling every run ' +
+            'start is checked against',
         moment: 'AS_OF_GENERATION',
-        includes: ['the configured number, whatever this month has actually spent'],
+        includes: [
+            'the configured number, whatever this month has actually spent',
+        ],
         excludes: [
-            'an unconfigured budget, reported as NO_MONTHLY_BUDGET_CONFIGURED ' +
-                'rather than as 0 — NULL means unlimited here, and a 0 would ' +
-                'read as a ceiling that refuses every run',
+            'a budget nobody has set, reported as not configured rather than as 0 — no ' +
+                'budget means unlimited here, and a 0 would read as a ceiling that refuses ' +
+                'every run',
         ],
     },
     'incidents.tokens_spent_this_month': {
         id: 'incidents.tokens_spent_this_month',
         label: 'Agent tokens spent this month',
         population:
-            'the sum of costTokens over rows in WorkflowRun started on or after ' +
-            'the first instant of the current UTC calendar month',
+            'the tokens spent by agent runs started since the first moment of the current ' +
+            'calendar month (UTC)',
         moment: 'AS_OF_GENERATION',
         includes: [
-            'the UTC calendar month rather than the report window — the budget ' +
-                'this is measured against resets monthly, and a 90-day total ' +
-                'would not be comparable to it',
-            'runs in every terminal state, and runs still RUNNING: the tokens ' +
-                'are spent whether or not the run finished',
+            'the calendar month (UTC) rather than the report window — the budget this is ' +
+                'measured against resets monthly, and a 90-day total would not be comparable ' +
+                'to it',
+            'runs however they ended, and runs still executing: the tokens are spent ' +
+                'whether or not the run finished',
         ],
         excludes: [
-            'runs started before this month, however recently — the budget is ' +
-                'a monthly allowance and last month\u2019s spend does not consume it',
+            'runs started before this month, however recently — the budget is a monthly ' +
+                'allowance and last month’s spend does not consume it',
         ],
     },
     'incidents.monthly_budget_remaining_tokens': {
         id: 'incidents.monthly_budget_remaining_tokens',
         label: 'Monthly token budget remaining',
         population:
-            'the configured budget minus this month\u2019s spend, in tokens, for this tenant',
+            'the configured budget minus this month’s spend, in tokens, for this workspace',
         moment: 'AS_OF_GENERATION',
         includes: [
-            'a NEGATIVE value when spend has passed the ceiling. The check is ' +
-                'pre-flight and bounds a run by its own token cap, so an ' +
-                'admitted run can still finish above the line — clamping to 0 ' +
-                'would hide exactly that overshoot',
+            'a negative value when spend has passed the ceiling. The check is made before ' +
+                'a run starts and bounds a run by its own token cap, so an admitted run can ' +
+                'still finish above the line — rounding up to 0 would hide exactly that ' +
+                'overshoot',
         ],
         excludes: [
-            'any figure at all when no budget is configured, because subtracting ' +
-                'from unlimited has no answer',
+            'any figure at all when no budget is configured, because subtracting from ' +
+                'unlimited has no answer',
         ],
     },
 
@@ -805,102 +821,125 @@ export const METRIC_DEFINITIONS = {
         id: 'assurance.workpaper_reviews_drawn',
         label: 'Auditor workpapers drawn for internal audit review',
         population:
-            'rows in AuditWorkpaperSampleReview for this tenant whose sampledAt is inside ' +
-            'the window — one per AuditWorkpaper the scheduled sweep drew at the ' +
-            'tenant\u2019s rate (TenantSecuritySettings.workpaperReviewSamplePercent)',
+            'the auditor agent’s workpapers drawn for review by internal audit inside the ' +
+            'window — one for each workpaper the scheduled sweep drew at this workspace’s ' +
+            'sampling rate',
         moment: 'OVER_WINDOW',
         includes: [
-            'every state: awaiting an answer, UNASSIGNED, and answered',
+            'every state: waiting for a reviewer to be assigned, waiting for an answer, ' +
+                'and answered',
             'workpapers of every procedure, period and auditor agent',
         ],
         excludes: [
-            'workpapers the keyed draw passed over at a rate below 100% (at the ' +
-                'pilot\u2019s 100% there are none)',
-            'workpapers written since the last daily sweep (09:40 UTC), which are not drawn yet',
+            'workpapers the draw passed over at a rate below 100% (at the pilot’s 100% ' +
+                'there are none)',
+            'workpapers written since the last daily sweep (09:40 UTC), which are not ' +
+                'drawn yet',
         ],
     },
     'assurance.workpaper_reviews_unassigned': {
         id: 'assurance.workpaper_reviews_unassigned',
         label: 'Drawn workpapers nobody in internal audit can be asked to review',
         population:
-            'the drawn rows above still PENDING with an unassignedReason: no ACTIVE ' +
-            'third-line member, only the auditor agent\u2019s owner is third-line, or the ' +
+            'the drawn workpapers above that are still unassigned, with the reason: no active ' +
+            'third-line member, the only third-line member owns the auditor agent, or the ' +
             'auditor agent is no longer in the register',
         moment: 'OVER_WINDOW',
-        includes: ['rows a later sweep may still assign, once somebody is eligible'],
+        includes: [
+            'workpapers a later sweep may still assign, once somebody is eligible',
+        ],
         excludes: [
-            'rows with an assigned reviewer, awaiting an answer — counted by ' +
-                'assurance.workpaper_reviews_awaiting',
-            'answered rows',
+            'workpapers with an assigned reviewer, awaiting an answer — counted under ' +
+                '“Drawn workpapers awaiting their assigned reviewer”',
+            'answered workpapers',
         ],
     },
     'assurance.workpaper_reviews_awaiting': {
         id: 'assurance.workpaper_reviews_awaiting',
         label: 'Drawn workpapers awaiting their assigned reviewer',
-        population: 'the drawn rows still PENDING with an assigned third-line reviewer',
+        population:
+            'the drawn workpapers with an assigned third-line reviewer that are still waiting ' +
+            'for an answer',
         moment: 'OVER_WINDOW',
-        includes: ['rows however long they have waited — an unanswered review is the failure this counts'],
-        excludes: ['UNASSIGNED rows', 'answered rows'],
+        includes: [
+            'workpapers however long they have waited — an unanswered review is the ' +
+                'failure this counts',
+        ],
+        excludes: [
+            'unassigned workpapers',
+            'answered workpapers',
+        ],
     },
     'assurance.workpaper_reviews_indeterminate': {
         id: 'assurance.workpaper_reviews_indeterminate',
         label: 'Reviews that could not conclude',
-        population: 'the drawn rows answered INDETERMINATE',
+        population:
+            'the drawn workpapers whose reviewer answered that they could not conclude',
         moment: 'OVER_WINDOW',
         includes: [
-            'answers where the reviewer could not judge the workpaper from the record — ' +
-                'a finding about the record, not a vote either way',
+            'answers where the reviewer could not judge the workpaper from the record — a ' +
+                'finding about the record, not a vote either way',
         ],
-        excludes: ['every other answer — INDETERMINATE is neither agreement nor disagreement'],
+        excludes: [
+            'every other answer — an indeterminate answer is neither agreement nor ' +
+                'disagreement',
+        ],
     },
     'assurance.workpaper_reviews_concluded': {
         id: 'assurance.workpaper_reviews_concluded',
         label: 'Reviews that concluded',
         population:
-            'the drawn rows answered CONCURRED or DISSENTED — the denominator of both ' +
-            're-performance rates',
+            'the drawn workpapers whose reviewer agreed or disagreed with the auditor agent — ' +
+            'the denominator of both re-performance rates',
         moment: 'OVER_WINDOW',
-        includes: ['CONCURRED and DISSENTED answers, each recorded once by the assigned reviewer'],
+        includes: [
+            'agreeing and disagreeing answers, each recorded once by the assigned reviewer',
+        ],
         excludes: [
-            'INDETERMINATE answers',
-            'UNASSIGNED rows, which nobody could be asked to answer',
-            'drawn but unreviewed rows',
+            'indeterminate answers',
+            'unassigned workpapers, which nobody could be asked to answer',
+            'drawn but unreviewed workpapers',
         ],
     },
     'assurance.workpaper_reperformance_agreement_rate': {
         id: 'assurance.workpaper_reperformance_agreement_rate',
         label: 'Share of concluded reviews that concurred with the auditor agent',
-        population: 'CONCURRED over (CONCURRED + DISSENTED), among the rows drawn inside the window',
+        population:
+            'reviews that agreed, divided by reviews that agreed or disagreed, among the ' +
+            'workpapers drawn inside the window',
         moment: 'OVER_WINDOW',
         includes: [
-            'a value in 0..1 — how often internal audit\u2019s re-performance reached the ' +
-                'auditor agent\u2019s result',
+            'a value between 0 and 1 — how often internal audit’s re-performance reached ' +
+                'the auditor agent’s result',
         ],
         excludes: [
-            'drawn but unreviewed workpapers, in neither the numerator nor the ' +
-                'denominator — counting them as agreement would improve the rate every ' +
-                'time the sweep ran and nobody did the work',
-            'INDETERMINATE answers, which are neither agreement nor disagreement',
-            'UNASSIGNED workpapers, which nobody could be asked to review',
-            'any figure at all when no review concluded — zero concluded reviews is ' +
-                'not "100% agreement"',
+            'drawn but unreviewed workpapers, in neither the numerator nor the denominator ' +
+                '— counting them as agreement would improve the rate every time the sweep ran ' +
+                'and nobody did the work',
+            'indeterminate answers, which are neither agreement nor disagreement',
+            'unassigned workpapers, which nobody could be asked to review',
+            'any figure at all when no review concluded — zero concluded reviews is not ' +
+                '“100% agreement”',
         ],
     },
     'assurance.workpaper_reperformance_disagreement_rate': {
         id: 'assurance.workpaper_reperformance_disagreement_rate',
         label: 'Share of concluded reviews that dissented from the auditor agent',
-        population: 'DISSENTED over (CONCURRED + DISSENTED), among the rows drawn inside the window',
+        population:
+            'reviews that disagreed, divided by reviews that agreed or disagreed, among the ' +
+            'workpapers drawn inside the window',
         moment: 'OVER_WINDOW',
         includes: [
-            'a value in 0..1, the complement of the agreement rate over the same ' +
-                'denominator; each dissent queued one finding proposal for a person to decide',
+            'a value between 0 and 1, the complement of the agreement rate over the same ' +
+                'denominator; each disagreement queued one finding proposal for a person to ' +
+                'decide',
         ],
         excludes: [
             'drawn but unreviewed workpapers',
-            'INDETERMINATE answers',
-            'UNASSIGNED workpapers',
-            'any figure at all when no review concluded — a tenant whose internal ' +
-                'audit concluded nothing and one that never disagreed both have zero dissents',
+            'indeterminate answers',
+            'unassigned workpapers',
+            'any figure at all when no review concluded — a workspace whose internal audit ' +
+                'concluded nothing and one that never disagreed both have zero disagreements',
         ],
     },
 
@@ -913,33 +952,41 @@ export const METRIC_DEFINITIONS = {
     // one the figure was computed over.
     'assurance.reliance_reperformance_agreement_rate': {
         id: 'assurance.reliance_reperformance_agreement_rate',
-        label: 'Share of concluded reviews, of the workpapers relied on, that concurred with the auditor agent',
+        label: 'Share of concluded reviews, of the workpapers relied on, that concurred with the ' +
+            'auditor agent',
         population:
-            'CONCURRED over (CONCURRED + DISSENTED), among AuditWorkpaperSampleReview rows of the ' +
-            'AuditWorkpaper rows in the reliance pack: workpapers of a library v1 procedure whose ' +
-            'period lies wholly inside the audit cycle’s period',
+            'reviews that agreed, divided by reviews that agreed or disagreed, among the ' +
+            'reviews of the workpapers in the reliance pack: workpapers of a library v1 ' +
+            'procedure whose period lies wholly inside the audit cycle’s period',
         moment: 'AS_OF_GENERATION',
         includes: [
-            'a value in 0..1, per control and once for the pack, computed when the pack was assembled',
+            'a value between 0 and 1, for each control and once for the pack, computed ' +
+                'when the pack was assembled',
         ],
         excludes: [
             'workpapers internal audit did not draw, listed beside the rate as not drawn',
             'drawn but unreviewed workpapers, in neither the numerator nor the denominator',
-            'INDETERMINATE answers, which are neither agreement nor disagreement',
-            'UNASSIGNED workpapers, which nobody could be asked to review',
-            'any figure at all when no review concluded — zero concluded reviews is not "100% agreement"',
+            'indeterminate answers, which are neither agreement nor disagreement',
+            'unassigned workpapers, which nobody could be asked to review',
+            'any figure at all when no review concluded — zero concluded reviews is not ' +
+                '“100% agreement”',
         ],
     },
     'assurance.reliance_reperformance_disagreement_rate': {
         id: 'assurance.reliance_reperformance_disagreement_rate',
-        label: 'Share of concluded reviews, of the workpapers relied on, that dissented from the auditor agent',
+        label: 'Share of concluded reviews, of the workpapers relied on, that dissented from the ' +
+            'auditor agent',
         population:
-            'DISSENTED over (CONCURRED + DISSENTED), over the same rows as ' +
-            'assurance.reliance_reperformance_agreement_rate',
+            'reviews that disagreed, divided by reviews that agreed or disagreed, over the ' +
+            'same reviews as the agreement rate for the workpapers relied on',
         moment: 'AS_OF_GENERATION',
-        includes: ['a value in 0..1, the complement of the agreement rate over the same denominator'],
+        includes: [
+            'a value between 0 and 1, the complement of the agreement rate over the same ' +
+                'denominator',
+        ],
         excludes: [
-            'workpapers not drawn, drawn but unreviewed, INDETERMINATE and UNASSIGNED, as for the agreement rate',
+            'workpapers not drawn, drawn but unreviewed, indeterminate and unassigned, as ' +
+                'for the agreement rate',
             'any figure at all when no review concluded',
         ],
     },
@@ -948,62 +995,67 @@ export const METRIC_DEFINITIONS = {
     'thirdparty.agents': {
         id: 'thirdparty.agents',
         label: 'Third-party agents',
-        population: agentPopulation('provenance = THIRD_PARTY'),
+        population: agentPopulation('that a third party supplies'),
         moment: 'AS_OF_GENERATION',
-        includes: ['every lifecycle status'],
+        includes: ['every lifecycle state'],
         excludes: AGENT_ROW_EXCLUSIONS,
     },
     'thirdparty.supplying_vendors': {
         id: 'thirdparty.supplying_vendors',
         label: 'Vendors supplying an agent',
-        population: 'distinct Vendor rows named by a third-party agent',
+        population: 'the different vendors named as the supplier of a third-party agent',
         moment: 'AS_OF_GENERATION',
         includes: ['a vendor supplying several agents, counted once'],
         excludes: [
-            'vendors in the register that supply no agent — this is the agentic ' +
-                'supply chain, not the whole vendor book',
-            'soft-deleted vendors, which are reported per agent as an unresolved supplier',
+            'vendors in the register that supply no agent — this is the agents’ supply ' +
+                'chain, not the whole vendor book',
+            'deleted vendors, which are reported per agent as an unresolved supplier',
         ],
     },
     'thirdparty.vendors_without_completed_assessment': {
         id: 'thirdparty.vendors_without_completed_assessment',
         label: 'Supplying vendors with no completed assessment',
         population:
-            'the supplying vendors above with no VendorAssessment in a terminal ' +
-            'reviewed state (APPROVED, REVIEWED or CLOSED)',
+            'the supplying vendors above with no vendor assessment that reached a reviewed end ' +
+            '(approved, reviewed or closed)',
         moment: 'AS_OF_GENERATION',
         includes: [
-            'vendors with an assessment still in DRAFT, SENT, IN_PROGRESS, ' +
-                'SUBMITTED or IN_REVIEW — started is not finished',
-            'vendors whose only assessment was REJECTED, which is a completed ' +
-                'process with an adverse result and is reported per row',
+            'vendors with an assessment still in progress — drafted, sent, being answered, ' +
+                'submitted or in review: started is not finished',
+            'vendors whose only assessment was rejected, which is a completed process with ' +
+                'an adverse result and is reported per vendor',
         ],
-        excludes: ['vendors holding at least one terminal reviewed assessment'],
+        excludes: [
+            'vendors holding at least one assessment that reached a reviewed end',
+        ],
     },
     'thirdparty.tools_pinned': {
         id: 'thirdparty.tools_pinned',
         label: 'Agent tools with a pinned definition',
-        population: 'rows in McpToolManifestPin for this tenant',
+        population: 'the tool definitions pinned for this workspace’s agents',
         moment: 'AS_OF_GENERATION',
         includes: [
-            'BASELINE pins, taken on first observation with no human involved',
-            'APPROVED pins, where a named human accepted a changed definition',
+            'definitions pinned when first seen, with no human involved',
+            'definitions a named human accepted after they changed',
         ],
         excludes: [
-            'tools this build serves that no agent has ever invoked here, which ' +
-                'therefore have no pin',
+            'tools this build offers that no agent has ever called here, which therefore ' +
+                'have no pin',
         ],
     },
     'thirdparty.tools_human_approved': {
         id: 'thirdparty.tools_human_approved',
         label: 'Tool definitions a human accepted after a change',
-        population: 'the pins above with approvalSource = APPROVED',
+        population:
+            'the pinned definitions above that a named human accepted after a change',
         moment: 'AS_OF_GENERATION',
-        includes: ['pins whose definition moved and a named human re-approved it'],
+        includes: [
+            'pins whose definition changed and a named human approved it again',
+        ],
         excludes: [
-            'BASELINE pins — trust-on-first-use is not a human decision, and an ' +
-                'auditor asking "did a person accept this description" must not ' +
-                'have the two inferred from a timestamp',
+            'definitions pinned when first seen — trusting what was seen first is not a ' +
+                'human decision, and an auditor asking “did a person accept this description” ' +
+                'must not have the two told apart by a timestamp',
         ],
     },
     'thirdparty.supplier_side_agent_changes': {
@@ -1013,13 +1065,12 @@ export const METRIC_DEFINITIONS = {
         moment: 'AS_OF_GENERATION',
         includes: [],
         excludes: [
-            'everything — a third-party agent’s model, prompt and tool ' +
-                'implementation live on the supplier’s side of the boundary. ' +
-                'The register records what the operator DECLARES (modelRef, ' +
-                'autonomy, scope) and the tool boundary records what the agent ' +
-                'DID here. Neither is a view of the supplier’s build, and a ' +
-                'figure derived from either would be a claim about the supplier ' +
-                'made out of our own logs',
+            'everything — a third-party agent’s model, prompt and tool implementation live ' +
+                'on the supplier’s side of the boundary. The register records what the ' +
+                'operator declares (the model, autonomy and scope) and the tool boundary ' +
+                'records what the agent did here. Neither is a view of the supplier’s build, ' +
+                'and a figure derived from either would be a claim about the supplier made out ' +
+                'of our own logs',
         ],
     },
 } as const satisfies Record<string, MetricDefinition>;

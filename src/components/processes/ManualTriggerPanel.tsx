@@ -90,7 +90,7 @@ export function ManualTriggerPanel() {
     return (
         <Card>
             <div className="space-y-default">
-                <p className="text-[11px] uppercase tracking-wide text-content-subtle">
+                <p className="text-xs uppercase tracking-wide text-content-subtle">
                     {t('heading')}
                 </p>
                 <Combobox

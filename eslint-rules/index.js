@@ -72,5 +72,6 @@ module.exports = {
         'no-native-choice-input': require('./rules/no-native-choice-input'),
         'no-negative-margin-icon': require('./rules/no-negative-margin-icon'),
         'no-literal-aria-label': require('./rules/no-literal-aria-label'),
+        'no-sub-12px-text': require('./rules/no-sub-12px-text'),
     },
 };

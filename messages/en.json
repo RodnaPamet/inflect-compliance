@@ -1151,7 +1151,7 @@
       "breadcrumb": "Import",
       "title": "Import assets from CSV",
       "csvFormat": "CSV format",
-      "csvDesc": "Upload a CSV file with at minimum Name and Type columns. Optional columns: Status, Owner, Classification, Location, Confidentiality, Integrity, Availability (1-5), Retention, RetentionUntil (YYYY-MM-DD), ExternalRef, Dependencies, BusinessProcesses, DataResidency, CPE, Vendor, Product, Version.",
+      "csvDesc": "Upload a CSV file with at minimum <code>Name</code> and <code>Type</code> columns. Optional columns: <code>Status</code>, <code>Owner</code>, <code>Classification</code>, <code>Location</code>, <code>Confidentiality</code>, <code>Integrity</code>, <code>Availability</code> (1-5), <code>Retention</code>, <code>RetentionUntil</code> (YYYY-MM-DD), <code>ExternalRef</code>, <code>Dependencies</code>, <code>BusinessProcesses</code>, <code>DataResidency</code>, <code>CPE</code>, <code>Vendor</code>, <code>Product</code>, <code>Version</code>.",
       "chooseFile": "Choose CSV file",
       "assetsToImport": "{count} asset(s) to import",
       "importing": "Importing… ({count})",
@@ -5246,10 +5246,21 @@
     "gapAnalysisHeading": "Gap analysis — {count} unmapped requirements",
     "noGaps": "Every requirement has at least one mapped control",
     "missingEvidenceHeading": "Controls missing evidence — {count}",
-    "riskTplPortfolio": "Portfolio Risk Summary",
-    "riskTplDeepDive": "Risk Deep Dive",
-    "riskTplBia": "Business Impact Analysis",
     "riskTplMore": "+{count} more"
+  },
+  "riskReportTemplates": {
+    "PORTFOLIO_SUMMARY": {
+      "name": "Portfolio Risk Summary",
+      "description": "Executive VaR + top risks + appetite + BIA."
+    },
+    "RISK_DEEP_DIVE": {
+      "name": "Risk Deep Dive",
+      "description": "Single-risk FAIR decomposition + history."
+    },
+    "BIA": {
+      "name": "Business Impact Analysis",
+      "description": "RTO/RPO/MTPD + impact + revenue at risk."
+    }
   },
   "notifications": {
     "title": "Notifications",
@@ -5348,6 +5359,7 @@
       "commaSeparated": "Comma-separated",
       "issuerUrl": "Issuer URL",
       "clientId": "Client ID",
+      "clientIdPlaceholder": "client-id-from-idp",
       "clientSecret": "Client Secret",
       "showSecret": "Show client secret",
       "hideSecret": "Hide client secret",
@@ -9622,7 +9634,7 @@
     "riskRegister": "Risk Register",
     "importTitle": "Import Risks from CSV",
     "csvFormat": "CSV Format",
-    "csvDesc": "Upload a CSV file with at least a title column. Optional columns: description, category, likelihood (1–{likelihoodMax}), impact (1–{impactMax}), owner.",
+    "csvDesc": "Upload a CSV file with at least a <code>title</code> column. Optional columns: <code>description</code>, <code>category</code>, <code>likelihood</code> (1–{likelihoodMax}), <code>impact</code> (1–{impactMax}), <code>owner</code>.",
     "chooseFile": "Choose CSV File",
     "risksToImport": "{count, plural, one {# risk} other {# risks}} to import",
     "confirmImport": "Import {count, plural, one {# risk} other {# risks}}",
@@ -19295,405 +19307,405 @@
     "inventory": {
       "registered_agents": {
         "label": "Registered agents",
-        "population": "rows in RegisteredAgent for this tenant",
-        "includes": "every lifecycle status — DRAFT, ACTIVE, SUSPENDED and RETIRED; agents currently stopped by a kill switch (the row still exists)",
-        "excludes": "soft-deleted agents (RegisteredAgent.deletedAt IS NOT NULL); the legacy placeholder row (isLegacyPlaceholder = true), which adopts pre-register proposals and is never a real agent"
+        "population": "the agents in this workspace’s register",
+        "includes": "every lifecycle state — draft, active, suspended and retired; agents currently stopped by a kill switch (the agent is still in the register)",
+        "excludes": "deleted agents; the placeholder entry that holds proposals made before the register existed, which is never a real agent"
       },
       "active_agents": {
-        "label": "Agents in ACTIVE status",
-        "population": "rows in RegisteredAgent for this tenant, status = ACTIVE",
-        "includes": "agents an unlifted kill switch is currently stopping — status is the register’s state, the kill is a separate axis reported per row as killState",
-        "excludes": "soft-deleted agents (RegisteredAgent.deletedAt IS NOT NULL); the legacy placeholder row (isLegacyPlaceholder = true), which adopts pre-register proposals and is never a real agent; DRAFT agents, which have never been admitted; SUSPENDED and RETIRED agents"
+        "label": "Active agents",
+        "population": "the agents in this workspace’s register that are active",
+        "includes": "agents a kill switch is stopping right now — being active is the register’s state, and a kill is a separate fact, reported for each agent",
+        "excludes": "deleted agents; the placeholder entry that holds proposals made before the register existed, which is never a real agent; draft agents, which have never been admitted; suspended and retired agents"
       },
       "retired_agents": {
-        "label": "Agents in RETIRED status",
-        "population": "rows in RegisteredAgent for this tenant, status = RETIRED",
+        "label": "Retired agents",
+        "population": "the agents in this workspace’s register that are retired",
         "includes": "agents retired at any time, however long ago",
-        "excludes": "soft-deleted agents (RegisteredAgent.deletedAt IS NOT NULL); the legacy placeholder row (isLegacyPlaceholder = true), which adopts pre-register proposals and is never a real agent; soft-deleted agents, which are a different end state from retirement"
+        "excludes": "deleted agents; the placeholder entry that holds proposals made before the register existed, which is never a real agent; deleted agents, which are a different end state from retirement"
       },
       "unscored_agents": {
         "label": "Agents with no risk tier",
-        "population": "rows in RegisteredAgent for this tenant, riskTier IS NULL",
-        "includes": "agents registered but never assessed — the state between insert and the first completed scoring run",
-        "excludes": "soft-deleted agents (RegisteredAgent.deletedAt IS NOT NULL); the legacy placeholder row (isLegacyPlaceholder = true), which adopts pre-register proposals and is never a real agent; agents whose assessment is COMPLETED but has since gone stale — those carry a tier and are counted by inventory.stale_assessments"
+        "population": "the agents in this workspace’s register that have no risk tier",
+        "includes": "agents registered but never assessed — the state between registration and the first completed risk assessment",
+        "excludes": "deleted agents; the placeholder entry that holds proposals made before the register existed, which is never a real agent; agents whose completed assessment has since gone out of date — those carry a tier and are counted under “Agents whose assessment is stale”"
       },
       "stale_assessments": {
         "label": "Agents whose assessment is stale",
-        "population": "rows in RegisteredAgent for this tenant, with a COMPLETED AgentRiskAssessment whose staleAt IS NOT NULL",
-        "includes": "agents whose autonomy, tool grants, data scope, reversibility or declared model moved after the tier was scored",
-        "excludes": "soft-deleted agents (RegisteredAgent.deletedAt IS NOT NULL); the legacy placeholder row (isLegacyPlaceholder = true), which adopts pre-register proposals and is never a real agent; never-assessed agents — an absent judgement is not a stale one"
+        "population": "the agents in this workspace’s register whose completed risk assessment is out of date",
+        "includes": "agents whose autonomy, tool grants, data scope, reversibility or declared model changed after the tier was scored",
+        "excludes": "deleted agents; the placeholder entry that holds proposals made before the register existed, which is never a real agent; never-assessed agents — an absent judgement is not a stale one"
       },
       "unattended_agents": {
         "label": "Agents at unattended autonomy",
-        "population": "rows in RegisteredAgent for this tenant, autonomyLevel >= UNATTENDED_AUTONOMY (5)",
-        "includes": "the REGISTERED autonomy level, which is a declaration by the operator, not an observation of what the agent did",
-        "excludes": "soft-deleted agents (RegisteredAgent.deletedAt IS NOT NULL); the legacy placeholder row (isLegacyPlaceholder = true), which adopts pre-register proposals and is never a real agent; any narrowing a policy card’s autonomy ceiling imposes at the tool boundary — the ceiling is enforcement, this column is the claim"
+        "population": "the agents in this workspace’s register registered at autonomy level 5 or above, where nobody watches each step",
+        "includes": "the registered autonomy level, which is what the operator declared, not an observation of what the agent did",
+        "excludes": "deleted agents; the placeholder entry that holds proposals made before the register existed, which is never a real agent; any narrowing a policy card’s autonomy ceiling imposes when the agent calls a tool — the ceiling is what is enforced, the registered level is the claim"
       },
       "third_party_agents": {
         "label": "Third-party agents",
-        "population": "rows in RegisteredAgent for this tenant, provenance = THIRD_PARTY",
-        "includes": "agents supplied by a named vendor (the schema requires one)",
-        "excludes": "soft-deleted agents (RegisteredAgent.deletedAt IS NOT NULL); the legacy placeholder row (isLegacyPlaceholder = true), which adopts pre-register proposals and is never a real agent; FIRST_PARTY agents"
+        "population": "the agents in this workspace’s register that a third party supplies",
+        "includes": "agents supplied by a named vendor (the register requires one)",
+        "excludes": "deleted agents; the placeholder entry that holds proposals made before the register existed, which is never a real agent; agents built in-house"
       },
       "agents_without_policy_card": {
         "label": "Agents with no policy card",
-        "population": "rows in RegisteredAgent for this tenant, with no AgentPolicyCard row",
-        "includes": "agents registered before the policy card existed, for which the tool boundary contributes no card term",
-        "excludes": "soft-deleted agents (RegisteredAgent.deletedAt IS NOT NULL); the legacy placeholder row (isLegacyPlaceholder = true), which adopts pre-register proposals and is never a real agent; agents holding a card whose current version grants nothing — that is a card, and a restrictive one"
+        "population": "the agents in this workspace’s register that have no policy card",
+        "includes": "agents registered before policy cards existed, whose tool calls no card constrains",
+        "excludes": "deleted agents; the placeholder entry that holds proposals made before the register existed, which is never a real agent; agents holding a card whose current version grants nothing — that is a card, and a restrictive one"
       },
       "agents_with_spending_authority": {
         "label": "Agents with declared spending authority",
-        "population": "rows in RegisteredAgent for this tenant, with at least one AgentSpendingAuthority row not WITHDRAWN",
-        "includes": "envelopes awaiting review, reviewed, and those a kill asked to be suspended — a suspension is a request to the token requestor, not proof the token stopped; retired agents whose envelope was never withdrawn",
-        "excludes": "soft-deleted agents (RegisteredAgent.deletedAt IS NOT NULL); the legacy placeholder row (isLegacyPlaceholder = true), which adopts pre-register proposals and is never a real agent; withdrawn envelopes; agents whose code can pay but on which nobody declared an envelope — the harness raises SPENDING_AGENT_UNDECLARED for those, and a register count cannot see them"
+        "population": "the agents in this workspace’s register with at least one spending limit that has not been withdrawn",
+        "includes": "limits awaiting review, reviewed limits, and those a kill asked to be suspended — a suspension is a request to the token provider, not proof the token stopped; retired agents whose limit was never withdrawn",
+        "excludes": "deleted agents; the placeholder entry that holds proposals made before the register existed, which is never a real agent; withdrawn limits; agents whose code can pay but for which nobody declared a limit — the scanner reports those as an undeclared spending agent, and a count of the register cannot see them"
       },
       "agents_with_unreviewed_spending_authority": {
         "label": "Agents with spending authority nobody else has reviewed",
-        "population": "rows in RegisteredAgent for this tenant, with an AgentSpendingAuthority row that is DECLARED, or SUSPENDED_REQUESTED with no review",
-        "includes": "an envelope a kill moved to SUSPENDED_REQUESTED before anybody reviewed it — the same rule that holds the agent back from activation",
-        "excludes": "soft-deleted agents (RegisteredAgent.deletedAt IS NOT NULL); the legacy placeholder row (isLegacyPlaceholder = true), which adopts pre-register proposals and is never a real agent; withdrawn envelopes, and envelopes a second person reviewed"
+        "population": "the agents in this workspace’s register with a spending limit that is declared and not yet reviewed, or that a kill asked to suspend before anybody reviewed it",
+        "includes": "a limit a kill asked to suspend before anybody reviewed it — the same rule that holds the agent back from activation",
+        "excludes": "deleted agents; the placeholder entry that holds proposals made before the register existed, which is never a real agent; withdrawn limits, and limits a second person reviewed"
       }
     },
     "asi": {
       "agents_in_scope": {
         "label": "Agents the coverage matrix covers",
-        "population": "rows in RegisteredAgent for this tenant",
-        "includes": "every registered agent, whatever its status",
-        "excludes": "soft-deleted agents (RegisteredAgent.deletedAt IS NOT NULL); the legacy placeholder row (isLegacyPlaceholder = true), which adopts pre-register proposals and is never a real agent"
+        "population": "the agents in this workspace’s register",
+        "includes": "every registered agent, whatever its state",
+        "excludes": "deleted agents; the placeholder entry that holds proposals made before the register existed, which is never a real agent"
       },
       "risks_in_framework": {
         "label": "Distinct agentic risks in the installed framework",
-        "population": "distinct FrameworkRequirement.code rows across EVERY installed representation of the OWASP Agentic Top 10 (the seeded and the library-synced framework rows are one family)",
-        "includes": "codes present in either representation",
-        "excludes": "deprecated requirement rows (deprecatedAt IS NOT NULL)"
+        "population": "the distinct risk codes across every installed copy of the OWASP Agentic Top 10 (the seeded framework and the one synced from the library are one family)",
+        "includes": "codes present in either copy",
+        "excludes": "requirements the framework has withdrawn"
       },
       "agents_fully_covered": {
         "label": "Agents with no uncovered agentic risk",
-        "population": "rows in RegisteredAgent for this tenant, scored against the installed framework",
-        "includes": "agents for which every risk resolves to covered or partially covered by a direct or inherited control",
-        "excludes": "soft-deleted agents (RegisteredAgent.deletedAt IS NOT NULL); the legacy placeholder row (isLegacyPlaceholder = true), which adopts pre-register proposals and is never a real agent; agents with any risk in the review-needed bucket — a route that needs a human decision is not coverage; risks the register shows do not apply to that agent (zero tool grants for ASI02, autonomy 0 for ASI08) — they are neither covered nor a gap, so they cannot keep an agent out of this count"
+        "population": "the agents in this workspace’s register scored against the installed framework",
+        "includes": "agents for which every risk is covered or partly covered by a direct or inherited control",
+        "excludes": "deleted agents; the placeholder entry that holds proposals made before the register existed, which is never a real agent; agents with any risk that needs review — a route that needs a human decision is not coverage; risks the register shows do not apply to that agent (no tool grants for ASI02, autonomy 0 for ASI08) — they are neither covered nor a gap, so they cannot keep an agent out of this count"
       },
       "risks_covered_by_no_agent": {
         "label": "Agentic risks no agent covers",
-        "population": "the distinct risk codes counted by asi.risks_in_framework",
-        "includes": "a risk that is uncovered or review-needed for every agent it applies to, and applies to at least one of them",
-        "excludes": "risks covered for at least one agent, however many others leave them open — this is a floor, not an average; risks that apply to no agent in the population — nobody covering a risk nobody is exposed to is not a gap"
+        "population": "the distinct risk codes counted under “Distinct agentic risks in the installed framework”",
+        "includes": "a risk that is uncovered or needs review for every agent it applies to, and applies to at least one of them",
+        "excludes": "risks covered for at least one agent, however many others leave them open — this is a floor, not an average; risks that apply to no agent — nobody covering a risk nobody is exposed to is not a gap"
       }
     },
     "approvals": {
       "decided": {
         "label": "Proposals a human decided",
-        "population": "rows in AgentProposal with status in (ACCEPTED, EDITED, REJECTED), reviewedByUserId set and reviewedAt inside the window",
-        "includes": "decisions on proposals from any agent, including unattributed ones",
-        "excludes": "PENDING proposals, which nobody has decided; EXPIRED proposals, which closed without a decision; decisions beyond the report row cap, which the payload flags as truncated"
+        "population": "agent proposals a person accepted, accepted with edits, or rejected, with the decision made inside the window",
+        "includes": "decisions on proposals from any agent, including proposals no agent is named on",
+        "excludes": "pending proposals, which nobody has decided; expired proposals, which closed without a decision; decisions beyond the report’s row limit, which the report marks as cut short"
       },
       "approved": {
         "label": "Proposals approved",
-        "population": "the decided proposals above with status in (ACCEPTED, EDITED)",
-        "includes": "EDITED, where the human changed the payload before accepting it",
-        "excludes": "REJECTED proposals"
+        "population": "the decided proposals above that a person accepted, with or without edits",
+        "includes": "proposals the person edited before accepting them",
+        "excludes": "rejected proposals"
       },
       "rejected": {
         "label": "Proposals rejected",
-        "population": "the decided proposals above with status = REJECTED",
+        "population": "the decided proposals above that a person rejected",
         "includes": "every rejection, whatever the reason",
         "excludes": "proposals that expired unreviewed"
       },
       "approval_rate": {
         "label": "Share of decisions that approved",
-        "population": "approvals.approved over approvals.decided",
-        "includes": "a value in 0..1",
-        "excludes": "any figure at all when nothing was decided — an empty denominator reports NO_POPULATION rather than 0, which would read as \"everything was rejected\""
+        "population": "proposals approved, divided by proposals a human decided",
+        "includes": "a value between 0 and 1",
+        "excludes": "any figure at all when nothing was decided — an empty denominator is reported as having no population rather than as 0, which would read as “everything was rejected”"
       },
       "fastest_decision_seconds": {
         "label": "Fastest decision in the window",
-        "population": "the minimum decision latency across every reviewer in the window",
-        "includes": "a single OBSERVATION, reported at any sample size — unlike the per-reviewer estimates, which the engine refuses below its floor",
+        "population": "the shortest time any reviewer took to decide a proposal in the window",
+        "includes": "a single observation, reported at any sample size — unlike the per-reviewer estimates, which are withheld below a minimum number of decisions",
         "excludes": "reviewers with no decision in the window"
       },
       "reviewers": {
         "label": "Distinct humans who decided something",
-        "population": "distinct AgentProposal.reviewedByUserId inside the window",
+        "population": "the different people who decided at least one agent proposal in the window",
         "includes": "anyone who decided at least one proposal",
         "excludes": "people with permission to review who did not — the queue records decisions, not eligibility"
       },
       "reviewers_below_reportable_sample": {
         "label": "Reviewers with too few decisions to estimate",
-        "population": "reviewers whose decision count is under the engine’s minimum sample",
-        "includes": "reviewers for whom rate and median estimates are visibly REFUSED rather than computed from a handful of decisions",
-        "excludes": "reviewers at or above the floor"
+        "population": "reviewers whose number of decisions is under the minimum sample",
+        "includes": "reviewers for whom the approval rate and the median time are shown as withheld rather than computed from a handful of decisions",
+        "excludes": "reviewers at or above the minimum"
       },
       "bias_signals": {
         "label": "Automation-bias patterns that fired",
-        "population": "signals returned by the automation-bias engine over the window",
-        "includes": "bulk-approval bursts, implausibly fast decisions, fast medians, never-rejected reviewers and declared-but-unrecorded second approvers",
-        "excludes": "whether the proposal content was ever actually read — the queue records decisions, never attention, and the payload names that question as unobservable rather than approximating it"
+        "population": "the signs of automation bias detected in the window",
+        "includes": "bursts of bulk approvals, implausibly fast decisions, fast medians, reviewers who never reject, and second approvers that were required but not recorded",
+        "excludes": "whether the proposal was ever actually read — the queue records decisions, never attention, and the report names that question as unobservable rather than guessing at it"
       },
       "pending_now": {
         "label": "Proposals awaiting a decision",
-        "population": "rows in AgentProposal with status = PENDING",
-        "includes": "every pending row regardless of age — this is a snapshot and NOT scoped to the report window, because queue depth now is what drives rubber-stamping now",
-        "excludes": "proposals already moved to EXPIRED by the expiry sweep"
+        "population": "agent proposals waiting for a decision now",
+        "includes": "every waiting proposal regardless of age — this is a snapshot, not limited to the report window, because the length of the queue now is what drives rubber-stamping now",
+        "excludes": "proposals already closed as expired"
       },
       "sample_audits_answered": {
         "label": "Retrospective sample audits answered",
-        "population": "rows in AgentProposalSampleAudit sampled inside the window whose outcome has left PENDING",
-        "includes": "CONCURRED, DISSENTED and INDETERMINATE answers",
-        "excludes": "drawn-but-unanswered audits — counting them would improve the disagreement rate every time the sampler ran and nobody did the work"
+        "population": "decided proposals drawn for a second look inside the window whose second look has been answered",
+        "includes": "answers that agreed, disagreed or could not conclude",
+        "excludes": "drawn but unanswered audits — counting them would improve the disagreement rate every time the sample was drawn and nobody did the work"
       },
       "sample_audit_disagreement_rate": {
         "label": "Share of answered sample audits that dissented",
-        "population": "DISSENTED over answered, inside the window",
-        "includes": "a value in 0..1 — the number the approval queue is judged on",
-        "excludes": "any figure when nothing was answered — a tenant with a perfect record and a tenant nobody reviewed both produce zero dissents"
+        "population": "answered sample audits that disagreed, divided by all answered sample audits, inside the window",
+        "includes": "a value between 0 and 1 — the number the approval queue is judged on",
+        "excludes": "any figure when nothing was answered — a workspace with a perfect record and one nobody reviewed both produce zero disagreements"
       },
       "guard_flagged": {
         "label": "Proposals the content guard refused",
-        "population": "rows in AgentProposal whose guardVerdict is not CLEAN",
-        "includes": "both non-clean verdicts — FLAGGED (surfaced to a reviewer with its rule ids) and QUARANTINED (withheld from the review queue entirely). Both mean the guard looked and objected; proposals since decided by a human — the guard’s verdict is a record of what it saw, not of what happened next",
-        "excludes": "proposals written before the guard existed, which carry the column default CLEAN and no guardInputDigest — those are counted separately by approvals.guard_unscanned"
+        "population": "agent proposals the content guard objected to",
+        "includes": "both kinds of objection — flagged (shown to a reviewer with the rules that matched) and quarantined (held out of the review queue entirely). Both mean the guard looked and objected; proposals since decided by a human — the guard’s verdict is a record of what it saw, not of what happened next",
+        "excludes": "proposals written before the guard existed, which read as passed but were never scanned — those are counted under “Proposals no content guard ever scanned”"
       },
       "guard_unscanned": {
         "label": "Proposals no content guard ever scanned",
-        "population": "rows in AgentProposal with guardVerdict = CLEAN and guardInputDigest IS NULL",
-        "includes": "every proposal that entered the queue before the guard shipped — the column is NOT NULL DEFAULT CLEAN and the migration ran no backfill, so CLEAN on these rows means \"not refused\", never \"scanned and found clean\"",
-        "excludes": "scanned proposals, whichever way the scan went — the digest is the discriminator, and it is written on every proposal the guard decides"
+        "population": "agent proposals that read as passed by the content guard but carry no record of a scan",
+        "includes": "every proposal that entered the queue before the guard shipped — such a proposal reads as passed because that was the default, and no earlier record was filled in, so “passed” on it means “not refused”, never “scanned and found clean”",
+        "excludes": "scanned proposals, whichever way the scan went — the record of the scan is what tells them apart, and it is written on every proposal the guard decides"
       },
       "guard_clean": {
         "label": "Proposals the content guard scanned and passed",
-        "population": "rows in AgentProposal with guardVerdict = CLEAN and a non-null guardInputDigest",
-        "includes": "the remainder: total proposals minus refused minus unscanned, so the three guard figures always sum to the population rather than being three counts that can disagree under a concurrent write",
-        "excludes": "pre-guard rows, which look identical in the column and are counted by approvals.guard_unscanned instead"
+        "population": "agent proposals the content guard scanned and let through",
+        "includes": "the remainder: all proposals minus those refused minus those never scanned, so the three guard figures always add up to the whole rather than being three counts that can disagree when proposals arrive at the same time",
+        "excludes": "proposals from before the guard, which look the same as passed ones and are counted under “Proposals no content guard ever scanned”"
       }
     },
     "incidents": {
       "guard_blocks": {
         "label": "Guard blocks",
-        "population": "QUARANTINED verdicts inside the window, across BOTH places one can land: AgentProposal rows the guard quarantined, and WorkflowStep rows a run was stopped at",
-        "includes": "blocks that produced a proposal, and blocks on a reasoning run that produced no proposal at all — the second is the only trace a Flue block leaves; blocks on a run that began before the window; the step carries its own stamp, and a run blocked inside the window was blocked inside it",
-        "excludes": "FLAGGED verdicts, which pause for review rather than stop — those are counted by approvals.guard_flagged; runs the circuit breaker then latched; the trip is counted separately by incidents.breaker_trips, and one cause can produce both"
+        "population": "times inside the window the content guard quarantined something, in both places that can happen: an agent proposal it quarantined, and a step of a run it stopped",
+        "includes": "blocks that produced a proposal, and blocks on a reasoning run that produced no proposal at all — the second is the only trace a block on a Flue run leaves; blocks on a run that began before the window; each step carries its own time, and a run blocked inside the window was blocked inside it",
+        "excludes": "flagged proposals, which pause for review rather than stop — those are counted under “Proposals the content guard refused”; runs the circuit breaker then stopped; the trip is counted separately under “Circuit breakers that tripped”, and one cause can produce both"
       },
       "kill_engagements": {
         "label": "Kill switches engaged",
-        "population": "rows in AgentKillSwitch engaged inside the window",
-        "includes": "both scopes — a tenant-wide kill (agentId IS NULL) and a per-agent one; kills that have since been lifted; the row is the record of the window",
-        "excludes": "the scheduled drill’s canary kills, which are exercises against an id no credential resolves to and are counted separately; OWNER_DEPARTED kills (reasonCode = OWNER_DEPARTED), which the owner-orphan pass engages because an agent’s accountable owner left — a lifecycle containment, not an incident, counted separately as incidents.owner_departed_engagements; the platform-wide kill, which is global and has no tenant to scope to"
+        "population": "kill switches engaged inside the window",
+        "includes": "both scopes — a kill for the whole workspace and one for a single agent; kills that have since been lifted; the engagement is the record of the window",
+        "excludes": "the scheduled drill’s practice kills, which are exercises against an agent no credential belongs to and are counted separately; kills engaged because an agent’s accountable owner left, which the owner check engages — a lifecycle containment, not an incident, counted separately under “Kills engaged because an agent’s owner left”; the platform-wide kill, which is global and belongs to no workspace"
       },
       "owner_departed_engagements": {
         "label": "Kills engaged because an agent’s owner left",
-        "population": "rows in AgentKillSwitch engaged inside the window with reasonCode = OWNER_DEPARTED",
-        "includes": "every OWNER_DEPARTED kill the owner-orphan pass engaged, as the system actor system:agent-owner-orphan-pass, whether or not it has since been lifted after a completed ownership transfer",
-        "excludes": "kills a person engaged, whatever their reason text says — the code is a column only the system writes, never the free-text reason; agents the pass found at DRY_RUN, which it recorded and did not stop; the drill canary’s kills"
+        "population": "kill switches engaged inside the window because an agent’s accountable owner left",
+        "includes": "every such kill the scheduled owner check engaged, whether or not it has since been lifted after a completed ownership transfer",
+        "excludes": "kills a person engaged, whatever their stated reason says — only the system records this cause, never the free-text reason; agents the check found while it was running as a dry run, which it recorded and did not stop; the drill’s practice kills"
       },
       "owner_departed_in_force_now": {
-        "label": "OWNER_DEPARTED kills currently in force",
-        "population": "rows in AgentKillSwitch with reasonCode = OWNER_DEPARTED and liftedAt IS NULL",
+        "label": "Kills for a departed owner currently in force",
+        "population": "kill switches engaged because an agent’s accountable owner left that have not been lifted",
         "includes": "kills engaged before the report window and still in force — each is an agent waiting for an ownership transfer to complete",
-        "excludes": "kills a person engaged; drill canary kills; the global platform kill"
+        "excludes": "kills a person engaged; the drill’s practice kills; the global platform kill"
       },
       "drill_canary_engagements": {
         "label": "Drill canary kills",
-        "population": "rows in AgentKillSwitch inside the window naming the drill canary agent id",
+        "population": "kill switches engaged inside the window against the drill’s practice agent",
         "includes": "exercises the scheduled drill engaged and lifted itself",
         "excludes": "kills a human engaged against a real agent"
       },
       "kills_in_force_now": {
         "label": "Kill switches currently in force",
-        "population": "rows in AgentKillSwitch with liftedAt IS NULL",
+        "population": "kill switches that have not been lifted",
         "includes": "kills engaged before the report window — a stop still in force is a fact about now, not about the window",
-        "excludes": "drill canary kills; OWNER_DEPARTED kills, counted as incidents.owner_departed_in_force_now; the global platform kill"
+        "excludes": "the drill’s practice kills; kills for a departed owner, counted under “Kills for a departed owner currently in force”; the global platform kill"
       },
       "longest_kill_minutes": {
         "label": "Longest kill window in the report window",
-        "population": "engaged-to-lifted duration of the kills counted above",
-        "includes": "a kill still in force, measured to the report generation instant and flagged per row as unlifted",
-        "excludes": "drill canary kills; OWNER_DEPARTED kills, which last as long as an ownership transfer takes and are not an incident’s duration"
+        "population": "how long each kill counted above lasted, from engaged to lifted",
+        "includes": "a kill still in force, measured to the moment the report was generated and marked as not lifted",
+        "excludes": "the drill’s practice kills; kills for a departed owner, which last as long as an ownership transfer takes and are not an incident’s duration"
       },
       "drills_run": {
         "label": "Kill-switch drills run",
-        "population": "rows in AgentKillSwitchDrill started inside the window",
-        "includes": "every outcome — PASSED, FAILED and ERROR",
+        "population": "kill-switch drills started inside the window",
+        "includes": "every outcome — passed, failed and could not run",
         "excludes": "drills started before the window"
       },
       "drills_failed": {
-        "label": "Drills that FAILED",
-        "population": "the drills above with outcome = FAILED",
+        "label": "Drills that failed",
+        "population": "the drills above that failed",
         "includes": "drills where the stop control did not stop something",
-        "excludes": "ERROR drills, which proved nothing rather than proving the control broken — collapsing the two would raise a finding about the wrong thing"
+        "excludes": "drills that could not run, which proved nothing rather than proving the control broken — counting the two together would raise a finding about the wrong thing"
       },
       "drills_errored": {
         "label": "Drills that could not run",
-        "population": "the drills above with outcome = ERROR",
-        "includes": "drills that could not complete, and so evidence nothing",
-        "excludes": "FAILED drills"
+        "population": "the drills above that could not run",
+        "includes": "drills that could not complete, and so are evidence of nothing",
+        "excludes": "drills that failed"
       },
       "tool_calls_after_kill": {
         "label": "Tool calls that got through after a kill",
-        "population": "sum of AgentKillSwitchDrill.toolCallsAfterKill over the drills above that actually MEASURED something — a drill whose outcome is ERROR could not run and measured nothing",
-        "includes": "every call the boundary admitted while a kill was in force; anything other than zero is the control failing",
-        "excludes": "any figure at all when no drill ran — summing an empty list to zero would make a tenant that never tested its stop control indistinguishable from one whose control is proven; drills whose outcome is ERROR. Such a drill is a ROW but not a MEASUREMENT: it could not run, so it proves nothing either way, and `toolCallsAfterKill` is left at its column default of 0. Counting it summed that default into the strongest claim this product makes, so a tenant whose only drill BROKE read exactly like one whose stop control is proven. \"Never drilled\" and \"drilled and the drill broke\" demand different actions and now carry different bases"
+        "population": "the tool calls that got through after the kill, added up over the drills above that actually measured something — a drill that could not run measured nothing",
+        "includes": "every call let through while a kill was in force; anything other than zero is the control failing",
+        "excludes": "any figure at all when no drill ran — adding up an empty list to zero would make a workspace that never tested its stop control look the same as one whose control is proven; drills that could not run. Such a drill is recorded but measured nothing: it could not run, so it proves nothing either way, and its count of calls is left at zero. Counting it added that zero to the strongest claim this product makes, so a workspace whose only drill broke read exactly like one whose stop control is proven. “Never drilled” and “drilled and the drill broke” demand different actions and are reported differently"
       },
       "breaker_trips": {
         "label": "Circuit breakers that tripped",
-        "population": "rows in AgentCircuitBreaker whose trippedAt falls inside the window",
+        "population": "circuit breakers that tripped inside the window",
         "includes": "a breaker that tripped and has since been closed",
-        "excludes": "breakers that have never tripped, and agents with no breaker row at all"
+        "excludes": "breakers that have never tripped, and agents that have no breaker"
       },
       "breakers_open_now": {
         "label": "Circuit breakers currently open",
-        "population": "rows in AgentCircuitBreaker with state = OPEN",
+        "population": "circuit breakers that are open now",
         "includes": "breakers tripped before the window — nothing closes itself, so an open breaker is open until a human closes it",
-        "excludes": "closed breakers, whatever their close reason"
+        "excludes": "closed breakers, whatever the reason they were closed"
       },
       "monthly_token_budget": {
         "label": "Monthly agent token budget",
-        "population": "TenantSecuritySettings.agentMonthlyTokenBudget for this tenant, the ceiling every run start is checked against",
+        "population": "the monthly token budget set for this workspace’s agents, the ceiling every run start is checked against",
         "includes": "the configured number, whatever this month has actually spent",
-        "excludes": "an unconfigured budget, reported as NO_MONTHLY_BUDGET_CONFIGURED rather than as 0 — NULL means unlimited here, and a 0 would read as a ceiling that refuses every run"
+        "excludes": "a budget nobody has set, reported as not configured rather than as 0 — no budget means unlimited here, and a 0 would read as a ceiling that refuses every run"
       },
       "tokens_spent_this_month": {
         "label": "Agent tokens spent this month",
-        "population": "the sum of costTokens over rows in WorkflowRun started on or after the first instant of the current UTC calendar month",
-        "includes": "the UTC calendar month rather than the report window — the budget this is measured against resets monthly, and a 90-day total would not be comparable to it; runs in every terminal state, and runs still RUNNING: the tokens are spent whether or not the run finished",
+        "population": "the tokens spent by agent runs started since the first moment of the current calendar month (UTC)",
+        "includes": "the calendar month (UTC) rather than the report window — the budget this is measured against resets monthly, and a 90-day total would not be comparable to it; runs however they ended, and runs still executing: the tokens are spent whether or not the run finished",
         "excludes": "runs started before this month, however recently — the budget is a monthly allowance and last month’s spend does not consume it"
       },
       "monthly_budget_remaining_tokens": {
         "label": "Monthly token budget remaining",
-        "population": "the configured budget minus this month’s spend, in tokens, for this tenant",
-        "includes": "a NEGATIVE value when spend has passed the ceiling. The check is pre-flight and bounds a run by its own token cap, so an admitted run can still finish above the line — clamping to 0 would hide exactly that overshoot",
+        "population": "the configured budget minus this month’s spend, in tokens, for this workspace",
+        "includes": "a negative value when spend has passed the ceiling. The check is made before a run starts and bounds a run by its own token cap, so an admitted run can still finish above the line — rounding up to 0 would hide exactly that overshoot",
         "excludes": "any figure at all when no budget is configured, because subtracting from unlimited has no answer"
       }
     },
     "runs": {
       "completed": {
         "label": "Runs completed",
-        "population": "WorkflowRun rows that reached COMPLETED, started inside the window",
+        "population": "agent runs started inside the window that completed",
         "includes": "runs started by a person and runs started by an automation rule",
-        "excludes": "runs still in flight, which are counted by the three AT_GENERATION measures below; runs started before the window, however they ended — the window is on startedAt, so a quarter reports the runs it began"
+        "excludes": "runs still in progress, which are counted by the three “now” measures below; runs started before the window, however they ended — the window is on the start time, so a quarter reports the runs it began"
       },
       "failed": {
         "label": "Runs failed",
-        "population": "WorkflowRun rows that reached FAILED, started inside the window",
-        "includes": "runs the reaper settled as having no executor — a deploy that stranded a run looks like a failure here, which is honest: it did not complete",
-        "excludes": "runs ABORTED by a guard block or a kill, counted separately — the cause is different and so is what an operator does about it"
+        "population": "agent runs started inside the window that failed",
+        "includes": "runs closed as failed because nothing was left to execute them — a deploy that stranded a run looks like a failure here, which is honest: it did not complete",
+        "excludes": "runs stopped by a guard block or a kill, counted separately as aborted — the cause is different and so is what an operator does about it"
       },
       "aborted": {
         "label": "Runs aborted",
-        "population": "WorkflowRun rows that reached ABORTED, started inside the window",
-        "includes": "runs a guard BLOCKED, runs a kill switch stopped, and runs an operator aborted by hand",
-        "excludes": "runs that FAILED, which nothing stopped deliberately; the reason for each abort; this is a count, and the trail carries the cause per run"
+        "population": "agent runs started inside the window that were aborted",
+        "includes": "runs a guard blocked, runs a kill switch stopped, and runs an operator aborted by hand",
+        "excludes": "runs that failed, which nothing stopped deliberately; the reason for each abort; this is a count, and the trail carries the cause for each run"
       },
       "in_flight": {
         "label": "Runs in flight now",
-        "population": "WorkflowRun rows in RUNNING, at the moment the pack was generated",
+        "population": "agent runs executing at the moment the pack was generated",
         "includes": "runs this deployment is executing and runs stranded by a deploy",
-        "excludes": "runs AWAITING_APPROVAL or PAUSED, which are in flight in the concurrent-run cap's sense but are waiting on a person rather than executing — those are their own measures"
+        "excludes": "runs awaiting approval or paused, which count against the limit on runs at once but are waiting on a person rather than executing — those are their own measures"
       },
       "awaiting_approval": {
         "label": "Runs awaiting approval",
-        "population": "WorkflowRun rows in AWAITING_APPROVAL, at the moment the pack was generated",
-        "includes": "runs parked at a human checkpoint, and runs a guard FLAGGED for review",
-        "excludes": "runs whose approval window has EXPIRED but whose status has not moved; the status is what this counts, and expiry is a separate question the approval-window measures answer"
+        "population": "agent runs waiting for a person’s approval at the moment the pack was generated",
+        "includes": "runs stopped at a human checkpoint, and runs the guard flagged for review",
+        "excludes": "runs whose approval window has expired but which have not moved on; this counts where the run stands, and expiry is a separate question the approval-window measures answer"
       },
       "paused": {
         "label": "Runs paused",
-        "population": "WorkflowRun rows in PAUSED, at the moment the pack was generated",
-        "includes": "runs a SIGTERM paused on the way out of a deploy, which is the state that makes them resumable rather than reaped",
+        "population": "agent runs paused at the moment the pack was generated",
+        "includes": "runs paused as a deploy shut the worker down, which is what makes them resumable rather than closed as failed",
         "excludes": "runs awaiting a person, which are their own measure above"
       }
     },
     "assurance": {
       "workpaper_reviews_drawn": {
         "label": "Auditor workpapers drawn for internal audit review",
-        "population": "rows in AuditWorkpaperSampleReview for this tenant whose sampledAt is inside the window — one per AuditWorkpaper the scheduled sweep drew at the tenant’s rate (TenantSecuritySettings.workpaperReviewSamplePercent)",
-        "includes": "every state: awaiting an answer, UNASSIGNED, and answered; workpapers of every procedure, period and auditor agent",
-        "excludes": "workpapers the keyed draw passed over at a rate below 100% (at the pilot’s 100% there are none); workpapers written since the last daily sweep (09:40 UTC), which are not drawn yet"
+        "population": "the auditor agent’s workpapers drawn for review by internal audit inside the window — one for each workpaper the scheduled sweep drew at this workspace’s sampling rate",
+        "includes": "every state: waiting for a reviewer to be assigned, waiting for an answer, and answered; workpapers of every procedure, period and auditor agent",
+        "excludes": "workpapers the draw passed over at a rate below 100% (at the pilot’s 100% there are none); workpapers written since the last daily sweep (09:40 UTC), which are not drawn yet"
       },
       "workpaper_reviews_unassigned": {
         "label": "Drawn workpapers nobody in internal audit can be asked to review",
-        "population": "the drawn rows above still PENDING with an unassignedReason: no ACTIVE third-line member, only the auditor agent’s owner is third-line, or the auditor agent is no longer in the register",
-        "includes": "rows a later sweep may still assign, once somebody is eligible",
-        "excludes": "rows with an assigned reviewer, awaiting an answer — counted by assurance.workpaper_reviews_awaiting; answered rows"
+        "population": "the drawn workpapers above that are still unassigned, with the reason: no active third-line member, the only third-line member owns the auditor agent, or the auditor agent is no longer in the register",
+        "includes": "workpapers a later sweep may still assign, once somebody is eligible",
+        "excludes": "workpapers with an assigned reviewer, awaiting an answer — counted under “Drawn workpapers awaiting their assigned reviewer”; answered workpapers"
       },
       "workpaper_reviews_awaiting": {
         "label": "Drawn workpapers awaiting their assigned reviewer",
-        "population": "the drawn rows still PENDING with an assigned third-line reviewer",
-        "includes": "rows however long they have waited — an unanswered review is the failure this counts",
-        "excludes": "UNASSIGNED rows; answered rows"
+        "population": "the drawn workpapers with an assigned third-line reviewer that are still waiting for an answer",
+        "includes": "workpapers however long they have waited — an unanswered review is the failure this counts",
+        "excludes": "unassigned workpapers; answered workpapers"
       },
       "workpaper_reviews_indeterminate": {
         "label": "Reviews that could not conclude",
-        "population": "the drawn rows answered INDETERMINATE",
+        "population": "the drawn workpapers whose reviewer answered that they could not conclude",
         "includes": "answers where the reviewer could not judge the workpaper from the record — a finding about the record, not a vote either way",
-        "excludes": "every other answer — INDETERMINATE is neither agreement nor disagreement"
+        "excludes": "every other answer — an indeterminate answer is neither agreement nor disagreement"
       },
       "workpaper_reviews_concluded": {
         "label": "Reviews that concluded",
-        "population": "the drawn rows answered CONCURRED or DISSENTED — the denominator of both re-performance rates",
-        "includes": "CONCURRED and DISSENTED answers, each recorded once by the assigned reviewer",
-        "excludes": "INDETERMINATE answers; UNASSIGNED rows, which nobody could be asked to answer; drawn but unreviewed rows"
+        "population": "the drawn workpapers whose reviewer agreed or disagreed with the auditor agent — the denominator of both re-performance rates",
+        "includes": "agreeing and disagreeing answers, each recorded once by the assigned reviewer",
+        "excludes": "indeterminate answers; unassigned workpapers, which nobody could be asked to answer; drawn but unreviewed workpapers"
       },
       "workpaper_reperformance_agreement_rate": {
         "label": "Share of concluded reviews that concurred with the auditor agent",
-        "population": "CONCURRED over (CONCURRED + DISSENTED), among the rows drawn inside the window",
-        "includes": "a value in 0..1 — how often internal audit’s re-performance reached the auditor agent’s result",
-        "excludes": "drawn but unreviewed workpapers, in neither the numerator nor the denominator — counting them as agreement would improve the rate every time the sweep ran and nobody did the work; INDETERMINATE answers, which are neither agreement nor disagreement; UNASSIGNED workpapers, which nobody could be asked to review; any figure at all when no review concluded — zero concluded reviews is not \"100% agreement\""
+        "population": "reviews that agreed, divided by reviews that agreed or disagreed, among the workpapers drawn inside the window",
+        "includes": "a value between 0 and 1 — how often internal audit’s re-performance reached the auditor agent’s result",
+        "excludes": "drawn but unreviewed workpapers, in neither the numerator nor the denominator — counting them as agreement would improve the rate every time the sweep ran and nobody did the work; indeterminate answers, which are neither agreement nor disagreement; unassigned workpapers, which nobody could be asked to review; any figure at all when no review concluded — zero concluded reviews is not “100% agreement”"
       },
       "workpaper_reperformance_disagreement_rate": {
         "label": "Share of concluded reviews that dissented from the auditor agent",
-        "population": "DISSENTED over (CONCURRED + DISSENTED), among the rows drawn inside the window",
-        "includes": "a value in 0..1, the complement of the agreement rate over the same denominator; each dissent queued one finding proposal for a person to decide",
-        "excludes": "drawn but unreviewed workpapers; INDETERMINATE answers; UNASSIGNED workpapers; any figure at all when no review concluded — a tenant whose internal audit concluded nothing and one that never disagreed both have zero dissents"
+        "population": "reviews that disagreed, divided by reviews that agreed or disagreed, among the workpapers drawn inside the window",
+        "includes": "a value between 0 and 1, the complement of the agreement rate over the same denominator; each disagreement queued one finding proposal for a person to decide",
+        "excludes": "drawn but unreviewed workpapers; indeterminate answers; unassigned workpapers; any figure at all when no review concluded — a workspace whose internal audit concluded nothing and one that never disagreed both have zero disagreements"
       },
       "reliance_reperformance_agreement_rate": {
         "label": "Share of concluded reviews, of the workpapers relied on, that concurred with the auditor agent",
-        "population": "CONCURRED over (CONCURRED + DISSENTED), among AuditWorkpaperSampleReview rows of the AuditWorkpaper rows in the reliance pack: workpapers of a library v1 procedure whose period lies wholly inside the audit cycle’s period",
-        "includes": "a value in 0..1, per control and once for the pack, computed when the pack was assembled",
-        "excludes": "workpapers internal audit did not draw, listed beside the rate as not drawn; drawn but unreviewed workpapers, in neither the numerator nor the denominator; INDETERMINATE answers, which are neither agreement nor disagreement; UNASSIGNED workpapers, which nobody could be asked to review; any figure at all when no review concluded — zero concluded reviews is not \"100% agreement\""
+        "population": "reviews that agreed, divided by reviews that agreed or disagreed, among the reviews of the workpapers in the reliance pack: workpapers of a library v1 procedure whose period lies wholly inside the audit cycle’s period",
+        "includes": "a value between 0 and 1, for each control and once for the pack, computed when the pack was assembled",
+        "excludes": "workpapers internal audit did not draw, listed beside the rate as not drawn; drawn but unreviewed workpapers, in neither the numerator nor the denominator; indeterminate answers, which are neither agreement nor disagreement; unassigned workpapers, which nobody could be asked to review; any figure at all when no review concluded — zero concluded reviews is not “100% agreement”"
       },
       "reliance_reperformance_disagreement_rate": {
         "label": "Share of concluded reviews, of the workpapers relied on, that dissented from the auditor agent",
-        "population": "DISSENTED over (CONCURRED + DISSENTED), over the same rows as assurance.reliance_reperformance_agreement_rate",
-        "includes": "a value in 0..1, the complement of the agreement rate over the same denominator",
-        "excludes": "workpapers not drawn, drawn but unreviewed, INDETERMINATE and UNASSIGNED, as for the agreement rate; any figure at all when no review concluded"
+        "population": "reviews that disagreed, divided by reviews that agreed or disagreed, over the same reviews as the agreement rate for the workpapers relied on",
+        "includes": "a value between 0 and 1, the complement of the agreement rate over the same denominator",
+        "excludes": "workpapers not drawn, drawn but unreviewed, indeterminate and unassigned, as for the agreement rate; any figure at all when no review concluded"
       }
     },
     "thirdparty": {
       "agents": {
         "label": "Third-party agents",
-        "population": "rows in RegisteredAgent for this tenant, provenance = THIRD_PARTY",
-        "includes": "every lifecycle status",
-        "excludes": "soft-deleted agents (RegisteredAgent.deletedAt IS NOT NULL); the legacy placeholder row (isLegacyPlaceholder = true), which adopts pre-register proposals and is never a real agent"
+        "population": "the agents in this workspace’s register that a third party supplies",
+        "includes": "every lifecycle state",
+        "excludes": "deleted agents; the placeholder entry that holds proposals made before the register existed, which is never a real agent"
       },
       "supplying_vendors": {
         "label": "Vendors supplying an agent",
-        "population": "distinct Vendor rows named by a third-party agent",
+        "population": "the different vendors named as the supplier of a third-party agent",
         "includes": "a vendor supplying several agents, counted once",
-        "excludes": "vendors in the register that supply no agent — this is the agentic supply chain, not the whole vendor book; soft-deleted vendors, which are reported per agent as an unresolved supplier"
+        "excludes": "vendors in the register that supply no agent — this is the agents’ supply chain, not the whole vendor book; deleted vendors, which are reported per agent as an unresolved supplier"
       },
       "vendors_without_completed_assessment": {
         "label": "Supplying vendors with no completed assessment",
-        "population": "the supplying vendors above with no VendorAssessment in a terminal reviewed state (APPROVED, REVIEWED or CLOSED)",
-        "includes": "vendors with an assessment still in DRAFT, SENT, IN_PROGRESS, SUBMITTED or IN_REVIEW — started is not finished; vendors whose only assessment was REJECTED, which is a completed process with an adverse result and is reported per row",
-        "excludes": "vendors holding at least one terminal reviewed assessment"
+        "population": "the supplying vendors above with no vendor assessment that reached a reviewed end (approved, reviewed or closed)",
+        "includes": "vendors with an assessment still in progress — drafted, sent, being answered, submitted or in review: started is not finished; vendors whose only assessment was rejected, which is a completed process with an adverse result and is reported per vendor",
+        "excludes": "vendors holding at least one assessment that reached a reviewed end"
       },
       "tools_pinned": {
         "label": "Agent tools with a pinned definition",
-        "population": "rows in McpToolManifestPin for this tenant",
-        "includes": "BASELINE pins, taken on first observation with no human involved; APPROVED pins, where a named human accepted a changed definition",
-        "excludes": "tools this build serves that no agent has ever invoked here, which therefore have no pin"
+        "population": "the tool definitions pinned for this workspace’s agents",
+        "includes": "definitions pinned when first seen, with no human involved; definitions a named human accepted after they changed",
+        "excludes": "tools this build offers that no agent has ever called here, which therefore have no pin"
       },
       "tools_human_approved": {
         "label": "Tool definitions a human accepted after a change",
-        "population": "the pins above with approvalSource = APPROVED",
-        "includes": "pins whose definition moved and a named human re-approved it",
-        "excludes": "BASELINE pins — trust-on-first-use is not a human decision, and an auditor asking \"did a person accept this description\" must not have the two inferred from a timestamp"
+        "population": "the pinned definitions above that a named human accepted after a change",
+        "includes": "pins whose definition changed and a named human approved it again",
+        "excludes": "definitions pinned when first seen — trusting what was seen first is not a human decision, and an auditor asking “did a person accept this description” must not have the two told apart by a timestamp"
       },
       "supplier_side_agent_changes": {
         "label": "Changes a supplier made to its own agent",
         "population": "nothing this platform can observe",
         "includes": "—",
-        "excludes": "everything — a third-party agent’s model, prompt and tool implementation live on the supplier’s side of the boundary. The register records what the operator DECLARES (modelRef, autonomy, scope) and the tool boundary records what the agent DID here. Neither is a view of the supplier’s build, and a figure derived from either would be a claim about the supplier made out of our own logs"
+        "excludes": "everything — a third-party agent’s model, prompt and tool implementation live on the supplier’s side of the boundary. The register records what the operator declares (the model, autonomy and scope) and the tool boundary records what the agent did here. Neither is a view of the supplier’s build, and a figure derived from either would be a claim about the supplier made out of our own logs"
       }
     }
   },

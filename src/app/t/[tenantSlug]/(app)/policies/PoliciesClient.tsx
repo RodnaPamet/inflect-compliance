@@ -807,7 +807,7 @@ function PoliciesPageInner({
                     >
                         <span
                             aria-hidden
-                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-bg-elevated text-[10px] font-medium text-content-emphasis"
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-bg-elevated text-xs font-medium text-content-emphasis"
                         >
                             {initial}
                         </span>
@@ -836,7 +836,7 @@ function PoliciesPageInner({
                 }
                 return (
                     <span
-                        className="inline-flex items-center rounded-md bg-bg-subtle px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-content-emphasis"
+                        className="inline-flex items-center rounded-md bg-bg-subtle px-1.5 py-0.5 font-mono text-xs tabular-nums text-content-emphasis"
                         data-testid={`policy-version-${row.original.id}`}
                     >
                         v{v}

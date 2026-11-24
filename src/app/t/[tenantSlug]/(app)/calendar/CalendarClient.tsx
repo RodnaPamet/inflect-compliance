@@ -930,7 +930,7 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                                                             {ev.detail}
                                                         </div>
                                                     )}
-                                                    <div className="text-[10px] text-content-subtle uppercase tracking-wider mt-0.5">
+                                                    <div className="text-xs text-content-subtle uppercase tracking-wider mt-0.5">
                                                         {categoryLabel(t, ev.category)} · {statusLabel(t, ev.status)}
                                                     </div>
                                                 </Link>

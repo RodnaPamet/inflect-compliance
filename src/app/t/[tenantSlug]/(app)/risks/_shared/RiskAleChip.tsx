@@ -40,7 +40,7 @@ export function RiskAleChip({
     return (
         <Tooltip content={tooltip}>
             <span
-                className="text-[10px] tabular-nums text-content-muted"
+                className="text-xs tabular-nums text-content-muted"
                 data-testid={`risk-ale-${riskId}`}
             >
                 {label}

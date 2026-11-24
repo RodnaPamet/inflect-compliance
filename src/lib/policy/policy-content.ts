@@ -110,6 +110,13 @@ export interface PolicyTocLabels {
     title: string;
     /** The `<nav>` landmark's accessible name. */
     ariaLabel: string;
+    /**
+     * The language the two labels are in (the page's), when the document's
+     * own differs: the Contents block then carries it, and its list of
+     * headings carries `contentLang`, the document's (WCAG 3.1.2).
+     */
+    lang?: string;
+    contentLang?: string;
 }
 
 const DEFAULT_TOC_LABELS: PolicyTocLabels = { title: 'Contents', ariaLabel: 'Table of contents' };
@@ -120,6 +127,7 @@ function buildTocNav(doc: Document, headings: PolicyHeading[], labels: PolicyToc
     nav.className = 'policy-toc';
     nav.setAttribute('aria-label', labels.ariaLabel);
     nav.setAttribute('data-testid', 'policy-toc');
+    if (labels.lang) nav.setAttribute('lang', labels.lang);
 
     const title = doc.createElement('p');
     title.className = 'policy-toc-title';
@@ -127,6 +135,7 @@ function buildTocNav(doc: Document, headings: PolicyHeading[], labels: PolicyToc
     nav.appendChild(title);
 
     const ul = doc.createElement('ul');
+    if (labels.lang && labels.contentLang) ul.setAttribute('lang', labels.contentLang);
     for (const h of headings) {
         const li = doc.createElement('li');
         li.className = `policy-toc-l${h.level}`;

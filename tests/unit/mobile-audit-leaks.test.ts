@@ -143,6 +143,19 @@ describe('findEnglishLeaks', () => {
         it('does not call a multi-word library phrase inside a Bulgarian sentence a leak', () => {
             expect(leaksWithLibrary(['Категория: Risk Management'])).toEqual([]);
         });
+
+        it('does not call a word of a library title a leak when the sentence carries the whole title', () => {
+            // "Избор на {name}" with a control template's title in it: "Monitoring"
+            // is also an English catalog label, but here it is the title's word.
+            const monCatalog = buildLeakCatalog({ nav: { monitoring: 'Monitoring' } }, { nav: { monitoring: 'Наблюдение' } });
+            const title = 'Monitoring, review and change management of supplier services';
+            const find = (texts: string[]) => findEnglishLeaks({ texts, chromeTexts: texts }, monCatalog, new Set(), new Set([title]));
+            expect(find([`Избор на A-5.22 ${title}`])).toEqual([]);
+            // The same word without the title around it is the interface's word.
+            expect(find(['Избор на Monitoring'])).toEqual([{ text: 'Избор на Monitoring', reason: 'EMBEDDED' }]);
+            // And a sentence carrying only part of the title is not vouched for by it.
+            expect(find(['Избор на Monitoring, review'])).toEqual([{ text: 'Избор на Monitoring, review', reason: 'EMBEDDED' }]);
+        });
     });
 
     it('skips ICU plurals, whose literal text is not one string', () => {

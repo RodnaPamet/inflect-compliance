@@ -464,6 +464,18 @@ const config = [
         rules: { 'local/no-negative-margin-icon': 'error' },
     },
     {
+        // ── Small text is 12 px everywhere ──
+        //
+        // Owner decision (2026-11-23): the type scale's floor, `text-xs`, is
+        // the smallest text on any page, desktop included. The sub-12 text a
+        // phone audit found was always an arbitrary size written beside the
+        // scale (`text-[10px]`, `text-[11px]`, #5924). See
+        // eslint-rules/rules/no-sub-12px-text.js.
+        files: ['src/**/*.{ts,tsx}', 'packages/ui/src/**/*.{ts,tsx}'],
+        ignores: ['**/__tests__/**', '**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}'],
+        rules: { 'local/no-sub-12px-text': 'error' },
+    },
+    {
         // The seam and the signer it calls.
         files: ['src/lib/web-bot-auth/bot-fetch.ts', 'src/lib/web-bot-auth/sign.ts'],
         rules: { 'local/web-bot-auth-single-seam': 'off' },

@@ -196,14 +196,14 @@ export function CanvasHistorySidebar({
                                         </span>
                                         {isCurrent && (
                                             <span
-                                                className="text-[10px] uppercase tracking-wide text-brand-default"
+                                                className="text-xs uppercase tracking-wide text-brand-default"
                                                 data-testid="canvas-history-current"
                                             >
                                                 {t("current")}
                                             </span>
                                         )}
                                     </div>
-                                    <span className="text-[11px] text-content-subtle">
+                                    <span className="text-xs text-content-subtle">
                                         {formatDateTime(r.createdAt)}
                                         {r.createdByName
                                             ? ` · ${r.createdByName}`

@@ -20,6 +20,7 @@ import { SharePointFilePicker } from '@/components/integrations/sharepoint/Share
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTranslations } from 'next-intl';
+import { reportTemplateText } from '@/lib/risk-report/system-templates';
 import type { KeyedMutator } from 'swr';
 import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { useToastWithUndo } from '@/components/ui/hooks';
@@ -28,7 +29,7 @@ import { UpgradeGate } from '@/components/UpgradeGate';
 import { RiskPicker } from '../_shared/RiskPicker';
 import { AnalyticsState } from '../_shared/AnalyticsState';
 
-interface Template { id: string; name: string; description: string | null; type: string }
+interface Template { id: string; name: string; description: string | null; type: string; isSystem?: boolean }
 /**
  * A ReportRun as the list endpoint returns it.
  *
@@ -103,6 +104,8 @@ function parseRecipients(raw: string): { emails: string[]; invalid: string[] } {
 
 export default function RiskReportsPage() {
     const t = useTranslations('risks');
+    // A stock template's name in the reader's language; a tenant's own as written (#5924).
+    const tTemplates = useTranslations('riskReportTemplates');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const { permissions, appPermissions } = useTenantContext();
@@ -194,7 +197,10 @@ export default function RiskReportsPage() {
         );
     };
 
-    const nameOf = (id: string) => templates.find((tpl) => tpl.id === id)?.name ?? '—';
+    const nameOf = (id: string) => {
+        const tpl = templates.find((x) => x.id === id);
+        return tpl ? reportTemplateText(tpl, tTemplates).name : '—';
+    };
     const statusVariant = (s: string) => (s === 'COMPLETED' ? 'success' : s === 'FAILED' ? 'error' : 'info');
     // #4774 — the run's status in words, not as stored.
     const statusLabel = (s: string) => (RUN_STATUSES.has(s) ? t(`reports.status_${s}`) : s);
@@ -224,8 +230,10 @@ export default function RiskReportsPage() {
                     {templates.map((tpl) => (
                         <li key={tpl.id} className="flex flex-wrap items-center gap-default py-default text-sm">
                             <div className="flex-1 min-w-[12rem]">
-                                <div className="font-medium text-content-emphasis">{tpl.name}</div>
-                                {tpl.description && <div className="text-xs text-content-muted">{tpl.description}</div>}
+                                <div className="font-medium text-content-emphasis">{reportTemplateText(tpl, tTemplates).name}</div>
+                                {reportTemplateText(tpl, tTemplates).description && (
+                                    <div className="text-xs text-content-muted">{reportTemplateText(tpl, tTemplates).description}</div>
+                                )}
                                 {isDeepDive(tpl) && (
                                     <div className="mt-tight max-w-xs">
                                         <RiskPicker
@@ -442,7 +450,7 @@ function SchedulesCard({
     const [editFormat, setEditFormat] = useState<ReportFormat>('PDF');
     const [editRiskId, setEditRiskId] = useState<string | null>(null);
 
-    const templateOptions: ComboboxOption[] = templates.map((tpl) => ({ value: tpl.id, label: tpl.name }));
+    const templateOptions: ComboboxOption[] = templates.map((tpl) => ({ value: tpl.id, label: nameOf(tpl.id) }));
     const cadenceOptions: ComboboxOption[] = CADENCES.map((c) => ({ value: c, label: t(`reports.cadence_${c}`) }));
     const formatOptions: ComboboxOption[] = FORMATS.map((f) => ({ value: f, label: f }));
     // A RISK_DEEP_DIVE schedule must carry the same single-risk scope the

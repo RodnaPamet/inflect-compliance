@@ -240,7 +240,7 @@ export function ChartTooltipContainer({
             )}
         >
             {title ? (
-                <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-content-muted">
+                <div className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-content-muted">
                     {title}
                 </div>
             ) : null}

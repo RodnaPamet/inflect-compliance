@@ -129,6 +129,19 @@ describe('enrichPolicyHtml', () => {
         expect(out).not.toMatch(/Table of contents|>Contents</);
     });
 
+    it('marks the labels with the page’s language and the headings with the document’s (#5924)', () => {
+        // An English policy on a Bulgarian page: the Contents block is the
+        // page's words, its list is the document's headings.
+        const out = enrichPolicyHtml(body, { title: 'Съдържание', ariaLabel: 'Съдържание на документа', lang: 'bg', contentLang: 'en' });
+        const nav = new DOMParser().parseFromString(out, 'text/html').querySelector('nav.policy-toc');
+        expect(nav?.getAttribute('lang')).toBe('bg');
+        expect(nav?.querySelector('ul')?.getAttribute('lang')).toBe('en');
+        // Same language, nothing to mark.
+        const same = new DOMParser().parseFromString(enrichPolicyHtml(body, { title: 'Contents', ariaLabel: 'Contents' }), 'text/html');
+        expect(same.querySelector('nav.policy-toc')?.hasAttribute('lang')).toBe(false);
+        expect(same.querySelector('nav.policy-toc ul')?.hasAttribute('lang')).toBe(false);
+    });
+
     it('is null-safe', () => {
         expect(enrichPolicyHtml(null)).toBe('');
         expect(enrichPolicyHtml(undefined)).toBe('');
