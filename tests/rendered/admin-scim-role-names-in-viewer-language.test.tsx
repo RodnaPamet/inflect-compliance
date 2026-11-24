@@ -27,8 +27,10 @@ jest.mock('next-intl', () => {
             const v = resolve(`${ns}.${key}`);
             return typeof v === 'string' ? fill(v, values) : key;
         };
-        // Rich text: string values fill their placeholders; tags keep their text.
-        t.rich = (key: string, values?: Record<string, unknown>) => t(key, values).replace(/<\/?\w+>/g, '');
+        // Rich text: string values fill their placeholders; tags keep their
+        // text. Split on the tag tokens and keep the text between them (a
+        // test mock over our own catalogue, not a sanitiser).
+        t.rich = (key: string, values?: Record<string, unknown>) => t(key, values).split(/<\/?\w+>/).join('');
         return t;
     };
     return { useTranslations: (ns: string) => make(ns), useLocale: () => 'bg' };
