@@ -152,3 +152,55 @@ export function compareReports(reference: AuditReport, current: AuditReport): { 
     }
     return { rows, regressions: rows.filter((r) => r.current > r.reference) };
 }
+
+/** The routes failing `metric` in `config` now that did not in the reference: where to look first. */
+export function newlyFailing(reference: AuditReport, current: AuditReport, config: string, metric: ComparisonRow['metric']): string[] {
+    if (metric === 'uncaptured') {
+        const before = new Set(reference.uncaptured.filter((u) => u.kind === 'route' && u.config === config).map((u) => u.id));
+        return current.uncaptured
+            .filter((u) => u.kind === 'route' && u.config === config && !before.has(u.id))
+            .map((u) => `${u.id} (${u.reason})`)
+            .sort();
+    }
+    const failing = (r: AuditReport) =>
+        new Set(r.captured.filter((p) => p.kind === 'route' && p.config === config && p.counts[metric] > 0).map((p) => p.id));
+    const before = failing(reference);
+    return [...failing(current)].filter((id) => !before.has(id)).sort();
+}
+
+/**
+ * The comparison as markdown (`comparison.md`): every count of failing pages
+ * that moved and, for each one that ROSE, the routes that fail now and did not
+ * before. The scheduled workflow (`.github/workflows/mobile-audit.yml`)
+ * publishes it beside `summary.md` and quotes it in the issue it opens or
+ * updates when a count rose.
+ */
+export function renderComparison(reference: AuditReport, current: AuditReport): string {
+    const { rows, regressions } = compareReports(reference, current);
+    const label = (m: ComparisonRow['metric']) =>
+        m === 'uncaptured' ? 'Routes not captured' : (MOBILE_METRICS.find((x) => x.id === m)?.label ?? m);
+    const stamp = (r: AuditReport) => `${r.generatedAt}${r.commit ? ` (commit \`${r.commit}\`)` : ''}`;
+    const lines: string[] = [];
+    lines.push('# Mobile audit compared with the previous run', '');
+    lines.push(`Previous: ${stamp(reference)}. Now: ${stamp(current)}.`, '');
+    if (!rows.length) {
+        lines.push('No count of failing pages moved.');
+        return lines.join('\n');
+    }
+    lines.push(
+        regressions.length
+            ? `**${regressions.length} ${regressions.length === 1 ? 'count' : 'counts'} rose**: a page regressed on a phone, or stopped rendering.`
+            : 'Every count that moved fell.',
+        '',
+    );
+    lines.push('| Configuration | Check | Previous | Now |', '|---|---|---|---|');
+    for (const r of rows) lines.push(`| ${r.config} | ${label(r.metric)} | ${r.reference} | ${r.current} ${r.current > r.reference ? '▲' : '▼'} |`);
+    lines.push('');
+    for (const r of regressions) {
+        lines.push(`## ${label(r.metric)}, ${r.config}`, '');
+        // A count of failing routes that rose has at least one route new to it.
+        for (const id of newlyFailing(reference, current, r.config, r.metric)) lines.push(`- \`${id}\``);
+        lines.push('');
+    }
+    return lines.join('\n');
+}

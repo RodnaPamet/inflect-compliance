@@ -146,13 +146,19 @@ type Baseline = Record<MobileE2eConfig, Record<RatchetedMetric, number>>;
  * command palette's 23px search field took the search bar's full height. The
  * one left is the dashboard's chart marks and legend links (#5877).
  *
+ * tapUnder24, 0 (#5877): the dashboard's chart marks and legend links are
+ * gone. A donut legend row is the slice's link and a 44px row on touch; the
+ * radar's 8px vertices and its axis labels take no taps on a coarse pointer
+ * (the posture ladder beside it lists the same values). No fixed route has a
+ * tap target under 24px.
+ *
  * clipped, 0 (#5875, with #5874 and #5879): the last one was the integrations
  * page's webhook URL, a `<code>` with no space to break at. `code`, `samp` and
  * `.font-mono` now wrap anywhere (`src/app/globals.css`).
  */
 export const SEED_BASELINE: Baseline = {
-    '390-dark-bg': { clipped: 0, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 1, englishLeaks: 0 },
-    '360-light-bg': { clipped: 0, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 1, englishLeaks: 0 },
+    '390-dark-bg': { clipped: 0, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 0, englishLeaks: 0 },
+    '360-light-bg': { clipped: 0, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 0, englishLeaks: 0 },
 };
 
 /** Routes in `RECORD_ROUTES` failing each metric. */

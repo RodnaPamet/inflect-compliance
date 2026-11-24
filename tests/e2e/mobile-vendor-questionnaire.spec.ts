@@ -1,7 +1,8 @@
 /**
- * The public vendor questionnaire on a phone (#5896): a respondent who
- * submits with one required answer missing lands on that question with its
- * error in view, answers it, and submits every answer.
+ * The public vendor questionnaire on a phone (#5896), and the key phone
+ * journey of answering one (#5899): a respondent who submits with one required
+ * answer missing lands on that question with its error in view, answers it,
+ * submits every answer, and is told the questionnaire is submitted.
  *
  * The questionnaire is created in an isolated tenant through the product's
  * own API — a template with one section of required questions, published, and
@@ -16,6 +17,7 @@ import { PHONE_CONFIGS, preferenceCookies } from '../../scripts/mobile-audit/con
 import { measurePage } from '../../scripts/mobile-audit/measure';
 import { MOBILE_E2E_CONFIGS } from './mobile-ratchet';
 import { safeGoto } from './e2e-utils';
+import { holdScreen } from './mobile-journey-support';
 
 async function created<T = { id: string }>(res: APIResponse, what: string): Promise<T> {
     if (!res.ok()) throw new Error(`creating ${what} failed: ${res.status()} ${await res.text()}`);
@@ -114,15 +116,24 @@ for (const config of MOBILE_E2E_CONFIGS) {
             await yesRow(MISSING).click();
             await expect(yes(MISSING)).toBeChecked();
             await expect(page.getByTestId(`q-${questionIds[MISSING]}-error`)).toHaveCount(0);
-            const submitted = page.waitForRequest(
-                (req) => req.method() === 'POST' && req.url().includes(`/api/vendor-assessment/${sent.assessmentId}/submit`),
-            );
+            const isSubmit = (url: string) => url.includes(`/api/vendor-assessment/${sent.assessmentId}/submit`);
+            const submitted = page.waitForRequest((req) => req.method() === 'POST' && isSubmit(req.url()));
+            const answered = page.waitForResponse((res) => res.request().method() === 'POST' && isSubmit(res.url()));
             await page.getByTestId('vendor-assessment-submit-btn').click();
             // What leaves the phone is the whole questionnaire, the answer it
-            // was missing included. What the server then does with it is the
-            // submit route's own business, held by its own tests.
+            // was missing included.
             const body = (await submitted).postDataJSON() as { answers: Array<{ questionId: string }> };
             expect(body.answers.map((a) => a.questionId).sort()).toEqual([...questionIds].sort());
+            // And the server takes it (#5910: every submit used to roll back
+            // on the audit row's foreign key and answer "Submission failed").
+            const res = await answered;
+            expect(res.status(), await res.text().catch(() => '')).toBe(200);
+        });
+
+        await test.step('the vendor is told it is submitted, in Bulgarian, on a page that fits', async () => {
+            await expect(page.getByTestId('vendor-assessment-submitted')).toBeVisible({ timeout: 30_000 });
+            await expect(page.getByTestId('vendor-assessment-error')).toHaveCount(0);
+            await holdScreen(page, 'questionnaire submitted', ['Supplier security questionnaire', 'Northwind Logistics', 'Access control']);
         });
     });
 }

@@ -7,6 +7,9 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { buildLeakCatalog, findEnglishLeaks, optionLabels } from '../../scripts/mobile-audit/leaks';
+import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
+import { localizedRunSummary, type WorkflowSummaryTranslator } from '@/lib/agentic/workflow-labels';
+import type { WorkflowContext } from '@/lib/agentic/workflow-types';
 
 const en = {
     nav: { back: 'Back to {section}', agents: 'Agents', controls: 'Controls' },
@@ -16,6 +19,7 @@ const en = {
     untranslated: { principal: 'Service principal: {status} for the agent' },
     short: { user: 'User {name}' },
     plural: { items: '{count, plural, one {# item} other {# items}}' },
+    run: { summary: 'Posture snapshot — {controls} controls, {risks} risks.' },
 };
 const bg = {
     nav: { back: 'Обратно към {section}', agents: 'Агенти', controls: 'Контроли' },
@@ -25,6 +29,7 @@ const bg = {
     untranslated: { principal: 'Service principal: {status} for the agent' },
     short: { user: 'Потребител {name}' },
     plural: { items: '{count, plural, one {# елемент} other {# елемента}}' },
+    run: { summary: 'Моментна снимка — контроли: {controls}, рискове: {risks}.' },
 };
 const catalog = buildLeakCatalog(en, bg);
 const leaksIn = (texts: string[], chromeTexts: string[] = [], names: string[] = []) =>
@@ -43,6 +48,15 @@ describe('findEnglishLeaks', () => {
 
     it('finds an English label embedded in a Bulgarian sentence', () => {
         expect(leaksIn(['Обратно към Agents'])).toEqual([{ text: 'Обратно към Agents', reason: 'EMBEDDED' }]);
+    });
+
+    it('finds a whole templated English message behind a Bulgarian label, though no word of it is a message', () => {
+        // A stored product sentence (a run summary) shown after a Bulgarian
+        // label, in one text node. None of its Latin runs is a catalog
+        // message on its own; the template is.
+        const line = 'Обобщение: Posture snapshot — 3 controls, 7 risks.';
+        expect(leaksIn([line])).toEqual([{ text: line, reason: 'EMBEDDED' }]);
+        expect(leaksIn(['Обобщение: Моментна снимка — контроли: 3, рискове: 7.'])).toEqual([]);
     });
 
     it('finds an English month and a relative time', () => {
@@ -161,5 +175,49 @@ describe('the catalog built from the repository', () => {
 
     it('holds no Bulgarian text', () => {
         expect(Array.from(real.exact).filter((s) => /[Ѐ-ӿ]/.test(s))).toEqual([]);
+    });
+});
+
+describe('a sentence the product stores in English and shows as stored (#5883)', () => {
+    // The class #5883 found on `agents/runs` in Bulgarian: the diagnostic
+    // workflow's run summary, written by the product in English, kept as the
+    // run's record, and shown as stored. The detector missed it while its
+    // template was in no catalog. These run against the REAL catalog and the
+    // summary the workflow's own synthesis step writes, so a detector change,
+    // a catalog change or a builder change that loses it fails here.
+    const root = path.resolve(__dirname, '..', '..');
+    const enJson = JSON.parse(readFileSync(path.join(root, 'messages', 'en.json'), 'utf8'));
+    const bgJson = JSON.parse(readFileSync(path.join(root, 'messages', 'bg.json'), 'utf8'));
+    const real = buildLeakCatalog(enJson, bgJson);
+    const onPage = (texts: string[]) => findEnglishLeaks({ texts, chromeTexts: [] }, real);
+
+    function storedDiagnosticSummary(stats: { controls: number; risks: number; openTasks: number }): string {
+        const step = getWorkflowDefinition('diagnostic')?.steps.find((s) => s.kind === 'SYNTHESIS');
+        if (!step || step.kind !== 'SYNTHESIS') throw new Error('the diagnostic workflow has no synthesis step');
+        return step.synthesize({ outputs: { posture: { stats } } } as unknown as WorkflowContext).text;
+    }
+    const stored = storedDiagnosticSummary({ controls: 42, risks: 17, openTasks: 9 });
+    const bgTranslator: WorkflowSummaryTranslator = (key, values) => {
+        const [workflow, field] = key.split('.');
+        const template = bgJson.agentWorkflows[workflow][field] as string;
+        return template.replace(/\{(\w+)\}/g, (m, name: string) => (name in values ? String(values[name]) : m));
+    };
+
+    it('is a leak when the runs page shows it as stored', () => {
+        expect(stored.startsWith('Posture snapshot')).toBe(true);
+        expect(onPage([stored])).toEqual([{ text: stored, reason: 'CATALOG' }]);
+    });
+
+    it('is a leak behind a Bulgarian label, in one text node', () => {
+        const line = `Обобщение: ${stored}`;
+        expect(onPage([line])).toEqual([{ text: line, reason: 'EMBEDDED' }]);
+    });
+
+    it("is not a leak once the page re-words it, nor is an agent's own English summary", () => {
+        const shown = localizedRunSummary('diagnostic', stored, bgTranslator);
+        expect(shown).not.toBe(stored);
+        expect(onPage([shown as string])).toEqual([]);
+        // An agent's words are data: free prose in no catalog is never judged.
+        expect(onPage(['Reviewed the posture and found three controls without evidence.'])).toEqual([]);
     });
 });

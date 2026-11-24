@@ -21,7 +21,8 @@
  *   --no-screenshots      measure only
  *   --no-states           skip the open states (drawer, menus, sheets…)
  *   --compare <file>      a previous metrics.json: print every count that moved,
- *                         exit 1 if any count of failing pages went up
+ *                         exit 1 if any count of failing pages went up, and
+ *                         write comparison.md + comparison.json beside the report
  *   --chromium <path>     a Chromium binary, when Playwright's own is not installed
  *   --create-records      first create, through the app's API, the records the
  *                         seed lacks (records.ts). WRITES to the database: use a
@@ -39,7 +40,7 @@ import { signInOrgContext, signInTenantContext } from './auth';
 import { AUDIT_CONFIG_IDS, PHONE_CONFIGS, contextOptionsFor, preferenceCookies, type PhoneConfig, type PhoneConfigId } from './configs';
 import { findEnglishLeaks, loadLeakCatalog, type LeakCatalog } from './leaks';
 import { countsOf, measurePage, settlePage, type RawMeasurement } from './measure';
-import { compareReports, renderSummary, type AuditReport, type CapturedPage, type UncapturedPage } from './report';
+import { compareReports, renderComparison, renderSummary, type AuditReport, type CapturedPage, type UncapturedPage } from './report';
 import { connectDb, dataNames, libraryTexts, resolveContext, resolveRoute, type ResolvedRoute } from './resolve';
 import { createAuditRecords } from './records';
 import { enumerateRoutes, routeSlug, type RouteAudience } from './routes';
@@ -291,6 +292,11 @@ async function main(): Promise<void> {
     if (opts.compare) {
         const reference = JSON.parse(readFileSync(opts.compare, 'utf8')) as AuditReport;
         const { rows, regressions } = compareReports(reference, report);
+        // Beside the summary, for whoever reads the report and for the
+        // scheduled workflow, which reads `regressions` to decide whether to
+        // open an issue (a crash exits 1 too, and must not read as a regression).
+        writeFileSync(path.join(opts.out, 'comparison.md'), `${renderComparison(reference, report)}\n`);
+        writeFileSync(path.join(opts.out, 'comparison.json'), `${JSON.stringify({ rows, regressions }, null, 2)}\n`);
         console.log(rows.length ? '\n[mobile-audit] counts that moved (reference → now):' : '\n[mobile-audit] no count moved.');
         for (const r of rows) console.log(`  ${r.config} ${r.metric}: ${r.reference} → ${r.current}${r.current > r.reference ? '   REGRESSION' : ''}`);
         if (regressions.length) process.exitCode = 1;

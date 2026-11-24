@@ -9,7 +9,7 @@ import { execSync } from 'node:child_process';
 import path from 'node:path';
 import { audienceOf, enumerateRoutes, fillPattern, paramsOf, patternOfPageFile, routeSlug } from '../../scripts/mobile-audit/routes';
 import { RESOLVERS } from '../../scripts/mobile-audit/resolve';
-import { compareReports, headline, type AuditReport, type CapturedPage } from '../../scripts/mobile-audit/report';
+import { compareReports, headline, newlyFailing, renderComparison, type AuditReport, type CapturedPage } from '../../scripts/mobile-audit/report';
 import { MOBILE_METRICS, type MetricCounts } from '../../scripts/mobile-audit/measure';
 
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -77,5 +77,45 @@ describe('compareReports', () => {
         const ref = report([page('/a', { clipped: 1 }), page('/b', {})]);
         const now = report([page('/b', {})], 1);
         expect(compareReports(ref, now).regressions.map((r) => r.metric)).toEqual(['uncaptured']);
+    });
+});
+
+describe('renderComparison (what the scheduled workflow quotes in its issue)', () => {
+    const zero = Object.fromEntries(MOBILE_METRICS.map((m) => [m.id, 0])) as MetricCounts;
+    const page = (id: string, counts: Partial<MetricCounts>): CapturedPage => ({
+        kind: 'route', id, config: '390-dark-bg', url: id, finalUrl: id, status: 200,
+        counts: { ...zero, ...counts }, samples: {}, leaks: [], consoleErrors: [],
+    });
+    const report = (captured: CapturedPage[], gone: string[] = []): AuditReport => ({
+        generatedAt: 'now', baseUrl: '', commit: 'abc1234', configs: ['390-dark-bg'], routeCount: captured.length + gone.length,
+        captured,
+        uncaptured: gone.map((id) => ({ kind: 'route' as const, id, config: '390-dark-bg', reason: 'HTTP 500' })),
+    });
+
+    it('names the routes that fail a check now and did not before, and only those', () => {
+        const ref = report([page('/a', { tapUnder24: 1 }), page('/b', {}), page('/c', {})]);
+        const now = report([page('/a', { tapUnder24: 2 }), page('/b', { tapUnder24: 1 }), page('/c', {})]);
+        expect(newlyFailing(ref, now, '390-dark-bg', 'tapUnder24')).toEqual(['/b']);
+        const md = renderComparison(ref, now);
+        expect(md).toContain('**1 count rose**');
+        expect(md).toContain('| 390-dark-bg | Tap target < 24 px in the page body | 1 | 2 ▲ |');
+        expect(md).toContain('- `/b`');
+        expect(md).not.toContain('- `/a`');
+    });
+
+    it('names a route that stopped rendering, with its reason', () => {
+        const ref = report([page('/a', {}), page('/b', {})]);
+        const now = report([page('/a', {})], ['/b']);
+        const md = renderComparison(ref, now);
+        expect(md).toContain('| 390-dark-bg | Routes not captured | 0 | 1 ▲ |');
+        expect(md).toContain('- `/b (HTTP 500)`');
+    });
+
+    it('reports a fall without calling it a regression, and says so when nothing moved', () => {
+        const ref = report([page('/a', { clipped: 1 })]);
+        const fell = renderComparison(ref, report([page('/a', {})]));
+        expect(fell).toContain('Every count that moved fell.');
+        expect(fell).not.toContain('rose');
+        expect(renderComparison(ref, ref)).toContain('No count of failing pages moved.');
     });
 });
