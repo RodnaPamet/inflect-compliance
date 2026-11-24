@@ -149,11 +149,14 @@ const MIN_BYTES_READ = 10_000_000;
 
 /**
  * Cap on how much of the tracked tree the structural exclusions may remove.
- * Today they remove 6 files (5 under `public/`, plus `src/app/favicon.ico`);
- * the headroom is for a handful of future images. A widened exclusion is the
- * one change that would gut this sweep silently, so the count is asserted.
+ * Today they remove 25 files: 5 under `public/` (Swagger UI, openapi.json,
+ * .gitkeep), the 19 under `public/vendor/tldraw/<version>/fonts/` (16 fonts,
+ * two licences, a notice; #5870 — a tldraw upgrade replaces that folder rather
+ * than adding one), and `src/app/favicon.ico`. The headroom
+ * is for a handful of future images. A widened exclusion is the one change
+ * that would gut this sweep silently, so the count is asserted.
  */
-const MAX_EXCLUDED_FILES = 20;
+const MAX_EXCLUDED_FILES = 30;
 
 interface Hit {
     byte: number;

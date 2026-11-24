@@ -33,6 +33,7 @@ import { createShapeId, type Editor, type TLComponents, type TLShapeId, Tldraw }
 import { AGENT_FLOW_NODE_H, AGENT_FLOW_NODE_W, type FlowLayout } from '@/lib/processes/agent-flow/agent-flow-document';
 
 import { AGENT_FLOW_NODE_SHAPE_TYPE, AgentFlowNodeShapeUtil, type AgentFlowNodeShape } from './AgentFlowNodeShapeUtil';
+import { TLDRAW_ASSET_URLS } from '../tldraw/asset-urls';
 
 /** Module scope: a new array each render would remount the editor. */
 const SHAPE_UTILS = [AgentFlowNodeShapeUtil];
@@ -217,7 +218,13 @@ export function AgentFlowCanvas({ nodes, edges, layout, onMove, onSelect, readOn
 
     return (
         <div className="h-full w-full" data-tldraw-agent-flow="true" data-process-canvas="true">
-            <Tldraw shapeUtils={SHAPE_UTILS} onMount={handleMount} options={OPTIONS} components={COMPONENTS} />
+            <Tldraw
+                shapeUtils={SHAPE_UTILS}
+                onMount={handleMount}
+                options={OPTIONS}
+                components={COMPONENTS}
+                assetUrls={TLDRAW_ASSET_URLS}
+            />
         </div>
     );
 }
