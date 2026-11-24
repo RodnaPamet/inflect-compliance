@@ -129,6 +129,7 @@ import {
 import { isProcessNodeKind } from './node-taxonomy';
 import { ProcessNodeShapeUtil } from './tldraw/ProcessNodeShapeUtil';
 import { TLDRAW_ASSET_URLS } from './tldraw/asset-urls';
+import { TldrawReaderLanguage, TLDRAW_TRANSLATIONS } from './tldraw/reader-language';
 import {
     rowsToTldraw,
     type FreeformRecord,
@@ -181,6 +182,7 @@ const KEPT_TOOLS = new Set([
 ]);
 const REMOVED_ACTIONS = ['insert-media', 'insert-embed', 'group', 'ungroup'];
 const TLDRAW_OVERRIDES: TLUiOverrides = {
+    translations: TLDRAW_TRANSLATIONS,
     tools(_editor, tools) {
         for (const id of Object.keys(tools)) {
             if (!KEPT_TOOLS.has(id)) delete tools[id];
@@ -953,7 +955,9 @@ export function TldrawProcessCanvas({
                 hideUi={embedded}
                 autoFocus={!embedded}
                 cameraOptions={embedded ? EMBEDDED_CAMERA : undefined}
-            />
+            >
+                <TldrawReaderLanguage />
+            </Tldraw>
         </div>
     );
 }

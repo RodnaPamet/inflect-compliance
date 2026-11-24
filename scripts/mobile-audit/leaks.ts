@@ -66,6 +66,28 @@
  * management of supplier services" is the catalog's "Избор на {name}" with a
  * control template's title in it, and "Monitoring" there is the title's word,
  * not a stray interface label (#5924).
+ *
+ * A PRODUCT NAME IN BULGARIAN PROSE is the Bulgarian text's own word
+ * (#5924). The NIS2 gap questionnaire asks "Използвате ли сигурни съобщения
+ * (Teams, Signal) вместо некриптирани SMS…": "Signal" is also an English
+ * catalog label (a legacy-queue column, "Сигнал"), but here it names an app.
+ * An interface label that leaks is interpolated where a Bulgarian word should
+ * stand — "Обратно към Agents", "…да изтриете този Risk?" — and a name is
+ * given as an example, in an aside. So a single capitalised Latin word inside
+ * a parenthesised aside of a Bulgarian sentence (at least
+ * `PROSE_MIN_CYRILLIC_WORDS` Bulgarian words) is a name, not a leak. A label
+ * outside an aside, a label in a short string, and a multi-word message are
+ * still judged; a name in running text with no aside ("Teams или Signal") is
+ * the case this rule does not reach.
+ *
+ * A QUESTIONNAIRE'S ANSWER OPTIONS are data where their question is shown
+ * (#5924). A vendor questionnaire a tenant wrote offers "Yes", "Partial",
+ * "Other" as its options; each is also a one-word English catalog label, and
+ * none is the interface's. The caller passes every questionnaire's options
+ * keyed by the prompt they answer (`QuestionOptions`), and `pageDataNames`
+ * adds a question's options to the page's data names only when the page shows
+ * that question's prompt: an option is data beside its question, and the same
+ * word anywhere else is still judged as the interface's.
  */
 
 export type LeakReason = 'CATALOG' | 'EMBEDDED' | 'EN_IN_BG' | 'CHROME' | 'DATE';
@@ -117,6 +139,11 @@ const DATE_RES = [
 
 const CYRILLIC_RANGE = 'Ѐ-ӿ';
 const CYRILLIC = new RegExp(`[${CYRILLIC_RANGE}]`);
+const CYRILLIC_WORD = new RegExp(`[${CYRILLIC_RANGE}]+`, 'g');
+/** How many Bulgarian words make a string a sentence rather than a label ("Обратно към Agents" has two). */
+export const PROSE_MIN_CYRILLIC_WORDS = 6;
+/** A parenthesised aside: "(Teams, Signal)". */
+const ASIDE = /\(([^()]*)\)/g;
 const PLACEHOLDER = /\{[^{}]*\}/g;
 /** A run of Latin words inside a mixed string: "Agents" in "Обратно към Agents". */
 const LATIN_RUN = /[A-Za-z][A-Za-z0-9'’&-]*(?: [A-Za-z0-9'’&-]+)*/g;
@@ -204,6 +231,40 @@ function libraryRunIndex(libraryTexts: ReadonlySet<string>): Map<string, string[
     return index;
 }
 
+/**
+ * `run` is a name given as an example in Bulgarian prose: one capitalised
+ * Latin word inside a parenthesised aside of a sentence of at least
+ * `PROSE_MIN_CYRILLIC_WORDS` Bulgarian words (see the module docblock).
+ */
+function nameInAnAside(s: string, run: string): boolean {
+    if (run.includes(' ') || !/^[A-Z][a-z]/.test(run)) return false;
+    if ((s.match(CYRILLIC_WORD) ?? []).length < PROSE_MIN_CYRILLIC_WORDS) return false;
+    const word = new RegExp(`(?:^|[^A-Za-z0-9])${escapeRe(run)}(?:[^A-Za-z0-9]|$)`);
+    for (const aside of s.matchAll(ASIDE)) if (word.test(aside[1])) return true;
+    return false;
+}
+
+/** Every questionnaire's answer options, keyed by the (squashed) prompt they answer. */
+export type QuestionOptions = ReadonlyMap<string, readonly string[]>;
+
+/**
+ * The page's data names: `names`, plus the answer options of every question
+ * whose prompt the page shows (see the module docblock).
+ */
+export function pageDataNames(
+    texts: readonly string[],
+    names: ReadonlySet<string>,
+    questionOptions: QuestionOptions,
+): ReadonlySet<string> {
+    if (!questionOptions.size) return names;
+    const extra: string[] = [];
+    for (const raw of texts) {
+        const options = questionOptions.get(squash(raw));
+        if (options) extra.push(...options);
+    }
+    return extra.length ? new Set([...names, ...extra.map(squash)]) : names;
+}
+
 function catalogHas(catalog: LeakCatalog, s: string): boolean {
     if (catalog.exact.has(s)) return true;
     for (const p of catalog.patterns) if (s.includes(p.literal) && p.re.test(s)) return true;
@@ -250,7 +311,8 @@ export function findEnglishLeaks(
                 !isLibrary(r) &&
                 !catalog.keptInBg.has(r) &&
                 catalog.exact.has(r) &&
-                !inLibraryValue(r);
+                !inLibraryValue(r) &&
+                !nameInAnAside(s, r);
             // A whole templated message inside the sentence: a stored English
             // sentence the product wrote, shown after a Bulgarian label.
             const message = catalog.patterns.some((p) => s.includes(p.literal) && p.embedded.test(s));

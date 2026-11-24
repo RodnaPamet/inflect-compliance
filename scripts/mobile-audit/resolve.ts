@@ -280,6 +280,30 @@ export async function libraryTexts(db: PrismaClient): Promise<Set<string>> {
     return new Set(values.map((v) => (v ?? '').replace(/\s+/g, ' ').trim()).filter(Boolean));
 }
 
+/**
+ * Every questionnaire's answer options, keyed by the prompt they answer:
+ * the vendor questionnaires (a tenant's own and the seeded globals) and the
+ * inbound questionnaire library. An option is data on a page that shows its
+ * question (`pageDataNames` in `leaks.ts`): a tenant's "Yes / Partial / No"
+ * is its own content, in whatever language it wrote it, and only the page
+ * that renders the question renders its options (#5924).
+ */
+export async function questionOptions(db: PrismaClient): Promise<Map<string, string[]>> {
+    const [vendorQuestions, questions] = await Promise.all([
+        db.vendorAssessmentTemplateQuestion.findMany({ select: { prompt: true, optionsJson: true, scaleConfigJson: true }, take: 20_000 }),
+        db.questionnaireQuestion.findMany({ select: { prompt: true, optionsJson: true }, take: 10_000 }),
+    ]);
+    const byPrompt = new Map<string, string[]>();
+    const add = (prompt: string | null, options: string[]) => {
+        const key = (prompt ?? '').replace(/\s+/g, ' ').trim();
+        if (!key || !options.length) return;
+        byPrompt.set(key, [...(byPrompt.get(key) ?? []), ...options]);
+    };
+    for (const q of vendorQuestions) add(q.prompt, [...optionLabels(q.optionsJson), ...optionLabels(q.scaleConfigJson)]);
+    for (const q of questions) add(q.prompt, optionLabels(q.optionsJson));
+    return byPrompt;
+}
+
 export type ResolvedRoute =
     | { route: AppRoute; url: string }
     | { route: AppRoute; uncaptured: string };

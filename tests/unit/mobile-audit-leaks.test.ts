@@ -6,7 +6,7 @@
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { buildLeakCatalog, findEnglishLeaks, optionLabels } from '../../scripts/mobile-audit/leaks';
+import { buildLeakCatalog, findEnglishLeaks, optionLabels, pageDataNames } from '../../scripts/mobile-audit/leaks';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
 import { localizedRunSummary, type WorkflowSummaryTranslator } from '@/lib/agentic/workflow-labels';
 import type { WorkflowContext } from '@/lib/agentic/workflow-types';
@@ -166,6 +166,37 @@ describe('findEnglishLeaks', () => {
         });
     });
 
+    describe('a product name in Bulgarian prose (#5924)', () => {
+        // "Signal" is also a catalog label (a column, "Сигнал"); here it names an app.
+        const appCatalog = buildLeakCatalog(
+            { nav: { back: 'Back to {section}' }, queue: { signal: 'Signal' }, kinds: { risk: 'Risk' } },
+            { nav: { back: 'Обратно към {section}' }, queue: { signal: 'Сигнал' }, kinds: { risk: 'Риск' } },
+        );
+        const find = (texts: string[]) => findEnglishLeaks({ texts, chromeTexts: [] }, appCatalog);
+
+        it('does not call an app named as an example, in an aside of a Bulgarian sentence, a leak', () => {
+            expect(
+                find([
+                    'Криптирана ли е фирмената ви поща? Използвате ли сигурни съобщения (Teams, Signal) вместо некриптирани SMS за чувствителни теми?',
+                    'Ако пощата ви спре по време на кибератака, как ще комуникира екипът? Има ли резервен план (телефонно дърво, група в Signal, списък с лични имейли)?',
+                ]),
+            ).toEqual([]);
+        });
+
+        it('still finds the same word interpolated where a Bulgarian word should stand', () => {
+            // A label in a short string, and a label in a sentence but outside an aside.
+            const outside = 'Сигурни ли сте, че искате да изтриете този Risk завинаги от системата?';
+            expect(find(['Обратно към Signal', outside])).toEqual([
+                { text: 'Обратно към Signal', reason: 'EMBEDDED' },
+                { text: outside, reason: 'EMBEDDED' },
+            ]);
+        });
+
+        it('still finds a label in an aside of a string too short to be a sentence', () => {
+            expect(find(['Колона (Signal)'])).toEqual([{ text: 'Колона (Signal)', reason: 'EMBEDDED' }]);
+        });
+    });
+
     it('skips ICU plurals, whose literal text is not one string', () => {
         expect(catalog.patterns.some((p) => p.literal.includes('item'))).toBe(false);
     });
@@ -179,6 +210,32 @@ describe('optionLabels (the seeded questionnaires\' option text, for the library
         expect(optionLabels(null)).toEqual([]);
         expect(optionLabels({ value: 'x' })).toEqual([]);
         expect(optionLabels([{ value: 'no-label' }, 3])).toEqual([]);
+    });
+});
+
+describe('pageDataNames: a questionnaire\'s answer options are data beside their question (#5924)', () => {
+    // A tenant's own vendor questionnaire offers "Yes", "Partial", "Other":
+    // each is also a one-word catalog label, and none is the interface's.
+    const optCatalog = buildLeakCatalog(
+        { common: { yes: 'Yes', other: 'Other' }, status: { partial: 'Partial' } },
+        { common: { yes: 'Да', other: 'Друго' }, status: { partial: 'Частично' } },
+    );
+    const questions = new Map([['Do you encrypt data at rest?', ['Yes', 'Partial', 'Other']]]);
+    const leaksOn = (texts: string[]) =>
+        findEnglishLeaks({ texts, chromeTexts: texts }, optCatalog, pageDataNames(texts, new Set(['Acme Corp']), questions));
+
+    it('does not call an option a leak on a page that shows its question', () => {
+        expect(leaksOn(['Do you encrypt data at rest?', 'Yes', 'Partial', 'Other'])).toEqual([]);
+    });
+
+    it('still judges the same words on a page that does not show the question', () => {
+        expect(leaksOn(['Yes', 'Partial']).map((l) => l.text)).toEqual(['Yes', 'Partial']);
+    });
+
+    it('keeps the page\'s other data names, and adds nothing when no question is shown', () => {
+        const names = new Set(['Acme Corp']);
+        expect(pageDataNames(['Нещо друго'], names, questions)).toBe(names);
+        expect([...pageDataNames(['Do you encrypt data at rest?'], names, questions)].sort()).toEqual(['Acme Corp', 'Other', 'Partial', 'Yes']);
     });
 });
 
