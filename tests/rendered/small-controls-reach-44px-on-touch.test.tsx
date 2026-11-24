@@ -127,14 +127,15 @@ describe('RichTextEditor toolbar', () => {
 });
 
 describe('Slider', () => {
-    it('the thumb wears the hit area, takes the id and is named by a visible label', () => {
+    it('the thumb wears the hit area, takes the id and is named by a visible label', async () => {
         render(
             <>
                 <span id="lik-label">Likelihood · 3</span>
                 <Slider id="risk-likelihood" ariaLabelledBy="lik-label" min={1} max={5} value={3} onChange={() => {}} />
             </>,
         );
-        const thumb = screen.getByRole('slider', { name: 'Likelihood · 3' });
+        // The thumb is the lazily loaded Radix part (see `slider.tsx`).
+        const thumb = await screen.findByRole('slider', { name: 'Likelihood · 3' });
         expect(thumb).toHaveAttribute('id', 'risk-likelihood');
         expect(thumb).not.toHaveAttribute('aria-label');
         expectTouchHitArea(thumb);

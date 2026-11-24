@@ -5,7 +5,7 @@
  *        in BOTH the create and edit modals.
  *   A3 — the detail Overview shows only the score (AssetCriticalityBadge).
  */
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import * as React from 'react';
 import { SWRConfig } from 'swr';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -77,7 +77,7 @@ describe('getAssetCriticality — top-two-mean with critical override (item 25)'
 });
 
 describe('AssetCriticalityFields (A1/A2)', () => {
-    it('renders the title, 3 sliders, and a coloured score (max + label)', () => {
+    it('renders the title, 3 sliders, and a coloured score (max + label)', async () => {
         const { container } = withProviders(
             <AssetCriticalityFields
                 confidentiality={5}
@@ -87,6 +87,8 @@ describe('AssetCriticalityFields (A1/A2)', () => {
             />,
         );
         expect(screen.getByText('Asset Criticality')).not.toBeNull();
+        // The slider's Radix part loads on demand (see `slider.tsx`).
+        await screen.findAllByRole('slider');
         const ranges = container.querySelectorAll('[role="slider"]');
         expect(ranges.length).toBe(3);
         expect(document.getElementById('asset-confidentiality')).not.toBeNull();
@@ -97,22 +99,28 @@ describe('AssetCriticalityFields (A1/A2)', () => {
         expect(score.textContent).toMatch(/Critical/);
     });
 
-    it('honours idPrefix for the edit modal', () => {
+    it('honours idPrefix for the edit modal', async () => {
         withProviders(
             <AssetCriticalityFields idPrefix="asset-edit" confidentiality={1} integrity={1} availability={1} onChange={() => {}} />,
         );
+        await screen.findAllByRole('slider');
         expect(document.getElementById('asset-edit-confidentiality')).not.toBeNull();
         expect(screen.getByTestId('asset-edit-criticality-score')).not.toBeNull();
     });
 });
 
 describe('AssetCriticalityBadge (A3 — detail Overview)', () => {
-    it('shows the score + label and no sliders', () => {
+    it('shows the score + label and no sliders', async () => {
         // C=4, I=1, A=2 → top two {4,2} → mean 3 → Medium (under the
         // item-25 model; was High under the old high-water-mark rule).
         const { container } = withProviders(
             <AssetCriticalityBadge confidentiality={4} integrity={1} availability={2} />,
         );
+        // Let a lazily loaded slider arrive, were there one, so "none" is not
+        // just "not loaded yet".
+        await act(async () => {
+            await import('@/components/ui/slider-control');
+        });
         expect(container.querySelectorAll('[role="slider"]').length).toBe(0);
         const badge = screen.getByTestId('asset-criticality-score');
         expect(badge.textContent).toMatch(/3/);
@@ -126,9 +134,10 @@ describe('EditAssetFields includes the criticality box (A2 edit side)', () => {
         fields: { name: 'A', type: 'SYSTEM', criticality: 'MEDIUM', status: 'ACTIVE', ownerUserId: '', owner: '', externalRef: '', classification: '', location: '', confidentiality: 3, integrity: 4, availability: 2 },
         setField: jest.fn(),
     };
-    it('renders the asset-edit criticality sliders + score', () => {
+    it('renders the asset-edit criticality sliders + score', async () => {
         const { container } = withProviders(<EditAssetFields form={form} tenantSlug="acme" />);
         expect(screen.getByText('Asset Criticality')).not.toBeNull();
+        await screen.findAllByRole('slider');
         expect(container.querySelectorAll('[role="slider"]').length).toBe(3);
         expect(screen.getByTestId('asset-edit-criticality-score')).not.toBeNull();
     });

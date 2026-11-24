@@ -99,10 +99,12 @@ describe('NewAssetFields (create)', () => {
         }
     });
 
-    it('titles the C/I/A box "Asset Criticality" with sliders + a score', () => {
+    it('titles the C/I/A box "Asset Criticality" with sliders + a score', async () => {
         const { container } = withClient(<NewAssetFields form={form} labels={NEW_LABELS} tenantSlug="acme" />);
         expect(screen.getByText('Asset Criticality')).not.toBeNull();
-        // C/I/A are sliders now (not NumberSteppers)
+        // C/I/A are sliders now (not NumberSteppers); the Radix part loads on
+        // demand (see `slider.tsx`).
+        await screen.findAllByRole('slider');
         expect(container.querySelectorAll('[role="slider"]').length).toBe(3);
         expect(screen.getByTestId('asset-criticality-score')).not.toBeNull();
     });
