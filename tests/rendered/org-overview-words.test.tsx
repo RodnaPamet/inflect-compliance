@@ -26,7 +26,9 @@ jest.mock('next/navigation', () => ({
 
 // The grid and the dispatcher are not under test: a stand-in renders each
 // widget's title and its edit-mode action slot.
-jest.mock('@/components/ui/dashboard-widgets', () => ({
+// The dashboard imports the grid and the (lazily loaded) picker from their
+// own modules, not the barrel.
+jest.mock('@/components/ui/dashboard-widgets/DashboardGrid', () => ({
     DashboardGrid: ({ widgets, renderWidget }: { widgets: Array<{ id: string }>; renderWidget: (w: unknown) => React.ReactNode }) => (
         <div data-testid="grid">
             {widgets.map((w) => (
@@ -34,6 +36,8 @@ jest.mock('@/components/ui/dashboard-widgets', () => ({
             ))}
         </div>
     ),
+}));
+jest.mock('@/components/ui/dashboard-widgets/WidgetPicker', () => ({
     WidgetPicker: () => null,
 }));
 jest.mock('@/app/org/[orgSlug]/(app)/widget-dispatcher', () => ({
