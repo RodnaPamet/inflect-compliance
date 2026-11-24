@@ -51,6 +51,14 @@ did.
   inside the tapped row on a phone and below the grid on a larger screen; the
   same element either way, rendered once.
 
+- **An install invalidates the cached lists.** The new mobile E2E (two
+  templates ticked and installed in an isolated tenant) found that neither
+  install path — `installControlsFromTemplate`, `installSingleTemplate`,
+  `bulkInstallTemplates`, nor a pack install — bumped the list-cache version,
+  so for up to the cache's 60 s TTL the controls page an install redirects to
+  said "no controls yet". Each now bumps `control` and `task` after its
+  transaction commits.
+
 ## Files
 
 | File | Role |
@@ -64,6 +72,8 @@ did.
 | `src/app/t/[tenantSlug]/(app)/controls/sankey/ControlsSankeyClient.tsx` | CSS switch between the list and the chart |
 | `src/app/t/[tenantSlug]/(app)/risks/correlations/page.tsx` | Phone list, editor beside the pair |
 | `src/app/t/[tenantSlug]/(app)/risks/correlations/correlation-pairs.ts` | The pairs above the diagonal, split and ordered |
+| `src/app-layer/usecases/control/mappings.ts`, `.../framework/install.ts` | Bump the control and task list caches after an install |
+| `tests/e2e/mobile-template-install.spec.ts` | Two templates ticked and installed on a phone, in both phone configurations |
 | `messages/{en,bg}.json` | `controls.sankey.phone`, `risks.correlations.phone`, `panels.framework.backToRequirements`, `controls.templates.phone`, `frameworks.templates.phone` |
 
 ## Decisions
