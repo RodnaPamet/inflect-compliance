@@ -2044,9 +2044,13 @@ are easy to undo:
 
 - **Its own key, `admin.integrations_ingest`** (scope `admin:integrations_ingest`;
   owner decision), held and classified exactly as `agent_harness_ingest` is,
-  side-door list included. A key minted for one report does not post the other.
-  The SAME registered scanner keys verify both reports, and each verifier refuses
-  the other's contract.
+  side-door list included. A key needs this scope to post this report, but one
+  key MAY carry several ingest scopes (owner decision, 2026-11-24): "Connect a
+  scanner" on the Scanner keys card creates exactly one key per scanner, bound
+  to its agent, with the scope of every report ticked (`scannerKeyScopes`,
+  `src/lib/agentic/scanner-connect.ts`), through the api-keys route and no
+  other. The SAME registered scanner keys verify both reports, and each
+  verifier refuses the other's contract.
 - **The contract and the planner are the package's** —
   `verifyAndParseIntegrationsReport` and `planIntegrationsScan` from
   `@rodnapamet/scanent-contract/integrations-*`, imported directly (no
@@ -2083,7 +2087,9 @@ single-write-seam guard holds them); its results are the Agent surface tab on
 
 - **Its own key, `admin.agent_rules_ingest`** (scope `admin:agent_rules_ingest`;
   owner decision 3 of `scanent`'s agent-surface rules design), held and
-  classified exactly as `integrations_ingest`, side-door list included.
+  classified exactly as `integrations_ingest`, side-door list included. The
+  scope is its own; the key need not be (one scanner key may carry all three
+  ingest scopes, as above).
 - **A finding closes only on positive evidence about its ORIGIN** (owner
   decision, 2026-11-22): a later scan by the SAME scanner read the place it was
   found — an MCP server (`mcp:<URL>`) or a code root (`code:<label>`) — in full

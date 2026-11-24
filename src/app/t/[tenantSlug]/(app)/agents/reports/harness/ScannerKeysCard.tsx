@@ -39,6 +39,7 @@ import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import type { HarnessScannerKeyRow, HarnessScannerKeysView } from '@/lib/agentic/harness-read-model';
 
+import { ConnectScannerSheet } from './ConnectScannerSheet';
 import { RegisterScannerKeyModal } from './RegisterScannerKeyModal';
 
 export function ScannerKeysCard({ view }: { view: HarnessScannerKeysView }) {
@@ -49,6 +50,7 @@ export function ScannerKeysCard({ view }: { view: HarnessScannerKeysView }) {
     const toast = useToast();
 
     const [registering, setRegistering] = useState(false);
+    const [connecting, setConnecting] = useState(false);
     const [revoking, setRevoking] = useState<HarnessScannerKeyRow | null>(null);
     const [revokeError, setRevokeError] = useState<string | null>(null);
 
@@ -156,16 +158,29 @@ export function ScannerKeysCard({ view }: { view: HarnessScannerKeysView }) {
                     page where the product-wide primary ceiling has no slot to
                     give. The dialog it opens carries the one primary — its
                     submit, which `modal-action-order` requires. */}
-                <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    icon={<Plus />}
-                    onClick={() => setRegistering(true)}
-                    data-testid="harness-key-register-button"
-                >
-                    {t('harness.keys.register')}
-                </Button>
+                <div className="flex flex-wrap gap-tight">
+                    {/* The whole Inflect half of setting up scanent in one panel:
+                        public key, reports, one API key, and what to paste. */}
+                    <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setConnecting(true)}
+                        data-testid="harness-connect-scanner-button"
+                    >
+                        {t('harness.connect.open')}
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        icon={<Plus />}
+                        onClick={() => setRegistering(true)}
+                        data-testid="harness-key-register-button"
+                    >
+                        {t('harness.keys.register')}
+                    </Button>
+                </div>
             </div>
             <p className="text-sm text-content-muted">{t('harness.keys.intro')}</p>
 
@@ -193,6 +208,8 @@ export function ScannerKeysCard({ view }: { view: HarnessScannerKeysView }) {
             {registering && (
                 <RegisterScannerKeyModal candidates={view.candidates} onClose={() => setRegistering(false)} />
             )}
+
+            {connecting && <ConnectScannerSheet view={view} onClose={() => setConnecting(false)} />}
 
             <ConfirmDialog
                 showModal={revoking !== null}

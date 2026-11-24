@@ -32,6 +32,7 @@
  * (`OwnerSignalKind`, the model's row, and the stored shapes the contract
  * owns), erased at build, so the tab's bundle gains nothing.
  */
+import type { ScannerAgentCandidate } from './scanner-connect';
 import type { HarnessMatrixRow } from '@rodnapamet/scanent-contract/harness-matrix-model';
 
 import { rungOf, type HarnessLevel } from './harness-ladder';
@@ -296,13 +297,27 @@ export interface HarnessScannerKeyRow {
     readonly revokedAt: string | null;
 }
 
-/** The key register, plus the agents a new key may be registered for. */
+/**
+ * The key register, plus the agents a new key may be registered for, and what
+ * the viewer may do in "Connect a scanner". Every flag is decided on the server
+ * from the viewer's context, as the routes the panel calls decide it.
+ */
 export interface HarnessScannerKeysView {
     readonly keys: { readonly rows: readonly HarnessScannerKeyRow[]; readonly truncated: boolean };
-    /** Live, non-retired register rows — the agents `addHarnessScannerKey` accepts. */
+    /**
+     * Live, non-retired register rows — the agents `addHarnessScannerKey`
+     * accepts — with what activation still asks of each, so the panel can say
+     * why an agent cannot carry an API key yet.
+     */
     readonly candidates: {
-        readonly rows: readonly { readonly id: string; readonly name: string }[];
+        readonly rows: readonly ScannerAgentCandidate[];
         readonly truncated: boolean;
+    };
+    readonly connect: {
+        /** `admin.manage` AND the role-tier admin check `createApiKey` asserts. */
+        readonly canMintKeys: boolean;
+        /** `admin.agent_tool_exposure`: the tool grant and the grants read. */
+        readonly canGrantTools: boolean;
     };
 }
 

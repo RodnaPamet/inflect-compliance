@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import { unwrapCappedList, type CappedList } from '@/lib/list-backfill-cap';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
+import { KpiStrip } from '@/components/ui/kpi-strip';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import {
     FilterProvider,
@@ -307,7 +308,7 @@ function IncidentsPageInner({
                 ) : undefined,
             }}
             kpis={
-                <div className="grid grid-cols-1 gap-default sm:grid-cols-3">
+                <KpiStrip columns="md:grid-cols-3">
                     <KpiFilterCard label={t('kpi.open')} value={openCount} />
                     <KpiFilterCard label={t('kpi.reportable')} value={reportableCount} />
                     <KpiFilterCard
@@ -315,7 +316,7 @@ function IncidentsPageInner({
                         value={dueOrOverdueCount}
                         tone={dueOrOverdueCount > 0 ? 'critical' : 'default'}
                     />
-                </div>
+                </KpiStrip>
             }
             // The list stops at the backfill cap; say so rather than show a
             // partial register as if it were whole.

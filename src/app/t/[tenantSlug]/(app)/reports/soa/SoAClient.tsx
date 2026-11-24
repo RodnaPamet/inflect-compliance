@@ -29,7 +29,7 @@ import { RequirePermission } from '@/components/require-permission';
 import { UpgradeGate } from '@/components/UpgradeGate';
 import { apiErrorMessage } from '@/lib/api-error';
 import { useIsBelowMd } from '@/components/ui/hooks';
-import { ScrollCueStrip } from '@/components/ui/scroll-cue-strip';
+import { KpiStrip } from '@/components/ui/kpi-strip';
 import { useSoASectionLabel } from '@/app/t/[tenantSlug]/(app)/reports/soa/section-label';
 
 // ─── Types ───
@@ -248,13 +248,13 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
     const { summary } = report;
 
     const summaryTiles = [
-        <SummaryCard key="total" compact={belowMd} label={t('soaView.total')} value={summary.total} icon={<FileText className="w-4 h-4 text-content-muted" />} />,
-        <SummaryCard key="applicable" compact={belowMd} label={t('soaView.applicable')} value={summary.applicable} icon={<CheckCircle2 className="w-4 h-4 text-content-success" />} />,
-        <SummaryCard key="notApplicable" compact={belowMd} label={t('soaView.notApplicable')} value={summary.notApplicable} icon={<XCircle className="w-4 h-4 text-content-muted" />} />,
-        <SummaryCard key="unmapped" compact={belowMd} label={t('soaView.unmapped')} value={summary.unmapped} icon={<HelpCircle className="w-4 h-4 text-content-error" />} accent={summary.unmapped > 0 ? 'danger' : undefined} />,
-        <SummaryCard key="implemented" compact={belowMd} label={t('soaView.implemented')} value={summary.implemented} icon={<CheckCircle2 className="w-4 h-4 text-content-success" />} />,
-        <SummaryCard key="excepted" compact={belowMd} label={t('soaView.excepted')} value={summary.excepted} icon={<AlertTriangle className="w-4 h-4 text-content-warning" />} accent={summary.excepted > 0 ? 'warning' : undefined} />,
-        <SummaryCard key="missingJustification" compact={belowMd} label={t('soaView.missingJustification')} value={summary.missingJustification} icon={<AlertTriangle className="w-4 h-4 text-content-warning" />} accent={summary.missingJustification > 0 ? 'warning' : undefined} />,
+        <SummaryCard key="total" label={t('soaView.total')} value={summary.total} icon={<FileText className="w-4 h-4 text-content-muted" />} />,
+        <SummaryCard key="applicable" label={t('soaView.applicable')} value={summary.applicable} icon={<CheckCircle2 className="w-4 h-4 text-content-success" />} />,
+        <SummaryCard key="notApplicable" label={t('soaView.notApplicable')} value={summary.notApplicable} icon={<XCircle className="w-4 h-4 text-content-muted" />} />,
+        <SummaryCard key="unmapped" label={t('soaView.unmapped')} value={summary.unmapped} icon={<HelpCircle className="w-4 h-4 text-content-error" />} accent={summary.unmapped > 0 ? 'danger' : undefined} />,
+        <SummaryCard key="implemented" label={t('soaView.implemented')} value={summary.implemented} icon={<CheckCircle2 className="w-4 h-4 text-content-success" />} />,
+        <SummaryCard key="excepted" label={t('soaView.excepted')} value={summary.excepted} icon={<AlertTriangle className="w-4 h-4 text-content-warning" />} accent={summary.excepted > 0 ? 'warning' : undefined} />,
+        <SummaryCard key="missingJustification" label={t('soaView.missingJustification')} value={summary.missingJustification} icon={<AlertTriangle className="w-4 h-4 text-content-warning" />} accent={summary.missingJustification > 0 ? 'warning' : undefined} />,
     ];
 
     return (
@@ -297,20 +297,16 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
 
             {/* Summary cards. On a phone, seven tiles in a two-column grid
                 filled the whole first screen before any requirement; there
-                they are one scrolling strip that says it scrolls. */}
-            {belowMd ? (
-                <ScrollCueStrip
-                    data-testid="soa-kpi-strip"
-                    listClassName="gap-tight"
-                    aria-label={t('soaMobile.summaryAria')}
-                >
-                    {summaryTiles}
-                </ScrollCueStrip>
-            ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-compact" data-testid="soa-kpi-grid">
-                    {summaryTiles}
-                </div>
-            )}
+                they are one scrolling strip that says it scrolls — the shared
+                KPI strip, a grid again from md up. */}
+            <KpiStrip
+                data-testid="soa-kpi-strip"
+                aria-label={t('soaMobile.summaryAria')}
+                columns="md:grid-cols-3 lg:grid-cols-7"
+                gridGap="md:gap-compact"
+            >
+                {summaryTiles}
+            </KpiStrip>
 
             {/* Readiness banner */}
             {(summary.unmapped > 0 || summary.missingJustification > 0) && (
@@ -913,23 +909,15 @@ function SoACard({
 
 // ─── Summary Card ───
 
-function SummaryCard({ label, value, icon, accent, compact = false }: { label: string; value: number; icon: React.ReactNode; accent?: 'danger' | 'warning'; compact?: boolean }) {
+function SummaryCard({ label, value, icon, accent }: { label: string; value: number; icon: React.ReactNode; accent?: 'danger' | 'warning' }) {
     const border = accent === 'danger' ? 'border-border-error' : accent === 'warning' ? 'border-border-warning' : 'border-border-default/50';
     return (
-        <div
-            className={cn(
-                cardVariants({ density: 'none' }),
-                'border',
-                // In the phone strip each tile keeps its width and does not
-                // shrink, so the strip scrolls rather than squeezing seven
-                // tiles into one screen.
-                compact ? 'basis-28 shrink-0 grow-0 px-3 py-2' : 'px-4 py-3',
-                border,
-            )}
-        >
+        // In the phone strip (`KpiStrip`) the tile is compact and keeps its
+        // width, so the strip scrolls rather than squeezing seven tiles.
+        <div className={cn(cardVariants({ density: 'none' }), 'border px-4 py-3', border)}>
             <div className="flex items-center justify-between">
                 {icon}
-                <span className={cn('font-bold text-content-emphasis', compact ? 'text-lg' : 'text-xl')}>{value}</span>
+                <span className="font-bold text-content-emphasis text-xl max-md:text-lg">{value}</span>
             </div>
             <div className="text-xs text-content-muted mt-1">{label}</div>
         </div>
