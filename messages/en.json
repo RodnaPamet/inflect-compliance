@@ -12600,7 +12600,10 @@
         "controlNeedsCreate": "Approving this control creates it as you, so it needs permission to create controls. Somebody who has it can approve this one.",
         "controlNeedsEdit": "Approving this change edits the control as you, so it needs permission to edit controls. Somebody who has it can approve this one.",
         "policyNeedsCreate": "Approving this policy creates it as you, so it needs permission to create policies. Somebody who has it can approve this one.",
-        "policyNeedsEdit": "Approving this change edits the policy as you, so it needs permission to edit policies. Somebody who has it can approve this one."
+        "policyNeedsEdit": "Approving this change edits the policy as you, so it needs permission to edit policies. Somebody who has it can approve this one.",
+        "fourEyesOwner": "This proposal needs two independent approvers, and you are the registered owner of the agent that made it. Someone else has to sign.",
+        "fourEyesAlreadySigned": "You have already approved this proposal. A second approval has to come from a different person.",
+        "fourEyesNotFound": "This proposal was not found."
       }
     },
     "runs": {

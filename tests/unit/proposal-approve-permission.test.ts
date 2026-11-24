@@ -103,6 +103,10 @@ describe('a process map’s, a finding’s and a risk’s refusals are worded, i
         ['CONTROL_APPROVER_NEEDS_CONTROLS_EDIT', 'controlNeedsEdit'],
         ['POLICY_APPROVER_NEEDS_POLICIES_CREATE', 'policyNeedsCreate'],
         ['POLICY_APPROVER_NEEDS_POLICIES_EDIT', 'policyNeedsEdit'],
+        // #5919: the four-eyes rules, one reason each.
+        ['agent_proposal_four_eyes_owner', 'fourEyesOwner'],
+        ['agent_proposal_four_eyes_already_signed', 'fourEyesAlreadySigned'],
+        ['agent_proposal_four_eyes_not_found', 'fourEyesNotFound'],
     ])('%s → refused.%s', (reason, key) => {
         expect(proposalRefusalKey({ error: { details: { reason } } })).toBe(key);
         for (const messages of [en, bg]) {
@@ -110,6 +114,27 @@ describe('a process map’s, a finding’s and a risk’s refusals are worded, i
             expect(typeof text === 'string' && text.trim().length > 0).toBe(true);
             // A message the surface renders with no arguments.
             expect(text).not.toMatch(/[{}]/);
+        }
+    });
+});
+
+describe('the four-eyes rules are told apart (#5919)', () => {
+    it('the family reason every rule once shared is not worded as any one of them', () => {
+        // Mapping it would word "not found" as "you own the agent": a server
+        // still sending it keeps its own sentence.
+        expect(proposalRefusalKey({ error: { details: { reason: 'agent_proposal_four_eyes' } } })).toBeNull();
+    });
+
+    it('each rule is worded differently, so a reader can tell which one refused', () => {
+        const keys = [
+            'agent_proposal_four_eyes_owner',
+            'agent_proposal_four_eyes_already_signed',
+            'agent_proposal_four_eyes_not_found',
+        ].map((reason) => proposalRefusalKey({ error: { details: { reason } } }));
+        expect(new Set(keys).size).toBe(3);
+        for (const messages of [en, bg]) {
+            const texts = keys.map((k) => messages.agents.proposals.refused[k as string]);
+            expect(new Set(texts).size).toBe(3);
         }
     });
 });
