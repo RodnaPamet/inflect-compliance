@@ -42,7 +42,7 @@ measures the same.
 | `src/components/ui/SankeyChart.tsx` | Holds the phone list (`SankeyFlowList`, the page's former `SankeyFlowSummary`, now fed the chart's own dataset), and renders it below `md` and the diagram from `md` up. |
 | `src/app/t/[tenantSlug]/(app)/controls/sankey/ControlsSankeyClient.tsx` | Mounts the chart alone. |
 | `messages/{en,bg}.json` | The list's strings move from `controls.sankey.phone` to `common.ui.sankeyPhone`. |
-| `tests/e2e/mobile-ratchet.ts` | `tapUnder24` baseline lowered. |
+| `tests/e2e/mobile-ratchet.ts` | `tapUnder24` baseline 1 → 0: no fixed route has a target under 24px. |
 | `docs/charts.md` | The "Touch" rule. |
 
 ## Decisions
