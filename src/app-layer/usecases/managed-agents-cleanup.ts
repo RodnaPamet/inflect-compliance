@@ -29,6 +29,19 @@
  * `ABANDONED`, with an alert, so it does not live for ever (an implementation
  * decision of Step 5c, not an owner decision).
  *
+ * ── INFLECT'S OWN WORKSPACE (Step 6b, #4172) ────────────────────────────────
+ *
+ * A tenant hosted in Inflect's own Anthropic organisation has no connection
+ * row: its records carry the fixed connection id `inflect-hosted`, and its key
+ * is the deployment's, read through `inflectHostedWorkspace`, which returns
+ * before it reads the key while `HOSTED_MANAGED_AGENTS_ACTIVE` is false (a
+ * record then stays OPEN, `HOSTED_NOT_ACTIVE`). Three differences: an
+ * unfinished PURGE record of it stays OPEN and is retried, because no purge
+ * destroys Inflect's key (decision 7 is about the customer's); the
+ * reconciliation finds hosted tenants by their provisions; and a DSAR erasure
+ * skips it, because a hosted session is never kept. Opting out of hosting
+ * opens a `CONNECTION_REMOVED` record under that id.
+ *
  * Beside the triggers, the data-lifecycle job runs ONE periodic
  * reconciliation (`reconcileLostSessionDeletes`) over every live tenant's
  * workspace connections. It retries a session whose latest ledger step is

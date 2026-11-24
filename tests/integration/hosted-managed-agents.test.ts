@@ -233,9 +233,7 @@ afterAll(async () => {
     await deleteAuditRowsForTenants(prisma, tenants).catch(() => undefined);
     await deleteAuditRowsForUsers(prisma, users).catch(() => undefined);
     await prisma.user.deleteMany({ where: { id: { in: users } } });
-    for (const tenantId of tenants) {
-        await prisma.tenant.delete({ where: { id: tenantId } }).catch(() => undefined);
-    }
+    await prisma.tenant.deleteMany({ where: { id: { in: tenants } } });
     await appPrisma.$disconnect();
     await prisma.$disconnect();
     __resetAuditStreamForTests();

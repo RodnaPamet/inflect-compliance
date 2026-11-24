@@ -18726,6 +18726,7 @@
       "FRAMEWORK_PACK_INSTALLED": "Инсталиране на пакет на рамка",
       "FRAMEWORK_PACK_REMOVED": "Премахване на пакет на рамка",
       "FRAMEWORK_REORDERED": "Пренареждане на рамка",
+      "HOSTED_MANAGED_AGENTS_OPT_IN_CHANGED": "Промяна на включването за хоствани агенти",
       "HOST_CONSUMER_CREATED": "Създаване на хост потребител",
       "HOST_CONSUMER_KILL_ENGAGED": "Задействане на аварийно спиране на хост потребител",
       "HOST_CONSUMER_KILL_LIFTED": "Отмяна на аварийно спиране на хост потребител",
