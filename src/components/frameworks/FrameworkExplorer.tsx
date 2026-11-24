@@ -531,8 +531,10 @@ function FrameworkTreeRow({
             }
             secondary={
                 isSection ? null : (
-                    <span className="inline-flex items-center gap-1.5">
-                        {indicator}
+                    // Inline below `md`, so a wrapped title continues after
+                    // the code instead of dropping to a line of its own.
+                    <span className="max-md:inline md:inline-flex md:items-center md:gap-1.5">
+                        {indicator && <span className="max-md:mr-1.5 max-md:inline-block md:contents">{indicator}</span>}
                         <span>{node.title}</span>
                     </span>
                 )

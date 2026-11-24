@@ -19,6 +19,7 @@ import { cn } from '@inflect/ui/lib/cn';
 import { apiErrorMessage } from '@/lib/api-error';
 import { parsePlanLimitMessage } from '@/lib/billing/plan-limit-message';
 import { useIsBelowMd } from '@/components/ui/hooks';
+import { isControlCategoryTheme } from '@/lib/controls/control-categories';
 import {
     TemplateInstallDock,
     TemplateSelectRow,
@@ -282,7 +283,12 @@ export default function ControlTemplatesPage() {
                                         )}
                                         <span className="block break-words font-medium text-content-emphasis">{tpl.title}</span>
                                         <span className="mt-tight flex flex-wrap items-center gap-tight text-xs text-content-subtle">
-                                            {tpl.category && <StatusBadge variant="info">{tpl.category}</StatusBadge>}
+                                            {/* An ISO 27002 theme constant reads as its label. */}
+                                            {tpl.category && (
+                                                <StatusBadge variant="info">
+                                                    {isControlCategoryTheme(tpl.category) ? t(`categoryLabels.${tpl.category}`) : tpl.category}
+                                                </StatusBadge>
+                                            )}
                                             <span>
                                                 {t('templates.previewSummary', {
                                                     tasks: tpl._count?.tasks ?? 0,

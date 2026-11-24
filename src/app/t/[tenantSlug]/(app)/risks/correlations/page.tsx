@@ -194,12 +194,17 @@ export default function CorrelationMatrixPage() {
         );
         return (
             <li key={`${p.i}-${p.j}`} className="space-y-tight py-tight" data-testid={`corr-pair-${p.i}-${p.j}`}>
-                <div className="flex items-center gap-default">
-                    <div className="min-w-0 flex-1">
-                        {riskLink(p.i)}
-                        {riskLink(p.j)}
+                {/* The two risks a line each, then the figure and Edit:
+                    side by side, the names had a third of a phone's width. */}
+                <div className="min-w-0">
+                    {riskLink(p.i)}
+                    <div className="flex items-center gap-tight">
+                        <span aria-hidden className="text-content-subtle">↔</span>
+                        <div className="min-w-0 flex-1">{riskLink(p.j)}</div>
                     </div>
-                    <span className={`shrink-0 rounded-md border border-border-subtle px-2 py-1 text-sm tabular-nums ${cellClass(p.v)}`}>
+                </div>
+                <div className="flex items-center justify-between gap-default">
+                    <span className={`rounded-md border border-border-subtle px-2 py-1 text-sm tabular-nums ${cellClass(p.v)}`}>
                         {value}
                     </span>
                     {canWrite && (
