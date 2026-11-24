@@ -12,8 +12,11 @@
  * The contract now:
  *   · the 403's message is the sentence, addressed to the caller;
  *   · the condition's code is in `details.reason`, where a client or a test
- *     that needs to branch on it can read it;
- *   · the audit row is unchanged — the rule's code stays in the trail.
+ *     that needs to branch on it can read it — for four-eyes, ONE reason per
+ *     rule (#5919), so the review surfaces can word each in the reader's
+ *     language without wording "not found" as the owner refusal;
+ *   · the audit row is unchanged — its `reason` is the family
+ *     `agent_proposal_four_eyes` and `fourEyesRule` names the rule.
  *
  * The last block runs the real approve ROUTE, so the sentence is asserted on
  * the wire envelope the page reads (`{ error: { message } }`), not only on the
@@ -153,9 +156,10 @@ describe('a four-eyes refusal', () => {
         expect(err.message).toMatch(/already approved this proposal/);
         expect(err.message).toMatch(/different person/);
         expect(err.message).not.toContain('agent_proposal');
-        expect(err.details).toEqual({ reason: 'agent_proposal_four_eyes' });
-        // The rule's CODE stays in the trail, not in the 403.
-        expect(JSON.stringify(err.details)).not.toContain('approver_already_signed');
+        expect(err.details).toEqual({ reason: 'agent_proposal_four_eyes_already_signed' });
+        // The trail keeps its shape: the family reason, and the rule's code.
+        expect(denials()).toHaveLength(1);
+        expect((denials()[0].detailsJson as Record<string, unknown>).reason).toBe('agent_proposal_four_eyes');
         expect((denials()[0].detailsJson as Record<string, unknown>).fourEyesRule).toBe('approver_already_signed');
     });
 
@@ -169,8 +173,25 @@ describe('a four-eyes refusal', () => {
         };
         expect(err.message).toMatch(/registered owner of the agent that made it/);
         expect(err.message).toMatch(/Someone else has to sign/);
-        expect(err.details).toEqual({ reason: 'agent_proposal_four_eyes' });
+        expect(err.details).toEqual({ reason: 'agent_proposal_four_eyes_owner' });
+        expect((denials()[0].detailsJson as Record<string, unknown>).reason).toBe('agent_proposal_four_eyes');
         expect((denials()[0].detailsJson as Record<string, unknown>).fourEyesRule).toBe('agent_owner_may_not_approve');
+    });
+
+    it('a proposal the trigger cannot see is refused as not found, under its own reason', async () => {
+        db.agentProposalApproval.create.mockRejectedValueOnce(
+            new Error('P0001 AGENT_PROPOSAL_APPROVAL_NO_PROPOSAL: proposal not visible'),
+        );
+        const err = (await approveAgentProposal(ctx, 'p1').catch((e: unknown) => e)) as {
+            message: string;
+            details?: unknown;
+        };
+        expect(err.message).toBe('Proposal not found.');
+        // Its own reason: sharing the owner refusal's would word "not found"
+        // as "you own the agent" on the review surfaces.
+        expect(err.details).toEqual({ reason: 'agent_proposal_four_eyes_not_found' });
+        expect((denials()[0].detailsJson as Record<string, unknown>).reason).toBe('agent_proposal_four_eyes');
+        expect((denials()[0].detailsJson as Record<string, unknown>).fourEyesRule).toBe('proposal_not_visible');
     });
 
     it('an unrelated database failure is still rethrown, not dressed as a refusal', async () => {
