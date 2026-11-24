@@ -1,0 +1,309 @@
+# ───────────────────────────────────────────────────────────────
+#  Mobile audit (whole product), nightly
+#
+#  The `mobile` E2E project holds a FIXED set of routes on every pull request
+#  (tests/e2e/mobile-ratchet.ts). Every other page is measured only by the
+#  whole-product harness, `scripts/mobile-audit/run.ts`, which until this
+#  workflow ran only when somebody remembered to. A page outside the fixed set
+#  could regress on a phone and stay regressed until the next manual audit.
+#
+#  So the harness runs here every night, against the E2E build (`next build`
+#  with NEXT_TEST_MODE=1, then `next start`) on a freshly seeded database —
+#  the reference setup docs/mobile-audit.md names. It publishes `summary.md`,
+#  `metrics.json` and the screenshots as the `mobile-audit` artifact.
+#
+#  THE REFERENCE IS THE PREVIOUS SUCCESSFUL RUN on main. Its `metrics.json` is
+#  downloaded and passed to `--compare`, which fails the run when any count of
+#  failing pages ROSE, or a route stopped rendering (docs/mobile-audit.md).
+#  A run that fails is never a reference, so a regression is compared against
+#  the last good night on every later night until it is fixed — it cannot
+#  become the new normal by surviving one run. A count that FELL passes, and
+#  that run becomes the reference.
+#
+#  When a count rose, the notify job opens an issue (label `mobile-audit`), or
+#  comments on the open one, with `comparison.md`: the counts that moved and
+#  the routes newly failing each. A run that could not observe anything (the
+#  build, the app or the harness broke) gets its own issue title, because the
+#  two need opposite responses: fix a page, or fix the observer.
+#
+#  The first run has no reference: it publishes and becomes one.
+# ───────────────────────────────────────────────────────────────
+name: Mobile audit
+
+on:
+  schedule:
+    # Nightly, off the hour (sub-daily crons have never fired here; see
+    # queue-candidate-sweep.yml), and clear of DAST (04:00) and the load test
+    # (03:30), which build the same app on the same runners.
+    - cron: '47 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Mobile audit (whole product)
+    runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
+    # Build ~15 min, the harness ~40 min for ~180 routes and eight open states
+    # in three configurations. Twice that, so a slow night is not a red one.
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      # Reading the previous run's artifact.
+      actions: read
+    outputs:
+      rose: ${{ steps.verdict.outputs.rose }}
+
+    env:
+      AUTH_TEST_MODE: "1"
+      AUTH_TRUST_HOST: "1"
+      AUTH_SECRET: "test-auth-secret-that-is-long-enough-32chars" # pragma: allowlist secret — test-only stub, as in ci.yml's e2e job
+      JWT_SECRET: "test-auth-secret-that-is-long-enough-32chars" # pragma: allowlist secret — test-only stub, as in ci.yml's e2e job
+      AUTH_URL: "http://localhost:3006"
+      NEXTAUTH_URL: "http://localhost:3006"
+      DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
+      DATABASE_URL_TEST: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
+      DIRECT_DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
+      REDIS_URL: redis://localhost:6379
+      RATE_LIMIT_ENABLED: "0"
+      DATA_ENCRYPTION_KEY: ci-test-data-encryption-key-32-chars-or-more-deterministic-x
+      # The E2E build: distDir `.next-test`, the onboarding tour and the
+      # sidebar's background polling off (next.config.js, ci.yml e2e-bundle).
+      NEXT_TEST_MODE: "1"
+      NEXT_PUBLIC_TEST_MODE: "1"
+      # As in the DAST workflows: the stubs above are not a production
+      # configuration, and the app's env schema would refuse them under
+      # NODE_ENV=production.
+      SKIP_ENV_VALIDATION: "1"
+
+    services:
+      postgres:
+        image: ghcr.io/rodnapamet/postgres-pgvector:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: ci_testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U ci -d ci_testdb"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup environment
+        run: cp .env.e2e.example .env
+
+      - name: Setup Node + Prisma client
+        uses: ./.github/actions/setup-node-prisma
+        with:
+          node-version: '24'
+
+      - name: Create PostgreSQL roles for RLS
+        run: |
+          PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') THEN CREATE ROLE app_user NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postgres') THEN CREATE ROLE postgres NOLOGIN; END IF;
+          END $$;
+          GRANT app_user TO ci;
+          GRANT app_user TO postgres;
+          SQL
+
+      - name: Apply migrations + seed
+        run: |
+          ./node_modules/.bin/prisma migrate deploy
+          npx tsx prisma/seed.ts
+
+      - name: Build the E2E bundle
+        env:
+          NODE_ENV: production
+          # The production image's heap (tests/guards/app-build-heap-bound.test.ts).
+          NODE_OPTIONS: "--max-old-space-size=8192"
+        run: npm run build
+
+      - name: Start the app (background)
+        env:
+          NODE_ENV: production
+          PORT: "3006"
+          NODE_OPTIONS: "--max-old-space-size=4096"
+        run: |
+          npx next start -p 3006 > /tmp/app.log 2>&1 &
+          for i in $(seq 1 90); do
+            if curl -fsS http://localhost:3006/api/livez > /dev/null 2>&1; then
+              echo "App is up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error title=Mobile audit could not start the app::No answer on /api/livez within 90s. Last 100 lines of its log:"
+          tail -n 100 /tmp/app.log || true
+          exit 1
+
+      - name: Install Playwright Chromium
+        timeout-minutes: 10
+        run: npx playwright install --with-deps chromium
+
+      - name: Find the previous successful run's report
+        id: reference
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # The last SUCCESSFUL run on main: a run that rose failed, so it is
+          # never the reference (see the header).
+          prev=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow mobile-audit.yml --branch main \
+            --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty') \
+            || { echo "::error title=Mobile audit cannot read its own run history::gh run list failed. This is NOT a regression: the comparison could not be made."; exit 1; }
+          if [ -z "$prev" ]; then
+            echo "No successful run yet: this run publishes and becomes the reference."
+            echo "file=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if gh run download "$prev" --repo "$GITHUB_REPOSITORY" --name mobile-audit --dir reference; then
+            echo "Reference: run ${prev}"
+            echo "file=reference/metrics.json" >> "$GITHUB_OUTPUT"
+          else
+            # Expired (retention) or never uploaded. Reported, not hidden: a
+            # night without a comparison is a night a regression can pass.
+            echo "::warning title=No reference report::Run ${prev}'s mobile-audit artifact could not be downloaded; this run is not compared."
+            echo "file=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run the audit
+        id: audit
+        env:
+          REFERENCE: ${{ steps.reference.outputs.file }}
+        run: |
+          set -uo pipefail
+          compare=()
+          if [ -n "$REFERENCE" ]; then compare=(--compare "$REFERENCE"); fi
+          set +e
+          npm run -s mobile:audit -- --base-url http://localhost:3006 --create-records --out mobile-audit "${compare[@]}"
+          code=$?
+          set -e
+          echo "code=${code}" >> "$GITHUB_OUTPUT"
+          if [ -f mobile-audit/summary.md ]; then cat mobile-audit/summary.md >> "$GITHUB_STEP_SUMMARY"; fi
+          if [ -f mobile-audit/comparison.md ]; then { echo; cat mobile-audit/comparison.md; } >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mobile-audit
+          path: mobile-audit/
+          if-no-files-found: warn
+          # Longer than any gap between two successful nights is likely to be,
+          # so the next run still finds its reference.
+          retention-days: 30
+
+      - name: Verdict
+        id: verdict
+        if: always() && steps.audit.outcome == 'success'
+        env:
+          CODE: ${{ steps.audit.outputs.code }}
+        run: |
+          set -euo pipefail
+          rose=false
+          if [ -f mobile-audit/comparison.json ]; then
+            n=$(jq '.regressions | length' mobile-audit/comparison.json)
+            if [ "$n" -gt 0 ]; then rose=true; fi
+          fi
+          echo "rose=${rose}" >> "$GITHUB_OUTPUT"
+          if [ "$rose" = true ]; then
+            echo "::error title=A count of failing pages rose::See comparison.md in the mobile-audit artifact."
+            exit 1
+          fi
+          if [ "$CODE" != "0" ]; then
+            echo "::error title=Mobile audit could not run::The harness exited ${CODE} without a comparison that rose. This is a broken observer, not a regression."
+            exit 1
+          fi
+
+      - name: Stop the app
+        if: always()
+        run: pkill -f "next start -p 3006" || true
+
+  notify:
+    name: "Notify: mobile audit"
+    needs: [audit]
+    # `cancelled()` counts: a cancelled run observed nothing, which must not
+    # read as a quiet night.
+    if: ${{ failure() || cancelled() }}
+    runs-on: ubuntu-latest
+    # Job permissions REPLACE the workflow block, so `contents: read` above
+    # does not carry down.
+    permissions:
+      issues: write
+      actions: read
+    steps:
+      - name: Fetch the comparison
+        if: needs.audit.outputs.rose == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: mobile-audit
+          path: mobile-audit
+
+      - uses: actions/github-script@v9
+        env:
+          ROSE: ${{ needs.audit.outputs.rose }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const rose = process.env.ROSE === 'true';
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const title = rose
+              ? 'Mobile audit: pages regressed on a phone'
+              : 'Mobile audit could not run';
+            let comparison = '';
+            try { comparison = fs.readFileSync('mobile-audit/comparison.md', 'utf8'); } catch { /* reported below */ }
+            const body = rose
+              ? [
+                  `The nightly whole-product mobile audit found a count of failing pages that ROSE against the last successful night.`,
+                  ``,
+                  `- Run, with \`summary.md\`, \`metrics.json\` and the screenshots in the \`mobile-audit\` artifact: ${run}`,
+                  `- What each check means: \`docs/mobile-audit.md\``,
+                  ``,
+                  comparison || '_comparison.md was not readable; open the run._',
+                  ``,
+                  `The audit compares against the last SUCCESSFUL night, so this stays red, and this issue gets a comment each night, until the routes above are fixed.`,
+                ].join('\n')
+              : [
+                  `The nightly whole-product mobile audit did not complete, so it observed nothing tonight.`,
+                  ``,
+                  `- Run: ${run}`,
+                  ``,
+                  `This is a broken observer (the build, the app, Playwright or the harness), not a page that regressed. Fix the run; a page fix would be the wrong move.`,
+                ].join('\n');
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open', labels: 'mobile-audit',
+            });
+            const existing = open.find((i) => i.title === title);
+            if (existing) {
+              // One thread per kind of failure: a week of red nights is one
+              // issue with seven comments, not seven issues.
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: existing.number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo, title, body, labels: ['mobile-audit'],
+              });
+            }

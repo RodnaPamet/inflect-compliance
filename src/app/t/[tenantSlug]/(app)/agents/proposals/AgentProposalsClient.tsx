@@ -655,8 +655,15 @@ export function AgentProposalsClient({
                             id={`proposal-${p.id}`}
                             className={cn(cardVariants({ density: 'comfortable' }), 'space-y-default')}
                         >
-                            <div className="flex items-center justify-between gap-default">
-                                <div className="flex items-center gap-tight">
+                            {/*
+                              Both rows WRAP. On a phone the kind, operation,
+                              guard and decision badges with the date are wider
+                              than the screen, and an unwrapping row pushed
+                              Reject past the right edge, where the shell's clip
+                              hid it (tests/e2e/mobile-journeys.spec.ts).
+                            */}
+                            <div className="flex flex-wrap items-center justify-between gap-default">
+                                <div className="flex min-w-0 flex-wrap items-center gap-tight">
                                     {/*
                                       The tick that puts this row in a bulk
                                       reject. Rendered for readers too and

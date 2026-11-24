@@ -82,22 +82,32 @@ export async function revokeShare(ctx: RequestContext, packId: string, shareId: 
 
 export async function getPackByShareToken(token: string) {
     const hash = hashToken(token);
-    return runInGlobalContext(async (db) => {
-        const share = await db.auditPackShare.findFirst({
+    const share = await runInGlobalContext((db) =>
+        db.auditPackShare.findFirst({
             where: { tokenHash: hash, revokedAt: null },
-            select: { auditPackId: true, expiresAt: true },
-        });
-        if (!share) throw notFound('Invalid or expired share link');
-        if (share.expiresAt && share.expiresAt < new Date()) {
-            throw forbidden('Share link has expired');
-        }
+            select: { auditPackId: true, expiresAt: true, tenantId: true },
+        }),
+    );
+    if (!share) throw notFound('Invalid or expired share link');
+    if (share.expiresAt && share.expiresAt < new Date()) {
+        throw forbidden('Share link has expired');
+    }
 
+    // THE PACK IS READ AS ITS TENANT'S, not in the global context. Each item's
+    // `snapshotJson` is encrypted under the tenant's DEK (Epic B manifest), and
+    // the encryption extension decrypts only with an ambient tenant: in the
+    // global context it answers `null` by design. So every shared link served
+    // the auditor items with no snapshot — a control listed by its raw id and
+    // the Statement of Applicability with no content at all — while the pack
+    // page inside the product read fine. The share token is the authority; the
+    // share row names the tenant, and RLS scopes the reads to it.
+    return withTenantDb(share.tenantId, async (db) => {
         // PUBLIC projection — the token holder is UNAUTHENTICATED, so expose
         // ONLY the fields the external share page renders. Internal columns
         // (tenantId, notes, frozenByUserId, spExport*, deletedAt, …) must
         // never cross the boundary. A soft-deleted pack is a dead link.
         const pack = await db.auditPack.findFirst({
-            where: { id: share.auditPackId, deletedAt: null },
+            where: { id: share.auditPackId, tenantId: share.tenantId, deletedAt: null },
             select: {
                 id: true,
                 name: true,
@@ -111,7 +121,7 @@ export async function getPackByShareToken(token: string) {
         if (!pack || pack.status === 'DRAFT') throw notFound('Invalid or expired share link');
 
         const items = await db.auditPackItem.findMany({
-            where: { auditPackId: share.auditPackId },
+            where: { auditPackId: share.auditPackId, tenantId: share.tenantId },
             orderBy: { sortOrder: 'asc' },
             select: { id: true, entityType: true, entityId: true, snapshotJson: true },
             take: 2000,

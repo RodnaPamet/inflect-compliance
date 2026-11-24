@@ -62,7 +62,7 @@ jest.mock('@/lib/audit', () => ({
 const tenantDb: any = {
     auditPack: { findFirst: jest.fn() },
     auditPackShare: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn() },
-    auditPackItem: { findFirst: jest.fn() },
+    auditPackItem: { findFirst: jest.fn(), findMany: jest.fn() },
     // `updateMany` is the CLAIM materializeShareCommentFinding now takes before
     // creating anything — see the claim-before-create fix. Without it here the
     // stub returns undefined and the create path throws on `.count`.
@@ -81,11 +81,10 @@ const createTaskMock = jest.fn(async (..._args: any[]) => ({ id: 'task-new' }));
 jest.mock('@/app-layer/usecases/finding', () => ({ createFinding: (...a: any[]) => createFindingMock(...a) }));
 jest.mock('@/app-layer/usecases/task', () => ({ createTask: (...a: any[]) => createTaskMock(...a) }));
 const globalDb: any = {
+    // getPackByShareToken resolves the share in the global context (the token
+    // is the authority), then reads the pack + items AS THE SHARE'S TENANT
+    // (`withTenantDb`), so the encrypted item snapshots decrypt.
     auditPackShare: { findFirst: jest.fn() },
-    // getPackByShareToken now resolves the share first, then projects the
-    // pack + items via separate queries (public field projection).
-    auditPack: { findFirst: jest.fn() },
-    auditPackItem: { findMany: jest.fn() },
 };
 
 jest.mock('@/lib/db-context', () => {
@@ -120,6 +119,7 @@ import {
     assertCanManageAuditors,
 } from '@/app-layer/policies/audit-readiness.policies';
 import { makeRequestContext } from '../../helpers/make-context';
+import { withTenantDb } from '@/lib/db-context';
 
 beforeEach(() => {
     policyCalls.length = 0;
@@ -135,7 +135,7 @@ beforeEach(() => {
         tenantDb.auditorAccount.upsert, tenantDb.auditorAccount.findUnique, tenantDb.auditorAccount.findFirst, tenantDb.auditorAccount.findMany, tenantDb.auditorAccount.update,
         tenantDb.auditPackShare.findMany,
         tenantDb.auditorPackAccess.create, tenantDb.auditorPackAccess.deleteMany,
-        globalDb.auditPackShare.findFirst, globalDb.auditPack.findFirst, globalDb.auditPackItem.findMany,
+        globalDb.auditPackShare.findFirst, tenantDb.auditPackItem.findMany,
         assertCanSharePack as jest.Mock,
         assertCanManageAuditors as jest.Mock,
     ].forEach((m: any) => m.mockReset && m.mockReset());
@@ -294,12 +294,12 @@ describe('getPackByShareToken', () => {
     });
 
     it('returns a PROJECTED { pack, cycle, items } on the happy-path (no internal fields leak)', async () => {
-        globalDb.auditPackShare.findFirst.mockResolvedValueOnce({ auditPackId: 'p-1', expiresAt: null });
-        globalDb.auditPack.findFirst.mockResolvedValueOnce({
+        globalDb.auditPackShare.findFirst.mockResolvedValueOnce({ auditPackId: 'p-1', expiresAt: null, tenantId: 't-1' });
+        tenantDb.auditPack.findFirst.mockResolvedValueOnce({
             id: 'p-1', name: 'Q1 pack', status: 'FROZEN', frozenAt: new Date('2026-02-01'),
             cycle: { name: 'Cycle 1', frameworkKey: 'iso', frameworkVersion: '2022' },
         });
-        globalDb.auditPackItem.findMany.mockResolvedValueOnce([
+        tenantDb.auditPackItem.findMany.mockResolvedValueOnce([
             { id: 'i-1', entityType: 'CONTROL', entityId: 'c-1', snapshotJson: '{}' },
         ]);
 
@@ -311,23 +311,27 @@ describe('getPackByShareToken', () => {
         expect(result.cycle.frameworkKey).toBe('iso');
         expect(result.items).toHaveLength(1);
 
-        const packQuery = globalDb.auditPack.findFirst.mock.calls[0][0];
+        const packQuery = tenantDb.auditPack.findFirst.mock.calls[0][0];
         expect(Object.keys(packQuery.select).sort()).toEqual(['cycle', 'frozenAt', 'id', 'name', 'status']);
         expect(packQuery.where.deletedAt).toBeNull(); // soft-deleted packs filtered out
-        expect(globalDb.auditPackItem.findMany.mock.calls[0][0].take).toBe(2000); // bounded read
+        expect(tenantDb.auditPackItem.findMany.mock.calls[0][0].take).toBe(2000); // bounded read
+        // Read as the share's tenant: the item snapshots are encrypted under its
+        // DEK, and decrypt only with that tenant in context.
+        expect(withTenantDb).toHaveBeenCalledWith('t-1', expect.any(Function));
+        expect(packQuery.where.tenantId).toBe('t-1');
     });
 
     it('treats a soft-deleted OR DRAFT pack as a dead link (never serves it)', async () => {
         // deletedAt filter yields no row → invalid link.
-        globalDb.auditPackShare.findFirst.mockResolvedValueOnce({ auditPackId: 'p-1', expiresAt: null });
-        globalDb.auditPack.findFirst.mockResolvedValueOnce(null);
+        globalDb.auditPackShare.findFirst.mockResolvedValueOnce({ auditPackId: 'p-1', expiresAt: null, tenantId: 't-1' });
+        tenantDb.auditPack.findFirst.mockResolvedValueOnce(null);
         await expect(getPackByShareToken('legit')).rejects.toThrow(/invalid or expired/i);
 
         // A pack that regressed to DRAFT must not be served publicly either.
-        globalDb.auditPackShare.findFirst.mockResolvedValueOnce({ auditPackId: 'p-1', expiresAt: null });
-        globalDb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1', name: 'x', status: 'DRAFT', frozenAt: null, cycle: {} });
+        globalDb.auditPackShare.findFirst.mockResolvedValueOnce({ auditPackId: 'p-1', expiresAt: null, tenantId: 't-1' });
+        tenantDb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1', name: 'x', status: 'DRAFT', frozenAt: null, cycle: {} });
         await expect(getPackByShareToken('legit')).rejects.toThrow(/invalid or expired/i);
-        expect(globalDb.auditPackItem.findMany).not.toHaveBeenCalled();
+        expect(tenantDb.auditPackItem.findMany).not.toHaveBeenCalled();
     });
 
     it('queries by tokenHash AND revokedAt-null (no auth bypass via revoked share)', async () => {
