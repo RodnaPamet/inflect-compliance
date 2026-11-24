@@ -69,6 +69,7 @@ import {
 // not a column, so a step is known by its kind and the lifecycle in its input.
 import { sessionStepRecord, type SessionLifecycle } from '@/lib/agentic/managed-agents/session-ledger';
 import { ANTHROPIC_WORKSPACE_PROVIDER } from '@/lib/agentic/managed-agents/store';
+import { INFLECT_HOSTED_CONNECTION_ID, inflectHostedWorkspace } from '@/lib/agentic/managed-agents/workspace';
 import { ENGINE_CAPS } from '@/lib/agentic/workflow-types';
 import { managedAgentsClientFor } from '@/lib/agentic/tool-runner/client';
 import { runInGlobalContext, runInTenantJobContext } from '@/lib/db-context';
@@ -97,6 +98,14 @@ export type CleanupReason =
     | 'CONNECTION_GONE'
     /** `ANTHROPIC_CUSTOM_HEADERS` is set, so no client is built. */
     | 'SDK_AMBIENT_HEADERS_SET'
+    /**
+     * Inflect's own workspace (Step 6b) cannot be opened: hosting is not active
+     * (`HOSTED_MANAGED_AGENTS_ACTIVE` is false), or the deployment holds no
+     * workspace pair. Retried, as a refused key is: the pair is deployment
+     * configuration, and no purge destroys it.
+     */
+    | 'HOSTED_NOT_ACTIVE'
+    | 'HOSTED_NOT_CONFIGURED'
     /** The ledger held more steps than one read takes: some sessions are unknown. */
     | 'LEDGER_TRUNCATED'
     /** The ledger and the provisions held nothing for the connection. Done, and said so. */
@@ -141,8 +150,43 @@ interface CleanupConnection {
     readonly workspaceId: string;
     /** Decrypted; null when it cannot be read. */
     readonly apiKey: string | null;
-    /** Decision 4, read as the engine reads it: strictly `true`. */
+    /** Decision 4, read as the engine reads it: strictly `true`. Never for Inflect's own workspace. */
     readonly keepSessions: boolean;
+    /** Why the workspace cannot be opened, when that is known better than "unreadable" (Step 6b). */
+    readonly unavailable?: CleanupReason;
+}
+
+/**
+ * INFLECT'S OWN WORKSPACE as the clean-up reads it (Step 6b), under its fixed
+ * connection id. Its key is the deployment's, read through the one reader
+ * (`inflectHostedWorkspace`), which returns before it reads the key while
+ * hosting is not active: then the workspace cannot be opened, and a record
+ * stays OPEN with that reason rather than being reported done.
+ */
+function hostedCleanupConnection(): CleanupConnection {
+    const hosted = inflectHostedWorkspace();
+    if (!hosted.ok) {
+        return { connectionId: INFLECT_HOSTED_CONNECTION_ID, workspaceId: '', apiKey: null, keepSessions: false, unavailable: hosted.reason };
+    }
+    return { connectionId: INFLECT_HOSTED_CONNECTION_ID, workspaceId: hosted.workspaceId, apiKey: hosted.apiKey, keepSessions: false };
+}
+
+/**
+ * Has Inflect ever created anything for this tenant in its own workspace? A
+ * provision there, or a clean-up record of it still open (a purged tenant's
+ * provisions are gone, and its open record is what is left).
+ */
+async function hasHostedFootprint(tenantId: string): Promise<boolean> {
+    return runInGlobalContext(async (db) => {
+        const [provision, record] = await Promise.all([
+            db.agentProfileProvision.findFirst({ where: { tenantId, connectionId: INFLECT_HOSTED_CONNECTION_ID }, select: { id: true } }),
+            db.managedAgentsCleanup.findFirst({
+                where: { tenantId, connectionId: INFLECT_HOSTED_CONNECTION_ID, status: 'OPEN' },
+                select: { id: true },
+            }),
+        ]);
+        return Boolean(provision || record);
+    });
 }
 
 function connectionFromRow(row: { id: string; configJson: unknown; secretEncrypted: string | null }): CleanupConnection {
@@ -165,6 +209,10 @@ function connectionFromRow(row: { id: string; configJson: unknown; secretEncrypt
  * disables it, and that row's key is what the retry authenticates with.
  */
 async function readCleanupConnections(tenantId: string, connectionId?: string): Promise<CleanupConnection[]> {
+    // Inflect's own workspace has no row (Step 6b). Named, it is always
+    // returned; listed with the tenant's own, only where Inflect created
+    // something there.
+    if (connectionId === INFLECT_HOSTED_CONNECTION_ID) return [hostedCleanupConnection()];
     const rows = await runInTenantJobContext({ tenantId, source: CLEANUP_SOURCE }, (db) =>
         db.integrationConnection.findMany({
             where: { tenantId, provider: ANTHROPIC_WORKSPACE_PROVIDER, ...(connectionId ? { id: connectionId } : {}) },
@@ -173,7 +221,9 @@ async function readCleanupConnections(tenantId: string, connectionId?: string): 
             take: 50,
         }),
     );
-    return rows.map(connectionFromRow);
+    const own = rows.map(connectionFromRow);
+    if (connectionId) return own;
+    return (await hasHostedFootprint(tenantId)) ? [...own, hostedCleanupConnection()] : own;
 }
 
 /**
@@ -382,7 +432,9 @@ async function passWithKey(
     plan: CleanupPlan,
     signal: AbortSignal,
 ): Promise<PassOutcome> {
-    if (!connection.apiKey || !connection.workspaceId) return { kind: 'refused', reason: 'CONNECTION_UNREADABLE' };
+    if (!connection.apiKey || !connection.workspaceId) {
+        return { kind: 'refused', reason: connection.unavailable ?? 'CONNECTION_UNREADABLE' };
+    }
     const choice = managedAgentsClientFor({ apiKey: connection.apiKey, workspaceId: connection.workspaceId });
     if (!choice.ok) {
         return { kind: 'refused', reason: choice.reason === 'SDK_AMBIENT_HEADERS_SET' ? 'SDK_AMBIENT_HEADERS_SET' : 'CONNECTION_UNREADABLE' };
@@ -535,7 +587,15 @@ export async function cleanUpManagedAgentsBeforePurge(
                 : pass.reason;
             const finished = reason === null && pendingSessionIds.length === 0 && pendingAgentIds.length === 0;
             const nothing = finished && deleted.length === 0 && archived.length === 0;
-            const status: CleanupStatus = finished ? 'DONE' : 'PURGED_KEY_DESTROYED_UNFINISHED';
+            // INFLECT'S OWN WORKSPACE IS RETRIED (Step 6b). Decision 7's one
+            // attempt follows from destroying the CUSTOMER's key with the
+            // tenant's rows. Inflect's key is deployment configuration that no
+            // purge destroys, so what the attempt could not finish stays OPEN,
+            // ids on the record, and data-lifecycle retries it until it is done
+            // or ABANDONED after CLEANUP_ABANDON_AFTER_DAYS. A migration CHECK
+            // admits OPEN for this connection id only.
+            const hosted = connectionId === INFLECT_HOSTED_CONNECTION_ID;
+            const status: CleanupStatus = finished ? 'DONE' : hosted ? 'OPEN' : 'PURGED_KEY_DESTROYED_UNFINISHED';
             const finalReason = finished ? (nothing ? 'NOTHING_RECORDED' : null) : (reason ?? 'CLEANUP_FAILED');
             const row = await runInTenantJobContext({ tenantId, source: CLEANUP_SOURCE }, (db) =>
                 db.managedAgentsCleanup.create({
@@ -553,14 +613,14 @@ export async function cleanUpManagedAgentsBeforePurge(
                         archivedAgentIds: archived,
                         attempts: 1,
                         lastAttemptAt: new Date(),
-                        closedAt: new Date(),
+                        closedAt: status === 'OPEN' ? null : new Date(),
                     },
                     select: { id: true },
                 }),
             );
             records.push({ id: row.id, connectionId, status, reason: finalReason });
             settle('TENANT_PURGE', status, finalReason);
-            if (!finished) {
+            if (!finished && status !== 'OPEN') {
                 alertUnfinished({ id: row.id, tenantId, trigger: 'TENANT_PURGE', status, reason: finalReason, sessions: pendingSessionIds.length, agents: pendingAgentIds.length });
             }
         }
@@ -600,6 +660,12 @@ interface OpenRecord {
     readonly coversUntil: Date;
     readonly createdAt: Date;
     readonly pendingSessionIds: string[];
+    /**
+     * Agents an earlier pass could not archive. Re-derived from the provisions
+     * too, but a hosted purge record is retried after the tenant's provisions
+     * are gone (Step 6b), so what it carries is all there is.
+     */
+    readonly pendingAgentIds: string[];
     readonly deletedSessionIds: string[];
     readonly archivedAgentIds: string[];
 }
@@ -612,6 +678,7 @@ const OPEN_RECORD_SELECT = {
     coversUntil: true,
     createdAt: true,
     pendingSessionIds: true,
+    pendingAgentIds: true,
     deletedSessionIds: true,
     archivedAgentIds: true,
 } as const;
@@ -645,12 +712,15 @@ export async function attemptCleanupRecord(
             }
         }
         for (const id of record.pendingSessionIds) if (!deletedBefore.has(id)) sessionIds.add(id);
-        const agentIds = agents.filter((a) => a.connectionId === record.connectionId && !archivedBefore.has(a.agentId)).map((a) => a.agentId);
+        const agentIds = new Set(
+            agents.filter((a) => a.connectionId === record.connectionId && !archivedBefore.has(a.agentId)).map((a) => a.agentId),
+        );
+        if (!keptOnly) for (const id of record.pendingAgentIds ?? []) if (!archivedBefore.has(id)) agentIds.add(id);
         const plan: CleanupPlan = {
             tenantId: record.tenantId,
             sessionIds: [...sessionIds],
-            agentIds,
-            listAgentIds: agentIds,
+            agentIds: [...agentIds],
+            listAgentIds: [...agentIds],
             createdAtOrBefore: record.coversUntil,
         };
 
@@ -780,6 +850,11 @@ export async function openDsarErasureCleanups(
             // guardrail-allow: n+1 — reason: one existence probe per tenant the person held a membership in.
             if (!(await hasManagedAgentsFootprint(tenantId))) continue;
             for (const connection of await readCleanupConnections(tenantId)) {
+                // Inflect's own workspace keeps no session (decision 4 is
+                // MA-C2's only), so an erasure, which takes KEPT sessions, has
+                // nothing there. A session whose delete failed is the
+                // reconciliation's, as for every workspace.
+                if (connection.connectionId === INFLECT_HOSTED_CONNECTION_ID) continue;
                 const record = await openRecord(tenantId, 'DSAR_ERASURE', connection, now);
                 const result = await attemptCleanupRecord(record, options);
                 out.push({ tenantId, connectionId: connection.connectionId, ...result });
@@ -1041,17 +1116,29 @@ export async function reconcileLostSessionDeletes(
         checked: 0, lost: 0, deleted: 0, failed: 0, retried: 0, retriedDeleted: 0, retriedLeft: 0,
         abandoned: 0, abandonedDeleted: 0, abandonedKept: 0, abandonedLeft: 0,
     };
-    const tenants = await runWithoutRls({ reason: 'cross-tenant-sweep' }, (db) =>
-        db.integrationConnection.findMany({
-            // A soft-deleted workspace is the purge's: it makes its own
-            // attempt before the rows go (#5017's rule for cross-tenant reads).
-            where: { provider: ANTHROPIC_WORKSPACE_PROVIDER, tenant: { deletedAt: null } },
-            select: { tenantId: true },
-            distinct: ['tenantId'],
-            orderBy: { tenantId: 'asc' },
-            take: 1_000,
-        }),
+    const [connected, hostedTenants] = await runWithoutRls({ reason: 'cross-tenant-sweep' }, (db) =>
+        Promise.all([
+            db.integrationConnection.findMany({
+                // A soft-deleted workspace is the purge's: it makes its own
+                // attempt before the rows go (#5017's rule for cross-tenant reads).
+                where: { provider: ANTHROPIC_WORKSPACE_PROVIDER, tenant: { deletedAt: null } },
+                select: { tenantId: true },
+                distinct: ['tenantId'],
+                orderBy: { tenantId: 'asc' },
+                take: 1_000,
+            }),
+            // Inflect's own workspace has no connection row (Step 6b): a
+            // tenant Inflect provisioned there is reconciled too.
+            db.agentProfileProvision.findMany({
+                where: { connectionId: INFLECT_HOSTED_CONNECTION_ID, tenant: { deletedAt: null } },
+                select: { tenantId: true },
+                distinct: ['tenantId'],
+                orderBy: { tenantId: 'asc' },
+                take: 1_000,
+            }),
+        ]),
     );
+    const tenants = [...new Set([...connected, ...hostedTenants].map((t) => t.tenantId))].sort().map((tenantId) => ({ tenantId }));
     for (const { tenantId } of tenants) {
         const timer = deadline(options.deadlineMs ?? RETRY_CLEANUP_DEADLINE_MS);
         try {
