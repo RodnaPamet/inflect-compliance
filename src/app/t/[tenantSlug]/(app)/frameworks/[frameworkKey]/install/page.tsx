@@ -307,7 +307,8 @@ export default function InstallWizardPage() {
 
             {/* Step indicator */}
             {canInstall && (
-                <div className="flex items-center gap-tight text-xs">
+                // Wraps: the three Bulgarian step names ran past 360px.
+                <div className="flex flex-wrap items-center gap-tight text-xs" data-testid="install-steps">
                     {['stepSelect', 'stepPreview', 'stepInstall'].map((s, i) => (
                         <div key={s} className="flex items-center gap-tight">
                             <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${i === 0 && step === 'select' ? 'bg-brand-600 text-content-emphasis' :
@@ -325,7 +326,7 @@ export default function InstallWizardPage() {
 
             {/* Step 1: Choose packs — several packs, at least one required */}
             {canInstall && step === 'select' && multiPack && (
-                <div className={cn(cardVariants({ density: 'none' }), 'space-y-default')} id="install-choose-packs">
+                <div className={cn(cardVariants({ density: 'compact' }), 'space-y-default')} id="install-choose-packs">
                     <Heading level={2}>{tx('install.choosePacks')}</Heading>
                     <p className="text-sm text-content-muted">{tx('install.choosePacksHint')}</p>
                     <div className="space-y-tight">
@@ -374,7 +375,7 @@ export default function InstallWizardPage() {
 
             {/* Step 1: Select Pack */}
             {canInstall && step === 'select' && !multiPack && (
-                <div className={cn(cardVariants({ density: 'none' }), 'space-y-default')}>
+                <div className={cn(cardVariants({ density: 'compact' }), 'space-y-default')}>
                     <Heading level={2} id="install-pack-heading">{tx('install.selectAPack')}</Heading>
                     {packs.length === 0 ? (
                         <p className="text-content-subtle">{tx('install.packsEmpty')}</p>
@@ -417,9 +418,9 @@ export default function InstallWizardPage() {
             {/* Step 2: Preview */}
             {canInstall && step === 'preview' && preview && (
                 <div className="space-y-default">
-                    <div className={cardVariants({ density: 'none' })}>
+                    <div className={cardVariants({ density: 'compact' })}>
                         <Heading level={2} className="mb-4">{tx('install.installPreview')}</Heading>
-                        <div className="grid grid-cols-3 gap-default mb-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-default mb-4" data-testid="install-preview-figures">
                             <div className="p-3 rounded-lg bg-bg-default/50">
                                 <KPIStat id="preview-new-controls" value={preview.newControls} label={tx('install.newControls')} />
                             </div>
@@ -436,13 +437,13 @@ export default function InstallWizardPage() {
                             {preview.templates?.map((t) => (
                                 <div key={t.code} className="flex items-center gap-compact px-3 py-1.5 rounded-md text-sm">
                                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${t.alreadyInstalled ? 'bg-bg-success-emphasis' : 'bg-[var(--brand-default)]'}`} />
-                                    <code className="text-xs text-content-subtle font-mono w-24 flex-shrink-0">{t.code}</code>
-                                    <span className="text-content-default flex-1">{t.title}</span>
+                                    <code className="text-xs text-content-subtle font-mono w-14 sm:w-24 flex-shrink-0 whitespace-nowrap">{t.code}</code>
+                                    <span className="text-content-default flex-1 min-w-0 break-words">{t.title}</span>
                                     {t.alreadyInstalled && (t.missingMappings ?? 0) > 0 && (
                                         <span className="text-xs text-content-warning">{tx('install.missingCount', { count: t.missingMappings ?? 0 })}</span>
                                     )}
                                     {t.alreadyInstalled && (t.missingMappings ?? 0) === 0 && <span className="text-xs text-content-success">{tx('install.exists')}</span>}
-                                    {!t.alreadyInstalled && <span className="text-xs text-[var(--brand-default)]">{tx('install.tasksCount', { count: t.tasks })}</span>}
+                                    {!t.alreadyInstalled && <span className="text-xs text-[var(--brand-default)] shrink-0 whitespace-nowrap">{tx('install.tasksCount', { count: t.tasks })}</span>}
                                 </div>
                             ))}
                         </div>
@@ -455,16 +456,20 @@ export default function InstallWizardPage() {
                     )}
 
                     {error && (
-                        <div className={cn(cardVariants({ density: 'none' }), 'border-border-error bg-bg-error text-content-error text-sm')}>{error}</div>
+                        <div className={cn(cardVariants({ density: 'compact' }), 'border-border-error bg-bg-error text-content-error text-sm')}>{error}</div>
                     )}
 
-                    <div className="flex gap-compact">
+                    {/* Wraps on a phone (#5882): the button names never break
+                        (`whitespace-nowrap`), and "Възстановяване на 12
+                        съпоставяния" beside "Назад" is wider than 360px, so
+                        the install action takes the next line, full width. */}
+                    <div className="flex flex-wrap gap-compact" data-testid="install-confirm-row">
                         <Button variant="secondary" onClick={() => { setStep('select'); setSelectedPack(''); setPreview(null); }}>
                             {tx('install.back')}
                         </Button>
                         <Button
                             variant="primary"
-                            className="flex-1"
+                            className="flex-1 basis-48"
                             onClick={handleInstall}
                             // #4731 — a re-install also restores the mappings an
                             // existing control lost, so it is offered while any is
@@ -494,13 +499,13 @@ export default function InstallWizardPage() {
 
             {/* Step 3: Done */}
             {canInstall && step === 'done' && result && (
-                <div className={cn(cardVariants({ density: 'none' }), 'text-center space-y-default')} id="install-result">
+                <div className={cn(cardVariants({ density: 'compact' }), 'text-center space-y-default')} id="install-result">
                     <Heading level={1}>
                         {result.controlsCreated === 0 && result.mappingsCreated > 0
                             ? tx('install.restoredHeading')
                             : tx('install.successHeading')}
                     </Heading>
-                    <div className="grid grid-cols-3 gap-default">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-default">
                         <div className="p-3 rounded-lg bg-bg-success">
                             <KPIStat id="result-controls" value={result.controlsCreated} label={tx('install.controlsCreated')} tone="success" />
                         </div>
@@ -511,7 +516,7 @@ export default function InstallWizardPage() {
                             <KPIStat id="result-mappings" value={result.mappingsCreated} label={tx('install.mappingsCreated')} />
                         </div>
                     </div>
-                    <div className="flex gap-compact justify-center">
+                    <div className="flex flex-wrap gap-compact justify-center" data-testid="install-done-actions">
                         <Link href={tenantHref('/controls')} className={buttonVariants({ variant: 'primary' })} id="go-to-controls">
                             {tx('install.viewControls')}
                         </Link>

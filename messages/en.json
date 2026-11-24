@@ -17195,6 +17195,44 @@
     "inDialogs": "In dialogs & sheets",
     "showShortcuts": "Show keyboard shortcuts"
   },
+  "onboardingTour": {
+    "start": "Take the tour",
+    "next": "Next",
+    "previous": "Previous",
+    "done": "Done",
+    "close": "Close the tour",
+    "progress": "{current} of {total}",
+    "steps": {
+      "welcome": {
+        "title": "Welcome to Inflect Compliance",
+        "body": "A 30-second tour of the workspace. Close it at any time; it will not start on its own again."
+      },
+      "dashboard": {
+        "title": "Board",
+        "body": "Your daily start point: KPIs, due items and recent activity at a glance."
+      },
+      "controls": {
+        "title": "Control",
+        "body": "The register of every control your workspace operates. Open it to see status, owners and traceability."
+      },
+      "risks": {
+        "title": "Risk",
+        "body": "Inherent and residual scoring with an interactive heatmap. Mitigations link directly to controls."
+      },
+      "policies": {
+        "title": "Policy",
+        "body": "Written, linked or uploaded policies, with version history and an approval workflow."
+      },
+      "commandPalette": {
+        "title": "Command palette",
+        "body": "Press ⌘K (or Ctrl+K), or tap search in the top bar, to find controls, risks, policies, evidence and frameworks, or to jump to any page."
+      },
+      "complete": {
+        "title": "You're set",
+        "body": "You can restart this tour any time from \"{startLabel}\" in the navigation menu."
+      }
+    }
+  },
   "onboarding": {
     "wizard": {
       "accessRestricted": "Access Restricted",

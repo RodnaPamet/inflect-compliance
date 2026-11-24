@@ -412,3 +412,21 @@ describe('CardList — compound surface', () => {
         expect(typeof CardList.CardContent).toBe('function');
     });
 });
+
+// ─── Title on a phone ──────────────────────────────────────────────
+
+describe('CardList.CardHeader — the title on a phone', () => {
+    it('wraps below md and is cut to one line only from md up', () => {
+        const { getByTestId } = render(
+            <CardList>
+                <CardList.Card>
+                    <CardList.CardHeader title="ISO/IEC 27001:2022 Information security management" />
+                </CardList.Card>
+            </CardList>,
+        );
+        const classes = getByTestId('card-list-card-title').className.split(/\s+/);
+        // A bare `truncate` cut every framework name on a phone (#5882).
+        expect(classes).not.toContain('truncate');
+        expect(classes).toEqual(expect.arrayContaining(['min-w-0', 'break-words', 'md:truncate']));
+    });
+});

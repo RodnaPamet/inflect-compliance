@@ -36,6 +36,20 @@
 
 // ─── Public types ──────────────────────────────────────────────────────
 
+/**
+ * The catalogue entry a step reads its words from:
+ * `onboardingTour.steps.<messageKey>.title` / `.body` in `messages/*.json`.
+ * A closed union, so a step cannot name copy the catalogue does not have.
+ */
+export type TourStepMessageKey =
+    | 'welcome'
+    | 'dashboard'
+    | 'controls'
+    | 'risks'
+    | 'policies'
+    | 'commandPalette'
+    | 'complete';
+
 export interface OnboardingStep {
     /** Stable id — used for analytics + per-step skip tracing. */
     id: string;
@@ -44,10 +58,12 @@ export interface OnboardingStep {
      * step is centred ("welcome" / "tour complete" cards).
      */
     selector: string | null;
-    /** Step heading rendered by driver.js's popover. */
-    title: string;
-    /** Body text — single sentence, plain text. */
-    description: string;
+    /**
+     * Where the step's heading and body live in the message catalogue.
+     * The words are never written here: the tour runs in the reader's
+     * language, and this module has no locale (#5904).
+     */
+    messageKey: TourStepMessageKey;
     /**
      * Side of the target the popover should appear on. Must match
      * driver.js's `Side` union exactly — `"top" | "right" | "bottom"
@@ -72,9 +88,7 @@ export const DEFAULT_TOUR_STEPS: ReadonlyArray<OnboardingStep> = [
     {
         id: 'welcome',
         selector: null,
-        title: 'Welcome to Inflect Compliance',
-        description:
-            'A 30-second tour of the workspace. Use the arrow keys to navigate, or click Skip to dismiss for good.',
+        messageKey: 'welcome',
     },
 
     // Step 2 — Dashboard. The sidebar's data-testid slug pattern
@@ -83,9 +97,7 @@ export const DEFAULT_TOUR_STEPS: ReadonlyArray<OnboardingStep> = [
     {
         id: 'sidebar.dashboard',
         selector: '[data-testid="nav-dashboard"]',
-        title: 'Dashboard',
-        description:
-            'Your daily start point — KPIs, due items, and recent activity at a glance.',
+        messageKey: 'dashboard',
         side: 'right',
     },
 
@@ -93,9 +105,7 @@ export const DEFAULT_TOUR_STEPS: ReadonlyArray<OnboardingStep> = [
     {
         id: 'sidebar.controls',
         selector: '[data-testid="nav-controls"]',
-        title: 'Controls',
-        description:
-            'The register of every control your tenant operates. Open it to see status, owners, and traceability.',
+        messageKey: 'controls',
         side: 'right',
     },
 
@@ -103,9 +113,7 @@ export const DEFAULT_TOUR_STEPS: ReadonlyArray<OnboardingStep> = [
     {
         id: 'sidebar.risks',
         selector: '[data-testid="nav-risks"]',
-        title: 'Risks',
-        description:
-            'Inherent + residual scoring with an interactive heatmap. Mitigations link directly to controls.',
+        messageKey: 'risks',
         side: 'right',
     },
 
@@ -113,9 +121,7 @@ export const DEFAULT_TOUR_STEPS: ReadonlyArray<OnboardingStep> = [
     {
         id: 'sidebar.policies',
         selector: '[data-testid="nav-policies"]',
-        title: 'Policies',
-        description:
-            'Markdown / external-link / file-upload variants with version history and approval workflow.',
+        messageKey: 'policies',
         side: 'right',
     },
 
@@ -130,9 +136,7 @@ export const DEFAULT_TOUR_STEPS: ReadonlyArray<OnboardingStep> = [
     {
         id: 'tip.command-palette',
         selector: null,
-        title: 'Command palette',
-        description:
-            'Press ⌘K (or Ctrl+K) anywhere to search controls, risks, policies, evidence, and frameworks — or jump to any page.',
+        messageKey: 'commandPalette',
     },
 
     // (The previous sidebar.theme-toggle step was retired when the
@@ -147,9 +151,7 @@ export const DEFAULT_TOUR_STEPS: ReadonlyArray<OnboardingStep> = [
     {
         id: 'tour-complete',
         selector: null,
-        title: "You're set",
-        description:
-            'You can restart this tour any time from the "Take the tour" link in the sidebar footer.',
+        messageKey: 'complete',
     },
 ];
 

@@ -348,7 +348,7 @@ export function FrameworksClient({
                                     title={
                                         <span className="inline-flex items-center gap-tight">
                                             <FwIcon
-                                                className="w-5 h-5"
+                                                className="w-5 h-5 shrink-0"
                                                 aria-hidden="true"
                                             />
                                             <Link

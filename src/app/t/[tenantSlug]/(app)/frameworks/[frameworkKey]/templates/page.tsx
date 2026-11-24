@@ -246,9 +246,10 @@ export default function TemplateLibraryPage() {
     const sectionOptions = useMemo<ComboboxOption[]>(
         () => [
             { value: '', label: tx('templates.allSections') },
-            ...sections.map((s) => ({ value: s as string, label: s as string })),
+            // A section stored as an ISO 27002 theme constant reads as its label too.
+            ...sections.map((s) => ({ value: s as string, label: categoryLabel(s as string) })),
         ],
-        [sections],
+        [sections, categoryLabel],
     );
 
     // Below `md` (Mobile 4.3): one page of cards at a time, a real 24px
