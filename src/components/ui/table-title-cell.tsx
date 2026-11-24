@@ -36,8 +36,54 @@
  */
 
 import { cn } from '@inflect/ui/lib/cn';
+import { TOUCH_HIT_AREA_CLASS } from '@inflect/ui/components/ui/hit-area';
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import {
+    createContext,
+    forwardRef,
+    useContext,
+    type HTMLAttributes,
+    type MouseEvent,
+    type ReactNode,
+    type Ref,
+} from 'react';
+
+/**
+ * Where a title cell is rendered, declared by the renderer that mounts it.
+ *
+ *   - `'table'` (default): a desktop table row. Nothing changes.
+ *   - `'card'`: a field of a phone card (`<DataTableCards>`) that does not
+ *     open on a tap, usually its title. The title is the card's way in, and
+ *     as an inline link it was a 17-20px target a thumb missed, so it wears
+ *     the shared touch hit area (44px on a coarse pointer, its own box
+ *     everywhere else).
+ *   - `'clickable-card'`: a field of a card that IS a button (`onRowClick`
+ *     set). The card is the one target. A link or button inside it was an
+ *     interactive element inside an interactive element: two tab stops, a
+ *     nested control a screen reader announces inside the card's own name,
+ *     and a 20px target on top of a 44px one doing something else. So the
+ *     title renders as text with the same look, and a tap anywhere on the
+ *     card does what the card does.
+ */
+export type TableTitleSurface = 'table' | 'card' | 'clickable-card';
+
+const TableTitleSurfaceContext = createContext<TableTitleSurface>('table');
+
+/** Set by `<DataTableCards>` around a card's title field. */
+export const TableTitleSurfaceProvider = TableTitleSurfaceContext.Provider;
+
+/** The surface the nearest title renderer declared (`'table'` outside one). */
+export function useTableTitleSurface(): TableTitleSurface {
+    return useContext(TableTitleSurfaceContext);
+}
+
+/**
+ * The touch hit area a title link or button wears on a card. `inline-block`
+ * so the positioned `::after` centres on ONE box even when a long title wraps
+ * (an inline box split over lines has no single box to centre on); `relative`
+ * because the pseudo-element positions against its owner.
+ */
+const CARD_TITLE_HIT_AREA = cn('relative inline-block max-w-full', TOUCH_HIT_AREA_CLASS);
 
 export interface TableTitleCellProps {
     /** The title text — usually `entity.title` / `entity.name` / `entity.code`. */
@@ -50,6 +96,8 @@ export interface TableTitleCellProps {
     href?: string;
     /** Forwarded to the underlying Link / span (E2E selector). */
     id?: string;
+    /** Forwarded as `data-testid` to the underlying Link / span. */
+    testId?: string;
     /**
      * For the no-href branch only: where the brand-tone hover fires.
      *   - `'row'` (default) — tints when the whole ROW is hovered
@@ -87,15 +135,23 @@ export function TableTitleCell({
     children,
     href,
     id,
+    testId,
     tintOn = 'row',
     className,
 }: TableTitleCellProps) {
-    if (href) {
+    const surface = useTableTitleSurface();
+    if (href && surface !== 'clickable-card') {
         return (
             <Link
                 href={href}
                 id={id}
-                className={cn(TITLE_CELL_BASE, TITLE_CELL_LINK_HOVER, className)}
+                data-testid={testId}
+                className={cn(
+                    TITLE_CELL_BASE,
+                    TITLE_CELL_LINK_HOVER,
+                    surface === 'card' && CARD_TITLE_HIT_AREA,
+                    className,
+                )}
                 // R13-PR15 — single-click on the title link still
                 // navigates via Next's default Link behaviour. We
                 // intentionally do NOT `preventDefault` here — the
@@ -123,9 +179,12 @@ export function TableTitleCell({
     return (
         <span
             id={id}
+            data-testid={testId}
             className={cn(
                 TITLE_CELL_BASE,
-                tintOn === 'self' ? TITLE_CELL_LINK_HOVER : TITLE_CELL_ROW_HOVER,
+                // A link title on a clickable card is text: the card carries
+                // the hover, so the name does not pretend to be a link.
+                !href && (tintOn === 'self' ? TITLE_CELL_LINK_HOVER : TITLE_CELL_ROW_HOVER),
                 className,
             )}
         >
@@ -133,3 +192,63 @@ export function TableTitleCell({
         </span>
     );
 }
+
+export interface TableTitleButtonProps
+    extends Omit<HTMLAttributes<HTMLElement>, 'onClick' | 'children' | 'className'> {
+    /** The title text. */
+    children: ReactNode;
+    /** What the title does on its own: a quick-view, a side panel. */
+    onClick: (e: MouseEvent<HTMLButtonElement>) => void;
+    /** Forwarded as `data-testid` to the button (or, on a clickable card, the span). */
+    testId?: string;
+}
+
+/**
+ * A title that opens something in place (a quick-view panel) instead of
+ * navigating: the button Controls, Tasks and Assets wrap their title in. It
+ * stops the click, so the row's own handlers (select, open the full page) do
+ * not fire with it.
+ *
+ * On a clickable phone card it renders as text, as `<TableTitleCell>` does:
+ * the card is the one target there (see `TableTitleSurface`). On a card that
+ * does not open on a tap it keeps its action and wears the touch hit area.
+ *
+ * Forwards its ref and any other props (a `<Tooltip>` trigger's handlers).
+ */
+export const TableTitleButton = forwardRef<HTMLElement, TableTitleButtonProps>(
+    function TableTitleButton({ children, onClick, testId, ...rest }, ref) {
+        const surface = useTableTitleSurface();
+        if (surface === 'clickable-card') {
+            return (
+                <span ref={ref} data-testid={testId} {...rest}>
+                    {/* `tintOn="row"`: a card has no `group/row`, so the name
+                        does not tint like a link; the card carries the hover. */}
+                    <TableTitleCell tintOn="row">{children}</TableTitleCell>
+                </span>
+            );
+        }
+        return (
+            <button
+                ref={ref as Ref<HTMLButtonElement>}
+                type="button"
+                data-testid={testId}
+                {...rest}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onClick(e);
+                }}
+                // `inline-block max-w-full` (NOT `block w-full`): the trigger's
+                // footprint hugs the NAME, not the whole cell, as the title
+                // links on Risks and Policies do. `truncate` keeps a long name
+                // on one line in a table; a card wraps the name in full, and an
+                // `overflow: hidden` owner would clip its hit area away.
+                className={cn(
+                    'inline-block max-w-full cursor-pointer text-left align-middle rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    surface === 'card' ? CARD_TITLE_HIT_AREA : 'truncate',
+                )}
+            >
+                <TableTitleCell tintOn="self">{children}</TableTitleCell>
+            </button>
+        );
+    },
+);

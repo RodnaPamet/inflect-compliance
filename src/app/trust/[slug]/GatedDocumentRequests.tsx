@@ -12,6 +12,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { apiErrorMessage } from '@/lib/api-error';
@@ -141,8 +142,8 @@ function RequestForm({
                 <Input value={company} onChange={(e) => setCompany(e.target.value)} maxLength={200} autoComplete="organization" />
             </FormField>
             {ndaRequired && (
-                <label className="flex items-start gap-tight text-sm text-content-default">
-                    <input type="checkbox" checked={ndaAccepted} onChange={(e) => setNdaAccepted(e.target.checked)} />
+                <label className="flex items-start gap-tight text-sm text-content-default pointer-coarse:min-h-11">
+                    <Checkbox checked={ndaAccepted} onCheckedChange={(next) => setNdaAccepted(next === true)} />
                     {t('nda')}
                 </label>
             )}

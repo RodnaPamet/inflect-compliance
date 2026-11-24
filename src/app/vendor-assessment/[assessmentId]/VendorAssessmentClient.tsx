@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Heading } from '@/components/ui/typography';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { useUnsavedChangesWarning } from '@/lib/hooks';
 import { RequiredMarker } from '@/components/ui/required-marker';
@@ -532,13 +533,12 @@ function QuestionField(props: {
 }
 
 /**
- * A choice row: at least 44 px tall, and the whole row takes the tap. The
- * 20 px native input ignores pointer events, so a tap anywhere on the row —
- * the input included — lands on the label, which checks it; the keyboard
- * still reaches the input itself. Native inputs, not the Radix `RadioGroup`:
- * this public page loads none of the app's primitives, and adding them
- * regrouped the app's shared chunks (measured: +1.6 KB on the controls
- * routes).
+ * A choice row: at least 44 px tall, and the whole row takes the tap.
+ * Yes/no is the Radix `RadioGroup` (#5906 brought it to this page). The
+ * option lists keep a native input whose type is chosen per question: the
+ * 20 px input ignores pointer events, so a tap anywhere on the row — the
+ * input included — lands on the label, which checks it; the keyboard still
+ * reaches the input itself.
  */
 const CHOICE_ROW = 'flex min-h-11 cursor-pointer items-center gap-compact text-sm text-content-default';
 const CHOICE_INPUT = 'pointer-events-none h-5 w-5 shrink-0 accent-[var(--brand-default)]';
@@ -574,8 +574,10 @@ function QuestionControl({
             return (
                 <>
                     {baseLabel}
-                    <div
-                        role="radiogroup"
+                    <RadioGroup
+                        value={typeof value === 'string' ? value : ''}
+                        onValueChange={onChange}
+                        name={question.id}
                         aria-labelledby={labelId}
                         aria-describedby={describedBy}
                         aria-invalid={invalid}
@@ -583,18 +585,11 @@ function QuestionControl({
                     >
                         {['yes', 'no'].map((opt) => (
                             <label key={opt} className={CHOICE_ROW}>
-                                <input
-                                    type="radio"
-                                    name={question.id}
-                                    value={opt}
-                                    checked={value === opt}
-                                    onChange={() => onChange(opt)}
-                                    className={CHOICE_INPUT}
-                                />
+                                <RadioGroupItem value={opt} />
                                 {opt === 'yes' ? tCommon('yes') : tCommon('no')}
                             </label>
                         ))}
-                    </div>
+                    </RadioGroup>
                 </>
             );
 

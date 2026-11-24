@@ -2049,6 +2049,11 @@
   "derivation": "audited",
   "reason": "Skeleton primitives and page-level composites. Every a11y string goes through `useTranslations('common.skeleton')` — t('dashboard'), t('details'), t('settings'); everything else is aria-hidden geometry. Imports are @inflect/ui/lib/cn plus local card modules. The composites are named for page SHAPES (dashboard, detail-tabs, settings, filter-toolbar), not for compliance entities, so there are no domain-props."
  },
+ "src/components/ui/slider-control.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "The Radix half of `slider.tsx`, split out so the wrapper can load it with next/dynamic: root, track, range, mark dots and thumb with the shared touch hit area. Renders no copy of its own (the accessible name is resolved by the wrapper and passed in); no domain vocabulary, no brand fill tokens, no storage; imports Radix Slider and @inflect/ui only."
+ },
  "src/components/ui/slider.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
@@ -2188,6 +2193,11 @@
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "659-line react-window grid renderer. Copy via `useTranslations(\"common.table\")` (:363-364, :622); brand only as `bg-[var(--brand-subtle)]` and a focus ring; no storage; imports are tanstack/react-window/next-intl plus siblings. The single vocabulary hit, :17 \"The risk of subtly breaking the existing 80+ tables\", is the ordinary English noun, not the GRC entity — I checked the sentence."
+ },
+ "src/components/ui/text-link.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "TextLink (Next Link or a plain anchor) and TextButton: textLinkVariants plus the shared touch hit area. Every rendered string and the href are caller-supplied. No domain vocabulary, no brand fill tokens, no storage keys; imports next/link and @inflect/ui only."
  },
  "src/components/ui/textarea.tsx": {
   "classification": "GENERIC",

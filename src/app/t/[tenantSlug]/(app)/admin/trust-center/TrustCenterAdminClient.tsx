@@ -27,6 +27,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { FormField } from '@/components/ui/form-field';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { TextLink } from '@/components/ui/text-link';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
@@ -257,15 +258,17 @@ export function TrustCenterAdminClient({ tenantSlug, initial, canPublish, public
                 <p className="text-content-muted">{t('trustCenter.intro')}</p>
                 <div className="flex flex-wrap items-center gap-tight text-sm" id="trust-public-address">
                     <span className="text-content-muted">{t('trustCenter.publicUrlLabel')}</span>
-                    <a
+                    <TextLink
+                        external
                         href={publicPath}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="font-mono text-content-link underline"
+                        tone="underline"
+                        className="font-mono text-content-link [overflow-wrap:anywhere]"
                         id="trust-public-link"
                     >
                         {publicUrl}
-                    </a>
+                    </TextLink>
                     <CopyButton value={publicUrl} label={t('trustCenter.copyAddress')} successMessage={t('trustCenter.copyAddressOk')} size="sm" />
                     {!enabled && <span className="text-content-muted">{t('trustCenter.notPublishedNote')}</span>}
                 </div>

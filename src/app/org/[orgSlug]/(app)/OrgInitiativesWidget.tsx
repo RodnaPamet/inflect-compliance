@@ -10,6 +10,7 @@
  * tone; stale rows (IN_PROGRESS, no update in 30 days) get a muted flag.
  */
 import Link from 'next/link';
+import { TextLink } from '@/components/ui/text-link';
 import { useTranslations } from 'next-intl';
 import { Rocket, AlertTriangle } from 'lucide-react';
 
@@ -50,9 +51,13 @@ export function OrgInitiativesWidget({ data, orgSlug }: { data: InitiativeWidget
                         </p>
                     </div>
                 </div>
-                <Link href={`/org/${orgSlug}/initiatives`} className="text-xs text-content-info underline hover:text-content-default">
+                <TextLink
+                    href={`/org/${orgSlug}/initiatives`}
+                    tone="underline"
+                    className="shrink-0 text-xs text-content-info hover:text-content-default"
+                >
                     {t('widgets.viewAll')}
-                </Link>
+                </TextLink>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto space-y-tight">

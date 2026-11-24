@@ -31,7 +31,8 @@ const activityFeed = read("src/components/controls-shared/PanelActivityFeed.tsx"
 describe("Controls editable side-panel interaction", () => {
     it("the title cell is a <button> that opens the panel + expands inline tasks", () => {
         expect(controls).toMatch(/onClick=\{[\s\S]{0,80}openControlQuickView\(row\.original\)/);
-        expect(controls).toMatch(/data-testid={`control-title-/);
+        // `TableTitleButton` forwards `testId` as `data-testid`.
+        expect(controls).toMatch(/testId={`control-title-/);
         expect(controls).toMatch(/openControlQuickView\(row\.original\);[\s\S]{0,120}row\.toggleExpanded\(true\)/);
     });
 

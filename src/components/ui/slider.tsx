@@ -1,9 +1,27 @@
 "use client";
 
 import { useTranslations } from "next-intl";
+import dynamic from "next/dynamic";
 import { cn } from "@inflect/ui/lib/cn";
-import * as RadixSlider from "@radix-ui/react-slider";
-import { ReactNode } from "react";
+import type { ReactNode } from "react";
+
+/**
+ * The Radix part, loaded when a slider first renders rather than with the
+ * page. See "Loading" below.
+ */
+const SliderControl = dynamic(
+    () => import("./slider-control").then((m) => m.SliderControl),
+    {
+        ssr: false,
+        // The bare track at the control's height, so nothing moves when the
+        // thumb arrives.
+        loading: () => (
+            <div className="relative flex h-8 w-full items-center" aria-hidden>
+                <div className="h-[var(--track-height)] w-full rounded-full bg-bg-subtle" />
+            </div>
+        ),
+    },
+);
 
 /**
  * Epic 60 polish primitive — Slider.
@@ -39,6 +57,20 @@ import { ReactNode } from "react";
  * non-numeric options — use ToggleGroup or RadioGroup. Sliders also
  * struggle on touch without a visible numeric value; if the user
  * needs to pick precisely, pair with NumberStepper.
+ *
+ * ## Loading
+ *
+ * The Radix part (`slider-control.tsx`) is a `next/dynamic` import, so
+ * `@radix-ui/react-slider` and its collection runtime (about 8.5 KB gzipped)
+ * are not in the First Load JS of any page that merely CAN show a slider.
+ * The risk and asset forms that use it are modals and edit panels, and the
+ * risks list mounts `<NewRiskModal>` statically, so loading Radix eagerly put
+ * it in that page's entry and, through Next's client-reference manifest
+ * (which merges a parent path's page into every route below it), into
+ * `/risks/[riskId]` too: 675.2 -> 684.5 KB against a 676 KB budget (#5906).
+ * Until the chunk arrives the slider shows its bare track at full height,
+ * so the layout does not move, and is not yet operable — tests find it with
+ * `findByRole`, not `getByRole`.
  */
 
 export interface SliderProps {
@@ -57,6 +89,14 @@ export interface SliderProps {
     /** Optional formatter for a floating current-value label above the
      *  thumb. Typical use: `(v) => `${v}%`` for percentage sliders. */
     formatLabel?: (value: number) => ReactNode;
+    /** The thumb's `id` (the element that takes focus: `role="slider"`). */
+    id?: string;
+    /**
+     * The id of a VISIBLE label to name the slider by. Preferred over
+     * `ariaLabel` when the form already shows one: a `<label htmlFor>`
+     * cannot point at the thumb, which is not a labelable element.
+     */
+    ariaLabelledBy?: string;
 }
 
 export function Slider({
@@ -71,6 +111,8 @@ export function Slider({
     disabled,
     ariaLabel,
     formatLabel,
+    id,
+    ariaLabelledBy,
 }: SliderProps) {
     const t = useTranslations("common.ui");
     const sliderMarks = marks || [
@@ -90,52 +132,19 @@ export function Slider({
             )}
         >
             <div className="w-full">
-                <RadixSlider.Root
-                    className="relative flex h-8 w-full items-center"
-                    value={[value]}
+                <SliderControl
+                    value={value}
+                    onChange={onChange}
                     min={min}
                     max={max}
                     step={step}
-                    onValueChange={([v]: number[]) => onChange(v)}
+                    marks={sliderMarks}
                     disabled={disabled}
-                >
-                    <RadixSlider.Track className="relative h-[var(--track-height)] w-full overflow-visible rounded-full bg-bg-subtle">
-                        {/* Stub on the left edge — see docblock on why. */}
-                        <div className="absolute left-0 top-0 h-full w-[var(--thumb-radius)] rounded-l-full bg-content-emphasis" />
-
-                        <div className="pointer-events-none absolute inset-x-[var(--thumb-radius)] inset-y-0">
-                            <RadixSlider.Range className="absolute h-[var(--track-height)] bg-content-emphasis" />
-
-                            {sliderMarks.map((mark) => {
-                                const left =
-                                    ((mark - min) / (max - min)) * 100;
-                                return (
-                                    <span
-                                        key={mark}
-                                        aria-hidden
-                                        className="absolute top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-bg-default"
-                                        style={{ left: `${left}%` }}
-                                    />
-                                );
-                            })}
-                        </div>
-                    </RadixSlider.Track>
-
-                    <RadixSlider.Thumb
-                        aria-label={ariaLabel ?? t("slider")}
-                        className="relative z-20 flex size-[calc(var(--thumb-radius)*2)] items-center justify-center rounded-full border-0 bg-bg-default shadow-[0_2px_2px_rgba(0,0,0,0.10),0_3px_3px_rgba(0,0,0,0.09)] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                    >
-                        <span className="block size-[calc(var(--thumb-radius)*1.23)] rounded-full bg-content-emphasis" />
-                        {formatLabel && (
-                            <span
-                                aria-hidden
-                                className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-bg-inverted px-2 py-0.5 text-xs font-medium text-content-inverted"
-                            >
-                                {formatLabel(value)}
-                            </span>
-                        )}
-                    </RadixSlider.Thumb>
-                </RadixSlider.Root>
+                    ariaLabel={ariaLabel ?? t("slider")}
+                    ariaLabelledBy={ariaLabelledBy}
+                    id={id}
+                    formatLabel={formatLabel}
+                />
 
                 {hint && (
                     <div className="mt-2 min-h-[1rem] text-xs text-content-subtle">

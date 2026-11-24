@@ -46,6 +46,7 @@ import { OverflowAction } from '@/components/layout/PageActions';
 import { CAMPAIGN_MODIFY_ROLES, TENANT_ROLES, type CampaignModifyRole } from '@/lib/roles';
 import { apiErrorMessage } from '@/lib/api-error';
 import { MEMBER_DECISION_REFUSAL } from '@/lib/access-review/member-decision-rules';
+import { TextButton } from '@/components/ui/text-link';
 import { Heading } from '@/components/ui/typography';
 import {
     AGENT_CAMPAIGNS_IMPLEMENTED,
@@ -1552,14 +1553,13 @@ export function AccessReviewDetailClient({
                             {canEditSettings ? (
                                 <>
                                     {' '}
-                                    <button
-                                        type="button"
-                                        className="underline hover:text-content"
+                                    <TextButton
+                                        tone="underline"
                                         data-testid="access-review-change-reviewer"
                                         onClick={() => setEditingSettings(true)}
                                     >
                                         {t('changeReviewer')}
-                                    </button>
+                                    </TextButton>
                                 </>
                             ) : null}
                         </dd>
@@ -1583,14 +1583,13 @@ export function AccessReviewDetailClient({
                             {canEditSettings ? (
                                 <>
                                     {' '}
-                                    <button
-                                        type="button"
-                                        className="underline hover:text-content"
+                                    <TextButton
+                                        tone="underline"
                                         data-testid="access-review-change-due"
                                         onClick={() => setEditingSettings(true)}
                                     >
                                         {t('changeDueDate')}
-                                    </button>
+                                    </TextButton>
                                 </>
                             ) : null}
                         </dd>

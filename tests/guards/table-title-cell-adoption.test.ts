@@ -79,7 +79,9 @@ describe('TableTitleCell adoption (R13-PR1)', () => {
             const src = codeOf(fs.readFileSync(abs, 'utf-8'));
             const imports =
                 /from\s+['"]@\/components\/ui\/table-title-cell['"]/.test(src);
-            const mounts = /<TableTitleCell\b/.test(src);
+            // `<TableTitleButton>` (a title that opens a quick-view) renders
+            // `<TableTitleCell>` itself, so mounting it counts.
+            const mounts = /<TableTitle(?:Cell|Button)\b/.test(src);
             if (!imports || !mounts) {
                 missing.push(rel);
             }

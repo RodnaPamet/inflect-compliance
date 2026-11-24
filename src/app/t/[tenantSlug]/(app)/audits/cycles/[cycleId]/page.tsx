@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { TextLink } from '@/components/ui/text-link';
 import { Heading } from '@/components/ui/typography';
 import { KPIStat } from '@/components/ui/metric';
 import { useToast } from '@/components/ui/hooks';
@@ -509,13 +510,14 @@ export default function CycleDetailPage() {
             <div className="space-y-compact">
                 <div className="flex items-center justify-between">
                     <Heading level={2}>{tx('cycleDetail.fieldworkAudits')}</Heading>
-                    <Link
+                    <TextLink
                         href={`/t/${tenantSlug}/audits?cycleId=${cycleId}`}
-                        className="text-xs text-content-muted underline underline-offset-2"
+                        tone="underline"
+                        className="text-xs text-content-muted"
                         id="cycle-audits-hub-link"
                     >
                         {tx('cycleDetail.viewInHub')}
-                    </Link>
+                    </TextLink>
                 </div>
                 {cycle.audits?.length > 0 ? (
                     cycle.audits.map((a) => (

@@ -189,7 +189,7 @@ describe('IncidentDetailPage — incidents.manage gates the write controls', () 
         expect(screen.queryByRole('button', { name: 'Link evidence' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Unlink' })).not.toBeInTheDocument();
         // The containment steps are listed with their state, but no box to tick.
-        expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+        expect(container.querySelectorAll('[role="checkbox"]')).toHaveLength(0);
         expect(screen.getAllByText('Done').length).toBeGreaterThan(0);
         expect(screen.getAllByText('Not done').length).toBeGreaterThan(0);
 
@@ -212,7 +212,7 @@ describe('IncidentDetailPage — incidents.manage gates the write controls', () 
         expect(screen.getAllByRole('button', { name: 'Submit' }).length).toBeGreaterThan(0);
         expect(screen.getByRole('button', { name: 'Link evidence' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Unlink' })).toBeInTheDocument();
-        expect(container.querySelectorAll('input[type="checkbox"]').length).toBeGreaterThan(0);
+        expect(container.querySelectorAll('[role="checkbox"]').length).toBeGreaterThan(0);
 
         fireEvent.click(screen.getByRole('tab', { name: /Timeline/i }));
         expect(screen.getByRole('button', { name: 'Add entry' })).toBeInTheDocument();

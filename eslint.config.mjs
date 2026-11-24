@@ -427,6 +427,17 @@ const config = [
         rules: { 'local/shaded-list-rows': 'error' },
     },
     {
+        // ── No native checkbox / radio / range in an app page (mobile 3.6) ──
+        //
+        // A native `<input type="checkbox|radio|range">` is a 13-16px target
+        // painted by the browser. Pages use `Checkbox`, `RadioGroup` and
+        // `Slider`, which carry the 44px touch hit area and the theme. See
+        // eslint-rules/rules/no-native-choice-input.js.
+        files: ['src/app/**/*.tsx'],
+        ignores: ['**/__tests__/**', '**/*.test.tsx', '**/*.spec.tsx'],
+        rules: { 'local/no-native-choice-input': 'error' },
+    },
+    {
         // ── An icon is spaced by its container, not a negative margin ──
         //
         // Thirty-one create buttons carried `<Plus className="-ml-0.5

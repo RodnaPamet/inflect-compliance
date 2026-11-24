@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
+import { TextLink } from '@/components/ui/text-link';
 import { Heading } from '@/components/ui/typography';
 import { useToast } from '@/components/ui/hooks';
 import { ApiClientError } from '@/lib/api-client';
@@ -489,14 +490,15 @@ export function OverviewTab({
                                 narrating one classification is two surfaces that
                                 can disagree. */}
                             {agent.aiSystem && (
-                                <Link
+                                <TextLink
                                     href={`/t/${tenantSlug}/risks/ai-systems/${agent.aiSystem.id}`}
-                                    className="inline-flex items-center gap-tight text-content-info hover:underline"
+                                    tone="link"
+                                    className="gap-tight font-normal text-content-info"
                                     data-testid="agent-overview-ai-system-link"
                                 >
                                     {t('agentDetail.overview.aiActLink')}
                                     <ArrowUpRight className="w-3.5 h-3.5" aria-hidden="true" />
-                                </Link>
+                                </TextLink>
                             )}
                         </span>
                     </Fact>

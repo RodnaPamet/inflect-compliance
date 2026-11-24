@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 
 import { Card } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { TextLink } from '@/components/ui/text-link';
 import { Heading } from '@/components/ui/typography';
 import {
     parseSsoHandoffRefusal,
@@ -57,13 +58,17 @@ export function SsoComplete({ next, workspace }: { next: string; workspace: stri
                                     : t(`ssoComplete.refused.${failure}`)}
                             </span>
                         </InlineNotice>
-                        <a
+                        {/* A full load, not a client navigation: the sign-in
+                            page must start from a clean session. */}
+                        <TextLink
+                            external
                             id="sso-complete-back-to-login"
                             href={workspace ? `/login?sso=${encodeURIComponent(workspace)}` : '/login'}
-                            className="text-sm text-content-emphasis underline underline-offset-2 hover:text-[var(--brand-default)]"
+                            tone="underline"
+                            className="text-sm text-content-emphasis"
                         >
                             {t('ssoComplete.backToSignIn')}
-                        </a>
+                        </TextLink>
                     </div>
                 ) : (
                     <p role="status" className="text-sm text-content-muted">
