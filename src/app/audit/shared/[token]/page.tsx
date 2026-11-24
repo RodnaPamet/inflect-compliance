@@ -9,6 +9,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { Card, cardVariants } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { cn } from '@inflect/ui/lib/cn';
 import { RelianceSnapshotBlock } from '@/components/audits/RelianceSnapshotBlock';
 import { apiErrorMessage } from '@/lib/api-error';
@@ -171,6 +172,12 @@ export default function SharedPackPage() {
     const cycle = data?.cycle;
     const items = data?.items || [];
 
+    // The whole pack, pinned first, then every item by the name it is listed by.
+    const attachOptions: ComboboxOption[] = [
+        { value: '', label: t('returnChannel.attachWholePack'), first: true },
+        ...items.map((item) => ({ value: item.id, label: itemDisplayName(item, soaName) })),
+    ];
+
     const grouped: Record<string, PackItem[]> = {};
     items.forEach((item) => {
         if (!grouped[item.entityType]) grouped[item.entityType] = [];
@@ -249,10 +256,17 @@ export default function SharedPackPage() {
                     <Heading level={3} className="mb-1">{t('returnChannel.title')}</Heading>
                     <p className="text-xs text-content-muted mb-4">{t('returnChannel.subtitle')}</p>
 
-                    {/* Kind selector — segmented buttons (no native select) */}
+                    {/* Kind selector — segmented buttons (no native select).
+                        On a phone the four sit in a two-by-two grid of full
+                        tap rows; wrapping, they made three ragged lines. */}
                     <div className="mb-3">
                         <span className="block text-xs text-content-muted mb-1">{t('returnChannel.kindLabel')}</span>
-                        <div className="flex flex-wrap gap-tight" role="group" aria-label={t('returnChannel.kindLabel')}>
+                        <div
+                            className="flex flex-wrap gap-tight max-md:grid max-md:grid-cols-2"
+                            role="group"
+                            aria-label={t('returnChannel.kindLabel')}
+                            data-testid="return-channel-kinds"
+                        >
                             {KINDS.map((k) => (
                                 <button
                                     key={k}
@@ -260,7 +274,7 @@ export default function SharedPackPage() {
                                     onClick={() => setKind(k)}
                                     aria-pressed={kind === k}
                                     className={cn(
-                                        'px-3 py-1.5 rounded-md text-sm border transition',
+                                        'px-3 py-1.5 rounded-md text-sm border transition max-md:min-h-11 max-md:leading-tight',
                                         kind === k
                                             ? 'bg-bg-muted border-border-emphasis text-content-emphasis'
                                             : 'bg-bg-default border-border-subtle text-content-default hover:bg-bg-muted',
@@ -285,36 +299,26 @@ export default function SharedPackPage() {
                         />
                     </div>
 
+                    {/* What the comment is about: the whole pack or one item.
+                        One chip per item made a large pack a wall of chips;
+                        the shared combobox searches, and virtualises a long
+                        list (#5897). */}
                     {items.length > 0 && (
                         <div className="mb-3">
-                            <span className="block text-xs text-content-muted mb-1">{t('returnChannel.attachLabel')}</span>
-                            <div className="flex flex-wrap gap-tight">
-                                <button
-                                    type="button"
-                                    onClick={() => setAttachItemId('')}
-                                    aria-pressed={attachItemId === ''}
-                                    className={cn(
-                                        'px-2.5 py-1 rounded-md text-xs border transition',
-                                        attachItemId === '' ? 'bg-bg-muted border-border-emphasis text-content-emphasis' : 'bg-bg-default border-border-subtle text-content-default hover:bg-bg-muted',
-                                    )}
-                                >
-                                    {t('returnChannel.attachWholePack')}
-                                </button>
-                                {items.map((item) => (
-                                    <button
-                                        key={item.id}
-                                        type="button"
-                                        onClick={() => setAttachItemId(item.id)}
-                                        aria-pressed={attachItemId === item.id}
-                                        className={cn(
-                                            'px-2.5 py-1 rounded-md text-xs border transition max-w-[16rem] truncate',
-                                            attachItemId === item.id ? 'bg-bg-muted border-border-emphasis text-content-emphasis' : 'bg-bg-default border-border-subtle text-content-default hover:bg-bg-muted',
-                                        )}
-                                    >
-                                        {itemDisplayName(item, soaName)}
-                                    </button>
-                                ))}
-                            </div>
+                            <span className="block text-xs text-content-muted mb-1" id="return-channel-attach-label">{t('returnChannel.attachLabel')}</span>
+                            <Combobox
+                                options={attachOptions}
+                                selected={attachOptions.find((o) => o.value === attachItemId) ?? attachOptions[0]}
+                                setSelected={(opt) => setAttachItemId(opt?.value ?? '')}
+                                searchPlaceholder={t('returnChannel.attachSearch')}
+                                matchTriggerWidth
+                                caret
+                                id="return-channel-attach"
+                                buttonProps={{
+                                    className: 'w-full justify-between',
+                                    'aria-label': t('returnChannel.attachLabel'),
+                                }}
+                            />
                         </div>
                     )}
 

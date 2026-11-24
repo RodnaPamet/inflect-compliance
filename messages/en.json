@@ -3943,6 +3943,8 @@
     },
     "hub": {
       "lifecycleTitle": "Audit lifecycle",
+      "guideShow": "Show the guide",
+      "guideHide": "Hide the guide",
       "lifecycleSubtitle": "Plan, build, measure, and share an audit from end to end.",
       "cycles": "Cycles",
       "readiness": "Readiness",
@@ -5889,6 +5891,9 @@
       "tabCoverage": "ASI coverage",
       "tabRuns": "Runs",
       "tabBreaker": "Circuit breaker",
+      "tabGroupAssessment": "Assessment",
+      "tabGroupAuthority": "Authority",
+      "tabGroupActivity": "Activity",
       "metaAutonomy": "Autonomy",
       "metaAccess": "Data access",
       "metaReversibility": "Reversibility",
@@ -9742,6 +9747,9 @@
     "scrollCueStrip": {
       "scrollStart": "Show earlier tabs",
       "scrollEnd": "Show more tabs"
+    },
+    "kpiStrip": {
+      "label": "Key figures"
     },
     "recordStepper": {
       "previous": {
@@ -17816,6 +17824,9 @@
       "submittedBody": "Thank you. Your responses have been delivered to the requester for review.",
       "headerFor": "Vendor assessment for {vendor}",
       "fixErrors": "Please fix the following:",
+      "answerRequired": "This question needs an answer.",
+      "questionsToFix": "Questions to fix: {count}",
+      "progress": "{answered} of {total} answered",
       "submitFailed": "Submission failed. Please try again in a moment.",
       "submit": "Submit responses",
       "submitting": "Submitting…",
@@ -17868,6 +17879,7 @@
         "messagePlaceholder": "Write your message…",
         "attachLabel": "About",
         "attachWholePack": "The whole pack",
+        "attachSearch": "Search the pack…",
         "submit": "Send",
         "submitting": "Sending…",
         "submitError": "Could not send. Please try again.",

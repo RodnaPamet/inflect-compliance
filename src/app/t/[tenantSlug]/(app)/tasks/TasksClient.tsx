@@ -49,6 +49,7 @@ import {
     taskSourceLabels,
 } from './filter-defs';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
+import { KpiStrip } from '@/components/ui/kpi-strip';
 import { type MetricTone } from '@/components/ui/metric';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { useKpiTrends, buildKpiSparklines, buildKpiSparklineNullable, centeredSparklineDomain, assignSparklineVariants } from '@/lib/charts/kpi-trends';
@@ -1249,7 +1250,7 @@ function TasksPageInner({
 
             <ListPageShell.Filters className="space-y-section">
                 {/* R23-PR-E — KPI strip. */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
+                <KpiStrip>
                     {visibleKpiCards.map((card) => {
                         const cfg: Record<
                             string,
@@ -1300,7 +1301,7 @@ function TasksPageInner({
                             />
                         );
                     })}
-                </div>
+                </KpiStrip>
                 <FilterToolbar
                     filters={liveFilters}
                     searchId="tasks-search"

@@ -1929,6 +1929,11 @@
   "derivation": "audited",
   "reason": "The hook's code is completely generic — it composes `apply`/`isActive`/`clear` callbacks over the shared FilterContextValue and has no strings, no storage and no domain import (`@/components/ui/filter` is a ui module). But its 65-line design-rationale header and several prop docs are written throughout in risk-register vocabulary: the Risks page is named as the contract this implements, and the worked examples are drawn from its fields — `Open → status=OPEN` and `Critical → impact=5,4 + likelihood=5,4` at :27-29, `status=OPEN, severity=CRITICAL` at :102, and `High-Criticality → Active` in the B2 comment at :140-143, with the `toggle` doc at :113-115 naming the Risks page outright. Every hit is prose, so the comment mask in `codeOf` hides all of it from the mechanical pass and only a reader scores it — which makes this a documentation fix: neutral examples in the header and the prop docs, after which the hook ships unchanged on its two imports, `react` and `@/components/ui/filter`."
  },
+ "src/components/ui/kpi-strip.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "A row of KPI tiles: a sideways-scrolling strip with a faded end edge below md, the caller's grid from md up, all Tailwind classes. Mechanically generic (content is the caller's children, its one label comes from the 'ui.kpiStrip' catalog, semantic tokens only, no storage) but the docstring is written in terms of the product's list pages and their bundle budgets."
+ },
  "src/components/ui/label.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",

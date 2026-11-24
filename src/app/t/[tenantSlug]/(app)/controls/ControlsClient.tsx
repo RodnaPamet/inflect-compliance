@@ -79,6 +79,7 @@ import { applicabilityState } from '@/lib/controls/control-applicability';
 import { AiAssistRail } from '@/components/ui/ai-assist-rail';
 import { Sparkle3 } from '@inflect/ui/components/ui/icons/glyphs/sparkle3';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
+import { KpiStrip } from '@/components/ui/kpi-strip';
 import { useKpiTrends, buildKpiSparklines, centeredSparklineDomain, assignSparklineVariants } from '@/lib/charts/kpi-trends';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import type { CappedList } from '@/lib/list-backfill-cap';
@@ -2089,7 +2090,7 @@ function ControlsPageInner({
                    counts + their click-to-filter describe the LIVE set, so
                    surfacing them over soft-deleted rows would mislead. */
                 showDeleted ? undefined : (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
+                <KpiStrip>
                     {visibleKpiCards.map((card) => {
                         // Render config per KPI id — the gear owns which
                         // cards show + their order (visibleKpiCards).
@@ -2148,7 +2149,7 @@ function ControlsPageInner({
                             />
                         );
                     })}
-                </div>
+                </KpiStrip>
                 )
             }
             filters={{

@@ -3943,6 +3943,8 @@
     },
     "hub": {
       "lifecycleTitle": "Жизнен цикъл на одита",
+      "guideShow": "Покажи ръководството",
+      "guideHide": "Скрий ръководството",
       "lifecycleSubtitle": "Планирайте, изградете, измерете и споделете одит от начало до край.",
       "cycles": "Цикли",
       "readiness": "Готовност",
@@ -5889,6 +5891,9 @@
       "tabCoverage": "ASI покритие",
       "tabRuns": "Изпълнения",
       "tabBreaker": "Предпазител",
+      "tabGroupAssessment": "Оценка",
+      "tabGroupAuthority": "Правомощия",
+      "tabGroupActivity": "Дейност",
       "metaAutonomy": "Автономност",
       "metaAccess": "Достъп до данни",
       "metaReversibility": "Обратимост",
@@ -9742,6 +9747,9 @@
     "scrollCueStrip": {
       "scrollStart": "Покажи предишните раздели",
       "scrollEnd": "Покажи още раздели"
+    },
+    "kpiStrip": {
+      "label": "Основни показатели"
     },
     "recordStepper": {
       "previous": {
@@ -17816,6 +17824,9 @@
       "submittedBody": "Благодарим Ви. Вашите отговори бяха доставени на подателя за преглед.",
       "headerFor": "Оценка на доставчик за {vendor}",
       "fixErrors": "Моля, коригирайте следното:",
+      "answerRequired": "Този въпрос изисква отговор.",
+      "questionsToFix": "Въпроси за поправка: {count}",
+      "progress": "Отговорени: {answered} от {total}",
       "submitFailed": "Изпращането е неуспешно. Моля, опитайте отново след малко.",
       "submit": "Изпрати отговорите",
       "submitting": "Изпращане…",
@@ -17868,6 +17879,7 @@
         "messagePlaceholder": "Напишете вашето съобщение…",
         "attachLabel": "Относно",
         "attachWholePack": "Целият пакет",
+        "attachSearch": "Търсене в пакета…",
         "submit": "Изпрати",
         "submitting": "Изпращане…",
         "submitError": "Изпращането е неуспешно. Моля, опитайте отново.",

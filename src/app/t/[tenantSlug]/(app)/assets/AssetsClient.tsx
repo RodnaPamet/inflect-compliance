@@ -35,6 +35,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
+import { KpiStrip } from '@/components/ui/kpi-strip';
 import { useKpiTrends, buildKpiSparklines, centeredSparklineDomain } from '@/lib/charts/kpi-trends';
 import { BulkActionBar, type BulkActionDef } from '@/components/ui/bulk-action-bar';
 import { UserCombobox, useTenantMembers } from '@/components/ui/user-combobox';
@@ -1036,7 +1037,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                     filters) describe the LIVE set, not the deleted one, so
                     surfacing them over soft-deleted rows would mislead. */}
                 {!showDeleted && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
+                <KpiStrip>
                     {visibleKpiCards.map((card) => {
                         const cfg: Record<
                             string,
@@ -1084,7 +1085,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                             />
                         );
                     })}
-                </div>
+                </KpiStrip>
                 )}
                 <FilterToolbar
                     filters={liveFilters}
