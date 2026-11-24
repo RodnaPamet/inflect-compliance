@@ -44,6 +44,9 @@ interface ScimState {
 
 export default function ScimAdminPage() {
     const t = useTranslations('admin');
+    // Role names come from the one role vocabulary, never spelled inside a
+    // sentence: a name embedded in copy stayed English on a Bulgarian page.
+    const tRoles = useTranslations('roles');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const [state, setState] = useState<ScimState | null>(null);
@@ -365,6 +368,12 @@ export default function ScimAdminPage() {
                     {t.rich('scim.roleMapBody', {
                         b: (c) => <strong className="text-content-muted">{c}</strong>,
                         s: (c) => <strong>{c}</strong>,
+                        reader: tRoles('READER'),
+                        editor: tRoles('EDITOR'),
+                        auditor: tRoles('AUDITOR'),
+                        aiAdmin: tRoles('AI_ADMIN'),
+                        admin: tRoles('ADMIN'),
+                        owner: tRoles('OWNER'),
                     })}
                 </div>
             </Card>

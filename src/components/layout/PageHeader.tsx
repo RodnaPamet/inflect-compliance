@@ -142,6 +142,15 @@ export interface PageHeaderProps {
      */
     titleAdornment?: React.ReactNode;
     /**
+     * A MAIN page's H1 is visually hidden and the page leads with its
+     * subtitle. On a desktop the sidebar's active item still says where the
+     * reader is; on a phone the sidebar is a closed drawer, so a main page
+     * whose subtitle does not name it shows no name at all. Set this to keep
+     * the H1 visible below `md` (it stays `sr-only` from `md` up, so desktop
+     * is unchanged). Subpages always show their H1 and ignore it.
+     */
+    titleOnPhone?: boolean;
+    /**
      * Optional descriptive sentence below the title. One sentence,
      * ≤ 80 chars per the v2 polish copy convention.
      */
@@ -173,6 +182,7 @@ export function PageHeader({
     title,
     titleId,
     titleAdornment,
+    titleOnPhone = false,
     description,
     meta,
     actions,
@@ -291,7 +301,13 @@ export function PageHeader({
                     <Heading
                         level={1}
                         id={titleId}
-                        className={titleHidden ? "sr-only" : cn(back && "mt-1")}
+                        className={
+                            titleHidden
+                                ? titleOnPhone
+                                    ? "md:sr-only"
+                                    : "sr-only"
+                                : cn(back && "mt-1")
+                        }
                         data-testid="page-header-title"
                     >
                         {title}

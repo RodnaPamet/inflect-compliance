@@ -37,6 +37,7 @@ import { Plus } from '@inflect/ui/components/ui/icons/glyphs';
 import { NumberStepper } from '@/components/ui/number-stepper';
 import { RiskMatrix } from '@/components/risks/RiskMatrix';
 import { DEFAULT_RISK_MATRIX_CONFIG } from '@/lib/risk-matrix/defaults';
+import { localizeRiskMatrixConfig } from '@/lib/risk-matrix/localize';
 import {
     bandCoverageIssues,
     levelLabelIssues,
@@ -109,6 +110,7 @@ export function RiskMatrixAdminClient({
     const [saving, setSaving] = useState(false);
     const [serverError, setServerError] = useState<string | null>(null);
     const t = useTranslations('admin');
+    const tDefaults = useTranslations('riskMatrixDefaults');
     const toast = useToast();
 
     // Synthetic preview cells — every (L, I) carries one risk so the
@@ -123,6 +125,16 @@ export function RiskMatrixAdminClient({
         }
         return cells;
     }, [config.likelihoodLevels, config.impactLevels]);
+
+    // The preview is a DISPLAY of the draft, so the product's default words
+    // ("Low", "Rare", "Likelihood") read in the viewer's language there, as
+    // they do on every other matrix. The editor's fields keep the stored
+    // values: those are what a save writes, and a name the tenant typed is
+    // shown as typed in both places.
+    const previewConfig = useMemo(
+        () => localizeRiskMatrixConfig(config, (key) => tDefaults(key)),
+        [config, tDefaults],
+    );
 
     // ── Live validation ────────────────────────────────────────────
     const validationIssues = useMemo<RiskMatrixIssue[]>(
@@ -638,7 +650,7 @@ export function RiskMatrixAdminClient({
                         {t('riskMatrix.previewHint')}
                     </p>
                     <RiskMatrix
-                        config={config}
+                        config={previewConfig}
                         cells={previewCells}
                         title={t('riskMatrix.preview')}
                         showSwapToggle={false}

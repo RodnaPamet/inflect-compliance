@@ -305,7 +305,7 @@ export function JoinerPassesClient() {
     );
 
     return (
-        <div className="space-y-comfortable">
+        <div className="space-y-section">
             <BackAffordance />
             <PageBreadcrumbs
                 items={[

@@ -155,8 +155,13 @@ describe('the admin section (#4649)', () => {
         fireEvent.change(document.getElementById('trust-gated-file') as HTMLInputElement, {
             target: { files: [new File(['pdf'], 'pentest.pdf', { type: 'application/pdf' })] },
         });
+        // The product's picker names the chosen file; the browser's input is hidden.
+        expect(screen.getByTestId('file-picker-name')).toHaveTextContent('pentest.pdf');
+        expect(document.getElementById('trust-gated-file')).toHaveClass('sr-only');
         await act(async () => { fireEvent.click(document.getElementById('trust-gated-upload') as HTMLElement); });
         await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith(A.added, expect.anything()));
+        // A successful add clears the choice.
+        await waitFor(() => expect(screen.getByTestId('file-picker-name')).not.toHaveTextContent('pentest.pdf'));
 
         const upload = fetchMock.mock.calls.find(([u, i]) => /\/evidence\/uploads$/.test(String(u)) && i?.method === 'POST');
         const form = upload![1]!.body as FormData;

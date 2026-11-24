@@ -25,6 +25,7 @@ import { useTranslations } from 'next-intl';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy-button';
+import { FilePicker } from '@/components/ui/file-picker';
 import { FormField } from '@/components/ui/form-field';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Input } from '@/components/ui/input';
@@ -249,12 +250,13 @@ export function GatedDocumentsAdmin({ tenantSlug }: { tenantSlug: string }) {
                         <Input id="trust-gated-label" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={200} />
                     </FormField>
                     <FormField label={t('fileField')} required>
-                        <input
+                        {/* The product's own picker: the browser's "Choose File"
+                            input could not shrink, and forced this section wider
+                            than a phone. A new key clears it after an upload. */}
+                        <FilePicker
                             key={fileInputKey}
-                            id="trust-gated-file"
-                            type="file"
-                            className="block text-sm text-content-default"
-                            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                            inputId="trust-gated-file"
+                            onFileChange={setFile}
                         />
                     </FormField>
                     <Button variant="secondary" onClick={() => void addDocument()} disabled={uploading} loading={uploading} id="trust-gated-upload">

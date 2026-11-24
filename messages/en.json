@@ -358,6 +358,10 @@
       "cancelled": "Cancelled",
       "failed": "Failed"
     },
+    "filePicker": {
+      "choose": "Choose file",
+      "none": "No file chosen"
+    },
     "fileKinds": {
       "link": "Link",
       "text": "Text",
@@ -5425,7 +5429,7 @@
       "setup3": "Set the <b>SCIM connector base URL</b> to the endpoint shown above.",
       "setup4": "Set <b>Authentication</b> to \"HTTP Header\" with the bearer token.",
       "setupActions": "Enable provisioning actions: <i>Create Users</i>, <i>Update User Attributes</i>, <i>Deactivate Users</i>.",
-      "roleMapBody": "<b>Role mapping:</b> SCIM-provisioned users are assigned the <s>Reader</s> role by default. Editors and Auditors can be mapped through your identity provider's group or role assignment. A group push from Microsoft Entra ID applies the Entra page's group mappings, up to the AI admin role. The Admin and Owner roles cannot be assigned through SCIM; they are set by hand.",
+      "roleMapBody": "<b>Role mapping:</b> SCIM-provisioned users are assigned the <s>{reader}</s> role by default. The {editor} and {auditor} roles can be mapped through your identity provider's group or role assignment. A group push from Microsoft Entra ID applies the Entra page's group mappings, up to the {aiAdmin} role. The {admin} and {owner} roles cannot be assigned through SCIM; they are set by hand.",
       "emptyTokensHint": "Generate a token to enable automated provisioning from your identity provider.",
       "tokenLabel": "Token label",
       "errRevoke": "Couldn't revoke the token. It is still active.",
@@ -11022,6 +11026,7 @@
     }
   },
   "processes": {
+    "title": "Processes",
     "checkpoint": {
       "title": "Human checkpoint",
       "subtitle": "{workflowKey} · run is {status}",
@@ -19602,7 +19607,8 @@
   "agentWorkflows": {
     "diagnostic": {
       "name": "Posture diagnostic",
-      "description": "Read the compliance posture and synthesise a one-line health summary."
+      "description": "Read the compliance posture and synthesise a one-line health summary.",
+      "summary": "Posture snapshot — {controls} controls, {risks} risks, {openTasks} open tasks."
     },
     "framework_onboarding": {
       "name": "Framework onboarding",
