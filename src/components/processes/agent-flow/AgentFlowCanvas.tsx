@@ -34,6 +34,7 @@ import { AGENT_FLOW_NODE_H, AGENT_FLOW_NODE_W, type FlowLayout } from '@/lib/pro
 
 import { AGENT_FLOW_NODE_SHAPE_TYPE, AgentFlowNodeShapeUtil, type AgentFlowNodeShape } from './AgentFlowNodeShapeUtil';
 import { TLDRAW_ASSET_URLS } from '../tldraw/asset-urls';
+import { TldrawReaderLanguage, TLDRAW_READER_OVERRIDES } from '../tldraw/reader-language';
 
 /** Module scope: a new array each render would remount the editor. */
 const SHAPE_UTILS = [AgentFlowNodeShapeUtil];
@@ -224,7 +225,10 @@ export function AgentFlowCanvas({ nodes, edges, layout, onMove, onSelect, readOn
                 options={OPTIONS}
                 components={COMPONENTS}
                 assetUrls={TLDRAW_ASSET_URLS}
-            />
+                overrides={TLDRAW_READER_OVERRIDES}
+            >
+                <TldrawReaderLanguage />
+            </Tldraw>
         </div>
     );
 }

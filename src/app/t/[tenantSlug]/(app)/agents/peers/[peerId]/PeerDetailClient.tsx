@@ -47,6 +47,7 @@ import { DataTable, createColumns } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Heading } from '@/components/ui/typography';
+import { TextLink } from '@/components/ui/text-link';
 import { apiErrorMessage } from '@/lib/api-error';
 import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
@@ -463,13 +464,16 @@ function PeerDetailsCard({ detail, canManage, tenantSlug }: { detail: PeerDetail
                 </Fact>
                 <Fact label={t('peers.detail.vendor')}>
                     {peer.vendorId && peer.vendorName ? (
-                        <Link
+                        // The value of a fact, on its own line: a stand-alone
+                        // link, so it takes the touch square (#5924).
+                        <TextLink
                             href={`/t/${tenantSlug}/vendors/${peer.vendorId}`}
-                            className="text-content-info hover:underline"
+                            tone="link"
+                            className="font-normal text-content-info"
                             data-testid="peer-vendor"
                         >
                             {peer.vendorName}
-                        </Link>
+                        </TextLink>
                     ) : (
                         <span data-testid="peer-vendor">{t('peers.detail.vendorUnknown')}</span>
                     )}

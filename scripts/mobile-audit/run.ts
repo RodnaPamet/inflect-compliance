@@ -39,10 +39,10 @@ import path from 'node:path';
 import { assertNoUnknownArgs, readValueFlag } from '../lib/value-flag';
 import { signInOrgContext, signInTenantContext } from './auth';
 import { AUDIT_CONFIG_IDS, PHONE_CONFIGS, contextOptionsFor, preferenceCookies, type PhoneConfig, type PhoneConfigId } from './configs';
-import { findEnglishLeaks, loadLeakCatalog, type LeakCatalog } from './leaks';
+import { findEnglishLeaks, loadLeakCatalog, pageDataNames, type LeakCatalog, type QuestionOptions } from './leaks';
 import { countsOf, measurePage, settlePage, type RawMeasurement } from './measure';
 import { compareReports, renderComparison, renderSummary, type AuditReport, type CapturedPage, type UncapturedPage } from './report';
-import { connectDb, dataNames, libraryTexts, resolveContext, resolveRoute, type ResolvedRoute } from './resolve';
+import { connectDb, dataNames, libraryTexts, questionOptions, resolveContext, resolveRoute, type ResolvedRoute } from './resolve';
 import { apiFor, setUpAuditFixtures, type SetupOutcome } from './fixtures';
 import { enumerateRoutes, routeSlug, type RouteAudience } from './routes';
 import { OPEN_STATES, StateUnavailable, type OpenState } from './states';
@@ -134,7 +134,7 @@ async function capture(
     job: Job,
     page: Page,
     config: PhoneConfig,
-    leakInputs: { catalog: LeakCatalog; names: ReadonlySet<string>; library: ReadonlySet<string> },
+    leakInputs: { catalog: LeakCatalog; names: ReadonlySet<string>; library: ReadonlySet<string>; questions: QuestionOptions },
     opts: Options,
 ): Promise<CapturedPage | UncapturedPage> {
     const consoleErrors: string[] = [];
@@ -172,7 +172,10 @@ async function capture(
             return { kind: job.kind, id: job.id, config: config.id, reason: `measurement failed: ${why}` };
         }
     }
-    const leaks = config.locale === 'bg' ? findEnglishLeaks(m, leakInputs.catalog, leakInputs.names, leakInputs.library) : [];
+    const leaks =
+        config.locale === 'bg'
+            ? findEnglishLeaks(m, leakInputs.catalog, pageDataNames(m.texts, leakInputs.names, leakInputs.questions), leakInputs.library)
+            : [];
     let screenshot: string | undefined;
     if (opts.screenshots) {
         // After measuring: the overlay pass scrolled to the end; go back to the top for the picture.
@@ -209,6 +212,7 @@ async function main(): Promise<void> {
     let resolved: ResolvedRoute[];
     let names = new Set<string>();
     let library = new Set<string>();
+    let questions: QuestionOptions = new Map();
     let stateJobs: Array<Job | UncapturedPage> = [];
     let setup: SetupOutcome | undefined;
     const browser = await chromium.launch(opts.chromium ? { executablePath: opts.chromium } : {});
@@ -230,6 +234,7 @@ async function main(): Promise<void> {
         resolved = await Promise.all(routes.map((r) => resolveRoute(r, ctx)));
         names = await dataNames(db);
         library = await libraryTexts(db);
+        questions = await questionOptions(db);
         if (opts.states) {
             stateJobs = await Promise.all(OPEN_STATES.filter((s) => !opts.routeFilter || opts.routeFilter(s.route)).map(async (s) => {
                 const route = allRoutes.find((r) => r.pattern === s.route);
@@ -275,7 +280,7 @@ async function main(): Promise<void> {
                 for (let job = queue.shift(); job; job = queue.shift()) {
                     const page = await contexts.get(job.audience)!.newPage();
                     try {
-                        const result = await capture(job, page, config, { catalog, names, library }, opts);
+                        const result = await capture(job, page, config, { catalog, names, library, questions }, opts);
                         if ('reason' in result) uncaptured.push(result);
                         else captured.push(result);
                     } finally {
