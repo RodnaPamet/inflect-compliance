@@ -70,7 +70,7 @@ Settled also by an operator's Abort (its transaction) and by the reaper.
 | File | Role |
 | --- | --- |
 | `prisma/schema/agentic.prisma` | `WorkflowRunCheckpoint` |
-| `prisma/migrations/20261124120000_workflow_run_checkpoint/` | the table, its shape CHECK, the settled-frozen trigger, grants (no DELETE) and the RLS triple |
+| `prisma/migrations/20261124160000_workflow_run_checkpoint/` | the table, its shape CHECK, the settled-frozen trigger, grants (no DELETE) and the RLS triple |
 | `src/lib/security/encrypted-fields.ts` | `transcriptJson`, `resultsJson` in the manifest |
 | `src/lib/agentic/drivers/checkpoint-store.ts` | the table's only writer: read, turn write, in-flight, results, clear, settle, the segment anchor, the retry pause |
 | `src/lib/agentic/tool-runner/transcript.ts` | the checkpoint format, its seal and opening, the SDK's result block, the continued messages |
