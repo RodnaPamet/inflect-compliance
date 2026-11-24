@@ -444,7 +444,16 @@ describe('the Managed Agents engine (Step 5d)', () => {
             envEnabled: true,
             implemented: DRIVER_IMPLEMENTED['managed-agents'],
             workspace: 'CONNECTED',
+            // Step 6b: its own workspace wins, so no hosted term is named.
+            hostedRefusal: null,
         });
+    });
+
+    it('with no connection of its own, names the hosted term that failed: hosting is not active (Step 6b)', async () => {
+        workspaceConnections = [];
+        envBag.AGENT_MANAGED_AGENTS = '1';
+        const view = await getAgentDriverSetting(ctx);
+        expect(view.managedAgents).toMatchObject({ workspace: 'NONE', hostedRefusal: 'HOSTED_NOT_ACTIVE' });
     });
 
     it('is in force for a workspace that chose it, with its switch on and profiles on', async () => {

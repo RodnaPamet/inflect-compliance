@@ -46,9 +46,10 @@ import type { AgentSwitchBasis } from '@/lib/agentic/agent-switches';
 import { toolRunnerDecisionFor } from '@/lib/agentic/agent-switches-policy';
 import { managedAgentsEnabled } from '@/lib/agentic/managed-agents-switch';
 import {
-    readWorkspaceConnectionState,
-    type WorkspaceConnectionState,
-} from '@/lib/agentic/managed-agents/store';
+    readManagedAgentsWorkspaceState,
+    type HostedWorkspaceRefusal,
+    type ManagedAgentsWorkspaceState,
+} from '@/lib/agentic/managed-agents/workspace';
 import { runInTenantContext } from '@/lib/db-context';
 import { readStoredDriverMode } from '@/lib/agentic/agent-driver-stored-mode';
 import { env } from '@/env';
@@ -63,7 +64,7 @@ import { logger } from '@/lib/observability';
  */
 export type ManagedAgentsChoiceRefusal = 'MANAGED_AGENTS_NO_WORKSPACE' | 'MANAGED_AGENTS_AMBIGUOUS_WORKSPACE';
 
-const MANAGED_AGENTS_CHOICE_REFUSAL: Record<Exclude<WorkspaceConnectionState, 'CONNECTED'>, ManagedAgentsChoiceRefusal> = {
+const MANAGED_AGENTS_CHOICE_REFUSAL: Record<Exclude<ManagedAgentsWorkspaceState, 'CONNECTED' | 'HOSTED'>, ManagedAgentsChoiceRefusal> = {
     NONE: 'MANAGED_AGENTS_NO_WORKSPACE',
     AMBIGUOUS: 'MANAGED_AGENTS_AMBIGUOUS_WORKSPACE',
 };
@@ -115,8 +116,22 @@ export interface AgentDriverSetting {
      * needs before it may be chosen: exactly one enabled Anthropic workspace
      * connection (`workspace`). The page offers the engine only when the switch
      * is on and the workspace is `CONNECTED`; the writer refuses it without one.
+     *
+     * Since Step 6b the workspace may instead be INFLECT's own (`HOSTED`): no
+     * connection of the tenant's, and every hosted term holds (the source
+     * constant, the deployment's workspace pair, an owner's opt-in, a
+     * residency that is not LOCAL_ONLY and the plan's entitlement). It is
+     * read by the same rules the run's resolution applies
+     * (`readManagedAgentsWorkspaceState`), with no key read. `hostedRefusal`
+     * names the hosted term that failed when the answer is `NONE`. While
+     * `HOSTED_MANAGED_AGENTS_ACTIVE` is false it is never `HOSTED`.
      */
-    managedAgents: { envEnabled: boolean; implemented: boolean; workspace: WorkspaceConnectionState };
+    managedAgents: {
+        envEnabled: boolean;
+        implemented: boolean;
+        workspace: ManagedAgentsWorkspaceState;
+        hostedRefusal: HostedWorkspaceRefusal | null;
+    };
 }
 
 /** Read the stored mode and, more importantly, what it will actually do. */
@@ -139,7 +154,7 @@ export async function getAgentDriverSetting(ctx: RequestContext): Promise<AgentD
     const toolRunnerSwitch = await toolRunnerDecisionFor({ tenantId: ctx.tenantId });
     const toolRunnerEnvEnabled = toolRunnerSwitch.on;
     const managedAgentsEnvEnabled = managedAgentsEnabled();
-    const workspace = await runInTenantContext(ctx, (db) => readWorkspaceConnectionState(db, ctx.tenantId));
+    const workspace = await readManagedAgentsWorkspaceState(ctx);
     // FOUR terms, not three. `resolveAgentDriver` ANDs env, tenant and the
     // build flag; `narrowToWhatAWorkflowAsksFor` applies the fourth — no
     // registered WorkflowDefinition asks for the engine, so `selectRunDriver`
@@ -167,7 +182,8 @@ export async function getAgentDriverSetting(ctx: RequestContext): Promise<AgentD
         managedAgents: {
             envEnabled: managedAgentsEnvEnabled,
             implemented: DRIVER_IMPLEMENTED['managed-agents'],
-            workspace,
+            workspace: workspace.state,
+            hostedRefusal: workspace.hostedRefusal,
         },
     };
 }
@@ -204,8 +220,11 @@ export async function setAgentDriverSetting(
     // refuse, and with two it would refuse too, because a run never chooses.
     // Only the move TO this engine is refused; every move away stays instant,
     // for the reason the docblock gives.
-    if (next === 'MANAGED_AGENTS' && before.managedAgents.workspace !== 'CONNECTED') {
-        const reason = MANAGED_AGENTS_CHOICE_REFUSAL[before.managedAgents.workspace];
+    // Inflect's own workspace (`HOSTED`, Step 6b) is a workspace a run can use
+    // too, by the run's own rules.
+    const usable = before.managedAgents.workspace;
+    if (next === 'MANAGED_AGENTS' && usable !== 'CONNECTED' && usable !== 'HOSTED') {
+        const reason = MANAGED_AGENTS_CHOICE_REFUSAL[usable];
         throw new ConflictError(`${reason}: ${MANAGED_AGENTS_CHOICE_MESSAGE[reason]}`, { reason });
     }
 

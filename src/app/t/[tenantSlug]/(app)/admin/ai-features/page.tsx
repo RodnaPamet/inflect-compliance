@@ -18,6 +18,9 @@
  * - The "Agent engines" section renders for every admin (owner decision
  *   2026-10-25, #4139). It reads `GET /admin/agent-driver`, which is
  *   `admin.view`, and it decides for itself whether to offer the control.
+ * - "Agents hosted by Inflect" (Step 6b) sits behind `admin.tenant_lifecycle`,
+ *   the key of its endpoint, and renders nothing while the deployment does
+ *   not offer hosting.
  */
 import { useTranslations } from 'next-intl';
 
@@ -32,6 +35,7 @@ import { AiFeaturesClient } from './AiFeaturesClient';
 import { AiResidencySection } from './AiResidencySection';
 import { AgentEnginesSection } from './AgentEnginesSection';
 import { AgentOversightSection } from './AgentOversightSection';
+import { HostedAgentsSection } from './HostedAgentsSection';
 
 export default function AiFeaturesPage() {
     const t = useTranslations('admin');
@@ -88,6 +92,17 @@ export default function AiFeaturesPage() {
                 }
             >
                 <AgentOversightSection />
+            </RequirePermission>
+
+            {/*
+                Hosted agents (Step 6b): OWNER-only, as its endpoint is. No
+                fallback sentence: the section renders nothing while the
+                deployment does not offer hosting, which is true for every
+                workspace until Step 6c, and an administrator would otherwise
+                be told about a setting no owner can see either.
+            */}
+            <RequirePermission resource="admin" action="tenant_lifecycle">
+                <HostedAgentsSection />
             </RequirePermission>
         </div>
     );

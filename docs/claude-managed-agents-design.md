@@ -4,7 +4,8 @@ inflect · claude managed agents · design v1 · 2026-10-24
 
 > **Status: living design** — research into Claude Managed Agents and a
 > recommendation for how, and how far, they enter Inflect's agent stack. Phase
-> 5 is built through Step 5d. The **Current state** section is true today. The **Roadmap**
+> 5 is built through Step 5d, and Phase 6's hosted path through Step 6b, behind
+> a constant that is false. The **Current state** section is true today. The **Roadmap**
 > section is the plan, one pull request per step, and its later steps wait on
 > owner decisions about data that no code can make. Companion documents:
 > `docs/claude-agent-sdk-design.md` (the agent builder, and Route B: customer-
@@ -210,8 +211,53 @@ puts at Anthropic:
   marked PROPOSED, NOT IN EFFECT, and the customer notice
   (`docs/notices/2026-11-23-anthropic-hosted-managed-agents.md`) was issued on
   2026-11-24; its objection window closes 2026-12-24. Decision 6 is recorded on
-  #5865 and the change approved (see "MA-C1", "Notice"). No hosted
-  path exists in the code.
+  #5865 and the change approved (see "MA-C1", "Notice").
+- **The hosted path is built and cannot run (Step 6b, #4172).** Everything
+  hosting needs exists behind the source constant `HOSTED_MANAGED_AGENTS_ACTIVE`,
+  which is `false` (`src/lib/agentic/managed-agents/hosted-activation.ts`, a
+  leaf module). Setting it true is Step 6c's one-line diff, after 2026-12-24.
+  - **The constant is asked first.** Inflect's workspace id and key are
+    deployment configuration (`AGENT_MANAGED_AGENTS_HOSTED_WORKSPACE_ID`,
+    `AGENT_MANAGED_AGENTS_HOSTED_API_KEY`), and their one reader,
+    `inflectHostedWorkspace`, returns before it reads either while the
+    constant is false. So no run, provisioning or clean-up resolves Inflect's
+    workspace or builds a client with its key, and no workspace can opt in. A
+    guard reads the source for that order.
+  - **One resolution.** `resolveManagedAgentsWorkspace` (`workspace.ts`) is what
+    the driver and provisioning ask, and the engine setting asks its key-free
+    twin: the tenant's own connected workspace wins (one that is ambiguous or
+    unreadable refuses, never falls back); otherwise Inflect's workspace when
+    the constant, the deployment's pair, an owner's opt-in, a residency that is
+    not `LOCAL_ONLY` and the plan's entitlement all hold; otherwise the run is
+    refused naming the first that failed (`managed_agents_no_workspace`,
+    `_hosted_not_opted_in`, `_hosted_local_only`, `_hosted_not_entitled`).
+    Every hosted record carries the connection id `inflect-hosted`, and a
+    hosted session is always deleted at settle. The ledger's `SESSION_CREATED`
+    step and every `MODEL_CALL` step record the workspace kind.
+  - **The opt-in** is `TenantSecuritySettings.hostedManagedAgentsOptIn`, written
+    only by `usecases/hosted-managed-agents-opt-in.ts` behind a literal
+    `requirePermission('admin.tenant_lifecycle')`, by a person (an API key, an
+    agent and a job are refused), audited. Opting in is refused unless hosting
+    is offered, entitled and not `LOCAL_ONLY`; opting out is always allowed and
+    runs Step 5c's clean-up for the tenant. The Admin → AI features section
+    says what hosting stores, where and for how long, and renders nothing
+    until hosting is offered.
+  - **The shared workspace.** Every lookup is by recorded id; agent names and
+    session metadata carry opaque ids only (asserted on the faux transport).
+    The clean-up and the reconciliation reach a hosted tenant's records only.
+    A purge of Inflect's workspace that cannot finish stays `OPEN` and is
+    retried: decision 7 keeps no customer key past a purge, and Inflect's key
+    is not destroyed with the tenant's rows. A DSAR erasure skips it, since no
+    hosted session is ever kept.
+  - **Capacity and cost.** One hosted run per tenant and two per deployment
+    execute at once (`hosted-capacity.ts`, source constants), counted under
+    one advisory lock by the SQL function `hosted_managed_agents_claim_slot`
+    over runs holding a live run lease; a run over a cap is refused by name
+    before any client exists. A hosted run is marked
+    `WorkflowRun.hostedManagedAgents`, so its tokens (`costTokens`, and each
+    span-derived `MODEL_CALL`) are recorded per tenant. Hosted runs need the
+    plan entitlement `hostedManagedAgents`, which no plan includes until the
+    owner opens one.
 
 ## What Managed Agents is, as documented on 2026-10-24
 
@@ -1087,6 +1133,23 @@ Deliver per the Definition of done. This step is Significant.
 **Exit.** The 30-day window is running, against a description that matches the code.
 
 #### Step 6b — The hosted path, behind a constant that is false
+
+Built for #4172; the Current state section above describes the result, and
+`docs/implementation-notes/2026-11-24-step-6b-hosted-managed-agents.md` the
+decisions. Three things the prompt below left open were decided while
+building it:
+
+- **A run over a capacity cap is refused, not held.** It settles before any
+  client exists, with a named reason; holding it would keep a worker and its
+  run lease busy, and re-enqueueing a segment is dropped by BullMQ's
+  per-segment job id (#5900).
+- **The purge of Inflect's own workspace is retried.** Decision 7's one
+  attempt follows from destroying the customer's key with the tenant's rows;
+  Inflect's key is not destroyed, so an unfinished purge record stays `OPEN`
+  and data-lifecycle retries it, or it ends `ABANDONED` after 30 days.
+- **No plan is entitled to hosting.** Which plans include it is the owner's
+  decision; until it is made, every hosted run is refused
+  `managed_agents_hosted_not_entitled`.
 
 **Goal.** Build everything hosting needs, so that 6c is a one-line diff. Tenant data
 must not reach Inflect's organisation in this step.

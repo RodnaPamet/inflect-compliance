@@ -104,6 +104,51 @@ const PLAN_LIMITS: Record<Plan, Record<GatedResource, number | null>> = {
     ENTERPRISE: { control: null },
 };
 
+// ─── Feature entitlements ────────────────────────────────────────
+
+/**
+ * Features a plan either includes or does not. Unlike a `GatedResource`
+ * there is nothing to count: the answer is yes or no for the tenant's
+ * effective plan.
+ *
+ *   hostedManagedAgents — runs of the Managed Agents engine in INFLECT's own
+ *     Anthropic organisation (Step 6b of
+ *     `docs/claude-managed-agents-design.md`, shape MA-C1), for a tenant with
+ *     no Anthropic workspace of its own. Inflect pays for every session-hour
+ *     and token of those runs, so they sit behind an entitlement.
+ */
+export type GatedFeature = 'hostedManagedAgents';
+
+/**
+ * Which plans include which feature. **No plan includes
+ * `hostedManagedAgents`**, ENTERPRISE (and so every self-hosted tenant)
+ * included: which plans are entitled is a product and pricing decision that
+ * belongs to the owner, and until it is made the safe default is that hosted
+ * runs are refused (`HOSTED_NOT_ENTITLED`). Opening a plan is a reviewed
+ * one-line diff here.
+ */
+const PLAN_FEATURES: Record<Plan, Record<GatedFeature, boolean>> = {
+    FREE: { hostedManagedAgents: false },
+    TRIAL: { hostedManagedAgents: false },
+    PRO: { hostedManagedAgents: false },
+    ENTERPRISE: { hostedManagedAgents: false },
+};
+
+/** Does `plan` include `feature`? Pure. */
+export function planIncludes(plan: Plan, feature: GatedFeature): boolean {
+    return PLAN_FEATURES[plan][feature] === true;
+}
+
+/**
+ * Is the tenant's effective plan entitled to `feature`? Read, never thrown:
+ * the caller refuses with its own named reason, because a refused feature is
+ * usually one step of a decision that has several (hosting's resolution names
+ * which condition failed).
+ */
+export async function isEntitledTo(ctx: RequestContext, feature: GatedFeature): Promise<boolean> {
+    return planIncludes(await getEffectivePlan(ctx), feature);
+}
+
 // ─── Mode decision ───────────────────────────────────────────────
 
 // ─── Plan resolution ─────────────────────────────────────────────

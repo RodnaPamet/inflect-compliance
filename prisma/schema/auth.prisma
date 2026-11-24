@@ -1971,6 +1971,17 @@ model TenantSecuritySettings {
   auditorReadsAiDecisionLog    Boolean @default(false)
   auditorReadsAgentReceipts    Boolean @default(false)
   auditorReadsAgentQuarantine  Boolean @default(false)
+  /// HOSTED MANAGED AGENTS: has an OWNER opted this workspace in to running
+  /// Managed Agents in INFLECT's own Anthropic organisation (Step 6b of
+  /// `docs/claude-managed-agents-design.md`, shape MA-C1)? Default FALSE.
+  /// Written only by `usecases/hosted-managed-agents-opt-in.ts`, behind a
+  /// literal `requirePermission('admin.tenant_lifecycle')`, by a person, and
+  /// audited. It is one of five terms: the source constant
+  /// `HOSTED_MANAGED_AGENTS_ACTIVE`, the deployment's workspace pair in
+  /// `src/env.ts`, this opt-in, a residency that is not LOCAL_ONLY and the
+  /// plan entitlement must all hold, and a workspace with its own connected
+  /// Anthropic workspace always runs there instead.
+  hostedManagedAgentsOptIn     Boolean @default(false)
 
   createdAt                    DateTime          @default(now())
   updatedAt                    DateTime          @updatedAt

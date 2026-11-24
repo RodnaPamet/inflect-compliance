@@ -1042,6 +1042,19 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'they bind must not be able to switch them off.',
     },
 
+    // ── Hosted Managed Agents opt-in (Step 6b) ─────────────────────
+    {
+        path: new RegExp(`^${T}\\/admin\\/hosted-managed-agents(\\/.*)?$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Whether this workspace\'s agent runs may be hosted in Inflect\'s ' +
+            'own Anthropic organisation, which stores the run\'s instructions ' +
+            'and read-tool output in the US without Zero Data Retention until ' +
+            'the run ends (Step 6b of docs/claude-managed-agents-design.md). ' +
+            'OWNER-only, and the usecase also refuses an API key, an agent and ' +
+            'a job: it moves the workspace\'s data to a sub-processor.',
+    },
+
     // ── JML identity-write authority (per direction) ────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/identity-write-policy(\\/.*)?$`),

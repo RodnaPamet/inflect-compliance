@@ -661,6 +661,18 @@ export const env = createEnv({
         // carries. Read through `managedAgentsEnabled`
         // (src/lib/agentic/managed-agents-switch.ts).
         AGENT_MANAGED_AGENTS: z.string().optional(),
+        // INFLECT'S OWN ANTHROPIC WORKSPACE FOR HOSTED MANAGED AGENTS (Step 6b
+        // of docs/claude-managed-agents-design.md, shape MA-C1). One pair per
+        // deployment: production and staging never share a workspace or a key.
+        // Unset, the deployment never offers hosting, which is the self-hosted
+        // case. Set, it still offers nothing while the source constant
+        // HOSTED_MANAGED_AGENTS_ACTIVE is false
+        // (src/lib/agentic/managed-agents/hosted-activation.ts): that constant
+        // is checked BEFORE either variable is read, by the one reader,
+        // `inflectHostedWorkspace` (src/lib/agentic/managed-agents/workspace.ts).
+        // The key is a secret; the workspace id (`wrkspc_…`) is not.
+        AGENT_MANAGED_AGENTS_HOSTED_WORKSPACE_ID: z.string().trim().optional(),
+        AGENT_MANAGED_AGENTS_HOSTED_API_KEY: z.string().trim().optional(),
         // AUTOMATION RULES FROM WEB EVENTS (owner decision 2026-11-13) — opt-in.
         // Until #5541 no automation event emitted in the web process ever
         // reached the queue, so no rule fired from a task, risk or control
@@ -1019,6 +1031,8 @@ export const env = createEnv({
         AGENT_PROFILES: process.env.AGENT_PROFILES,
         AGENT_PROFILES_TENANTS: process.env.AGENT_PROFILES_TENANTS,
         AGENT_MANAGED_AGENTS: process.env.AGENT_MANAGED_AGENTS,
+        AGENT_MANAGED_AGENTS_HOSTED_WORKSPACE_ID: process.env.AGENT_MANAGED_AGENTS_HOSTED_WORKSPACE_ID,
+        AGENT_MANAGED_AGENTS_HOSTED_API_KEY: process.env.AGENT_MANAGED_AGENTS_HOSTED_API_KEY,
         AUTOMATION_WEB_EVENTS_ENABLED: process.env.AUTOMATION_WEB_EVENTS_ENABLED,
         EVALS_CARD_HIDDEN_ORG_SLUGS: process.env.EVALS_CARD_HIDDEN_ORG_SLUGS,
         AGENT_FLUE_MODEL: process.env.AGENT_FLUE_MODEL,

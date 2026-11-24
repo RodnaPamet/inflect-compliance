@@ -35,7 +35,7 @@ import { PROFILE_MODEL_TIERS, type ProfileModelTier } from '@/lib/agentic/agent-
 import { RESIDENCY_SELECT, residencyTermsFrom } from '@/lib/agentic/flue/model-selection';
 import { agentToolsFor, managedAgentsModelFor, type ProvisionShapeRefusal } from '@/lib/agentic/managed-agents/definition';
 import { provisionManagedAgent } from '@/lib/agentic/managed-agents/provision';
-import { readWorkspaceConnection, type WorkspaceConnectionRefusal } from '@/lib/agentic/managed-agents/store';
+import { resolveManagedAgentsWorkspace, type WorkspaceResolutionRefusal } from '@/lib/agentic/managed-agents/workspace';
 import { managedAgentsClientFor, type ManagedAgentsClientRefusal } from '@/lib/agentic/tool-runner/client';
 import { runInTenantContext } from '@/lib/db-context';
 import { READ_TOOLS } from '@/lib/mcp/tools/registry';
@@ -50,7 +50,7 @@ export type ProvisionApprovedOutcome =
               | 'ENGINE_NOT_IN_FORCE'
               | 'LOCAL_ONLY'
               | 'VERSION_NOT_APPROVED'
-              | WorkspaceConnectionRefusal
+              | WorkspaceResolutionRefusal
               | ProvisionShapeRefusal
               | ManagedAgentsClientRefusal
               | 'PROVIDER_ERROR';
@@ -94,15 +94,18 @@ export async function provisionApprovedProfileVersion(
         });
         if (!shaped.ok) return { provisioned: false, reason: shaped.reason };
 
-        const read = await readWorkspaceConnection(ctx);
+        // The run's own resolution (Step 6b): the tenant's workspace, or
+        // Inflect's when every hosted term holds. A refused hosted term
+        // provisions nothing, so nothing reaches Inflect's organisation.
+        const read = await resolveManagedAgentsWorkspace(ctx);
         if (!read.ok) return { provisioned: false, reason: read.reason };
-        const choice = managedAgentsClientFor({ apiKey: read.connection.apiKey, workspaceId: read.connection.workspaceId });
+        const choice = managedAgentsClientFor({ apiKey: read.workspace.apiKey, workspaceId: read.workspace.workspaceId });
         if (!choice.ok) return { provisioned: false, reason: choice.reason };
 
         const { record, created, replaced } = await provisionManagedAgent(ctx, choice.client, {
             profileId: version.profileId,
             profileVersionId: version.id,
-            connectionId: read.connection.connectionId,
+            connectionId: read.workspace.connectionId,
             model: managedAgentsModelFor(tier),
             tools: shaped.tools,
         });
@@ -112,13 +115,16 @@ export async function provisionApprovedProfileVersion(
                     action: 'AGENT_PROFILE_PROVISIONED',
                     entityType: 'AgentProfileVersion',
                     entityId: version.id,
-                    details: 'Provisioned the approved profile version as a Managed Agent in the connected Anthropic workspace',
+                    details: read.workspace.kind === 'HOSTED'
+                        ? 'Provisioned the approved profile version as a Managed Agent in Inflect\'s hosted Anthropic workspace'
+                        : 'Provisioned the approved profile version as a Managed Agent in the connected Anthropic workspace',
                     detailsJson: {
                         category: 'access',
                         entityName: 'AgentProfileVersion',
                         operation: 'created',
                         after: {
                             connectionId: record.connectionId,
+                            workspaceKind: read.workspace.kind,
                             anthropicAgentId: record.anthropicAgentId,
                             anthropicAgentVersion: record.anthropicAgentVersion,
                             environmentId: record.environmentId,
