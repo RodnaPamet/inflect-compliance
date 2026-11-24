@@ -245,6 +245,11 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // quarantine. OWNER-only. Linked from Admin → AI features, the section that
     // renders them.
     't/[tenantSlug]/admin/agent-oversight/route.ts',
+    // Step 6b — the owner's opt-in to agents hosted in Inflect's own Anthropic
+    // organisation (shape MA-C1). OWNER-only, a person only, audited; opting
+    // out runs the clean-up. Read by the "Agents hosted by Inflect" section of
+    // Admin → AI features, which renders nothing until hosting is offered.
+    't/[tenantSlug]/admin/hosted-managed-agents/route.ts',
     // The owner's checklist in that section: which of the six terms are
     // satisfied and which one blocks. Read-only, on the PUT's tenant-lifecycle key.
     't/[tenantSlug]/admin/flue-wiring/route.ts',

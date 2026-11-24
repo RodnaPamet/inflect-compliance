@@ -4044,6 +4044,78 @@ undone:
   recorded DELETED in the last seven days, deletes one that still exists, and
   meters it (`agentic.managed_agents.lost_delete`).
 
+**Hosting in Inflect's own Anthropic organisation is built and switched off by
+ONE source constant** (Step 6b, #4172, shape MA-C1;
+`src/lib/agentic/managed-agents/hosted-activation.ts`).
+`HOSTED_MANAGED_AGENTS_ACTIVE` is a plain `false` in a module that imports
+nothing; setting it true is Step 6c, the sub-processor activation (Anthropic
+(g)), after the notice window closes on 2026-12-24. Never an env variable, a
+template or a tenant setting, and nothing in `src/` writes it
+(`tests/guards/hosted-managed-agents-activation.test.ts`). Tests reach `true`
+only through a `jest.mock` getter on that leaf module.
+
+**Inflect's workspace key has one reader, and it asks the constant first.**
+`inflectHostedWorkspace` (`managed-agents/workspace.ts`) returns
+`HOSTED_NOT_ACTIVE` before it reads `AGENT_MANAGED_AGENTS_HOSTED_WORKSPACE_ID`
+or `_API_KEY`; no other file in `src/` but `env.ts` names either variable (the
+guard reads the source for both). Every client is still built by
+`managedAgentsClientFor` with its allowlist: never add a second constructor
+for the hosted key.
+
+**One resolution decides the workspace** (`resolveManagedAgentsWorkspace`; the
+settings read `readManagedAgentsWorkspaceState`, key-free, applies the same
+rules). The tenant's own connection wins, and an ambiguous or unreadable one
+REFUSES, never falls back to Inflect's workspace. Otherwise the hosted terms in
+a fixed order, the first that fails named: `HOSTED_NOT_ACTIVE`,
+`HOSTED_NOT_CONFIGURED`, `HOSTED_NOT_OPTED_IN`, `HOSTED_LOCAL_ONLY`,
+`HOSTED_NOT_ENTITLED`. The driver, provisioning and the engine setting all ask
+it; do not read `readWorkspaceConnection` directly for a run again. A hosted
+workspace is recorded under the fixed connection id `inflect-hosted`
+(`INFLECT_HOSTED_CONNECTION_ID`; no `IntegrationConnection` row, and a
+migration CHECK names it), never keeps sessions (decision 4 is MA-C2's only),
+and the ledger's `SESSION_CREATED` and every `MODEL_CALL` step record
+`workspaceKind` / `workspace`.
+
+**The hosted opt-in has one writer, an owner in person**
+(`usecases/hosted-managed-agents-opt-in.ts`,
+`TenantSecuritySettings.hostedManagedAgentsOptIn`). Its route carries a literal
+`requirePermission('admin.tenant_lifecycle')`; the usecase asks the key again
+and refuses an API key, an agent and any non-USER actor type (a job), audits
+every change (`HOSTED_MANAGED_AGENTS_OPT_IN_CHANGED`), refuses an opt-in that
+cannot be honoured (`HOSTED_NOT_OFFERED`, `_NOT_ENTITLED`, `_LOCAL_ONLY`), and
+always allows an opt-out, which runs Step 5c's clean-up as a
+`CONNECTION_REMOVED` record under `inflect-hosted` (so a later re-opt-in treats
+the old provisions as archived). The Admin → AI features section renders
+nothing until hosting is offered.
+
+**Hosted capacity is two source constants, and a run over one is REFUSED,
+not held** (`managed-agents/hosted-capacity.ts`: 1 per tenant, 2 per
+deployment, below the Environments API's five concurrent requests shared by
+production and staging). `claimHostedSlot` calls the SECURITY DEFINER function
+`hosted_managed_agents_claim_slot`, which counts hosted runs RUNNING with a
+live run lease (#5900) across every tenant under one advisory lock and sets
+`WorkflowRun.hostedManagedAgents`; a run without a lease is
+`HOSTED_RUN_NOT_LEASED`. Never re-enqueue a refused segment to make it wait:
+#5900 names each segment's job, and BullMQ drops the duplicate.
+
+**A purge of Inflect's own workspace is RETRIED; a customer's is not.**
+Decision 7 forbids keeping the CUSTOMER's key; Inflect's key is deployment
+configuration that no purge destroys, so `cleanUpManagedAgentsBeforePurge`
+writes an unfinished `inflect-hosted` record `OPEN` (never
+`PURGED_KEY_DESTROYED_UNFINISHED`; two CHECKs hold both halves), and the retry
+works from the record's own `pendingSessionIds` / `pendingAgentIds` because the
+tenant's provisions are gone. The reconciliation enumerates hosted tenants from
+`AgentProfileProvision`, and a DSAR erasure skips the hosted workspace (no
+kept sessions). While the constant is false a hosted record cannot be opened:
+it stays `OPEN` (`HOSTED_NOT_ACTIVE`) and ends `ABANDONED` after 30 days.
+
+**Hosted runs sit behind the plan entitlement `hostedManagedAgents`**
+(`GatedFeature` in `src/lib/billing/entitlements.ts`), and NO plan includes it,
+ENTERPRISE and self-hosted included: which plans do is an owner decision, a
+one-line diff in `PLAN_FEATURES`. A hosted run's usage is recorded per tenant
+through `WorkflowRun.hostedManagedAgents` with the run's `costTokens` and its
+span-derived `MODEL_CALL` steps.
+
 ## Testing Conventions
 
 - **Unit tests**: Mock dependencies with `jest.mock()` declared **before** imports. Use the `makeRequestContext(role, overrides)` helper from `tests/helpers/make-context.ts` to construct test contexts.

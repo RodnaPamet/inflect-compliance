@@ -637,6 +637,18 @@ model WorkflowRun {
   /// claim the run; it does not fence the holder, which is fenced only once
   /// somebody else holds the token.
   leaseExpiresAt    DateTime?
+  /// HOSTED: this Managed Agents run took a slot in INFLECT's own Anthropic
+  /// workspace (Step 6b of `docs/claude-managed-agents-design.md`, shape
+  /// MA-C1). Set to true ONLY by the SQL function
+  /// `hosted_managed_agents_claim_slot`, called by
+  /// `src/lib/agentic/managed-agents/hosted-capacity.ts`, which counts every
+  /// hosted run still executing (RUNNING, with a live lease) under one
+  /// advisory lock and refuses a run over the per-tenant or the
+  /// deployment-wide concurrency cap. Never set back: a run that stops
+  /// executing (settled, or its lease released or lapsed) stops counting by
+  /// itself. With the costs on the run row, it is also how a tenant's hosted
+  /// usage is read: Inflect pays for those runs.
+  hostedManagedAgents Boolean           @default(false)
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -657,6 +669,9 @@ model WorkflowRun {
   @@index([tenantId, agentId])
   /// The canvas query: every run one rule firing started, for one tenant.
   @@index([tenantId, parentExecutionId])
+  /// The hosted capacity count (Step 6b): the hosted runs still RUNNING,
+  /// across every tenant, read under the claim function's advisory lock.
+  @@index([hostedManagedAgents, status])
 
   /// #2356 batch 3 — the composite an FK from a tenant-scoped child
   /// references. `id` alone is already unique; this exists so Postgres

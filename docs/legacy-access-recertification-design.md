@@ -350,6 +350,16 @@ assertion.
   > this build (`docs/claude-managed-agents-design.md`, Step 5b), so they honour
   > nothing yet and are not counted among the five.
   >
+  > Two more branch on residency for hosted Managed Agents (Step 6b of
+  > `docs/claude-managed-agents-design.md`), behind a source constant that is
+  > false: the workspace resolution, `src/lib/agentic/managed-agents/workspace.ts`,
+  > refuses Inflect's own workspace to a `LOCAL_ONLY` tenant
+  > (`HOSTED_LOCAL_ONLY`), and the opt-in writer,
+  > `src/app-layer/usecases/hosted-managed-agents-opt-in.ts`, refuses a
+  > `LOCAL_ONLY` tenant's opt-in. While `HOSTED_MANAGED_AGENTS_ACTIVE` is false
+  > neither is reached, so they honour nothing yet and are not counted among the
+  > five.
+  >
   > The last two features arrived with steps 6c and 3b and the
   > bullet was not updated, which is criterion 11 unmet for those steps — the
   > same silent-staleness this section suffered in #3480, in the opposite

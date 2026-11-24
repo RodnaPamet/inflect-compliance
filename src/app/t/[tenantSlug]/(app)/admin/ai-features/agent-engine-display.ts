@@ -58,8 +58,14 @@ export interface AgentDriverSettingPayload {
      * The Managed Agents engine's switch and build flag, and whether exactly
      * one Anthropic workspace is connected and enabled (Step 5d). Absent from
      * a server that predates it, which reads as the engine being off.
+     * `HOSTED` (Step 6b): none is connected, and the run would use Inflect's
+     * own workspace, every hosted term holding.
      */
-    managedAgents?: { envEnabled: boolean; implemented: boolean; workspace: 'CONNECTED' | 'NONE' | 'AMBIGUOUS' };
+    managedAgents?: {
+        envEnabled: boolean;
+        implemented: boolean;
+        workspace: 'CONNECTED' | 'NONE' | 'AMBIGUOUS' | 'HOSTED';
+    };
 }
 
 /** A reasoning engine a workspace can choose. */
@@ -79,9 +85,14 @@ function managedAgentsEnvEnabled(setting: AgentDriverSettingPayload): boolean {
     return setting.managedAgents?.envEnabled === true;
 }
 
-/** Is exactly one Anthropic workspace connected and enabled (Step 5d)? */
+/**
+ * Has the workspace an Anthropic workspace a run can use: exactly one of its
+ * own connected and enabled (Step 5d), or Inflect's own (`HOSTED`, Step 6b)?
+ * The writer accepts the engine in both states.
+ */
 export function managedAgentsWorkspaceConnected(setting: AgentDriverSettingPayload): boolean {
-    return setting.managedAgents?.workspace === 'CONNECTED';
+    const workspace = setting.managedAgents?.workspace;
+    return workspace === 'CONNECTED' || workspace === 'HOSTED';
 }
 
 /** Is this engine's operator switch on? */

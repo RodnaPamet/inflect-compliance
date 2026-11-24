@@ -9491,6 +9491,28 @@
         }
       }
     },
+    "hostedAgents": {
+      "heading": "Agents hosted by Inflect",
+      "intro": "A workspace that has no Anthropic workspace of its own can have Inflect run its agents in Inflect's own Anthropic organisation. Only an owner can turn this on, and only after reading what it means.",
+      "termsHeading": "What opting in means",
+      "termConversation": "Each agent run's conversation, which holds your agent's instructions and what its tools read, runs in Inflect's Anthropic organisation and is stored there, in the US, without Zero Data Retention, until the run ends. Inflect deletes it when the run ends.",
+      "termAgents": "Inflect also creates agent objects there. They hold only Inflect's own instructions and tool descriptions, never yours. They are archived when they are no longer needed and are never deleted.",
+      "termOwnWorkspace": "If this workspace connects its own Anthropic workspace, its agents always run there instead.",
+      "termOptOut": "Opting out deletes the conversations and archives the agents Inflect created there for this workspace.",
+      "optedIn": "Opted in",
+      "notOptedIn": "Not opted in",
+      "optIn": "Opt in",
+      "optOut": "Opt out",
+      "notOffered": "This deployment does not offer hosted agents at the moment, so they do not run, whatever is chosen here.",
+      "notEntitled": "This workspace's plan does not include hosted agents.",
+      "localOnly": "Hosted agents are not available while this workspace keeps AI processing local, because they are stored in the US.",
+      "ownWorkspace": "This workspace has its own Anthropic workspace connected, so its agents run there.",
+      "inEffect": "Agents of this workspace that use the Managed Agents engine run in Inflect's Anthropic organisation.",
+      "saveFailedHeading": "The change was not saved",
+      "saveFailedBody": "The setting could not be saved. Try again.",
+      "loadFailed": "The hosted agents setting could not be loaded.",
+      "forbidden": "Only an owner can decide whether agents may be hosted by Inflect."
+    },
     "vendorAnswerType": {
       "YES_NO": "Yes or no",
       "SINGLE_SELECT": "Single choice",
@@ -18704,6 +18726,7 @@
       "FRAMEWORK_PACK_INSTALLED": "Framework pack installed",
       "FRAMEWORK_PACK_REMOVED": "Framework pack removed",
       "FRAMEWORK_REORDERED": "Framework reordered",
+      "HOSTED_MANAGED_AGENTS_OPT_IN_CHANGED": "Hosted agents opt-in changed",
       "HOST_CONSUMER_CREATED": "Host consumer created",
       "HOST_CONSUMER_KILL_ENGAGED": "Host consumer kill engaged",
       "HOST_CONSUMER_KILL_LIFTED": "Host consumer kill lifted",

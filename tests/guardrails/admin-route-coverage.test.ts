@@ -53,6 +53,10 @@ const ADMIN_ONLY_ROUTES = [
     // The owner's agent oversight switches (round 15). `admin.tenant_lifecycle`,
     // because they govern what agents and the roles that operate them may do.
     'admin/agent-oversight/route.ts',
+    // Hosted Managed Agents opt-in (Step 6b). `admin.tenant_lifecycle`: it
+    // decides whether the workspace's data may be stored by Inflect's own
+    // sub-processor, and the usecase refuses a key, an agent and a job.
+    'admin/hosted-managed-agents/route.ts',
     'admin/calendar/consent/route.ts',
     // Legacy access recertification (Step 2a). Both admin.manage: PUT decides
     // which legacy column means email and which means employeeNumber, and GET
