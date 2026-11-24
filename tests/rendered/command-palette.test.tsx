@@ -236,6 +236,21 @@ describe('CommandPalette — useCommandPalette()', () => {
 // ─── Focus + content ──────────────────────────────────────────────────
 
 describe('CommandPalette — focus & content', () => {
+    it('makes the search field the search bar\'s full height, so the whole bar takes a tap', () => {
+        // The bar's vertical padding sits on the INPUT: a 23px field in a
+        // 47px bar was the smallest tap target on the dashboard (#5884).
+        __setIsMacForTests(false);
+        render(<Shell />);
+        act(() => {
+            fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+        });
+        const input = document.querySelector('[data-testid="command-palette-input"]') as HTMLElement;
+        const bar = input.parentElement as HTMLElement;
+        expect(input).toHaveClass('py-3', 'flex-1');
+        expect(bar).toHaveClass('flex', 'items-center', 'px-4');
+        expect(bar).not.toHaveClass('py-3');
+    });
+
     it('focuses the search input when it opens', () => {
         __setIsMacForTests(false);
         render(<Shell />);

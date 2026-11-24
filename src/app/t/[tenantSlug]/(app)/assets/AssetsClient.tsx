@@ -823,7 +823,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                 if (!crit) return <span className="text-content-muted">—</span>;
                 return (
                     <StatusBadge variant={criticalityBadgeVariant(row.original.criticality)} size="sm">
-                        {crit.label}
+                        {tx(`filterEnums.criticality.${row.original.criticality}` as Parameters<typeof tx>[0])}
                     </StatusBadge>
                 );
             },

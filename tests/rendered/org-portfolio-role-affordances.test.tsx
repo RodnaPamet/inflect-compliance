@@ -20,8 +20,12 @@ jest.mock('next/navigation', () => ({
     useParams: () => ({ orgSlug: 'acme-org' }),
 }));
 
-jest.mock('@/components/ui/dashboard-widgets', () => ({
+// The dashboard imports the grid and the (lazily loaded) picker from their
+// own modules, not the barrel.
+jest.mock('@/components/ui/dashboard-widgets/DashboardGrid', () => ({
     DashboardGrid: () => <div data-testid="grid" />,
+}));
+jest.mock('@/components/ui/dashboard-widgets/WidgetPicker', () => ({
     WidgetPicker: () => null,
 }));
 

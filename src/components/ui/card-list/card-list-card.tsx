@@ -50,6 +50,7 @@ import * as React from 'react';
 
 import { useCardListContext } from './card-list';
 import { Heading } from '@/components/ui/typography';
+import { Checkbox } from '@/components/ui/checkbox';
 
 // ─── Card context ──────────────────────────────────────────────────
 
@@ -156,36 +157,14 @@ export function CardListCard({
             )}
         >
             {selectable && (
-                <label
+                <Checkbox
                     data-card-checkbox
-                    className={cn(
-                        'absolute top-3 right-3 z-10 flex h-5 w-5 items-center justify-center',
-                        'cursor-pointer rounded border border-border-default bg-bg-default',
-                        'transition-colors hover:border-[var(--brand-default)]',
-                        selected && 'border-[var(--brand-default)] bg-[var(--brand-default)]',
-                    )}
+                    className="absolute top-3 right-3 z-10"
+                    aria-label={selectionLabel}
+                    checked={selected}
+                    onCheckedChange={(v) => onSelectChange?.(v === true)}
                     onClick={(e) => e.stopPropagation()}
-                >
-                    <input
-                        type="checkbox"
-                        className="sr-only"
-                        aria-label={selectionLabel}
-                        checked={selected}
-                        onChange={(e) => onSelectChange?.(e.target.checked)}
-                    />
-                    {selected && (
-                        <svg
-                            aria-hidden="true"
-                            viewBox="0 0 16 16"
-                            className="h-3 w-3 text-content-inverted"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="3"
-                        >
-                            <path d="M3 8l3.5 3.5L13 4.5" />
-                        </svg>
-                    )}
-                </label>
+                />
             )}
 
             {/*

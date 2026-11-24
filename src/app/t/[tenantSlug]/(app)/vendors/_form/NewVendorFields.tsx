@@ -18,6 +18,10 @@ import {
 import { VENDOR_FIELD_MAX } from '@/lib/schemas/vendor-form';
 import type { NewVendorFormFields, NewVendorFormReturn } from './useNewVendorForm';
 
+/**
+ * The paired rows stack below `sm`: at 360px three columns left each select
+ * about 90px, and the data-access one read "— Ни…".
+ */
 export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
     const t = useTranslations('vendors');
     const CRIT_OPTIONS: ComboboxOption[] = [
@@ -44,7 +48,7 @@ export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
                 />
             </FormField>
 
-            <div className="grid grid-cols-2 gap-default">
+            <div className="grid grid-cols-1 gap-default sm:grid-cols-2">
                 <FormField label={t('form.legalName')}>
                     <Input
                         id="vendor-legal-name"
@@ -64,7 +68,7 @@ export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
                 </FormField>
             </div>
 
-            <div className="grid grid-cols-2 gap-default">
+            <div className="grid grid-cols-1 gap-default sm:grid-cols-2">
                 {/* A value that is not a full URL (`acme.com`) fails the
                     schema, which disables Create Vendor. The field used to
                     render no error, so the button greyed out with nothing to
@@ -103,7 +107,7 @@ export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
                 />
             </FormField>
 
-            <div className="grid grid-cols-3 gap-default">
+            <div className="grid grid-cols-1 gap-default sm:grid-cols-3">
                 {/* Not a choice (#4462). A new vendor starts Onboarding: Active
                     needs a completed assessment review, and a vendor that does
                     not exist yet has none, so the server refuses it. The form
@@ -164,7 +168,7 @@ export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
                 </FormField>
             </div>
 
-            <div className="grid grid-cols-2 gap-default">
+            <div className="grid grid-cols-1 gap-default sm:grid-cols-2">
                 <FormField label={t('form.nextReviewDate')}>
                     <DatePicker
                         id="vendor-next-review"

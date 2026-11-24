@@ -119,6 +119,16 @@ describe('enrichPolicyHtml', () => {
         expect(out).not.toContain('C <tag></a>');
     });
 
+    it('names the Contents block in the words the page passes, not in English', () => {
+        // The policy page passes its catalogue's strings, so a Bulgarian page's
+        // TOC landmark is not announced as "Table of contents" (#5884).
+        const out = enrichPolicyHtml(body, { title: 'Съдържание', ariaLabel: 'Съдържание на документа' });
+        const nav = new DOMParser().parseFromString(out, 'text/html').querySelector('nav.policy-toc');
+        expect(nav?.getAttribute('aria-label')).toBe('Съдържание на документа');
+        expect(nav?.querySelector('.policy-toc-title')?.textContent).toBe('Съдържание');
+        expect(out).not.toMatch(/Table of contents|>Contents</);
+    });
+
     it('is null-safe', () => {
         expect(enrichPolicyHtml(null)).toBe('');
         expect(enrichPolicyHtml(undefined)).toBe('');

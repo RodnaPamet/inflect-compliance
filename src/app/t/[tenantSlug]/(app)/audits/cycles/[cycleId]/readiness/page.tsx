@@ -323,7 +323,11 @@ export default function CycleReadinessPage() {
             {/* Exports */}
             <div className={cardVariants()} id="exports-section">
                 <Heading level={3} className="mb-3 inline-flex items-center gap-tight"><AppIcon name="export" size={16} /> {tx('readiness.exports')}</Heading>
-                <div className="flex flex-wrap gap-tight">
+                {/* Below `sm` the three downloads are a full-width list: their
+                    Bulgarian names do not fit two to a line at 360px, and a
+                    wrapping row left each one on a line of its own at a
+                    different width. */}
+                <div className="grid grid-cols-1 gap-tight sm:flex sm:flex-wrap" data-testid="readiness-exports">
                     <a href={apiUrl(`/audits/cycles/${cycleId}/readiness?action=export-json`)}
                         target="_blank" rel="noopener" className={buttonVariants({ variant: 'secondary', size: 'sm' })}>{tx('readiness.exportJson')}</a>
                     <a href={apiUrl(`/audits/cycles/${cycleId}/readiness?action=export-unmapped-csv`)}

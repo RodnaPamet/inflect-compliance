@@ -236,9 +236,12 @@ describe('5 — deep-links land on the relevant section', () => {
 
     it('the deep-link anchor targets exist on their detail pages', () => {
         // A deep-link to an anchor the page never renders scrolls nowhere.
+        // The vendor Overview declares its facts as a list (`id:` on the
+        // contract-renewal entry); vendor-overview-unset-fields-on-a-phone
+        // renders it and checks the element.
         expect(
             read('src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx'),
-        ).toMatch(/id="vendor-contract-renewal"/);
+        ).toMatch(/id(="|: ')vendor-contract-renewal['"]/);
         expect(
             read('src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx'),
         ).toMatch(/id="control-exceptions"/);

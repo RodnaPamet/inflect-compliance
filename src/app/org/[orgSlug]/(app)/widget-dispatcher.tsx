@@ -17,11 +17,10 @@
 import { ShieldCheck, AlertTriangle, Paperclip, Building2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
-import {
-    ChartRenderer,
-    DashboardWidget,
-    type ChartRendererProps,
-} from '@/components/ui/dashboard-widgets';
+// From their own modules, not the barrel, which also re-exports the widget
+// picker (PortfolioDashboard loads that on demand).
+import { ChartRenderer, type ChartRendererProps } from '@/components/ui/dashboard-widgets/ChartRenderer';
+import { DashboardWidget } from '@/components/ui/dashboard-widgets/DashboardWidget';
 import type { OrgDashboardWidgetDto } from '@/app-layer/schemas/org-dashboard-widget.schemas';
 import { localizedWidgetTitle } from '@/lib/org-dashboard-widget-titles';
 import type { OrgThreatLevelDto } from '@/app-layer/usecases/org-threat-level';

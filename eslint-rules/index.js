@@ -71,5 +71,6 @@ module.exports = {
         'shaded-list-rows': require('./rules/shaded-list-rows'),
         'no-native-choice-input': require('./rules/no-native-choice-input'),
         'no-negative-margin-icon': require('./rules/no-negative-margin-icon'),
+        'no-literal-aria-label': require('./rules/no-literal-aria-label'),
     },
 };
