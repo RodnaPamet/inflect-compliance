@@ -882,7 +882,7 @@ export default function AdminIntegrationsPage() {
                             {canConfigure && (
                                 <Button
                                     variant="primary"
-                                    icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                                    icon={<Plus />}
                                     className="order-first sm:order-none"
                                     onClick={() => { resetForm(); setShowForm(true); }}
                                     id="add-integration-btn"

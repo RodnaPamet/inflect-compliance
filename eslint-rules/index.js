@@ -70,5 +70,6 @@ module.exports = {
         'web-bot-auth-single-seam': require('./rules/web-bot-auth-single-seam'),
         'shaded-list-rows': require('./rules/shaded-list-rows'),
         'no-native-choice-input': require('./rules/no-native-choice-input'),
+        'no-negative-margin-icon': require('./rules/no-negative-margin-icon'),
     },
 };

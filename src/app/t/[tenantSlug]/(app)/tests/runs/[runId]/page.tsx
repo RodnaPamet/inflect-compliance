@@ -692,7 +692,7 @@ export default function TestRunPage() {
                         // secondary: the open form holds this region's primary.
                         <Button
                             variant="secondary"
-                            icon={showEvForm ? undefined : <Plus className="-ml-0.5 -mr-2.5" />}
+                            icon={showEvForm ? undefined : <Plus />}
                             onClick={() => { setShowEvForm(!showEvForm); setEvError(''); }}
                             id="link-evidence-btn"
                         >

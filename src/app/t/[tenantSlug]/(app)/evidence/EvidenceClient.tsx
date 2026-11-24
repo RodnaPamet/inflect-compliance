@@ -1952,7 +1952,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                             >
                                 <Button
                                     variant="primary"
-                                    icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                                    icon={<Plus />}
                                     id="add-evidence-btn"
                                 >
                                     {t.addEvidence}

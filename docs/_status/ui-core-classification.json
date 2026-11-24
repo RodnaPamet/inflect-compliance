@@ -79,6 +79,11 @@
   "derivation": "audited",
   "reason": "The header primitive is structurally generic — breadcrumbs/back/eyebrow/title/description/meta/actions are all caller-supplied, the back link's only literal is the `←` glyph (line 226), and there is no storage key or brand token. Two couplings. The import one is the substantive one: it makes a shared primitive's visible behaviour (whether the H1 is `sr-only`) depend on this product's route registry: `classifyRoute` comes from `@/lib/nav/page-segregation` (:63), a domain module whose `MAIN_PAGES`/`SUBPAGES` lists are this product's own routes, and it decides at :198 whether the H1 renders `sr-only` (:264) — a route it does not list classifies `unknown`, so a vendoring product gets a visible H1 on every page. The second coupling is prose: the `titleAdornment` docstring's worked example at :131 is a security-incident sentence (`Ransomware on the billing cluster`), removable in one comment edit. The two near misses are worth naming — `@inflect/ui/lib/cn` (:62) is a package import, outside the `@/` alias, and `@/components/nav/BackAffordance` (:70) is a sibling component namespace, not `src/app-layer` or a domain `src/lib`."
  },
+ "src/components/layout/SettingRow.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "A title-plus-control row (#5874): a column below `sm`, the usual title-left / control-right row from `sm` up, with a text column that can shrink and a control cluster that wraps. Slots only (leading, title, adornment, description, children, control) and closed spacing maps. Imports are `react` and `@inflect/ui/lib/cn` — no `src/app-layer` or domain `src/lib`. No strings, no GRC nouns, no storage, no brand tokens."
+ },
  "src/components/layout/SidebarNav.tsx": {
   "classification": "COUPLED",
   "derivation": "audited",

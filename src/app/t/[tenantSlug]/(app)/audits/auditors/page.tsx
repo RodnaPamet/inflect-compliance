@@ -344,7 +344,7 @@ export default function AuditorsManagementPage() {
                 {access.manageAuditors && (
                     <Button
                         variant="primary"
-                        icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                        icon={<Plus />}
                         onClick={() => setInviteOpen(true)}
                         id="invite-auditor-btn"
                     >

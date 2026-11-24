@@ -2159,7 +2159,7 @@ function ControlsPageInner({
                 toolbarLeading: canCreateControls ? (
                     <Button
                         variant="primary"
-                        icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                        icon={<Plus />}
                         id="new-control-btn"
                         onClick={() => setIsCreateOpen(true)}
                     >

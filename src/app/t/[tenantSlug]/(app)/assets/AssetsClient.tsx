@@ -1085,7 +1085,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                         // simply missed, so a READER saw a button that always
                         // 403'd on submit.
                         canCreate ? (
-                            <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setIsCreateOpen(true)} id="new-asset-btn">{t.addAsset}</Button>
+                            <Button variant="primary" icon={<Plus />} onClick={() => setIsCreateOpen(true)} id="new-asset-btn">{t.addAsset}</Button>
                         ) : undefined
                     }
                     actions={

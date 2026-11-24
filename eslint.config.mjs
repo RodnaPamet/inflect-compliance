@@ -438,6 +438,19 @@ const config = [
         rules: { 'local/no-native-choice-input': 'error' },
     },
     {
+        // ── An icon is spaced by its container, not a negative margin ──
+        //
+        // Thirty-one create buttons carried `<Plus className="-ml-0.5
+        // -mr-2.5" />` in the Button's icon slot. The slot already spaces the
+        // glyph with `gap-tight`; the -10 px margin cancelled it, and the plus
+        // touched the label ("+Одит", #5880). This refuses a negative margin
+        // on any element imported from `lucide-react` or an `icons` module.
+        // See eslint-rules/rules/no-negative-margin-icon.js.
+        files: ['src/**/*.tsx', 'packages/ui/src/**/*.tsx'],
+        ignores: ['**/__tests__/**', '**/*.test.tsx', '**/*.spec.tsx'],
+        rules: { 'local/no-negative-margin-icon': 'error' },
+    },
+    {
         // The seam and the signer it calls.
         files: ['src/lib/web-bot-auth/bot-fetch.ts', 'src/lib/web-bot-auth/sign.ts'],
         rules: { 'local/web-bot-auth-single-seam': 'off' },

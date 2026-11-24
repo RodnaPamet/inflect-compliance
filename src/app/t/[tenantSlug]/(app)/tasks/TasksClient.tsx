@@ -1305,7 +1305,7 @@ function TasksPageInner({
                     leading={canCreate ? (
                         <Button
                             variant="primary"
-                            icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                            icon={<Plus />}
                             onClick={() => setIsCreateOpen(true)}
                             id="new-task-btn"
                         >

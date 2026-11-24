@@ -139,10 +139,14 @@ type Baseline = Record<MobileE2eConfig, Record<RatchetedMetric, number>>;
  * are the Radix primitives. The four left are other issues' surfaces: the
  * dashboard's chart marks (#5877), the command palette's 23px search field,
  * the risk score's help button and the framework explorer's tree toggles.
+ *
+ * clipped, 0 (#5875, with #5874 and #5879): the last one was the integrations
+ * page's webhook URL, a `<code>` with no space to break at. `code`, `samp` and
+ * `.font-mono` now wrap anywhere (`src/app/globals.css`).
  */
 export const SEED_BASELINE: Baseline = {
-    '390-dark-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 4, englishLeaks: 0 },
-    '360-light-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 4, englishLeaks: 0 },
+    '390-dark-bg': { clipped: 0, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 4, englishLeaks: 0 },
+    '360-light-bg': { clipped: 0, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 4, englishLeaks: 0 },
 };
 
 /** Routes in `RECORD_ROUTES` failing each metric. */

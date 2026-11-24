@@ -746,7 +746,7 @@ export default function ApiKeysPage() {
                     </p>
                 </div>
                 {!showCreate && !createdKey && (
-                    <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setShowCreate(true)} id="create-api-key-btn">
+                    <Button variant="primary" icon={<Plus />} onClick={() => setShowCreate(true)} id="create-api-key-btn">
                         {t('apiKeys.headerButton')}
                     </Button>
                 )}

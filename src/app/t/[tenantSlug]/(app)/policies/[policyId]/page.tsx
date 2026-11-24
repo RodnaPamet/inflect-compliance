@@ -754,7 +754,11 @@ export default function PolicyDetailPage() {
             tabs={tabs}
             activeTab={tab}
             onTabChange={setTab}
-            title={<span className="truncate" id="policy-title">{policy.title}</span>}
+            // Wraps on a phone, truncates from `sm`. A bare `truncate` on an
+            // inline span only kept the title on one line (an inline box
+            // never clips), so a long title pushed the record pager off the
+            // screen (#5879).
+            title={<span className="block sm:truncate" id="policy-title">{policy.title}</span>}
             prevNext={{
                 ids: policyIds,
                 currentId: policyId,
@@ -846,7 +850,7 @@ export default function PolicyDetailPage() {
                         <button onClick={() => {
                             setTab('editor');
                             seedEditor(newest);
-                        }} className={buttonVariants({ variant: 'primary' })} id="new-version-btn"><Plus className="-ml-0.5 -mr-2.5" />{t('detail.version')}</button>
+                        }} className={buttonVariants({ variant: 'primary' })} id="new-version-btn"><Plus />{t('detail.version')}</button>
                     )}
                     {canArchivePolicy && policy.status !== 'ARCHIVED' && (
                         <Button variant="ghost" size="sm" className="text-content-muted hover:text-content-error" onClick={() => setArchiveOpen(true)} disabled={actionLoading === 'archive'} loading={actionLoading === 'archive'} id="archive-btn">
@@ -1274,7 +1278,7 @@ export default function PolicyDetailPage() {
                         </InlineNotice>
                     )}
 
-                    <Button variant="primary" icon={saving ? undefined : <Plus className="-ml-0.5 -mr-2.5" />} onClick={createVersion} disabled={saving} id="save-version-btn">
+                    <Button variant="primary" icon={saving ? undefined : <Plus />} onClick={createVersion} disabled={saving} id="save-version-btn">
                         {saving ? t('detail.saving') : t('detail.version')}
                     </Button>
                 </div>

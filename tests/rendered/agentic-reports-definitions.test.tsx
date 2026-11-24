@@ -100,6 +100,23 @@ describe('a metric with no published definition says so', () => {
     });
 });
 
+describe('a metric fits a phone column', () => {
+    it('breaks a raw id or model-field name anywhere rather than widening its grid cell', () => {
+        // A definition names fields like `AgentProposal.reviewedByUserId` and a
+        // metric with no definition shows its raw id: no space to break at.
+        render(
+            <Metric
+                id="approvals.reviewers_without_a_second_line_member"
+                measure={{ state: 'MEASURED', value: 3, basis: null }}
+                definition={undefined}
+            />,
+        );
+        expect(screen.getByTestId('metric-approvals.reviewers_without_a_second_line_member').className).toContain(
+            'wrap-anywhere',
+        );
+    });
+});
+
 describe('an absence is words, never a zero and never a dash', () => {
     it.each(MEASURE_BASES.map((b) => [b] as const))('%s renders as a sentence', (basis) => {
         const id = METRIC_IDS[0];

@@ -46,6 +46,7 @@ const LOCAL_RULES = [
     'web-bot-auth-single-seam',
     'shaded-list-rows',
     'no-native-choice-input',
+    'no-negative-margin-icon',
 ] as const;
 
 describe('local ESLint rules are wired at error', () => {

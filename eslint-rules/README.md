@@ -484,3 +484,26 @@ the control in a `<label>` with its words, so the whole row answers a tap.
 
 **What it cannot see.** A `type` it cannot read (`type={kind}`) and an input
 built with `createElement`. `src/components/` is outside its scope.
+
+### `no-negative-margin-icon`
+
+Under `src/` and `packages/ui/src/`, a JSX element whose name is imported from
+`lucide-react` or from a module with an `icons` path segment
+(`@inflect/ui/components/ui/icons/glyphs`, `@/components/icons/AppIcon`) is
+refused when its `className` carries a negative margin (`-m-`, `-mx-`, `-ml-`,
+`-mr-`, … with or without a variant prefix or `!`). The remedy is to drop the
+margin and let the container space the icon: `<Button icon={<Plus />}>` sets
+`gap-tight` between the slot and the label.
+
+**Why.** Thirty-one create buttons carried `<Plus className="-ml-0.5 -mr-2.5" />`
+in the Button's icon slot. The `-mr-2.5` (-10 px) cancelled the slot's 8 px gap,
+so the plus touched the label: "+Одит", "+Доказателство" (#5880). The margin
+looked deliberate, so each new button copied it.
+
+**What it leaves alone, on purpose.** A positive margin, a negative non-margin
+utility (`-translate-y-px`, `-rotate-90`), a negative margin on an element that
+is not an imported icon (a `Command.Separator`'s `-mx-1`), a component named
+like an icon but imported from elsewhere, and a class part it cannot read.
+
+**What it cannot see.** An icon re-exported through a module with no `icons`
+segment, a class held in a constant, and a wrapper span carrying the margin.

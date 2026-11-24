@@ -76,8 +76,9 @@ interface Hit {
  * 2026-06-14 cleanup-4-action-label-vocab — baseline cleared.
  * All 22 sites have been migrated:
  *
- *   - Header / form-submit Button literals (`'+ <Word>'`) → `icon={<Plus
- *     className="-ml-0.5 -mr-2.5" />}` prop + bare-noun label.
+ *   - Header / form-submit Button literals (`'+ <Word>'`) → `icon={<Plus />}`
+ *     prop + bare-noun label. (The margins these first carried glued the
+ *     glyph to the label; `local/no-negative-margin-icon` refuses them.)
  *   - Ternary-with-state form (`{busy ? 'Adding…' : '+ Word'}`) →
  *     `icon={busy ? undefined : <Plus />}` + ternary-without-prefix.
  *   - EmptyState `primaryAction.label` → verbed form `'Add Audit Cycle'`
