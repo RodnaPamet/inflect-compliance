@@ -161,6 +161,11 @@
       "sankeyActualSize": "Actual size",
       "sankeyNodeTitle": "{label} (weight {weight})",
       "sankeyLinkTitle": "{relation} ({value})",
+      "sankeyPhone": {
+        "notice": "The flow diagram is drawn for a larger screen. Here is every flow it shows, as a list.",
+        "flowCount": "Flows: {count}",
+        "targetsAria": "Linked from {name}"
+      },
       "sankeyColumn": {
         "asset": "Assets",
         "risk": "Risks",
@@ -2690,12 +2695,7 @@
       "title": "Controls flow",
       "subtitle": "How assets expose risks, how controls mitigate them, and which framework requirements each control implements.",
       "truncated": "The diagram shows up to {cap} items of each kind, and this workspace has more, so some are left out.",
-      "loadFailed": "Couldn't build the flow diagram. Reload the page to try again.",
-      "phone": {
-        "notice": "The flow diagram is drawn for a larger screen. Here is every flow it shows, as a list.",
-        "flowCount": "Flows: {count}",
-        "targetsAria": "Linked from {name}"
-      }
+      "loadFailed": "Couldn't build the flow diagram. Reload the page to try again."
     },
     "dashboard": {
       "consistencyChecking": "Running the consistency check…",

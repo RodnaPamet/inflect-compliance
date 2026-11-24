@@ -1,17 +1,19 @@
 /**
- * On a phone the controls flow page lists every flow the Sankey draws, after
- * a notice that the diagram is drawn for a larger screen.
+ * On a phone the Sankey lists every flow it draws, after a notice that the
+ * diagram is drawn for a larger screen.
  *
- * Below `md` the chart's labels and bars were a few pixels. The switch is CSS
- * (the list is `md:hidden`, the chart `hidden md:block`), so this reads those
- * classes, and holds the list to the chart's own projection: every link the
- * chart would draw is a row here, and each end links to its record.
+ * Below `md` the chart's labels and bars are a few pixels. The chart itself
+ * makes the switch, so no page can put the diagram on a phone without the
+ * list. It is CSS (the list is `md:hidden`, the chart `hidden md:block`), so
+ * this reads those classes, and holds the list to the chart's own dataset:
+ * every link the chart would draw is a row here, and each end links to its
+ * record.
  */
 import * as React from 'react';
 import { render, screen, within } from '@testing-library/react';
 
 import { ControlsSankeyClient } from '@/app/t/[tenantSlug]/(app)/controls/sankey/ControlsSankeyClient';
-import { sankeyFlowBands } from '@/app/t/[tenantSlug]/(app)/controls/sankey/SankeyFlowSummary';
+import { SankeyChart, sankeyFlowBands } from '@/components/ui/SankeyChart';
 import { buildSankeyDataset } from '@/lib/traceability-graph/sankey';
 import type { TraceabilityEdge, TraceabilityGraph, TraceabilityNode } from '@/lib/traceability-graph/types';
 
@@ -48,7 +50,7 @@ const GRAPH: TraceabilityGraph = {
     meta: { truncated: false, droppedNodeCount: 0, nodeCap: null, appliedFilters: {} },
 } as TraceabilityGraph;
 
-describe('the controls flow on a phone', () => {
+describe('the Sankey on a phone', () => {
     it('shows the list below md and the chart from md up', () => {
         render(<ControlsSankeyClient initialGraph={GRAPH} />);
         const summary = screen.getByTestId('sankey-flow-summary');
@@ -57,7 +59,7 @@ describe('the controls flow on a phone', () => {
         expect(chart.className).toContain('hidden');
         expect(chart.className).toContain('md:block');
         expect(within(chart).getByRole('img')).toBeInTheDocument();
-        expect(within(summary).getByText(en.controls.sankey.phone.notice)).toBeInTheDocument();
+        expect(within(summary).getByText(en.common.ui.sankeyPhone.notice)).toBeInTheDocument();
     });
 
     it('lists every flow the chart draws, once per pair, in the chart direction', () => {
@@ -74,7 +76,7 @@ describe('the controls flow on a phone', () => {
     });
 
     it('groups flows into the chart bands, with counts that add up to every edge drawn', () => {
-        const bands = sankeyFlowBands(GRAPH);
+        const bands = sankeyFlowBands(buildSankeyDataset(GRAPH));
         expect(bands.map((b) => `${b.sourceKind}-${b.targetKind}`)).toEqual(['asset-risk', 'risk-control', 'control-requirement']);
         expect(bands.reduce((n, b) => n + b.flowCount, 0)).toBe(buildSankeyDataset(GRAPH).links.length);
         expect(bands[0].sources.map((s) => s.node.id)).toEqual(['a1', 'a2']);
@@ -95,9 +97,20 @@ describe('the controls flow on a phone', () => {
         expect(toRequirement).toHaveTextContent('Name of q1');
     });
 
-    it('says so when nothing is linked yet', () => {
-        render(<ControlsSankeyClient initialGraph={{ ...GRAPH, edges: [] }} />);
+    it('lists only the flows the chart draws when a search narrows it', () => {
+        render(<SankeyChart graph={GRAPH} searchQuery="Name of a2" />);
         const summary = screen.getByTestId('sankey-flow-summary');
-        expect(within(summary).getByText(en.common.ui.sankeyNoLinks)).toBeInTheDocument();
+        const rows = Array.from(summary.querySelectorAll('[data-sankey-flow]')).map((el) => el.getAttribute('data-sankey-flow'));
+        const drawn = [...new Set(buildSankeyDataset(GRAPH, { searchQuery: 'Name of a2' }).links.map((l) => `${l.source}->${l.target}`))];
+        expect(rows.sort()).toEqual(drawn.sort());
+        expect(rows).not.toContain('a1->r1');
+    });
+
+    it('says so when nothing is linked yet, at every width', () => {
+        render(<ControlsSankeyClient initialGraph={{ ...GRAPH, edges: [] }} />);
+        // A sentence reads at any width, so there is no list and no hidden chart.
+        expect(screen.queryByTestId('sankey-flow-summary')).toBeNull();
+        expect(screen.queryByTestId('sankey-chart-desktop')).toBeNull();
+        expect(screen.getByText(en.common.ui.sankeyNoLinks)).toBeInTheDocument();
     });
 });

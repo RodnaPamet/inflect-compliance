@@ -160,6 +160,36 @@ error / ready` uniformly. Use the constructors (`chartLoading`,
 `data.length === 0` — the chart handles that itself and renders the
 caller-provided `emptyState`.
 
+### 4. Touch: what a chart does is also a list
+
+A chart mark is a few pixels: an 8px radar vertex, a thin donut slice, a
+3px Sankey bar, a 16px legend line. On a phone a finger cannot hit it, and
+a near miss lands on the neighbouring mark. So nothing a phone user needs
+may depend on hitting a mark:
+
+- **Every drill-down a mark offers is also a row in a list**, and a row a
+  finger can hit: 44px on a coarse pointer (`pointer-coarse:min-h-11`, or
+  `TOUCH_HIT_AREA_CLASS` where the row's height must not change). The
+  dashboard's donuts keep their legend beside them for this; each
+  `DonutLegendRow` is the slice's link and a 44px row on touch. A slice
+  stays clickable, as a convenience.
+- **A mark that only highlights takes no taps on a touch screen.**
+  `RadarChart` puts its vertices and axis labels in a group with
+  `pointer-coarse:pointer-events-none`, so a tap lands on the chart as a
+  whole. Keyboard focus, mouse hover and the accessible names are
+  unchanged. Where a radar's values matter, show them as a list beside it,
+  as the dashboard's posture ladder does.
+- **A diagram drawn for a large screen switches to a list below `md`.**
+  `SankeyChart` renders `SankeyFlowList` (exported beside it from
+  `@/components/ui/SankeyChart`) below `md`: a notice, then every flow the chart draws, built from the
+  chart's own dataset so the two cannot disagree, each end a 44px link.
+  From `md` up it renders the diagram. A page mounting the chart gets both.
+- **Text beside a chart is at least 12px** (`text-xs`). SVG text inside a
+  chart is the chart's own business.
+
+The mobile E2E project (`tests/e2e/mobile-ratchet.ts`) measures the
+dashboard on a phone and counts every tap target under 24px on it.
+
 ## Do-not-bypass list
 
 A dashboard page failing the guard in

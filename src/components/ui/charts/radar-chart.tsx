@@ -346,7 +346,16 @@ function RadarChartInner({
                 />
             </defs>
 
-            <Group>
+            {/* On a touch screen the marks take no taps
+                (`pointer-coarse:pointer-events-none`, which every mark
+                inherits). A vertex is 8px and a label one line of 11px
+                text, and all a tap could do is highlight a spoke, which a
+                finger covers anyway. A tap lands on the chart as a whole;
+                the values are read from the list a caller sets beside it
+                (the dashboard's posture ladder) and from the accessible
+                names, which pointer events do not touch. Keyboard focus and
+                mouse hover are unchanged (docs/charts.md, "Touch"). */}
+            <Group className="pointer-coarse:pointer-events-none">
                 {/* Concentric grid rings. Muted; orient the eye. */}
                 {gridRings.map((r) => (
                     <circle

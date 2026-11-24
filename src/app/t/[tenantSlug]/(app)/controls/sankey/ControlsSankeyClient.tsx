@@ -20,7 +20,6 @@ import { SankeyChart } from '@/components/ui/SankeyChart';
 import type { TraceabilityGraph } from '@/lib/traceability-graph/types';
 import { Heading } from '@/components/ui/typography';
 import { InlineNotice } from '@/components/ui/inline-notice';
-import { SankeyFlowSummary } from './SankeyFlowSummary';
 
 export interface ControlsSankeyClientProps {
     initialGraph: TraceabilityGraph;
@@ -61,17 +60,10 @@ export function ControlsSankeyClient({
                 </InlineNotice>
             )}
 
-            {/* Below `md` the chart's labels and bars are a few pixels, so a
-                phone reads the same flows as a list, after a notice that the
-                diagram is drawn for a larger screen (owner decision,
-                2026-11-23). A CSS switch: the server's paint is already right
-                for the screen, and desktop renders exactly what it did. The
-                list comes first so the chart stays the last child of the
-                `space-y` stack. */}
-            <SankeyFlowSummary graph={initialGraph} className="md:hidden" />
-            <div className="hidden md:block" data-testid="sankey-chart-desktop">
-                <SankeyChart graph={initialGraph} searchQuery="" />
-            </div>
+            {/* Below `md` the chart itself lists the flows, after a notice
+                that the diagram is drawn for a larger screen (owner
+                decision, 2026-11-23; `SankeyFlowList`). */}
+            <SankeyChart graph={initialGraph} searchQuery="" />
         </div>
     );
 }
