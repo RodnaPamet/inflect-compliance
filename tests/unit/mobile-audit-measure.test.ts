@@ -64,6 +64,32 @@ describe('tap targets', () => {
     });
 });
 
+describe('the tldraw watermark (licence-bound, #5924)', () => {
+    // tldraw 3.x is licensed on condition that its watermark keeps its size,
+    // place and label, so the measure leaves it out; the canvas's own
+    // controls beside it are still judged.
+    const canvas = `
+        <div class="tl-container">
+            <button aria-label="Меню" data-w="8" data-h="8"></button>
+            <div class="tl-watermark_SEE-LICENSE" data-w="8" data-h="48">
+                <button role="button" title="made with tldraw" data-w="8" data-h="32"></button>
+            </div>
+        </div>
+    `;
+
+    it('does not count the watermark as a small tap target, and still counts its neighbour', () => {
+        const m = measure(canvas);
+        expect(m.tapUnder24.samples.map((s) => s.text)).toEqual(['Меню']);
+    });
+
+    it('does not hand the watermark\'s label to the leak detector', () => {
+        const m = measure(canvas);
+        expect(m.texts).toContain('Меню');
+        expect(m.texts).not.toContain('made with tldraw');
+        expect(m.chromeTexts).not.toContain('made with tldraw');
+    });
+});
+
 describe('texts for the leak detector', () => {
     it('skips text declared in another language and code, and keeps the page’s own text', () => {
         const m = measure(`

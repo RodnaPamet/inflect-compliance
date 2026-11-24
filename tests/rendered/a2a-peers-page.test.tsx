@@ -15,6 +15,7 @@
 import * as React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { TOUCH_HIT_AREA_CLASS } from '@inflect/ui/components/ui/hit-area';
 
 jest.mock('next-intl', () => {
     const en = jest.requireActual('../../messages/en.json') as Record<string, unknown>;
@@ -473,6 +474,14 @@ describe('one peer: who answers for it, and the acts on it (#4902)', () => {
         renderDetail(owned());
         expect(screen.getByTestId('peer-owner').textContent).toBe('Ada Lovelace');
         expect(screen.getByTestId('peer-vendor').getAttribute('href')).toBe('/t/acme/vendors/vendor-1');
+    });
+
+    it('the supplier link, the value of a fact on its own line, is a 44px target on a touch screen (#5924)', () => {
+        renderDetail(owned());
+        const link = screen.getByRole('link', { name: 'Partner Ltd' });
+        const cls = (link.getAttribute('class') ?? '').split(/\s+/);
+        for (const token of TOUCH_HIT_AREA_CLASS.split(/\s+/)) expect(cls).toContain(token);
+        expect(cls).toContain('relative');
     });
 
     it('renames the peer, as a PATCH', async () => {

@@ -2,7 +2,7 @@
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import Link from 'next/link';
+import { TextLink } from '@/components/ui/text-link';
 import { useParams } from 'next/navigation';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
@@ -137,13 +137,18 @@ export default function NotificationsPage() {
                                 // old link without the workspace prefix opens in
                                 // this workspace. Opening it marks it read, as a
                                 // click in the bell does.
-                                <Link
+                                // A stand-alone link, so it takes the touch
+                                // square: as tall as its 12px text it was
+                                // under 24px on a phone (#5924).
+                                <TextLink
                                     href={resolveNotificationHref(n.linkUrl, tenantSlug)}
                                     onClick={() => { if (!n.read) void markRead(n.id); }}
-                                    className="text-xs font-medium text-content-link hover:underline"
+                                    tone="link"
+                                    className="text-xs font-medium"
+                                    data-testid={`inbox-notification-open-${n.id}`}
                                 >
                                     {t('open')}
-                                </Link>
+                                </TextLink>
                             )}
                             {!n.read && <Button variant="ghost" size="sm" className="text-xs" onClick={() => markRead(n.id)}>{t('markRead')}</Button>}
                             </div>

@@ -125,7 +125,9 @@ const toggleOptionVariants = cva(
     // (the `data-selected` variant): in the light theme an unselected
     // option in emphasis text read as plain body copy, so the selection
     // was carried by the pill alone. `pointer-coarse:min-h-11`: 44px.
-    `text-content-muted data-[selected=true]:text-content-emphasis relative z-10 flex shrink-0 items-center justify-center gap-tight whitespace-nowrap font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-lg pointer-coarse:min-h-11 ${HIT_AREA_CLASS}`,
+    // `pointer-coarse:min-w-11` too: a one-word option ("All") was 41px wide
+    // on a phone (#5924); the label stays centred in the wider pill.
+    `text-content-muted data-[selected=true]:text-content-emphasis relative z-10 flex shrink-0 items-center justify-center gap-tight whitespace-nowrap font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-lg pointer-coarse:min-h-11 pointer-coarse:min-w-11 ${HIT_AREA_CLASS}`,
     {
         variants: {
             size: {

@@ -47,6 +47,7 @@ import type { AgentViewDiff } from '@/lib/processes/agent-view/agent-canvas-diff
 import { AGENT_VIEW_NODE_SHAPE_TYPE, AgentViewNodeShapeUtil } from './AgentViewNodeShapeUtil';
 import { useAgentViewNodeText } from './agent-view-text';
 import { TLDRAW_ASSET_URLS } from '../tldraw/asset-urls';
+import { TldrawReaderLanguage, TLDRAW_READER_OVERRIDES } from '../tldraw/reader-language';
 
 /** Module scope: a new array each render would remount the editor. */
 const SHAPE_UTILS = [AgentViewNodeShapeUtil];
@@ -131,7 +132,10 @@ export function AgentCanvasView({ projection, diff = null, onEditorReady }: Agen
                 options={OPTIONS}
                 components={COMPONENTS}
                 assetUrls={TLDRAW_ASSET_URLS}
-            />
+                overrides={TLDRAW_READER_OVERRIDES}
+            >
+                <TldrawReaderLanguage />
+            </Tldraw>
         </div>
     );
 }

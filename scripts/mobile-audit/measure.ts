@@ -41,7 +41,8 @@
  *                      behind the product tour's overlay), no tap reaches the
  *                      element and it is not counted. A link inside a sentence is
  *                      exempt, as WCAG 2.5.8 exempts it, whether it is laid
- *                      out `inline`, `inline-flex` or `inline-block`.
+ *                      out `inline`, `inline-flex` or `inline-block`. The
+ *                      tldraw watermark is exempt too (see `LICENCE_BOUND`).
  *   textUnder12        an element whose own text is rendered under 12px. The
  *                      environment badge in the top bar (`top-chrome-env-badge`,
  *                      shown on localhost and staging only) is skipped; every
@@ -63,7 +64,7 @@
  *                      `leaks.ts`, which runs Node-side over the texts this
  *                      module collects. Text the page declares to be in
  *                      another language (`lang="en"`) or code (`<code>`) is
- *                      not collected.
+ *                      not collected, nor is the tldraw watermark's label.
  *   docScrollsSideways the document itself scrolls horizontally.
  *
  * Console errors are counted by the caller (they are page events, not layout).
@@ -126,6 +127,18 @@ export function collectInPage(opts: CollectOptions): RawMeasurement {
     const vw = document.documentElement.clientWidth;
     const vh = window.innerHeight;
     const EPS = 1;
+
+    /**
+     * The tldraw watermark ("made with tldraw", an 8x32 tab at a phone
+     * canvas's edge). tldraw 3.x is licensed on the condition that the
+     * watermark keeps its behaviour, "visible, unobscured, and available to
+     * user-interaction", and the owner adopted it with the watermark kept
+     * (D-L2-3, docs/dependency-risk-review.md). Its size, place and English
+     * label are tldraw's CSS and tldraw's text, which the product may not
+     * change, so neither the tap-target nor the leak measure judges it: a
+     * count nobody is allowed to lower is not a defect report (#5924).
+     */
+    const LICENCE_BOUND = '.tl-watermark_SEE-LICENSE';
 
     const INTERACTIVE = [
         'a[href]', 'button', 'input:not([type="hidden"])', 'select', 'textarea', 'summary',
@@ -366,6 +379,7 @@ export function collectInPage(opts: CollectOptions): RawMeasurement {
     };
     for (const el of shownInteractive) {
         if (el.closest('[role="banner"]')) continue;
+        if (el.closest(LICENCE_BOUND)) continue;
         if (isInlineSentenceLink(el)) continue;
         const target = hitTarget(el);
         if (!target) continue;
@@ -457,6 +471,7 @@ export function collectInPage(opts: CollectOptions): RawMeasurement {
         const pageLang = (document.documentElement.getAttribute('lang') ?? '').toLowerCase().split('-')[0];
         const declaredNotPageText = (el: Element): boolean => {
             if (el.closest('code,kbd,samp')) return true;
+            if (el.closest(LICENCE_BOUND)) return true;
             const tagged = el.closest('[lang]');
             const lang = (tagged?.getAttribute('lang') ?? '').toLowerCase().split('-')[0];
             return Boolean(pageLang && lang && lang !== pageLang);

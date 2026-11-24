@@ -164,7 +164,12 @@ function Payload({ label, json }: { label: string; json: string | null }) {
     if (!json) return null;
     return (
         <details className="text-xs">
-            <summary className="cursor-pointer text-content-subtle">{label}</summary>
+            {/* A 44px row on a touch screen (#5924): a step's Input and
+                Output toggles are stacked 8px apart, so the row grows rather
+                than a hit area that would overlap the next one. The line box
+                does the growing, so the disclosure marker stays beside the
+                label. */}
+            <summary className="cursor-pointer text-content-subtle pointer-coarse:min-h-11 pointer-coarse:leading-11">{label}</summary>
             {/*
                 `json` is agent-authored tenant content, decrypted on read by the
                 Epic B extension. It goes through `{}` so React escapes it, into
