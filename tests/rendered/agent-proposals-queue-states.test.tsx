@@ -3,8 +3,8 @@
  *
  * Each block is one of the issue's findings, asserted on the rendered page:
  *
- *   · a four-eyes or closed-window refusal shows the server's sentence, never
- *     a code;
+ *   · a four-eyes or closed-window refusal shows a sentence, never a code —
+ *     the page's own when it knows the reason, else the server's;
  *   · a card says when its window closes, and a card whose window has closed
  *     says so and offers neither Approve nor Reject;
  *   · a proposal holding one of two approvals says so from the DATA, on first
@@ -158,11 +158,33 @@ afterEach(() => {
 
 // ─── refusals ───────────────────────────────────────────────────────────────
 
-describe('a refusal shows the server’s sentence', () => {
+describe('a refusal shows a sentence, never a code', () => {
     const FOUR_EYES =
         'You have already approved this proposal. A second approval has to come from a different person.';
 
-    it('a four-eyes refusal reads as the sentence, not the code', async () => {
+    it('a four-eyes refusal is worded by the page from its own reason (#5919)', async () => {
+        mockFetch({
+            ok: false,
+            body: {
+                error: {
+                    code: 'FORBIDDEN',
+                    message: FOUR_EYES,
+                    details: { reason: 'agent_proposal_four_eyes_already_signed' },
+                },
+            },
+        });
+        renderQueue([row()]);
+        await act(async () => {
+            screen.getByTestId('proposal-approve-p1').click();
+        });
+        const error = screen.getByTestId('proposal-action-error');
+        expect(error).toHaveTextContent(en('proposals.refused.fourEyesAlreadySigned'));
+        expect(error.textContent).not.toContain('agent_proposal');
+    });
+
+    it('a refusal the page does not know reads as the server’s sentence, not the code', async () => {
+        // The shared reason every four-eyes rule carried before #5919: a
+        // server it is not mapped for still gets its sentence shown.
         mockFetch({
             ok: false,
             body: { error: { code: 'FORBIDDEN', message: FOUR_EYES, details: { reason: 'agent_proposal_four_eyes' } } },
