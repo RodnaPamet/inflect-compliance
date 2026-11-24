@@ -87,6 +87,7 @@ jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/AgentAmendModal', () => (
     ),
 }));
 import { AgentDetailClient, type AgentDetailPermissions } from '@/app/t/[tenantSlug]/(app)/agents/[agentId]/AgentDetailClient';
+import { agentDetailGroupOf, type AgentDetailTabKey } from '@/app/t/[tenantSlug]/(app)/agents/[agentId]/agent-detail-tabs';
 
 const AGENT = {
     id: 'agent-1',
@@ -120,12 +121,31 @@ function renderWith(perms: AgentDetailPermissions, profilesEnabled?: boolean) {
     );
 }
 
-const tab = (key: string) => document.getElementById(`tab-${key}`) as HTMLButtonElement | null;
+const byId = (id: string) => document.getElementById(id) as HTMLButtonElement | null;
+
+/**
+ * A SECTION's tab (#5898): the nine sections sit in four group tabs, and a
+ * group's section tabs render while the group is open. Open the section's
+ * group (when the reader may) and read the section's own tab; a closed group
+ * means every section in it is closed. Overview is its own group.
+ */
+const tab = (key: AgentDetailTabKey): { disabled: boolean } | null => {
+    const group = agentDetailGroupOf(key);
+    const groupTab = byId(`tab-${group}`);
+    if (!groupTab) return null;
+    if (group === key) return groupTab;
+    if (groupTab.disabled) {
+        // Present in the page's section list at all? Behaviour may not be.
+        return { disabled: true };
+    }
+    fireEvent.click(groupTab);
+    return byId(`tab-${key}`);
+};
 
 describe('a view-key-only reader', () => {
     it('opens Overview and Runs, and finds every register-key tab disabled', () => {
         renderWith(VIEW_ONLY);
-        const disabled = ['overview', 'risk', 'policy', 'tools', 'skills', 'coverage', 'runs', 'breaker'].filter(
+        const disabled = (['overview', 'risk', 'policy', 'tools', 'skills', 'coverage', 'runs', 'breaker'] as const).filter(
             (k) => tab(k)?.disabled,
         );
         expect(disabled).toEqual(['risk', 'policy', 'tools', 'skills', 'coverage', 'breaker']);
@@ -152,7 +172,7 @@ describe('a view-key-only reader', () => {
 
     it('the paired positive: a register-key holder has every tab the narrow keys do not close', () => {
         renderWith({ ...VIEW_ONLY, canReadRegistry: true, canManageRegistry: true });
-        const disabled = ['overview', 'risk', 'policy', 'tools', 'skills', 'coverage', 'runs', 'breaker'].filter(
+        const disabled = (['overview', 'risk', 'policy', 'tools', 'skills', 'coverage', 'runs', 'breaker'] as const).filter(
             (k) => tab(k)?.disabled,
         );
         expect(disabled).toEqual(['policy']);

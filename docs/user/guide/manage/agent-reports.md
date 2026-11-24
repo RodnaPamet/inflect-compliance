@@ -19,6 +19,7 @@ Open **{{ui:nav.agents}}** under **{{ui:nav.manage}}** in the sidebar, then choo
 | File the pack in the evidence library | Owner, Admin |
 | Declare, edit or remove an estate | Owner, Admin, AI admin |
 | See, register and revoke trusted scanner keys | Owner, Admin, AI admin |
+| Connect a scanner (creates its API key) | Owner, Admin |
 | Register a shadow agent or an unregistered identity | Owner, Admin, AI admin |
 | Accept or renew an agent's harness shortfall | The agent's accountable owner, when they are an Owner, Admin or AI admin |
 
@@ -94,6 +95,10 @@ Click **{{ui:agents.reports.exportAction}}**. The pack is saved as a document in
 ### Declare an estate
 
 On the harness tab, click **{{ui:agents.harness.estates.declare}}**. Fill in **{{ui:agents.harness.estates.form.nameLabel}}**, choose the **{{ui:agents.harness.estates.form.scannerLabel}}** from the registered agents that cover no other estate, fill in **{{ui:agents.harness.estates.form.cadenceLabel}}**, and add at least one source with its owner, an active member. Click **{{ui:agents.harness.estates.form.submitDeclare}}**. **{{ui:agents.harness.estates.edit}}** changes everything but the scanner; **{{ui:agents.harness.estates.remove}}** takes the estate away after five seconds, during which **{{ui:agents.harness.estates.undo}}** keeps it.
+
+### Connect a scanner
+
+To set up a new scanner in one go, click **{{ui:agents.harness.connect.open}}** in **{{ui:agents.harness.keys.heading}}**. The panel registers the scanner's public key, creates one API key for the reports it posts and shows what to put into the scanner's files. See [Connect a scanner](../../how-to/set-up/connect-a-scanner.md).
 
 ### Register or revoke a scanner key
 

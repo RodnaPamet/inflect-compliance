@@ -84,6 +84,7 @@
  * refuses a caller without that key before it asks whose agent it is — a
  * button computed for them would be shown and then refused.
  */
+import { isClassifiedTier } from '@/lib/eu-ai-act/classification';
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { forbidden } from '@/lib/errors/types';
@@ -766,7 +767,7 @@ export async function getHarnessMatrix(
  * RETIRED. Offering a retired agent would put a choice on screen the API
  * refuses.
  */
-export async function getHarnessScannerKeysView(ctx: RequestContext): Promise<HarnessScannerKeysView> {
+export async function getHarnessScannerKeysView(ctx: RequestContext): Promise<Omit<HarnessScannerKeysView, 'connect'>> {
     assertMayReadScannerKeys(ctx);
     return runInTenantContext(ctx, async (db) => {
         const keys = await db.agentHarnessScannerKey.findMany({
@@ -784,7 +785,7 @@ export async function getHarnessScannerKeysView(ctx: RequestContext): Promise<Ha
         });
         const candidates = await db.registeredAgent.findMany({
             where: { tenantId: ctx.tenantId, deletedAt: null, status: { not: 'RETIRED' } },
-            select: { id: true, name: true },
+            select: { id: true, name: true, status: true, autonomyLevel: true, riskTier: true, aiSystem: { select: { riskTier: true } } },
             orderBy: [{ name: 'asc' }, { id: 'asc' }],
             take: CANDIDATE_CAP + 1,
         });
@@ -801,7 +802,17 @@ export async function getHarnessScannerKeysView(ctx: RequestContext): Promise<Ha
                 truncated: keys.length > KEY_CAP,
             },
             candidates: {
-                rows: candidates.slice(0, CANDIDATE_CAP),
+                // What activation still asks of each agent, in its own terms
+                // (`assertActivatable`): a classified AI-system entry, then a
+                // scored risk tier. The panel names the first that is missing.
+                rows: candidates.slice(0, CANDIDATE_CAP).map((c) => ({
+                    id: c.id,
+                    name: c.name,
+                    status: c.status,
+                    autonomyLevel: c.autonomyLevel,
+                    aiSystemClassified: isClassifiedTier(c.aiSystem.riskTier),
+                    riskScored: c.riskTier !== null,
+                })),
                 truncated: candidates.length > CANDIDATE_CAP,
             },
         };

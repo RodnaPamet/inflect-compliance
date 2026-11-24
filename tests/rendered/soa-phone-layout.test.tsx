@@ -130,14 +130,15 @@ describe('SoA on a phone', () => {
     it('lays the summary out as one scrolling strip, not a tile grid', () => {
         renderPage();
         const strip = screen.getByTestId('soa-kpi-strip');
-        expect(strip.hasAttribute('data-scroll-cue-strip')).toBe(true);
-        expect(screen.queryByTestId('soa-kpi-grid')).toBeNull();
-        const list = strip.querySelector('[data-scroll-cue-list]') as HTMLElement;
-        expect(list.className).toContain('overflow-x-auto');
-        // Tiles keep their width, so the strip scrolls rather than squeezes.
-        const tiles = Array.from(list.children).filter((el) => !el.hasAttribute('data-scroll-cue-end-spacer'));
-        expect(tiles).toHaveLength(7);
-        for (const tile of tiles) expect(tile.className).toContain('shrink-0');
+        // The shared KPI strip (#5895): one row that scrolls sideways, its end
+        // faded, every tile a fixed width below md so it scrolls rather than
+        // squeezes.
+        expect(strip).toHaveAttribute('role', 'group');
+        expect(strip.className).toContain('overflow-x-auto');
+        expect(strip.children).toHaveLength(7);
+        expect(strip.className.split(/\s+/)).toEqual(
+            expect.arrayContaining(['max-md:*:w-40', 'max-md:*:shrink-0', 'max-md:after:w-8']),
+        );
     });
 
     it('opens a card\'s mapped controls from its button, with the reason in full', async () => {
@@ -177,8 +178,11 @@ describe('SoA from md up', () => {
     it('keeps the table and the tile grid', () => {
         renderPage();
         expect(document.getElementById('soa-table')).not.toBeNull();
-        expect(screen.getByTestId('soa-kpi-grid')).toBeInTheDocument();
         expect(screen.queryByTestId('soa-cards')).toBeNull();
-        expect(screen.queryByTestId('soa-kpi-strip')).toBeNull();
+        // One list either way: from md up it is the seven-column grid it was.
+        const list = screen.getByTestId('soa-kpi-strip');
+        expect(list.className.split(/\s+/)).toEqual(
+            expect.arrayContaining(['md:grid', 'md:grid-cols-3', 'lg:grid-cols-7', 'md:gap-compact']),
+        );
     });
 });

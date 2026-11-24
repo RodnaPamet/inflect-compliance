@@ -461,7 +461,17 @@ const BUDGETS_KB: Record<string, number> = {
     // Combined when #5853 merged after #5858: 682.2 (#5858 on CI) + 3.8 (this
     // batch, measured locally above) = about 686.0, so 690 is the combined
     // measured + ~4. Re-measured on CI for the merge commit.
-    'controls': 690,
+    //
+    // Raised 690 -> 694 by the mobile desktop-surfaces batch (#5909, owner
+    // decision 2026-11-24, on the PR's red Build). CI's webpack build of the
+    // branch merged with main: `controls/.../tests/[planId]/page` 690.0 KB,
+    // main (d22348991) 689.8, so +0.2. That is the shared `KpiStrip` (#5895),
+    // which every list page's KPI row now uses and which this detail route
+    // loads through the list pages' shared chunk. The batch already gave up
+    // `ScrollCueStrip` on the strip, and Radix on the vendor questionnaire,
+    // to stay inside 690. 694 is measured + ~4, the convention, and leaves
+    // the next phone batches room on this bucket.
+    'controls': 694,
     // Catch-all for any other tenant page.
     //
     // Raised 682 → 688 by the AI-roadmap integration (#5323, owner decision
