@@ -11,9 +11,10 @@
  *                 at all, see EN_IN_BG) — a string rendered from the English
  *                 catalog, or a hard-coded copy of one.
  *   EMBEDDED      a Bulgarian sentence carries an English catalog message
- *                 inside it: "Обратно към Agents". A Latin run that the
- *                 Bulgarian catalog itself uses ("Active Directory") is a
- *                 product name kept on purpose, not a leak.
+ *                 inside it: "Обратно към Agents", or a whole templated one,
+ *                 "Обобщение: Posture snapshot — 3 controls, …". A Latin run
+ *                 that the Bulgarian catalog itself uses ("Active Directory")
+ *                 is a product name kept on purpose, not a leak.
  *   EN_IN_BG      `messages/bg.json` holds the English text itself. Only values
  *                 that contain a common English word count, so a brand or an
  *                 acronym kept on purpose ("Okta", "PDF", "ISO 27001") does not.
@@ -29,6 +30,20 @@
  * the word heuristic, and the caller passes the record names (tenants, orgs,
  * controls) as `dataNames` — "Acme Corp" is both the seeded tenant and an
  * English placeholder in the catalog.
+ *
+ * A SENTENCE THE PRODUCT STORES is the case the page alone cannot settle
+ * (#5883): the diagnostic workflow writes its run summary in English
+ * ("Posture snapshot — 3 controls, 7 risks, 2 open tasks."), the run keeps it
+ * as its record, and the runs pages must re-word it for a Bulgarian reader. It
+ * is free text in the page body, like an agent's own summary, which is data.
+ * What makes it the product's is that its template is a catalog message
+ * (`agentWorkflows.diagnostic.summary`), so the stored English matches a
+ * placeholder pattern and is caught as CATALOG, or EMBEDDED behind a
+ * Bulgarian label. A product sentence in NO catalog cannot be told from tenant
+ * data by any rule here: the fix is to give its template a catalog message,
+ * which is also what lets it be translated.
+ * `tests/unit/mobile-audit-leaks.test.ts` holds this against the real catalog
+ * and the workflow's own synthesis step.
  *
  * LIBRARY CONTENT is content too (owner decision, 2026-11-23): the English
  * text the product ships as a library — control and policy templates,
@@ -56,8 +71,14 @@ export interface Leak {
 export interface LeakCatalog {
     /** English values (whitespace-squashed) Bulgarian renders differently. */
     exact: ReadonlySet<string>;
-    /** English values with `{placeholders}`, as anchored patterns plus a literal pre-filter. */
-    patterns: ReadonlyArray<{ literal: string; re: RegExp }>;
+    /**
+     * English values with `{placeholders}`, as anchored patterns plus a literal
+     * pre-filter, and `embedded`: the same message found INSIDE a longer string,
+     * its placeholders matching no Cyrillic, for a Bulgarian sentence that
+     * carries a whole English message ("Обобщение: Posture snapshot — 3
+     * controls, …").
+     */
+    patterns: ReadonlyArray<{ literal: string; re: RegExp; embedded: RegExp }>;
     /** Multi-word Latin runs the Bulgarian catalog itself uses: product names kept on purpose ("Active Directory"). */
     keptInBg: ReadonlySet<string>;
 }
@@ -87,7 +108,8 @@ const DATE_RES = [
     /\b(?:\d+|an?)\s+(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)\s+ago\b/i,
 ];
 
-const CYRILLIC = /[Ѐ-ӿ]/;
+const CYRILLIC_RANGE = 'Ѐ-ӿ';
+const CYRILLIC = new RegExp(`[${CYRILLIC_RANGE}]`);
 const PLACEHOLDER = /\{[^{}]*\}/g;
 /** A run of Latin words inside a mixed string: "Agents" in "Обратно към Agents". */
 const LATIN_RUN = /[A-Za-z][A-Za-z0-9'’&-]*(?: [A-Za-z0-9'’&-]+)*/g;
@@ -118,7 +140,7 @@ export function buildLeakCatalog(en: unknown, bg: unknown): LeakCatalog {
     flatten(en, '', enMap);
     flatten(bg, '', bgMap);
     const exact = new Set<string>();
-    const patterns: Array<{ literal: string; re: RegExp }> = [];
+    const patterns: Array<{ literal: string; re: RegExp; embedded: RegExp }> = [];
     const keptInBg = new Set<string>();
     // Multi-word runs only: a product name ("Active Directory", "Microsoft Entra
     // ID"). A single Latin word in bg.json ("Admin" in some technical string)
@@ -140,8 +162,12 @@ export function buildLeakCatalog(en: unknown, bg: unknown): LeakCatalog {
             // matches any data that starts or ends with that word.
             const literalText = literals.join(' ');
             if (!looksLikeEnglishProse(literalText) || literalText.length < 12 || words(literalText).length < 2) continue;
-            const body = value.split(PLACEHOLDER).map(escapeRe).join('.+?');
-            patterns.push({ literal, re: new RegExp(`^${body}$`) });
+            const parts = value.split(PLACEHOLDER).map(escapeRe);
+            patterns.push({
+                literal,
+                re: new RegExp(`^${parts.join('.+?')}$`),
+                embedded: new RegExp(parts.join(`[^${CYRILLIC_RANGE}]+?`)),
+            });
         } else if (value.length >= 3 && looksLikeEnglishProse(value)) {
             exact.add(value);
         }
@@ -187,7 +213,10 @@ export function findEnglishLeaks(
             const runs = s.match(LATIN_RUN) ?? [];
             const english = (r: string) =>
                 r.length >= 4 && !dataNames.has(r) && !isLibrary(r) && !catalog.keptInBg.has(r) && catalog.exact.has(r);
-            if (runs.some(english)) leaks.set(s, 'EMBEDDED');
+            // A whole templated message inside the sentence: a stored English
+            // sentence the product wrote, shown after a Bulgarian label.
+            const message = catalog.patterns.some((p) => s.includes(p.literal) && p.embedded.test(s));
+            if (runs.some(english) || message) leaks.set(s, 'EMBEDDED');
             continue;
         }
         // Three words at most: a control label, not a seeded title shown on a button.

@@ -406,6 +406,13 @@ describe('the external auditor’s access is pack-scoped', () => {
         const sharedIds = shared.items.map((i) => i.id);
         for (const id of otherItemIds) expect(sharedIds).not.toContain(id);
         expect(shared.items.map((i) => i.entityType).sort()).toEqual(['CONTROL', 'CONTROL', 'FRAMEWORK_COVERAGE']);
+        // The link carries each item's snapshot in plaintext, exactly as the
+        // tenant reads it. Read in the global context the encrypted column
+        // decrypted to null, and the auditor saw raw ids and an empty SoA.
+        for (const item of shared.items) {
+            expect(item.snapshotJson).toBe(await snapshotJsonOf(T1, item.id));
+            expect(() => JSON.parse(item.snapshotJson as string)).not.toThrow();
+        }
 
         // The auditor's grant names this one pack.
         const auditor = await inviteAuditor(fx[T1].contexts.admin, 'certification-body@example.test', 'Certification body');

@@ -79,6 +79,16 @@
         "reason": "Scheduled k6 load test; needs a deployed target and produces timing data that is meaningless on a cold PR runner.",
         "coveredBy": "NOT COVERED AT PR TIME, deliberately. Performance regressions are caught by the nightly run, not by CI gating."
     },
+    "mobile-audit.yml:audit": {
+        "kind": "never",
+        "reason": "Nightly whole-product mobile audit (schedule + dispatch only). It builds the E2E bundle, boots the app on a seeded database and measures every route in three phone configurations, about an hour of runner time; the comparison is against the previous successful night, which a pull request does not have.",
+        "coveredBy": "PARTIAL: the mobile E2E project holds the fixed route set (tests/e2e/mobile-ratchet.ts) and the key phone journeys on every PR; tests/unit/mobile-audit-routes.test.ts holds the comparison and what it reports; tests/guards/mobile-audit-schedule.test.ts holds the workflow's schedule, reference and notifier."
+    },
+    "mobile-audit.yml:notify": {
+        "kind": "never",
+        "reason": "The notifier of the nightly mobile audit. It lives in a schedule-only workflow, so no pull_request can reach it; it fires on failure() || cancelled() of the audit job and opens or comments on the mobile-audit issue.",
+        "coveredBy": "tests/guards/mobile-audit-schedule.test.ts runs on every PR and asserts this job exists, fires on failure or cancellation, and opens or comments on one issue per kind of failure."
+    },
     "override-freshness.yml:freshness": {
         "kind": "never",
         "reason": "Weekly check comparing pinned dependency overrides against the live npm registry; it needs network access to a moving external source, so its result is a function of time rather than of the diff.",

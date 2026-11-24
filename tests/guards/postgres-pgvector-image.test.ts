@@ -310,9 +310,9 @@ describe('every Postgres the repository runs is the postgres-pgvector line tag',
             'docker-compose.yml: postgres',
         ]);
         // ci.yml three times, and agent-evals, dast, dast-full, garak,
-        // integration-stress, load-test and rag-eval once each.
-        expect(workflowRefs.length).toBe(10);
-        expect(new Set(workflowRefs.map((r) => r.where.split(':')[0])).size).toBe(8);
+        // integration-stress, load-test, mobile-audit and rag-eval once each.
+        expect(workflowRefs.length).toBe(11);
+        expect(new Set(workflowRefs.map((r) => r.where.split(':')[0])).size).toBe(9);
     });
 
     it('every one of them runs the line tag, by tag (D-L4-8), never latest, a digest or another image', () => {
