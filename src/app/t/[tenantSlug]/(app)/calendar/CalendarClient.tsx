@@ -3,8 +3,9 @@
 /**
  * Epic 49 — Compliance Calendar client island.
  *
- * Three views: Heatmap (−365d…+180d), Month (single month grid), Gantt
- * (±180d centred on today). The view toggle drives both the rendered
+ * Four views: Heatmap (−365d…+180d), Month (single month grid), Gantt
+ * (±180d centred on today) and Agenda (the month's window as a list of days,
+ * the default on a phone). The view toggle drives both the rendered
  * component AND the query window. A category/type filter + a "my deadlines"
  * toggle refine what's shown; a selected day populates a side panel listing
  * that day's events with inline actions on task-backed deadlines.
@@ -17,7 +18,7 @@
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
-import { ChevronLeft, ChevronRight, Calendar as CalIcon } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Calendar as CalIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { cardVariants } from '@/components/ui/card';
@@ -32,6 +33,9 @@ import { parseYMD, toYMD, startOfUtcDay } from '@/components/ui/date-picker/date
 import { CalendarHeatmap } from '@/app/t/[tenantSlug]/(app)/calendar/_components/CalendarHeatmap';
 import { CalendarMonth, monthGridRange } from '@/app/t/[tenantSlug]/(app)/calendar/_components/CalendarMonth';
 import { GanttTimeline } from '@/app/t/[tenantSlug]/(app)/calendar/_components/GanttTimeline';
+import { CalendarAgenda } from '@/app/t/[tenantSlug]/(app)/calendar/_components/CalendarAgenda';
+import { useIsBelowMd } from '@/components/ui/hooks';
+import { TOUCH_HIT_AREA_CLASS } from '@inflect/ui/components/ui/hit-area';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { CACHE_KEYS } from '@/lib/swr-keys';
@@ -58,7 +62,7 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 
 const DAY_MS = 86_400_000;
 
-type View = 'heatmap' | 'month' | 'gantt';
+type View = 'heatmap' | 'month' | 'gantt' | 'agenda';
 
 interface CalendarClientProps {
     tenantSlug: string;
@@ -98,7 +102,10 @@ function rangeForView(
         };
     }
     // month — exactly the cells the 6-row grid shows, leading and trailing
-    // days included (the trailing run can be up to fourteen days).
+    // days included (the trailing run can be up to fourteen days). The agenda
+    // lists the same window, so switching between the two refetches nothing
+    // and the last days of a month still show the week that runs into the
+    // next.
     return monthGridRange(monthCursor);
 }
 
@@ -130,11 +137,31 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
     const pathname = usePathname();
     const searchParams = useSearchParams();
 
+    // The default view is the agenda on a phone and the month grid from `md`
+    // up (owner decision, 2026-11-23): 45 px day cells cannot carry an event's
+    // name. Only the default is per screen; a view named in the address is
+    // honoured on any screen, so a shared link opens what the sender saw.
+    // `useIsBelowMd` is `false` on the server and the first render, and the
+    // agenda reads the month's window, so the switch on a phone refetches
+    // nothing.
+    const belowMd = useIsBelowMd();
+    const defaultView: View = belowMd ? 'agenda' : 'month';
     const viewParam = searchParams.get('view');
-    const view: View =
-        viewParam === 'heatmap' || viewParam === 'gantt' || viewParam === 'month'
-            ? viewParam
-            : 'month';
+    const viewNamed =
+        viewParam === 'heatmap' || viewParam === 'gantt' || viewParam === 'month' || viewParam === 'agenda';
+    const view: View = viewNamed ? viewParam : defaultView;
+    // With no view in the address the screen decides, and the server cannot
+    // know the screen: until the first client effect has run, the default is
+    // not known, and rendering the desktop's grid then swapping it for the
+    // agenda on a phone would flash 42 empty cells. The fetch does not wait —
+    // both defaults read the same month window.
+    const [mounted, setMounted] = React.useState(false);
+    // In an effect on purpose: it then lands in the same flush as
+    // `useIsBelowMd`'s own effect, so the first decided render has the real
+    // breakpoint (as `useHydratedNow` does for the clock).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    React.useEffect(() => setMounted(true), []);
+    const viewDecided = viewNamed || mounted;
     const monthParam = searchParams.get('month');
     const monthCursor = React.useMemo(() => {
         const parsed = monthParam ? parseYMD(`${monthParam}-01`) : null;
@@ -155,14 +182,17 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
     );
 
     const setView = React.useCallback(
-        (v: View) => setParams({ view: v === 'month' ? null : v }),
-        [setParams],
+        (v: View) => setParams({ view: v === defaultView ? null : v }),
+        [setParams, defaultView],
     );
     const setMonthCursor = React.useCallback(
         (d: Date) => setParams({ month: d.toISOString().slice(0, 7) }),
         [setParams],
     );
     const [selectedDate, setSelectedDate] = React.useState<string | null>(null);
+    // On a phone the filter folds behind one button: eight touch-sized rows
+    // above the list would push the first deadline off the first screen.
+    const [filterOpen, setFilterOpen] = React.useState(false);
     const [taskCreateDate, setTaskCreateDate] = React.useState<string | null>(
         null,
     );
@@ -334,7 +364,7 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
     // and reading the current month from `monthCursor` (itself derived from the
     // URL) is the same thing a functional update would have read.
     const shiftMonth = (delta: number) => {
-        if (view !== 'month') return;
+        if (view !== 'month' && view !== 'agenda') return;
         setSelectedDate(null);
         setMonthCursor(
             new Date(
@@ -479,6 +509,20 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
         [apiBase, calQuery, optimisticPatch, t, toast, canEditTask, actionErrorMessage],
     );
 
+    // A phone offers the agenda and the month grid: the year heatmap and the
+    // twelve-month timeline are wide by nature. Larger screens keep the three
+    // views they had. A view the address names is always offered, so the
+    // toggle never shows nothing selected.
+    const VIEW_LABELS: Record<View, string> = {
+        agenda: t('agenda.view'),
+        month: t('viewMonth'),
+        heatmap: t('viewHeatmap'),
+        gantt: t('viewTimeline'),
+    };
+    const offeredViews: View[] = belowMd ? ['agenda', 'month'] : ['month', 'heatmap', 'gantt'];
+    if (!offeredViews.includes(view)) offeredViews.push(view);
+    const viewOptions = offeredViews.map((v) => ({ value: v, label: VIEW_LABELS[v] }));
+
     return (
         <div className="space-y-section animate-fadeIn">
             {/* Header */}
@@ -500,17 +544,17 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                     </p>
                 </div>
                 <div className="flex items-center gap-tight flex-wrap">
-                    <ToggleGroup
-                        selected={view}
-                        selectAction={(v) => changeView(v as View)}
-                        options={[
-                            { value: 'month', label: t('viewMonth') },
-                            { value: 'heatmap', label: t('viewHeatmap') },
-                            { value: 'gantt', label: t('viewTimeline') },
-                        ]}
-                        size="sm"
-                        ariaLabel={t('viewAria')}
-                    />
+                    {viewDecided ? (
+                        <ToggleGroup
+                            selected={view}
+                            selectAction={(v) => changeView(v as View)}
+                            options={viewOptions}
+                            size="sm"
+                            ariaLabel={t('viewAria')}
+                        />
+                    ) : (
+                        <div className="h-8" aria-hidden="true" />
+                    )}
                 </div>
             </header>
 
@@ -528,7 +572,7 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
 
             {/* Range navigation. Month has working prev/next; the fixed
                 windows (heatmap / gantt) render an explicit label instead. */}
-            {view === 'month' ? (
+            {view === 'month' || view === 'agenda' ? (
                 <div
                     className={cn(cardVariants({ density: 'none' }), 'flex items-center justify-between px-4 py-2')}
                     id="calendar-month-nav"
@@ -671,7 +715,13 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                             {t('loading')}
                         </div>
                     )}
-                    {view === 'heatmap' ? (
+                    {!viewDecided ? null : view === 'agenda' ? (
+                        <CalendarAgenda
+                            events={events}
+                            todayYmd={todayYmd}
+                            emptyMessage={t('agenda.empty')}
+                        />
+                    ) : view === 'heatmap' ? (
                         <CalendarHeatmap
                             events={events}
                             from={range.from}
@@ -730,11 +780,42 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                         interactive controls inside <aside> changes the a11y
                         tree: without this they would read as loose widgets in
                         a complementary landmark. */}
+                    {/* The fold is CSS (`md:hidden` / `max-md:hidden`), not the
+                        breakpoint hook, so a phone never paints the open
+                        filter first and then closes it. */}
+                    <button
+                        type="button"
+                        id="calendar-filter-toggle"
+                        aria-expanded={filterOpen}
+                        aria-controls="calendar-filter-group"
+                        onClick={() => setFilterOpen((v) => !v)}
+                        className="flex min-h-11 w-full items-center justify-between gap-tight text-left text-sm font-medium text-content-default md:hidden"
+                    >
+                        <span className="flex min-w-0 items-center gap-tight">
+                            {t('filterAria')}
+                            {(categoryFilter.size > 0 || mineOnly) && (
+                                <span className="rounded-full bg-bg-muted px-2 text-xs text-content-emphasis">
+                                    {t('agenda.filtersOn', { count: categoryFilter.size + (mineOnly ? 1 : 0) })}
+                                </span>
+                            )}
+                        </span>
+                        <span className="flex shrink-0 items-center gap-tight text-xs text-content-muted">
+                            {t('countTotal', { count: events.length })}
+                            <ChevronDown
+                                className={cn('size-4 transition-transform', filterOpen && 'rotate-180')}
+                                aria-hidden="true"
+                            />
+                        </span>
+                    </button>
                     <div
                         role="group"
                         aria-label={t('filterAria')}
                         id="calendar-filter-group"
-                        className="mb-3 border-b border-border-subtle pb-3"
+                        className={cn(
+                            view === 'agenda' ? 'pb-1' : 'mb-3 border-b border-border-subtle pb-3',
+                            'max-md:mt-2',
+                            !filterOpen && 'max-md:hidden',
+                        )}
                     >
                         <div className="mb-2 flex items-center justify-between">
                             <span className="text-xs font-medium text-content-muted">
@@ -744,7 +825,10 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                                 <button
                                     type="button"
                                     onClick={() => setCategoryFilter(new Set())}
-                                    className="text-xs text-content-muted underline underline-offset-2 hover:text-content-emphasis"
+                                    className={cn(
+                                        'relative text-xs text-content-muted underline underline-offset-2 hover:text-content-emphasis',
+                                        TOUCH_HIT_AREA_CLASS,
+                                    )}
                                 >
                                     {t('filterClear')}
                                 </button>
@@ -761,9 +845,10 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                                 return (
                                     <label
                                         key={cat}
-                                        className="flex min-w-0 cursor-pointer items-center gap-1.5 text-xs text-content-muted hover:text-content-emphasis"
+                                        className="flex min-w-0 cursor-pointer items-center gap-1.5 text-xs text-content-muted hover:text-content-emphasis pointer-coarse:min-h-11"
                                     >
                                         <Checkbox
+                                            className={cn('relative', TOUCH_HIT_AREA_CLASS)}
                                             size="sm"
                                             checked={active}
                                             onCheckedChange={() => toggleCategory(cat)}
@@ -778,8 +863,9 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                                 );
                             })}
                         </div>
-                        <label className="mt-2 flex cursor-pointer items-center gap-1.5 text-xs text-content-muted hover:text-content-emphasis">
+                        <label className="mt-2 flex cursor-pointer items-center gap-1.5 text-xs text-content-muted hover:text-content-emphasis pointer-coarse:min-h-11">
                             <Checkbox
+                                className={cn('relative', TOUCH_HIT_AREA_CLASS)}
                                 size="sm"
                                 checked={mineOnly}
                                 onCheckedChange={() => setMineOnly((v) => !v)}
@@ -799,7 +885,10 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                     </div>
 
                     {/* ── The selected day's events ── own scroll region so a
-                        busy day cannot push the filter above it out of reach. */}
+                        busy day cannot push the filter above it out of reach.
+                        The agenda lists every day's events itself, so in that
+                        view the panel is the filter alone. */}
+                    {view !== 'agenda' && (
                     <div className="min-h-0 flex-1 overflow-y-auto">
                     {selectedDate ? (
                         <>
@@ -811,7 +900,7 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                                     variant="secondary"
                                     size="sm"
                                     className="mb-3 w-full"
-                                    icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                                    icon={<Plus />}
                                     id="calendar-new-task-on-day"
                                     onClick={() => setTaskCreateDate(selectedDate)}
                                 >
@@ -913,6 +1002,7 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                         </p>
                     )}
                     </div>
+                    )}
                 </aside>
             </div>
 

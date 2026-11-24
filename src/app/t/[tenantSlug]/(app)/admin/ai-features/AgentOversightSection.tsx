@@ -8,6 +8,7 @@ import { ErrorState } from '@/components/ui/error-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
+import { SettingRow } from '@/components/layout/SettingRow';
 import { apiRefusalMessage } from '@/lib/api-error';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
@@ -87,32 +88,33 @@ export function AgentOversightSection() {
                             return (
                                 <ShadedRow padding="xl"
                                     key={key}
-                                    className="flex items-start justify-between gap-default"
                                     data-testid={`agent-oversight-${key}`}
                                 >
-                                    <div className="space-y-tight">
-                                        <div className="flex flex-wrap items-center gap-tight">
+                                    <SettingRow
+                                        title={
                                             <span className="text-sm font-medium text-content-emphasis">
                                                 {t(`agentOversight.setting.${key}.name`)}
                                             </span>
-                                            {on !== undefined && (
+                                        }
+                                        titleAdornment={
+                                            on !== undefined && (
                                                 <StatusBadge variant={on ? 'success' : 'neutral'}>
                                                     {on ? t('agentOversight.on') : t('agentOversight.off')}
                                                 </StatusBadge>
-                                            )}
-                                        </div>
-                                        <p className="max-w-3xl text-sm text-content-muted">
-                                            {t(`agentOversight.setting.${key}.description`)}
-                                        </p>
-                                    </div>
-                                    <Button
-                                        variant="secondary"
-                                        onClick={() => void change(key, !on)}
-                                        disabled={isLoading || on === undefined || saving !== null}
-                                        data-testid={`agent-oversight-toggle-${key}`}
-                                    >
-                                        {on ? t('agentOversight.turnOff') : t('agentOversight.turnOn')}
-                                    </Button>
+                                            )
+                                        }
+                                        description={t(`agentOversight.setting.${key}.description`)}
+                                        control={
+                                            <Button
+                                                variant="secondary"
+                                                onClick={() => void change(key, !on)}
+                                                disabled={isLoading || on === undefined || saving !== null}
+                                                data-testid={`agent-oversight-toggle-${key}`}
+                                            >
+                                                {on ? t('agentOversight.turnOff') : t('agentOversight.turnOn')}
+                                            </Button>
+                                        }
+                                    />
                                 </ShadedRow>
                             );
                         })}

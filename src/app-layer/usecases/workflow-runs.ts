@@ -65,6 +65,7 @@ import {
     lowerRole,
 } from '@/lib/agentic/agent-authority';
 import { enqueue } from '@/app-layer/jobs/queue';
+import { agentRunExecuteJobId } from '@/app-layer/jobs/agent-run-job-id';
 import {
     failRun,
     OPERATOR_ABORT_MESSAGE,
@@ -106,6 +107,14 @@ import {
     assertConcurrencyUnderLock,
 } from '@/lib/agentic/run-concurrency-policy';
 import { trackInFlightRun, untrackInFlightRun } from '@/lib/agentic/in-flight-runs';
+import {
+    claimRunLease,
+    keepRunLease,
+    releaseRunLease,
+    runLeaseLost,
+    RunLeaseLostError,
+    type RunLeaseTiming,
+} from '@/lib/agentic/run-lease';
 import {
     recordAgentRunStarted,
     recordAgentRunSettled,
@@ -680,7 +689,12 @@ export async function startWorkflowRun(
     // Moving BOTH would change the contract of every existing run — the route
     // returns a terminal status today — for no benefit the static engine needs.
     if (isReasoningEngine(chosenDriver)) {
-        await enqueue('agent-run-execute', { tenantId: ctx.tenantId, runId: run.id });
+        // ONE JOB PER SEGMENT (#5854): named by the run and its start, so a
+        // second enqueue of this segment is a duplicate BullMQ drops. See
+        // `agentRunExecuteJobId`.
+        await enqueue('agent-run-execute', { tenantId: ctx.tenantId, runId: run.id }, {
+            jobId: agentRunExecuteJobId(run.id, run.startedAt),
+        });
         // RUNNING is what `createSealedRun` wrote (the column's default), and
         // it is reported rather than a synthesised QUEUED. The reaper already
         // understands a RUNNING row that stops moving; a new enum value would
@@ -880,7 +894,7 @@ export async function resumeWorkflowRun(
     };
 
     // Close the pending checkpoint step (the one that paused the run).
-    const resumedFrom = await runInTenantContext(ctx, async (db) => {
+    const { resumedFrom, segmentAt } = await runInTenantContext(ctx, async (db) => {
         // CLAIM FIRST (#5119). The status check above is a read; two resumes
         // of one paused run both passed it, both moved it to RUNNING with an
         // unconditional write, and both executed the remaining steps —
@@ -898,6 +912,12 @@ export async function resumeWorkflowRun(
                 reason: 'RUN_ALREADY_RESUMED',
             });
         }
+        // THE INSTANT OF THIS CLAIM names the resumed segment's job (#5854):
+        // the claim succeeds once per pause, so no two resumes share it.
+        const claimedRow = await db.workflowRun.findFirst({
+            where: { id: runId, tenantId: ctx.tenantId },
+            select: { updatedAt: true },
+        });
         const pending = await db.workflowStep.findFirst({
             where: { runId, tenantId: ctx.tenantId, status: 'PENDING' },
             orderBy: { seq: 'desc' },
@@ -933,7 +953,7 @@ export async function resumeWorkflowRun(
         // stamp, and branching on the driver would put the engine's identity in
         // a place that does not otherwise need to know it.
         await recordDecisionOutcome(db, ctx, runId, 'ACCEPTED');
-        return pending?.seq ?? run.stepCount - 1;
+        return { resumedFrom: pending?.seq ?? run.stepCount - 1, segmentAt: claimedRow?.updatedAt ?? new Date() };
     });
 
     await appendAuditEntry({
@@ -1006,6 +1026,9 @@ export async function resumeWorkflowRun(
             // retry keeps this base and a wedged segment cannot buy a fresh
             // hour per attempt.
             clockBase: Date.now(),
+        }, {
+            // ONE JOB PER SEGMENT (#5854), named by the claim above.
+            jobId: agentRunExecuteJobId(runId, segmentAt),
         });
         // RUNNING, matching what `startWorkflowRun` returns for the same
         // engine. The transaction above already wrote it; this reports it
@@ -1352,12 +1375,18 @@ async function executeFrom(
     // in-flight registry, which is exactly the lifecycle the counters measure.
     recordAgentRunStarted({ driver: driverLabel });
 
-    trackInFlightRun(runId);
+    trackInFlightRun(runId, runCtx.runLeaseToken);
     try {
+        const driven = await run(runCtx, runId, def, fromSeq, runStartMs);
+        // A WORKER THAT LOST THE RUN SETTLES NOTHING (#5854). Its engine
+        // stopped at the abort check and its writes were fenced; none of the
+        // settlement steps below are its to take, because the run is another
+        // worker's now (or paused by the SIGTERM drain).
+        if (await lostRunLease(runCtx, runId)) throw new RunLeaseLostError(runId);
         // THE OPERATOR'S ABORT IS THE SETTLEMENT (#5366), whatever the engine
         // reports: it may have finished its last call before it next read the
         // row, and its own write did not land on the ABORTED.
-        const outcome = await yieldToOperatorAbort(runCtx, runId, await run(runCtx, runId, def, fromSeq, runStartMs));
+        const outcome = await yieldToOperatorAbort(runCtx, runId, driven);
         await recordRunSettlementMetrics(runCtx, runId, driverLabel, outcome.status);
         // A run that ended without resuming from an open deferral (a kill or a
         // suspension found at the resume, a refused transcript, any settlement
@@ -1376,6 +1405,12 @@ async function executeFrom(
         await captureAuditNarrativeAfterRun(runCtx, runId, def.key, outcome.status);
         return outcome;
     } catch (err) {
+        // A lost lease is not a failure, and the run is not this worker's to
+        // settle: nothing below runs for it (#5854).
+        if (err instanceof RunLeaseLostError || (await lostRunLease(runCtx, runId).catch(() => false))) {
+            recordAgentRunSettled({ driver: driverLabel, outcome: 'lease_lost' });
+            throw err instanceof RunLeaseLostError ? err : new RunLeaseLostError(runId);
+        }
         // A THROW IS A FAILED RUN for metric purposes, and it has to be
         // counted here: the settlement path that writes FAILED is reached by
         // `failRun` from the CALLER, so a throw that propagated past this
@@ -1392,8 +1427,17 @@ async function executeFrom(
         await settleRunDecisionLog(runCtx, runId, 'FAILED');
         throw err;
     } finally {
-        untrackInFlightRun(runId);
+        untrackInFlightRun(runId, runCtx.runLeaseToken);
     }
+}
+
+/**
+ * Did this execution lose its run lease (#5854)? False, with no query, for a
+ * context that holds none: every inline run.
+ */
+async function lostRunLease(ctx: RequestContext, runId: string): Promise<boolean> {
+    if (ctx.runLeaseToken === undefined) return false;
+    return runLeaseLost(ctx, await readRunSettlementState(ctx, runId));
 }
 
 /** The run statuses that are not a settlement: a run in one still holds its open deferral. */
@@ -1636,7 +1680,7 @@ async function createSealedRun(
      * and never after: a trigger refuses any later change (Step 1a, #4143).
      */
     profilePin: { versionId: string; instructionsHash: string } | null,
-): Promise<{ id: string }> {
+): Promise<{ id: string; startedAt: Date }> {
     try {
         return await runInTenantContext(ctx, async (db) => {
             // THE EXACT CONCURRENCY GATE, inside this transaction and BEFORE
@@ -1708,7 +1752,8 @@ async function createSealedRun(
                     profileVersionId: profilePin?.versionId ?? null,
                     profileInstructionsHash: profilePin?.instructionsHash ?? null,
                 },
-                select: { id: true },
+                // `startedAt` names the run's first segment's job (#5854).
+                select: { id: true, startedAt: true },
             });
             const sealed = sealContext({
                 tenantId: ctx.tenantId,
@@ -1888,7 +1933,11 @@ export function queuedRunClockBase(
 export async function executeQueuedWorkflowRun(
     tenantId: string,
     runId: string,
-    opts: { clockBase?: number } = {},
+    opts: {
+        clockBase?: number;
+        /** The lease's TTL and renewal interval. Tests shorten them; the job never passes them. */
+        leaseTiming?: RunLeaseTiming;
+    } = {},
 ): Promise<QueuedRunOutcome> {
     // Read the row BEFORE there is a context to read it with — the one place
     // that is unavoidable, and scoped by BOTH ids so a wrong tenant cannot
@@ -1912,100 +1961,145 @@ export async function executeQueuedWorkflowRun(
     // work left, and BullMQ can deliver a job more than once.
     if (row.status !== 'RUNNING') return { skipped: `NOT_RUNNING:${row.status}` };
 
-    // A profile run's definition is read from the version it PINNED, inside
-    // the tenant, once there is a context to read it with (below). A
-    // registered workflow resolves from the registry here, as it always has.
-    const profileRun = isProfileRunKey(row.workflowKey);
-    let def = profileRun ? undefined : getWorkflowDefinition(row.workflowKey);
-    if (!profileRun && !def) {
-        await failRun(
-            { tenantId, userId: row.startedByUserId ?? 'system' } as RequestContext,
-            runId,
-            'workflow_definition_missing: the workflow this run was started from no longer exists.',
-        );
-        return { skipped: 'NO_DEFINITION' };
-    }
-
-    if (!(await runAgentStillInService(tenantId, row.agentId))) {
-        await failRun(
-            { tenantId, userId: row.startedByUserId ?? 'system' } as RequestContext,
-            runId,
-            'run_agent_no_longer_in_service: the registered agent this run was started by ' +
-                'is no longer ACTIVE, so the run does not resume on its behalf.',
-        );
-        await settleDeferralsAfterRun({ tenantId, userId: row.startedByUserId ?? 'system' } as RequestContext, runId, 'FAILED');
-        return { skipped: 'AGENT_NOT_ACTIVE' };
-    }
-
-    const ctx = await rebuildRunContext(row);
-    if (!ctx) {
-        await failRun(
-            { tenantId, userId: row.startedByUserId ?? 'system' } as RequestContext,
-            runId,
-            'run_principal_no_longer_authorised: the principal that started this run ' +
-                'no longer holds an active membership in this workspace.',
-        );
-        await settleDeferralsAfterRun({ tenantId, userId: row.startedByUserId ?? 'system' } as RequestContext, runId, 'FAILED');
-        return { skipped: 'PRINCIPAL_REVOKED' };
-    }
-
-    if (profileRun) {
-        def = await resolvePinnedRunDefinition(ctx, row);
-        if (!def) {
+    // ═══ CLAIM THE RUN BEFORE EXECUTING ANY OF IT (#5854 finding 2) ═══
+    //
+    // `status === 'RUNNING'` cannot tell a run that waits for a worker from one
+    // a worker is executing right now, and BullMQ can hand one job to two
+    // workers (a stalled-job redelivery, a retry while the first attempt still
+    // runs). Before this, both executed it: two model loops, two Managed Agents
+    // sessions, tools run twice. The claim is one conditional UPDATE only one
+    // worker can win; a worker that cannot claim does nothing, and that is a
+    // correct refusal rather than an error. See `src/lib/agentic/run-lease.ts`.
+    //
+    // FIRST, before anything below can settle the run: the refusals that
+    // follow (`failRun`) are writes, and two workers must not both make them.
+    const claim = await claimRunLease(tenantId, runId, { timing: opts.leaseTiming });
+    if ('refused' in claim) return { skipped: claim.refused };
+    const keeper = keepRunLease(tenantId, runId, claim.token, opts.leaseTiming);
+    try {
+        // A profile run's definition is read from the version it PINNED, inside
+        // the tenant, once there is a context to read it with (below). A
+        // registered workflow resolves from the registry here, as it always has.
+        const profileRun = isProfileRunKey(row.workflowKey);
+        let def = profileRun ? undefined : getWorkflowDefinition(row.workflowKey);
+        if (!profileRun && !def) {
             await failRun(
-                ctx,
+                { tenantId, userId: row.startedByUserId ?? 'system', runLeaseToken: claim.token } as RequestContext,
                 runId,
-                'profile_version_unavailable: the agent profile version this run pinned can no longer be ' +
-                    'read as it was pinned, so the run does not continue.',
+                'workflow_definition_missing: the workflow this run was started from no longer exists.',
             );
-            await settleDeferralsAfterRun(ctx, runId, 'FAILED');
             return { skipped: 'NO_DEFINITION' };
         }
-    }
-    // Both arms above have already failed and returned a run with no
-    // definition; this only tells the compiler so.
-    if (!def) return { skipped: 'NO_DEFINITION' };
 
-    const permitted = (
-        await resolveDriverForRun(ctx.tenantId, {
-            requestId: ctx.requestId,
-            workflowKey: row.workflowKey,
-        })
-    ).driver;
-    // `max(seq) + 1` rather than `count(*)`: a gap in the sequence must not pull
-    // the resume point back on top of a step that already committed.
-    const ledger = await runInTenantContext(ctx, (db) =>
-        db.workflowStep.aggregate({
-            where: { runId, tenantId: ctx.tenantId },
-            _max: { seq: true },
-        }),
-    );
+        if (!(await runAgentStillInService(tenantId, row.agentId))) {
+            await failRun(
+                { tenantId, userId: row.startedByUserId ?? 'system', runLeaseToken: claim.token } as RequestContext,
+                runId,
+                'run_agent_no_longer_in_service: the registered agent this run was started by ' +
+                    'is no longer ACTIVE, so the run does not resume on its behalf.',
+            );
+            await settleDeferralsAfterRun({ tenantId, userId: row.startedByUserId ?? 'system', runLeaseToken: claim.token } as RequestContext, runId, 'FAILED');
+            return { skipped: 'AGENT_NOT_ACTIVE' };
+        }
 
-    // THE CLOCK: the person's resume when one enqueued this job, the run's
-    // start otherwise — never this attempt's, so a retry re-delivering the
-    // same payload halts at the wall clock rather than buying a fresh hour.
-    // See `queuedRunClockBase` and the payload's `clockBase` (#5534).
-    const clock = queuedRunClockBase(opts.clockBase, row.startedAt.getTime(), Date.now());
-    if (clock.ignored) {
-        logger.warn('workflow run: queued clock base ignored, measuring from the run start', {
-            component: 'workflow-runs',
-            tenantId: ctx.tenantId,
-            runId: row.id,
-            reason: clock.ignored,
+        const rebuilt = await rebuildRunContext(row);
+        if (!rebuilt) {
+            await failRun(
+                { tenantId, userId: row.startedByUserId ?? 'system', runLeaseToken: claim.token } as RequestContext,
+                runId,
+                'run_principal_no_longer_authorised: the principal that started this run ' +
+                    'no longer holds an active membership in this workspace.',
+            );
+            await settleDeferralsAfterRun({ tenantId, userId: row.startedByUserId ?? 'system', runLeaseToken: claim.token } as RequestContext, runId, 'FAILED');
+            return { skipped: 'PRINCIPAL_REVOKED' };
+        }
+        // THE LEASE RIDES ON THE CONTEXT (#5854): every write the engine makes
+        // through `updateRun` and `recordStep` is fenced on it, and its abort check
+        // reads a run somebody else now holds as stopped.
+        const ctx: RequestContext = { ...rebuilt, runLeaseToken: claim.token };
+
+        if (profileRun) {
+            def = await resolvePinnedRunDefinition(ctx, row);
+            if (!def) {
+                await failRun(
+                    ctx,
+                    runId,
+                    'profile_version_unavailable: the agent profile version this run pinned can no longer be ' +
+                        'read as it was pinned, so the run does not continue.',
+                );
+                await settleDeferralsAfterRun(ctx, runId, 'FAILED');
+                return { skipped: 'NO_DEFINITION' };
+            }
+        }
+        // Both arms above have already failed and returned a run with no
+        // definition; this only tells the compiler so.
+        if (!def) return { skipped: 'NO_DEFINITION' };
+
+        const permitted = (
+            await resolveDriverForRun(ctx.tenantId, {
+                requestId: ctx.requestId,
+                workflowKey: row.workflowKey,
+            })
+        ).driver;
+        // `max(seq) + 1` rather than `count(*)`: a gap in the sequence must not pull
+        // the resume point back on top of a step that already committed.
+        const ledger = await runInTenantContext(ctx, (db) =>
+            db.workflowStep.aggregate({
+                where: { runId, tenantId: ctx.tenantId },
+                _max: { seq: true },
+            }),
+        );
+
+        // THE CLOCK: the person's resume when one enqueued this job, the run's
+        // start otherwise — never this attempt's, so a retry re-delivering the
+        // same payload halts at the wall clock rather than buying a fresh hour.
+        // See `queuedRunClockBase` and the payload's `clockBase` (#5534).
+        const clock = queuedRunClockBase(opts.clockBase, row.startedAt.getTime(), Date.now());
+        if (clock.ignored) {
+            logger.warn('workflow run: queued clock base ignored, measuring from the run start', {
+                component: 'workflow-runs',
+                tenantId: ctx.tenantId,
+                runId: row.id,
+                reason: clock.ignored,
+            });
+        }
+
+        let driven: RunDriverOutcome;
+        try {
+            driven = await executeFrom(
+                ctx,
+                runId,
+                def,
+                // The ledger's answer OR the counter's, whichever is further on —
+                // see `resumePositionOf` for why neither alone is safe. Read AFTER
+                // the claim, so a predecessor's last step is in it.
+                resumePositionOf(ledger._max.seq ?? -1, row.stepCount),
+                clock.baseMs,
+                permitted,
+            );
+        } catch (err) {
+            // A WORKER THAT LOST THE RUN declined, it did not fail: the run is
+            // another worker's now (or the SIGTERM drain paused it), and BullMQ
+            // must not retry this attempt into a third executor.
+            if (err instanceof RunLeaseLostError) return { skipped: 'LEASE_LOST' };
+            throw err;
+        }
+        const { status, stepFailures } = driven;
+        return { status, stepFailures };
+    } finally {
+        keeper.stop();
+        // Released whatever happened, so a paused or parked run can be claimed
+        // by the job that resumes it. Matches only this token, so a worker that
+        // lost the run never releases its successor's lease. A release that
+        // fails leaves a lease that lapses on its own.
+        await releaseRunLease(tenantId, runId, claim.token).catch(() => {
+            logger.warn('workflow run: lease not released; it lapses on its own', {
+                component: 'workflow-runs',
+                tenantId,
+                runId,
+            });
         });
     }
-
-    const { status, stepFailures } = await executeFrom(
-        ctx,
-        runId,
-        def,
-        // The ledger's answer OR the counter's, whichever is further on — see
-        // `resumePositionOf` for why neither alone is safe.
-        resumePositionOf(ledger._max.seq ?? -1, row.stepCount),
-        clock.baseMs,
-        permitted,
-    );
-    return { status, stepFailures };
 }
 
 

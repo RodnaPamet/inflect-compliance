@@ -36,6 +36,7 @@ import type { AiToggleKey, AiToggleState } from '@/app-layer/usecases/ai-feature
 
 import { displayFor, type ToggleDisplay } from './ai-feature-display';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { SettingRow } from '@/components/layout/SettingRow';
 
 interface TogglesResponse {
     toggles: AiToggleState[];
@@ -106,35 +107,33 @@ export function AiFeaturesClient() {
                 data-testid={testId}
                 data-display-kind={display.kind}
             >
-                <div className="flex items-start justify-between gap-default">
-                    <div className="space-y-tight">
-                        <div className="flex items-center gap-tight">
-                            <Heading level={2}>{t(`aiFeatures.${state.key}.name`)}</Heading>
-                            <StatusBadge variant={badgeVariant(display)}>
-                                {t(`aiFeatures.status.${display.kind}`)}
-                            </StatusBadge>
-                        </div>
-                        <p className="max-w-3xl text-sm text-content-muted">
-                            {t(`aiFeatures.${state.key}.description`)}
-                        </p>
-                    </div>
-                    {/* NO BUTTON when the deploy forbids the feature. Not a
-                        disabled button either: a disabled control still says
-                        "this is the thing to press", and the honest answer is
-                        that this screen is not where that decision lives. */}
-                    {display.actionable && (
-                        <Button
-                            variant="secondary"
-                            onClick={() => toggle(state.key, !state.tenantEnabled)}
-                            disabled={isLoading || saving !== null}
-                            data-testid={`toggle-${state.key}`}
-                        >
-                            {state.tenantEnabled
-                                ? t('aiFeatures.turnOff')
-                                : t('aiFeatures.turnOn')}
-                        </Button>
-                    )}
-                </div>
+                <SettingRow
+                    title={<Heading level={2}>{t(`aiFeatures.${state.key}.name`)}</Heading>}
+                    titleAdornment={
+                        <StatusBadge variant={badgeVariant(display)}>
+                            {t(`aiFeatures.status.${display.kind}`)}
+                        </StatusBadge>
+                    }
+                    description={t(`aiFeatures.${state.key}.description`)}
+                    control={
+                        // NO BUTTON when the deploy forbids the feature. Not a
+                        // disabled button either: a disabled control still says
+                        // "this is the thing to press", and the honest answer is
+                        // that this screen is not where that decision lives.
+                        display.actionable && (
+                            <Button
+                                variant="secondary"
+                                onClick={() => toggle(state.key, !state.tenantEnabled)}
+                                disabled={isLoading || saving !== null}
+                                data-testid={`toggle-${state.key}`}
+                            >
+                                {state.tenantEnabled
+                                    ? t('aiFeatures.turnOff')
+                                    : t('aiFeatures.turnOn')}
+                            </Button>
+                        )
+                    }
+                />
 
                 {display.kind === 'off-by-platform' && (
                     <InlineNotice variant="info" title={t('aiFeatures.platformOffHeading')}>

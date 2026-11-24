@@ -267,7 +267,7 @@ describeFn('a run records which engine walked it (real DB, real engine)', () => 
             const { runId, status } = await startWorkflowRun(ctx(), WF_ASKS_FLUE, {});
             // It went to the worker queue, so it really was walked as Flue.
             expect(status).toBe('RUNNING');
-            expect(jest.mocked(enqueue)).toHaveBeenCalledWith('agent-run-execute', { tenantId: TENANT, runId });
+            expect(jest.mocked(enqueue)).toHaveBeenCalledWith('agent-run-execute', { tenantId: TENANT, runId }, { jobId: expect.stringMatching(/^agent-run-/) });
             return runId;
         }
 

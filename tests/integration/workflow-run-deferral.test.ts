@@ -8,11 +8,11 @@
  * engine's park writes them, because deploy 1 has no writer: it teaches every
  * reader what a parked run means before any exists.
  */
-const enqueued: Array<{ name: string; payload: Record<string, unknown> }> = [];
+const enqueued: Array<{ name: string; payload: Record<string, unknown>; options?: Record<string, unknown> }> = [];
 jest.mock('@/app-layer/jobs/queue', () => ({
     ...jest.requireActual('@/app-layer/jobs/queue'),
-    enqueue: jest.fn(async (name: string, payload: Record<string, unknown>) => {
-        enqueued.push({ name, payload });
+    enqueue: jest.fn(async (name: string, payload: Record<string, unknown>, options?: Record<string, unknown>) => {
+        enqueued.push({ name, payload, options });
         return undefined;
     }),
 }));
@@ -322,6 +322,8 @@ describeFn('a run parked on a deferred tool call (real DB)', () => {
         expect(checkpoint).toMatchObject({ status: 'DONE', actorUserId: DECIDER.A });
         expect(enqueued).toHaveLength(1);
         expect(enqueued[0]).toMatchObject({ name: 'agent-run-execute', payload: { tenantId: TENANTS.A, runId: a.runId } });
+        // One job per segment (#5854): named by the run and the decision's claim.
+        expect(enqueued[0].options).toEqual({ jobId: expect.stringMatching(new RegExp(`^agent-run-${a.runId}-\\d+$`)) });
         // The clock base leaves the wait out: about five seconds of unattended time, not three hours.
         const base = Number(enqueued[0].payload.clockBase);
         expect(Date.now() - base).toBeGreaterThanOrEqual(5_000);

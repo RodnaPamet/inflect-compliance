@@ -144,18 +144,23 @@ export function OrgAgentSwitchesSection({
                                 data-testid={`${id}-row`}
                                 data-deployment={s.deployment}
                             >
-                                <div className="flex items-center gap-compact">
-                                    <Switch
-                                        id={id}
-                                        checked={s.organization}
-                                        disabled={!state.canManage || busy !== null}
-                                        onCheckedChange={(on) => request(key, on)}
-                                        aria-describedby={`${id}-help`}
-                                        data-testid={id}
-                                    />
-                                    <Label htmlFor={id} className="font-medium text-content-emphasis">
-                                        {t(`${key}.label`)}
-                                    </Label>
+                                {/* Wraps on a phone: the badge drops under the
+                                    switch and its label instead of squeezing
+                                    the label to one word per line (#5874). */}
+                                <div className="flex flex-wrap items-center gap-compact">
+                                    <div className="flex min-w-0 items-center gap-compact">
+                                        <Switch
+                                            id={id}
+                                            checked={s.organization}
+                                            disabled={!state.canManage || busy !== null}
+                                            onCheckedChange={(on) => request(key, on)}
+                                            aria-describedby={`${id}-help`}
+                                            data-testid={id}
+                                        />
+                                        <Label htmlFor={id} className="min-w-0 font-medium text-content-emphasis">
+                                            {t(`${key}.label`)}
+                                        </Label>
+                                    </div>
                                     {overridden && (
                                         <span className="ml-auto">
                                             <StatusBadge variant="neutral" size="sm">

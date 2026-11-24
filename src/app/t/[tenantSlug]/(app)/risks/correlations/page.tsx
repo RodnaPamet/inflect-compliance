@@ -16,6 +16,7 @@ import { useTranslations } from 'next-intl';
 import { AnalyticsState } from '../_shared/AnalyticsState';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { apiErrorMessage } from '@/lib/api-error';
+import { SettingRow } from '@/components/layout/SettingRow';
 
 interface Matrix { riskIds: string[]; riskTitles: string[]; matrix: number[][]; isPositiveSemiDefinite: boolean; isPositiveDefinite: boolean; minEigenvalue: number }
 interface Suggestion { riskAId: string; riskBId: string; suggestedCoefficient: number; reason: string }
@@ -156,12 +157,15 @@ export default function CorrelationMatrixPage() {
         <div className="space-y-section">
             <BackAffordance />
             <PageBreadcrumbs items={[{ label: t('breadcrumbRoot'), href: tenantHref('/risks') }, { label: t('correlations.breadcrumb') }]} />
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-tight">
-                    <Heading level={1}>{t('correlations.title')}</Heading>
+            {/* Below `sm` the suggest button and its errors go under the title
+                instead of squeezing it (#5874). */}
+            <SettingRow
+                align="center"
+                title={<Heading level={1}>{t('correlations.title')}</Heading>}
+                titleAdornment={
                     <InfoTooltip title={t('correlations.conceptTitle')} content={t('correlations.conceptHelp')} side="right" />
-                </div>
-                <div className="flex items-center gap-tight">
+                }
+                control={<>
                     {suggestError && <span className="text-xs text-content-error" role="alert">{t('correlations.suggestError')}</span>}
                     {saveError && !sel && (
                         <span className="text-xs text-content-error" role="alert" data-testid="correlation-save-error">
@@ -171,8 +175,8 @@ export default function CorrelationMatrixPage() {
                     <Button variant="secondary" size="sm" onClick={autoSuggest} disabled={suggesting} id="correlations-suggest-btn">
                         {suggesting ? t('correlations.suggesting') : t('correlations.autoSuggest')}
                     </Button>
-                </div>
-            </div>
+                </>}
+            />
 
             <Card className="space-y-default p-6">
                 <AnalyticsState

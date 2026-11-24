@@ -458,7 +458,7 @@ function FindingsPageInner({
                     description={t.listDescription || undefined}
                     actions={
                         canCreate ? (
-                            <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setShowForm(!showForm)}>{t.newFinding}</Button>
+                            <Button variant="primary" icon={<Plus />} onClick={() => setShowForm(!showForm)}>{t.newFinding}</Button>
                         ) : undefined
                     }
                 />

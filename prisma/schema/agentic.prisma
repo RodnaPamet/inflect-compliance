@@ -616,6 +616,27 @@ model WorkflowRun {
   inboundHostConsumerId String?
   /// The `HostConsumerMessage` whose request started this run. A plain id.
   inboundHostMessageId  String?
+  /// WHO IS EXECUTING THIS RUN RIGHT NOW (#5854 finding 2): the attempt token
+  /// of the worker that claimed it, or NULL when nobody holds it.
+  ///
+  /// A BullMQ job can be delivered twice (a stalled-job redelivery, a retry
+  /// while the first attempt still runs), and before this column nothing on
+  /// the row said one was already executing, so two workers drove one run at
+  /// once. `executeQueuedWorkflowRun` now CLAIMS the run with a conditional
+  /// UPDATE (no holder, or an expired lease) before it executes, and a worker
+  /// that cannot claim does nothing. The token is a FENCE as well as a lock:
+  /// every write the engine makes through `updateRun` and `recordStep` is
+  /// conditional on it, so a worker that lost the run writes nothing more.
+  ///
+  /// Written ONLY by `src/lib/agentic/run-lease.ts` (claim, renew, release)
+  /// and cleared by the SIGTERM drain and the reaper. A run executed inline (a
+  /// static start or resume in the request) takes no lease and is unchanged.
+  leaseHolder       String?
+  /// When the holder's claim lapses unless renewed. Set from the DATABASE's
+  /// clock, never an application host's. An expired lease lets ANOTHER worker
+  /// claim the run; it does not fence the holder, which is fenced only once
+  /// somebody else holds the token.
+  leaseExpiresAt    DateTime?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)

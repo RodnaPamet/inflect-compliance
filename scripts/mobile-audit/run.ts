@@ -40,7 +40,7 @@ import { AUDIT_CONFIG_IDS, PHONE_CONFIGS, contextOptionsFor, preferenceCookies, 
 import { findEnglishLeaks, loadLeakCatalog, type LeakCatalog } from './leaks';
 import { countsOf, measurePage, settlePage, type RawMeasurement } from './measure';
 import { compareReports, renderSummary, type AuditReport, type CapturedPage, type UncapturedPage } from './report';
-import { connectDb, dataNames, resolveContext, resolveRoute, type ResolvedRoute } from './resolve';
+import { connectDb, dataNames, libraryTexts, resolveContext, resolveRoute, type ResolvedRoute } from './resolve';
 import { createAuditRecords } from './records';
 import { enumerateRoutes, routeSlug, type RouteAudience } from './routes';
 import { OPEN_STATES, StateUnavailable, type OpenState } from './states';
@@ -132,7 +132,7 @@ async function capture(
     job: Job,
     page: Page,
     config: PhoneConfig,
-    leakInputs: { catalog: LeakCatalog; names: ReadonlySet<string> },
+    leakInputs: { catalog: LeakCatalog; names: ReadonlySet<string>; library: ReadonlySet<string> },
     opts: Options,
 ): Promise<CapturedPage | UncapturedPage> {
     const consoleErrors: string[] = [];
@@ -154,7 +154,7 @@ async function capture(
         return { kind: job.kind, id: job.id, config: config.id, reason: `HTTP ${status}` };
     }
     const m: RawMeasurement = await measurePage(page, { scrollToEnd: job.kind === 'route' });
-    const leaks = config.locale === 'bg' ? findEnglishLeaks(m, leakInputs.catalog, leakInputs.names) : [];
+    const leaks = config.locale === 'bg' ? findEnglishLeaks(m, leakInputs.catalog, leakInputs.names, leakInputs.library) : [];
     let screenshot: string | undefined;
     if (opts.screenshots) {
         // After measuring: the overlay pass scrolled to the end; go back to the top for the picture.
@@ -190,6 +190,7 @@ async function main(): Promise<void> {
     const routes = opts.routeFilter ? allRoutes.filter((r) => opts.routeFilter!(r.pattern)) : allRoutes;
     let resolved: ResolvedRoute[];
     let names = new Set<string>();
+    let library = new Set<string>();
     let stateJobs: Array<Job | UncapturedPage> = [];
     const browser = await chromium.launch(opts.chromium ? { executablePath: opts.chromium } : {});
     try {
@@ -202,6 +203,7 @@ async function main(): Promise<void> {
         }
         resolved = await Promise.all(routes.map((r) => resolveRoute(r, ctx)));
         names = await dataNames(db);
+        library = await libraryTexts(db);
         if (opts.states) {
             stateJobs = await Promise.all(OPEN_STATES.filter((s) => !opts.routeFilter || opts.routeFilter(s.route)).map(async (s) => {
                 const route = allRoutes.find((r) => r.pattern === s.route);
@@ -247,7 +249,7 @@ async function main(): Promise<void> {
                 for (let job = queue.shift(); job; job = queue.shift()) {
                     const page = await contexts.get(job.audience)!.newPage();
                     try {
-                        const result = await capture(job, page, config, { catalog, names }, opts);
+                        const result = await capture(job, page, config, { catalog, names, library }, opts);
                         if ('reason' in result) uncaptured.push(result);
                         else captured.push(result);
                     } finally {

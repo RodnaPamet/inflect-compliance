@@ -11,6 +11,7 @@ import { cardVariants } from '@/components/ui/card-variants';
 import { cn } from '@inflect/ui/lib/cn';
 import { gateAdminPage } from '../_lib/admin-page-gate';
 import { MembersTable, type MembersTableRow } from './MembersTable';
+import { RolePermissionsByRole, type RolePermissionGroup } from './RolePermissionsByRole';
 
 export const dynamic = 'force-dynamic';
 
@@ -97,6 +98,24 @@ export default async function RbacPage({
         }
     }
 
+    // The same rows for a phone, one role at a time: grouped by resource, each
+    // action naming the roles that hold it.
+    const permissionGroups: RolePermissionGroup[] = [];
+    for (const { resource, action } of permissionRows) {
+        let group = permissionGroups.find((g) => g.resource === resource);
+        if (!group) {
+            group = { resource, label: resourceLabel(resource), actions: [] };
+            permissionGroups.push(group);
+        }
+        group.actions.push({
+            action,
+            label: actionLabel(action),
+            grantedTo: roles.filter(
+                (role) => (permissionMatrix[role][resource as keyof PermissionSet] as Record<string, boolean>)[action],
+            ),
+        });
+    }
+
     return (
         <div className="space-y-page animate-fadeIn">
             <BackAffordance />
@@ -130,7 +149,16 @@ export default async function RbacPage({
             <section>
                 <Heading level={2} className="mb-1">{t('rbac.permissionMatrix')}</Heading>
                 <p className="mb-3 text-sm text-content-muted">{t('rbac.matrixNote')}</p>
-                <div className={cn(cardVariants({ density: 'none' }), 'overflow-x-auto')}>
+                {/* A phone: one role at a time (owner decision, 2026-11-23).
+                    The table showed one of its six role columns there. */}
+                <div className="md:hidden">
+                    <RolePermissionsByRole
+                        roles={roles.map((r) => ({ value: r, label: roleLabel(r) }))}
+                        groups={permissionGroups}
+                        initialRole={ctx.role}
+                    />
+                </div>
+                <div className={cn(cardVariants({ density: 'none' }), 'hidden md:block overflow-x-auto')} data-testid="rbac-matrix">
                     <table className="data-table">
                         <thead>
                             <tr>

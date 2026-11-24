@@ -1049,7 +1049,7 @@ function AddSectionForm({ onSubmit }: { onSubmit: (title: string) => Promise<boo
             </FormField>
             <Button
                 variant="primary"
-                icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                icon={<Plus />}
                 type="submit"
                 disabled={busy || !title.trim()}
                 loading={busy}
@@ -1404,7 +1404,7 @@ function QuestionForm({
                 <Button
                     variant="primary"
                     size="sm"
-                    icon={busy || isEdit ? undefined : <Plus className="-ml-0.5 -mr-2.5" />}
+                    icon={busy || isEdit ? undefined : <Plus />}
                     type="submit"
                     disabled={busy || !prompt.trim()}
                     loading={busy}

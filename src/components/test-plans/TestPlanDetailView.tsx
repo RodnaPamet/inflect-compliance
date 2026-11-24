@@ -443,7 +443,7 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
                     {canRun && plan.status === 'ACTIVE' && (
                         <Button
                             variant={hasPendingRun ? 'secondary' : 'primary'}
-                            icon={hasPendingRun ? undefined : <Plus className="-ml-0.5 -mr-2.5" />}
+                            icon={hasPendingRun ? undefined : <Plus />}
                             onClick={createRun}
                             disabled={creatingRun}
                         >
