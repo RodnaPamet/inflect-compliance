@@ -117,6 +117,15 @@ afterEach(() => {
 });
 
 describe('idle', () => {
+    it('names the page on a phone: its title is hidden only from md up', () => {
+        // A main page leads with its subtitle and hides its H1; this subtitle
+        // does not name the page, and a phone has no sidebar on screen to.
+        render(<AskClient tenantSlug="acme" maxChars={MAX} />);
+        const title = screen.getByRole('heading', { level: 1, name: 'Ask a question' });
+        expect(title).toHaveClass('md:sr-only');
+        expect(title).not.toHaveClass('sr-only');
+    });
+
     it('offers the input and refuses to submit nothing', () => {
         render(<AskClient tenantSlug="acme" maxChars={MAX} />);
         expect(screen.getByLabelText('Your question')).toBeInTheDocument();

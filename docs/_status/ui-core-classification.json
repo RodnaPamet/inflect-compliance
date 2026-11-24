@@ -739,6 +739,11 @@
   "derivation": "audited",
   "reason": "Pure extension/MIME → icon mapping, correctly extracted for node tests. The labels now have a catalog key (`kind`, which `FileTypeIcon` translates), but the English `label` is still returned and rendered by callers that read it directly; the `domainKind` hint keeps its row-kind values."
  },
+ "src/components/ui/file-picker.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "A single-file chooser (#5883): the native file input kept only to open the dialog (visually hidden, out of the tab order) behind a real `Button`, with the chosen file's name beside it; the row wraps and the name breaks anywhere, so it never widens a phone layout. Inside a `FormField` the field's id and aria land on the button. Its two strings come from next-intl (`common.filePicker`), and the caller can override the button's words. Imports are `react`, `next-intl`, `lucide-react`, `@/components/ui/button` and `@inflect/ui/lib/cn` — no `src/app-layer` or domain `src/lib`. No GRC nouns, no storage, no brand tokens."
+ },
  "src/components/ui/file-type-icon.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",

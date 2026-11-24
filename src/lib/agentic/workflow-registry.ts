@@ -8,6 +8,7 @@
  * orchestration.
  */
 import type { WorkflowDefinition } from './workflow-types';
+import { diagnosticSummaryText } from './workflow-labels';
 import { frameworkOnboardingWorkflow } from './workflows/framework-onboarding';
 import { auditPrepWorkflow } from './workflows/audit-prep';
 import { postureReviewWorkflow } from './workflows/posture-review';
@@ -38,9 +39,13 @@ const diagnosticWorkflow: WorkflowDefinition = {
                     | undefined;
                 const s = posture?.stats ?? {};
                 return {
-                    text:
-                        `Posture snapshot — ${s.controls ?? 0} controls, ${s.risks ?? 0} risks, ` +
-                        `${s.openTasks ?? 0} open tasks.`,
+                    // Stored in English as the record; the runs pages re-word
+                    // it in the reader's language (`localizedRunSummary`).
+                    text: diagnosticSummaryText({
+                        controls: s.controls ?? 0,
+                        risks: s.risks ?? 0,
+                        openTasks: s.openTasks ?? 0,
+                    }),
                     data: { stats: s },
                 };
             },

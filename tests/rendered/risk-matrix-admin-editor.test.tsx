@@ -113,6 +113,26 @@ describe('<RiskMatrixAdminClient>', () => {
         );
     });
 
+    it('on a phone a band row gives the name its own line, and the scores theirs', () => {
+        render(
+            withTooltip(
+                <RiskMatrixAdminClient
+                    tenantSlug="acme"
+                    initialConfig={DEFAULT_RISK_MATRIX_CONFIG}
+                />,
+            ),
+        );
+        // Six columns below `sm`: the name spans all six, the low, high and
+        // colour cells two each, and Remove a line of its own; twelve from `sm`.
+        const row = screen.getByTestId('rm-band-row-0');
+        expect(row).toHaveClass('grid-cols-6', 'sm:grid-cols-12');
+        expect(screen.getByTestId('rm-band-name-0')).toHaveClass('col-span-6', 'sm:col-span-4');
+        for (const id of ['rm-band-min-0', 'rm-band-max-0', 'rm-band-color-0']) {
+            expect(screen.getByTestId(id)).toHaveClass('col-span-2');
+        }
+        expect(screen.getByTestId('rm-band-remove-0')).toHaveClass('col-span-6', 'sm:col-span-2');
+    });
+
     it('the live preview reflects axis-title edits', () => {
         render(
             withTooltip(

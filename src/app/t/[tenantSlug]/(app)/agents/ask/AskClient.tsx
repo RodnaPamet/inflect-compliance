@@ -260,7 +260,10 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
 
     return (
         <div className="space-y-section">
-            <PageHeader title={t('title')} description={t('description')} />
+            {/* A main page, so its H1 is hidden and it leads with the
+                subtitle; the subtitle does not name the page, so a phone
+                (no sidebar on screen) keeps the title visible. */}
+            <PageHeader title={t('title')} description={t('description')} titleOnPhone />
 
             <div className={cn(cardVariants(), 'space-y-default')}>
                 <Textarea

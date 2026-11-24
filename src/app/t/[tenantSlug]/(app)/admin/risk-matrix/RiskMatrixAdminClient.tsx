@@ -37,6 +37,7 @@ import { Plus } from '@inflect/ui/components/ui/icons/glyphs';
 import { NumberStepper } from '@/components/ui/number-stepper';
 import { RiskMatrix } from '@/components/risks/RiskMatrix';
 import { DEFAULT_RISK_MATRIX_CONFIG } from '@/lib/risk-matrix/defaults';
+import { localizeRiskMatrixConfig } from '@/lib/risk-matrix/localize';
 import {
     bandCoverageIssues,
     levelLabelIssues,
@@ -109,6 +110,7 @@ export function RiskMatrixAdminClient({
     const [saving, setSaving] = useState(false);
     const [serverError, setServerError] = useState<string | null>(null);
     const t = useTranslations('admin');
+    const tDefaults = useTranslations('riskMatrixDefaults');
     const toast = useToast();
 
     // Synthetic preview cells — every (L, I) carries one risk so the
@@ -123,6 +125,16 @@ export function RiskMatrixAdminClient({
         }
         return cells;
     }, [config.likelihoodLevels, config.impactLevels]);
+
+    // The preview is a DISPLAY of the draft, so the product's default words
+    // ("Low", "Rare", "Likelihood") read in the viewer's language there, as
+    // they do on every other matrix. The editor's fields keep the stored
+    // values: those are what a save writes, and a name the tenant typed is
+    // shown as typed in both places.
+    const previewConfig = useMemo(
+        () => localizeRiskMatrixConfig(config, (key) => tDefaults(key)),
+        [config, tDefaults],
+    );
 
     // ── Live validation ────────────────────────────────────────────
     const validationIssues = useMemo<RiskMatrixIssue[]>(
@@ -550,12 +562,16 @@ export function RiskMatrixAdminClient({
                             {config.bands.map((band, idx) => (
                                 <ShadedRow as="li" padding="sm"
                                     key={`band-${idx}`}
-                                    className="grid grid-cols-12 items-center gap-tight"
+                                    // Below `sm` a band takes three lines (name; low,
+                                    // high and colour; remove): on one twelve-column
+                                    // line a phone cut the name to four letters and
+                                    // the scores to one digit.
+                                    className="grid grid-cols-6 items-center gap-tight sm:grid-cols-12"
                                     data-testid={`rm-band-row-${idx}`}
                                 >
                                     <input
                                         type="text"
-                                        className="input col-span-4 text-sm"
+                                        className="input col-span-6 text-sm sm:col-span-4"
                                         value={band.name}
                                         onChange={(e) =>
                                             updateBand(idx, {
@@ -615,7 +631,7 @@ export function RiskMatrixAdminClient({
                                         variant="secondary"
                                         size="sm"
                                         type="button"
-                                        className="col-span-2"
+                                        className="col-span-6 justify-self-start sm:col-span-2 sm:justify-self-stretch"
                                         onClick={() => removeBand(idx)}
                                         aria-label={t('riskMatrix.removeBandAria', { n: idx + 1 })}
                                         data-testid={`rm-band-remove-${idx}`}
@@ -638,7 +654,7 @@ export function RiskMatrixAdminClient({
                         {t('riskMatrix.previewHint')}
                     </p>
                     <RiskMatrix
-                        config={config}
+                        config={previewConfig}
                         cells={previewCells}
                         title={t('riskMatrix.preview')}
                         showSwapToggle={false}
