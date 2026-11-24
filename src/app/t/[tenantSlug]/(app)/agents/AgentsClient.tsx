@@ -47,6 +47,7 @@ import { EntityListPage } from '@/components/layout/EntityListPage';
 import { FilterProvider, useFilterContext, useFilters } from '@/components/ui/filter';
 import { useFilterCardVisibility, type CardDefinition } from '@/components/ui/filter';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
+import { KpiStrip } from '@/components/ui/kpi-strip';
 import { createColumns } from '@/components/ui/table';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
@@ -580,7 +581,7 @@ function AgentsInner({
                     </div>
                 }
                 kpis={
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
+                    <KpiStrip>
                         {visibleKpiCards.map((card) => {
                             const id = card.id as AgentKpiId;
                             const cfg: Record<
@@ -624,7 +625,7 @@ function AgentsInner({
                                 />
                             );
                         })}
-                    </div>
+                    </KpiStrip>
                 }
                 filters={{
                     defs: filterDefs,

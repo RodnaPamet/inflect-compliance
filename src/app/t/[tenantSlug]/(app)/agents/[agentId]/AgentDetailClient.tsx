@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { OverflowAction, PrimaryAction } from '@/components/layout/PageActions';
@@ -27,7 +27,15 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { InlineNotice } from '@/components/ui/inline-notice';
-import type { AgentDetailTabKey } from './agent-detail-tabs';
+import {
+    AGENT_DETAIL_GROUPS,
+    AGENT_DETAIL_GROUP_KEYS,
+    agentDetailGroupOf,
+    resolveAgentDetailTab,
+    type AgentDetailGroupKey,
+    type AgentDetailTabKey,
+} from './agent-detail-tabs';
+import { AgentSectionStrip } from './AgentSectionStrip';
 
 export interface AgentSummary {
     id: string;
@@ -150,7 +158,19 @@ export interface AgentDetailPermissions {
 //
 // The list lives in `agent-detail-tabs.ts`, which the loading skeleton reads
 // too (#5313).
+//
+// Since #5898 these nine are SECTIONS, grouped into four tabs (Overview,
+// Assessment, Authority, Activity — `AGENT_DETAIL_GROUPS`); the order above
+// is kept inside each group. A section key is still the page's address for
+// it: `?tab=runs` opens Activity on Runs.
 type TabKey = AgentDetailTabKey;
+
+/** A section as the page offers it: present, named, and open or not. */
+interface SectionDef {
+    key: TabKey;
+    label: string;
+    disabled?: boolean;
+}
 
 /**
  * The stored codes the header shows, each with its label (#4937). An unknown
@@ -188,6 +208,7 @@ export function AgentDetailClient({
     viewerUserId,
     profilesEnabled = false,
     canvasHref = null,
+    initialTab,
 }: {
     tenantSlug: string;
     agent: AgentSummary;
@@ -214,6 +235,11 @@ export function AgentDetailClient({
      * editor stays out of its bundle.
      */
     canvasHref?: string | null;
+    /**
+     * The `?tab=` the page was opened with: a section (`runs`) or a group
+     * (`activity`). Resolved against what this reader may open (#5898).
+     */
+    initialTab?: string;
 }) {
     const t = useTranslations('admin');
     const tCanvas = useTranslations('agentCanvas');
@@ -223,7 +249,108 @@ export function AgentDetailClient({
     // both. See the note on the breadcrumb trail below.
     const tAgents = useTranslations('agents');
     const tRisks = useTranslations('risks');
-    const [tab, setTab] = useState<TabKey>('overview');
+
+    // Every section the page shows, and whether this reader may open it. The
+    // grouping below reads this list; it decides nothing about access.
+    // Overview is a section and the group that holds it, under one name.
+    const overviewLabel = t('agentDetail.tabOverview');
+    const sections: SectionDef[] = [
+        { key: 'overview', label: overviewLabel },
+        // Disabled without the register key (#3710), like the policy
+        // card without its own: the tab's GET is gated on that key, so a
+        // view-key reader would open it and be refused on the read.
+        { key: 'risk', label: t('agentDetail.tabRisk'), disabled: !perms.canReadRegistry },
+        // Disabled, not hidden. The two narrow keys gate the GET as
+        // well as the write, so a holder of the register key alone
+        // opens either tab and is refused on the read. A greyed tab
+        // says the surface exists and is not yours; a missing one says
+        // the product does not have it.
+        {
+            key: 'policy',
+            label: t('agentDetail.tabPolicy'),
+            disabled: !perms.canEditPolicyCard,
+        },
+        // NOT disabled on `canGrantTools`, unlike the policy card.
+        // This tab hosts TWO independently-gated resources: the
+        // per-agent grants (admin.agent_tool_exposure) and the
+        // tenant-wide manifest pins, which have no rule of their own
+        // and fall to the admin.agent_registry catch-all the page has
+        // already required. Disabling the tab on the narrower key hid
+        // the supply-chain pins — the ASI04 tool-poisoning surface —
+        // from an operator entitled to read them. The tab gates the
+        // grants section internally instead. Disabled only when the
+        // reader holds NEITHER key (#3710): a view-key reader can read
+        // neither the pins nor the grants.
+        {
+            key: 'tools',
+            label: t('agentDetail.tabTools'),
+            disabled: !perms.canReadRegistry && !perms.canGrantTools,
+        },
+        { key: 'skills', label: t('agentDetail.tabSkills'), disabled: !perms.canReadRegistry },
+        // The profile read and every act take the register key, so a
+        // view-key reader finds the tab disabled, like Skills.
+        ...(profilesEnabled
+            ? [{ key: 'behaviour' as const, label: t('agentDetail.tabBehaviour'), disabled: !perms.canReadRegistry }]
+            : []),
+        { key: 'coverage', label: t('agentDetail.tabCoverage'), disabled: !perms.canReadRegistry },
+        // The runs read is `/agent-runs`, which the view key reads
+        // (#3710) — this agent's runs are part of what an auditor reads
+        // about it. Disabled only for a reader the route refuses: one
+        // holding the register key and neither `admin.view` nor the
+        // view key (`canReadRuns`).
+        { key: 'runs', label: t('agentDetail.tabRuns'), disabled: perms.canReadRuns === false },
+        { key: 'breaker', label: t('agentDetail.tabBreaker'), disabled: !perms.canReadRegistry },
+    ];
+    const sectionByKey = new Map(sections.map((d) => [d.key, d]));
+    const isOpen = (k: TabKey) => {
+        const d = sectionByKey.get(k);
+        return !!d && !d.disabled;
+    };
+
+    const [tab, setTabState] = useState<TabKey>(() => resolveAgentDetailTab(initialTab, isOpen));
+    // The section last open in each group, so returning to a group returns to it.
+    const lastInGroup = useRef<Partial<Record<AgentDetailGroupKey, TabKey>>>({});
+
+    /**
+     * Open a section, and write it to the address bar (`?tab=`) so the page can
+     * be linked to and reloaded where it was. `replaceState`, not a navigation:
+     * the server has nothing new to render.
+     */
+    const setTab = useCallback((next: TabKey) => {
+        setTabState(next);
+        lastInGroup.current[agentDetailGroupOf(next)] = next;
+        if (typeof window === 'undefined') return;
+        const url = new URL(window.location.href);
+        if (next === 'overview') url.searchParams.delete('tab');
+        else url.searchParams.set('tab', next);
+        window.history.replaceState(null, '', url.toString());
+    }, []);
+
+    const activeGroup = agentDetailGroupOf(tab);
+    const groupSections = (g: AgentDetailGroupKey): SectionDef[] =>
+        (AGENT_DETAIL_GROUPS[g] as readonly TabKey[])
+            .map((k) => sectionByKey.get(k))
+            .filter((d): d is SectionDef => !!d);
+    const GROUP_LABEL: Record<AgentDetailGroupKey, string> = {
+        overview: overviewLabel,
+        assessment: t('agentDetail.tabGroupAssessment'),
+        authority: t('agentDetail.tabGroupAuthority'),
+        activity: t('agentDetail.tabGroupActivity'),
+    };
+    // A group is a tab while it holds a section, and is closed only when every
+    // section in it is closed to this reader.
+    const groupTabs = AGENT_DETAIL_GROUP_KEYS.filter((g) => groupSections(g).length > 0).map((g) => ({
+        key: g,
+        label: GROUP_LABEL[g],
+        disabled: groupSections(g).every((d) => d.disabled),
+    }));
+    const selectGroup = (g: AgentDetailGroupKey) => {
+        const remembered = lastInGroup.current[g];
+        const next =
+            remembered && isOpen(remembered) ? remembered : groupSections(g).find((d) => !d.disabled)?.key;
+        if (next) setTab(next);
+    };
+    const activeGroupSections = groupSections(activeGroup);
     const [refreshToken, setRefreshToken] = useState(0);
     const [amending, setAmending] = useState(false);
     const [connecting, setConnecting] = useState(false);
@@ -282,7 +409,7 @@ export function AgentDetailClient({
     const props = { tenantSlug, agentId: agent.id, refreshToken };
 
     return (
-        <EntityDetailLayout<TabKey>
+        <EntityDetailLayout<AgentDetailGroupKey>
             // `smart` rather than a static href: it resolves from the in-tab
             // referrer, so arriving from the proposals queue goes BACK there
             // instead of to the register nobody came from. A cold load or deep
@@ -388,55 +515,9 @@ export function AgentDetailClient({
                     />
                 </>
             }
-            tabs={[
-                { key: 'overview', label: t('agentDetail.tabOverview') },
-                // Disabled without the register key (#3710), like the policy
-                // card without its own: the tab's GET is gated on that key, so a
-                // view-key reader would open it and be refused on the read.
-                { key: 'risk', label: t('agentDetail.tabRisk'), disabled: !perms.canReadRegistry },
-                // Disabled, not hidden. The two narrow keys gate the GET as
-                // well as the write, so a holder of the register key alone
-                // opens either tab and is refused on the read. A greyed tab
-                // says the surface exists and is not yours; a missing one says
-                // the product does not have it.
-                {
-                    key: 'policy',
-                    label: t('agentDetail.tabPolicy'),
-                    disabled: !perms.canEditPolicyCard,
-                },
-                // NOT disabled on `canGrantTools`, unlike the policy card.
-                // This tab hosts TWO independently-gated resources: the
-                // per-agent grants (admin.agent_tool_exposure) and the
-                // tenant-wide manifest pins, which have no rule of their own
-                // and fall to the admin.agent_registry catch-all the page has
-                // already required. Disabling the tab on the narrower key hid
-                // the supply-chain pins — the ASI04 tool-poisoning surface —
-                // from an operator entitled to read them. The tab gates the
-                // grants section internally instead. Disabled only when the
-                // reader holds NEITHER key (#3710): a view-key reader can read
-                // neither the pins nor the grants.
-                {
-                    key: 'tools',
-                    label: t('agentDetail.tabTools'),
-                    disabled: !perms.canReadRegistry && !perms.canGrantTools,
-                },
-                { key: 'skills', label: t('agentDetail.tabSkills'), disabled: !perms.canReadRegistry },
-                // The profile read and every act take the register key, so a
-                // view-key reader finds the tab disabled, like Skills.
-                ...(profilesEnabled
-                    ? [{ key: 'behaviour' as const, label: t('agentDetail.tabBehaviour'), disabled: !perms.canReadRegistry }]
-                    : []),
-                { key: 'coverage', label: t('agentDetail.tabCoverage'), disabled: !perms.canReadRegistry },
-                // The runs read is `/agent-runs`, which the view key reads
-                // (#3710) — this agent's runs are part of what an auditor reads
-                // about it. Disabled only for a reader the route refuses: one
-                // holding the register key and neither `admin.view` nor the
-                // view key (`canReadRuns`).
-                { key: 'runs', label: t('agentDetail.tabRuns'), disabled: perms.canReadRuns === false },
-                { key: 'breaker', label: t('agentDetail.tabBreaker'), disabled: !perms.canReadRegistry },
-            ]}
-            activeTab={tab}
-            onTabChange={setTab}
+            tabs={groupTabs}
+            activeTab={activeGroup}
+            onTabChange={selectGroup}
         >
             {/* Outside the tab switch: a kill in force stops this agent on
                 every surface, so it is not the property of whichever tab
@@ -454,6 +535,12 @@ export function AgentDetailClient({
                     {t('agentDetail.viewOnlyTabs')}
                 </InlineNotice>
             )}
+            <AgentSectionStrip
+                label={GROUP_LABEL[activeGroup]}
+                sections={activeGroupSections}
+                active={tab}
+                onSelect={setTab}
+            >
             {tab === 'overview' && (
                 <>
                     <OverviewTab
@@ -547,6 +634,7 @@ export function AgentDetailClient({
                     canReadKillHistory={perms.canReadKillHistory ?? perms.canCloseBreaker}
                 />
             )}
+            </AgentSectionStrip>
             {connecting && (
                 <ConnectAgentSheet
                     agent={agent}

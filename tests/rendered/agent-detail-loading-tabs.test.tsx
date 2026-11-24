@@ -13,16 +13,14 @@ jest.mock('next-intl/server', () => ({
 }));
 
 import AgentDetailLoading from '@/app/t/[tenantSlug]/(app)/agents/[agentId]/loading';
-import {
-    AGENT_DETAIL_OPTIONAL_TAB_KEYS,
-    AGENT_DETAIL_TAB_KEYS,
-} from '@/app/t/[tenantSlug]/(app)/agents/[agentId]/agent-detail-tabs';
+import { AGENT_DETAIL_GROUP_KEYS } from '@/app/t/[tenantSlug]/(app)/agents/[agentId]/agent-detail-tabs';
 
+// Since #5898 the page's tab bar holds the four groups its nine sections sit
+// in, and every workspace sees all four.
 it('draws one tab placeholder per tab every workspace sees', async () => {
     const { container } = render(await AgentDetailLoading());
     const tabBar = container.querySelector('.border-b');
     expect(tabBar).not.toBeNull();
-    const expected = AGENT_DETAIL_TAB_KEYS.length - AGENT_DETAIL_OPTIONAL_TAB_KEYS.length;
-    expect(expected).toBe(8);
-    expect(tabBar!.children).toHaveLength(expected);
+    expect(AGENT_DETAIL_GROUP_KEYS).toHaveLength(4);
+    expect(tabBar!.children).toHaveLength(AGENT_DETAIL_GROUP_KEYS.length);
 });

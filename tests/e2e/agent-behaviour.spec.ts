@@ -36,13 +36,14 @@ async function signIn(page: Page, email: string, password: string): Promise<void
 
 /** Open the agent's Behaviour tab and return the tab panel. */
 async function openBehaviour(page: Page, tenantSlug: string, agentId: string) {
-    await safeGoto(page, `/t/${tenantSlug}/agents/${agentId}`, { waitUntil: 'domcontentloaded' });
+    // Behaviour is a section of the Authority tab (#5898); its address opens it.
+    await safeGoto(page, `/t/${tenantSlug}/agents/${agentId}?tab=behaviour`, { waitUntil: 'domcontentloaded' });
     const main = page.getByRole('main');
     const tab = main.getByRole('tab', { name: 'Behaviour' });
     await waitForHydration(page, '[role="tab"]#tab-behaviour');
     await tab.click();
     await expect(tab).toHaveAttribute('aria-selected', 'true');
-    const panel = main.getByRole('tabpanel');
+    const panel = main.locator('#tabpanel-behaviour');
     await expect(panel.locator('[data-testid="agent-behaviour-tab"]')).toBeVisible({ timeout: 30_000 });
     return panel;
 }

@@ -235,6 +235,25 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
     };
 
     /**
+     * On a phone the list comes first and the detail below it (#5894), so
+     * choosing an audit — a row, a deep link, a new audit — scrolls its detail
+     * into view. Keyed on the audit's id: a re-read of the same audit (a status
+     * move, an edit) does not move the page. From `md` up the detail sits
+     * beside or below the list as before, and nothing scrolls.
+     */
+    const detailRef = useRef<HTMLDivElement>(null);
+    const selectedId = selected?.id;
+    useEffect(() => {
+        if (!selectedId || !detailRef.current) return;
+        if (typeof window.matchMedia !== 'function' || !window.matchMedia('(max-width: 767.98px)').matches) return;
+        detailRef.current.scrollIntoView({ block: 'start' });
+    }, [selectedId]);
+
+    // The lifecycle guide is collapsed behind a disclosure on a phone, where
+    // it sits below the list; from `md` up it is always open.
+    const [guideOpen, setGuideOpen] = useState(false);
+
+    /**
      * Deep-link into one audit: `/audits?selected=<auditId>` opens that audit
      * in the detail pane on arrival.
      *
@@ -376,7 +395,10 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
     };
 
     return (
-        <>
+        // A column with the page's section rhythm, so a phone can put the
+        // list first and the lifecycle guide last with `order` alone (#5894);
+        // from `md` up the order is the source order, as before.
+        <div className="flex flex-col gap-section" data-testid="audits-hub">
             <PageHeader
                 // The Internal Audit action row (6 pills + New Audit) is wide
                 // enough to wrap onto its own header line; ml-auto keeps it
@@ -489,13 +511,33 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                 "Related" pills (Frameworks / Scans / Findings / Incidents) are
                 separate top-level surfaces cross-linked for convenience; this
                 band is where an audit actually starts. */}
-            <section className={cn(cardVariants(), 'space-y-default')} aria-labelledby="audit-lifecycle-heading" id="audit-lifecycle">
+            <section
+                className={cn(cardVariants(), 'space-y-default max-md:order-last')}
+                aria-labelledby="audit-lifecycle-heading"
+                id="audit-lifecycle"
+            >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-compact">
                     <div>
-                        <Heading level={2} id="audit-lifecycle-heading">{tx('hub.lifecycleTitle')}</Heading>
-                        <p className="text-sm text-content-muted">{tx('hub.lifecycleSubtitle')}</p>
+                        <div className="flex flex-wrap items-center justify-between gap-x-compact">
+                            <Heading level={2} id="audit-lifecycle-heading">{tx('hub.lifecycleTitle')}</Heading>
+                            {/* Phone only: the guide is a disclosure there. */}
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="md:hidden"
+                                aria-expanded={guideOpen}
+                                aria-controls="audit-lifecycle-subtitle audit-lifecycle-links audit-lifecycle-steps"
+                                onClick={() => setGuideOpen((o) => !o)}
+                                data-testid="audit-lifecycle-toggle"
+                            >
+                                {guideOpen ? tx('hub.guideHide') : tx('hub.guideShow')}
+                            </Button>
+                        </div>
+                        <p className={cn('text-sm text-content-muted', !guideOpen && 'max-md:hidden')} id="audit-lifecycle-subtitle">
+                            {tx('hub.lifecycleSubtitle')}
+                        </p>
                     </div>
-                    <div className="flex flex-wrap gap-tight">
+                    <div className={cn('flex flex-wrap gap-tight', !guideOpen && 'max-md:hidden')} id="audit-lifecycle-links">
                         <Link href={`/t/${tenantSlug}/audits/cycles`} className={cn(buttonVariants({ variant: 'secondary' }))} id="audits-cycles-link">
                             {tx('hub.cycles')}
                         </Link>
@@ -519,7 +561,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                     </div>
                 </div>
 
-                <div className="space-y-tight">
+                <div className={cn('space-y-tight', !guideOpen && 'max-md:hidden')} id="audit-lifecycle-steps">
                     <div>
                         <Heading level={3}>{tx('hub.startTitle')}</Heading>
                         <p className="text-sm text-content-muted">{tx('hub.startSubtitle')}</p>
@@ -592,7 +634,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-default">
-                <div className="space-y-tight">
+                <div className="space-y-tight" data-testid="audits-list">
                     {/* #11a — the master list gets a real empty state instead of a
                         silently-blank column when the tenant (or the cycle filter)
                         has no audits. */}
@@ -617,9 +659,16 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                     )}
                 </div>
 
-                <div className="lg:col-span-2">
+                {/* No empty "select an audit" panel on a phone: the list is
+                    the page there, and the detail appears below it once an
+                    audit is chosen. */}
+                <div className={cn('lg:col-span-2', !selected && 'max-md:hidden')}>
                     {selected ? (
-                        <div className={cn(cardVariants(), 'animate-fadeIn space-y-default')}>
+                        <div
+                            ref={detailRef}
+                            className={cn(cardVariants(), 'animate-fadeIn space-y-default max-md:scroll-mt-20')}
+                            data-testid="audit-detail"
+                        >
                                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-compact">
                                 <Heading level={2}>{selected.title}</Heading>
                                 <div className="flex flex-wrap gap-tight">
@@ -830,6 +879,6 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                     }}
                 />
             )}
-        </>
+        </div>
     );
 }
