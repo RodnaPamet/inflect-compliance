@@ -129,7 +129,11 @@ scanner on the VM has no GitHub token to federate with.
 3. Create a second API key bound to the same agent, holding
    `admin:integrations_ingest` and nothing else. That is
    `INFLECT_INTEGRATIONS_KEY`: it posts the integrations report (scanent
-   0.16.0 and later), and a key minted for one report does not post the other.
+   0.16.0 and later). One key holding both scopes works too (owner decision,
+   2026-11-24): the **Connect a scanner** panel on the Harness matrix tab's
+   Scanner keys card creates one such key and prints the lines to paste. This
+   VM keeps its two keys; moving it to one is putting the same key in both
+   variables.
 4. Grant the scanner agent the tool `get_harness_register`, and nothing else.
    Keep it at autonomy 1 with no behaviour profile: that bound is what its
    read-only H3 verdicts stand on.

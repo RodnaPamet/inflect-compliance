@@ -199,7 +199,7 @@ const renderTab = (canRegisterShadow?: boolean) =>
                 tab="harness"
                 tenantSlug="acme"
                 harness={view()}
-                scannerKeys={{ keys: { rows: [], truncated: false }, candidates: { rows: [], truncated: false } }}
+                scannerKeys={{ keys: { rows: [], truncated: false }, candidates: { rows: [], truncated: false }, connect: { canMintKeys: false, canGrantTools: false } }}
                 // No estate declared (#3678): the estate card is its own suite's.
                 estateHealth={{ generatedAt: '2026-10-19T00:00:00.000Z', scanWindow: 500, windowTruncated: false, estates: { rows: [], truncated: false } }}
                 {...(canRegisterShadow === undefined ? {} : { canRegisterShadow })}
@@ -513,7 +513,7 @@ describe('the stored review suggestion shows in the dialog, names nobody, and is
                     tab="harness"
                     tenantSlug="acme"
                     harness={view(rows)}
-                    scannerKeys={{ keys: { rows: [], truncated: false }, candidates: { rows: [], truncated: false } }}
+                    scannerKeys={{ keys: { rows: [], truncated: false }, candidates: { rows: [], truncated: false }, connect: { canMintKeys: false, canGrantTools: false } }}
                     estateHealth={{ generatedAt: '2026-10-19T00:00:00.000Z', scanWindow: 500, windowTruncated: false, estates: { rows: [], truncated: false } }}
                     canRegisterShadow
                     canReviewProposals
@@ -617,7 +617,7 @@ describe('an unregistered identity is registered from its own list, through the 
                     tab="harness"
                     tenantSlug="acme"
                     harness={view([], identities)}
-                    scannerKeys={{ keys: { rows: [], truncated: false }, candidates: { rows: [], truncated: false } }}
+                    scannerKeys={{ keys: { rows: [], truncated: false }, candidates: { rows: [], truncated: false }, connect: { canMintKeys: false, canGrantTools: false } }}
                     estateHealth={{ generatedAt: '2026-10-19T00:00:00.000Z', scanWindow: 500, windowTruncated: false, estates: { rows: [], truncated: false } }}
                     canRegisterShadow={canRegisterShadow}
                     canReviewProposals

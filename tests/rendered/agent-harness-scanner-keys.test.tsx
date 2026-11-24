@@ -115,11 +115,12 @@ const keysView = (over: Partial<HarnessScannerKeysView> = {}): HarnessScannerKey
     keys: { rows: [ACTIVE, REVOKED], truncated: false },
     candidates: {
         rows: [
-            { id: 'agt_scanner', name: 'Estate scanner' },
-            { id: 'agt_second', name: 'Second scanner' },
+            { id: 'agt_scanner', name: 'Estate scanner', status: 'ACTIVE', autonomyLevel: 1, aiSystemClassified: true, riskScored: true },
+            { id: 'agt_second', name: 'Second scanner', status: 'DRAFT', autonomyLevel: 1, aiSystemClassified: true, riskScored: false },
         ],
         truncated: false,
     },
+    connect: { canMintKeys: false, canGrantTools: false },
     ...over,
 });
 
