@@ -586,6 +586,7 @@ async function notifyEvidenceOwner(
         });
         if (!member) return;
     }
+    const stockKind = newStatus === 'APPROVED' ? 'EVIDENCE_APPROVED' : 'EVIDENCE_REJECTED';
     await db.notification.create({
         data: {
             tenantId: ctx.tenantId,
@@ -593,8 +594,10 @@ async function notifyEvidenceOwner(
             // and both branches above confirm the owner exists.
             userId: evidence.ownerUserId,
             type: newStatus === 'APPROVED' ? 'EVIDENCE_APPROVED' : 'EVIDENCE_REJECTED',
-            title: `Evidence ${newStatus.toLowerCase()}: ${evidence.title}`,
-            message: comment || `Your evidence "${evidence.title}" has been ${newStatus.toLowerCase()}.`,
+            // Stock sentences the bell words in the reader's language (#5929);
+            // a reviewer's comment is their own text, shown as written.
+            title: stockNotificationTitle(stockKind, { title: evidence.title }),
+            message: comment || stockNotificationText(stockKind, { title: evidence.title }),
             // `/t/<slug>`-prefixed — a bare `/evidence` 404'd from the bell (#4128).
             linkUrl: tenantPageLink(await resolveTenantSlugForLinks(db, ctx), '/evidence'),
         },
@@ -863,6 +866,7 @@ import { scanUploadOrRefuse } from '../services/file-scan';
 import { SIGNED_DOWNLOAD_URL_TTL_SECONDS } from '@/lib/storage/signed-url-policy';
 import { Readable } from 'stream';
 import { env } from '@/env';
+import { stockNotificationText, stockNotificationTitle } from '@/lib/notifications/stock-notifications';
 
 /**
  * A hash that was ever quarantined stays poisoned — on EVERY path that accepts

@@ -15,6 +15,7 @@ import { MARK_NOTIFICATION_READ_REQUEST } from '@/lib/notifications/mark-read';
 import { resolveNotificationHref } from '@/lib/notifications/notification-href';
 import { localizedNotificationTitle } from '@/lib/notifications/agentic-titles';
 import { localizedNotificationBody } from '@/lib/notifications/agentic-bodies';
+import { localizedStockNotification } from '@/lib/notifications/stock-notifications';
 
 type Notification = {
     id: string;
@@ -127,8 +128,8 @@ export default function NotificationsPage() {
                             <span className="text-lg"><AppIcon name={n.type === 'EVIDENCE' ? 'evidence' : n.type === 'FINDING' ? 'bug' : 'bell'} size={18} /></span>
                             {/* The text keeps at least 12rem; on a phone the actions wrap below it. */}
                             <div className="min-w-0 flex-1 basis-48">
-                                <p className="text-sm font-medium text-content-emphasis">{localizedNotificationTitle(n.type, n.title, tTitles)}</p>
-                                <p className="text-sm text-content-default">{localizedNotificationBody(n.type, n.message, tBodies)}</p>
+                                <p className="text-sm font-medium text-content-emphasis">{localizedStockNotification(n, tTitles, tBodies)?.title ?? localizedNotificationTitle(n.type, n.title, tTitles)}</p>
+                                <p className="text-sm text-content-default">{localizedStockNotification(n, tTitles, tBodies)?.message ?? localizedNotificationBody(n.type, n.message, tBodies)}</p>
                                 <p className="text-xs text-content-subtle mt-1">{formatDateTime(n.createdAt)}</p>
                             </div>
                             <div className="ml-auto flex items-center gap-compact" data-testid={`inbox-notification-actions-${n.id}`}>

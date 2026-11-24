@@ -43,7 +43,10 @@
  * data by any rule here: the fix is to give its template a catalog message,
  * which is also what lets it be translated.
  * `tests/unit/mobile-audit-leaks.test.ts` holds this against the real catalog
- * and the workflow's own synthesis step.
+ * and the workflow's own synthesis step. The stock notifications are the
+ * second case (#5929): an assignment, task-due or NIS2 bell row is stored in
+ * English, and its templates are now the `notificationTitles.stock` and
+ * `notificationBodies.stock` messages, so one shown as stored is CATALOG.
  *
  * LIBRARY CONTENT is content too (owner decision, 2026-11-23): the English
  * text the product ships as a library — control and policy templates,

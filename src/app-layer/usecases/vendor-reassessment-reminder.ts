@@ -43,6 +43,7 @@ import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { runJob } from '@/lib/observability/job-runner';
 import { tenantPageLink } from '@/app-layer/notifications/tenant-link';
+import { stockNotificationText, stockNotificationTitle } from '@/lib/notifications/stock-notifications';
 
 export interface VendorReassessmentReminderOptions {
     /** Override "now" timestamp for tests. */
@@ -121,10 +122,9 @@ export async function runVendorReassessmentReminder(
                         tenantId: v.tenantId,
                         userId: v.ownerUserId,
                         type: 'VENDOR_REVIEW_DUE',
-                        title: `Vendor review due: ${v.name}`,
-                        message:
-                            `Vendor "${v.name}" is past its scheduled review date. ` +
-                            'Re-assess the vendor or extend the review date.',
+                        // A stock sentence the bell words in the reader's language (#5929).
+                        title: stockNotificationTitle('VENDOR_REVIEW_PAST_DUE', { name: v.name }),
+                        message: stockNotificationText('VENDOR_REVIEW_PAST_DUE', { name: v.name }),
                         linkUrl: tenantPageLink(v.tenant?.slug, `/vendors/${v.id}`),
                         dedupeKey: vendorReviewDueDedupeKey(v.tenantId, v.id, v.ownerUserId, v.nextReviewAt),
                     }],

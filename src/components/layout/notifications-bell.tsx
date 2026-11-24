@@ -48,6 +48,7 @@ import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { localizedNotificationTitle } from '@/lib/notifications/agentic-titles';
 import { localizedNotificationBody } from '@/lib/notifications/agentic-bodies';
+import type { localizedStockNotification } from '@/lib/notifications/stock-notifications';
 import { Bell, CheckCheck } from 'lucide-react';
 
 import { Popover } from '@/components/ui/popover';
@@ -184,6 +185,26 @@ export function NotificationsBell() {
     const [sessionExpired, setSessionExpired] = useState(false);
 
     const close = useCallback(() => setOpen(false), []);
+
+    // The stock sentences' reader (assignment, task due, NIS2, …; #5929),
+    // loaded once the bell mounts rather than with it: the bell is on every
+    // page, so a static import would put its English templates into every
+    // route's First Load JS. It arrives long before anybody opens the list;
+    // until it does, a stock row is shown as stored.
+    const [stock, setStock] = useState<{ read: typeof localizedStockNotification } | null>(null);
+    useEffect(() => {
+        let live = true;
+        import('@/lib/notifications/stock-notifications')
+            .then((m) => {
+                if (live) setStock({ read: m.localizedStockNotification });
+            })
+            .catch(() => {
+                /* A chunk that fails to load leaves rows as stored — still readable. */
+            });
+        return () => {
+            live = false;
+        };
+    }, []);
 
     /**
      * Set once the endpoint has answered 401/403, and never cleared.
@@ -529,18 +550,19 @@ export function NotificationsBell() {
                             </div>
                         ) : (
                             items!.map((n) => {
+                                const worded = stock?.read(n, tTitles, tBodies);
                                 const row = (
                                     <>
                                         <div className="flex items-center justify-between gap-tight">
                                             <p className="min-w-0 flex-1 break-words text-sm font-medium text-content-emphasis">
-                                                {localizedNotificationTitle(n.type, n.title, tTitles)}
+                                                {worded?.title ?? localizedNotificationTitle(n.type, n.title, tTitles)}
                                             </p>
                                             <span className="flex-shrink-0 text-xs text-content-subtle tabular-nums">
                                                 {formatRelativeTime(n.createdAt, t)}
                                             </span>
                                         </div>
                                         <p className="text-xs text-content-muted line-clamp-2">
-                                            {localizedNotificationBody(n.type, n.message, tBodies)}
+                                            {worded?.message ?? localizedNotificationBody(n.type, n.message, tBodies)}
                                         </p>
                                     </>
                                 );

@@ -22,11 +22,13 @@ import type { PrismaClient } from '@prisma/client';
 import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
 import { insertedNotificationIds } from './inserted-ids';
 import { tenantPageLink } from './tenant-link';
+import { SOMEBODY, stockNotificationText, stockNotificationTitle } from '@/lib/notifications/stock-notifications';
 
 /** Same bound as `resolveAgenticRecipients`: a broadcast must not become a mail bomb. */
 const MAX_OWNER_RECIPIENTS = 50;
 
-export const SCIM_AI_ADMIN_DEPROVISIONED_TITLE = 'An AI admin was deactivated by your directory';
+/** A stock sentence the bell words in the reader's language (#5929). */
+export const SCIM_AI_ADMIN_DEPROVISIONED_TITLE = stockNotificationTitle('SCIM_AI_ADMIN_DEACTIVATED');
 
 export interface ScimAiAdminDeprovision {
     tenantId: string;
@@ -53,10 +55,8 @@ export async function notifyOwnersOfScimAiAdminDeprovision(
         where: { id: input.userId },
         select: { name: true, email: true },
     });
-    const who = person?.name || person?.email || 'A member';
-    const message =
-        `${who} was deactivated in this workspace by your identity provider (SCIM). ` +
-        'They held the AI admin role. Review the agents they own on the agent register.';
+    const who = person?.name || person?.email || SOMEBODY;
+    const message = stockNotificationText('SCIM_AI_ADMIN_DEACTIVATED', { who });
     // A SCIM context carries no slug, so it is looked up, as
     // `resolveTenantSlugForLinks` does for a context without one.
     const tenant = await db.tenant.findUnique({ where: { id: input.tenantId }, select: { slug: true } });

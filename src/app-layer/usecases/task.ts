@@ -8,6 +8,12 @@ import { enqueueEmail } from '../notifications/enqueue';
 import { createTaskDueNotification } from '../notifications/task-due';
 import { createAssignmentNotification } from '../notifications/assignment';
 import { createWatcherNotifications, type WatcherActivityKind } from '../notifications/watcher';
+import {
+    WATCH_DETAIL,
+    WATCH_DETAIL_SEPARATOR,
+    watchDueDetail,
+    watchStatusDetail,
+} from '@/lib/notifications/stock-notifications';
 import { runInTenantContext, runInTenantReadContext } from '@/lib/db-context';
 import { env } from '@/env';
 import { notFound, badRequest, forbidden } from '@/lib/errors/types';
@@ -636,12 +642,10 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
             // Plain YYYY-MM-DD — this string goes into a stored notification
             // body read by many users, so it stays locale-free.
             const ymd = (d: Date) => d.toISOString().slice(0, 10);
-            const from = beforeDueAt ? ymd(beforeDueAt) : 'no due date';
-            const to = result.dueAt ? ymd(result.dueAt) : 'no due date';
-            changes.push(`due ${from} → ${to}`);
+            changes.push(watchDueDetail(beforeDueAt ? ymd(beforeDueAt) : null, result.dueAt ? ymd(result.dueAt) : null));
         }
         if (reviewerChanged) {
-            changes.push(result.reviewerUserId ? 'reviewer reassigned' : 'reviewer cleared');
+            changes.push(result.reviewerUserId ? WATCH_DETAIL.reviewerReassigned : WATCH_DETAIL.reviewerCleared);
         }
         await emitTaskWatcherActivity(
             ctx,
@@ -651,7 +655,7 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
             // genuinely different reschedules don't collapse into one bell
             // while a retry of the same write still dedupes.
             `${beforeDueAt?.toISOString() ?? 'none'}->${result.dueAt?.toISOString() ?? 'none'}|${beforeReviewerUserId ?? 'none'}->${result.reviewerUserId ?? 'none'}`,
-            changes.join(', '),
+            changes.join(WATCH_DETAIL_SEPARATOR),
         );
     }
 
@@ -1013,7 +1017,7 @@ async function afterTaskStatusCommit(
             taskId: c.taskId,
             kind: 'status_changed' as const,
             discriminator: `${c.fromStatus}->${c.toStatus}`,
-            detail: `status changed ${c.fromStatus} → ${c.toStatus}`,
+            detail: watchStatusDetail(c.fromStatus, c.toStatus),
         })),
     );
     await emitTaskReviewRequestedNotifications(ctx, changes);
@@ -1230,7 +1234,7 @@ export async function assignTask(ctx: RequestContext, taskId: string, assigneeUs
         taskId,
         'assigned',
         assigneeUserId ?? 'unassigned',
-        assigneeUserId ? 'reassigned' : 'unassigned',
+        assigneeUserId ? WATCH_DETAIL.reassigned : WATCH_DETAIL.unassigned,
     );
     return result;
 }
@@ -1798,7 +1802,7 @@ export async function addTaskComment(ctx: RequestContext, taskId: string, body: 
     await bumpEntityCacheVersion(ctx, 'task');
     // TP-2 — notify watchers of the new comment (bell). Keyed on the
     // comment id so each distinct comment is its own activity entry.
-    await emitTaskWatcherActivity(ctx, taskId, 'commented', result.id, 'new comment added');
+    await emitTaskWatcherActivity(ctx, taskId, 'commented', result.id, WATCH_DETAIL.commented);
     return result;
 }
 
