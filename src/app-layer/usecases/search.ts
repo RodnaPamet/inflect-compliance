@@ -553,10 +553,9 @@ function buildTestHit(
         title: row.name,
         subtitle: controlLabel,
         badge: row.status,
-        // Test plans live inside the control detail page — no
-        // standalone test-plan detail route. Hit lands on the
-        // control's `tests` tab.
-        href: `/t/${slug}/controls/${row.controlId}/tests`,
+        // A test plan's own page lives under its control. The hit used
+        // to name `/controls/<id>/tests`, which has no page: a 404.
+        href: `/t/${slug}/controls/${row.controlId}/tests/${row.id}`,
         score: computeRankScore(query, {
             type: 'test',
             title: row.name,

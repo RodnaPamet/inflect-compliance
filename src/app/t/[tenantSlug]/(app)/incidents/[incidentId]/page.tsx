@@ -14,6 +14,8 @@ import { IncidentBiaContext } from '@/components/bia/IncidentBiaContext';
 import { Card, cardVariants } from '@/components/ui/card';
 import LinkedTasksPanel from '@/components/LinkedTasksPanel';
 import { useTenantContext } from '@/lib/tenant-context-provider';
+import { useOffersAdminApiWrite } from '@/lib/auth/use-offers-admin-api-write';
+import { INCIDENT_AUTHORITY_ANCHOR } from '@/lib/incidents/authority';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Modal } from '@/components/ui/modal';
@@ -75,6 +77,8 @@ interface IncidentDetail {
     notifications: IncidentNotification[];
     timeline: TimelineEntry[];
     evidenceLinks: IncidentEvidenceLink[];
+    /** The Article 23 authority the workspace names, or null when it names none. */
+    notifyAuthority: string | null;
 }
 interface IncidentEvidenceLink {
     id: string;
@@ -150,6 +154,10 @@ export default function IncidentDetailPage() {
     // (no coarse tier on either), so that one key is what shows the controls.
     // OWNER and ADMIN hold it by default; a custom role may grant it.
     const canManage = !!appPermissions?.incidents?.manage;
+    // The authority is set on the admin security page, behind the settings
+    // route's key: only a viewer that page would take the write from is
+    // offered the link to it; everybody else is told who sets it.
+    const canSetAuthority = useOffersAdminApiWrite({ key: 'admin.manage' });
     // #4697 — the runbook, forensic checklist and roles are reference text
     // kept in English in `src/data/incident-containment.ts`; the page reads
     // each one from `incidents.containment`, falling back to that English.
@@ -507,21 +515,39 @@ export default function IncidentDetailPage() {
                         )}
                     </section>
 
-                    {/* Jurisdiction / authority. */}
-                    <section className="space-y-default">
+                    {/* Jurisdiction / authority: the one the workspace names on its
+                        security settings, or how to name one. */}
+                    <section className="space-y-tight" data-testid="incident-authority">
                         <Heading level={2}>{tx('detail.authorityHeading')}</Heading>
-                        <p className="text-sm text-content-muted">
-                            {tx.rich('detail.authorityText', {
-                                settings: (c) => (
-                                    <Link
-                                        href={`/t/${tenantSlug}/admin/settings`}
-                                        className="text-content-link underline"
-                                    >
-                                        {c}
-                                    </Link>
-                                ),
-                            })}
-                        </p>
+                        {incident.notifyAuthority ? (
+                            <p className="text-sm text-content-default break-words" data-testid="incident-authority-name">
+                                {tx.rich('detail.authorityConfigured', {
+                                    authority: incident.notifyAuthority,
+                                    b: (c) => <span className="font-medium text-content-emphasis">{c}</span>,
+                                })}
+                            </p>
+                        ) : (
+                            <p className="text-sm text-content-muted">{tx('detail.authorityNone')}</p>
+                        )}
+                        {canSetAuthority ? (
+                            <p className="text-sm text-content-muted">
+                                {tx.rich(incident.notifyAuthority ? 'detail.authorityChange' : 'detail.authoritySet', {
+                                    settings: (c) => (
+                                        <Link
+                                            href={`/t/${tenantSlug}/admin/security#${INCIDENT_AUTHORITY_ANCHOR}`}
+                                            className="text-content-link underline"
+                                            data-testid="incident-authority-settings-link"
+                                        >
+                                            {c}
+                                        </Link>
+                                    ),
+                                })}
+                            </p>
+                        ) : (
+                            !incident.notifyAuthority && (
+                                <p className="text-sm text-content-muted">{tx('detail.authorityAskAdmin')}</p>
+                            )
+                        )}
                     </section>
 
                     {/* Forensic evidence collection checklist. */}

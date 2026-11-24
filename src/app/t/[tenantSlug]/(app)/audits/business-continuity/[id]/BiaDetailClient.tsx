@@ -395,7 +395,7 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
                         <p className="text-sm text-content-default">
                             {tx('biaDetail.processNodePrefix')}{' '}
                             <Link
-                                href={`/t/${tenantSlug}/processes/${bia.processNode.processMapId}`}
+                                href={`/t/${tenantSlug}/processes?activeId=${encodeURIComponent(bia.processNode.processMapId)}`}
                                 className="text-content-link hover:underline"
                             >
                                 {bia.processNode.label}

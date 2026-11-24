@@ -80,7 +80,16 @@ export async function getIncident(ctx: RequestContext, id: string) {
     return runInTenantContext(ctx, async (db) => {
         const incident = await IncidentRepository.getById(db, ctx, id);
         if (!incident) throw notFound('Incident not found', { reason: 'INCIDENT_NOT_FOUND' satisfies IncidentRefusal });
-        return incident;
+        // The Article 23 authority the workspace notifies, named on its
+        // security settings (`incidentAuthority`). Read here rather than from
+        // the settings route because that route is admin-only, and everybody
+        // who reads an incident needs to know whom to notify. The name only:
+        // nothing else on the settings row leaves through this read.
+        const settings = await db.tenantSecuritySettings.findUnique({
+            where: { tenantId: ctx.tenantId },
+            select: { incidentAuthority: true },
+        });
+        return { ...incident, notifyAuthority: settings?.incidentAuthority ?? null };
     });
 }
 

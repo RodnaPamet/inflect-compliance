@@ -30,6 +30,11 @@ import { jsonResponse } from '@/lib/api-response';
  * row, this PUT is already patch-shaped and `.strict()`, and a second writer
  * for the row is what the patch semantics exist to avoid. Its before/after
  * values get their own audit event in the usecase.
+ *
+ * `incidentAuthority` — the NIS2 Article 23 authority every incident names as
+ * the one to notify — is written here for the same reason, and likewise
+ * audited with both values. It is READ by every incident reader through the
+ * incident itself (`getIncident`'s `notifyAuthority`), not through this route.
  */
 
 export const GET = withApiErrorHandling(

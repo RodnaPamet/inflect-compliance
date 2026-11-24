@@ -26,6 +26,8 @@ import {
     type TurnCaps,
 } from '@/lib/agentic/turn-caps';
 import { readTurnCapInputs } from '@/lib/agentic/turn-caps-policy';
+import { MAX_INCIDENT_AUTHORITY_LENGTH } from '@/lib/incidents/authority';
+import { sanitizePlainText } from '@/lib/security/sanitize';
 import type { AiGuardMode, AiResidency, LegacyMatchAiMode } from '@prisma/client';
 
 /**
@@ -242,6 +244,12 @@ export interface TenantSecurityConfig {
      */
     apiKeyRotationDays: number | null;
     /**
+     * The NIS2 Article 23 authority this workspace notifies of a significant
+     * incident ("CCB (Belgium)", "BSI (Germany)"), or null when none is named.
+     * Every incident shows it as the authority to notify.
+     */
+    incidentAuthority: string | null;
+    /**
      * The workspace's stored narrowing of delegations per turn (#4594), or
      * null when it follows the organization's ceiling.
      */
@@ -281,6 +289,12 @@ export interface TenantSecurityConfigPatch {
      */
     apiKeyRotationDays?: number | null;
     /**
+     * The incident notification authority, free text. Trimmed, stripped of
+     * markup and refused above `MAX_INCIDENT_AUTHORITY_LENGTH`; `null`, or a
+     * value that is empty once trimmed, clears it.
+     */
+    incidentAuthority?: string | null;
+    /**
      * The workspace's narrowing of delegations per turn, 0..10 and no higher
      * than the organization's ceiling. `null` follows the organization.
      */
@@ -319,6 +333,25 @@ function turnCapsFor(
 }
 
 const MAX_CONCURRENT_SESSIONS_CEILING = 100;
+
+/**
+ * The stored form of an incident authority: markup stripped
+ * (`sanitizePlainText`, C.5 — the value is rendered on every incident and may
+ * reach a PDF), whitespace collapsed to single spaces and trimmed, and null
+ * when nothing is left. Refused above `MAX_INCIDENT_AUTHORITY_LENGTH` once
+ * normalised, which the route's schema cannot see.
+ */
+function normaliseIncidentAuthority(raw: string | null): string | null {
+    if (raw === null) return null;
+    const value = sanitizePlainText(raw).replace(/\s+/g, ' ').trim();
+    if (value.length === 0) return null;
+    if (value.length > MAX_INCIDENT_AUTHORITY_LENGTH) {
+        throw badRequest(
+            `incidentAuthority must be at most ${MAX_INCIDENT_AUTHORITY_LENGTH} characters, or null to clear it.`,
+        );
+    }
+    return value;
+}
 const MIN_AUDIT_STREAM_SECRET_LENGTH = 16;
 
 export async function getTenantSecurityConfig(
@@ -343,6 +376,7 @@ export async function getTenantSecurityConfig(
                 mfaFailClosed: true,
                 requireRegisteredAgent: true,
                 apiKeyRotationDays: true,
+                incidentAuthority: true,
                 agentMaxSubagentsPerTurn: true,
                 agentMaxToolCallsPerTurn: true,
             },
@@ -369,6 +403,8 @@ export async function getTenantSecurityConfig(
             recertificationOwnerUserId: row?.recertificationOwnerUserId ?? null,
             // Null is "no setting": the pass applies the product default.
             apiKeyRotationDays: row?.apiKeyRotationDays ?? null,
+            // Null is "no authority named": the incident page says so.
+            incidentAuthority: row?.incidentAuthority ?? null,
             // Null follows the organization's ceiling (#4594).
             agentMaxSubagentsPerTurn: row?.agentMaxSubagentsPerTurn ?? null,
             agentMaxToolCallsPerTurn: row?.agentMaxToolCallsPerTurn ?? null,
@@ -486,6 +522,11 @@ export async function updateTenantSecurityConfig(
         changed.push('apiKeyRotationDays');
     }
 
+    if (patch.incidentAuthority !== undefined) {
+        data.incidentAuthority = normaliseIncidentAuthority(patch.incidentAuthority);
+        changed.push('incidentAuthority');
+    }
+
     // THE PER-TURN CAPS (#4594): a workspace may only NARROW its organization's
     // ceiling. A value above the CURRENT ceiling is refused, because it would
     // store a choice that changes nothing; null follows the organization. The
@@ -572,6 +613,7 @@ export async function updateTenantSecurityConfig(
                 auditStreamUrl: true,
                 auditStreamSecretEncrypted: true,
                 apiKeyRotationDays: true,
+                incidentAuthority: true,
                 agentMaxSubagentsPerTurn: true,
                 agentMaxToolCallsPerTurn: true,
             },
@@ -775,6 +817,34 @@ export async function updateTenantSecurityConfig(
             }
         }
 
+        // THE INCIDENT AUTHORITY GETS ITS OWN EVENT, with both values, as the
+        // rotation age does: "since when have we been telling incident
+        // commanders to notify BSI, and whom before" is the question, and
+        // `SECURITY_SETTINGS_UPDATED` records field names only. An authority's
+        // name is public, so neither value is sensitive.
+        if (patch.incidentAuthority !== undefined) {
+            const prior = before?.incidentAuthority ?? null;
+            const next = (data.incidentAuthority as string | null) ?? null;
+            if (prior !== next) {
+                await logEvent(db, ctx, {
+                    action: 'INCIDENT_AUTHORITY_CHANGED',
+                    entityType: 'TenantSecuritySettings',
+                    entityId: ctx.tenantId,
+                    details:
+                        `Incident notification authority changed from ${prior ?? '(none)'} ` +
+                        `to ${next ?? '(none)'}`,
+                    detailsJson: {
+                        category: 'entity_lifecycle',
+                        entityName: 'TenantSecuritySettings',
+                        operation: 'updated',
+                        changedFields: ['incidentAuthority'],
+                        before: { incidentAuthority: prior },
+                        after: { incidentAuthority: next },
+                    },
+                });
+            }
+        }
+
         // THE PER-TURN CAPS GET THEIR OWN EVENT, with both values, beside
         // `SECURITY_SETTINGS_UPDATED`, as the rotation age does (#4594): "who
         // narrowed delegation here, and from what" is the question it answers.
@@ -867,6 +937,7 @@ export async function updateTenantSecurityConfig(
                 mfaFailClosed: true,
                 requireRegisteredAgent: true,
                 apiKeyRotationDays: true,
+                incidentAuthority: true,
                 agentMaxSubagentsPerTurn: true,
                 agentMaxToolCallsPerTurn: true,
             },
@@ -893,6 +964,8 @@ export async function updateTenantSecurityConfig(
             recertificationOwnerUserId: row?.recertificationOwnerUserId ?? null,
             // Null is "no setting": the pass applies the product default.
             apiKeyRotationDays: row?.apiKeyRotationDays ?? null,
+            // Null is "no authority named": the incident page says so.
+            incidentAuthority: row?.incidentAuthority ?? null,
             // Null follows the organization's ceiling (#4594).
             agentMaxSubagentsPerTurn: row?.agentMaxSubagentsPerTurn ?? null,
             agentMaxToolCallsPerTurn: row?.agentMaxToolCallsPerTurn ?? null,
