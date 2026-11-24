@@ -18,6 +18,14 @@ import { BackAffordance } from '@/components/nav/BackAffordance';
 import { cn } from '@inflect/ui/lib/cn';
 import { apiErrorMessage } from '@/lib/api-error';
 import { parsePlanLimitMessage } from '@/lib/billing/plan-limit-message';
+import { useIsBelowMd } from '@/components/ui/hooks';
+import { isControlCategoryTheme } from '@/lib/controls/control-categories';
+import {
+    TemplateInstallDock,
+    TemplateSelectRow,
+    TemplateShowMore,
+    useProgressiveCount,
+} from '@/components/controls-shared/template-library-phone';
 
 // listControlTemplates → ControlTemplateRepository.list (ControlTemplate model).
 interface ControlTemplateRow {
@@ -153,6 +161,21 @@ export default function ControlTemplatesPage() {
                   (tpl.category ?? '').toLowerCase().includes(filterQuery),
           );
 
+    // Below `md` (Mobile 4.3): search first, one page of cards at a time,
+    // each with a real checkbox, and the install bar pinned to the bottom of
+    // the screen. The table stays for larger screens. `false` on the server
+    // and the first render, as DataTable's own card fallback.
+    const belowMd = useIsBelowMd();
+    const phone = useProgressiveCount(filterQuery);
+    const phoneRows = filtered.slice(0, phone.count);
+    // On a phone Install is tapped in the bottom bar, screens below the
+    // notices at the top; bring the outcome into view.
+    useEffect(() => {
+        if (!belowMd) return;
+        const id = error ? 'install-error' : success ? 'install-success' : null;
+        if (id) document.getElementById(id)?.scrollIntoView?.({ block: 'center' });
+    }, [belowMd, error, success]);
+
 
     return (
         <div className="space-y-section animate-fadeIn">
@@ -166,7 +189,7 @@ export default function ControlTemplatesPage() {
             </div>
 
             {error && (
-                <InlineNotice variant="error" icon={null}>{error}</InlineNotice>
+                <InlineNotice variant="error" icon={null} id="install-error">{error}</InlineNotice>
             )}
             {success && (
                 <InlineNotice variant="success" icon={null} id="install-success">{success}</InlineNotice>
@@ -179,7 +202,7 @@ export default function ControlTemplatesPage() {
 
             {/* Install bar — bulk-install the selected templates. */}
             {canInstall && (
-                <div className={cardVariants({ density: 'compact' })}>
+                <div className={cn(cardVariants({ density: 'compact' }), 'max-md:hidden')}>
                     <div className="flex items-center justify-end">
                         <Button
                             variant="primary"
@@ -235,6 +258,72 @@ export default function ControlTemplatesPage() {
                             description={t('templates.emptyDesc')}
                         />
                     )
+                ) : belowMd ? (
+                    <div className="space-y-default p-default" id="templates-phone-list">
+                        {canInstall && (
+                            <Button
+                                variant="secondary"
+                                className="min-h-11 w-full"
+                                onClick={toggleAll}
+                                id="templates-phone-select-all"
+                            >
+                                {selectedIds.size === filtered.length
+                                    ? t('templates.phone.clearSelection')
+                                    : t('templates.phone.selectAll', { count: filtered.length })}
+                            </Button>
+                        )}
+                        <ul className="divide-y divide-border-subtle">
+                            {phoneRows.map((tpl) => {
+                                const name = tpl.code ? `${tpl.code} ${tpl.title}` : tpl.title;
+                                const boxId = `template-select-${tpl.id}`;
+                                const text = (
+                                    <>
+                                        {tpl.code && (
+                                            <code className="block whitespace-nowrap text-xs text-content-muted">{tpl.code}</code>
+                                        )}
+                                        <span className="block break-words font-medium text-content-emphasis">{tpl.title}</span>
+                                        <span className="mt-tight flex flex-wrap items-center gap-tight text-xs text-content-subtle">
+                                            {/* An ISO 27002 theme constant reads as its label. */}
+                                            {tpl.category && (
+                                                <StatusBadge variant="info">
+                                                    {isControlCategoryTheme(tpl.category) ? t(`categoryLabels.${tpl.category}`) : tpl.category}
+                                                </StatusBadge>
+                                            )}
+                                            <span>
+                                                {t('templates.previewSummary', {
+                                                    tasks: tpl._count?.tasks ?? 0,
+                                                    requirements: tpl._count?.requirementLinks ?? 0,
+                                                })}
+                                            </span>
+                                        </span>
+                                    </>
+                                );
+                                return (
+                                    <li key={tpl.id} className="flex items-start gap-default py-default" data-testid="template-phone-card">
+                                        {canInstall ? (
+                                            <TemplateSelectRow
+                                                id={boxId}
+                                                checked={selectedIds.has(tpl.id)}
+                                                onCheckedChange={() => toggle(tpl.id)}
+                                                label={t('templates.selectRow', { name })}
+                                            >
+                                                {text}
+                                            </TemplateSelectRow>
+                                        ) : (
+                                            <div className="min-w-0 flex-1">{text}</div>
+                                        )}
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                        {phoneRows.length < filtered.length && (
+                            <TemplateShowMore
+                                id="templates-phone-more"
+                                onClick={phone.showMore}
+                                label={t('templates.phone.showMore', { remaining: filtered.length - phoneRows.length })}
+                            />
+                        )}
+                    </div>
                 ) : (
                     (() => {
                         // #4795 — the selection exists only to install, so it is
@@ -305,6 +394,17 @@ export default function ControlTemplatesPage() {
                     })()
                 )}
             </div>
+
+            {canInstall && (
+                <TemplateInstallDock
+                    id="templates-phone-install"
+                    installLabel={installing ? t('templates.installing') : t('templates.installSelected', { count: selectedIds.size })}
+                    onInstall={handleInstall}
+                    disabled={selectedIds.size === 0 || installing}
+                    clearLabel={selectedIds.size > 0 ? t('templates.phone.clearSelection') : undefined}
+                    onClear={() => setSelectedIds(new Set())}
+                />
+            )}
         </div>
     );
 }

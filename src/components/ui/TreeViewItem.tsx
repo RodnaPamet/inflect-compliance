@@ -87,7 +87,10 @@ export const TreeViewItem = forwardRef<HTMLDivElement, TreeViewItemProps>(
                 data-selected={selected ? 'true' : undefined}
                 onClick={onSelect}
                 className={cn(
-                    'flex items-center gap-tight py-1.5 pr-2 cursor-pointer rounded-md',
+                    // On a touch screen a row is a finger's height (44px),
+                    // and its chevron below spans that height, so neither
+                    // the row nor the chevron is a sliver to aim at.
+                    'flex items-center gap-tight py-1.5 pr-2 cursor-pointer rounded-md pointer-coarse:min-h-11 pointer-coarse:py-0',
                     'text-sm text-content-default transition-colors',
                     'hover:bg-bg-muted',
                     'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-default)] focus-visible:ring-offset-2 focus-visible:ring-offset-bg-default',
@@ -105,7 +108,7 @@ export const TreeViewItem = forwardRef<HTMLDivElement, TreeViewItemProps>(
                         if (hasChildren) onToggle();
                     }}
                     className={cn(
-                        'flex-shrink-0 w-5 h-5 flex items-center justify-center rounded',
+                        'flex-shrink-0 w-5 h-5 flex items-center justify-center rounded pointer-coarse:w-9 pointer-coarse:h-auto pointer-coarse:self-stretch',
                         hasChildren ? 'hover:bg-bg-muted text-content-muted' : 'invisible',
                     )}
                 >
@@ -122,7 +125,9 @@ export const TreeViewItem = forwardRef<HTMLDivElement, TreeViewItemProps>(
                     )}
                 </button>
 
-                <span className="truncate flex-1 min-w-0">
+                {/* Below `md` a row is the whole width of a phone list, so its
+                    title wraps instead of being cut. */}
+                <span className="truncate flex-1 min-w-0 max-md:whitespace-normal max-md:py-1.5">
                     <span className="font-mono text-xs text-content-subtle mr-2">{label}</span>
                     {secondary && (
                         <span className="text-content-muted">{secondary}</span>
