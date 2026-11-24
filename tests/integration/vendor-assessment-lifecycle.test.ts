@@ -27,6 +27,14 @@
  * hiding the defect it should have caught. The template question is now the
  * only question row created.
  *
+ * Seeding note (#5910): the suite also used to create a `User` with the id
+ * `external-respondent`, the principal `submitResponse` stamped on its audit
+ * rows. No migration or seed creates that user, so in the product every
+ * submit failed the `AuditLog.userId` foreign key and rolled back, while this
+ * suite passed. The submit now writes as the tenant's SYSTEM user, which it
+ * creates on first use, and the suite seeds NO actor for it, so it runs the
+ * path a vendor runs.
+ *
  * RUN: npx jest tests/integration/vendor-assessment-lifecycle.test.ts
  */
 import { Role } from '@prisma/client';
@@ -42,6 +50,7 @@ import {
     listVendorAssessments,
 } from '@/app-layer/usecases/vendor-assessment-review';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { tenantSystemUserId } from '@/lib/tenant-system-user';
 
 // Route writes through the PII-encryption-enabled client (emailHash on
 // User is NOT NULL at the DB but populated by middleware).
@@ -64,19 +73,6 @@ describeFn('Epic G-3 — vendor assessment lifecycle (integration)', () => {
             data: { email: `g3-life-${runId}@test.com`, name: 'G-3 Lifecycle User' },
         });
         userId = user.id;
-
-        // The public submit flow stamps the synthetic actor
-        // `external-respondent` on its audit row (AuditLog.userId FK).
-        // Seed that sentinel user so the real submit audit resolves.
-        await prisma.user.upsert({
-            where: { id: 'external-respondent' },
-            update: {},
-            create: {
-                id: 'external-respondent',
-                email: 'external-respondent@system.local',
-                name: 'External Respondent',
-            },
-        });
 
         const tenant = await prisma.tenant.create({
             data: {
@@ -190,8 +186,8 @@ describeFn('Epic G-3 — vendor assessment lifecycle (integration)', () => {
                     tenantId,
                 );
                 await tx.$executeRawUnsafe(
-                    `DELETE FROM "User" WHERE "id" = $1`,
-                    userId,
+                    `DELETE FROM "User" WHERE "id" = ANY($1::text[])`,
+                    [userId, tenantSystemUserId(tenantId)],
                 );
             });
         } catch (e) {
@@ -225,6 +221,32 @@ describeFn('Epic G-3 — vendor assessment lifecycle (integration)', () => {
         );
         expect(submitted.status).toBe('SUBMITTED');
         expect(typeof submitted.provisionalScore).toBe('number');
+
+        // ── the submit is audited, as the tenant's system user (#5910) ──
+        // Nothing in this suite creates an actor for the respondent. On the
+        // old `external-respondent` principal this submit failed the
+        // `AuditLog.userId` foreign key (23503) and never got here.
+        const submitAudit = await prisma.auditLog.findFirst({
+            where: {
+                tenantId,
+                action: 'VENDOR_ASSESSMENT_SUBMITTED',
+                entityId: sent.assessmentId,
+            },
+            select: { userId: true, actorType: true, detailsJson: true },
+        });
+        expect(submitAudit).toEqual({
+            userId: tenantSystemUserId(tenantId),
+            actorType: 'SYSTEM',
+            detailsJson: expect.objectContaining({
+                actor: {
+                    kind: 'EXTERNAL_ASSESSMENT_RESPONDENT',
+                    authenticatedBy: 'ASSESSMENT_ACCESS_TOKEN',
+                },
+            }),
+        });
+        // The structured actor carries no personal data: the respondent's
+        // address is on the assessment, not in a row that streams to a SIEM.
+        expect(JSON.stringify(submitAudit?.detailsJson)).not.toContain('respondent@example.test');
 
         const afterSubmit = await prisma.vendorAssessment.findUnique({
             where: { id: sent.assessmentId },

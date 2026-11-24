@@ -84,6 +84,12 @@ jest.mock('@/app-layer/events/audit', () => ({
     logEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
+// The respondent writes as the tenant's system user (#5910). The real helper
+// inserts the row with raw SQL; here it only answers the id it would create.
+jest.mock('@/app-layer/context-system', () => ({
+    ensureTenantSystemUser: jest.fn(async (tenantId: string) => `sys_${tenantId}`),
+}));
+
 import {
     loadResponseByToken,
     submitResponse,
@@ -91,6 +97,9 @@ import {
     ResponseValidationError,
 } from '@/app-layer/usecases/vendor-assessment-response';
 import { hashAccessToken } from '@/lib/security/external-assessment-access';
+import { ensureTenantSystemUser } from '@/app-layer/context-system';
+import { runWithAuditContext } from '@/lib/audit-context';
+import { logEvent } from '@/app-layer/events/audit';
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
@@ -477,6 +486,39 @@ describe('submitResponse — persistence', () => {
             score: 9,
         });
         expect(updateCall.data.submittedAt).toBeInstanceOf(Date);
+    });
+
+    test('attributes the submit to the tenant system user, never a fabricated principal', async () => {
+        // `external-respondent` was no `User` row, so the audit insert failed
+        // its foreign key and every real submission rolled back (#5910).
+        setupSubmitMocks([{ id: 'q1', answerType: 'YES_NO' }]);
+        await submitResponse(RAW_TOKEN, 'assess-1', [
+            { questionId: 'q1', answerJson: { value: 'yes' } },
+        ]);
+
+        expect(ensureTenantSystemUser).toHaveBeenCalledWith('tenant-1');
+        const auditContext = (runWithAuditContext as jest.Mock).mock.calls[0][0];
+        expect(auditContext.actorUserId).toBe('sys_tenant-1');
+
+        const [, ctx, event] = (logEvent as jest.Mock).mock.calls[0];
+        expect({ userId: ctx.userId, actorType: ctx.actorType }).toEqual({
+            userId: 'sys_tenant-1',
+            actorType: 'SYSTEM',
+        });
+        // The context still claims no authority — the system user's identity
+        // is borrowed, a job's ADMIN grant is not.
+        expect(ctx.permissions).toEqual({
+            canRead: false,
+            canWrite: false,
+            canAdmin: false,
+            canAudit: false,
+            canExport: false,
+        });
+        expect(event.action).toBe('VENDOR_ASSESSMENT_SUBMITTED');
+        expect(event.detailsJson.actor).toEqual({
+            kind: 'EXTERNAL_ASSESSMENT_RESPONDENT',
+            authenticatedBy: 'ASSESSMENT_ACCESS_TOKEN',
+        });
     });
 
     test('duplicate questionId rejects validation', async () => {
