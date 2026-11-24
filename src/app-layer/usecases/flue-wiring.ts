@@ -172,8 +172,13 @@ export async function getFlueWiringState(ctx: RequestContext): Promise<FlueWirin
                   { key: 'TENANT', satisfied: true, actor: 'tenant' },
                   { key: 'BUILD', satisfied: driver.managedAgents.implemented, actor: 'operator' },
                   { key: 'PROFILES', satisfied: profilesRequested, actor: profiles ? switchActor(profiles.basis) : 'operator' },
-                  // The setting's own read: exactly one enabled connection.
-                  { key: 'WORKSPACE', satisfied: driver.managedAgents.workspace === 'CONNECTED', actor: 'tenant' },
+                  // The setting's own read: exactly one enabled connection, or
+                  // Inflect's own workspace with every hosted term holding (Step 6b).
+                  {
+                      key: 'WORKSPACE',
+                      satisfied: driver.managedAgents.workspace === 'CONNECTED' || driver.managedAgents.workspace === 'HOSTED',
+                      actor: 'tenant',
+                  },
                   { key: 'REGISTERED_AGENT', satisfied: agents > 0, actor: 'tenant', count: agents },
               ]
             : engine === 'TOOL_RUNNER'

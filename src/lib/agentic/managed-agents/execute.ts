@@ -168,6 +168,7 @@ import { listCrashWindow } from './cleanup';
 import { recordManagedAgentsDecision, type InflectSentInput } from './model-decision';
 import { sessionStepRecord, type SessionLifecycle } from './session-ledger';
 import { readRecordedSessionIds, recordEnvironmentHashOnFirstUse, type ProvisionRecord } from './store';
+import type { ManagedAgentsWorkspaceKind } from './workspace';
 
 const RANK: Record<StepGuardObservation['verdict'], number> = { CLEAN: 0, FLAGGED: 1, QUARANTINED: 2 };
 
@@ -318,7 +319,14 @@ export interface ManagedAgentsRoute {
     readonly providerId: string;
     readonly externalAiAcknowledgement: ExternalAiAcknowledgement;
     readonly connectionId: string;
-    /** Decision 4. */
+    /**
+     * Whose workspace this run uses (Step 6b): the tenant's own (`TENANT`) or
+     * Inflect's (`HOSTED`). Written on the ledger's `SESSION_CREATED` step and
+     * on every `MODEL_CALL` step, so the run records which workspace it used
+     * and, for a hosted run, what Inflect paid for.
+     */
+    readonly workspaceKind: ManagedAgentsWorkspaceKind;
+    /** Decision 4. Always false for a hosted workspace. */
     readonly keepSessions: boolean;
     readonly provision: ProvisionRecord;
     readonly model: string;
@@ -825,6 +833,10 @@ export async function executeManagedAgentsRun(
                 spanDerived: true,
                 model: route.model,
                 spanEventId: ev.id,
+                // Whose workspace the call ran in (Step 6b): a HOSTED call's
+                // tokens are Inflect's to pay, recorded per tenant here and in
+                // the run's `costTokens`.
+                workspace: route.workspaceKind,
             },
         });
         await recordManagedAgentsDecision(
@@ -984,6 +996,7 @@ export async function executeManagedAgentsRun(
         await recordSessionStep(ctx, runId, binding.nextSeq(), 'SESSION_CREATED', {
             sessionId,
             connectionId: route.connectionId,
+            workspaceKind: route.workspaceKind,
             agentId: pinned.anthropicAgentId,
             agentVersion: pinned.anthropicAgentVersion,
             budgetCents: sessionBudget.max_list_cost.amount,
@@ -1175,6 +1188,7 @@ async function settleUnrecordedSessions(
             await recordSessionStep(ctx, runId, binding.nextSeq(), 'SESSION_CREATED', {
                 sessionId: found.sessionId,
                 connectionId: route.connectionId,
+                workspaceKind: route.workspaceKind,
                 agentId,
                 foundUnrecorded: look.search,
             });
