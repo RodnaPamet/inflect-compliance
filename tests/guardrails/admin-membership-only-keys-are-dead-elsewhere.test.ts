@@ -98,6 +98,8 @@ const DEFINITION_MODULES: Readonly<Record<string, string>> = {
 const AFFORDANCE_ONLY_PAGES: Readonly<Record<string, string>> = {
     'src/app/t/[tenantSlug]/(app)/agents/[agentId]/page.tsx':
         'the policy-card, tools, skills and ownership-transfer flags passed to the tabs; every one of those tabs reads and writes `/api/t/:slug/admin/agents/[agentId]/**`',
+    'src/app/t/[tenantSlug]/(app)/agents/reports/page.tsx':
+        'the Connect a scanner flag (2026-11-24): whether the viewer holds the tool-exposure key, so the panel offers the register-read tick; the grant is `POST /api/t/:slug/admin/agents/[agentId]/tools`, which asks it again',
     'src/app/t/[tenantSlug]/(app)/agents/audit-pilot/page.tsx':
         'the readiness notice (#4904): whether the viewer holds the tool-exposure key the set-up needs, so the page says so before the dry run; the set-up itself is `POST /api/t/:slug/admin/agents/audit-pilot`, which asks it again',
 };
