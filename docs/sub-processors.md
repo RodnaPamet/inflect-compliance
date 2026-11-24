@@ -246,22 +246,26 @@ on Claude Managed Agents in Inflect's own Anthropic organisation, for a tenant
 that has no Anthropic account of its own (`docs/claude-managed-agents-design.md`,
 "MA-C1", Step 6a). It is a proposal. **No tenant's data reaches Inflect's
 Anthropic organisation today**, and nothing in this deployment can send it
-there: the Managed Agents engine reaches only a workspace the customer itself
-connected (the separate `anthropic-workspace` row below), with that
-connection's own key; it is not selectable at all
-(`DRIVER_IMPLEMENTED['managed-agents']` is `false`,
-`src/lib/agentic/agent-driver.ts:236`); and the deployment holds no key or
-workspace of Inflect's own for it (`src/env.ts` has none). The hosted path is
-Step 6b of that design, behind a source constant that is false, and it is
-switched on only by Step 6c, after the notice window below has closed with no
-sustained objection. The common terms of (a) to (f) above do not apply to (g).
+there. The hosted path is built (Step 6b of that design) behind the source
+constant `HOSTED_MANAGED_AGENTS_ACTIVE`, which is `false`
+(`src/lib/agentic/managed-agents/hosted-activation.ts`). While it is false the
+one reader of Inflect's workspace pair, `inflectHostedWorkspace`
+(`src/lib/agentic/managed-agents/workspace.ts`), returns before it reads either
+variable, so no run, provisioning or clean-up resolves Inflect's workspace or
+builds a client with its key, and no workspace can opt in (the writer refuses
+`HOSTED_NOT_OFFERED`). The Managed Agents engine therefore reaches only a
+workspace the customer itself connected (the separate `anthropic-workspace`
+row below), with that connection's own key. Hosting is switched on only by
+Step 6c, a one-line diff setting the constant `true`, after the notice window
+below has closed with no sustained objection. The common terms of (a) to (f)
+above do not apply to (g).
 
 - **What is stored at Anthropic, per run** — the session's event history. A
   session of the Step 5b engine holds exactly this:
   - **Instructions:** Inflect's fixed preamble, the catalogue of the skills the
     run mounts (name and short description), and the **tenant-authored agent
     instructions** of the approved profile version, as the session's `system`
-    override (`sessionSystemFor`, `src/lib/agentic/managed-agents/definition.ts:279`).
+    override (`sessionSystemFor`, `src/lib/agentic/managed-agents/definition.ts:391`).
   - **The opening message:** the run's task and its declared run input.
   - **The model's work:** its messages, its reasoning, and the tool calls it
     makes, with the arguments it wrote.
@@ -273,7 +277,7 @@ sustained objection. The common terms of (a) to (f) above do not apply to (g).
     refusal sentences, and the full instructions of any skill the run
     activates, which can be a tenant-authored skill.
   - **Session metadata:** the tenant's id and the run's id, never a name or a
-    slug (`sessionMetadataFor`, `definition.ts:294`), and a dollar spending cap.
+    slug (`sessionMetadataFor`, `definition.ts:406`), and a dollar spending cap.
   - **Not stored:** files, credentials, MCP servers, built-in tools and
     memory. The engine's one client refuses a session that names `resources`
     or `vault_ids` and an agent that names anything but custom tools
@@ -284,10 +288,10 @@ sustained objection. The common terms of (a) to (f) above do not apply to (g).
   model id, Inflect's fixed preamble as `system`, and the tool definitions
   (name, description and input schema from Inflect's catalogue, plus
   `activate_skill`, whose schema names no skill). **No tenant-authored text is
-  ever written to an agent** (`agentBodyFor`, `definition.ts:158`). An
+  ever written to an agent** (`agentBodyFor`, `definition.ts:172`). An
   environment object holds only an opaque name and a sealed network
   configuration (`cloud`, `limited`, no allowed hosts; `environmentBodyFor`,
-  `definition.ts:183`).
+  `definition.ts:197`).
 - **Purpose:** hosted agent runs for agent profiles, for tenants with no
   Anthropic account of their own.
 - **Region:** **US.** Anthropic's workspace geography (where data is stored at
@@ -297,16 +301,20 @@ sustained objection. The common terms of (a) to (f) above do not apply to (g).
 - **Retention:**
   - **Sessions:** deleted by Inflect when each run ends, in the run's `finally`,
     after the session leaves `running` (`DELETE /v1/sessions/{id}`,
-    `src/lib/agentic/managed-agents/execute.ts:1020`); Anthropic's delete
+    `src/lib/agentic/managed-agents/execute.ts:1248`); Anthropic's delete
     removes the session's record, events and sandbox. There is no option to
     keep a session in Inflect's organisation: "Keep sessions in my workspace"
-    (owner decision 4) applies only to a customer's own workspace. A delete
-    that fails is recorded (`SESSION_DELETE_FAILED`) and stays Inflect's to
-    delete; today the clean-up takes such a session again on tenant purge
-    (`src/app-layer/usecases/managed-agents-cleanup.ts`), and a periodic
-    reconciliation deletes any session recorded deleted in the last seven
-    days that still exists.
-  - **Agents:** archived on tenant purge, never deleted.
+    (owner decision 4) applies only to a customer's own workspace, and a
+    hosted workspace resolves with keep-sessions off whatever any setting
+    says. A delete that fails is recorded (`SESSION_DELETE_FAILED`) and stays
+    Inflect's to delete: the periodic reconciliation retries it by its
+    recorded id, reaching every tenant Inflect provisioned in its own
+    workspace, and the clean-up takes it again on an opt-out and on tenant
+    purge (`src/app-layer/usecases/managed-agents-cleanup.ts`). A purge of
+    Inflect's own workspace that cannot finish is retried, because its key is
+    Inflect's and is not destroyed with the tenant's rows (owner decision 7
+    keeps no CUSTOMER key; it does not bear on this one).
+  - **Agents:** archived on an opt-out and on tenant purge, never deleted.
   - **No Zero Data Retention.** Anthropic lists Managed Agents as not
     eligible for ZDR. Anthropic also states that, under any arrangement, it may
     keep data where the law requires it, and inputs and outputs of a session
@@ -318,14 +326,26 @@ sustained objection. The common terms of (a) to (f) above do not apply to (g).
     6c lists the people who hold those roles, on its pull request.
   - **Inflect's application** reads sessions through the API with the
     deployment's own key, by the ids it recorded.
-- **Operator-optional, and per-tenant opt-in only**, as Step 6b proposes it: a
-  deployment without a workspace key of Inflect's own offers no hosting (the
-  self-hosted case); in one that has it, a workspace is hosted only after one
-  of its Owners opts in, and nothing of a workspace that has not opted in is
-  sent or stored. A workspace that has connected its own Anthropic workspace
-  runs there instead. A `LOCAL_ONLY` workspace is refused, as the driver
-  already refuses it today before it reads anything
-  (`MANAGED_AGENTS_LOCAL_ONLY_UNSERVED`, `src/lib/agentic/managed-agents/driver.ts`).
+- **Operator-optional, and per-tenant opt-in only**, as Step 6b builds it: a
+  deployment without a workspace pair of Inflect's own
+  (`AGENT_MANAGED_AGENTS_HOSTED_WORKSPACE_ID`, `AGENT_MANAGED_AGENTS_HOSTED_API_KEY`
+  in `src/env.ts`) offers no hosting (the self-hosted case); in one that has
+  it, a workspace is hosted only after one of its Owners opts in, in person
+  (`TenantSecuritySettings.hostedManagedAgentsOptIn`, written only by
+  `src/app-layer/usecases/hosted-managed-agents-opt-in.ts`, audited), and
+  nothing of a workspace that has not opted in is sent or stored. A workspace
+  that has connected its own Anthropic workspace runs there instead. A
+  `LOCAL_ONLY` workspace is refused, as the driver already refuses it before it
+  reads anything (`MANAGED_AGENTS_LOCAL_ONLY_UNSERVED`,
+  `src/lib/agentic/managed-agents/driver.ts`). Hosted runs also need the plan
+  entitlement `hostedManagedAgents` (`src/lib/billing/entitlements.ts`), which
+  no plan includes until the owner opens one, and are capped per tenant and per
+  deployment (`src/lib/agentic/managed-agents/hosted-capacity.ts`).
+- **Env:** `AGENT_MANAGED_AGENTS_HOSTED_WORKSPACE_ID` (not a secret) and
+  `AGENT_MANAGED_AGENTS_HOSTED_API_KEY` (a secret), one pair per deployment,
+  production and staging never sharing one (`src/env.ts`). Read only by
+  `inflectHostedWorkspace`, and only once `HOSTED_MANAGED_AGENTS_ACTIVE` is
+  true.
 - **Data processing agreement, transfer mechanism and transfer impact
   assessment:** recorded 2026-11-23 (Commercial Terms with the incorporated DPA;
   the EU SCCs in it; no transfer impact assessment, the repo owner accepting
@@ -347,12 +367,23 @@ sustained objection. The common terms of (a) to (f) above do not apply to (g).
   https://platform.claude.com/docs/en/managed-agents/observability
 - **Codebase:** the Step 5b engine this entry describes, in
   `src/lib/agentic/managed-agents/`: `definition.ts` (`MANAGED_AGENTS_PREAMBLE`
-  :56, `agentBodyFor` :158, `environmentBodyFor` :183, `sessionSystemFor` :279,
-  `sessionMetadataFor` :294), `provision.ts` (`provisionManagedAgent`),
-  `execute.ts` (`sessions.create` :578, the delete at settle :1020),
-  `driver.ts` (`runManagedAgentsDriver`), `cleanup.ts` (purge: session delete
-  and agent archive by recorded id); the one client constructor,
-  `managedAgentsClientFor` (`src/lib/agentic/tool-runner/client.ts:476`).
+  re-exported :64 from `preamble.ts`, `agentBodyFor` :172, `environmentBodyFor`
+  :197, `sessionSystemFor` :391, `sessionMetadataFor` :406), `provision.ts`
+  (`provisionManagedAgent`), `execute.ts` (`sessions.create` :705, the delete
+  at settle :1248), `driver.ts` (`runManagedAgentsDriver`), `cleanup.ts`
+  (purge: session delete and agent archive by recorded id); the one client
+  constructor, `managedAgentsClientFor`
+  (`src/lib/agentic/tool-runner/client.ts:577`). The Step 6b hosted path, every
+  part of it unreachable while the constant is false: `hosted-activation.ts`
+  (`HOSTED_MANAGED_AGENTS_ACTIVE`), `workspace.ts` (`inflectHostedWorkspace`,
+  the key's one reader; `resolveManagedAgentsWorkspace`, the one resolution;
+  `INFLECT_HOSTED_CONNECTION_ID`, the connection id every hosted record
+  carries), `hosted-capacity.ts` (`claimHostedSlot` and the SQL function
+  `hosted_managed_agents_claim_slot`); the opt-in writer
+  `src/app-layer/usecases/hosted-managed-agents-opt-in.ts` and its route
+  `src/app/api/t/[tenantSlug]/admin/hosted-managed-agents/route.ts`; the
+  clean-up of Inflect's workspace in
+  `src/app-layer/usecases/managed-agents-cleanup.ts`.
 - **Customer notice (issued 2026-11-24):**
   [`docs/notices/2026-11-23-anthropic-hosted-managed-agents.md`](./notices/2026-11-23-anthropic-hosted-managed-agents.md).
 
@@ -366,8 +397,9 @@ sustained objection. The common terms of (a) to (f) above do not apply to (g).
   change and the notice on the Step 6a pull request.
 - Step 3, customer notice (30 days): issued 2026-11-24; the objection window
   closes 2026-12-24.
-- Step 4, activation: not started. The hosted path is not built (Step 6b), and
-  is switched on only by Step 6c.
+- Step 4, activation: not started. The hosted path is built behind
+  `HOSTED_MANAGED_AGENTS_ACTIVE = false` (Step 6b), and is switched on only by
+  Step 6c, which sets it true.
 
 ### HaveIBeenPwned — password breach check
 - **PII shared:** **none** — only the first 5 hex chars of the SHA-1 of a candidate password (k-anonymity range query). The full hash/password never leaves the server.

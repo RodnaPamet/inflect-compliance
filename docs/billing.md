@@ -164,6 +164,23 @@ If you add another tier-gated capability, read
 `getEffectivePlan(ctx)` through this module — do not re-derive a
 plan from a `BillingAccount` query of your own.
 
+### Feature entitlements
+
+A capability that is simply in a plan or not is a `GatedFeature`
+in `src/lib/billing/entitlements.ts`, read with
+`isEntitledTo(ctx, feature)` (or the pure `planIncludes(plan,
+feature)`), from the `PLAN_FEATURES` table beside `PLAN_LIMITS`.
+The caller refuses with its own named reason.
+
+The one feature today is `hostedManagedAgents`: Managed Agents runs
+hosted in Inflect's own Anthropic organisation (Step 6b of
+`docs/claude-managed-agents-design.md`), whose session-hours and
+tokens Inflect pays for. **No plan includes it**, ENTERPRISE (and so
+every self-hosted tenant) included, so every hosted run is refused
+`managed_agents_hosted_not_entitled` and no workspace can opt in.
+Which plans include it is a product and pricing decision for the
+owner; opening one is a one-line diff in `PLAN_FEATURES`.
+
 ### Failure shape
 
 When the gate trips, it throws `forbidden(...)` from

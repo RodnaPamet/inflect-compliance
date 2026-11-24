@@ -626,6 +626,16 @@ workspace. `AgentProfileProvision` is therefore NOT retained: the clean-up
 reads it before the purge, and a retained provision row would keep nothing the
 clean-up record does not already hold.
 
+**Inflect's own workspace is the exception, and it is retried** (Step 6b,
+#4172). For a tenant hosted in Inflect's own Anthropic organisation (connection
+id `inflect-hosted`, not in effect while `HOSTED_MANAGED_AGENTS_ACTIVE` is
+false), the key is Inflect's deployment configuration, not the customer's, and
+no purge destroys it. So an unfinished purge record of that workspace stays
+`OPEN`, carrying the session and agent ids, and `data-lifecycle` retries it
+from those ids until it is `DONE`, or `ABANDONED` with the alert after 30 days.
+It is never `PURGED_KEY_DESTROYED_UNFINISHED` (a CHECK). Opting a tenant out of
+hosting makes the same clean-up as removing a connection.
+
 Removing an `anthropic-workspace` connection makes the same clean-up for that
 connection, and a DSAR erasure deletes every KEPT session in every tenant where
 the person held a membership. Neither deletes the row that holds the key (a
