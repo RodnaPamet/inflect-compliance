@@ -207,9 +207,10 @@ puts at Anthropic:
     call's prompt was not visible to Inflect.
 - **Hosting in Inflect's own organisation (MA-C1) is proposed, not in effect
   (Step 6a drafts).** `docs/sub-processors.md` carries it as Anthropic (g),
-  marked PROPOSED, NOT IN EFFECT, and the customer notice is drafted at
-  `docs/notices/2026-11-23-anthropic-hosted-managed-agents.md` and not issued.
-  Decision 6 is recorded on #5865 and the change approved; the notice dates are OPEN (see "MA-C1", "Notice"). No hosted
+  marked PROPOSED, NOT IN EFFECT, and the customer notice
+  (`docs/notices/2026-11-23-anthropic-hosted-managed-agents.md`) was issued on
+  2026-11-24; its objection window closes 2026-12-24. Decision 6 is recorded on
+  #5865 and the change approved (see "MA-C1", "Notice"). No hosted
   path exists in the code.
 
 ## What Managed Agents is, as documented on 2026-10-24
@@ -487,11 +488,13 @@ Two things on those pages that this section did not record before:
   not a Managed Agents term; the register entry and the notice state it.
 
 **Notice.** The register entry is Anthropic (g) in `docs/sub-processors.md`,
-marked PROPOSED, NOT IN EFFECT. The customer notice is drafted at
-`docs/notices/2026-11-23-anthropic-hosted-managed-agents.md` and **not issued**.
+marked PROPOSED, NOT IN EFFECT. The customer notice,
+`docs/notices/2026-11-23-anthropic-hosted-managed-agents.md`, was **issued on
+2026-11-24**.
 
-- Date the notice was sent: **OPEN** (repo owner).
-- Date the 30-day window closes: **OPEN** (repo owner).
+- Date the notice was sent: 2026-11-24 (repo owner).
+- Date the 30-day window closes: 2026-12-24. Step 6c may not activate hosting
+  before then.
 - Decision 6 — recorded by the repo owner on #5865 on 2026-11-23, once for
   every use of Anthropic as Inflect's sub-processor: the EU SCCs incorporated in
   Anthropic's DPA; no transfer impact assessment, the repo owner accepting

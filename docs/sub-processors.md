@@ -353,7 +353,7 @@ sustained objection. The common terms of (a) to (f) above do not apply to (g).
   `driver.ts` (`runManagedAgentsDriver`), `cleanup.ts` (purge: session delete
   and agent archive by recorded id); the one client constructor,
   `managedAgentsClientFor` (`src/lib/agentic/tool-runner/client.ts:476`).
-- **Customer notice (DRAFT, not issued):**
+- **Customer notice (issued 2026-11-24):**
   [`docs/notices/2026-11-23-anthropic-hosted-managed-agents.md`](./notices/2026-11-23-anthropic-hosted-managed-agents.md).
 
 **Policy progress for (g)** — recorded as a list, one line per step of the
@@ -364,8 +364,8 @@ sustained objection. The common terms of (a) to (f) above do not apply to (g).
   transfer mechanism and the transfer impact assessment decision are recorded on
   #5865 for all of Inflect's use of Anthropic; the repo owner approved this
   change and the notice on the Step 6a pull request.
-- Step 3, customer notice (30 days): **OPEN** — not issued. Date sent: **OPEN**.
-  Window closes: **OPEN**.
+- Step 3, customer notice (30 days): issued 2026-11-24; the objection window
+  closes 2026-12-24.
 - Step 4, activation: not started. The hosted path is not built (Step 6b), and
   is switched on only by Step 6c.
 

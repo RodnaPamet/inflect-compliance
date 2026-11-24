@@ -1,17 +1,15 @@
 # Sub-processor notice — Anthropic, hosted agents (Claude Managed Agents)
 
 <!-- The filename carries 2026-11-23, the date this was DRAFTED. It is not the
-     issue date. The issue date below is the authoritative one, and it stays
-     OPEN until the notice is actually posted and emailed. -->
+     issue date. The issue date below is the authoritative one. -->
 
-> **DRAFT — NOT ISSUED.** This notice has not been posted or sent to anyone.
-> The repo owner approved it on 2026-11-23, and the data processing agreement,
-> the transfer mechanism and the decision on a transfer impact assessment are
-> recorded on #5865. It is issued when it is posted and emailed, and the dates
-> below are filled in then.
+> **Issued 2026-11-24.** The repo owner approved this notice on 2026-11-23;
+> the data processing agreement, the transfer mechanism and the decision on a
+> transfer impact assessment are recorded on #5865. Hosting stays off for every
+> workspace until the objection window below has closed.
 
-**Issued:** OPEN — the date the notice is posted and emailed, entered by the repo owner.
-**Objection window closes:** OPEN — 30 days after the issue date, entered by the repo owner.
+**Issued:** 2026-11-24.
+**Objection window closes:** 2026-12-24.
 
 ---
 
