@@ -323,7 +323,7 @@ export default function RiskAppetitePage() {
                                 P{pVal}
                             </Button>
                         ))}
-                        <span className="text-[10px] text-content-subtle">
+                        <span className="text-xs text-content-subtle">
                             {t('riskAppetite.percentileHint')}
                         </span>
                     </div>

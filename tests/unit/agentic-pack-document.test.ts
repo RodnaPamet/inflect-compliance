@@ -657,6 +657,6 @@ describe("report 6 — internal audit's re-performance of the auditor (#3677)", 
         // Its definition reaches the appendix with the exclusions spelled out.
         const appendix = doc.slice(doc.indexOf('APPENDIX'));
         expect(appendix).toContain('assurance.workpaper_reperformance_agreement_rate');
-        expect(appendix).toContain('Excludes: INDETERMINATE answers, which are neither agreement nor disagreement');
+        expect(appendix).toContain('Excludes: indeterminate answers, which are neither agreement nor disagreement');
     });
 });

@@ -877,6 +877,20 @@ body {
   .policy-content .policy-toc a:hover {
     color: var(--brand-default);
   }
+  /* On a touch screen each Contents entry is a 44px row (#5924): a line of
+     text 19px tall, 4px from the next, was a target a thumb could not hit
+     without taking its neighbour. The link fills the row's height; a long
+     heading still wraps inside it. */
+  @media (pointer: coarse) {
+    .policy-content .policy-toc li {
+      margin: 0;
+    }
+    .policy-content .policy-toc a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 2.75rem;
+    }
+  }
 
   @media print {
     /* The on-screen "page" chrome dissolves into the real printed page. */

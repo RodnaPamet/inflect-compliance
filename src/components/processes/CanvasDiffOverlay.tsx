@@ -196,7 +196,7 @@ function DiffSummary({ diff }: { diff: CanvasDiff }) {
     return (
         <ul
             data-testid="canvas-diff-summary"
-            className="flex flex-wrap gap-tight text-[11px] text-content-muted"
+            className="flex flex-wrap gap-tight text-xs text-content-muted"
         >
             <SummaryChip
                 count={s.nodesAdded}
@@ -271,7 +271,7 @@ function DiffList({
     };
     return (
         <div className="flex flex-col gap-tight">
-            <span className="text-[10px] uppercase tracking-wide text-content-subtle">
+            <span className="text-xs uppercase tracking-wide text-content-subtle">
                 {title}
             </span>
             <ul className="flex flex-col gap-tight text-[12px]">
@@ -282,8 +282,8 @@ function DiffList({
                         data-class={klass}
                         className={`rounded-[6px] border border-border-subtle px-2 py-1 ${toneClass(klass)}`}
                     >
-                        <span className="font-mono text-[11px]">{key}</span>{" "}
-                        <span className="text-[10px] uppercase">
+                        <span className="font-mono text-xs">{key}</span>{" "}
+                        <span className="text-xs uppercase">
                             {classLabels[klass] ?? klass}
                         </span>
                     </li>

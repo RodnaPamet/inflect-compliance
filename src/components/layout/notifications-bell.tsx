@@ -110,7 +110,7 @@ const BADGE_OVERLAY_CLASS =
     // the bell glyph remains uncluttered. On a touch screen the box is
     // 44px with the 22px bell centred in it, so the chip moves in by the
     // 11px between them and stays on the bell, not in the box's corner.
-    'absolute -top-0.5 -right-0.5 pointer-coarse:top-[9px] pointer-coarse:right-[9px] flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-bg-error-emphasis text-[10px] font-semibold text-content-inverted tabular-nums leading-none';
+    'absolute -top-0.5 -right-0.5 pointer-coarse:top-[9px] pointer-coarse:right-[9px] flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-bg-error-emphasis text-xs font-semibold text-content-inverted tabular-nums leading-none';
 
 const ROW_CLASS =
     'flex flex-col gap-tight rounded-md px-2.5 py-2 transition-colors hover:bg-bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]';
@@ -471,7 +471,7 @@ export function NotificationsBell() {
                 <Popover.Menu aria-label={t('notifications')}>
                     {/* Header row — count + mark-all-read action */}
                     <div className="flex items-center justify-between px-2.5 py-1.5">
-                        <span className="text-[10px] font-semibold uppercase tracking-widest text-content-subtle">
+                        <span className="text-xs font-semibold uppercase tracking-widest text-content-subtle">
                             {t('notifications')}
                         </span>
                         {unreadCount > 0 && (
@@ -535,7 +535,7 @@ export function NotificationsBell() {
                                             <p className="min-w-0 flex-1 break-words text-sm font-medium text-content-emphasis">
                                                 {localizedNotificationTitle(n.type, n.title, tTitles)}
                                             </p>
-                                            <span className="flex-shrink-0 text-[10px] text-content-subtle tabular-nums">
+                                            <span className="flex-shrink-0 text-xs text-content-subtle tabular-nums">
                                                 {formatRelativeTime(n.createdAt, t)}
                                             </span>
                                         </div>

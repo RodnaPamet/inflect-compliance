@@ -165,7 +165,7 @@ export function ChecklistGearButton({
                                         hidden. */}
                                     <span
                                         className={cn(
-                                            'flex h-4 w-4 shrink-0 items-center justify-center rounded text-[10px] font-semibold tabular-nums',
+                                            'flex h-4 w-4 shrink-0 items-center justify-center rounded text-xs font-semibold tabular-nums',
                                             item.visible
                                                 ? 'bg-[var(--brand-subtle)] text-content-brand'
                                                 : 'text-content-subtle',

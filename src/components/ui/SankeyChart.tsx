@@ -228,7 +228,7 @@ export function SankeyChart({
                             {layout.columns.map((c) => (
                                 <div
                                     key={c.kind}
-                                    className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-content-subtle"
+                                    className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-content-subtle"
                                 >
                                     <span
                                         aria-hidden

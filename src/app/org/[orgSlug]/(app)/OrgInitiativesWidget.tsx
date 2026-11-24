@@ -42,7 +42,7 @@ export function OrgInitiativesWidget({ data, orgSlug }: { data: InitiativeWidget
                 <div className="flex items-center gap-compact">
                     <Rocket className="w-5 h-5 text-content-muted" aria-hidden="true" />
                     <div>
-                        <p className="text-[11px] uppercase tracking-wide text-content-muted">{t('widgets.securityInitiatives')}</p>
+                        <p className="text-xs uppercase tracking-wide text-content-muted">{t('widgets.securityInitiatives')}</p>
                         <p className="text-sm font-medium">
                             {t('widgets.inFlight', { count: data.inFlight })}
                             {data.atRisk > 0 && (

@@ -405,6 +405,31 @@ describe('status and errors', () => {
     });
 });
 
+describe('on a phone (#5924)', () => {
+    it('"Edit review schedule" is a text button with a touch square', async () => {
+        serve(EDITED_DRAFT);
+        await renderPage();
+        const edit = screen.getByTestId('policy-edit-review-schedule');
+        expect(edit.tagName).toBe('BUTTON');
+        expect(edit).toHaveTextContent(EN.detail.editReviewSchedule);
+        expect(edit.className.split(/\s+/)).toEqual(
+            expect.arrayContaining(['relative', 'pointer-coarse:after:min-h-11', 'pointer-coarse:after:min-w-11']),
+        );
+    });
+
+    it('the document is marked with the policy’s own language, which can differ from the page’s', async () => {
+        serve({ ...EDITED_DRAFT, language: 'bg' });
+        await renderPage();
+        expect(screen.getByTestId('policy-version-html-v2').getAttribute('lang')).toBe('bg');
+    });
+
+    it('a policy with no language declares none', async () => {
+        serve({ ...EDITED_DRAFT, language: null });
+        await renderPage();
+        expect(screen.getByTestId('policy-version-html-v2').hasAttribute('lang')).toBe(false);
+    });
+});
+
 describe('archiving says what it does (#4279)', () => {
     it('the archive confirmation states only what archiving does', async () => {
         // It used to say the policy is "withdrawn from the library and cannot

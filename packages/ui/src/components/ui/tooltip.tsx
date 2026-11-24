@@ -307,7 +307,7 @@ function TooltipBody({
                         </span>
                     )}
                     {shortcut && (
-                        <kbd className="ml-auto rounded border border-border-subtle bg-bg-subtle px-1.5 py-0.5 text-[10px] font-medium text-content-muted">
+                        <kbd className="ml-auto rounded border border-border-subtle bg-bg-subtle px-1.5 py-0.5 text-xs font-medium text-content-muted">
                             {shortcut}
                         </kbd>
                     )}

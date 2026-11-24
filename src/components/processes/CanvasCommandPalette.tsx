@@ -170,7 +170,7 @@ export function CanvasCommandPalette({ groups, hostRef }: CanvasCommandPalettePr
                                     heading={group.heading}
                                     className={cn(
                                         "[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1",
-                                        "[&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-semibold",
+                                        "[&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-semibold",
                                         "[&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider",
                                         "[&_[cmdk-group-heading]]:text-content-subtle",
                                     )}
@@ -206,14 +206,14 @@ export function CanvasCommandPalette({ groups, hostRef }: CanvasCommandPalettePr
                                                     {cmd.label}
                                                 </span>
                                                 {cmd.description && (
-                                                    <span className="break-words text-[10px] text-content-subtle">
+                                                    <span className="break-words text-xs text-content-subtle">
                                                         {cmd.description}
                                                     </span>
                                                 )}
                                             </div>
                                             {cmd.shortcut && (
                                                 <kbd
-                                                    className="ml-auto rounded border border-border-subtle bg-bg-subtle px-1.5 py-0.5 text-[10px] font-medium text-content-muted"
+                                                    className="ml-auto rounded border border-border-subtle bg-bg-subtle px-1.5 py-0.5 text-xs font-medium text-content-muted"
                                                 >
                                                     {cmd.shortcut}
                                                 </kbd>

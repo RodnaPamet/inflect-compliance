@@ -104,7 +104,7 @@ function LegendChip({
         <li
             role="listitem"
             data-testid={`risk-matrix-legend-chip-${band.name.toLowerCase()}`}
-            className="inline-flex items-center gap-1.5 text-[10px] text-content-muted"
+            className="inline-flex items-center gap-1.5 text-xs text-content-muted"
         >
             <span
                 aria-hidden

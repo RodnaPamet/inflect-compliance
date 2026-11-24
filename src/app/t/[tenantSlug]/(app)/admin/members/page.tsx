@@ -954,7 +954,7 @@ export default function MembersAdminPage() {
                                     title={t('members.customRoleTitle')}
                                     content={m.customRole.name}
                                 >
-                                    <span className="inline-flex items-center rounded-md px-2 py-1 text-[10px] font-medium bg-info text-content-info border border-border-info cursor-help">
+                                    <span className="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium bg-info text-content-info border border-border-info cursor-help">
                                         {m.customRole.name}
                                     </span>
                                 </Tooltip>
@@ -1018,7 +1018,7 @@ export default function MembersAdminPage() {
                                 void openSessionsModal(m);
                             }}
                             className={cn(
-                                'inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium border transition-colors',
+                                'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium border transition-colors',
                                 count > 0
                                     ? 'bg-bg-success text-content-success border-border-success hover:bg-bg-success'
                                     : 'bg-bg-muted text-content-subtle border-border-subtle hover:bg-bg-muted',
@@ -1497,7 +1497,7 @@ export default function MembersAdminPage() {
                                         <p className="text-xs text-content-muted mt-0.5">
                                             {t('members.sessionMeta', { ip: s.ipAddress || '—', date: formatDate(s.lastActiveAt) })}
                                         </p>
-                                        <p className="text-[10px] text-content-subtle mt-0.5 font-mono break-all">
+                                        <p className="text-xs text-content-subtle mt-0.5 font-mono break-all">
                                             {s.sessionId}
                                         </p>
                                     </div>

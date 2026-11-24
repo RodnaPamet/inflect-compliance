@@ -58,7 +58,11 @@
  * "Security") is still judged as the interface string, because a one-word
  * label is far likelier to be the product's own ("High" is a severity) than
  * a coincidence. A multi-word value ("Risk Management", "Information Security
- * Policy") is the library's phrase wherever it appears.
+ * Policy") is the library's phrase wherever it appears — including INSIDE a
+ * Bulgarian sentence: "Избор на A-5.22 Monitoring, review and change
+ * management of supplier services" is the catalog's "Избор на {name}" with a
+ * control template's title in it, and "Monitoring" there is the title's word,
+ * not a stray interface label (#5924).
  */
 
 export type LeakReason = 'CATALOG' | 'EMBEDDED' | 'EN_IN_BG' | 'CHROME' | 'DATE';
@@ -175,6 +179,28 @@ export function buildLeakCatalog(en: unknown, bg: unknown): LeakCatalog {
     return { exact, patterns, keptInBg };
 }
 
+/**
+ * For each Latin run of a multi-word library value, the values it occurs in,
+ * so a run inside a Bulgarian sentence can be traced to a library value the
+ * sentence carries whole. Built once per library set.
+ */
+const libraryRunIndexes = new WeakMap<ReadonlySet<string>, Map<string, string[]>>();
+function libraryRunIndex(libraryTexts: ReadonlySet<string>): Map<string, string[]> {
+    let index = libraryRunIndexes.get(libraryTexts);
+    if (index) return index;
+    index = new Map();
+    for (const value of libraryTexts) {
+        if (!value.includes(' ')) continue;
+        for (const run of value.match(LATIN_RUN) ?? []) {
+            const list = index.get(run);
+            if (list) list.push(value);
+            else index.set(run, [value]);
+        }
+    }
+    libraryRunIndexes.set(libraryTexts, index);
+    return index;
+}
+
 function catalogHas(catalog: LeakCatalog, s: string): boolean {
     if (catalog.exact.has(s)) return true;
     for (const p of catalog.patterns) if (s.includes(p.literal) && p.re.test(s)) return true;
@@ -211,8 +237,17 @@ export function findEnglishLeaks(
         }
         if (cyr) {
             const runs = s.match(LATIN_RUN) ?? [];
+            // A run that belongs to a multi-word library value the sentence
+            // carries whole is the library's word, not the interface's.
+            const inLibraryValue = (r: string) =>
+                (libraryRunIndex(libraryTexts).get(r) ?? []).some((value) => s.includes(value));
             const english = (r: string) =>
-                r.length >= 4 && !dataNames.has(r) && !isLibrary(r) && !catalog.keptInBg.has(r) && catalog.exact.has(r);
+                r.length >= 4 &&
+                !dataNames.has(r) &&
+                !isLibrary(r) &&
+                !catalog.keptInBg.has(r) &&
+                catalog.exact.has(r) &&
+                !inLibraryValue(r);
             // A whole templated message inside the sentence: a stored English
             // sentence the product wrote, shown after a Bulgarian label.
             const message = catalog.patterns.some((p) => s.includes(p.literal) && p.embedded.test(s));

@@ -1437,7 +1437,7 @@ function ControlsPageInner({
                         {labels.map((label) => (
                             <span
                                 key={label}
-                                className="inline-flex items-center rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-content-muted"
+                                className="inline-flex items-center rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-content-muted"
                             >
                                 {label}
                             </span>
@@ -1570,7 +1570,7 @@ function ControlsPageInner({
                     >
                         <span
                             aria-hidden
-                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-bg-elevated text-[10px] font-medium text-content-emphasis"
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-bg-elevated text-xs font-medium text-content-emphasis"
                         >
                             {initial}
                         </span>
@@ -1652,7 +1652,7 @@ function ControlsPageInner({
                                           already lives in the Deleted view, so
                                           this stays quiet chrome and keeps the
                                           per-file badge budget. */}
-                                      <span className="inline-flex items-center rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-content-muted">
+                                      <span className="inline-flex items-center rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-content-muted">
                                           {t('deleted.badge')}
                                       </span>
                                       <Button
@@ -1846,7 +1846,7 @@ function ControlsPageInner({
                                             </span>
                                             {g.frameworkLabel && (
                                                 <span
-                                                    className="text-[10px] font-medium uppercase tracking-wide text-content-subtle"
+                                                    className="text-xs font-medium uppercase tracking-wide text-content-subtle"
                                                     data-framework-tag={g.frameworkLabel}
                                                 >
                                                     {g.frameworkLabel}

@@ -28,6 +28,7 @@ import {
 } from './report-recipients';
 import { buildTailByRisk } from '@/lib/risk/per-risk-results';
 import { addMonthsClampedUtc } from '../utils/cadence';
+import { SYSTEM_REPORT_TEMPLATES } from '@/lib/risk-report/system-templates';
 
 export type ReportFormat = 'PDF' | 'CSV' | 'PPTX';
 
@@ -97,11 +98,8 @@ export async function assembleReportData(
 
 // ── Templates ─────────────────────────────────────────────────────────
 
-const SYSTEM_TEMPLATES = [
-    { name: 'Portfolio Risk Summary', type: 'PORTFOLIO_SUMMARY', description: 'Executive VaR + top risks + appetite + BIA.' },
-    { name: 'Risk Deep Dive', type: 'RISK_DEEP_DIVE', description: 'Single-risk FAIR decomposition + history.' },
-    { name: 'Business Impact Analysis', type: 'BIA', description: 'RTO/RPO/MTPD + impact + revenue at risk.' },
-];
+// The stock templates live with their reader-language names (client-safe).
+const SYSTEM_TEMPLATES = SYSTEM_REPORT_TEMPLATES;
 
 /** List templates, lazily seeding the 3 system templates for the tenant. */
 export async function listTemplates(ctx: RequestContext) {

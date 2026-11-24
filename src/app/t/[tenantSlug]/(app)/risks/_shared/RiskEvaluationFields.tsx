@@ -139,7 +139,7 @@ export function RiskEvaluationFields({
                         {t('score')}
                     </p>
                     <p className="text-xl font-bold">{score}</p>
-                    <p className="text-[11px] font-medium">{band.name}</p>
+                    <p className="text-xs font-medium">{band.name}</p>
                 </div>
             </div>
         </div>

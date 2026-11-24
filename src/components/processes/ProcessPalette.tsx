@@ -162,7 +162,7 @@ export function ProcessPalette({ onAdd }: ProcessPaletteProps = {}) {
             data-process-palette-layout="vertical"
             aria-label={t("paletteAria")}
         >
-            <span className="text-[9px] font-semibold uppercase tracking-wider text-content-subtle">
+            <span className="text-xs font-semibold uppercase tracking-wider text-content-subtle">
                 {t("tools")}
             </span>
             {CATEGORY_ORDER.map((category, categoryIdx) => {

@@ -178,7 +178,15 @@ export default function RiskImportPage() {
             <div className={cn(cardVariants({ density: 'compact' }), 'border-border-emphasis/50')}>
                 <Heading level={3} className="mb-2">{t('csvFormat')}</Heading>
                 {/* #4775 — the scale is the workspace matrix's, which the preview checks against. */}
-                <p className="text-xs text-content-muted">{t('csvDesc', { likelihoodMax: matrixConfig.likelihoodLevels, impactMax: matrixConfig.impactLevels })}</p>
+                {/* The column names are what the importer reads, literally, so they
+                    are code, not words to translate (#5924). */}
+                <p className="text-xs text-content-muted">
+                    {t.rich('csvDesc', {
+                        likelihoodMax: matrixConfig.likelihoodLevels,
+                        impactMax: matrixConfig.impactLevels,
+                        code: (chunks) => <code className="font-mono">{chunks}</code>,
+                    })}
+                </p>
                 <pre className="mt-2 text-xs text-content-subtle bg-bg-page/50 p-2 rounded overflow-x-auto">
                     title,description,category,likelihood,impact,owner{'\n'}
                     Unauthorized access,Risk of unauthorized data access,Technical,4,5,CISO
@@ -224,7 +232,7 @@ export default function RiskImportPage() {
                                     <div className="flex flex-col gap-0.5">
                                         <span className="text-xs">{getValue() as string}</span>
                                         {oos?.map((c, i) => (
-                                            <span key={i} className="text-[11px] text-content-warning" data-testid="import-out-of-scale">
+                                            <span key={i} className="text-xs text-content-warning" data-testid="import-out-of-scale">
                                                 {t(c.field === 'likelihood' ? 'outOfScaleLikelihood' : 'outOfScaleImpact', { value: c.value, max: c.max })}
                                             </span>
                                         ))}

@@ -385,7 +385,7 @@ export function RiskMatrix({
                                 onClick={() => setShowMovement((p) => !p)}
                                 aria-pressed={showMovement}
                                 className={cn(
-                                    'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] transition-colors',
+                                    'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs transition-colors',
                                     showMovement
                                         ? 'border-border-emphasis text-content-emphasis'
                                         : 'border-border-subtle text-content-muted hover:border-border-emphasis hover:text-content-emphasis',
@@ -402,7 +402,7 @@ export function RiskMatrix({
                                 onClick={() => setAleOverlay((p) => !p)}
                                 aria-pressed={aleOverlay}
                                 className={cn(
-                                    'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] transition-colors',
+                                    'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs transition-colors',
                                     aleOverlay
                                         ? 'border-border-emphasis text-content-emphasis'
                                         : 'border-border-subtle text-content-muted hover:border-border-emphasis hover:text-content-emphasis',
@@ -417,7 +417,7 @@ export function RiskMatrix({
                             <button
                                 type="button"
                                 onClick={() => setInternalSwap((p) => !p)}
-                                className="inline-flex items-center gap-1 rounded-md border border-border-subtle px-2 py-0.5 text-[10px] text-content-muted transition-colors hover:border-border-emphasis hover:text-content-emphasis"
+                                className="inline-flex items-center gap-1 rounded-md border border-border-subtle px-2 py-0.5 text-xs text-content-muted transition-colors hover:border-border-emphasis hover:text-content-emphasis"
                                 aria-label={t('swapAxesAria')}
                                 data-testid="risk-matrix-swap"
                             >
@@ -435,7 +435,7 @@ export function RiskMatrix({
             <div className="flex gap-tight">
                 {/* Y-axis title (vertical-LR rotation matches the legacy heatmap). */}
                 <div className="-mr-1 flex flex-col items-center justify-center">
-                    <span className="rotate-180 text-[10px] uppercase tracking-widest text-content-subtle [writing-mode:vertical-lr]">
+                    <span className="rotate-180 text-xs uppercase tracking-widest text-content-subtle [writing-mode:vertical-lr]">
                         {yAxisLabel}
                     </span>
                 </div>
@@ -469,7 +469,7 @@ export function RiskMatrix({
                                 {/* Row label (numeric). */}
                                 <div
                                     role="rowheader"
-                                    className="flex items-center justify-center text-[10px] tabular-nums text-content-subtle"
+                                    className="flex items-center justify-center text-xs tabular-nums text-content-subtle"
                                     title={
                                         yLabels[rowVal - 1] ?? String(rowVal)
                                     }
@@ -628,7 +628,7 @@ export function RiskMatrix({
                                 <div
                                     key={`col-${colVal}`}
                                     role="columnheader"
-                                    className="flex items-center justify-center text-[10px] tabular-nums text-content-subtle"
+                                    className="flex items-center justify-center text-xs tabular-nums text-content-subtle"
                                     title={xLabels[colVal - 1] ?? String(colVal)}
                                     data-testid={`risk-matrix-col-label-${colVal}`}
                                 >
@@ -639,7 +639,7 @@ export function RiskMatrix({
                     </div>
 
                     <div className="mt-1 text-center">
-                        <span className="text-[10px] uppercase tracking-widest text-content-subtle">
+                        <span className="text-xs uppercase tracking-widest text-content-subtle">
                             {xAxisLabel}
                         </span>
                     </div>
@@ -650,7 +650,7 @@ export function RiskMatrix({
                 the overlay so an off-toggle matrix stays uncluttered. */}
             {movementActive && (
                 <div
-                    className="mt-3 flex flex-wrap items-center gap-default text-[10px] text-content-muted"
+                    className="mt-3 flex flex-wrap items-center gap-default text-xs text-content-muted"
                     data-testid="risk-matrix-movement-legend"
                 >
                     <span className="inline-flex items-center gap-1">

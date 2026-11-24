@@ -644,7 +644,7 @@ function RiskEntryCard({
 
             {entry.directControls.length > 0 && (
                 <div className="space-y-tight">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-content-subtle">
+                    <p className="text-xs font-medium uppercase tracking-wide text-content-subtle">
                         {t('agentDetail.coverage.directHeading')}
                     </p>
                     <ControlList controls={entry.directControls} tenantSlug={tenantSlug} />
@@ -653,7 +653,7 @@ function RiskEntryCard({
 
             {entry.inheritedFrom.length > 0 && (
                 <div className="space-y-compact border-t border-border-subtle pt-3">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-content-subtle">
+                    <p className="text-xs font-medium uppercase tracking-wide text-content-subtle">
                         {t('agentDetail.coverage.inheritedHeading')}
                     </p>
                     {entry.inheritedFrom.map((route) => (

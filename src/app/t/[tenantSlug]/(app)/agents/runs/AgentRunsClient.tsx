@@ -112,6 +112,9 @@ const NO_START_ABILITIES: StartAbilities = { discoveredAgents: false, askPage: f
 /** The statuses a run can be resumed from — the two `resumeWorkflowRun` accepts. */
 const RESUMABLE = new Set(['AWAITING_APPROVAL', 'PAUSED']);
 
+/** A start control is a full-width, left-aligned row below `sm` (#5924). */
+const ROW_ON_PHONE = 'max-sm:w-full max-sm:justify-start';
+
 /**
  * The agent-runs client. Lists runs with live status + cost, lets an operator
  * start a workflow (through a start form when it declares required input),
@@ -326,7 +329,10 @@ export function AgentRunsClient({
             {workflows.length > 0 && (
                 <div className={cn(cardVariants({ density: 'comfortable' }), 'space-y-default')}>
                     <p className="text-sm font-medium text-content-emphasis">{t('runs.startWorkflow')}</p>
-                    <div className="flex flex-wrap gap-tight">
+                    {/* Below `sm` the workflows are a list of full-width rows:
+                        ten buttons wrapped onto six to ten ragged lines on a
+                        phone (#5924). From `sm` up they sit in a wrapping row. */}
+                    <div className="flex flex-col gap-tight sm:flex-row sm:flex-wrap" data-testid="workflow-start-list">
                         {workflows.map((w) => {
                             // ONE CLICK, A FORM, A LINK, OR NOT HERE — from the
                             // definition's `requiredInput` and what this caller
@@ -345,7 +351,7 @@ export function AgentRunsClient({
                                     <Link
                                         key={w.key}
                                         href={tenantHref(plan.path)}
-                                        className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+                                        className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }), ROW_ON_PHONE)}
                                         data-testid={`workflow-start-${w.key}`}
                                     >
                                         {w.name}
@@ -370,6 +376,7 @@ export function AgentRunsClient({
                                     <Button
                                         variant="secondary"
                                         size="sm"
+                                        className={ROW_ON_PHONE}
                                         disabled={!canOperate || notHere || startBusy}
                                         data-testid={`workflow-start-${w.key}`}
                                         onClick={() => {

@@ -19,6 +19,8 @@ import type { ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { Card } from '@/components/ui/card';
+import { TOUCH_HIT_AREA_CLASS } from '@inflect/ui/components/ui/hit-area';
+import { cn } from '@inflect/ui/lib/cn';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import {
@@ -34,10 +36,16 @@ import { ShadedRow } from '@/components/ui/shaded-row';
 
 const code = (chunks: ReactNode) => <code className="font-mono text-xs">{chunks}</code>;
 
+/**
+ * A link on a line of its own: the text is 17px tall, so on a touch screen it
+ * answers a 44px square (`TOUCH_HIT_AREA_CLASS`, #5924). The constant comes
+ * from the shared module rather than `TextLink`, which is a client module:
+ * this card ships no JavaScript.
+ */
 function ExternalLink({ href, children, testId }: { href: string; children: ReactNode; testId: string }) {
     return (
         <a
-            className="text-sm text-content-link underline-offset-2 hover:underline"
+            className={cn('relative text-sm text-content-link underline-offset-2 hover:underline', TOUCH_HIT_AREA_CLASS)}
             href={href}
             target="_blank"
             rel="noopener noreferrer"
@@ -59,7 +67,9 @@ function NightlyEntry({ nightly }: { nightly: EvalNightly }) {
 
     return (
         <ShadedRow as="li" data-testid={id}>
-            <div className="flex items-center gap-compact">
+            {/* Wraps: at 360px the name and the badge did not fit one line,
+                and the badge ran past the screen edge (#5924). */}
+            <div className="flex flex-wrap items-center gap-compact">
                 <span className="font-medium text-content-emphasis">{t(`${nightly.key}.name`)}</span>
                 <span className="ml-auto">
                     <StatusBadge variant="neutral" size="sm">{t('offByDefault')}</StatusBadge>

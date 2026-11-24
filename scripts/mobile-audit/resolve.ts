@@ -153,9 +153,14 @@ export async function resolveContext(
  * owner account is linked. It is the tenant's words, not the product's; that
  * it happens to equal a catalog value ("Infrastructure", an asset type) made
  * the detector call it a leak (#5828).
+ *
+ * An AI system's `provider` is the same: free text a person typed (the audit
+ * records' "Internal", a system built in-house), shown on the AI-systems list
+ * and detail, and equal to a catalog value (a finding source) by coincidence
+ * (#5924).
  */
 export async function dataNames(db: PrismaClient): Promise<Set<string>> {
-    const [tenants, orgs, controls, riskOwners] = await Promise.all([
+    const [tenants, orgs, controls, riskOwners, aiProviders] = await Promise.all([
         db.tenant.findMany({ select: { name: true }, take: 1000 }),
         db.organization.findMany({ select: { name: true }, take: 1000 }),
         db.control.findMany({ select: { name: true }, distinct: ['name'], take: 5000 }),
@@ -165,11 +170,18 @@ export async function dataNames(db: PrismaClient): Promise<Set<string>> {
             distinct: ['treatmentOwner'],
             take: 1000,
         }),
+        db.aiSystem.findMany({
+            where: { provider: { not: null } },
+            select: { provider: true },
+            distinct: ['provider'],
+            take: 1000,
+        }),
     ]);
     return new Set(
         [
             ...[...tenants, ...orgs, ...controls].map((r) => r.name),
             ...riskOwners.map((r) => r.treatmentOwner ?? ''),
+            ...aiProviders.map((r) => r.provider ?? ''),
         ]
             .map((n) => n.trim())
             .filter(Boolean),

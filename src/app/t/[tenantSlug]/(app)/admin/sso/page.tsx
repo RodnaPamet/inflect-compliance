@@ -476,7 +476,7 @@ export default function SsoAdminPage() {
                                 disabled={!canChangeTrust}
                                 value={oidcClientId}
                                 onChange={(e) => setOidcClientId(e.target.value)}
-                                placeholder="client-id-from-idp"
+                                placeholder={t('sso.clientIdPlaceholder')}
                                 className="w-full"
                             />
                         </FormField>

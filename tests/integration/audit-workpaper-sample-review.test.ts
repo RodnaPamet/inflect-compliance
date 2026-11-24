@@ -767,8 +767,8 @@ describe('the agreement rate counts concluded reviews only', () => {
         const definition = METRIC_DEFINITIONS['assurance.workpaper_reperformance_agreement_rate'];
         const excludes = definition.excludes.join(' | ');
         expect(excludes).toMatch(/drawn but unreviewed/);
-        expect(excludes).toMatch(/INDETERMINATE/);
-        expect(excludes).toMatch(/UNASSIGNED/);
+        expect(excludes).toMatch(/indeterminate answers/);
+        expect(excludes).toMatch(/unassigned workpapers/);
         expect(excludes).toMatch(/100% agreement/);
 
         const measured = await buildWorkpaperReviewReport(fx[T1].contexts.admin);

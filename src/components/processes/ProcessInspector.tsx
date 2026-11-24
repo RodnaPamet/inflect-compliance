@@ -332,12 +332,12 @@ export function ProcessInspector({
                 aria-label={t("selectedNodeAria")}
             >
                 {kindMeta && (
-                    <span className="text-[10px] uppercase tracking-wide text-content-subtle">
+                    <span className="text-xs uppercase tracking-wide text-content-subtle">
                         {tKinds(kindMeta.id)}
                     </span>
                 )}
                 <label className="flex flex-col gap-tight">
-                <span className="text-[10px] uppercase tracking-wide text-content-muted">
+                <span className="text-xs uppercase tracking-wide text-content-muted">
                     {t("label")}
                 </span>
                 <input
@@ -356,7 +356,7 @@ export function ProcessInspector({
                 />
             </label>
             <label className="flex flex-col gap-tight">
-                <span className="text-[10px] uppercase tracking-wide text-content-muted">
+                <span className="text-xs uppercase tracking-wide text-content-muted">
                     {t("subtitle")}
                 </span>
                 <input
@@ -380,7 +380,7 @@ export function ProcessInspector({
                 advertises a capability the host does not have. */}
             {rendererHonoursSize && (
                 <div className="flex flex-col gap-tight" data-testid="inspector-size">
-                    <span className="text-[10px] uppercase tracking-wide text-content-muted">
+                    <span className="text-xs uppercase tracking-wide text-content-muted">
                         {t("size")}
                     </span>
                     <ToggleGroup
@@ -421,7 +421,7 @@ export function ProcessInspector({
                 {tenantSlug && mapId && (
                     <NodeBiaAffordance tenantSlug={tenantSlug} mapId={mapId} nodeKey={node.id} />
                 )}
-                <p className="text-[10px] text-content-subtle">
+                <p className="text-xs text-content-subtle">
                     {t("saveHint")}
                 </p>
             </div>
@@ -512,12 +512,12 @@ function NodeLinkedEntityPicker({
             data-entity-kind={nodeKind}
         >
             <div className="flex items-center justify-between gap-tight">
-                <span className="text-[10px] uppercase tracking-wide text-content-muted">
+                <span className="text-xs uppercase tracking-wide text-content-muted">
                     {active.label}
                 </span>
                 {liveStatus && (
                     <span
-                        className={`rounded-[4px] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${entityStatusTone(liveStatus)}`}
+                        className={`rounded-[4px] px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide ${entityStatusTone(liveStatus)}`}
                         data-testid="inspector-node-entity-status"
                         data-status={liveStatus}
                         title={t("currentStatus", { status: liveStatus })}
@@ -660,11 +660,11 @@ function EdgeInspectorBody({
                 data-inspector-mode="edge"
                 aria-label={t("selectedEdgeAria")}
             >
-                <span className="text-[10px] uppercase tracking-wide text-content-subtle">
+                <span className="text-xs uppercase tracking-wide text-content-subtle">
                     {t("connection")}
                 </span>
                 <label className="flex flex-col gap-tight">
-                <span className="text-[10px] uppercase tracking-wide text-content-muted">
+                <span className="text-xs uppercase tracking-wide text-content-muted">
                     {t("label")}
                 </span>
                 <input
@@ -684,7 +684,7 @@ function EdgeInspectorBody({
                 />
             </label>
             <div className="flex flex-col gap-tight">
-                <span className="text-[10px] uppercase tracking-wide text-content-muted">
+                <span className="text-xs uppercase tracking-wide text-content-muted">
                     {t("variant")}
                 </span>
                 <ToggleGroup
@@ -701,7 +701,7 @@ function EdgeInspectorBody({
                         })
                     }
                 />
-                <span className="text-[10px] text-content-subtle">
+                <span className="text-xs text-content-subtle">
                     {edgeMeta[variant].description}
                 </span>
             </div>
@@ -714,7 +714,7 @@ function EdgeInspectorBody({
                 className="flex flex-col gap-tight"
                 data-testid="inspector-edge-control-picker"
             >
-                <span className="text-[10px] uppercase tracking-wide text-content-muted">
+                <span className="text-xs uppercase tracking-wide text-content-muted">
                     {t("linkedControl")}
                 </span>
                 <Combobox
@@ -732,11 +732,11 @@ function EdgeInspectorBody({
                               : t("pickControl")
                     }
                 />
-                <span className="text-[10px] text-content-subtle">
+                <span className="text-xs text-content-subtle">
                     {t("auditorsHint")}
                 </span>
             </div>
-                <p className="text-[10px] text-content-subtle">
+                <p className="text-xs text-content-subtle">
                     {t("saveHint")}
                 </p>
             </div>
