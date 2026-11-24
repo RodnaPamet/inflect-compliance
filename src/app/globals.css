@@ -599,6 +599,21 @@ body {
     min-height: 44px;
   }
 
+  /* The product tour's popover (#5904; its section is at the end of this
+   * file): footer buttons and the close button reach 44px, and the title
+   * clears the larger close button. One attribute more specific than the
+   * section's own rules, which come later in the file. */
+  #driver-popover-content[role="dialog"] .driver-popover-footer-btn {
+    min-height: 44px;
+  }
+  #driver-popover-content[role="dialog"] .driver-popover-close-btn {
+    width: 44px;
+    height: 44px;
+  }
+  #driver-popover-content[role="dialog"] .driver-popover-title {
+    padding-inline-end: 40px;
+  }
+
   /* ── App-wide touch targets (mobile PR-1, WCAG 2.5.5 / Apple HIG) ──
    * Native inputs/selects using the `.input` utility get a 44px floor.
    * The React <Input>/<Button> primitives handle this themselves via
@@ -985,15 +1000,6 @@ body {
   height: 32px;
   color: var(--content-muted);
 }
-@media (pointer: coarse) {
-  #driver-popover-content .driver-popover-footer-btn {
-    min-height: 44px;
-  }
-  #driver-popover-content .driver-popover-close-btn {
-    width: 44px;
-    height: 44px;
-  }
-  #driver-popover-content .driver-popover-title {
-    padding-inline-end: 40px;
-  }
-}
+/* On a coarse pointer its buttons and close button are 44px: those rules sit
+ * in the app-wide coarse-pointer touch-target block above, so
+ * the floors live in one place. */
