@@ -54,6 +54,7 @@ import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { useCreateQueryParam, useThresholdLoadMore, useToast } from '@/components/ui/hooks';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
+import { KpiStrip } from '@/components/ui/kpi-strip';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import {
     resolveFileTypeIcon,
@@ -1790,7 +1791,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                     `grid-cols-2 md:grid-cols-4` therefore fills exactly one
                     row at the default, and wraps to a second only for a user
                     who asked for more. */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
+                <KpiStrip>
                     {visibleKpiCards.map((card) => {
                         // Status cards drive `useKpiFilter`; freshness cards
                         // drive the `freshness` filter directly. Both axes
@@ -1882,7 +1883,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                             />
                         );
                     })}
-                </div>
+                </KpiStrip>
 
                 {/*
                   Filter toolbar — the Filter button + live search sit on

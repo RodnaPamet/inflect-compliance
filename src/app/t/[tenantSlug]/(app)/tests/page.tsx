@@ -41,6 +41,7 @@ import { useThresholdLoadMore } from '@inflect/ui/components/ui/hooks/use-thresh
 import { useToastWithUndo } from '@/components/ui/hooks/use-toast-with-undo';
 import { Heading } from '@/components/ui/typography';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
+import { KpiStrip } from '@/components/ui/kpi-strip';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { useKpiTrends, buildKpiSparklines, buildKpiSparklineNullable, centeredSparklineDomain, assignSparklineVariants } from '@/lib/charts/kpi-trends';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
@@ -898,7 +899,7 @@ function TestsRollupContent() {
             <ListPageShell.Filters className="space-y-section">
                 {view === 'plans' && (<>
                 {/* KPI strip — clickable cards filter the table by status. */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
+                <KpiStrip>
                     {visibleKpiCards.map((card) => {
                         const cfg: Record<
                             string,
@@ -948,7 +949,7 @@ function TestsRollupContent() {
                             />
                         );
                     })}
-                </div>
+                </KpiStrip>
 
                 {/* Filter bar (Status / Last Result / Frequency / Due) +
                     live content search + column-visibility gear. Replaces

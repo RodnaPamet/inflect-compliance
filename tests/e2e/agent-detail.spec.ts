@@ -50,31 +50,26 @@ import { test, expect } from './fixtures';
 import { safeGoto, waitForHydration } from './e2e-utils';
 
 /**
- * The nine tabs, exactly as `AgentDetailClient` declares them and `en.json`
- * words them. Asserted as an ordered list rather than one-by-one so a tab that
- * silently disappears — the policy card is `disabled`, not hidden, precisely
- * because "a missing tab says the product does not have it" — fails here.
+ * The page's tabs: the four groups its nine sections sit in (#5898), exactly
+ * as `AgentDetailClient` declares them and `en.json` words them. Asserted as
+ * an ordered list rather than one-by-one so a tab that silently disappears —
+ * a closed section is `disabled`, not hidden, precisely because "a missing tab
+ * says the product does not have it" — fails here.
  */
-const TAB_LABELS = [
-    'Overview',
-    'Risk assessment',
-    'Policy card',
-    'Tools',
-    // #3470 added this one. It is listed in RENDER ORDER for the same reason
-    // the list is ordered at all: a label in the wrong place is a tab in the
-    // wrong place, and this spec is the only thing that reads the rendered
-    // strings rather than the keys that produce them.
-    'Skills',
-    // Step 1b (#4144). Present because the E2E environment turns agent
-    // profiles on (`AGENT_PROFILES=1` in `.env.e2e.example`); a deployment
-    // without the flag has no such tab, which the rendered shell test holds.
-    'Behaviour',
-    'ASI coverage',
-    // #3472 added this one, between coverage and the breaker: it is the record
-    // of what the agent DID, after the tabs describing what it MAY do.
-    'Runs',
-    'Circuit breaker',
-];
+const TAB_LABELS = ['Overview', 'Assessment', 'Authority', 'Activity'];
+
+/**
+ * The sections each group holds, in render order. Behaviour is present
+ * because the E2E environment turns agent profiles on (`AGENT_PROFILES=1` in
+ * `.env.e2e.example`); a deployment without the flag has no such section,
+ * which the rendered shell test holds.
+ */
+const SECTION_LABELS: Record<string, string[]> = {
+    Assessment: ['Risk assessment', 'ASI coverage'],
+    Authority: ['Policy card', 'Tools', 'Skills', 'Behaviour'],
+    // What the agent DID, after the sections describing what it MAY do.
+    Activity: ['Runs', 'Circuit breaker'],
+};
 
 /**
  * Register one agent through the production POST — the same route
@@ -130,7 +125,7 @@ async function registerAgent(
 }
 
 test.describe('Agent detail page', () => {
-    test('register → agent detail: nine tabs, the kill switch, and back', async ({
+    test('register → agent detail: grouped tabs, the kill switch, and back', async ({
         authedPage: page,
         isolatedTenant,
     }) => {
@@ -263,13 +258,13 @@ test.describe('Agent detail page', () => {
             await expect(dialog).toHaveCount(0, { timeout: 10_000 });
         });
 
-        await test.step('nine tabs, and selecting one swaps the panel', async () => {
-            const tabs = main.getByRole('tablist').getByRole('tab');
+        await test.step('four tabs over nine sections, and selecting one swaps the panel', async () => {
+            const tabs = main.getByTestId('entity-detail-tabs').getByRole('tab');
             await expect(tabs).toHaveText(TAB_LABELS, { timeout: 20_000 });
 
-            const panel = main.getByRole('tabpanel');
+            const panel = main.getByTestId('entity-detail-tabpanel');
             const overviewTab = main.getByRole('tab', { name: 'Overview' });
-            const breakerTab = main.getByRole('tab', { name: 'Circuit breaker' });
+            const activityTab = main.getByRole('tab', { name: 'Activity' });
 
             await expect(overviewTab).toHaveAttribute('aria-selected', 'true');
             await expect(panel).toHaveAttribute('aria-labelledby', 'tab-overview');
@@ -278,11 +273,23 @@ test.describe('Agent detail page', () => {
             // its read succeeded, so the click below lands on a live handler.
             await expect(panel).toContainText('Governing profile', { timeout: 30_000 });
 
+            // Every group holds the sections it promises, in order.
+            for (const [group, sections] of Object.entries(SECTION_LABELS)) {
+                await main.getByRole('tab', { name: group, exact: true }).click();
+                await expect(main.getByTestId('agent-section-tabs').getByRole('tab')).toHaveText(sections);
+            }
+
+            await activityTab.click();
+            const breakerTab = main.getByRole('tab', { name: 'Circuit breaker' });
             await breakerTab.click();
 
+            await expect(activityTab).toHaveAttribute('aria-selected', 'true');
             await expect(breakerTab).toHaveAttribute('aria-selected', 'true');
             await expect(overviewTab).toHaveAttribute('aria-selected', 'false');
-            await expect(panel).toHaveAttribute('aria-labelledby', 'tab-breaker');
+            await expect(panel).toHaveAttribute('aria-labelledby', 'tab-activity');
+            await expect(main.getByTestId('agent-section-panel')).toHaveAttribute('aria-labelledby', 'tab-breaker');
+            // The address names the section, so a link to it lands here again.
+            await expect(page).toHaveURL(/[?&]tab=breaker(&|$)/);
             // The panel really swapped rather than the tab bar merely restyling
             // itself. Negative, with the three positive assertions above it
             // from the same render as its companions — and the breaker panel's

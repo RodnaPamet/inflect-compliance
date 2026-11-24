@@ -3943,6 +3943,8 @@
     },
     "hub": {
       "lifecycleTitle": "Audit lifecycle",
+      "guideShow": "Show the guide",
+      "guideHide": "Hide the guide",
       "lifecycleSubtitle": "Plan, build, measure, and share an audit from end to end.",
       "cycles": "Cycles",
       "readiness": "Readiness",
@@ -5889,6 +5891,9 @@
       "tabCoverage": "ASI coverage",
       "tabRuns": "Runs",
       "tabBreaker": "Circuit breaker",
+      "tabGroupAssessment": "Assessment",
+      "tabGroupAuthority": "Authority",
+      "tabGroupActivity": "Activity",
       "metaAutonomy": "Autonomy",
       "metaAccess": "Data access",
       "metaReversibility": "Reversibility",
@@ -9742,6 +9747,9 @@
     "scrollCueStrip": {
       "scrollStart": "Show earlier tabs",
       "scrollEnd": "Show more tabs"
+    },
+    "kpiStrip": {
+      "label": "Key figures"
     },
     "recordStepper": {
       "previous": {
@@ -13658,6 +13666,63 @@
         "submitting": "Registering…",
         "saved": "Registered in draft. Classify its AI-system entry before activating it.",
         "failed": "The agent could not be registered."
+      },
+      "connect": {
+        "open": "Connect a scanner",
+        "title": "Connect a scanner",
+        "description": "Set up Inflect for a scanent scanner in one place: its public key, the reports it posts, and one API key for them. Then copy what the scanner needs.",
+        "blocked": {
+          "permission": "Only an Owner or Admin can create the API key a scanner posts with. Ask one to connect it."
+        },
+        "agentLabel": "Scanner agent",
+        "agentHint": "The registered agent that runs the scanner. Reports are refused unless the key that signs them and the key that posts them both belong to it.",
+        "agentPlaceholder": "Choose an agent",
+        "agentSearch": "Search agents…",
+        "agentBlocked": {
+          "unclassified": "{name} is not active, so it cannot hold an API key. Its AI system has not been classified yet. Classify it, score its risk assessment, then activate it.",
+          "unscored": "{name} is not active, so it cannot hold an API key. Its risk assessment has not been scored yet. Score it, then activate the agent.",
+          "notActive": "{name} is not active, so it cannot hold an API key. Activate it first."
+        },
+        "openAgent": "Open the agent",
+        "publicKeyLabel": "Scanner public key",
+        "publicKeyHint": "Paste what the scanner prints for `scanent public-key`: 64 hexadecimal characters or base64.",
+        "publicKeyHintHasKey": "This agent already has {count, plural, one {# registered key} other {# registered keys}}. Leave this empty to keep using it, or paste another to add it.",
+        "reportsLabel": "What the scanner posts",
+        "report": {
+          "agentReport": "The agent report (the Harness matrix tab)",
+          "integrations": "The integrations report (the Integrations tab)",
+          "agentRules": "The agent-surface report (the Agent surface tab)",
+          "readRegister": "Also read the agent register. This grants the agent the get_harness_register tool."
+        },
+        "noneTicked": "Choose at least one report.",
+        "keyName": "Key name",
+        "defaultKeyName": "{name} scanner",
+        "scopes": "The key's scopes",
+        "scopesHint": "Worked out from what you ticked. One key carries all of them.",
+        "submit": "Connect",
+        "connecting": "Connecting…",
+        "cancel": "Cancel",
+        "failedAt": {
+          "publicKey": "The public key was not registered",
+          "grant": "The register tool was not granted",
+          "key": "The API key was not created"
+        },
+        "failed": {
+          "publicKey": "The public key could not be registered.",
+          "grant": "The agent could not be granted get_harness_register.",
+          "key": "The API key could not be created.",
+          "network": "The request did not reach Inflect. Try again."
+        },
+        "keyOnce": "Copy this key now. It is shown only once.",
+        "copyKey": "Copy key",
+        "copy": "Copy",
+        "envHeading": "In scanent.env",
+        "envIntro": "Paste the key after each = below. It is the same key on every line: scanent reads each report's key from its own variable.",
+        "configHeading": "In config.json",
+        "configIntro": "Set scanner.agentId and replace the inflect block with these. Keep the rest of the file.",
+        "configIntroRegister": "Set scanner.agentId, replace the inflect block with these, and add the inflect-register entry to sources. Keep the rest of the file.",
+        "done": "Done",
+        "registerHasNoScanner": "No agent in the register can be a scanner yet. Register an agent for the scanner first."
       }
     },
     "peers": {
@@ -17854,6 +17919,9 @@
       "submittedBody": "Thank you. Your responses have been delivered to the requester for review.",
       "headerFor": "Vendor assessment for {vendor}",
       "fixErrors": "Please fix the following:",
+      "answerRequired": "This question needs an answer.",
+      "questionsToFix": "Questions to fix: {count}",
+      "progress": "{answered} of {total} answered",
       "submitFailed": "Submission failed. Please try again in a moment.",
       "submit": "Submit responses",
       "submitting": "Submitting…",
@@ -17906,6 +17974,7 @@
         "messagePlaceholder": "Write your message…",
         "attachLabel": "About",
         "attachWholePack": "The whole pack",
+        "attachSearch": "Search the pack…",
         "submit": "Send",
         "submitting": "Sending…",
         "submitError": "Could not send. Please try again.",

@@ -264,6 +264,8 @@ test.describe('an operator finds, registers, grants, and stops an agent', () => 
 
         // ─── 4. GRANT A TOOL ────────────────────────────────────────────
         await test.step('the tools tab says what a grant widens before it is made', async () => {
+            // Tools is a section of the Authority tab (#5898).
+            await main.locator('#tab-authority').click();
             await main.getByRole('tab', { name: /tools/i }).click();
 
             const picker = main.locator('#agent-tool-grant-input');

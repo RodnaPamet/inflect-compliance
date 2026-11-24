@@ -71,6 +71,7 @@ import { useLocalizedRiskMatrixConfig } from '@/lib/hooks/use-risk-matrix-config
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
+import { KpiStrip } from '@/components/ui/kpi-strip';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { Plus } from '@inflect/ui/components/ui/icons/glyphs';
@@ -1202,7 +1203,7 @@ function RisksPageInner({
                     Risks page is the first consumer of the shared
                     primitive; later R23 PRs roll it out to Assets,
                     Controls, Tasks, Evidence, Policies, Vendors. */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
+                <KpiStrip>
                     {visibleKpiCards.map((card) => {
                         const cfg: Record<
                             string,
@@ -1263,7 +1264,7 @@ function RisksPageInner({
                             />
                         );
                     })}
-                </div>
+                </KpiStrip>
 
                 <RisksFilterToolbar
                     risks={risks}
