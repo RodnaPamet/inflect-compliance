@@ -28,6 +28,7 @@ jest.mock('next-intl', () => {
         );
     const cache = new Map<string, (k: string, p?: Record<string, unknown>) => string>();
     return {
+        useLocale: () => 'en',
         useTranslations: (ns: string) => {
             if (!cache.has(ns)) {
                 cache.set(ns, (key: string, params?: Record<string, unknown>) => {

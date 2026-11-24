@@ -34,6 +34,7 @@ jest.mock('next/navigation', () => ({
 
 jest.mock('next-intl', () => ({
     useTranslations: () => (key: string) => key,
+    useLocale: () => 'en',
 }));
 
 // The detail client now reads via `useTenantSWR`, which resolves the
