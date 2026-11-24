@@ -38,8 +38,6 @@
  *                                          polarity model above
  */
 
-import { activeDateLocale } from '@inflect/ui/lib/format-date';
-
 export type TrendPolarity = 'up-good' | 'down-good' | 'neutral';
 
 /** Display semantic — drives the colour token at the renderer. */
@@ -188,9 +186,9 @@ export function formatTrendAbsolute(
         if (magnitude >= 1_000) {
             return `${sign}${(magnitude / 1_000).toFixed(1)}K`;
         }
-        return `${sign}${magnitude.toLocaleString(activeDateLocale())}`;
+        return `${sign}${magnitude.toLocaleString()}`;
     }
-    return `${sign}${magnitude.toLocaleString(activeDateLocale())}`;
+    return `${sign}${magnitude.toLocaleString()}`;
 }
 
 /**

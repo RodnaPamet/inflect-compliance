@@ -9,8 +9,7 @@
  * v9 requires. The `ColumnMeta` fields (disableTruncate / headerTooltip) are
  * typed via the module augmentation in `src/types/tanstack-table.d.ts`.
  */
-import { useTranslations } from "next-intl";
-import { activeDateLocale } from "@inflect/ui/lib/format-date";
+import { useLocale, useTranslations } from "next-intl";
 
 import { cn, deepEqual, isClickOnInteractiveChild } from "./table-utils";
 // v9 renamed the hook `useReactTable` → `useTable`, which collides with THIS
@@ -973,6 +972,9 @@ export function Table<T extends TableRowData>({
   enableColumnResizing = false,
 }: TableProps<T>) {
   const t = useTranslations("common");
+  // Row counts in the reader's language, never the runtime default: the
+  // server's locale and the browser's can disagree, a hydration mismatch.
+  const locale = useLocale();
   const selectionEnabled = selectionEnabledProp ?? true;
   const visibleColumns = table.getVisibleLeafColumns();
   // Memoized on the (TanStack-memoized) visible-column array so the
@@ -1756,17 +1758,17 @@ export function Table<T extends TableRowData>({
               {(
                 (pagination.pageIndex - 1) * pagination.pageSize +
                 1
-              ).toLocaleString(activeDateLocale())}
+              ).toLocaleString(locale)}
               -
               {Math.min(
                 (pagination.pageIndex - 1) * pagination.pageSize +
                   pagination.pageSize,
                 table.getRowCount(),
-              ).toLocaleString(activeDateLocale())}
+              ).toLocaleString(locale)}
             </span>{" "}
             {t("table.of")}{" "}
             <As href={paginationAllRowsHref ?? "#"} className="font-medium">
-              {table.getRowCount().toLocaleString(activeDateLocale())}{" "}
+              {table.getRowCount().toLocaleString(locale)}{" "}
               {resourceName?.(table.getRowCount() !== 1) || t("table.items")}
             </As>
           </div>

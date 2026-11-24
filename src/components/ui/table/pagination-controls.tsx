@@ -20,8 +20,7 @@
  *   // PaginationControls is rendered automatically in the table footer.
  */
 
-import { useTranslations } from "next-intl";
-import { activeDateLocale } from "@inflect/ui/lib/format-date";
+import { useLocale, useTranslations } from "next-intl";
 
 import { cn } from "./table-utils";
 import { Button } from "../button";
@@ -69,6 +68,9 @@ export function PaginationControls({
   className,
 }: PaginationControlsProps) {
   const t = useTranslations("common");
+  // The reader's language, never the runtime default: the server's locale and
+  // the browser's can disagree ("1,234" vs "1234"), which is a hydration mismatch.
+  const locale = useLocale();
   const meta: PaginationMeta = { page, pageSize, totalCount };
   const state = getPaginationState(meta);
 
@@ -76,9 +78,6 @@ export function PaginationControls({
   if (state.isEmpty || state.isSinglePage) return null;
 
   const range = getPageRange(meta);
-  // The reader's language, never the runtime default: the server's locale and
-  // the browser's can disagree ("1,234" vs "1234"), which is a hydration mismatch.
-  const locale = activeDateLocale();
   const As = allRowsHref ? Link : "span";
 
   return (
