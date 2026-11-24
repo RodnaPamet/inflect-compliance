@@ -142,6 +142,12 @@ jest.mock('@/app-layer/usecases/sandbox-runtime-config', () => ({
     readSandboxRuntimeDeclaration: () => reads.readSandboxRuntimeDeclaration(),
     readSandboxExecutionPlatformEnabled: () => reads.readSandboxExecutionPlatformEnabled(),
 }));
+// The hub's workspace-language card (#5932) reads the stored language for an
+// `admin.manage` holder; it has its own tests, so it is stubbed here.
+jest.mock('@/app-layer/usecases/workspace-language', () => ({
+    __esModule: true,
+    getWorkspaceLanguage: async () => ({ defaultLocale: 'en' }),
+}));
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {

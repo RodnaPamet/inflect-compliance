@@ -20,6 +20,17 @@ jest.mock('@/app/t/[tenantSlug]/(app)/admin/_lib/admin-page-gate', () => ({
 
 jest.mock('@/components/theme/ThemeToggle', () => ({ ThemeToggle: () => null }));
 
+// The workspace-language card the hub shows an `admin.manage` holder reads the
+// stored language from the database; it has its own tests.
+jest.mock('@/app-layer/usecases/workspace-language', () => ({
+    __esModule: true,
+    getWorkspaceLanguage: async () => ({ defaultLocale: 'en' }),
+}));
+jest.mock('@/app/t/[tenantSlug]/(app)/admin/WorkspaceLanguageCard', () => ({
+    __esModule: true,
+    WorkspaceLanguageCard: () => null,
+}));
+
 jest.mock('next-intl/server', () => {
     const lookup = (bag: unknown, key: string): unknown =>
         key.split('.').reduce<unknown>((o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined), bag);

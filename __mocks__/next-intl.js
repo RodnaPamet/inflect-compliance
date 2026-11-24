@@ -80,6 +80,23 @@ const NextIntlClientProvider = ({ children }) =>
     React.createElement(React.Fragment, null, children);
 const IntlProvider = NextIntlClientProvider;
 
+/**
+ * `createTranslator` over the catalogue the CALLER passes (a server module
+ * wording a record in a workspace's language loads `messages/<locale>.json`
+ * itself), so a test of such a module sees the real language it chose, not
+ * this mock's English. `{param}` interpolation only, like the rest of this
+ * mock: no ICU plural or select syntax.
+ */
+function createTranslator({ messages, namespace }) {
+    return (key, params) => {
+        const path = namespace ? `${namespace}.${key}` : key;
+        const val = path
+            .split('.')
+            .reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), messages);
+        return interpolate(typeof val === 'string' ? val : path, params);
+    };
+}
+
 module.exports = {
     useTranslations,
     useLocale,
@@ -89,4 +106,5 @@ module.exports = {
     useFormatter,
     NextIntlClientProvider,
     IntlProvider,
+    createTranslator,
 };

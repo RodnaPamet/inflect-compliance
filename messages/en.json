@@ -19000,7 +19000,8 @@
       "WORKFLOW_RUN_RESUMED": "Workflow run resumed",
       "WORKFLOW_RUN_STARTED": "Workflow run started",
       "WORKFLOW_STEP": "Workflow step",
-      "WORKFLOW_STEP_ISOLATED_FAILURE": "Workflow step isolated failure"
+      "WORKFLOW_STEP_ISOLATED_FAILURE": "Workflow step isolated failure",
+      "WORKSPACE_LANGUAGE_CHANGED": "Workspace language changed"
     },
     "entity": {
       "access_review": "Access review",
@@ -19298,6 +19299,32 @@
       "workflow_run_deferral": "Workflow run deferral",
       "workflow_step": "Workflow step"
     }
+  },
+  "workspaceText": {
+    "nis2GapTask": {
+      "title": "Answer the NIS2 gap assessment questions for {group} ({count})",
+      "count": {
+        "one": "{n} question",
+        "other": "{n} questions"
+      },
+      "group": {
+        "CEO": "leadership",
+        "IT": "IT",
+        "HR": "HR",
+        "PROCUREMENT": "procurement",
+        "ANYONE": "anyone in the organisation"
+      }
+    }
+  },
+  "workspaceLanguage": {
+    "section": "Workspace",
+    "title": "Workspace language",
+    "description": "The language the product uses when it writes text into this workspace's records for you. Today that is the titles of the tasks a NIS2 gap assessment dispatch creates. Records already written keep their wording, and anyone can still edit them.",
+    "notInterface": "It does not change anyone's interface language. Each person chooses that in their own browser.",
+    "label": "Default language",
+    "save": "Save",
+    "saved": "Workspace language saved.",
+    "saveFailed": "The workspace language could not be saved."
   },
   "notificationBodies": {
     "body": {

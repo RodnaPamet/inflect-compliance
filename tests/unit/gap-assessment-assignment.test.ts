@@ -94,8 +94,12 @@ describe('dispatchAssignments', () => {
             },
             notification: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
             // The context below carries no `tenantSlug` (a job-style context),
-            // so the notification link's slug is looked up.
-            tenant: { findUnique: jest.fn().mockResolvedValue({ slug: 'acme' }) },
+            // so the notification link's slug is looked up. The same row
+            // carries the workspace's default language, read for task titles.
+            tenant: {
+                findUnique: jest.fn().mockImplementation(async (args: { select: Record<string, true> }) =>
+                    args.select.slug ? { slug: 'acme' } : { defaultLocale: 'en' }),
+            },
             ...over,
         };
     }
@@ -132,7 +136,70 @@ describe('dispatchAssignments', () => {
         expect(d.notification.createMany).toHaveBeenCalledTimes(1);
         expect(d.notification.createMany.mock.calls[0][0].data[0].linkUrl).toBe('/t/acme/audits/nis2-gap/respond/asg-1');
         // Looked up once for the dispatch, not once per role.
-        expect(d.tenant.findUnique).toHaveBeenCalledTimes(1);
+        const slugReads = d.tenant.findUnique.mock.calls.filter(
+            ([args]: [{ select: Record<string, true> }]) => args.select.slug,
+        );
+        expect(slugReads).toHaveLength(1);
+    });
+
+    // Owner decision 2026-11-24: a task is an editable record, so its title is
+    // worded once, at dispatch, in the WORKSPACE's default language.
+    describe('task titles in the workspace default language', () => {
+        const titles = () => mockCreateTask.mock.calls.map(([, input]) => (input as { title: string }).title);
+        function dbIn(locale: string | null) {
+            return db({
+                tenant: {
+                    findUnique: jest.fn().mockImplementation(async (args: { select: Record<string, true> }) =>
+                        args.select.slug ? { slug: 'acme' } : locale === null ? null : { defaultLocale: locale }),
+                },
+            });
+        }
+
+        it('a Bulgarian workspace gets Bulgarian titles, group and question count included', async () => {
+            withDb(dbIn('bg'));
+            await dispatchAssignments(ctx(), 'a1', { CEO: 'user-ceo', IT: 'user-it' });
+            expect(titles()).toEqual([
+                'Отговорете на въпросите от оценката на пропуските по NIS2 за ръководството (1 въпрос)',
+                'Отговорете на въпросите от оценката на пропуските по NIS2 за ИТ отдела (1 въпрос)',
+            ]);
+        });
+
+        it('an English workspace gets exactly the English title every workspace got before the setting', async () => {
+            withDb(dbIn('en'));
+            await dispatchAssignments(ctx(), 'a1', { CEO: 'user-ceo', ANYONE: 'user-any' });
+            expect(titles()).toEqual([
+                'Answer the NIS2 gap assessment questions for leadership (1 question)',
+                'Answer the NIS2 gap assessment questions for anyone in the organisation (1 question)',
+            ]);
+        });
+
+        it('counts in the plural form of the workspace language', async () => {
+            repo.listQuestions.mockResolvedValue([
+                { id: 'q1', respondent: 'HR' },
+                { id: 'q2', respondent: 'HR' },
+                { id: 'q3', respondent: 'HR' },
+            ] as never);
+            withDb(dbIn('bg'));
+            await dispatchAssignments(ctx(), 'a1', { HR: 'user-hr' });
+            expect(titles()).toEqual([
+                'Отговорете на въпросите от оценката на пропуските по NIS2 за отдел „Човешки ресурси“ (3 въпроса)',
+            ]);
+        });
+
+        it('an unreadable or unsupported stored language reads as English, never as a refusal', async () => {
+            withDb(dbIn('xx'));
+            await dispatchAssignments(ctx(), 'a1', { PROCUREMENT: 'user-p', IT: 'user-it' });
+            expect(titles()).toEqual(['Answer the NIS2 gap assessment questions for IT (1 question)']);
+        });
+
+        it('the notification stays the stored English stock sentence, whatever the workspace language', async () => {
+            const d = dbIn('bg');
+            withDb(d);
+            await dispatchAssignments(ctx(), 'a1', { IT: 'user-it' });
+            expect(d.notification.createMany.mock.calls[0][0].data[0].message).toBe(
+                'You have 1 question to answer in the NIS2 gap assessment, for IT.',
+            );
+        });
     });
 
     it('counts an existing assignment as updated and skips the task when the assignee is unchanged', async () => {
