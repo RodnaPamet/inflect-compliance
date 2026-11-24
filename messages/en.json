@@ -363,6 +363,10 @@
       "cancelled": "Cancelled",
       "failed": "Failed"
     },
+    "filePicker": {
+      "choose": "Choose file",
+      "none": "No file chosen"
+    },
     "fileKinds": {
       "link": "Link",
       "text": "Text",
@@ -3726,6 +3730,8 @@
       "versionEmpty": "No version published yet.",
       "createVersionHint": "Create a version in the Editor tab.",
       "contentEmpty": "No content",
+      "tocTitle": "Contents",
+      "tocAria": "Table of contents",
       "versionsEmpty": "No versions yet.",
       "published": "Published",
       "current": "Current",
@@ -5427,7 +5433,7 @@
       "setup3": "Set the <b>SCIM connector base URL</b> to the endpoint shown above.",
       "setup4": "Set <b>Authentication</b> to \"HTTP Header\" with the bearer token.",
       "setupActions": "Enable provisioning actions: <i>Create Users</i>, <i>Update User Attributes</i>, <i>Deactivate Users</i>.",
-      "roleMapBody": "<b>Role mapping:</b> SCIM-provisioned users are assigned the <s>Reader</s> role by default. Editors and Auditors can be mapped through your identity provider's group or role assignment. A group push from Microsoft Entra ID applies the Entra page's group mappings, up to the AI admin role. The Admin and Owner roles cannot be assigned through SCIM; they are set by hand.",
+      "roleMapBody": "<b>Role mapping:</b> SCIM-provisioned users are assigned the <s>{reader}</s> role by default. The {editor} and {auditor} roles can be mapped through your identity provider's group or role assignment. A group push from Microsoft Entra ID applies the Entra page's group mappings, up to the {aiAdmin} role. The {admin} and {owner} roles cannot be assigned through SCIM; they are set by hand.",
       "emptyTokensHint": "Generate a token to enable automated provisioning from your identity provider.",
       "tokenLabel": "Token label",
       "errRevoke": "Couldn't revoke the token. It is still active.",
@@ -9958,6 +9964,7 @@
       "inherentRisk": "Inherent Risk",
       "inherentRiskReadOnly": "Set by assessment review — not editable here",
       "inherentRiskHint": "Assessment-derived — set from the latest completed assessment review.",
+      "notSet": "Not set: {fields}",
       "residualRisk": "Residual Risk",
       "residualRiskNone": "Not set",
       "nextReview": "Next Review",
@@ -11030,6 +11037,7 @@
     }
   },
   "processes": {
+    "title": "Processes",
     "checkpoint": {
       "title": "Human checkpoint",
       "subtitle": "{workflowKey} · run is {status}",
@@ -17260,6 +17268,44 @@
     "inDialogs": "In dialogs & sheets",
     "showShortcuts": "Show keyboard shortcuts"
   },
+  "onboardingTour": {
+    "start": "Take the tour",
+    "next": "Next",
+    "previous": "Previous",
+    "done": "Done",
+    "close": "Close the tour",
+    "progress": "{current} of {total}",
+    "steps": {
+      "welcome": {
+        "title": "Welcome to Inflect Compliance",
+        "body": "A 30-second tour of the workspace. Close it at any time; it will not start on its own again."
+      },
+      "dashboard": {
+        "title": "Board",
+        "body": "Your daily start point: KPIs, due items and recent activity at a glance."
+      },
+      "controls": {
+        "title": "Control",
+        "body": "The register of every control your workspace operates. Open it to see status, owners and traceability."
+      },
+      "risks": {
+        "title": "Risk",
+        "body": "Inherent and residual scoring with an interactive heatmap. Mitigations link directly to controls."
+      },
+      "policies": {
+        "title": "Policy",
+        "body": "Written, linked or uploaded policies, with version history and an approval workflow."
+      },
+      "commandPalette": {
+        "title": "Command palette",
+        "body": "Press ⌘K (or Ctrl+K), or tap search in the top bar, to find controls, risks, policies, evidence and frameworks, or to jump to any page."
+      },
+      "complete": {
+        "title": "You're set",
+        "body": "You can restart this tour any time from \"{startLabel}\" in the navigation menu."
+      }
+    }
+  },
   "onboarding": {
     "wizard": {
       "accessRestricted": "Access Restricted",
@@ -19671,7 +19717,8 @@
   "agentWorkflows": {
     "diagnostic": {
       "name": "Posture diagnostic",
-      "description": "Read the compliance posture and synthesise a one-line health summary."
+      "description": "Read the compliance posture and synthesise a one-line health summary.",
+      "summary": "Posture snapshot — {controls} controls, {risks} risks, {openTasks} open tasks."
     },
     "framework_onboarding": {
       "name": "Framework onboarding",

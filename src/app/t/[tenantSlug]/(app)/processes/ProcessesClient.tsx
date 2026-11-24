@@ -37,6 +37,7 @@ import { useIsBelowMd } from "@/components/ui/hooks";
 import { cardVariants } from "@/components/ui/card";
 import { ScrollCueStrip } from "@/components/ui/scroll-cue-strip";
 import { StatusBadge, type StatusBadgeVariant } from "@/components/ui/status-badge";
+import { Heading } from "@/components/ui/typography";
 import { RulesTab } from "./RulesTab";
 import { AnalyticsTab } from "./AnalyticsTab";
 import { MonitorTab } from "./MonitorTab";
@@ -166,6 +167,20 @@ export function ProcessesClient({
 
     return (
         <div className="flex h-full min-h-0 flex-col">
+            {/* The page's name. The canvas announces itself on a desktop (its
+                document bar carries the map's title, and the sidebar the
+                section), so there it is only the a11y landmark; a phone has
+                neither on screen, so there it is shown. The Rules tab carries
+                its own page header and H1, so this one stands aside for it. */}
+            {tab !== "rules" && (
+                <Heading
+                    level={1}
+                    className="pb-compact md:sr-only"
+                    data-testid="processes-page-title"
+                >
+                    {t("title")}
+                </Heading>
+            )}
             {/* The shared scroll-cue strip (fades, chevrons, active tab in
                 view, end padding) — the same behaviour as the detail-page
                 tab bar. The governance link scrolls with the tabs, as it

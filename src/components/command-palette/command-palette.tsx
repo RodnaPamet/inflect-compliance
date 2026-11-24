@@ -381,10 +381,14 @@ export function CommandPalette() {
                         className="flex flex-col"
                         label={t('title')}
                     >
+                        {/* The row's vertical padding is the INPUT's, not the
+                            row's: the field is the row's full height (47px)
+                            rather than its 23px line, so the whole bar takes
+                            a tap. The row looks exactly as it did. */}
                         <div
                             className={cn(
                                 'flex items-center gap-tight border-b border-border-subtle',
-                                'px-4 py-3',
+                                'px-4',
                             )}
                         >
                             <Search
@@ -401,7 +405,7 @@ export function CommandPalette() {
                                         : t('searchPlaceholder')
                                 }
                                 className={cn(
-                                    'flex-1 bg-transparent text-sm',
+                                    'min-w-0 flex-1 bg-transparent py-3 text-sm',
                                     'text-content-emphasis placeholder:text-content-subtle',
                                     'focus:outline-none',
                                 )}

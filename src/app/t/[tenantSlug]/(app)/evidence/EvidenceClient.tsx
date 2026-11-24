@@ -1,6 +1,6 @@
 'use client';
 import { useTranslations } from 'next-intl';
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSWRConfig } from 'swr';
 import { useTenantSWR, usePrefetchTenant } from '@/lib/hooks/use-tenant-swr';
@@ -972,6 +972,12 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
     //   - hydratedNow set (skips SSR / first-render race)
     //   - default 'active' retention tab + no other filters
     //   - query has actually loaded data at least once
+    //   - the state was REACHED while the page was open (#5882): the
+    //     register has to have read as not-all-current first. Opening a
+    //     register that was already current used to celebrate on load,
+    //     and on a phone the toast sat bottom-centre over the list the
+    //     reader had just opened. A celebration marks the moment of
+    //     getting there — a review, an upload — not finding it so.
     // Session dedupe in `useCelebration` prevents repeat fires across
     // refreshes / re-renders.
     // EP-4 — "all current" is judged from the SERVER retention aggregate
@@ -985,12 +991,17 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
         metrics.expired === 0 &&
         metrics.expiringSoon === 0 &&
         metrics.needsReview === 0;
+    const sawEvidenceNotCurrent = useRef(false);
     useEffect(() => {
+        if (!allEvidenceCurrent) {
+            sawEvidenceNotCurrent.current = true;
+            return;
+        }
+        if (!sawEvidenceNotCurrent.current) return;
         if (!hydratedNow) return;
         if (retentionFilter !== 'active') return;
         if (anyFilterActive) return;
         if (evidenceQuery.isLoading) return;
-        if (!allEvidenceCurrent) return;
         const def = MILESTONES['evidence-all-current'];
         // The registry's copy is English; the toast reads the catalogue.
         celebrate({

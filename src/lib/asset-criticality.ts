@@ -34,18 +34,24 @@ export type CriticalityEnum = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 /** The dimension value (on the 1–5 scale) that counts as "Critical". */
 export const CRITICALITY_CEILING = 5;
 
+/**
+ * `label` is the band's English IDENTITY (the key `criticalityToEnum` maps
+ * through), not display text. A surface renders `level` through the
+ * `assets.filterEnums.criticality.<LEVEL>` message, so a Bulgarian page does
+ * not read "Medium".
+ */
 export function getAssetCriticality(
     confidentiality: number,
     integrity: number,
     availability: number,
-): { score: number; label: string; tone: AssetCriticalityTone } {
+): { score: number; label: string; level: CriticalityEnum; tone: AssetCriticalityTone } {
     const dims = [confidentiality, integrity, availability];
     const peak = Math.max(...dims);
 
     // Critical override — a single ceiling dimension keeps the asset
     // Critical even when the other two are minimal.
     if (peak >= CRITICALITY_CEILING) {
-        return { score: CRITICALITY_CEILING, label: 'Critical', tone: 'critical' };
+        return { score: CRITICALITY_CEILING, label: 'Critical', level: 'CRITICAL', tone: 'critical' };
     }
 
     // Otherwise band from the mean of the two highest dimensions, rounded
@@ -54,9 +60,9 @@ export function getAssetCriticality(
     const [hi, mid] = [...dims].sort((x, y) => y - x);
     const score = Math.round((hi + mid) / 2);
 
-    if (score >= 4) return { score, label: 'High', tone: 'danger' };
-    if (score >= 3) return { score, label: 'Medium', tone: 'warning' };
-    return { score, label: 'Low', tone: 'success' };
+    if (score >= 4) return { score, label: 'High', level: 'HIGH', tone: 'danger' };
+    if (score >= 3) return { score, label: 'Medium', level: 'MEDIUM', tone: 'warning' };
+    return { score, label: 'Low', level: 'LOW', tone: 'success' };
 }
 
 /** Map a criticality label to the Prisma `Criticality` enum member. */

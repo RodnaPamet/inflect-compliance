@@ -526,7 +526,10 @@ export default function PolicyDetailPage() {
         if (!safe.trim()) {
             return <span className="text-content-subtle italic">{t('detail.contentEmpty')}</span>;
         }
-        const enriched = enrichPolicyHtml(safe);
+        const enriched = enrichPolicyHtml(safe, {
+            title: t('detail.tocTitle'),
+            ariaLabel: t('detail.tocAria'),
+        });
         return (
             <div
                 className="policy-content"

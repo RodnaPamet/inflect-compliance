@@ -39,11 +39,14 @@ export default async function AppLayout({
     // Resolve translations server-side — passed as plain string to AppShell
     const tc = await getTranslations('common');
 
-    // ClientProviders sits inside AppShell so the page tree (children)
-    // gets QueryClient + OnboardingTour context. AppShell's own
-    // SidebarNav must NOT depend on either provider — the
-    // calendar-badge hook (Epic 49) uses a plain fetch + useState
-    // instead of useQuery for that reason.
+    // ClientProviders wraps AppShell, so the shell's sidebar is inside the
+    // OnboardingTour context: its "Take the tour" button renders only inside
+    // that provider, and while ClientProviders sat inside AppShell (page tree
+    // only) the button rendered nowhere — not in the desktop sidebar, not in
+    // a phone's navigation drawer — while the tour's last step told readers
+    // to restart it from there (#5904). The sidebar still does not DEPEND on
+    // the provider: the button renders nothing without it, and the
+    // calendar-badge hook (Epic 49) uses a plain fetch + useState.
     // ═══ WHERE THE LAUNCHER MOUNTS, AND WHY NOT IN AppShell ═══
     //
     // The roadmap says "mount it in AppShell.tsx, NOT AppShellFrame.tsx", for
@@ -95,6 +98,7 @@ export default async function AppLayout({
 
     return (
         <AssistantPageContextProvider>
+        <ClientProviders userId={session.user.id ?? null}>
         <AppShell
             user={{
                 name: session.user.name,
@@ -118,11 +122,10 @@ export default async function AppLayout({
                 </>
             }
         >
-            <ClientProviders userId={session.user.id ?? null}>
-                <NavigationTracker />
-                {children}
-            </ClientProviders>
+            <NavigationTracker />
+            {children}
         </AppShell>
+        </ClientProviders>
         {assistantEnabled ? <AssistantLauncher /> : null}
         </AssistantPageContextProvider>
     );

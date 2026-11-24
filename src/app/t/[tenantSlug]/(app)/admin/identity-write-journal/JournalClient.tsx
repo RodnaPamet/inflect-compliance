@@ -246,7 +246,7 @@ export function JournalClient() {
     const notFound = (detailError as { status?: number } | undefined)?.status === 404;
 
     return (
-        <div className="space-y-comfortable">
+        <div className="space-y-section">
             <BackAffordance />
             <PageBreadcrumbs
                 items={[

@@ -433,9 +433,22 @@ const config = [
         // painted by the browser. Pages use `Checkbox`, `RadioGroup` and
         // `Slider`, which carry the 44px touch hit area and the theme. See
         // eslint-rules/rules/no-native-choice-input.js.
-        files: ['src/app/**/*.tsx'],
+        // `src/components` too: a shared component draws on every page that
+        // renders it, and the widget picker, the treatment-plan milestones
+        // and the onboarding sovereignty step were the last native boxes.
+        files: ['src/app/**/*.tsx', 'src/components/**/*.tsx', 'packages/ui/src/**/*.tsx'],
         ignores: ['**/__tests__/**', '**/*.test.tsx', '**/*.spec.tsx'],
         rules: { 'local/no-native-choice-input': 'error' },
+    },
+    {
+        // ── An accessible name comes from the message catalogue ──
+        //
+        // A literal `aria-label` is English on a Bulgarian page, and nothing
+        // on screen shows it (#5884: "Next review date" on the new-risk date
+        // picker). See eslint-rules/rules/no-literal-aria-label.js.
+        files: ['src/**/*.tsx', 'packages/ui/src/**/*.tsx'],
+        ignores: ['**/__tests__/**', '**/*.test.tsx', '**/*.spec.tsx'],
+        rules: { 'local/no-literal-aria-label': 'error' },
     },
     {
         // ── An icon is spaced by its container, not a negative margin ──

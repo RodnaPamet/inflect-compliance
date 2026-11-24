@@ -537,7 +537,7 @@ export function NewRiskModal({
                                 disabledDays={{
                                     before: startOfUtcDay(new Date()),
                                 }}
-                                aria-label="Next review date"
+                                aria-label={tx('new.nextReviewLabel')}
                             />
                         </FormField>
 

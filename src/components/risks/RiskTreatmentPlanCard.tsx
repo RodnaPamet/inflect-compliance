@@ -18,6 +18,7 @@ import useSWR, { useSWRConfig } from 'swr';
 import { ApiClientError } from '@/lib/api-client';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
@@ -429,16 +430,15 @@ function MilestoneRowItem({
             className="flex items-center gap-compact py-1"
             data-testid={`treatment-plan-milestone-${milestone.id}`}
         >
-            <input
-                type="checkbox"
+            <Checkbox
+                size="sm"
                 checked={completed}
                 disabled={!canWrite || completed || completing}
-                onChange={() => {
+                onCheckedChange={() => {
                     if (!completed && canWrite) void handleComplete();
                 }}
                 aria-label={t('completeMilestoneAria', { title: milestone.title })}
                 data-testid={`treatment-plan-milestone-checkbox-${milestone.id}`}
-                className="h-4 w-4 rounded border-border-subtle text-brand-emphasis"
             />
             <span
                 className={

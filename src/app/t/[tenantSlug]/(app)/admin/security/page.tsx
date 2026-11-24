@@ -236,6 +236,11 @@ export default function AdminSecurityPage() {
 
     return (
         <div className="space-y-section animate-fadeIn">
+            {/* The loaded page keeps the loading state's back link: without
+                it a phone showed the whole breadcrumb trail as its only way
+                back, where every other admin page shows one back link
+                (`PHONE_TRAIL_CLASS` hides the trail once a back link shows). */}
+            <BackAffordance />
             <div>
                 <PageBreadcrumbs
                     items={[

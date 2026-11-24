@@ -15,6 +15,7 @@ import {
     getAssetCriticality,
     presentCriticality,
     type AssetCriticalityTone,
+    type CriticalityEnum,
     ASSET_CRITICALITY_TONE_CLASSES,
 } from './asset-criticality';
 
@@ -44,8 +45,9 @@ export function AssetCriticalityBadge({
     const t = useTranslations('assets');
     const stored = presentCriticality(storedCriticality);
     const derived = getAssetCriticality(confidentiality, integrity, availability);
-    const crit: { score: number; label: string; tone: AssetCriticalityTone } = stored
-        ? { score: derived.score, label: stored.label, tone: stored.tone }
+    // `presentCriticality` returned a band, so the stored value IS its level.
+    const crit: { score: number; level: CriticalityEnum; tone: AssetCriticalityTone } = stored
+        ? { score: derived.score, level: storedCriticality as CriticalityEnum, tone: stored.tone }
         : derived;
     return (
         <div
@@ -56,7 +58,7 @@ export function AssetCriticalityBadge({
                 {t('crit.badge')}
             </p>
             <p className="text-xl font-bold">{crit.score}</p>
-            <p className="text-xs font-medium">{crit.label}</p>
+            <p className="text-xs font-medium">{t(`filterEnums.criticality.${crit.level}` as Parameters<typeof t>[0])}</p>
         </div>
     );
 }
@@ -135,7 +137,7 @@ export function AssetCriticalityFields({
                         {t('crit.badge')}
                     </p>
                     <p className="text-xl font-bold">{crit.score}</p>
-                    <p className="text-[11px] font-medium">{crit.label}</p>
+                    <p className="text-xs font-medium">{t(`filterEnums.criticality.${crit.level}` as Parameters<typeof t>[0])}</p>
                 </div>
             </div>
         </div>

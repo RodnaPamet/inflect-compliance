@@ -327,7 +327,7 @@ export function SidebarContent({ user, onLogout, onNavClick, onToggleCollapse }:
                 in the user block below is the literal last line. */}
             {!collapsed && (
                 <div className="mx-2">
-                    <StartTourButton />
+                    <StartTourButton onStart={onNavClick} />
                 </div>
             )}
 
