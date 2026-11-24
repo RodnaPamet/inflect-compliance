@@ -10,6 +10,7 @@
  * typed via the module augmentation in `src/types/tanstack-table.d.ts`.
  */
 import { useTranslations } from "next-intl";
+import { activeDateLocale } from "@inflect/ui/lib/format-date";
 
 import { cn, deepEqual, isClickOnInteractiveChild } from "./table-utils";
 // v9 renamed the hook `useReactTable` → `useTable`, which collides with THIS
@@ -1755,17 +1756,17 @@ export function Table<T extends TableRowData>({
               {(
                 (pagination.pageIndex - 1) * pagination.pageSize +
                 1
-              ).toLocaleString()}
+              ).toLocaleString(activeDateLocale())}
               -
               {Math.min(
                 (pagination.pageIndex - 1) * pagination.pageSize +
                   pagination.pageSize,
                 table.getRowCount(),
-              ).toLocaleString()}
+              ).toLocaleString(activeDateLocale())}
             </span>{" "}
             {t("table.of")}{" "}
             <As href={paginationAllRowsHref ?? "#"} className="font-medium">
-              {table.getRowCount().toLocaleString()}{" "}
+              {table.getRowCount().toLocaleString(activeDateLocale())}{" "}
               {resourceName?.(table.getRowCount() !== 1) || t("table.items")}
             </As>
           </div>

@@ -24,7 +24,7 @@ import { Heading } from '@/components/ui/typography';
 import { LossExceedanceCurve, type LossReferenceLine } from '@/components/ui/charts';
 import { useTenantApiUrl, useMoneyFormatter, useTenantContext, useTenantHref } from '@/lib/tenant-context-provider';
 import { apiErrorMessage } from '@/lib/api-error';
-import { formatDateTime } from '@inflect/ui/lib/format-date';
+import { activeDateLocale, formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTranslations } from 'next-intl';
 import { StatTile } from '../_shared/StatTile';
 
@@ -162,7 +162,7 @@ export function MonteCarloPanel({
             ) : (
                 <>
                     <p className="mb-default text-xs text-content-muted">
-                        {t('monteCarlo.lastRun', { date: run.completedAt ? formatDateTime(run.completedAt) : '', iterations: run.iterations.toLocaleString(), ms: run.executionMs ?? 0 })}
+                        {t('monteCarlo.lastRun', { date: run.completedAt ? formatDateTime(run.completedAt) : '', iterations: run.iterations.toLocaleString(activeDateLocale()), ms: run.executionMs ?? 0 })}
                     </p>
                     {/* PR-L — the configured correlation matrix was non-PSD, so
                         the sim dropped it and sampled independently. Surface it
