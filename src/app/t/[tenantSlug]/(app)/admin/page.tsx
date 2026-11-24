@@ -8,6 +8,8 @@ import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Eyebrow } from '@/components/ui/typography';
 import { gateAdminPage } from './_lib/admin-page-gate';
+import { getWorkspaceLanguage } from '@/app-layer/usecases/workspace-language';
+import { WorkspaceLanguageCard } from './WorkspaceLanguageCard';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +22,8 @@ export const dynamic = 'force-dynamic';
  * Notifications. Policy templates were unused chrome and were
  * dropped entirely.
  *
- * Reads no tenant data, and is still gated here on `admin.view` like every
+ * Reads one tenant setting, the workspace default language, and only for a
+ * holder of `admin.manage`. Gated here on `admin.view` like every
  * admin server page (`./_lib/admin-page-requirements.ts`): the client admin
  * layout cannot keep a server page's props out of the payload, so a read added
  * to this page later must already be behind a server gate.
@@ -35,6 +38,13 @@ export default async function AdminPage({
     const { tenantSlug } = gate;
 
     const t = await getTranslations('admin');
+    const tw = await getTranslations('workspaceLanguage');
+    // The workspace default language: read and offered only to a holder of
+    // `admin.manage`, the key its PUT takes, so nobody is shown a control the
+    // server would refuse.
+    const workspaceLanguage = gate.ctx.appPermissions?.admin?.manage
+        ? await getWorkspaceLanguage(gate.ctx)
+        : null;
 
     const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
 
@@ -192,6 +202,15 @@ export default async function AdminPage({
                     </div>
                 </section>
             ))}
+
+            {/* A workspace-wide setting, after the navigation: the hub is
+                still a map of the admin area first. */}
+            {workspaceLanguage && (
+                <section className="space-y-default" aria-label={tw('section')}>
+                    <Eyebrow>{tw('section')}</Eyebrow>
+                    <WorkspaceLanguageCard initialLocale={workspaceLanguage.defaultLocale} />
+                </section>
+            )}
         </div>
     );
 }

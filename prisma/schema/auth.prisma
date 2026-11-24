@@ -107,6 +107,19 @@ model Tenant {
   /// or sums > 1.0 are rejected at the usecase layer.
   /// Audit Coherence S5 (2026-05-22).
   readinessWeightsJson              Json?
+  /// The workspace's default language (#5868, owner decision 2026-11-24):
+  /// the language of text the PRODUCT writes into this workspace's records on
+  /// its behalf, which a person may then edit — first, the NIS2 gap-assessment
+  /// dispatch task titles. It is NOT anybody's interface language, which stays
+  /// a per-browser cookie (`inflect_locale`).
+  ///
+  /// Plain text constrained by the CHECK `Tenant_defaultLocale_supported` to
+  /// `SUPPORTED_LOCALES` (`src/lib/locale-constants.ts`), never a Postgres
+  /// enum: adding a language is then a CHECK widened in a migration, not an
+  /// `ALTER TYPE` that fails still-running containers mid-deploy. Default
+  /// `en`, which is what every workspace wrote before the column existed.
+  /// One writer: `usecases/workspace-language.ts`.
+  defaultLocale                     String                             @default("en")
   createdAt                         DateTime                           @default(now())
   updatedAt                         DateTime                           @updatedAt
   assets                            Asset[]

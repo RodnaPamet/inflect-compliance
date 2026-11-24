@@ -42,6 +42,7 @@ import {
     nis2QuestionCount,
     stockNotificationText,
 } from '@/lib/notifications/stock-notifications';
+import { readWorkspaceLocale, workspaceTranslator } from '@/lib/i18n/workspace-text';
 
 export const NIS2_RESPONDENT_ROLES = ['CEO', 'IT', 'HR', 'PROCUREMENT', 'ANYONE'] as const;
 export type Nis2RespondentRole = (typeof NIS2_RESPONDENT_ROLES)[number];
@@ -126,6 +127,11 @@ export async function dispatchAssignments(
         // `/t/<slug>` prefix — a bare tenant path 404'd from the bell (#4128).
         // Resolved once, not per role.
         const tenantSlug = await resolveTenantSlugForLinks(db, ctx);
+        // The task title is an editable record written on the workspace's
+        // behalf, so it is worded once, now, in the WORKSPACE's default
+        // language (owner decision 2026-11-24) — not the dispatcher's browser
+        // language: the person dispatching is not the person who reads it.
+        const taskTitle = await nis2TaskTitleWriter(await readWorkspaceLocale(db, ctx.tenantId));
 
         // Bounded to the 5 respondent roles, all inside one tenant transaction;
         // the per-role upsert/task cannot be hoisted into a single query.
@@ -151,7 +157,7 @@ export async function dispatchAssignments(
             const assigneeChanged = !existing || existing.assigneeUserId !== assigneeUserId;
             if (assigneeUserId && assigneeChanged) {
                 await createTask(ctx, {
-                    title: `Answer the NIS2 gap assessment questions for ${respondentLabel(role)} (${nis2QuestionCount(questionIds.length)})`,
+                    title: taskTitle(role, questionIds.length),
                     type: 'CONTROL_GAP',
                     source: 'AUDIT',
                     assigneeUserId,
@@ -257,14 +263,28 @@ export async function getAssignmentForRespondent(ctx: RequestContext, assignment
 const isFinalizedRun = isFinalizedNis2Run;
 
 /**
- * The respondent group in words, for the task and notification an assignee
- * receives (#4929). They are stored text with no recipient locale to render
- * in, so they are English; the codes stay in the task's metadata. The
- * notification's words are the stock sentence's own phrases, which the bell
- * reads back in the reader's language (#5929); the TASK title is a record a
- * person may edit, so it stays as written.
+ * The respondent group in words, for the notification an assignee receives
+ * (#4929). The notification's words are the stock sentence's own phrases,
+ * which the bell reads back in the reader's language (#5929), so they are
+ * stored in English; the codes stay in the task's metadata.
  */
 const respondentLabel = (role: string): string => (NIS2_GROUP as Record<string, string>)[role] ?? role;
+
+/**
+ * The assignee TASK's title, in the workspace's default language. A task is a
+ * record a person may edit, so unlike the notification it cannot be re-worded
+ * on read; it is written once, in `workspaceText.nis2GapTask`. The group and
+ * the question count are product phrases and are translated with it. A role
+ * outside the five (none is today) is named by its code, as before.
+ */
+async function nis2TaskTitleWriter(locale: string): Promise<(role: string, questions: number) => string> {
+    const t = await workspaceTranslator(locale, 'workspaceText.nis2GapTask');
+    return (role, questions) =>
+        t('title', {
+            group: Object.hasOwn(NIS2_GROUP, role) ? t(`group.${role}`) : role,
+            count: t(questions === 1 ? 'count.one' : 'count.other', { n: questions }),
+        });
+}
 
 /**
  * Write ONLY answers whose ids are in this assignment's bucket into the parent

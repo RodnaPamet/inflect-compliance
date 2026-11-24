@@ -241,6 +241,17 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'Read-only sibling at /risk-matrix-config (risks.view).',
     },
 
+    // ── Workspace default language (owner decision 2026-11-24) ──────
+    {
+        path: new RegExp(`^${T}\\/admin\\/workspace-language$`),
+        permission: 'admin.manage',
+        note:
+            'Reading and setting the language of text the product writes into ' +
+            'this workspace\'s records on its behalf (first, NIS2 dispatch task ' +
+            'titles). Workspace-wide, so on the key of the other workspace ' +
+            'settings; it changes no one\'s interface language.',
+    },
+
     // ── Risk appetite approval (#5313 item 11) ──────────────────────
     {
         path: new RegExp(`^${T}\\/risk-appetite\\/approve$`),
