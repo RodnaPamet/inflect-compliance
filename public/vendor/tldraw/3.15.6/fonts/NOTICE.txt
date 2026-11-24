@@ -1,0 +1,16 @@
+Fonts used by the tldraw canvas, served from this origin instead of cdn.tldraw.com.
+
+Source: the npm package @tldraw/assets@3.15.6, folder fonts/, copied unmodified.
+The files are byte-identical to https://cdn.tldraw.com/3.15.6/fonts/<file>.
+
+IBM Plex Mono, IBM Plex Sans, IBM Plex Serif (12 files: IBMPlex*.woff2)
+  Copyright 2017, 2018, 2020 IBM Corp., with Reserved Font Name "Plex".
+  Licensed under the SIL Open Font License, Version 1.1: IBM-Plex-OFL.txt
+
+Shantell Sans Informal (4 files: Shantell_Sans-Informal_*.woff2)
+  Copyright 2022 The Shantell Sans Project Authors
+  (https://github.com/arrowtype/shantell-sans)
+  Licensed under the SIL Open Font License, Version 1.1: Shantell-Sans-OFL.txt
+
+The copyright and licence lines above are the ones each font carries in its own
+name table.
