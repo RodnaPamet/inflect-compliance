@@ -99,6 +99,22 @@ describe('CSP Module', () => {
             expect(csp).toContain('blob:');
         });
 
+        it('lets the page show an image its own script made (img-src blob:)', () => {
+            const imgSrc = buildCspHeader(nonce)
+                .split(';')
+                .map((d) => d.trim())
+                .find((d) => d.startsWith('img-src '));
+            expect(imgSrc?.split(' ')).toContain('blob:');
+        });
+
+        it('keeps fonts to self, data: and Google Fonts', () => {
+            const fontSrc = buildCspHeader(nonce)
+                .split(';')
+                .map((d) => d.trim())
+                .find((d) => d.startsWith('font-src '));
+            expect(fontSrc).toBe("font-src 'self' data: https://fonts.gstatic.com");
+        });
+
         it('includes report-uri for violation reporting', () => {
             const csp = buildCspHeader(nonce);
             expect(csp).toContain('report-uri');
