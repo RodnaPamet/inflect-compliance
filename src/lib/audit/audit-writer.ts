@@ -150,12 +150,24 @@ function generateCuid(): string {
  * Applied at the single write seam rather than at each of the thirteen job
  * context builders, so a future job cannot reintroduce it by copying an
  * existing one.
+ *
+ * THE `system:` NAMESPACE TOO (#5910). Two jobs name themselves rather than
+ * using the bare sentinel — `system:report-delivery` and `system:webhook` — and
+ * both run their writes through `runInTenantContext`, whose audit extension
+ * hands `ctx.userId` to this writer. Neither id is a `User` row either, so
+ * every per-statement audit row those jobs produced failed the same
+ * constraint, and the extension swallows its own failures, so nothing said
+ * so. The ids stay as they are on the context; only the FK column gets NULL,
+ * and `actorType` marks the machine actor, as for the bare sentinel. No `User.id` can start with `system:`:
+ * people get cuids, and the tenant system user is `sys_<tenantId>`.
  */
 const SYSTEM_PRINCIPAL_SENTINEL = 'system';
+const SYSTEM_PRINCIPAL_NAMESPACE = 'system:';
 
 export function auditUserIdOrNull(userId: string | null | undefined): string | null {
     if (userId === undefined || userId === null) return null;
-    return userId === SYSTEM_PRINCIPAL_SENTINEL ? null : userId;
+    if (userId === SYSTEM_PRINCIPAL_SENTINEL) return null;
+    return userId.startsWith(SYSTEM_PRINCIPAL_NAMESPACE) ? null : userId;
 }
 
 /**
