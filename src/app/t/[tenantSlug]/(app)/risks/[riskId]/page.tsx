@@ -32,7 +32,7 @@ import { useTenantMembers } from '@/components/ui/user-combobox';
 import { buildRiskTreatmentOptions, canonicalTreatmentLabel, buildRiskStatusOptions, riskStatusLabel, buildRiskCategoryOptions, riskCategoryLabel } from '../_shared/risk-options';
 import { cn } from '@inflect/ui/lib/cn';
 import { cardVariants } from '@/components/ui/card';
-import { EditRiskModal, type EditRiskForm } from './_modals/EditRiskModal';
+import type { EditRiskForm } from './_modals/EditRiskModal';
 import { RiskAssessmentPanel } from './RiskAssessmentPanel';
 import { resolveALE } from '@/lib/fair-math';
 import { formatTailAwareAle } from '@/lib/tail-language';
@@ -47,6 +47,13 @@ import { InheritedMappingsPanel } from '@/components/InheritedMappingsPanel';
 import { extractMutationError } from '@/lib/mutations';
 import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
+
+// The edit form carries the likelihood/impact sliders (Radix Slider since the
+// mobile tap-target batch, #5876). It opens on demand, so it loads after the
+// page instead of in its First Load JS.
+const EditRiskModal = dynamic(() => import('./_modals/EditRiskModal').then((m) => m.EditRiskModal), {
+    ssr: false,
+});
 
 const TraceabilityPanel = dynamic(() => import('@/components/TraceabilityPanel'), {
     loading: () => <SkeletonCard lines={3} />,
