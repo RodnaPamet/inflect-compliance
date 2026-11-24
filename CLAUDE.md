@@ -3304,10 +3304,69 @@ a no-op. Do not add a write path for a run's row or ledger that bypasses
 `updateRun` / `recordStep`: it would not be fenced. Each `agent-run-execute`
 enqueue names its segment (`agentRunExecuteJobId`: the run's `startedAt`, or the
 `updatedAt` its #5119 resume claim left), so BullMQ drops a duplicate enqueue;
-never key it on `stepCount` or a clock read at the enqueue. A retry still
-re-RUNS a reasoning segment from its opening message, so a tool the dead attempt
-called can run again: replaying or refusing it is an open owner decision (the
-note `docs/implementation-notes/2026-11-23-fix-5854-run-claim.md`).
+never key it on `stepCount` or a clock read at the enqueue. The payload names the
+same instant as `segment`. What a retry does with a reasoning segment is the next
+four paragraphs (#5854 item 3, owner decision 2026-11-24).
+
+**A retried Tool Runner segment CONTINUES ITS CONVERSATION; it never starts again
+from the opening message** (`drivers/checkpoint-store.ts`, `WorkflowRunCheckpoint`,
+one row per run). At every reply that asks for tools the engine writes the
+request through that reply (byte-faithful and sealed, as the deferral transcript
+is, and encrypted, Epic B) in the transaction that records its MODEL_CALL step,
+so the reply is in the checkpoint exactly when it is in the ledger; each call's
+result is kept as it settles, and the turn's exact SDK message replaces them when
+the turn ends; after a compaction the COMPACTED list is written. A retry, a
+stalled-job redelivery or a lease takeover opens it through the deferral resume's
+path: the seals, the envelope, the stored `system`, `tools` and `model`
+(`lockedParams`' `resume`), each stored tool taking its runnable from the new
+offer (`resumedToolsFor`, refusing a withdrawn one with
+`TOOL_WITHDRAWN_BEFORE_CONTINUATION`). A seal or envelope that fails halts the run
+by name (`tool_runner_checkpoint_unsealed` / `_unreadable`); it never falls back
+to the opening message. The wall clock continues from the STRICTER of the
+worker's base and the checkpoint's elapsed time, so neither a retry nor a resume
+of a paused run buys time back. A DECIDED deferral outranks a checkpoint (the park
+clears it). Do not write a second resume path for this: it is the deferral's.
+
+**A call is never made twice, and never guessed about.** Every call of the
+parent's loop goes through ONE queue, and that queue (only for an execution
+holding a run lease) names the call in flight on the checkpoint BEFORE it runs and
+keeps its result once it settles (`SerialQueue`'s `CallCheckpointHooks`, keyed by
+the `tool_use` id). A call whose start cannot be recorded is not made. On
+continuation a kept result is sent as kept; the call named in flight is answered
+`TOOL_CALL_OUTCOME_UNKNOWN` and any other open call `TOOL_CALL_NOT_RUN`, each an
+error result the model reads and a FAILED step charged one STEPS; neither is run
+again. A sub-agent is one call of its parent's: its own conversation is not
+checkpointed, and a delegation in flight is answered unknown.
+
+**The checkpoint is working state, cleared when nobody will continue from it.**
+Kept while the run is RUNNING (an attempt that threw, which BullMQ retries) or
+PAUSED (the SIGTERM drain; a person's resume continues it); CLEARED when the run
+parks on a deferral (in the park's transaction) or is held for a person at
+AWAITING_APPROVAL; SETTLED (cleared, `settledAt` stamped, frozen by trigger) when
+it ends, by `executeFrom`, the worker's refusals, an operator's Abort (in its
+transaction) and the reaper. The hashes are kept. Only an execution holding a run
+lease keeps or reads one (`keepsCheckpoint`), so an inline run and every unit
+test of an engine touch nothing; every write is fenced on the lease. The store is
+the table's ONLY writer (`tests/guards/workflow-run-checkpoint-single-write-seam.test.ts`).
+
+**Flue and Managed Agents cannot continue a conversation Inflect keeps, so a
+retried segment that already made a call PAUSES for a person.** Flue resumes a
+conversation only from its own durable store, which Inflect does not configure
+(`db` is absent on purpose in `runtime-start.ts`), and a Managed Agents run never
+re-attaches to its session at Anthropic. `segmentRecoveryOf(driver)`
+(`agent-driver.ts`, a `Record<AgentDriver, …>`, so a new engine must be
+classified) says which: `LEDGER` (static), `CHECKPOINT` (Tool Runner),
+`PAUSE_ON_RETRY` (Flue, Managed Agents). For the last, the first attempt of a
+queued segment ANCHORS it on the checkpoint row (the payload's `segment`, compared
+for equality only, and where its ledger began); a later attempt of the same
+segment that finds a TOOL_CALL or MODEL_CALL step in its own part of the ledger
+writes a PENDING `HUMAN_CHECKPOINT` labelled `retry-paused` and moves the run to
+PAUSED in one transaction (`pauseRetriedSegment`, audited
+`WORKFLOW_RUN_RETRY_PAUSED`) before any engine runs. A person's resume is a new
+segment and starts the engine again: that is the person's decision. A retry that
+made no call restarts, and a job naming no segment (an older build's) is never
+paused. Making Managed Agents continue would mean re-attaching to a session,
+which changes a stated invariant: an open owner question, not something to build.
 
 **"Is this a reasoning engine" is `isReasoningEngine(driver)`**
 (`src/lib/agentic/agent-driver.ts`), never a comparison with `'flue'`. It is
