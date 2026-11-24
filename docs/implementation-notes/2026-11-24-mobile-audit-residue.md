@@ -38,7 +38,13 @@ where the cause was shared, in the shared thing:
   dashboard and the org dashboard, which `/tenants` redirects to, and on the
   open states captured over the dashboard. That is `AnimatedNumber`
   formatting with the runtime locale (#5921, fixed in its own change), so
-  nothing here touches it.
+  nothing here touches it. Checked in a production build: the server renders
+  "50.0%" and a Bulgarian browser "50,0%" (dashboard), "0.0%" / "0,0%" (org
+  dashboard); English pages log nothing.
+- **`inert=""` on the selection toolbar.** Not counted by the audit (a
+  development-only warning), but a real bug: React 19 reads an empty string
+  for the boolean `inert` as false, so the idle bulk-action bar on every list
+  page was never inert. It is now `inert={selectedCount === 0 || undefined}`.
 
 ## Files
 
