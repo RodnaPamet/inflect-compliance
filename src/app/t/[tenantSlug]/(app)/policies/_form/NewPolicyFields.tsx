@@ -21,6 +21,7 @@ import { cn } from '@inflect/ui/lib/cn';
 import type { RichTextContentType } from '@/components/ui/RichTextEditor';
 import type { NewPolicyFormReturn } from './useNewPolicyForm';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { LIBRARY_LANG } from '@/lib/library-language';
 
 // Prompt-3.3 — the SAME Tiptap editor used for later versions (lazy, no SSR).
 const RichTextEditor = dynamic(
@@ -85,12 +86,17 @@ export function NewPolicyFields({ form }: { form: NewPolicyFormReturn }) {
                                     selected={form.fields.templateId === tpl.id}
                                     className={`text-left text-sm ${form.fields.templateId === tpl.id ? 'text-content-emphasis' : 'text-content-default'}`}
                                 >
-                                    <p className="font-medium">{tpl.title}</p>
-                                    {tpl.category && (
-                                        <p className="text-xs text-content-subtle mt-0.5">
-                                            {tpl.category}
-                                        </p>
-                                    )}
+                                    {/* The template's title and category are the
+                                        library's English, marked as such (#5924):
+                                        content, not interface text. */}
+                                    <span className="block" lang={tpl.language || LIBRARY_LANG} data-testid={`policy-template-text-${tpl.id}`}>
+                                        <span className="block font-medium">{tpl.title}</span>
+                                        {tpl.category && (
+                                            <span className="block text-xs text-content-subtle mt-0.5">
+                                                {tpl.category}
+                                            </span>
+                                        )}
+                                    </span>
                                 </ShadedRow>
                             ))}
                         </div>
@@ -101,7 +107,7 @@ export function NewPolicyFields({ form }: { form: NewPolicyFormReturn }) {
                       * (the template tiles are buttons, so a link can't nest
                       * inside them). */}
                     {form.templates.some((tpl) => tpl.source === 'ciso-toolkit') && (
-                        <p className="text-[10px] text-content-subtle italic" data-testid="template-source-credit">
+                        <p className="text-xs text-content-subtle italic" data-testid="template-source-credit">
                             {t.rich('templates.adaptedFrom', {
                                 link: (c) => (
                                     <a

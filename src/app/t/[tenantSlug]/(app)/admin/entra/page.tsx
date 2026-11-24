@@ -13,6 +13,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { TextLink } from '@/components/ui/text-link';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
@@ -173,14 +174,16 @@ export default function EntraProviderWizard() {
                         <code>&quot;groupMembershipClaims&quot;: &quot;SecurityGroup&quot;</code>
                     </li>
                 </ol>
-                <a
-                    className="inline-flex items-center gap-tight text-sm text-content-link"
+                <TextLink
+                    external
+                    tone="link"
+                    className="gap-tight text-sm font-normal text-content-link"
                     href="https://entra.microsoft.com"
                     target="_blank"
                     rel="noopener noreferrer"
                 >
                     {t('entra.openPortal')}
-                </a>
+                </TextLink>
             </Card>
 
             {/* Step 3 — provider config form */}

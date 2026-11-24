@@ -74,7 +74,11 @@ export function Metric({
     const text = definition ? definitionText(definition, tMetrics) : null;
 
     return (
-        <div className="space-y-tight" data-testid={`metric-${id}`} data-metric-id={id}>
+        // `wrap-anywhere`: a definition names model fields
+        // (`AgentProposal.reviewedByUserId`) and a metric with no definition
+        // shows its raw id. Neither has a space to break at, and in a grid
+        // cell they held the column wider than a 360 px screen (#5875).
+        <div className="space-y-tight wrap-anywhere" data-testid={`metric-${id}`} data-metric-id={id}>
             <p className="text-xs uppercase tracking-wide text-content-subtle">
                 {text?.label ?? id}
             </p>

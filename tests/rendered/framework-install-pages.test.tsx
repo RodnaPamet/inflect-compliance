@@ -126,7 +126,7 @@ describe('the install wizard', () => {
         expect(screen.getByText(en.frameworks.install.restricted)).toBeTruthy();
         expect(screen.queryByText(en.frameworks.install.selectAPack)).toBeNull();
         expect(screen.queryByText(en.frameworks.install.stepSelect)).toBeNull();
-        expect(document.querySelector('input[type="radio"]')).toBeNull();
+        expect(document.querySelector('[role="radio"]')).toBeNull();
     });
 
     it('offers the steps to a member who holds it', async () => {
@@ -135,7 +135,7 @@ describe('the install wizard', () => {
         render(<InstallWizardPage />);
         expect(await screen.findByText(en.frameworks.install.selectAPack)).toBeTruthy();
         expect(screen.queryByText(en.frameworks.install.restrictedTitle)).toBeNull();
-        expect(document.querySelectorAll('input[type="radio"]').length).toBe(1);
+        expect(document.querySelectorAll('[role="radio"]').length).toBe(1);
     });
 
     it('asks for at least one pack when the framework has several, and installs only those chosen', async () => {
@@ -147,7 +147,7 @@ describe('the install wizard', () => {
 
         expect(await screen.findByText(en.frameworks.install.choosePacks)).toBeTruthy();
         expect(screen.getByText(en.frameworks.install.choosePacksRequired)).toBeTruthy();
-        expect(document.querySelectorAll('input[type="radio"]').length).toBe(0);
+        expect(document.querySelectorAll('[role="radio"]').length).toBe(0);
         const boxes = screen.getAllByRole('checkbox');
         expect(boxes).toHaveLength(2);
         const preview = document.getElementById('preview-chosen-packs-btn') as HTMLButtonElement;
@@ -259,6 +259,23 @@ describe('the install wizard says what happened', () => {
         expect(document.getElementById('install-restore-notice')).not.toBeNull();
     });
 
+    it('lets its step names and its confirm row wrap, so neither runs past a phone\'s edge', async () => {
+        previewResponse = SINGLE_PREVIEW;
+        render(<InstallWizardPage />);
+        const install = await installButton();
+        // Button names never break, so the row must; the install action then
+        // takes the next line rather than pushing past the screen.
+        const row = screen.getByTestId('install-confirm-row');
+        expect(row.contains(install)).toBe(true);
+        expect(row.className.split(/\s+/)).toContain('flex-wrap');
+        expect(screen.getByTestId('install-steps').className.split(/\s+/)).toContain('flex-wrap');
+        // Three figures with one-word Bulgarian labels ("СЪЩЕСТВУВАТ") do not
+        // fit side by side at 360px; they stack until `sm`.
+        expect(screen.getByTestId('install-preview-figures').className.split(/\s+/)).toEqual(
+            expect.arrayContaining(['grid-cols-1', 'sm:grid-cols-3']),
+        );
+    });
+
     it('offers nothing when every control exists with all its mappings', async () => {
         previewResponse = {
             ...SINGLE_PREVIEW,
@@ -323,7 +340,7 @@ describe('the template library', () => {
         await screen.findByText('Policies');
         expect(screen.queryByText(en.frameworks.templates.install)).toBeNull();
         expect(document.getElementById('select-all-btn')).toBeNull();
-        expect(document.querySelector('#template-list input[type="checkbox"]')).toBeNull();
+        expect(document.querySelector('#template-list [role="checkbox"]')).toBeNull();
     });
 
     it('says who can install when a single install is refused, in the reader\'s language', async () => {
@@ -356,9 +373,9 @@ describe('the template library', () => {
         });
         expect(await screen.findByText(en.frameworks.templates.refused.TEMPLATE_NOT_FOUND)).toBeTruthy();
         // Still selected: both boxes ticked and the bulk button still offered.
-        const boxes = Array.from(document.querySelectorAll<HTMLInputElement>('#template-list input[type="checkbox"]'));
+        const boxes = Array.from(document.querySelectorAll<HTMLElement>('#template-list [role="checkbox"]'));
         expect(boxes).toHaveLength(2);
-        expect(boxes.every((b) => b.checked)).toBe(true);
+        expect(boxes.every((b) => b.getAttribute('aria-checked') === 'true')).toBe(true);
         expect(document.getElementById('bulk-install-btn')!.textContent).toContain('2');
     });
 

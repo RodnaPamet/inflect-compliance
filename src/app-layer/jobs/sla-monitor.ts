@@ -27,6 +27,7 @@ import { logEvent } from '../events/audit';
 import type { RequestContext } from '../types';
 import { buildSystemContext } from '../context-system';
 import type { JobRunResult } from './types';
+import { stockNotificationText, stockNotificationTitle } from '@/lib/notifications/stock-notifications';
 
 function makeSystemCtx(tenantId: string): RequestContext {
     return buildSystemContext({ tenantId, job: 'sla-monitor', discriminator: String(Date.now()) });
@@ -185,10 +186,13 @@ export async function sweepTenant(tenantId: string, now: Date): Promise<number> 
                             tenantId,
                             userId,
                             type: 'GENERAL' as const,
-                            title: 'Automation SLA breached',
+                            // A stock sentence the bell words in the reader's
+                            // language (#5929); a configured message is the
+                            // rule author's own text, shown as written.
+                            title: stockNotificationTitle('AUTOMATION_SLA_BREACH'),
                             message:
                                 cfg.message ??
-                                `An automation rule's ${windowMin}m SLA window was breached.`,
+                                stockNotificationText('AUTOMATION_SLA_BREACH', { minutes: windowMin }),
                         })),
                     });
                 }

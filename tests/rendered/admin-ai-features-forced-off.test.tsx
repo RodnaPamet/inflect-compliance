@@ -158,6 +158,17 @@ describe('the happy path', () => {
         expect(screen.queryByText('AI is off for this workspace')).toBeNull();
     });
 
+    it('puts each switch on its own line on a phone (the shared setting row)', () => {
+        renderWith(ALL_ON);
+        // A hand-rolled `justify-between` row pushed the button off a 360 px
+        // screen. The shared row stacks it below `sm` (#5874).
+        for (const key of ['ai', 'assistant', 'risk', 'questionnaire']) {
+            const control = screen.getByTestId(`toggle-${key}`).closest('[data-slot="setting-row-control"]');
+            expect(control).not.toBeNull();
+            expect(control!.className).toContain('flex-wrap');
+        }
+    });
+
     it('renders the real localized copy, not key paths', () => {
         renderWith(ALL_ON);
         // A missing key would put `admin.aiFeatures.assistant.name` in the DOM.

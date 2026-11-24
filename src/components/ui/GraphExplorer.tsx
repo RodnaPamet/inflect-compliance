@@ -235,12 +235,12 @@ const TraceNode = memo(function TraceNode({
                 <span className="truncate">{data.label}</span>
             </div>
             {data.secondary && (
-                <div className="text-[10px] text-content-muted truncate mt-0.5">
+                <div className="text-xs text-content-muted truncate mt-0.5">
                     {data.secondary}
                 </div>
             )}
             {data.badge && (
-                <div className="text-[10px] text-content-subtle mt-1 truncate">
+                <div className="text-xs text-content-subtle mt-1 truncate">
                     {data.badge}
                 </div>
             )}

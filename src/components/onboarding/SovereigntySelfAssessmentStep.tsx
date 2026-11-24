@@ -29,6 +29,7 @@ import { InfoTooltip } from '@/components/ui/tooltip';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { KPIStat } from '@/components/ui/metric';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { LoadingSpinner } from '@inflect/ui/components/ui/icons/loading-spinner';
 import { DIGITAL_SOVEREIGNTY_ASSESSMENT, type SovereigntyBandKey } from '@/data/self-assessments/digital-sovereignty';
 import {
@@ -260,20 +261,18 @@ export function SovereigntySelfAssessmentStep({
                                         <StatusBadge variant="neutral" size="sm">{g.clauseRef}</StatusBadge>
                                     </div>
                                     <label className="flex items-start gap-tight text-sm cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            className="mt-1"
+                                        <Checkbox
+                                            className="mt-0.5"
                                             checked={a.createRisk}
-                                            onChange={(e) => setApproval(g.dimensionId, { createRisk: e.target.checked })}
+                                            onCheckedChange={(v) => setApproval(g.dimensionId, { createRisk: v === true })}
                                         />
                                         <span>{t('sovereignty.riskPrefix')}<span className="text-content-muted">{g.riskTitle}</span></span>
                                     </label>
                                     <label className="flex items-start gap-tight text-sm cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            className="mt-1"
+                                        <Checkbox
+                                            className="mt-0.5"
                                             checked={a.createControl}
-                                            onChange={(e) => setApproval(g.dimensionId, { createControl: e.target.checked })}
+                                            onCheckedChange={(v) => setApproval(g.dimensionId, { createControl: v === true })}
                                         />
                                         <span>{t('sovereignty.controlPrefix')}<span className="text-content-muted">{g.controlName}</span></span>
                                     </label>

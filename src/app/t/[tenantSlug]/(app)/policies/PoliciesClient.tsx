@@ -32,6 +32,7 @@ import {
 import { EntityListPage } from '@/components/layout/EntityListPage';
 import { useThresholdLoadMore, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
+import { KpiStrip } from '@/components/ui/kpi-strip';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
@@ -806,7 +807,7 @@ function PoliciesPageInner({
                     >
                         <span
                             aria-hidden
-                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-bg-elevated text-[10px] font-medium text-content-emphasis"
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-bg-elevated text-xs font-medium text-content-emphasis"
                         >
                             {initial}
                         </span>
@@ -835,7 +836,7 @@ function PoliciesPageInner({
                 }
                 return (
                     <span
-                        className="inline-flex items-center rounded-md bg-bg-subtle px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-content-emphasis"
+                        className="inline-flex items-center rounded-md bg-bg-subtle px-1.5 py-0.5 font-mono text-xs tabular-nums text-content-emphasis"
                         data-testid={`policy-version-${row.original.id}`}
                     >
                         v{v}
@@ -935,7 +936,7 @@ function PoliciesPageInner({
             kpis={
                 /* R23-PR-F — KPI strip rendered via EntityListPage's
                    kpis slot (added in R23-PR-D). */
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
+                <KpiStrip>
                     {visibleKpiCards.map((card) => {
                         const cfg: Record<
                             string,
@@ -994,7 +995,7 @@ function PoliciesPageInner({
                             />
                         );
                     })}
-                </div>
+                </KpiStrip>
             }
             filters={{
                 defs: liveFilters,
@@ -1003,7 +1004,7 @@ function PoliciesPageInner({
                 toolbarLeading: canCreate ? (
                     <Button
                         variant="primary"
-                        icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                        icon={<Plus />}
                         onClick={() => {
                             setCreateTemplateMode(false);
                             setIsCreateOpen(true);

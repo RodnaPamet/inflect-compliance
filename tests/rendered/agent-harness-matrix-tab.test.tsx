@@ -173,6 +173,7 @@ const view = (over: Partial<HarnessMatrixView> = {}): HarnessMatrixView => {
 const NO_KEYS: HarnessScannerKeysView = {
     keys: { rows: [], truncated: false },
     candidates: { rows: [], truncated: false },
+    connect: { canMintKeys: false, canGrantTools: false },
 };
 
 const renderHarness = (v: HarnessMatrixView, scannerKeys: HarnessScannerKeysView = NO_KEYS) =>

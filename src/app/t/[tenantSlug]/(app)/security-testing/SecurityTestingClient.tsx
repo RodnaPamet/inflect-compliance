@@ -16,7 +16,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { TextLink } from '@/components/ui/text-link';
 import { ShieldAlert } from '@inflect/ui/components/ui/icons/glyphs/shield-alert';
 import { CloudUpload } from '@inflect/ui/components/ui/icons/glyphs/cloud-upload';
 import { EntityListPage } from '@/components/layout/EntityListPage';
@@ -253,12 +253,13 @@ function SecurityTestingInner({ initialFindings, findingsTruncated, openCritical
     // alongside the (write-gated) SARIF upload button.
     const headerActions = (
         <div className="flex items-center gap-default">
-            <Link
+            <TextLink
                 href={`/t/${tenantSlug}/vulnerabilities`}
-                className="inline-flex items-center gap-1 text-sm font-medium text-content-link hover:underline"
+                tone="link"
+                className="text-sm font-medium text-content-link"
             >
                 {t('viewAllVulnerabilities')}
-            </Link>
+            </TextLink>
             {uploadAction}
         </div>
     );

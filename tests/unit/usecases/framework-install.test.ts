@@ -45,6 +45,11 @@ jest.mock('@/lib/billing/entitlements', () => ({
     getEffectivePlan: jest.fn().mockResolvedValue('ENTERPRISE'),
 }));
 
+// An install writes controls and tasks, so it invalidates their cached lists.
+jest.mock('@/lib/cache/list-cache', () => ({
+    bumpEntityCacheVersion: jest.fn().mockResolvedValue(undefined),
+}));
+
 import {
     previewPackInstall,
     previewPacksInstall,
@@ -58,6 +63,7 @@ import {
 import { runInTenantContext } from '@/lib/db-context';
 import { prisma } from '@/lib/prisma';
 import { logEvent } from '@/app-layer/events/audit';
+import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { assertWithinLimit } from '@/lib/billing/entitlements';
 import { makeRequestContext } from '../../helpers/make-context';
 
@@ -326,6 +332,9 @@ describe('installPack — RBAC + idempotency + audit', () => {
             expect.anything(),
             expect.objectContaining({ action: 'FRAMEWORK_PACK_INSTALLED' }),
         );
+        // The controls page must not serve its cached, pre-install list.
+        expect(bumpEntityCacheVersion).toHaveBeenCalledWith(expect.anything(), 'control');
+        expect(bumpEntityCacheVersion).toHaveBeenCalledWith(expect.anything(), 'task');
     });
 });
 
@@ -614,6 +623,8 @@ describe('bulkInstallTemplates', () => {
             expect.anything(),
             expect.objectContaining({ action: 'BULK_TEMPLATES_INSTALLED' }),
         );
+        expect(bumpEntityCacheVersion).toHaveBeenCalledWith(expect.anything(), 'control');
+        expect(bumpEntityCacheVersion).toHaveBeenCalledWith(expect.anything(), 'task');
     });
 });
 

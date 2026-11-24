@@ -523,7 +523,7 @@ export function CalendarMonth({
                                                         <Link
                                                             href={ev.href}
                                                             className={cn(
-                                                                'flex items-center gap-1 px-1 py-0.5 rounded text-[10px] truncate',
+                                                                'flex items-center gap-1 px-1 py-0.5 rounded text-xs truncate',
                                                                 'hover:bg-bg-muted transition-colors',
                                                                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]',
                                                                 ev.status === 'overdue' &&
@@ -557,7 +557,7 @@ export function CalendarMonth({
                                         <button
                                             type="button"
                                             onClick={() => onSelectDate?.(ymd)}
-                                            className="text-[10px] text-content-muted hover:text-content-emphasis text-left px-1"
+                                            className="text-xs text-content-muted hover:text-content-emphasis text-left px-1"
                                         >
                                             {t('moreEvents', { count: overflow })}
                                         </button>

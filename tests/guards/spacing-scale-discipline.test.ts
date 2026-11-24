@@ -34,6 +34,7 @@
  */
 import * as fs from "fs";
 import * as path from "path";
+import { repoFiles, repoRelative } from "../helpers/repo-files";
 
 const ROOT = path.resolve(__dirname, "../..");
 const SCAN_DIRS = ["src/app", "src/components"];
@@ -148,6 +149,51 @@ describe("v2-PR-2 semantic spacing scale ratchet", () => {
                 );
             }
             expect(offenders).toHaveLength(0);
+        });
+    });
+
+    describe("a named spacing utility names a token the scale defines", () => {
+        // `space-y-comfortable` is not a token, and Tailwind emits nothing for
+        // a class it does not know, so the page it sat on had NO spacing: the
+        // joiner-pass intro ran straight into its buttons, and nothing failed.
+        // A word-suffixed gap / space-x / space-y must therefore be one of the
+        // scale's names (read from tailwind.config.js, not restated here) or
+        // one of Tailwind's own keywords. Only class strings are read: a
+        // `className=` value, or a string whose every word is class-shaped,
+        // so prose such as "gap-assessment" in an id or a comment is not.
+        const cfg = fs.readFileSync(path.join(ROOT, "tailwind.config.js"), "utf8");
+        const block = cfg.match(/spacing:\s*\{([^}]*)\}/);
+        const tokens = new Set(
+            [...(block?.[1] ?? "").matchAll(/^\s*([a-z]+):/gm)].map((m) => m[1]),
+        );
+        const KEYWORDS = ["px", "reverse"];
+        const UTIL = /^!?-?(?:[a-z0-9-]+:)*(?:gap|gap-x|gap-y|space-x|space-y)-([a-z]+)$/;
+        const STRING = /(className=)?(?:"([^"\n]*)"|'([^'\n]*)'|`([^`$\n]*)`)/g;
+        const CLASS_SHAPED = /^!?-?[a-z][a-z0-9:/[\]().%_!#-]*$/;
+
+        it("reads the scale's five names from the config", () => {
+            expect([...tokens].sort()).toEqual(["compact", "default", "page", "section", "tight"]);
+        });
+
+        it("no class string names a spacing token that does not exist", () => {
+            const allowed = new Set([...tokens, ...KEYWORDS]);
+            const offenders: string[] = [];
+            for (const dir of SCAN_DIRS) {
+                for (const file of repoFiles({ under: dir, extensions: [".ts", ".tsx"] })) {
+                    if (isExempt(path.relative(ROOT, file))) continue;
+                    const src = fs.readFileSync(file, "utf8");
+                    for (const m of src.matchAll(STRING)) {
+                        const words = (m[2] ?? m[3] ?? m[4] ?? "").trim().split(/\s+/).filter(Boolean);
+                        const isClassString = Boolean(m[1]) || (words.length >= 2 && words.every((w) => CLASS_SHAPED.test(w)));
+                        if (!isClassString) continue;
+                        for (const word of words) {
+                            const u = UTIL.exec(word);
+                            if (u && !allowed.has(u[1])) offenders.push(`${repoRelative(file)}: ${word}`);
+                        }
+                    }
+                }
+            }
+            expect(offenders).toStrictEqual([]);
         });
     });
 

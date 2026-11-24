@@ -28,16 +28,31 @@ import {
 } from '@/lib/security/external-assessment-access';
 import { logEvent } from '../events/audit';
 import { runWithAuditContext } from '@/lib/audit-context';
+import { ensureTenantSystemUser } from '../context-system';
 import type { RequestContext } from '../types';
 import { enqueueEmail } from '../notifications/enqueue';
 import { logger } from '@/lib/observability/logger';
 
 /**
+ * How the audit trail names the respondent (#5910).
+ *
+ * Structured, and deliberately free of personal data: the respondent's email
+ * and name are on the assessment row already, and an audit row's
+ * `detailsJson` streams to the tenant's SIEM. What the trail needs is WHAT
+ * KIND of party acted and HOW it was authenticated; WHICH assessment is the
+ * row's `entityId`.
+ */
+export const EXTERNAL_RESPONDENT_ACTOR = {
+    kind: 'EXTERNAL_ASSESSMENT_RESPONDENT',
+    authenticatedBy: 'ASSESSMENT_ACCESS_TOKEN',
+} as const;
+
+/**
  * Minimal `RequestContext` for the anonymous respondent.
  *
- * `logEvent` reads exactly three fields off ctx — tenantId, userId,
- * requestId (events/audit.ts) — and `runInTenantContext` reads the same
- * three to bind RLS + audit correlation. Nothing on this path reads `role`
+ * `logEvent` reads tenantId, userId, actorType and requestId off ctx
+ * (events/audit.ts), and `runInTenantContext` reads tenantId, userId and
+ * requestId to bind RLS + audit correlation. Nothing on this path reads `role`
  * or `permissions`.
  *
  * They are therefore zeroed rather than forged. The previous shape claimed
@@ -46,14 +61,29 @@ import { logger } from '@/lib/observability/logger';
  * any future code that reaches for `ctx.permissions` to decide something.
  * An external respondent holds no authority in this tenant; the context now
  * says so. Authority on this path comes from the verified token alone.
+ *
+ * WHO the rows name (#5910). This used to be `userId: 'external-respondent'`,
+ * a principal no migration or seed creates. `AuditLog.userId` is a foreign
+ * key to `User`, so the submit's audit insert failed (SQLSTATE 23503), rolled
+ * the whole submission back, and every vendor saw "Submission failed".
+ * The rows now name the tenant's SYSTEM user (#4400), the identity other
+ * non-member writers use, created on first use and unable to sign in or hold
+ * standing anywhere. `actorType: 'SYSTEM'` says no person in the tenant
+ * acted; the audit row's `detailsJson.actor` says it was the external
+ * respondent ({@link EXTERNAL_RESPONDENT_ACTOR}).
+ *
+ * Only the IDENTITY half of `buildTenantSystemJobContext` is taken: that
+ * builder also grants a job's ADMIN authority, which a token holder must
+ * never carry, even unread.
  */
-function makeExternalAuditCtx(
+async function makeExternalAuditCtx(
     tenantId: string,
     assessmentId: string,
-): RequestContext {
+): Promise<RequestContext> {
     return {
         tenantId,
-        userId: 'external-respondent',
+        userId: await ensureTenantSystemUser(tenantId),
+        actorType: 'SYSTEM',
         requestId: `vendor-assessment-submit:${assessmentId}`,
         role: 'READER' as const,
         permissions: {
@@ -171,7 +201,7 @@ export async function loadResponseByToken(
     // `set_config('app.tenant_id')` engage RLS, so a mistake in any
     // predicate below cannot reach another tenant's rows.
     const templateVersionId = assessment.templateVersionId;
-    const externalCtx = makeExternalAuditCtx(assessment.tenantId, assessment.id);
+    const externalCtx = await makeExternalAuditCtx(assessment.tenantId, assessment.id);
     const loaded = await runInTenantContext(externalCtx, async (tdb) => {
         const [vendor, template] = await Promise.all([
             tdb.vendor.findUnique({
@@ -289,7 +319,7 @@ export async function submitResponse(
     // version. Validation runs against THIS, not whatever the
     // client claims to have answered.
     const templateVersionId = assessment.templateVersionId;
-    const externalCtx = makeExternalAuditCtx(assessment.tenantId, assessment.id);
+    const externalCtx = await makeExternalAuditCtx(assessment.tenantId, assessment.id);
     const questions = (await runInTenantContext(externalCtx, (tdb) =>
         tdb.vendorAssessmentTemplateQuestion.findMany({
             where: {
@@ -411,10 +441,10 @@ export async function submitResponse(
     }
 
     // ── Persist + transition ──
-    // The public flow has no `RequestContext`, so we drive the
-    // transaction through the audit-context helper directly. The
-    // actor for the audit log is the assessment id itself
-    // (external respondent), tenantId is the assessment's.
+    // The public flow has no session `RequestContext`, so we drive the
+    // transaction through the audit-context helper directly. The actor
+    // is the tenant's system user (see makeExternalAuditCtx), tenantId
+    // is the assessment's.
     const submittedAt = new Date();
     const provisionalScore = cleanedAnswers.reduce(
         (sum, a) => sum + a.computedPoints,
@@ -424,8 +454,8 @@ export async function submitResponse(
     return runWithAuditContext(
         {
             tenantId: assessment.tenantId,
-            actorUserId: 'external-respondent',
-            requestId: `vendor-assessment-submit:${assessment.id}`,
+            actorUserId: externalCtx.userId,
+            requestId: externalCtx.requestId,
         },
         async () => {
             // runInTenantContext, not a bare prisma.$transaction, so the
@@ -476,14 +506,7 @@ export async function submitResponse(
                     },
                 });
 
-                // Minimal RequestContext for logEvent — only needs
-                // tenantId + userId + requestId. Synthesised here
-                // because the public flow has no real auth ctx.
-                const auditCtx = makeExternalAuditCtx(
-                    assessment.tenantId,
-                    assessment.id,
-                );
-                await logEvent(tx, auditCtx, {
+                await logEvent(tx, externalCtx, {
                     action: 'VENDOR_ASSESSMENT_SUBMITTED',
                     entityType: 'VendorAssessment',
                     entityId: assessment.id,
@@ -499,6 +522,7 @@ export async function submitResponse(
                             answerCount: cleanedAnswers.length,
                         },
                         summary: `Vendor assessment submitted by external respondent`,
+                        actor: EXTERNAL_RESPONDENT_ACTOR,
                     },
                 });
             });

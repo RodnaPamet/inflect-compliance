@@ -37,6 +37,7 @@ import { Plus } from '@inflect/ui/components/ui/icons/glyphs';
 import { NumberStepper } from '@/components/ui/number-stepper';
 import { RiskMatrix } from '@/components/risks/RiskMatrix';
 import { DEFAULT_RISK_MATRIX_CONFIG } from '@/lib/risk-matrix/defaults';
+import { localizeRiskMatrixConfig } from '@/lib/risk-matrix/localize';
 import {
     bandCoverageIssues,
     levelLabelIssues,
@@ -54,6 +55,7 @@ import { BackAffordance } from '@/components/nav/BackAffordance';
 import { apiErrorMessage } from '@/lib/api-error';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { SettingRow } from '@/components/layout/SettingRow';
 
 interface RiskMatrixAdminClientProps {
     tenantSlug: string;
@@ -108,6 +110,7 @@ export function RiskMatrixAdminClient({
     const [saving, setSaving] = useState(false);
     const [serverError, setServerError] = useState<string | null>(null);
     const t = useTranslations('admin');
+    const tDefaults = useTranslations('riskMatrixDefaults');
     const toast = useToast();
 
     // Synthetic preview cells — every (L, I) carries one risk so the
@@ -122,6 +125,16 @@ export function RiskMatrixAdminClient({
         }
         return cells;
     }, [config.likelihoodLevels, config.impactLevels]);
+
+    // The preview is a DISPLAY of the draft, so the product's default words
+    // ("Low", "Rare", "Likelihood") read in the viewer's language there, as
+    // they do on every other matrix. The editor's fields keep the stored
+    // values: those are what a save writes, and a name the tenant typed is
+    // shown as typed in both places.
+    const previewConfig = useMemo(
+        () => localizeRiskMatrixConfig(config, (key) => tDefaults(key)),
+        [config, tDefaults],
+    );
 
     // ── Live validation ────────────────────────────────────────────
     const validationIssues = useMemo<RiskMatrixIssue[]>(
@@ -300,8 +313,20 @@ export function RiskMatrixAdminClient({
             className="animate-fadeIn space-y-section p-6"
         >
             <BackAffordance />
-            <header className="flex flex-wrap items-end justify-between gap-compact">
-                <div>
+            {/* A title-plus-controls row: below `sm` the two buttons sit under
+                the description and wrap, where a row that never wrapped pushed
+                Save off the screen (#5874). From `sm` it wraps as it always
+                did: the text keeps its own width (`flex-initial`), so the long
+                description takes the line and the buttons go under it. */}
+            <SettingRow
+                as="header"
+                align="end"
+                gap="compact"
+                className="sm:flex-wrap"
+                textSpacing="micro"
+                textClassName="sm:flex-initial"
+                descriptionClassName="max-w-none"
+                title={<>
                     <PageBreadcrumbs
                         items={[
                             { label: t('crumb.dashboard'), href: `/t/${tenantSlug}/dashboard` },
@@ -313,11 +338,9 @@ export function RiskMatrixAdminClient({
                     <Heading level={1}>
                         {t('riskMatrix.title')}
                     </Heading>
-                    <p className="mt-1 text-sm text-content-muted">
-                        {t('riskMatrix.description')}
-                    </p>
-                </div>
-                <div className="flex gap-tight">
+                </>}
+                description={t('riskMatrix.description')}
+                control={<>
                     <Button
                         variant="secondary"
                         size="sm"
@@ -339,8 +362,8 @@ export function RiskMatrixAdminClient({
                     >
                         {saving ? t('riskMatrix.saving') : t('riskMatrix.saveChanges')}
                     </Button>
-                </div>
-            </header>
+                </>}
+            />
 
             {(validationIssues.length > 0 || serverError) && (
                 <div
@@ -524,7 +547,7 @@ export function RiskMatrixAdminClient({
                             </Heading>
                             <Button
                                 variant="primary"
-                                icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                                icon={<Plus />}
                                 type="button"
                                 id="rm-add-band-btn"
                                 onClick={addBand}
@@ -539,12 +562,16 @@ export function RiskMatrixAdminClient({
                             {config.bands.map((band, idx) => (
                                 <ShadedRow as="li" padding="sm"
                                     key={`band-${idx}`}
-                                    className="grid grid-cols-12 items-center gap-tight"
+                                    // Below `sm` a band takes three lines (name; low,
+                                    // high and colour; remove): on one twelve-column
+                                    // line a phone cut the name to four letters and
+                                    // the scores to one digit.
+                                    className="grid grid-cols-6 items-center gap-tight sm:grid-cols-12"
                                     data-testid={`rm-band-row-${idx}`}
                                 >
                                     <input
                                         type="text"
-                                        className="input col-span-4 text-sm"
+                                        className="input col-span-6 text-sm sm:col-span-4"
                                         value={band.name}
                                         onChange={(e) =>
                                             updateBand(idx, {
@@ -604,7 +631,7 @@ export function RiskMatrixAdminClient({
                                         variant="secondary"
                                         size="sm"
                                         type="button"
-                                        className="col-span-2"
+                                        className="col-span-6 justify-self-start sm:col-span-2 sm:justify-self-stretch"
                                         onClick={() => removeBand(idx)}
                                         aria-label={t('riskMatrix.removeBandAria', { n: idx + 1 })}
                                         data-testid={`rm-band-remove-${idx}`}
@@ -627,7 +654,7 @@ export function RiskMatrixAdminClient({
                         {t('riskMatrix.previewHint')}
                     </p>
                     <RiskMatrix
-                        config={config}
+                        config={previewConfig}
                         cells={previewCells}
                         title={t('riskMatrix.preview')}
                         showSwapToggle={false}

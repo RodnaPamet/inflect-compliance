@@ -271,7 +271,7 @@ export function AutomationInspectorPanel({
     return (
         <div className="space-y-default" data-testid="automation-inspector">
             <div className="flex items-center justify-between gap-default">
-                <span className="text-[11px] uppercase tracking-wide text-content-subtle">
+                <span className="text-xs uppercase tracking-wide text-content-subtle">
                     {t(`kindRule.${kind}`)}
                 </span>
                 {owning && (

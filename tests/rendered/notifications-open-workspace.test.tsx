@@ -13,6 +13,7 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import * as React from 'react';
+import { TOUCH_HIT_AREA_CLASS } from '@inflect/ui/components/ui/hit-area';
 
 let mockParams: Record<string, string> = { tenantSlug: 'acme' };
 jest.mock('next/navigation', () => ({
@@ -111,6 +112,14 @@ describe('the inbox page (#4643)', () => {
         expect(screen.getByText('A new version was published.')).toBeTruthy();
         // A stored link without the workspace prefix resolves into this one.
         expect(screen.getByRole('link', { name: 'Open' }).getAttribute('href')).toBe('/t/acme/policies/p1');
+    });
+
+    it('makes "Open", a stand-alone 12px link, a 44px target on a touch screen (#5924)', async () => {
+        render(<NotificationsPage />);
+        const open = await screen.findByRole('link', { name: 'Open' });
+        const cls = (open.getAttribute('class') ?? '').split(/\s+/);
+        for (const token of TOUCH_HIT_AREA_CLASS.split(/\s+/)) expect(cls).toContain(token);
+        expect(cls).toContain('relative');
     });
 
     it('says the load failed, and does not crash on an error body', async () => {

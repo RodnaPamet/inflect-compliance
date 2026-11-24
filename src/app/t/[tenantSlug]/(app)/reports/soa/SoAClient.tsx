@@ -28,6 +28,9 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { RequirePermission } from '@/components/require-permission';
 import { UpgradeGate } from '@/components/UpgradeGate';
 import { apiErrorMessage } from '@/lib/api-error';
+import { useIsBelowMd } from '@/components/ui/hooks';
+import { KpiStrip } from '@/components/ui/kpi-strip';
+import { useSoASectionLabel } from '@/app/t/[tenantSlug]/(app)/reports/soa/section-label';
 
 // ─── Types ───
 
@@ -132,6 +135,12 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
     // R2-P3 — restored searchable picker for the map-control modal.
     const [mapSearch, setMapSearch] = useState('');
     const toast = useToast();
+    // A phone (below `md`) reads the SoA as one card per requirement and the
+    // summary as a scrolling strip; the 7-column table and the 7-tile grid
+    // stay for larger screens. `false` on the server and the first render,
+    // so the desktop layout is the default everywhere but a narrow viewport
+    // (the DataTable card fallback works the same way).
+    const belowMd = useIsBelowMd();
 
     const apiUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);
 
@@ -238,6 +247,16 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
 
     const { summary } = report;
 
+    const summaryTiles = [
+        <SummaryCard key="total" label={t('soaView.total')} value={summary.total} icon={<FileText className="w-4 h-4 text-content-muted" />} />,
+        <SummaryCard key="applicable" label={t('soaView.applicable')} value={summary.applicable} icon={<CheckCircle2 className="w-4 h-4 text-content-success" />} />,
+        <SummaryCard key="notApplicable" label={t('soaView.notApplicable')} value={summary.notApplicable} icon={<XCircle className="w-4 h-4 text-content-muted" />} />,
+        <SummaryCard key="unmapped" label={t('soaView.unmapped')} value={summary.unmapped} icon={<HelpCircle className="w-4 h-4 text-content-error" />} accent={summary.unmapped > 0 ? 'danger' : undefined} />,
+        <SummaryCard key="implemented" label={t('soaView.implemented')} value={summary.implemented} icon={<CheckCircle2 className="w-4 h-4 text-content-success" />} />,
+        <SummaryCard key="excepted" label={t('soaView.excepted')} value={summary.excepted} icon={<AlertTriangle className="w-4 h-4 text-content-warning" />} accent={summary.excepted > 0 ? 'warning' : undefined} />,
+        <SummaryCard key="missingJustification" label={t('soaView.missingJustification')} value={summary.missingJustification} icon={<AlertTriangle className="w-4 h-4 text-content-warning" />} accent={summary.missingJustification > 0 ? 'warning' : undefined} />,
+    ];
+
     return (
         // Roadmap-2 PR-12 — SoAClient is embedded inside the
         // Reports page now; the parent owns the H1 + breadcrumbs.
@@ -276,20 +295,22 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
                 and this branch should be written against the behaviour that
                 replaces it. */}
 
-            {/* Summary cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-compact">
-                <SummaryCard label={t('soaView.total')} value={summary.total} icon={<FileText className="w-4 h-4 text-content-muted" />} />
-                <SummaryCard label={t('soaView.applicable')} value={summary.applicable} icon={<CheckCircle2 className="w-4 h-4 text-content-success" />} />
-                <SummaryCard label={t('soaView.notApplicable')} value={summary.notApplicable} icon={<XCircle className="w-4 h-4 text-content-muted" />} />
-                <SummaryCard label={t('soaView.unmapped')} value={summary.unmapped} icon={<HelpCircle className="w-4 h-4 text-content-error" />} accent={summary.unmapped > 0 ? 'danger' : undefined} />
-                <SummaryCard label={t('soaView.implemented')} value={summary.implemented} icon={<CheckCircle2 className="w-4 h-4 text-content-success" />} />
-                <SummaryCard label={t('soaView.excepted')} value={summary.excepted} icon={<AlertTriangle className="w-4 h-4 text-content-warning" />} accent={summary.excepted > 0 ? 'warning' : undefined} />
-                <SummaryCard label={t('soaView.missingJustification')} value={summary.missingJustification} icon={<AlertTriangle className="w-4 h-4 text-content-warning" />} accent={summary.missingJustification > 0 ? 'warning' : undefined} />
-            </div>
+            {/* Summary cards. On a phone, seven tiles in a two-column grid
+                filled the whole first screen before any requirement; there
+                they are one scrolling strip that says it scrolls — the shared
+                KPI strip, a grid again from md up. */}
+            <KpiStrip
+                data-testid="soa-kpi-strip"
+                aria-label={t('soaMobile.summaryAria')}
+                columns="md:grid-cols-3 lg:grid-cols-7"
+                gridGap="md:gap-compact"
+            >
+                {summaryTiles}
+            </KpiStrip>
 
             {/* Readiness banner */}
             {(summary.unmapped > 0 || summary.missingJustification > 0) && (
-                <div className="rounded-lg border border-border-error bg-bg-error px-4 py-3 flex items-center justify-between" id="soa-readiness-banner">
+                <div className="rounded-lg border border-border-error bg-bg-error px-4 py-3 flex flex-wrap items-center justify-between gap-tight" id="soa-readiness-banner">
                     <div className="flex items-center gap-tight">
                         <AlertTriangle className="w-4 h-4 text-content-error flex-shrink-0" />
                         <div className="text-xs text-content-error">
@@ -385,6 +406,30 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
                 presentation jump. Default density gives the same
                 inset padding ratio the DataTable card uses on the
                 other list pages. */}
+            {belowMd ? (
+                <ul className="space-y-tight" data-testid="soa-cards" aria-label={t('soa')}>
+                    {filteredEntries.map(entry => (
+                        <SoACard
+                            key={entry.requirementId}
+                            entry={entry}
+                            expanded={expandedRow === entry.requirementId}
+                            onToggle={() => setExpandedRow(expandedRow === entry.requirementId ? null : entry.requirementId)}
+                            canEdit={canEdit}
+                            onMap={() => setMapModal({ requirementId: entry.requirementId, requirementCode: entry.requirementCode })}
+                            onJustify={(controlId, controlCode, current) => {
+                                setJustModal({ controlId, controlCode, requirementCode: entry.requirementCode });
+                                setJustText(current ?? '');
+                            }}
+                            tenantSlug={tenantSlug}
+                        />
+                    ))}
+                    {filteredEntries.length === 0 && (
+                        <li className={cn(cardVariants({ density: 'compact' }), 'text-center text-sm text-content-subtle')}>
+                            {gapsOnly ? t('soaView.noGaps') : t('soaView.noMatching')}
+                        </li>
+                    )}
+                </ul>
+            ) : (
             <div
                 className={cn(cardVariants(), 'overflow-auto')}
                 data-testid="soa-table-card"
@@ -428,6 +473,7 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
                     </tbody>
                 </table>
             </div>
+            )}
 
             {/* Map Control Modal — shared <Modal> (Epic 54) */}
             <Modal
@@ -590,10 +636,8 @@ function SoARow({
     tenantSlug: string;
 }) {
     const t = useTranslations('reports');
-    const hasGap = entry.applicable === null || (
-        entry.applicable === false &&
-        entry.mappedControls.some(c => c.applicability === 'NOT_APPLICABLE' && !c.justification)
-    );
+    const sectionLabel = useSoASectionLabel();
+    const hasGap = entryHasGap(entry);
 
     return (
         <>
@@ -609,7 +653,7 @@ function SoARow({
                 <td className="text-xs font-mono text-[var(--brand-default)]">{entry.requirementCode}</td>
                 <td className="text-sm text-content-emphasis">
                     <div>{entry.requirementTitle}</div>
-                    {entry.section && <div className="text-[10px] text-content-subtle">{entry.section}</div>}
+                    {entry.section && <div className="text-xs text-content-subtle">{sectionLabel(entry.section)}</div>}
                 </td>
                 <td><ApplicabilityBadge value={entry.applicable} /></td>
                 <td>
@@ -649,72 +693,217 @@ function SoARow({
             {expanded && entry.mappedControls.length > 0 && (
                 <tr className="bg-bg-default/40">
                     <td colSpan={canEdit ? 7 : 6} className="p-0">
-                        <div className="px-6 py-3 space-y-tight">
-                            <div className="text-[10px] uppercase tracking-wider text-content-subtle font-semibold">{t('soaView.mappedControls')}</div>
-                            {entry.mappedControls.map(c => (
-                                <div key={c.controlId} className="flex items-center justify-between text-xs bg-bg-page/40 rounded-lg px-3 py-2">
-                                    <div className="flex items-center gap-compact">
-                                        <a
-                                            href={`/t/${tenantSlug}/controls/${c.controlId}`}
-                                            className={`${textLinkVariants({ tone: 'link' })} font-mono`}
-                                            onClick={e => e.stopPropagation()}
-                                        >
-                                            {c.code || c.controlId.slice(0, 8)}
-                                        </a>
-                                        <span className="text-content-emphasis">{c.title}</span>
-                                        <StatusBadgePrimitive variant={c.applicability === 'APPLICABLE' ? 'success' : 'neutral'}>
-                                            {c.applicability === 'APPLICABLE' ? t('soaView.applicable') : t('soaView.notApplicable')}
-                                        </StatusBadgePrimitive>
-                                        <StatusBadge value={c.status} />
-                                    </div>
-                                    <div className="flex items-center gap-tight">
-                                        {c.justification && (
-                                            <Tooltip content={c.justification}>
-                                                <span className="text-content-muted max-w-trunc-default truncate">
-                                                    {c.justification}
-                                                </span>
-                                            </Tooltip>
-                                        )}
-                                        {c.applicability === 'NOT_APPLICABLE' && !c.justification && canEdit && (
-                                            <Button
-                                                variant="destructive"
-                                                size="xs"
-                                                onClick={(e) => { e.stopPropagation(); onJustify(c.controlId, c.code || c.controlId.slice(0, 8)); }}
-                                            >
-                                                <MessageSquare className="w-3.5 h-3.5" /> {t('soaView.justify')}
-                                            </Button>
-                                        )}
-                                        {/* #4740 — a reason already given can be corrected
-                                            here, not only on the control's page. */}
-                                        {c.applicability === 'NOT_APPLICABLE' && c.justification && canEdit && (
-                                            <Button
-                                                variant="ghost"
-                                                size="xs"
-                                                onClick={(e) => { e.stopPropagation(); onJustify(c.controlId, c.code || c.controlId.slice(0, 8), c.justification ?? ''); }}
-                                                id={`soa-edit-justification-${c.controlId}`}
-                                            >
-                                                <MessageSquare className="w-3.5 h-3.5" /> {t('soaView.editJustification')}
-                                            </Button>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                            {entry.evidenceCount > 0 && (
-                                <div className="text-[10px] text-content-subtle">{t('soaView.evidenceItems', { count: entry.evidenceCount })}</div>
-                            )}
-                            {entry.openTaskCount > 0 && (
-                                <div className="text-[10px] text-content-warning">{t('soaView.openTasks', { count: entry.openTaskCount })}</div>
-                            )}
-                            {entry.lastTestResult && (
-                                <div className="text-[10px] text-content-subtle">
-                                    {t('soaView.lastTest')} <span className={entry.lastTestResult === 'PASS' ? 'text-content-success' : 'text-content-error'}>{entry.lastTestResult}</span>
-                                </div>
-                            )}
-                        </div>
+                        <MappedControlsDetail
+                            entry={entry}
+                            canEdit={canEdit}
+                            onJustify={onJustify}
+                            tenantSlug={tenantSlug}
+                            className="px-6 py-3"
+                        />
                     </td>
                 </tr>
             )}
         </>
+    );
+}
+
+// ─── Shared pieces of a row and a card ───
+
+/** Unmapped, or not applicable with a control that gives no reason. */
+function entryHasGap(entry: SoAEntryDTO): boolean {
+    return entry.applicable === null || (
+        entry.applicable === false &&
+        entry.mappedControls.some(c => c.applicability === 'NOT_APPLICABLE' && !c.justification)
+    );
+}
+
+/**
+ * A requirement's mapped controls with their applicability, status and
+ * reason — the table row's expansion, and a phone card's. `stacked` lays each
+ * control out in lines instead of one row with the actions at its far end,
+ * which ran past a phone's edge.
+ */
+function MappedControlsDetail({
+    entry, canEdit, onJustify, tenantSlug, className, stacked = false,
+}: {
+    entry: SoAEntryDTO;
+    canEdit: boolean;
+    onJustify: (controlId: string, controlCode: string, current?: string) => void;
+    tenantSlug: string;
+    className?: string;
+    stacked?: boolean;
+}) {
+    const t = useTranslations('reports');
+    return (
+        <div className={cn('space-y-tight', className)} data-testid={`soa-mapped-controls-${entry.requirementId}`}>
+            <div className="text-xs uppercase tracking-wider text-content-subtle font-semibold">{t('soaView.mappedControls')}</div>
+            {entry.mappedControls.map(c => (
+                <div
+                    key={c.controlId}
+                    className={cn(
+                        'text-xs bg-bg-page/40 rounded-lg px-3 py-2',
+                        stacked ? 'flex flex-col items-start gap-tight' : 'flex items-center justify-between',
+                    )}
+                >
+                    <div className={cn('flex items-center gap-compact', stacked && 'flex-wrap min-w-0')}>
+                        <a
+                            href={`/t/${tenantSlug}/controls/${c.controlId}`}
+                            className={`${textLinkVariants({ tone: 'link' })} font-mono`}
+                            onClick={e => e.stopPropagation()}
+                        >
+                            {c.code || c.controlId.slice(0, 8)}
+                        </a>
+                        <span className={cn('text-content-emphasis', stacked && 'break-words')}>{c.title}</span>
+                        <StatusBadgePrimitive variant={c.applicability === 'APPLICABLE' ? 'success' : 'neutral'}>
+                            {c.applicability === 'APPLICABLE' ? t('soaView.applicable') : t('soaView.notApplicable')}
+                        </StatusBadgePrimitive>
+                        <StatusBadge value={c.status} />
+                    </div>
+                    <div className={cn('flex items-center gap-tight', stacked && 'flex-wrap min-w-0 max-w-full')}>
+                        {c.justification && (stacked ? (
+                            // A phone has no hover to read a truncated reason, so it wraps.
+                            <span className="text-content-muted break-words">{c.justification}</span>
+                        ) : (
+                            <Tooltip content={c.justification}>
+                                <span className="text-content-muted max-w-trunc-default truncate">
+                                    {c.justification}
+                                </span>
+                            </Tooltip>
+                        ))}
+                        {c.applicability === 'NOT_APPLICABLE' && !c.justification && canEdit && (
+                            <Button
+                                variant="destructive"
+                                size="xs"
+                                onClick={(e) => { e.stopPropagation(); onJustify(c.controlId, c.code || c.controlId.slice(0, 8)); }}
+                            >
+                                <MessageSquare className="w-3.5 h-3.5" /> {t('soaView.justify')}
+                            </Button>
+                        )}
+                        {/* #4740 — a reason already given can be corrected
+                            here, not only on the control's page. */}
+                        {c.applicability === 'NOT_APPLICABLE' && c.justification && canEdit && (
+                            <Button
+                                variant="ghost"
+                                size="xs"
+                                onClick={(e) => { e.stopPropagation(); onJustify(c.controlId, c.code || c.controlId.slice(0, 8), c.justification ?? ''); }}
+                                id={`soa-edit-justification-${c.controlId}`}
+                            >
+                                <MessageSquare className="w-3.5 h-3.5" /> {t('soaView.editJustification')}
+                            </Button>
+                        )}
+                    </div>
+                </div>
+            ))}
+            {entry.evidenceCount > 0 && (
+                <div className="text-xs text-content-subtle">{t('soaView.evidenceItems', { count: entry.evidenceCount })}</div>
+            )}
+            {entry.openTaskCount > 0 && (
+                <div className="text-xs text-content-warning">{t('soaView.openTasks', { count: entry.openTaskCount })}</div>
+            )}
+            {entry.lastTestResult && (
+                <div className="text-xs text-content-subtle">
+                    {t('soaView.lastTest')} <span className={entry.lastTestResult === 'PASS' ? 'text-content-success' : 'text-content-error'}>{entry.lastTestResult}</span>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ─── Card Component (a phone) ───
+
+/**
+ * One requirement on a phone: code, title and group, then applicability,
+ * status, the requirement's reason and its gaps, each on its own line, and its
+ * mapped controls behind a button rather than a tap on the whole row.
+ */
+function SoACard({
+    entry, expanded, onToggle, canEdit, onMap, onJustify, tenantSlug,
+}: {
+    entry: SoAEntryDTO;
+    expanded: boolean;
+    onToggle: () => void;
+    canEdit: boolean;
+    onMap: () => void;
+    onJustify: (controlId: string, controlCode: string, current?: string) => void;
+    tenantSlug: string;
+}) {
+    const t = useTranslations('reports');
+    const sectionLabel = useSoASectionLabel();
+    const hasGap = entryHasGap(entry);
+    const detailId = `soa-card-detail-${entry.requirementId}`;
+
+    return (
+        <li
+            className={cn(cardVariants({ density: 'compact' }), 'min-w-0', hasGap && 'border-border-error')}
+            data-testid={`soa-card-${entry.requirementId}`}
+        >
+            <div className="flex items-start justify-between gap-tight">
+                <div className="min-w-0">
+                    <div className="text-xs font-mono text-[var(--brand-default)]">{entry.requirementCode}</div>
+                    <div className="text-sm font-medium text-content-emphasis break-words">{entry.requirementTitle}</div>
+                    {entry.section && (
+                        <div className="text-xs text-content-subtle" data-testid="soa-card-section">{sectionLabel(entry.section)}</div>
+                    )}
+                </div>
+                {canEdit && entry.applicable === null && (
+                    <Button
+                        variant="secondary"
+                        size="xs"
+                        onClick={onMap}
+                        aria-label={t('soaView.mapControl')}
+                        className="shrink-0"
+                    >
+                        <Plus className="w-3.5 h-3.5" />
+                    </Button>
+                )}
+            </div>
+
+            <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-compact gap-y-tight text-xs">
+                <dt className="text-content-muted">{t('soaView.colApplicability')}</dt>
+                <dd><ApplicabilityBadge value={entry.applicable} /></dd>
+                <dt className="text-content-muted">{t('soaView.colStatus')}</dt>
+                <dd>
+                    {entry.verdict === 'excepted'
+                        ? <ExceptedBadge until={entry.exceptedUntil} t={t} />
+                        : <StatusBadge value={entry.implementationStatus} />}
+                </dd>
+                {entry.justification && (
+                    <>
+                        <dt className="text-content-muted">{t('soaMobile.justification')}</dt>
+                        <dd className="break-words text-content-default">{entry.justification}</dd>
+                    </>
+                )}
+            </dl>
+
+            {hasGap && <div className="mt-2"><GapBadges entry={entry} /></div>}
+
+            {entry.mappedControls.length > 0 && (
+                <div className="mt-2">
+                    <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={onToggle}
+                        aria-expanded={expanded}
+                        aria-controls={detailId}
+                        data-testid={`soa-card-toggle-${entry.requirementId}`}
+                        icon={<Link2 className="w-3.5 h-3.5" />}
+                    >
+                        {t('soaMobile.mappedControls', { count: entry.mappedControls.length })}
+                    </Button>
+                    {expanded && (
+                        <div id={detailId} className="mt-2">
+                            <MappedControlsDetail
+                                entry={entry}
+                                canEdit={canEdit}
+                                onJustify={onJustify}
+                                tenantSlug={tenantSlug}
+                                stacked
+                            />
+                        </div>
+                    )}
+                </div>
+            )}
+        </li>
     );
 }
 
@@ -723,12 +912,14 @@ function SoARow({
 function SummaryCard({ label, value, icon, accent }: { label: string; value: number; icon: React.ReactNode; accent?: 'danger' | 'warning' }) {
     const border = accent === 'danger' ? 'border-border-error' : accent === 'warning' ? 'border-border-warning' : 'border-border-default/50';
     return (
-        <div className={cn(cardVariants({ density: 'none' }), 'px-4 py-3 border', border)}>
+        // In the phone strip (`KpiStrip`) the tile is compact and keeps its
+        // width, so the strip scrolls rather than squeezing seven tiles.
+        <div className={cn(cardVariants({ density: 'none' }), 'border px-4 py-3', border)}>
             <div className="flex items-center justify-between">
                 {icon}
-                <span className="text-xl font-bold text-content-emphasis">{value}</span>
+                <span className="font-bold text-content-emphasis text-xl max-md:text-lg">{value}</span>
             </div>
-            <div className="text-[10px] text-content-muted mt-1">{label}</div>
+            <div className="text-xs text-content-muted mt-1">{label}</div>
         </div>
     );
 }

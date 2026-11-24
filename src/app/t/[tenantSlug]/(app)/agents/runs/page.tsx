@@ -7,7 +7,7 @@ import { authOptions } from '@/auth';
 import { listWorkflowRuns } from '@/app-layer/usecases/workflow-runs';
 import { getWorkflowDefinition, listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import { profileRunLabel } from '@/lib/agentic/agent-profile';
-import { localizedWorkflowDescription, localizedWorkflowName } from '@/lib/agentic/workflow-labels';
+import { localizedRunSummary, localizedWorkflowDescription, localizedWorkflowName } from '@/lib/agentic/workflow-labels';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { checkAdminAccess } from '@/lib/auth/guard';
 import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
@@ -96,7 +96,9 @@ export default async function AgentRunsPage({
         // the date is a FACT beside the run rather than a reminder chasing
         // them. Null unless parked.
         approvalExpiresAt: r.approvalExpiresAt ? r.approvalExpiresAt.toISOString() : null,
-        summary: r.summary,
+        // The product's own summary sentence in the reader's language; an
+        // agent's words as written.
+        summary: localizedRunSummary(r.workflowKey, r.summary, (key, values) => tWorkflows(key, values)),
         pendingProposals: r._count.proposals,
         // A run parked on a deferred call (Step 2f) waits on THIS proposal:
         // the list offers it in place of Resume, which would be refused.

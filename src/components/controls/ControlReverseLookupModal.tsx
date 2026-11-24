@@ -269,7 +269,7 @@ export function ControlReverseLookupModal({
                                                 {label}
                                             </span>
                                             {req?.framework?.name && (
-                                                <span className="text-[11px] text-content-subtle">
+                                                <span className="text-xs text-content-subtle">
                                                     {req.framework.name}
                                                 </span>
                                             )}
@@ -346,7 +346,7 @@ export function ControlReverseLookupModal({
                                             >
                                                 {g.mapName}
                                             </Link>
-                                            <span className="text-[11px] text-content-subtle">
+                                            <span className="text-xs text-content-subtle">
                                                 {t("mapMeta", {
                                                     status: g.mapStatus,
                                                     count: g.placementCount,

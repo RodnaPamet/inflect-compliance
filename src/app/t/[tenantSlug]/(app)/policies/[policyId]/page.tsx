@@ -9,12 +9,13 @@ import { formatDate } from '@inflect/ui/lib/format-date';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { useEffect, useState, useCallback } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { humanizeDetail } from '@/components/controls-shared/PanelActivityFeed';
 import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
+import { TextButton } from '@/components/ui/text-link';
 import { Plus } from '@inflect/ui/components/ui/icons/glyphs';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
@@ -163,6 +164,7 @@ type ContentMode = 'MARKDOWN' | 'EXTERNAL_LINK';
 
 export default function PolicyDetailPage() {
     const t = useTranslations('policies');
+    const locale = useLocale();
     // Same namespace the ApprovalBanner uses, so the per-version approval badge
     // reads with identical vocabulary instead of the raw enum.
     const tApproval = useTranslations('approval');
@@ -526,10 +528,20 @@ export default function PolicyDetailPage() {
         if (!safe.trim()) {
             return <span className="text-content-subtle italic">{t('detail.contentEmpty')}</span>;
         }
-        const enriched = enrichPolicyHtml(safe);
+        // The document is in the policy's own language (a template's English,
+        // by default), which can differ from the page's: it is marked with it
+        // (WCAG 3.1.2), and the Contents block's labels with the page's (#5924).
+        const contentLang = policy?.language || undefined;
+        const enriched = enrichPolicyHtml(safe, {
+            title: t('detail.tocTitle'),
+            ariaLabel: t('detail.tocAria'),
+            lang: contentLang && contentLang !== locale ? locale : undefined,
+            contentLang,
+        });
         return (
             <div
                 className="policy-content"
+                lang={contentLang}
                 data-testid={`policy-version-html-${v.id}`}
                 dangerouslySetInnerHTML={{ __html: enriched }}
             />
@@ -754,7 +766,11 @@ export default function PolicyDetailPage() {
             tabs={tabs}
             activeTab={tab}
             onTabChange={setTab}
-            title={<span className="truncate" id="policy-title">{policy.title}</span>}
+            // Wraps on a phone, truncates from `sm`. A bare `truncate` on an
+            // inline span only kept the title on one line (an inline box
+            // never clips), so a long title pushed the record pager off the
+            // screen (#5879).
+            title={<span className="block sm:truncate" id="policy-title">{policy.title}</span>}
             prevNext={{
                 ids: policyIds,
                 currentId: policyId,
@@ -846,7 +862,7 @@ export default function PolicyDetailPage() {
                         <button onClick={() => {
                             setTab('editor');
                             seedEditor(newest);
-                        }} className={buttonVariants({ variant: 'primary' })} id="new-version-btn"><Plus className="-ml-0.5 -mr-2.5" />{t('detail.version')}</button>
+                        }} className={buttonVariants({ variant: 'primary' })} id="new-version-btn"><Plus />{t('detail.version')}</button>
                     )}
                     {canArchivePolicy && policy.status !== 'ARCHIVED' && (
                         <Button variant="ghost" size="sm" className="text-content-muted hover:text-content-error" onClick={() => setArchiveOpen(true)} disabled={actionLoading === 'archive'} loading={actionLoading === 'archive'} id="archive-btn">
@@ -903,9 +919,14 @@ export default function PolicyDetailPage() {
                         {/* Review controls */}
                         {canEditPolicy && !editingReview && (
                             <div className="flex items-center gap-default mt-2">
-                                <button onClick={() => setEditingReview(true)} className="text-xs text-[var(--brand-default)] hover:text-[var(--brand-muted)]">
+                                <TextButton
+                                    tone="brand"
+                                    onClick={() => setEditingReview(true)}
+                                    className="text-xs"
+                                    data-testid="policy-edit-review-schedule"
+                                >
                                     {t('detail.editReviewSchedule')}
-                                </button>
+                                </TextButton>
                                 {policy.status !== 'ARCHIVED' && (
                                     <Tooltip content={t('detail.markReviewedTooltip')}>
                                         <Button
@@ -1274,7 +1295,7 @@ export default function PolicyDetailPage() {
                         </InlineNotice>
                     )}
 
-                    <Button variant="primary" icon={saving ? undefined : <Plus className="-ml-0.5 -mr-2.5" />} onClick={createVersion} disabled={saving} id="save-version-btn">
+                    <Button variant="primary" icon={saving ? undefined : <Plus />} onClick={createVersion} disabled={saving} id="save-version-btn">
                         {saving ? t('detail.saving') : t('detail.version')}
                     </Button>
                 </div>

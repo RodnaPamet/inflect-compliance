@@ -10,6 +10,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { Heading, Eyebrow } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
+import { LIBRARY_LANG } from '@/lib/library-language';
 
 const STATUS_COLORS: Record<string, StatusBadgeVariant> = {
     NOT_STARTED: 'neutral', IN_PROGRESS: 'info', READY: 'success', NEEDS_REVIEW: 'warning',
@@ -127,7 +128,7 @@ export function ClausesBrowser({ clauses: initialClauses, tenantSlug, canEdit }:
                             <span className="font-medium text-sm">{t('clause')} {c.number}</span>
                             <StatusBadge variant={STATUS_COLORS[c.status]}>{statusLabel(c.status)}</StatusBadge>
                         </div>
-                        <p className="text-xs text-content-muted mt-1">{c.title}</p>
+                        <p className="text-xs text-content-muted mt-1" lang={LIBRARY_LANG}>{c.title}</p>
                     </button>
                 ))}
             </div>
@@ -136,7 +137,7 @@ export function ClausesBrowser({ clauses: initialClauses, tenantSlug, canEdit }:
                 {selected ? (
                     <div className={cn(cardVariants(), 'animate-fadeIn')}>
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-compact mb-4">
-                            <Heading level={2}>{t('clause')} {selected.number}: {selected.title}</Heading>
+                            <Heading level={2}>{t('clause')} {selected.number}: <span lang={LIBRARY_LANG}>{selected.title}</span></Heading>
                             {canEdit ? (
                                 <div className="w-full sm:w-48">
                                     <Combobox
@@ -160,10 +161,10 @@ export function ClausesBrowser({ clauses: initialClauses, tenantSlug, canEdit }:
                                 </StatusBadge>
                             )}
                         </div>
-                        <p className="text-sm text-content-default mb-4">{selected.description}</p>
+                        <p className="text-sm text-content-default mb-4" lang={LIBRARY_LANG}>{selected.description}</p>
                         <div className="mb-4">
                             <Eyebrow className="mb-2">{t('requiredArtifacts')}</Eyebrow>
-                            <p className="text-sm text-content-muted">{selected.artifacts}</p>
+                            <p className="text-sm text-content-muted" lang={LIBRARY_LANG}>{selected.artifacts}</p>
                         </div>
                         <div>
                             <Eyebrow className="mb-2">{t('checklist')}</Eyebrow>
@@ -172,7 +173,7 @@ export function ClausesBrowser({ clauses: initialClauses, tenantSlug, canEdit }:
                                 every re-render. Rendered as a static reference
                                 list until real per-clause progress is modelled
                                 (there is no persistence for it today). */}
-                            <ul className="space-y-tight">
+                            <ul className="space-y-tight" lang={LIBRARY_LANG}>
                                 {selected.checklist?.map((item: string, i: number) => (
                                     <li key={i} className="flex items-start gap-tight text-sm text-content-default">
                                         <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-content-subtle" aria-hidden />

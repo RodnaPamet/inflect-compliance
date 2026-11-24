@@ -55,7 +55,7 @@ type AppEnv = 'prod' | 'staging' | 'dev';
  * brand-mark's 32px height envelope.
  */
 const BADGE_BASE_CLASS =
-    'inline-flex items-center rounded text-[10px] font-bold uppercase tracking-widest text-content-inverted px-1.5 py-0.5 leading-none';
+    'inline-flex items-center rounded text-xs font-bold uppercase tracking-widest text-content-inverted px-1.5 py-0.5 leading-none';
 
 const BADGE_STAGING_CLASS = `${BADGE_BASE_CLASS} bg-bg-warning-emphasis`;
 const BADGE_DEV_CLASS = `${BADGE_BASE_CLASS} bg-bg-error-emphasis`;

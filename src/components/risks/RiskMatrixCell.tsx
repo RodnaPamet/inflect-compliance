@@ -375,7 +375,7 @@ export function RiskMatrixCell({
                     {count}
                     {aleOverlay && hasAle && (
                         <span
-                            className="text-[9px] font-medium"
+                            className="text-xs font-medium"
                             data-testid="risk-matrix-cell-ale"
                         >
                             {money(totalAle)}
@@ -389,7 +389,7 @@ export function RiskMatrixCell({
                 <span
                     aria-hidden="true"
                     data-testid="risk-matrix-cell-collision"
-                    className="absolute right-0.5 top-0.5 rounded-sm bg-bg-default/80 px-0.5 text-[9px] font-bold leading-none text-content-error"
+                    className="absolute right-0.5 top-0.5 rounded-sm bg-bg-default/80 px-0.5 text-xs font-bold leading-none text-content-error"
                 >
                     ≠
                 </span>
@@ -436,7 +436,7 @@ function BubbleOverlay({
     if (total > 1) {
         return (
             <span
-                className="absolute inset-0 flex items-center justify-center px-0.5 text-center text-[10px] font-semibold leading-tight"
+                className="absolute inset-0 flex items-center justify-center px-0.5 text-center text-xs font-semibold leading-tight"
                 style={{ color: fg }}
                 data-testid="risk-matrix-cell-count-summary"
             >
@@ -469,7 +469,7 @@ function BubbleOverlay({
             {visible.map((r) => (
                 <span
                     key={r.id}
-                    className="truncate rounded-sm bg-white/15 px-1 py-[1px] text-[9px] font-medium leading-tight"
+                    className="truncate rounded-sm bg-white/15 px-1 py-[1px] text-xs font-medium leading-tight"
                     style={{ color: fg }}
                     title={r.title}
                 >

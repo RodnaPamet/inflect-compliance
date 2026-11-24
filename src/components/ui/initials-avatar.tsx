@@ -58,9 +58,9 @@ export function getInitials(
  * account-profile-page preview (avatar roadmap P3).
  */
 const SIZE_CLASS = {
-    sm: 'h-5 w-5 text-[10px]',
-    nav: 'h-[22px] w-[22px] text-[10px]',
-    md: 'h-8 w-8 text-[11px]',
+    sm: 'h-5 w-5 text-xs',
+    nav: 'h-[22px] w-[22px] text-xs',
+    md: 'h-8 w-8 text-xs',
     lg: 'h-16 w-16 text-xl',
 } as const;
 

@@ -60,6 +60,9 @@ export function ControlsSankeyClient({
                 </InlineNotice>
             )}
 
+            {/* Below `md` the chart itself lists the flows, after a notice
+                that the diagram is drawn for a larger screen (owner
+                decision, 2026-11-23; `SankeyFlowList`). */}
             <SankeyChart graph={initialGraph} searchQuery="" />
         </div>
     );

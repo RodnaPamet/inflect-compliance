@@ -48,6 +48,7 @@ import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { localizedNotificationTitle } from '@/lib/notifications/agentic-titles';
 import { localizedNotificationBody } from '@/lib/notifications/agentic-bodies';
+import type { localizedStockNotification } from '@/lib/notifications/stock-notifications';
 import { Bell, CheckCheck } from 'lucide-react';
 
 import { Popover } from '@/components/ui/popover';
@@ -110,7 +111,7 @@ const BADGE_OVERLAY_CLASS =
     // the bell glyph remains uncluttered. On a touch screen the box is
     // 44px with the 22px bell centred in it, so the chip moves in by the
     // 11px between them and stays on the bell, not in the box's corner.
-    'absolute -top-0.5 -right-0.5 pointer-coarse:top-[9px] pointer-coarse:right-[9px] flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-bg-error-emphasis text-[10px] font-semibold text-content-inverted tabular-nums leading-none';
+    'absolute -top-0.5 -right-0.5 pointer-coarse:top-[9px] pointer-coarse:right-[9px] flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-bg-error-emphasis text-xs font-semibold text-content-inverted tabular-nums leading-none';
 
 const ROW_CLASS =
     'flex flex-col gap-tight rounded-md px-2.5 py-2 transition-colors hover:bg-bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]';
@@ -184,6 +185,26 @@ export function NotificationsBell() {
     const [sessionExpired, setSessionExpired] = useState(false);
 
     const close = useCallback(() => setOpen(false), []);
+
+    // The stock sentences' reader (assignment, task due, NIS2, …; #5929),
+    // loaded once the bell mounts rather than with it: the bell is on every
+    // page, so a static import would put its English templates into every
+    // route's First Load JS. It arrives long before anybody opens the list;
+    // until it does, a stock row is shown as stored.
+    const [stock, setStock] = useState<{ read: typeof localizedStockNotification } | null>(null);
+    useEffect(() => {
+        let live = true;
+        import('@/lib/notifications/stock-notifications')
+            .then((m) => {
+                if (live) setStock({ read: m.localizedStockNotification });
+            })
+            .catch(() => {
+                /* A chunk that fails to load leaves rows as stored — still readable. */
+            });
+        return () => {
+            live = false;
+        };
+    }, []);
 
     /**
      * Set once the endpoint has answered 401/403, and never cleared.
@@ -471,7 +492,7 @@ export function NotificationsBell() {
                 <Popover.Menu aria-label={t('notifications')}>
                     {/* Header row — count + mark-all-read action */}
                     <div className="flex items-center justify-between px-2.5 py-1.5">
-                        <span className="text-[10px] font-semibold uppercase tracking-widest text-content-subtle">
+                        <span className="text-xs font-semibold uppercase tracking-widest text-content-subtle">
                             {t('notifications')}
                         </span>
                         {unreadCount > 0 && (
@@ -529,18 +550,19 @@ export function NotificationsBell() {
                             </div>
                         ) : (
                             items!.map((n) => {
+                                const worded = stock?.read(n, tTitles, tBodies);
                                 const row = (
                                     <>
                                         <div className="flex items-center justify-between gap-tight">
                                             <p className="min-w-0 flex-1 break-words text-sm font-medium text-content-emphasis">
-                                                {localizedNotificationTitle(n.type, n.title, tTitles)}
+                                                {worded?.title ?? localizedNotificationTitle(n.type, n.title, tTitles)}
                                             </p>
-                                            <span className="flex-shrink-0 text-[10px] text-content-subtle tabular-nums">
+                                            <span className="flex-shrink-0 text-xs text-content-subtle tabular-nums">
                                                 {formatRelativeTime(n.createdAt, t)}
                                             </span>
                                         </div>
                                         <p className="text-xs text-content-muted line-clamp-2">
-                                            {localizedNotificationBody(n.type, n.message, tBodies)}
+                                            {worded?.message ?? localizedNotificationBody(n.type, n.message, tBodies)}
                                         </p>
                                     </>
                                 );

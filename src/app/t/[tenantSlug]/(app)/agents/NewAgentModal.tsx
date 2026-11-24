@@ -22,6 +22,7 @@ import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Modal } from '@/components/ui/modal';
 import { Combobox } from '@/components/ui/combobox';
 import { AsyncCombobox, type AsyncOption } from '@/components/ui/async-combobox';
@@ -469,11 +470,20 @@ export function NewAgentModal({
                             <FormField label={t('register.new.annexIIILabel')}>
                                 {clauseSelect('annexIIIArea', toClauseOptions(ANNEX_III_AREAS))}
                             </FormField>
-                            <label className="flex items-center gap-tight text-sm text-content-default">
-                                <input
-                                    id="agent-annexi-input"
-                                    type="checkbox"
-                                    {...register('isAnnexIProductSafetyComponent')}
+                            <label className="flex items-center gap-tight text-sm text-content-default pointer-coarse:min-h-11">
+                                <Controller
+                                    control={control}
+                                    name="isAnnexIProductSafetyComponent"
+                                    render={({ field }) => (
+                                        <Checkbox
+                                            id="agent-annexi-input"
+                                            name={field.name}
+                                            checked={field.value === true}
+                                            onCheckedChange={(next) => field.onChange(next === true)}
+                                            onBlur={field.onBlur}
+                                            ref={field.ref}
+                                        />
+                                    )}
                                 />
                                 {t('register.new.art6Checkbox')}
                             </label>

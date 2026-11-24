@@ -9,6 +9,7 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { buttonVariants } from '@/components/ui/button';
 import { Heading } from '@/components/ui/typography';
 import { Card } from '@/components/ui/card';
+import { SettingRow } from '@/components/layout/SettingRow';
 
 /** The part of `getOnboardingMetrics` this card reads. */
 interface OnboardingStatus {
@@ -41,18 +42,26 @@ export default function OnboardingBanner() {
 
     return (
         <Card className="border-[var(--brand-default)]/30 bg-gradient-to-r from-[var(--brand-subtle)] to-[var(--brand-subtle)]">
-            <div className="flex items-center gap-compact">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[var(--brand-emphasis)] to-[var(--brand-default)] flex items-center justify-center flex-shrink-0">
-                    <Sparkles className="w-5 h-5 text-white" />
-                </div>
-                <div className="flex-1 min-w-0">
-                    <Heading level={3}>{t('banner.title')}</Heading>
-                    <p className="text-xs text-content-muted mt-0.5">{t('banner.body')}</p>
-                </div>
-                <Link href={tenantHref('/onboarding')} className={buttonVariants({ variant: 'primary', size: 'sm', className: 'flex-shrink-0' })} data-testid="onboarding-cta">
-                    <Sparkles className="w-3.5 h-3.5" /> {t('banner.continue')}
-                </Link>
-            </div>
+            {/* Below `sm` the button goes under the text, which used to run
+                one word per line beside it (#5874). */}
+            <SettingRow
+                align="center"
+                gap="compact"
+                textSpacing="none"
+                descriptionClassName="mt-0.5 max-w-none text-xs"
+                leading={
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[var(--brand-emphasis)] to-[var(--brand-default)] flex items-center justify-center">
+                        <Sparkles className="w-5 h-5 text-white" />
+                    </div>
+                }
+                title={<Heading level={3}>{t('banner.title')}</Heading>}
+                description={t('banner.body')}
+                control={
+                    <Link href={tenantHref('/onboarding')} className={buttonVariants({ variant: 'primary', size: 'sm' })} data-testid="onboarding-cta">
+                        <Sparkles className="w-3.5 h-3.5" /> {t('banner.continue')}
+                    </Link>
+                }
+            />
         </Card>
     );
 }

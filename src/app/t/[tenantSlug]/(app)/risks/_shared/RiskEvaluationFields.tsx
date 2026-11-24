@@ -17,9 +17,15 @@
  */
 import { useTranslations } from 'next-intl';
 import { InfoTooltip } from '@/components/ui/tooltip';
+import { Slider } from '@/components/ui/slider';
 import { useRiskMatrixConfig } from '@/lib/hooks/use-risk-matrix-config';
 import { resolveBandTone, type RiskSeverityTone } from '@/lib/risk-matrix/scoring';
 import type { RiskMatrixConfigShape } from '@/lib/risk-matrix/types';
+
+/** One mark per level, so a 5x5 or a 6x6 matrix shows its own steps. */
+function levelMarks(levels: number): number[] {
+    return Array.from({ length: levels }, (_, i) => i + 1);
+}
 
 const TONE_CLASSES: Record<RiskSeverityTone, string> = {
     default: 'border-border-subtle bg-bg-subtle text-content-default',
@@ -66,9 +72,9 @@ export function RiskEvaluationFields({
             <div className="grid grid-cols-1 gap-default sm:grid-cols-[1fr_1fr_auto] sm:items-end">
                 <div>
                     <div className="mb-1 flex items-center gap-1.5">
-                        <label
+                        <span
                             className="text-sm text-content-default"
-                            htmlFor={`${idPrefix}-likelihood`}
+                            id={`${idPrefix}-likelihood-label`}
                         >
                             {config.axisLikelihoodLabel || t('eval.likelihood')} ·{' '}
                             <span className="font-semibold text-content-emphasis">
@@ -77,28 +83,28 @@ export function RiskEvaluationFields({
                             {likelihoodLabel && (
                                 <span className="text-content-muted"> — {likelihoodLabel}</span>
                             )}
-                        </label>
+                        </span>
                         <InfoTooltip
                             aria-label={t('eval.aboutLikelihood')}
                             iconClassName="h-3.5 w-3.5"
                             content={t('eval.likelihoodHelp')}
                         />
                     </div>
-                    <input
+                    <Slider
                         id={`${idPrefix}-likelihood`}
-                        type="range"
+                        ariaLabelledBy={`${idPrefix}-likelihood-label`}
                         min={1}
                         max={config.likelihoodLevels}
+                        marks={levelMarks(config.likelihoodLevels)}
                         value={likelihood}
-                        onChange={(e) => onLikelihood(Number(e.target.value))}
-                        className="w-full accent-brand-emphasis"
+                        onChange={onLikelihood}
                     />
                 </div>
                 <div>
                     <div className="mb-1 flex items-center gap-1.5">
-                        <label
+                        <span
                             className="text-sm text-content-default"
-                            htmlFor={`${idPrefix}-impact`}
+                            id={`${idPrefix}-impact-label`}
                         >
                             {config.axisImpactLabel || t('eval.impact')} ·{' '}
                             <span className="font-semibold text-content-emphasis">
@@ -107,21 +113,21 @@ export function RiskEvaluationFields({
                             {impactLabel && (
                                 <span className="text-content-muted"> — {impactLabel}</span>
                             )}
-                        </label>
+                        </span>
                         <InfoTooltip
                             aria-label={t('eval.aboutImpact')}
                             iconClassName="h-3.5 w-3.5"
                             content={t('eval.impactHelp')}
                         />
                     </div>
-                    <input
+                    <Slider
                         id={`${idPrefix}-impact`}
-                        type="range"
+                        ariaLabelledBy={`${idPrefix}-impact-label`}
                         min={1}
                         max={config.impactLevels}
+                        marks={levelMarks(config.impactLevels)}
                         value={impact}
-                        onChange={(e) => onImpact(Number(e.target.value))}
-                        className="w-full accent-brand-emphasis"
+                        onChange={onImpact}
                     />
                 </div>
                 <div
@@ -133,7 +139,7 @@ export function RiskEvaluationFields({
                         {t('score')}
                     </p>
                     <p className="text-xl font-bold">{score}</p>
-                    <p className="text-[11px] font-medium">{band.name}</p>
+                    <p className="text-xs font-medium">{band.name}</p>
                 </div>
             </div>
         </div>

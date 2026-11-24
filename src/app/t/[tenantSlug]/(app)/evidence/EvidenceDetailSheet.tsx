@@ -1218,7 +1218,7 @@ function EvidenceFileVersions({
                                 <span className="block truncate text-xs text-content-default">
                                     {t('detail.versionBadge', { version: v.version })} · {v.originalName}
                                 </span>
-                                <span className="block text-[10px] text-content-subtle">
+                                <span className="block text-xs text-content-subtle">
                                     {formatDateTime(v.createdAt)} · {formatBytes(v.sizeBytes)}
                                 </span>
                             </span>

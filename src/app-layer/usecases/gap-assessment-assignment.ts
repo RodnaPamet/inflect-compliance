@@ -36,6 +36,12 @@ import { snapshotNis2Readiness } from './nis2-readiness';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { resolveTenantSlugForLinks, tenantPageLink } from '../notifications/tenant-link';
 import { isFinalizedNis2Run } from '@/lib/nis2-run-status';
+import {
+    NIS2_GROUP,
+    STOCK_NOTIFICATIONS,
+    nis2QuestionCount,
+    stockNotificationText,
+} from '@/lib/notifications/stock-notifications';
 
 export const NIS2_RESPONDENT_ROLES = ['CEO', 'IT', 'HR', 'PROCUREMENT', 'ANYONE'] as const;
 export type Nis2RespondentRole = (typeof NIS2_RESPONDENT_ROLES)[number];
@@ -145,7 +151,7 @@ export async function dispatchAssignments(
             const assigneeChanged = !existing || existing.assigneeUserId !== assigneeUserId;
             if (assigneeUserId && assigneeChanged) {
                 await createTask(ctx, {
-                    title: `Answer the NIS2 gap assessment questions for ${respondentLabel(role)} (${questionCount(questionIds.length)})`,
+                    title: `Answer the NIS2 gap assessment questions for ${respondentLabel(role)} (${nis2QuestionCount(questionIds.length)})`,
                     type: 'CONTROL_GAP',
                     source: 'AUDIT',
                     assigneeUserId,
@@ -169,8 +175,13 @@ export async function dispatchAssignments(
                             tenantId: ctx.tenantId,
                             userId: assigneeUserId,
                             type: 'GENERAL',
-                            title: 'NIS2 gap assessment assigned',
-                            message: `You have ${questionCount(questionIds.length)} to answer in the NIS2 gap assessment, for ${respondentLabel(role)}.`,
+                            // A stock sentence: the bell and the notifications
+                            // page word it in the reader's language (#5929).
+                            title: STOCK_NOTIFICATIONS.NIS2_GAP_ASSIGNED.title,
+                            message: stockNotificationText('NIS2_GAP_ASSIGNED', {
+                                count: nis2QuestionCount(questionIds.length),
+                                group: respondentLabel(role),
+                            }),
                             linkUrl: tenantPageLink(tenantSlug, `/audits/nis2-gap/respond/${assignment.id}`),
                             dedupeKey: `NIS2_GAP_ASSIGNMENT:${assignment.id}:${assigneeUserId}`,
                         },
@@ -248,17 +259,12 @@ const isFinalizedRun = isFinalizedNis2Run;
 /**
  * The respondent group in words, for the task and notification an assignee
  * receives (#4929). They are stored text with no recipient locale to render
- * in, so they are English; the codes stay in the task's metadata.
+ * in, so they are English; the codes stay in the task's metadata. The
+ * notification's words are the stock sentence's own phrases, which the bell
+ * reads back in the reader's language (#5929); the TASK title is a record a
+ * person may edit, so it stays as written.
  */
-const RESPONDENT_LABEL: Record<string, string> = {
-    CEO: 'leadership',
-    IT: 'IT',
-    HR: 'HR',
-    PROCUREMENT: 'procurement',
-    ANYONE: 'anyone in the organisation',
-};
-const respondentLabel = (role: string) => RESPONDENT_LABEL[role] ?? role;
-const questionCount = (n: number) => (n === 1 ? '1 question' : `${n} questions`);
+const respondentLabel = (role: string): string => (NIS2_GROUP as Record<string, string>)[role] ?? role;
 
 /**
  * Write ONLY answers whose ids are in this assignment's bucket into the parent

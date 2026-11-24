@@ -26,6 +26,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
 import { insertedNotificationIds } from './inserted-ids';
+import { STOCK_NOTIFICATIONS, recordLabel, stockNotificationText } from '@/lib/notifications/stock-notifications';
 
 export interface AssignmentTarget {
     /** Tenant the entity belongs to. */
@@ -53,40 +54,18 @@ export type AssignmentNotificationKind =
     // one; only the recipient's ROLE differs (reviewer, not assignee).
     | 'TASK_REVIEW_REQUESTED';
 
-interface AssignmentCopy {
-    title: string;
-    body: (label: string) => string;
-    linkPath: (tenantSlug: string, entityId: string) => string;
-}
-
-const COPY: Record<AssignmentNotificationKind, AssignmentCopy> = {
-    TASK_ASSIGNED: {
-        title: 'You were assigned a task',
-        body: (label) => `${label} is now yours.`,
-        linkPath: (slug, id) => `/t/${slug}/tasks/${id}`,
-    },
-    CONTROL_ASSIGNED: {
-        title: 'You were assigned a control',
-        body: (label) => `${label} is now yours.`,
-        linkPath: (slug, id) => `/t/${slug}/controls/${id}`,
-    },
-    RISK_ASSIGNED: {
-        title: 'You were assigned a risk',
-        body: (label) => `${label} is now yours.`,
-        linkPath: (slug, id) => `/t/${slug}/risks/${id}`,
-    },
-    ASSET_ASSIGNED: {
-        title: 'You were assigned an asset',
-        body: (label) => `${label} is now yours.`,
-        linkPath: (slug, id) => `/t/${slug}/assets/${id}`,
-    },
-    TASK_REVIEW_REQUESTED: {
-        title: 'A task is awaiting your review',
-        // Says WHY it is theirs: the sign-off gate refuses everyone else,
-        // so the reviewer is the only person who can move this task on.
-        body: (label) => `${label} is ready for your sign-off — only you can complete it.`,
-        linkPath: (slug, id) => `/t/${slug}/tasks/${id}`,
-    },
+/**
+ * The deep link per kind. The title and body are the stock sentences in
+ * `@/lib/notifications/stock-notifications`, which the bell and the
+ * notifications page read back in the reader's language (#5929); the kind's
+ * name is its stock kind.
+ */
+const LINK_SEGMENT: Record<AssignmentNotificationKind, string> = {
+    TASK_ASSIGNED: 'tasks',
+    CONTROL_ASSIGNED: 'controls',
+    RISK_ASSIGNED: 'risks',
+    ASSET_ASSIGNED: 'assets',
+    TASK_REVIEW_REQUESTED: 'tasks',
 };
 
 /**
@@ -116,18 +95,15 @@ export async function createAssignmentNotification(
     target: AssignmentTarget,
     now: Date = new Date(),
 ): Promise<AssignmentNotificationOutcome> {
-    const copy = COPY[kind];
-    const label = target.entityKey
-        ? `${target.entityKey} "${target.entityLabel}"`
-        : `"${target.entityLabel}"`;
+    const label = recordLabel(target.entityLabel, target.entityKey);
 
     const row = {
         tenantId: target.tenantId,
         userId: target.assigneeUserId,
         type: kind,
-        title: copy.title,
-        message: copy.body(label),
-        linkUrl: copy.linkPath(target.tenantSlug, target.entityId),
+        title: STOCK_NOTIFICATIONS[kind].title,
+        message: stockNotificationText(kind, { label }),
+        linkUrl: `/t/${target.tenantSlug}/${LINK_SEGMENT[kind]}/${target.entityId}`,
         dedupeKey: buildAssignmentDedupeKey(
             target.tenantId,
             kind,

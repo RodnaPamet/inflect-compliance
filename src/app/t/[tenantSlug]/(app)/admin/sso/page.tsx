@@ -12,6 +12,7 @@ import { Card, cardVariants } from '@/components/ui/card';
 import { useTenantApiUrl, useTenantHref, usePermissions } from '@/lib/tenant-context-provider';
 import { Shield, ExternalLink, Trash2, Save, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
 import { Textarea } from '@/components/ui/textarea';
@@ -27,6 +28,7 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { IdentityCrossLinks } from '@/components/admin/IdentityCrossLinks';
 import { cn } from '@inflect/ui/lib/cn';
+import { TOUCH_HIT_AREA_CLASS } from '@inflect/ui/components/ui/hit-area';
 import { extractMutationError } from '@/lib/mutations';
 
 interface SsoProvider {
@@ -474,7 +476,7 @@ export default function SsoAdminPage() {
                                 disabled={!canChangeTrust}
                                 value={oidcClientId}
                                 onChange={(e) => setOidcClientId(e.target.value)}
-                                placeholder="client-id-from-idp"
+                                placeholder={t('sso.clientIdPlaceholder')}
                                 className="w-full"
                             />
                         </FormField>
@@ -495,7 +497,9 @@ export default function SsoAdminPage() {
                                 type="button"
                                 aria-label={showSecret ? t('sso.hideSecret') : t('sso.showSecret')}
                                 onClick={() => setShowSecret(!showSecret)}
-                                className="absolute right-3 bottom-2.5 text-content-muted hover:text-content-emphasis"
+                                // A 16px eye in the field: 44px to a finger (it is already
+                                // `absolute`, which the hit area positions against).
+                                className={cn('absolute right-3 bottom-2.5 text-content-muted hover:text-content-emphasis', TOUCH_HIT_AREA_CLASS)}
                             >
                                 {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             </button>
@@ -567,22 +571,18 @@ export default function SsoAdminPage() {
 
                 {/* Toggles */}
                 <div className="flex items-center gap-section mt-6 pt-4 border-t border-border-default/50">
-                    <label className="flex items-center gap-tight cursor-pointer">
-                        <input
-                            type="checkbox"
+                    <label className="flex items-center gap-tight cursor-pointer pointer-coarse:min-h-11">
+                        <Checkbox
                             checked={formEnabled}
-                            onChange={(e) => setFormEnabled(e.target.checked)}
-                            className="accent-[var(--brand-default)]"
+                            onCheckedChange={(next) => setFormEnabled(next === true)}
                             id="sso-enabled"
                         />
                         <span className="text-sm text-content-emphasis">{t('sso.enableSso')}</span>
                     </label>
-                    <label className="flex items-center gap-tight cursor-pointer">
-                        <input
-                            type="checkbox"
+                    <label className="flex items-center gap-tight cursor-pointer pointer-coarse:min-h-11">
+                        <Checkbox
                             checked={formEnforced}
-                            onChange={(e) => setFormEnforced(e.target.checked)}
-                            className="accent-amber-500"
+                            onCheckedChange={(next) => setFormEnforced(next === true)}
                             id="sso-enforced"
                         />
                         <span className="text-sm text-content-emphasis">{t('sso.enforceSso')}</span>

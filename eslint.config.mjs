@@ -427,6 +427,55 @@ const config = [
         rules: { 'local/shaded-list-rows': 'error' },
     },
     {
+        // ── No native checkbox / radio / range in an app page (mobile 3.6) ──
+        //
+        // A native `<input type="checkbox|radio|range">` is a 13-16px target
+        // painted by the browser. Pages use `Checkbox`, `RadioGroup` and
+        // `Slider`, which carry the 44px touch hit area and the theme. See
+        // eslint-rules/rules/no-native-choice-input.js.
+        // `src/components` too: a shared component draws on every page that
+        // renders it, and the widget picker, the treatment-plan milestones
+        // and the onboarding sovereignty step were the last native boxes.
+        files: ['src/app/**/*.tsx', 'src/components/**/*.tsx', 'packages/ui/src/**/*.tsx'],
+        ignores: ['**/__tests__/**', '**/*.test.tsx', '**/*.spec.tsx'],
+        rules: { 'local/no-native-choice-input': 'error' },
+    },
+    {
+        // ── An accessible name comes from the message catalogue ──
+        //
+        // A literal `aria-label` is English on a Bulgarian page, and nothing
+        // on screen shows it (#5884: "Next review date" on the new-risk date
+        // picker). See eslint-rules/rules/no-literal-aria-label.js.
+        files: ['src/**/*.tsx', 'packages/ui/src/**/*.tsx'],
+        ignores: ['**/__tests__/**', '**/*.test.tsx', '**/*.spec.tsx'],
+        rules: { 'local/no-literal-aria-label': 'error' },
+    },
+    {
+        // ── An icon is spaced by its container, not a negative margin ──
+        //
+        // Thirty-one create buttons carried `<Plus className="-ml-0.5
+        // -mr-2.5" />` in the Button's icon slot. The slot already spaces the
+        // glyph with `gap-tight`; the -10 px margin cancelled it, and the plus
+        // touched the label ("+Одит", #5880). This refuses a negative margin
+        // on any element imported from `lucide-react` or an `icons` module.
+        // See eslint-rules/rules/no-negative-margin-icon.js.
+        files: ['src/**/*.tsx', 'packages/ui/src/**/*.tsx'],
+        ignores: ['**/__tests__/**', '**/*.test.tsx', '**/*.spec.tsx'],
+        rules: { 'local/no-negative-margin-icon': 'error' },
+    },
+    {
+        // ── Small text is 12 px everywhere ──
+        //
+        // Owner decision (2026-11-23): the type scale's floor, `text-xs`, is
+        // the smallest text on any page, desktop included. The sub-12 text a
+        // phone audit found was always an arbitrary size written beside the
+        // scale (`text-[10px]`, `text-[11px]`, #5924). See
+        // eslint-rules/rules/no-sub-12px-text.js.
+        files: ['src/**/*.{ts,tsx}', 'packages/ui/src/**/*.{ts,tsx}'],
+        ignores: ['**/__tests__/**', '**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}'],
+        rules: { 'local/no-sub-12px-text': 'error' },
+    },
+    {
         // The seam and the signer it calls.
         files: ['src/lib/web-bot-auth/bot-fetch.ts', 'src/lib/web-bot-auth/sign.ts'],
         rules: { 'local/web-bot-auth-single-seam': 'off' },

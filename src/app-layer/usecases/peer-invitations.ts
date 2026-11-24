@@ -77,6 +77,7 @@ import { upsertIntegrationConnection } from './integrations';
 import { savableConnectionName } from '@/lib/text/connection-name';
 import { A2A_PEER_PROVIDER_ID } from '@/app-layer/integrations/providers/a2a-peer-provider';
 import { peerInvitationRefusal } from '@/lib/agentic/peer-invitation-rules';
+import { stockNotificationText, stockNotificationTitle } from '@/lib/notifications/stock-notifications';
 
 const RISK_TIERS = ['LOW', 'MODERATE', 'HIGH', 'CRITICAL'] as const;
 
@@ -675,8 +676,9 @@ export async function acceptPeerInvitationAtInviter(
                     tenantId: tenant.id,
                     userId: invitation.ownerUserId,
                     type: 'GENERAL',
-                    title: `${name} accepted your A2A invitation`,
-                    message: 'Read its agent card and approve it to start exchanging tasks. Nothing is exchanged until you do.',
+                    // A stock sentence the bell words in the reader's language (#5929).
+                    title: stockNotificationTitle('A2A_INVITATION_ACCEPTED', { name }),
+                    message: stockNotificationText('A2A_INVITATION_ACCEPTED'),
                     linkUrl: tenantPageLink(tenant.slug, `/agents/peers/${peerId}`),
                 },
             });

@@ -53,7 +53,24 @@ jest.mock('next-intl', () => {
             const val = lookup(ns, key);
             return typeof val === 'string' ? format(val, params) : key;
         };
-        t.rich = t; t.markup = t; t.raw = (k: string) => lookup(ns, k);
+        // `rich` builds the tags it is given a renderer for (`<code>` on the
+        // CSV format line), as next-intl does.
+        t.rich = (key: string, params?: Record<string, unknown>) => {
+            const text = t(key, params);
+            const tags = Object.keys(params ?? {}).filter((k) => typeof params![k] === 'function');
+            if (tags.length === 0) return text;
+            const re = new RegExp(`<(${tags.join('|')})>(.*?)</\\1>`, 'g');
+            const out: React.ReactNode[] = [];
+            let last = 0;
+            for (const m of text.matchAll(re)) {
+                out.push(text.slice(last, m.index));
+                out.push(React.createElement(React.Fragment, { key: out.length }, (params![m[1]] as (c: string) => React.ReactNode)(m[2])));
+                last = (m.index ?? 0) + m[0].length;
+            }
+            out.push(text.slice(last));
+            return out;
+        };
+        t.markup = t; t.raw = (k: string) => lookup(ns, k);
         t.has = (k: string) => lookup(ns, k) !== undefined;
         return t;
     };
@@ -100,7 +117,12 @@ const CSV = 'title,likelihood,impact\nPhishing,3,2\n,2,2\nOutage,1,1\n';
 describe('Risk import page', () => {
     it("states the workspace matrix's scale", () => {
         mount();
-        expect(screen.getByText(/likelihood \(1–6\), impact \(1–4\)/)).toBeInTheDocument();
+        // The column names are <code> (#5924), so the scale reads across elements.
+        const format = screen.getByText((_, el) => el?.tagName === 'P' && /likelihood \(1–6\), impact \(1–4\)/.test(el.textContent ?? ''));
+        // Each column name is code the importer reads literally, not a word to translate.
+        expect(Array.from(format.querySelectorAll('code')).map((c) => c.textContent)).toEqual([
+            'title', 'description', 'category', 'likelihood', 'impact', 'owner',
+        ]);
     });
 
     it('counts rows with no title instead of dropping them silently', async () => {

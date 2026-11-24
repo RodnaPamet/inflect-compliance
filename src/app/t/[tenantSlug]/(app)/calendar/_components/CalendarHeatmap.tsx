@@ -275,7 +275,7 @@ export function CalendarHeatmap({
         >
             <div className="flex gap-tight">
                 {/* Row labels (only show every other row to save space). */}
-                <div className="flex flex-col gap-[2px] pt-[14px] text-[10px] text-content-muted select-none">
+                <div className="flex flex-col gap-[2px] pt-[14px] text-xs text-content-muted select-none">
                     {weekdayLabels().map((label, i) => (
                         <span
                             key={i}

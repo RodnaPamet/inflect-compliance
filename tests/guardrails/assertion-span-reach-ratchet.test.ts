@@ -219,7 +219,11 @@ const UNBOUNDED_INTERIOR_SPAN_BASELINE = 138;
 //   unbounded baseline does not move.
 // 295 -> 294 (2026-11-23, #5821): the same span as the unbounded baseline's
 //   139 -> 138, counted here too.
-const INTERIOR_SPAN_BASELINE = 294;
+// 294 -> 292 (2026-11-23, mobile 3.6): the two bounded `[\s\S]{0,200}` spans
+//   in `new-risk-modal.test.ts` that reached from the field id to a native
+//   `type="range"`; the fields are `<Slider id=…>` now, matched with no span.
+//   Both were bounded, so the unbounded baseline does not move.
+const INTERIOR_SPAN_BASELINE = 292;
 
 /**
  * `toMatch` arguments whose pattern this detector could not recover.

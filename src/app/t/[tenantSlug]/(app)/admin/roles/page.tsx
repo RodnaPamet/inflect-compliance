@@ -530,7 +530,7 @@ function RoleForm({
                         <div className="flex items-center justify-between mb-3">
                             <Eyebrow>{t('roles.permissions')}</Eyebrow>
                             <div className="flex gap-1">
-                                <span className="text-[10px] text-content-subtle">{t('roles.presetFrom')}</span>
+                                <span className="text-xs text-content-subtle">{t('roles.presetFrom')}</span>
                                 {BASE_ROLES.map((r) => (
                                     <button
                                         key={r}
@@ -540,7 +540,7 @@ function RoleForm({
                                                 withoutLocked(withinBase(withinHeld(getPermissionsForRole(r), held), baseRole), lockedKeys),
                                             )
                                         }
-                                        className="text-[10px] px-2 py-0.5 rounded bg-bg-elevated/50 text-content-default hover:bg-bg-muted/50 transition"
+                                        className="text-xs px-2 py-0.5 rounded bg-bg-elevated/50 text-content-default hover:bg-bg-muted/50 transition"
                                         id={`preset-${r}`}
                                     >
                                         {roleLabel(r)}
@@ -929,7 +929,7 @@ export default function CustomRolesPage() {
                     {canManage && !showCreate && !editingId && (
                         <Button
                             variant="primary"
-                            icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                            icon={<Plus />}
                             onClick={() => setShowCreate(true)}
                             id="create-role-btn"
                         >

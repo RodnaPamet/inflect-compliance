@@ -4,8 +4,11 @@
  *
  * `<Providers>` binds the reader's language once per render
  * (`useBindDateLocale` → `bindDateLocale`), so the call sites take no locale.
- * On the server that binding lives in an AsyncLocalStorage store entered for
- * the request's render. If it were a module variable instead, a Bulgarian
+ * On the server, with no render scope registered (as here), that binding lives
+ * in an AsyncLocalStorage store entered for the request's render — the
+ * fallback; in the app it is recorded against Next's request store, see
+ * `date-locale-holds-in-resumed-ssr.test.ts`. If it were a module variable
+ * instead, a Bulgarian
  * request and an English one rendering concurrently would format each other's
  * dates — and a client that hydrates with a different string than the server
  * sent is a hydration mismatch.

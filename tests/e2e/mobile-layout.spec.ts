@@ -11,7 +11,7 @@
  * live in `scripts/mobile-audit/measure.ts`.
  */
 import { test, expect } from '@playwright/test';
-import { connectDb, dataNames, resolveContext, resolveRoute } from '../../scripts/mobile-audit/resolve';
+import { connectDb, dataNames, libraryTexts, resolveContext, resolveRoute } from '../../scripts/mobile-audit/resolve';
 import { enumerateRoutes, type AppRoute } from '../../scripts/mobile-audit/routes';
 import { signInTenantContext } from '../../scripts/mobile-audit/auth';
 import { MOBILE_E2E_CONFIGS, SEED_BASELINE, SEED_ROUTES, fixedRouteKey } from './mobile-ratchet';
@@ -19,7 +19,7 @@ import { REPO_ROOT, failingRoutes, holdInvariants, holdRatchet, measureRoute, ph
 import type { MetricCounts } from '../../scripts/mobile-audit/measure';
 
 /** Fill every fixed route from the seeded database once, before the configurations run. */
-async function resolveSeedRoutes(): Promise<{ urls: Map<string, string>; names: Set<string> }> {
+async function resolveSeedRoutes(): Promise<{ urls: Map<string, string>; names: Set<string>; library: Set<string> }> {
     const databaseUrl = process.env.DATABASE_URL;
     if (!databaseUrl) throw new Error('the mobile layout spec reads the seeded database: set DATABASE_URL');
     const db = connectDb(databaseUrl);
@@ -34,7 +34,7 @@ async function resolveSeedRoutes(): Promise<{ urls: Map<string, string>; names: 
             if ('uncaptured' in r) throw new Error(`${fixed.route} cannot be filled from the seed: ${r.uncaptured}`);
             urls.set(fixed.route, r.url);
         }
-        return { urls, names: await dataNames(db) };
+        return { urls, names: await dataNames(db), library: await libraryTexts(db) };
     } finally {
         await db.$disconnect();
     }
@@ -43,7 +43,7 @@ async function resolveSeedRoutes(): Promise<{ urls: Map<string, string>; names: 
 for (const config of MOBILE_E2E_CONFIGS) {
     test(`fixed routes hold on a phone — ${config}`, async ({ browser }, testInfo) => {
         test.setTimeout(10 * 60_000);
-        const { urls, names } = await resolveSeedRoutes();
+        const { urls, names, library } = await resolveSeedRoutes();
         const signedIn = await phoneContext(browser, config, testInfo);
         const anonymous = await phoneContext(browser, config, testInfo);
         try {
@@ -56,7 +56,7 @@ for (const config of MOBILE_E2E_CONFIGS) {
                     const ctx = fixed.route.startsWith('/t/') ? signedIn : anonymous;
                     const page = await ctx.newPage();
                     try {
-                        const m = await measureRoute(page, urls.get(fixed.route)!, fixed.state, names);
+                        const m = await measureRoute(page, urls.get(fixed.route)!, fixed.state, names, library);
                         holdInvariants(key, config, m.raw);
                         counts.push(m.counts);
                         perRoute[key] = m.counts;

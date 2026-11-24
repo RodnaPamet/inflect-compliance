@@ -9,7 +9,7 @@
  *   2. The legacy wizard's business contract is preserved byte-for-byte
  *      (POST payload shape, templateId pass-through, sequential control
  *      linking, cache invalidation).
- *   3. Scoring UX invariants — range inputs, computed score, risk badge.
+ *   3. Scoring UX invariants — slider inputs, computed score, risk badge.
  *   4. `/risks/new` is now a server redirect shim to `/risks?create=1`.
  *   5. `RisksClient` wires the trigger + auto-opens on `?create=1`.
  */
@@ -197,13 +197,11 @@ describe('NewRiskModal — scoring UX (shared RiskEvaluationFields)', () => {
         expect(en.risks.eval.title).toBe('Risk Evaluation');
     });
 
-    it('the shared box exposes likelihood + impact as 1–5 range inputs', () => {
-        expect(SHARED_SRC).toMatch(
-            /id=\{`\$\{idPrefix\}-likelihood`\}[\s\S]{0,200}type=["']range["']/,
-        );
-        expect(SHARED_SRC).toMatch(
-            /id=\{`\$\{idPrefix\}-impact`\}[\s\S]{0,200}type=["']range["']/,
-        );
+    it('the shared box exposes likelihood + impact as Slider primitives', () => {
+        // The shared `Slider`, not a native range: a 26px thumb with a 44px
+        // touch hit area (mobile 3.6), keyed by the same element ids.
+        expect(SHARED_SRC).toMatch(/<Slider\s+id=\{`\$\{idPrefix\}-likelihood`\}/);
+        expect(SHARED_SRC).toMatch(/<Slider\s+id=\{`\$\{idPrefix\}-impact`\}/);
         // Slider ranges are config-driven (PR-J) — a 6×6 tenant can enter
         // their full range, so max reads from the tenant matrix, not a
         // hardcoded 5.

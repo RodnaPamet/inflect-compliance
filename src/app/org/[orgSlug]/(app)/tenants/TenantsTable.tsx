@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -134,13 +135,13 @@ export function TenantsTable({ rows, orgSlug }: Props) {
                     // name is text, not a link to /no-tenant (#5313).
                     cell: ({ row }) =>
                         perms.canDrillDown ? (
-                            <Link
+                            <TableTitleCell
                                 href={row.original.drillDownUrl}
-                                className="font-medium text-content-emphasis hover:text-content-info hover:underline"
-                                data-testid={`org-tenant-link-${row.original.slug}`}
+                                className="hover:text-content-info hover:underline"
+                                testId={`org-tenant-link-${row.original.slug}`}
                             >
                                 {row.original.name}
-                            </Link>
+                            </TableTitleCell>
                         ) : (
                             <span
                                 className="font-medium text-content-emphasis"

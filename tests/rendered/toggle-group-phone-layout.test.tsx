@@ -79,10 +79,11 @@ describe('ToggleGroup — labels and overflow', () => {
         }
     });
 
-    it('each option is a 44px target on a coarse pointer', () => {
+    it('each option is a 44px target on a coarse pointer, a one-word option included', () => {
+        // Height and width: an "All" option was 44px tall and 41px wide (#5924).
         render(<Harness options={THREE} />);
         for (const radio of screen.getAllByRole('radio')) {
-            expect(radio).toHaveClass('pointer-coarse:min-h-11');
+            expect(radio).toHaveClass('pointer-coarse:min-h-11', 'pointer-coarse:min-w-11');
         }
     });
 

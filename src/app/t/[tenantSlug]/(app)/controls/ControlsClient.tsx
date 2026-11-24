@@ -49,7 +49,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Tooltip, InfoTooltip } from '@/components/ui/tooltip';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
-import { TableTitleCell } from '@/components/ui/table-title-cell';
+import { TableTitleButton } from '@/components/ui/table-title-cell';
 import {
     FilterProvider,
     filterStateToUrlParams,
@@ -79,6 +79,7 @@ import { applicabilityState } from '@/lib/controls/control-applicability';
 import { AiAssistRail } from '@/components/ui/ai-assist-rail';
 import { Sparkle3 } from '@inflect/ui/components/ui/icons/glyphs/sparkle3';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
+import { KpiStrip } from '@/components/ui/kpi-strip';
 import { useKpiTrends, buildKpiSparklines, centeredSparklineDomain, assignSparklineVariants } from '@/lib/charts/kpi-trends';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import type { CappedList } from '@/lib/list-backfill-cap';
@@ -1391,20 +1392,19 @@ function ControlsPageInner({
             // isClickOnInteractiveChild() skips the row's select/navigate
             // handlers: name-click = quick-view + expand tasks; row
             // single-click = select; row double-click = full detail page.
+            // On a phone card the card itself opens the control, so
+            // `TableTitleButton` renders the name as text there.
             cell: ({ row }) => (
-                <button
-                    type="button"
-                    onClick={(e) => {
-                        e.stopPropagation();
+                <TableTitleButton
+                    onClick={() => {
                         openControlQuickView(row.original);
                         if (row.getCanExpand()) row.toggleExpanded(true);
                     }}
-                    className="inline-block max-w-full cursor-pointer truncate text-left align-middle rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     id={`control-link-${row.original.id}`}
-                    data-testid={`control-title-${row.original.id}`}
+                    testId={`control-title-${row.original.id}`}
                 >
-                    <TableTitleCell tintOn="self">{row.original.name}</TableTitleCell>
-                </button>
+                    {row.original.name}
+                </TableTitleButton>
             ),
         },
         {
@@ -1437,7 +1437,7 @@ function ControlsPageInner({
                         {labels.map((label) => (
                             <span
                                 key={label}
-                                className="inline-flex items-center rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-content-muted"
+                                className="inline-flex items-center rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-content-muted"
                             >
                                 {label}
                             </span>
@@ -1570,7 +1570,7 @@ function ControlsPageInner({
                     >
                         <span
                             aria-hidden
-                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-bg-elevated text-[10px] font-medium text-content-emphasis"
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-bg-elevated text-xs font-medium text-content-emphasis"
                         >
                             {initial}
                         </span>
@@ -1652,7 +1652,7 @@ function ControlsPageInner({
                                           already lives in the Deleted view, so
                                           this stays quiet chrome and keeps the
                                           per-file badge budget. */}
-                                      <span className="inline-flex items-center rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-content-muted">
+                                      <span className="inline-flex items-center rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-content-muted">
                                           {t('deleted.badge')}
                                       </span>
                                       <Button
@@ -1846,7 +1846,7 @@ function ControlsPageInner({
                                             </span>
                                             {g.frameworkLabel && (
                                                 <span
-                                                    className="text-[10px] font-medium uppercase tracking-wide text-content-subtle"
+                                                    className="text-xs font-medium uppercase tracking-wide text-content-subtle"
                                                     data-framework-tag={g.frameworkLabel}
                                                 >
                                                     {g.frameworkLabel}
@@ -2089,7 +2089,7 @@ function ControlsPageInner({
                    counts + their click-to-filter describe the LIVE set, so
                    surfacing them over soft-deleted rows would mislead. */
                 showDeleted ? undefined : (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
+                <KpiStrip>
                     {visibleKpiCards.map((card) => {
                         // Render config per KPI id — the gear owns which
                         // cards show + their order (visibleKpiCards).
@@ -2148,7 +2148,7 @@ function ControlsPageInner({
                             />
                         );
                     })}
-                </div>
+                </KpiStrip>
                 )
             }
             filters={{
@@ -2160,7 +2160,7 @@ function ControlsPageInner({
                 toolbarLeading: canCreateControls ? (
                     <Button
                         variant="primary"
-                        icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                        icon={<Plus />}
                         id="new-control-btn"
                         onClick={() => setIsCreateOpen(true)}
                     >

@@ -513,7 +513,7 @@ export function FilterSelect({
           // Count an active content search alongside structured filters so
           // the badge signals "something is filtering" even when the search
           // text lives inside the (closed) dropdown.
-          <div className="flex size-4 shrink-0 items-center justify-center rounded-full bg-brand-emphasis text-[0.625rem] text-content-inverted">
+          <div className="flex size-4 shrink-0 items-center justify-center rounded-full bg-brand-emphasis text-xs text-content-inverted">
             {(activeFilters?.length ?? 0) +
               (contentSearch && searchValue ? 1 : 0)}
           </div>
@@ -523,7 +523,7 @@ export function FilterSelect({
               className={cn(
                 "hidden shrink-0 items-center rounded border",
                 "border-border-subtle bg-bg-muted px-1.5 py-0.5",
-                "text-[10px] font-medium text-content-muted",
+                "text-xs font-medium text-content-muted",
                 "md:inline-flex",
                 "group-data-[state=open]:hidden",
               )}

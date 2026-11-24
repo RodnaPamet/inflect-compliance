@@ -62,6 +62,10 @@ const EXEMPT_FILES = new Set<string>([
     // breadcrumbs would point to itself. The DashboardLayout
     // intentionally omits the slot.
     "src/app/t/[tenantSlug]/(app)/dashboard/DashboardClient.tsx",
+    // Processes is a MAIN page whose trail lives in the canvas's document
+    // bar (R31); its one H1 is the page's name on a phone and only the a11y
+    // landmark from md up. A strip above it would be the header R31 retired.
+    "src/app/t/[tenantSlug]/(app)/processes/ProcessesClient.tsx",
 
     // Error / loading / fallback boundaries — they render outside
     // the normal page flow.

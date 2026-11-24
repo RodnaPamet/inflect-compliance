@@ -160,7 +160,7 @@ export function PanelActivityFeed({
                                 "."
                             )}
                         </p>
-                        <p className="mt-0.5 text-[11px] text-content-subtle">
+                        <p className="mt-0.5 text-xs text-content-subtle">
                             {formatRelativeTime(e.createdAt, now, { addSuffix: true })}
                         </p>
                     </li>

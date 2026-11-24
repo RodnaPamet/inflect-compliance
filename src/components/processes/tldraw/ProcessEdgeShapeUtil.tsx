@@ -182,7 +182,7 @@ export class ProcessEdgeShapeUtil extends ShapeUtil<ProcessEdgeShape> {
                             pointerEvents: 'none',
                         }}
                     >
-                        <span className="inline-flex items-center rounded-[4px] border border-canvas-border bg-canvas-frame px-1.5 py-0.5 text-[10px] leading-4 text-content-muted">
+                        <span className="inline-flex items-center rounded-[4px] border border-canvas-border bg-canvas-frame px-1.5 py-0.5 text-xs leading-4 text-content-muted">
                             {chipLabel}
                         </span>
                     </div>
@@ -198,7 +198,7 @@ export class ProcessEdgeShapeUtil extends ShapeUtil<ProcessEdgeShape> {
                             maxWidth: 160,
                             pointerEvents: 'none',
                         }}
-                        className="truncate rounded-[3px] bg-canvas-frame px-1 text-[10px] leading-4 text-content-muted"
+                        className="truncate rounded-[3px] bg-canvas-frame px-1 text-xs leading-4 text-content-muted"
                     >
                         {label}
                     </div>

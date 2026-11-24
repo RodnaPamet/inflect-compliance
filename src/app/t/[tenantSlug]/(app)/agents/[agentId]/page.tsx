@@ -32,10 +32,15 @@ import { AgentDetailClient } from './AgentDetailClient';
  */
 export default async function AgentDetailPage({
     params,
+    searchParams,
 }: {
     params: Promise<{ tenantSlug: string; agentId: string }>;
+    searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
     const { tenantSlug, agentId } = await params;
+    // `?tab=` — a section (`runs`) or a group (`activity`); the client
+    // resolves it against what this reader may open (#5898).
+    const tabParam = (await searchParams)?.tab;
     const ctx = await getTenantCtx({ tenantSlug });
 
     // The INVENTORY read (#3710): the view key, or the register key whose
@@ -213,6 +218,7 @@ export default async function AgentDetailPage({
                 canMintKeys: ctx.appPermissions.admin.manage && ctx.permissions.canAdmin,
             }}
             viewerUserId={ctx.userId}
+            initialTab={typeof tabParam === 'string' ? tabParam : undefined}
             // The Behaviour tab exists only where agent profiles are on: the
             // whole deployment, this tenant by name, or its organization's
             // choice (Steps 1b and 1H, #4557). Its routes answer 404 everywhere

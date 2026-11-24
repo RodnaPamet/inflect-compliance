@@ -160,6 +160,14 @@ export async function runAgentRunReaperJob(options?: {
                     // make progress" — which is the question the reaper is
                     // actually asking.
                     updatedAt: { lt: cutoff },
+                    // …AND NO LIVE LEASE (#5854). A worker holding the run
+                    // renews its lease while it executes, so a lease that has
+                    // not lapsed IS a live executor, whatever `updatedAt` says;
+                    // an expired one is a worker that stopped renewing, which
+                    // is an abandoned run like any other. A holder stops
+                    // renewing past the wall clock plus this grace
+                    // (`RUN_LEASE_MAX_HOLD_MS`), so a wedged one still lapses.
+                    OR: [{ leaseHolder: null }, { leaseExpiresAt: { lte: now } }],
                     ...(tenantId ? { tenantId } : {}),
                 },
                 select: {
@@ -357,9 +365,18 @@ export function groupByAgent(runs: readonly StalledRun[]): AgentGroup[] {
 async function reapOneRun(run: StalledRun, now: Date): Promise<boolean> {
     const ctx = buildSystemContext({ tenantId: run.tenantId, job: COMPONENT, discriminator: run.id });
     return withTenantDb(run.tenantId, async (db) => {
+        // The lease condition again, at the write: a worker may have claimed
+        // the run between the enumeration and here. And the lease is CLEARED,
+        // so a wedged holder that wakes finds the run is not its own and
+        // writes nothing over the FAILED (#5854).
         const claimed = await db.workflowRun.updateMany({
-            where: { id: run.id, tenantId: run.tenantId, status: 'RUNNING' },
-            data: { status: 'FAILED', completedAt: now, errorMessage: REAP_REASON },
+            where: {
+                id: run.id,
+                tenantId: run.tenantId,
+                status: 'RUNNING',
+                OR: [{ leaseHolder: null }, { leaseExpiresAt: { lte: now } }],
+            },
+            data: { status: 'FAILED', completedAt: now, errorMessage: REAP_REASON, leaseHolder: null, leaseExpiresAt: null },
         });
         if (claimed.count === 0) return false;
 

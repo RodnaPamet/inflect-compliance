@@ -151,6 +151,19 @@ export default async function AgentReportsPage({
             // Per-estate schedule health (#3678): the same inventory read.
             getHarnessEstateHealth(ctx),
         ]);
+        // What "Connect a scanner" may do, as the routes it calls decide it:
+        // the key route takes `admin.manage` and `createApiKey` the role-tier
+        // admin check; the tool grant takes `admin.agent_tool_exposure`. An
+        // affordance only: each route asks again.
+        const scannerKeysView = scannerKeys
+            ? {
+                  ...scannerKeys,
+                  connect: {
+                      canMintKeys: Boolean(ctx.appPermissions?.admin?.manage) && Boolean(ctx.permissions?.canAdmin),
+                      canGrantTools: Boolean(ctx.appPermissions?.admin?.agent_tool_exposure),
+                  },
+              }
+            : null;
         return (
             <ReportsClient
                 tab="harness"
@@ -158,7 +171,7 @@ export default async function AgentReportsPage({
                 // JSON-safe by construction (ISO strings); the round trip is the
                 // pack's, and keeps the server/client boundary honest.
                 harness={JSON.parse(JSON.stringify(harness))}
-                scannerKeys={JSON.parse(JSON.stringify(scannerKeys))}
+                scannerKeys={JSON.parse(JSON.stringify(scannerKeysView))}
                 estateHealth={JSON.parse(JSON.stringify(estateHealth))}
                 // The intake's own rule, so the shadow list's Register action
                 // is shown exactly where the usecase would take it (#3712).

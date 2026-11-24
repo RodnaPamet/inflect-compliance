@@ -342,9 +342,9 @@ export default function RiskDashboardPage() {
                                 })}
                             </Fragment>
                         ))}
-                        <div className="text-content-subtle text-[10px] mt-1">{t('dash.likelihoodArrow')}</div>
+                        <div className="text-content-subtle text-xs mt-1">{t('dash.likelihoodArrow')}</div>
                         <div
-                            className="text-center text-content-subtle text-[10px] mt-1"
+                            className="text-center text-content-subtle text-xs mt-1"
                             style={{ gridColumn: `span ${impactLevels}` }}
                         >
                             {t('dash.impactArrow')}
@@ -529,7 +529,7 @@ export default function RiskDashboardPage() {
                                             <span className="flex items-center gap-tight truncate">
                                                 <span
                                                     aria-hidden="true"
-                                                    className="inline-flex items-center gap-px rounded border border-border-subtle px-1 text-[10px] tabular-nums text-content-emphasis"
+                                                    className="inline-flex items-center gap-px rounded border border-border-subtle px-1 text-xs tabular-nums text-content-emphasis"
                                                     data-testid={`risk-coherence-chip-${f.riskId}`}
                                                 >
                                                 {moneyBigger ? t('dash.chipMoneyBigger') : t('dash.chipScoreBigger')}

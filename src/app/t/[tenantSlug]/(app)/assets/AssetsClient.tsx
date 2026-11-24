@@ -29,12 +29,13 @@ import { Modal } from '@/components/ui/modal';
 import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
 import { EmptyState } from '@/components/ui/empty-state';
-import { TableTitleCell } from '@/components/ui/table-title-cell';
+import { TableTitleButton } from '@/components/ui/table-title-cell';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
+import { KpiStrip } from '@/components/ui/kpi-strip';
 import { useKpiTrends, buildKpiSparklines, centeredSparklineDomain } from '@/lib/charts/kpi-trends';
 import { BulkActionBar, type BulkActionDef } from '@/components/ui/bulk-action-bar';
 import { UserCombobox, useTenantMembers } from '@/components/ui/user-combobox';
@@ -790,28 +791,16 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
             // single-click row = select, double-click row = full view).
             cell: ({ row, getValue }) => (
                 <Tooltip content={tx('rowInteractionHint')}>
-                <button
-                    type="button"
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedAssetId(row.original.id);
-                    }}
-                    // `inline-block max-w-full` (NOT `block w-full`) — the
-                    // quick-look trigger's footprint hugs the NAME text, not
-                    // the whole cell. With a full-cell button the pointer
-                    // cursor + the brand-tint hover landed anywhere in the
-                    // cell; Controls/Risks render the title as an INLINE
-                    // <Link> (footprint = the text), so hover/cursor scope to
-                    // the name only. This matches that. `max-w-full` keeps a
-                    // long name inside the column; `truncate` clips overflow.
-                    className="inline-block max-w-full cursor-pointer truncate text-left align-middle rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    data-testid={`asset-title-${row.original.id}`}
+                {/* The trigger's footprint hugs the NAME text, not the whole
+                    cell, and the name tints only when it is itself hovered,
+                    matching the Controls + Risks title links. On a phone card
+                    the card itself opens the asset, so the name is text there. */}
+                <TableTitleButton
+                    onClick={() => setSelectedAssetId(row.original.id)}
+                    testId={`asset-title-${row.original.id}`}
                 >
-                    {/* tintOn="self" — the name tints brand-color only when the
-                        name itself is hovered (not the whole row/cell),
-                        matching the Controls + Risks title links. */}
-                    <TableTitleCell tintOn="self">{getValue()}</TableTitleCell>
-                </button>
+                    {getValue()}
+                </TableTitleButton>
                 </Tooltip>
             ),
         },
@@ -834,7 +823,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                 if (!crit) return <span className="text-content-muted">—</span>;
                 return (
                     <StatusBadge variant={criticalityBadgeVariant(row.original.criticality)} size="sm">
-                        {crit.label}
+                        {tx(`filterEnums.criticality.${row.original.criticality}` as Parameters<typeof tx>[0])}
                     </StatusBadge>
                 );
             },
@@ -1036,7 +1025,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                     filters) describe the LIVE set, not the deleted one, so
                     surfacing them over soft-deleted rows would mislead. */}
                 {!showDeleted && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
+                <KpiStrip>
                     {visibleKpiCards.map((card) => {
                         const cfg: Record<
                             string,
@@ -1084,7 +1073,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                             />
                         );
                     })}
-                </div>
+                </KpiStrip>
                 )}
                 <FilterToolbar
                     filters={liveFilters}
@@ -1097,7 +1086,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                         // simply missed, so a READER saw a button that always
                         // 403'd on submit.
                         canCreate ? (
-                            <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setIsCreateOpen(true)} id="new-asset-btn">{t.addAsset}</Button>
+                            <Button variant="primary" icon={<Plus />} onClick={() => setIsCreateOpen(true)} id="new-asset-btn">{t.addAsset}</Button>
                         ) : undefined
                     }
                     actions={

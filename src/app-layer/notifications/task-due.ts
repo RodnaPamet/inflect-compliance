@@ -13,8 +13,8 @@
  * module graph; `notifications/` is the neutral shared layer that a
  * job and a usecase may both depend on (it sits beside
  * `notifications/enqueue`, which the task usecase already imports).
- * This module's only import is the Prisma *type* — it pulls nothing
- * into a caller's runtime graph.
+ * Its runtime imports are the notification bus and the client-safe stock
+ * sentences — nothing from a usecase or a job.
  *
  * Reminder windows:
  *   A task is notified when the integer count of calendar days from
@@ -41,6 +41,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
 import { insertedNotificationIds } from './inserted-ids';
+import { STOCK_NOTIFICATIONS, recordLabel, stockNotificationText } from '@/lib/notifications/stock-notifications';
 
 /** ms in a UTC day. */
 export const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -51,10 +52,13 @@ export type TaskDueWindow = 'week' | 'day' | 'today';
 interface WindowCopy {
     /** Integer calendar days (in the active tz) from now to `dueAt` that triggers it. */
     days: number;
-    /** Bell title line. */
+    /**
+     * The stock sentence (`@/lib/notifications/stock-notifications`): its
+     * title and its body, which the bell reads back in the reader's language.
+     */
+    kind: 'TASK_DUE_WEEK' | 'TASK_DUE_DAY' | 'TASK_DUE_TODAY';
+    /** Bell title line — the kind's stored English title. */
     title: string;
-    /** Sentence fragment — "<task label> <phrase>." */
-    phrase: string;
 }
 
 /**
@@ -63,9 +67,9 @@ interface WindowCopy {
  * the human copy.
  */
 export const TASK_DUE_WINDOWS: Record<TaskDueWindow, WindowCopy> = {
-    week: { days: 7, title: 'Task due in one week', phrase: 'is due in one week' },
-    day: { days: 1, title: 'Task due tomorrow', phrase: 'is due tomorrow' },
-    today: { days: 0, title: 'Task due today', phrase: 'is due today' },
+    week: { days: 7, kind: 'TASK_DUE_WEEK', title: STOCK_NOTIFICATIONS.TASK_DUE_WEEK.title },
+    day: { days: 1, kind: 'TASK_DUE_DAY', title: STOCK_NOTIFICATIONS.TASK_DUE_DAY.title },
+    today: { days: 0, kind: 'TASK_DUE_TODAY', title: STOCK_NOTIFICATIONS.TASK_DUE_TODAY.title },
 };
 
 /** UTC midnight of the given instant. */
@@ -170,16 +174,14 @@ export async function createTaskDueNotification(
     if (!window) return { status: 'out-of-window', window: null };
 
     const copy = TASK_DUE_WINDOWS[window];
-    const label = task.key
-        ? `${task.key} "${task.title}"`
-        : `"${task.title}"`;
+    const label = recordLabel(task.title, task.key);
 
     const row = {
         tenantId: task.tenantId,
         userId: task.assigneeUserId,
         type: 'TASK_DUE' as const,
         title: copy.title,
-        message: `${label} ${copy.phrase}.`,
+        message: stockNotificationText(copy.kind, { label }),
         linkUrl: `/t/${task.tenantSlug}/tasks/${task.id}`,
         dedupeKey: buildTaskDueDedupeKey(
             task.tenantId,

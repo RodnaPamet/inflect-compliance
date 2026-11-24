@@ -14,6 +14,7 @@ import { StatusBreakdown, type StatusBreakdownItem } from '@/components/ui/statu
 import { type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { KPIStat, type MetricTone } from '@/components/ui/metric';
+import { KpiStrip } from '@/components/ui/kpi-strip';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { SkeletonDashboard } from '@/components/ui/skeleton';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
@@ -24,12 +25,17 @@ import { cn } from '@inflect/ui/lib/cn';
 
 
 function MetricCard({ label, value, tone, href }: { label: string; value: number | string; tone?: MetricTone; href?: string }) {
-    const inner = (
-        <div className={cn(cardVariants({ density: 'compact' }), href && 'hover:bg-bg-muted/50 cursor-pointer transition-colors')}>
+    // The link IS the card, so in the phone KPI strip the tile the strip sizes
+    // is the card itself rather than a wrapper around it.
+    return href ? (
+        <Link href={href} className={cn(cardVariants({ density: 'compact' }), 'block hover:bg-bg-muted/50 cursor-pointer transition-colors')}>
+            <KPIStat value={value} label={label} tone={tone} />
+        </Link>
+    ) : (
+        <div className={cardVariants({ density: 'compact' })}>
             <KPIStat value={value} label={label} tone={tone} />
         </div>
     );
-    return href ? <Link href={href}>{inner}</Link> : inner;
 }
 
 function BreakdownBar({
@@ -148,8 +154,9 @@ export default function VendorDashboardPage() {
             }}
         >
 
-            {/* KPI Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-default">
+            {/* KPI Cards — one scrolling strip on a phone, so the first
+                breakdown is on the first screen. */}
+            <KpiStrip columns="md:grid-cols-4 lg:grid-cols-6">
                 <MetricCard label={tx('dashboard.kpiTotal')} value={metrics.totalVendors} />
                 <MetricCard label={tx('dashboard.kpiOverdueReviews')} value={metrics.overdueReview} tone={metrics.overdueReview > 0 ? 'critical' : 'success'}
                     href={tenantHref('/vendors?reviewDue=overdue')} />
@@ -158,12 +165,12 @@ export default function VendorDashboardPage() {
                 <MetricCard label={tx('dashboard.kpiOverdueRenewals')} value={metrics.overdueRenewal} tone={metrics.overdueRenewal > 0 ? 'critical' : 'success'} />
                 <MetricCard label={tx('dashboard.kpiUpcomingRenewals')} value={metrics.upcomingRenewal} tone="attention" />
                 <MetricCard label={tx('dashboard.kpiHighRisk')} value={metrics.highRiskNoAssessment} tone={metrics.highRiskNoAssessment > 0 ? 'critical' : 'success'} />
-            </div>
+            </KpiStrip>
 
             {/* Continuous assurance — posture signals from the monitoring sweep */}
             <div className={cn(cardVariants(), 'space-y-default')}>
                 <Heading level={3}>{tx('dashboard.continuousAssurance')}</Heading>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-default">
+                <KpiStrip columns="md:grid-cols-3">
                     <MetricCard label={tx('dashboard.kpiExpiredAttestations')} value={metrics.expiredAttestations}
                         tone={metrics.expiredAttestations > 0 ? 'critical' : 'success'} />
                     <MetricCard label={tx('dashboard.kpiRecentBreach')} value={metrics.recentBreachActivity}
@@ -180,7 +187,7 @@ export default function VendorDashboardPage() {
                         yet, so the card states its number and stops. */}
                     <MetricCard label={tx('dashboard.kpiOverdueReassessment')} value={metrics.overdueReassessment}
                         tone={metrics.overdueReassessment > 0 ? 'critical' : 'success'} />
-                </div>
+                </KpiStrip>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-section">

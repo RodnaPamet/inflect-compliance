@@ -38,7 +38,7 @@ import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
-import { TableTitleCell } from '@/components/ui/table-title-cell';
+import { TableTitleButton, TableTitleCell } from '@/components/ui/table-title-cell';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
 import {
     AWAITING_REVIEW_FILTER_KEY,
@@ -49,6 +49,7 @@ import {
     taskSourceLabels,
 } from './filter-defs';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
+import { KpiStrip } from '@/components/ui/kpi-strip';
 import { type MetricTone } from '@/components/ui/metric';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { useKpiTrends, buildKpiSparklines, buildKpiSparklineNullable, centeredSparklineDomain, assignSparklineVariants } from '@/lib/charts/kpi-trends';
@@ -995,19 +996,16 @@ function TasksPageInner({
                 // <button>, so the table's isClickOnInteractiveChild() skips
                 // the row's select/navigate handlers). Row double-click still
                 // navigates to the full detail page.
+                // On a phone card the card itself opens the task, so
+                // `TableTitleButton` renders the title as text there.
                 cell: ({ row }) => (
-                    <button
-                        type="button"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedTask(row.original);
-                        }}
-                        className="inline-block max-w-full cursor-pointer truncate text-left align-middle rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    <TableTitleButton
+                        onClick={() => setSelectedTask(row.original)}
                         id={`task-link-${row.original.id}`}
-                        data-testid={`task-title-${row.original.id}`}
+                        testId={`task-title-${row.original.id}`}
                     >
-                        <TableTitleCell tintOn="self">{row.original.title}</TableTitleCell>
-                    </button>
+                        {row.original.title}
+                    </TableTitleButton>
                 ),
             },
             {
@@ -1249,7 +1247,7 @@ function TasksPageInner({
 
             <ListPageShell.Filters className="space-y-section">
                 {/* R23-PR-E — KPI strip. */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
+                <KpiStrip>
                     {visibleKpiCards.map((card) => {
                         const cfg: Record<
                             string,
@@ -1300,7 +1298,7 @@ function TasksPageInner({
                             />
                         );
                     })}
-                </div>
+                </KpiStrip>
                 <FilterToolbar
                     filters={liveFilters}
                     searchId="tasks-search"
@@ -1308,7 +1306,7 @@ function TasksPageInner({
                     leading={canCreate ? (
                         <Button
                             variant="primary"
-                            icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                            icon={<Plus />}
                             onClick={() => setIsCreateOpen(true)}
                             id="new-task-btn"
                         >

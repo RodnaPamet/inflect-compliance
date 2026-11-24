@@ -90,8 +90,8 @@ function TrendIndicator({ trend, size }: { trend: MetricTrend; size: 'md' | 'sm'
     return (
         <span
             className={cn(
-                'inline-flex items-center gap-0.5 font-medium tabular-nums',
-                size === 'md' ? 'text-xs' : 'text-[10px]',
+                // 12 px at both sizes: the small-text floor (#5924).
+                'inline-flex items-center gap-0.5 text-xs font-medium tabular-nums',
                 TONE_VALUE_CLASS[tone],
             )}
             aria-label={trend.ariaLabel}
@@ -200,7 +200,8 @@ export function KPIStat({
             )}
             data-testid={testId}
         >
-            <span className="text-[11px] font-medium uppercase tracking-wide text-content-muted">
+            {/* 12 px, not 11 (owner decision, 2026-11-23, #5872). */}
+            <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
                 {label}
             </span>
             <div className="flex items-baseline gap-tight flex-wrap">

@@ -250,10 +250,12 @@ describe('RiskTreatmentPlanCard', () => {
                 />,
             ),
         );
+        // The shared Checkbox primitive: a `role="checkbox"` button.
         const cb = (await screen.findByTestId(
             'treatment-plan-milestone-checkbox-m-done',
-        )) as HTMLInputElement;
-        expect(cb.checked).toBe(true);
+        )) as HTMLButtonElement;
+        expect(cb.getAttribute('role')).toBe('checkbox');
+        expect(cb.getAttribute('aria-checked')).toBe('true');
         expect(cb.disabled).toBe(true);
     });
 

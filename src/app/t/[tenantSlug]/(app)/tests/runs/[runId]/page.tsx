@@ -24,6 +24,7 @@ import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { useToastWithUndo } from '@/components/ui/hooks';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -536,11 +537,10 @@ export default function TestRunPage() {
                             return (
                                 <li key={step.id} className="flex gap-compact text-sm items-start">
                                     {isRunning && canExecute ? (
-                                        <input
-                                            type="checkbox"
-                                            className="mt-1 flex-shrink-0"
+                                        <Checkbox
+                                            className="mt-0.5"
                                             checked={checked}
-                                            onChange={() => setCheckedSteps((prev) => {
+                                            onCheckedChange={() => setCheckedSteps((prev) => {
                                                 const next = new Set(prev);
                                                 if (next.has(step.id)) next.delete(step.id); else next.add(step.id);
                                                 return next;
@@ -692,7 +692,7 @@ export default function TestRunPage() {
                         // secondary: the open form holds this region's primary.
                         <Button
                             variant="secondary"
-                            icon={showEvForm ? undefined : <Plus className="-ml-0.5 -mr-2.5" />}
+                            icon={showEvForm ? undefined : <Plus />}
                             onClick={() => { setShowEvForm(!showEvForm); setEvError(''); }}
                             id="link-evidence-btn"
                         >

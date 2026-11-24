@@ -1539,6 +1539,22 @@ export function wasApplied(outcome: ApproveOutcome): outcome is ApproveResult {
     return outcome.status !== 'AWAITING_APPROVAL';
 }
 
+/** A four-eyes refusal: the rule that refused, its 403 reason, and its sentence. */
+interface FourEyesRefusal {
+    /** The constraint that refused, as a code. Recorded in the trail as `fourEyesRule`. */
+    readonly rule: string;
+    /**
+     * The 403's `details.reason`, ONE PER RULE (#5919). The review surfaces word
+     * a refusal in the reader's language by this code
+     * (`src/lib/agentic/proposal-refusal-keys.ts`); one reason shared by every
+     * rule left them the server's English sentence, and could not have been
+     * mapped without wording "Proposal not found." as the owner refusal.
+     */
+    readonly reason: string;
+    /** The English sentence, addressed to the person who clicked. */
+    readonly message: string;
+}
+
 /**
  * Which four-eyes constraint refused, as the database reported it.
  *
@@ -1552,11 +1568,12 @@ export function wasApplied(outcome: ApproveOutcome): outcome is ApproveResult {
  * an unrelated error here would turn a broken database into a silent four-eyes
  * refusal, which reads to an operator as the control working.
  */
-function fourEyesRefusal(err: unknown): { rule: string; message: string } | null {
+function fourEyesRefusal(err: unknown): FourEyesRefusal | null {
     const text = err instanceof Error ? err.message : '';
     if (text.includes('AGENT_PROPOSAL_APPROVAL_OWNER_SELF_REVIEW')) {
         return {
             rule: 'agent_owner_may_not_approve',
+            reason: 'agent_proposal_four_eyes_owner',
             message:
                 'This proposal needs two independent approvers, and you are the ' +
                 'registered owner of the agent that made it. Someone else has to sign.',
@@ -1565,12 +1582,14 @@ function fourEyesRefusal(err: unknown): { rule: string; message: string } | null
     if (text.includes('AGENT_PROPOSAL_APPROVAL_NO_PROPOSAL')) {
         return {
             rule: 'proposal_not_visible',
+            reason: 'agent_proposal_four_eyes_not_found',
             message: 'Proposal not found.',
         };
     }
     if ((err as { code?: unknown } | null)?.code === 'P2002') {
         return {
             rule: 'approver_already_signed',
+            reason: 'agent_proposal_four_eyes_already_signed',
             message:
                 'You have already approved this proposal. A second approval has ' +
                 'to come from a different person.',
@@ -1587,15 +1606,19 @@ function fourEyesRefusal(err: unknown): { rule: string; message: string } | null
  *
  * The body's message is `fourEyesRefusal`'s sentence, addressed to the person
  * who clicked: "you have already approved", "you are the registered owner".
- * It names nobody else, and the rule's CODE stays in the trail. The 403 used to
- * carry the bare `agent_proposal_four_eyes` and throw the sentence away, so the
- * reviewer saw a code and was not told that somebody else has to sign. The
- * condition's code is in `details.reason`, beside the other review refusals.
+ * It names nobody else. The 403 used to carry the bare `agent_proposal_four_eyes`
+ * and throw the sentence away, so the reviewer saw a code and was not told that
+ * somebody else has to sign. `details.reason` is the RULE's own reason
+ * (`agent_proposal_four_eyes_owner` / `_already_signed` / `_not_found`, #5919),
+ * so the review surfaces can word each one in the reader's language; it says no
+ * more than the sentence beside it already did. The trail row is unchanged: its
+ * `reason` stays the family `agent_proposal_four_eyes`, and `fourEyesRule`
+ * names the constraint.
  */
 async function refuseFourEyes(
     ctx: RequestContext,
     proposal: { id: string; kind: string; agentId: string | null; requiredApprovals: number | null },
-    refusal: { rule: string; message: string },
+    refusal: FourEyesRefusal,
 ): Promise<never> {
     await appendAuditEntry({
         tenantId: ctx.tenantId,
@@ -1611,7 +1634,8 @@ async function refuseFourEyes(
             reason: 'agent_proposal_four_eyes',
             attemptedAction: 'approve',
             // WHICH constraint refused, as a code, goes in the TRAIL. The 403
-            // carries only the sentence addressed to the caller.
+            // carries the sentence addressed to the caller and the rule's own
+            // reason, which says no more than that sentence.
             fourEyesRule: refusal.rule,
             kind: proposal.kind,
             approvalsRequired: proposal.requiredApprovals,
@@ -1623,7 +1647,7 @@ async function refuseFourEyes(
         },
     }).catch(() => undefined);
 
-    throw forbidden(refusal.message, { reason: 'agent_proposal_four_eyes' });
+    throw forbidden(refusal.message, { reason: refusal.reason });
 }
 
 /**

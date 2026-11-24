@@ -376,10 +376,10 @@ export const NAV_BAR_SLOT_RIGHT =
  *       surfaces (brand mark + band on active row) as one piece
  *       of jewellery.
  *
- *   (5) `text-content-inverted text-[11px] font-bold` — the
+ *   (5) `text-content-inverted text-xs font-bold` — the
  *       initials text. Inverted-content (dark on yellow in the dark
- *       theme, white on dark in the light theme). 11px is the smallest size at which
- *       bold "IC" reads clearly at 32×32 without looking cramped.
+ *       theme, white on dark in the light theme). 12 px, the small-text
+ *       floor (#5924); bold "IC" still sits comfortably at 32×32.
  *
  *   (6) `animate-nav-brand-pulse` — the 6s breath. Tempo
  *       deliberately slower than the band's 4s so the eye reads
@@ -413,7 +413,7 @@ export const NAV_BAR_BRAND_CLASS = [
     'relative h-[22px] w-[22px] rounded-lg flex-shrink-0',
     // Flex / type
     'flex items-center justify-center',
-    'text-content-inverted text-[11px] font-bold',
+    'text-content-inverted text-xs font-bold',
     // Brand gradient (3-stop) + bg-size for the pan animation
     'bg-gradient-to-r from-[var(--brand-default)] via-[var(--brand-muted)] to-[var(--brand-emphasis)]',
     'bg-[length:200%_100%]',

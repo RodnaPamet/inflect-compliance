@@ -32,6 +32,7 @@ import AdminSecurityPage from '@/app/t/[tenantSlug]/(app)/admin/security/page';
 import { TenantProvider } from '@/lib/tenant-context-provider';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { getPermissionsForRole } from '@/lib/permissions';
+import { BACK_LINK_ATTR } from '@/components/layout/breadcrumbs-store';
 
 const REQUIRED_REFUSAL =
     'Cannot enable REQUIRED MFA: at least one active owner or admin must be enrolled in MFA first. ' +
@@ -188,5 +189,16 @@ describe('admin Security & MFA page — the settings are named', () => {
             const put = (global.fetch as jest.Mock).mock.calls.find(([, init]) => init?.method === 'PUT');
             expect(JSON.parse(put?.[1]?.body as string)).toEqual({ mfaPolicy: 'OPTIONAL', sessionMaxAgeMinutes: 480 });
         });
+    });
+
+    it('the loaded page shows one back link, so a phone hides the breadcrumb trail', async () => {
+        // A phone has no top chrome: the inline trail yields to a back link
+        // (`PHONE_TRAIL_CLASS`), so a page with no back link showed the whole
+        // trail as its only way out, unlike every other admin page.
+        mount();
+        await loaded();
+        const back = screen.getAllByTestId('page-header-back');
+        expect(back).toHaveLength(1);
+        expect(back[0]).toHaveAttribute(BACK_LINK_ATTR);
     });
 });

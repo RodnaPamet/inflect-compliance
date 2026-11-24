@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { localizedWorkflowName } from '@/lib/agentic/workflow-labels';
+import { localizedRunSummary, localizedWorkflowName } from '@/lib/agentic/workflow-labels';
 
 import { getTenantCtx } from '@/app-layer/context';
 import { getWorkflowRun } from '@/app-layer/usecases/workflow-runs';
@@ -120,7 +120,7 @@ export default async function AgentRunDetailPage({
                 costTokens: run.costTokens,
                 startedAt: run.startedAt.toISOString(),
                 completedAt: run.completedAt ? run.completedAt.toISOString() : null,
-                summary: run.summary,
+                summary: localizedRunSummary(run.workflowKey, run.summary, (key, values) => tWorkflows(key, values)),
                 errorMessage: run.errorMessage,
                 // THE CAUSE (#3537). Projected explicitly like every other
                 // field here — the usecase returns the whole row and the whole

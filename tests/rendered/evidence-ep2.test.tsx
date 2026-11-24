@@ -38,6 +38,7 @@ jest.mock('next/navigation', () => ({
 jest.mock('next-intl', () => {
     const en = require('../../messages/en.json');
     return {
+        useLocale: () => 'en',
         useTranslations: (ns?: string) => (key: string) => {
             const dotted = ns ? `${ns}.${key}` : key;
             let cur: unknown = en;

@@ -21,6 +21,8 @@
  */
 import { auditUserIdOrNull } from '@/lib/audit/audit-writer';
 import { SYSTEM_PRINCIPAL } from '@/app-layer/context-system';
+import { REPORT_DELIVERY_PRINCIPAL } from '@/app-layer/jobs/report-delivery-jobs';
+import { tenantSystemUserId } from '@/lib/tenant-system-user';
 
 describe('the system principal never reaches the AuditLog foreign key', () => {
     it('maps the sentinel to null', () => {
@@ -46,6 +48,22 @@ describe('the system principal never reaches the AuditLog foreign key', () => {
 
     it('is idempotent — the inner writer normalises again for direct callers', () => {
         expect(auditUserIdOrNull(auditUserIdOrNull(SYSTEM_PRINCIPAL))).toBeNull();
+    });
+
+    it('maps the named job principals in the `system:` namespace to null', () => {
+        // `system:report-delivery` and `system:webhook` run their writes
+        // through `runInTenantContext`, so the audit extension hands them to
+        // this writer. Neither is a `User` row, and the extension swallows the
+        // FK failure, so those rows were lost silently (#5910).
+        expect(auditUserIdOrNull(REPORT_DELIVERY_PRINCIPAL)).toBeNull();
+        expect(auditUserIdOrNull('system:webhook')).toBeNull();
+    });
+
+    it('leaves the tenant system user alone — it IS a User row', () => {
+        // The other non-member identity (#4400) must keep its id: it is what
+        // names the external respondent and the tenant-system jobs.
+        const id = tenantSystemUserId('cmtb3fb00000b01pftf68dc7u');
+        expect(auditUserIdOrNull(id)).toBe(id);
     });
 
     it('does not map anything merely CONTAINING the sentinel', () => {

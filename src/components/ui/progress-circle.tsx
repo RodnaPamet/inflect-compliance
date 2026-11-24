@@ -69,7 +69,7 @@ const SIZE_ROOT: Record<ProgressCircleSize, string> = {
 };
 
 const SIZE_LABEL: Record<ProgressCircleSize, string> = {
-    sm: "text-[10px]",
+    sm: "text-xs",
     md: "text-xs",
     lg: "text-sm",
 };

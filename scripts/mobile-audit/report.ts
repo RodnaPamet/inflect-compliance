@@ -9,6 +9,12 @@
  * compares a fresh report against a reference one (typically `main`) and
  * fails when any count of pages failing a check went UP, or when more routes
  * went uncaptured — a page that stops rendering must not lower a count.
+ *
+ * Counts are compared over the routes BOTH reports captured. A route captured
+ * for the first time (a new page, or a detail page whose record the fixture
+ * setup now creates) has no previous count to have risen from: it is listed
+ * as newly measured and becomes part of the comparison from the next run on.
+ * A route that stopped being captured is caught by the uncaptured count.
  */
 import { MOBILE_METRICS, type MetricCounts, type MobileMetricId, type MeasureSample } from './measure';
 import type { Leak } from './leaks';
@@ -44,15 +50,30 @@ export interface AuditReport {
     routeCount: number;
     captured: CapturedPage[];
     uncaptured: UncapturedPage[];
+    /** What the fixture setup did (`--create-records`); absent when it did not run. */
+    setup?: { created: string[]; minted: string[]; failed: Record<string, string> };
 }
 
-/** Pages (routes, not states) failing each check, per configuration. */
-export function headline(report: AuditReport): Record<string, Record<MobileMetricId, number>> {
+/** The route patterns captured in `config`. */
+export function capturedRoutes(report: AuditReport, config: string): Set<string> {
+    return new Set(report.captured.filter((p) => p.kind === 'route' && p.config === config).map((p) => p.id));
+}
+
+/**
+ * Pages (routes, not states) failing each check, per configuration; with
+ * `only`, counting only the routes it holds for that configuration.
+ */
+export function headline(
+    report: AuditReport,
+    only?: (config: string) => ReadonlySet<string>,
+): Record<string, Record<MobileMetricId, number>> {
     const out: Record<string, Record<MobileMetricId, number>> = {};
     for (const config of report.configs) {
         const row = Object.fromEntries(MOBILE_METRICS.map((m) => [m.id, 0])) as Record<MobileMetricId, number>;
+        const within = only?.(config);
         for (const p of report.captured) {
             if (p.kind !== 'route' || p.config !== config) continue;
+            if (within && !within.has(p.id)) continue;
             for (const m of MOBILE_METRICS) if (p.counts[m.id] > 0) row[m.id] += 1;
         }
         out[config] = row;
@@ -89,6 +110,17 @@ export function renderSummary(report: AuditReport): string {
         for (const s of states) {
             lines.push(`| ${s.id.replace(/^state:/, '')} | ${s.config} | ${s.counts.clipped} | ${s.counts.overlayCoversControl} | ${s.counts.tapUnder24} | ${s.counts.inputUnder16} |`);
         }
+        lines.push('');
+    }
+
+    if (report.setup) {
+        const { created, minted, failed } = report.setup;
+        lines.push('## Fixture setup', '');
+        lines.push(`- Created: ${created.length ? created.join(', ') : 'nothing (every record already existed)'}`);
+        lines.push(`- Tokens minted: ${minted.length ? minted.join(', ') : 'none'}`);
+        const failures = Object.entries(failed);
+        if (failures.length) for (const [what, why] of failures) lines.push(`- **Failed: ${what}**: ${why}`);
+        else lines.push('- Failed: none');
         lines.push('');
     }
 
@@ -137,8 +169,9 @@ export interface ComparisonRow {
  * `regressions` are the rows that went up.
  */
 export function compareReports(reference: AuditReport, current: AuditReport): { rows: ComparisonRow[]; regressions: ComparisonRow[] } {
-    const rh = headline(reference);
-    const ch = headline(current);
+    const both = memoBoth(reference, current);
+    const rh = headline(reference, both);
+    const ch = headline(current, both);
     const rows: ComparisonRow[] = [];
     for (const config of current.configs) {
         if (!reference.configs.includes(config)) continue;
@@ -151,4 +184,89 @@ export function compareReports(reference: AuditReport, current: AuditReport): { 
         if (ru !== cu) rows.push({ config, metric: 'uncaptured', reference: ru, current: cu });
     }
     return { rows, regressions: rows.filter((r) => r.current > r.reference) };
+}
+
+/** Per configuration, the routes captured in both reports: the population a count is compared over. */
+function memoBoth(reference: AuditReport, current: AuditReport): (config: string) => ReadonlySet<string> {
+    const memo = new Map<string, Set<string>>();
+    return (config) => {
+        let set = memo.get(config);
+        if (!set) {
+            const before = capturedRoutes(reference, config);
+            set = new Set([...capturedRoutes(current, config)].filter((id) => before.has(id)));
+            memo.set(config, set);
+        }
+        return set;
+    };
+}
+
+/** Routes captured now and not in the reference, per configuration: measured for the first time, not compared. */
+export function newlyCaptured(reference: AuditReport, current: AuditReport): Record<string, string[]> {
+    const out: Record<string, string[]> = {};
+    for (const config of current.configs) {
+        if (!reference.configs.includes(config)) continue;
+        const before = capturedRoutes(reference, config);
+        const fresh = [...capturedRoutes(current, config)].filter((id) => !before.has(id)).sort();
+        if (fresh.length) out[config] = fresh;
+    }
+    return out;
+}
+
+/** The routes failing `metric` in `config` now that did not in the reference: where to look first. */
+export function newlyFailing(reference: AuditReport, current: AuditReport, config: string, metric: ComparisonRow['metric']): string[] {
+    if (metric === 'uncaptured') {
+        const before = new Set(reference.uncaptured.filter((u) => u.kind === 'route' && u.config === config).map((u) => u.id));
+        return current.uncaptured
+            .filter((u) => u.kind === 'route' && u.config === config && !before.has(u.id))
+            .map((u) => `${u.id} (${u.reason})`)
+            .sort();
+    }
+    const both = memoBoth(reference, current)(config);
+    const failing = (r: AuditReport) =>
+        new Set(r.captured.filter((p) => p.kind === 'route' && p.config === config && both.has(p.id) && p.counts[metric] > 0).map((p) => p.id));
+    const before = failing(reference);
+    return [...failing(current)].filter((id) => !before.has(id)).sort();
+}
+
+/**
+ * The comparison as markdown (`comparison.md`): every count of failing pages
+ * that moved and, for each one that ROSE, the routes that fail now and did not
+ * before. The scheduled workflow (`.github/workflows/mobile-audit.yml`)
+ * publishes it beside `summary.md` and quotes it in the issue it opens or
+ * updates when a count rose.
+ */
+export function renderComparison(reference: AuditReport, current: AuditReport): string {
+    const { rows, regressions } = compareReports(reference, current);
+    const label = (m: ComparisonRow['metric']) =>
+        m === 'uncaptured' ? 'Routes not captured' : (MOBILE_METRICS.find((x) => x.id === m)?.label ?? m);
+    const stamp = (r: AuditReport) => `${r.generatedAt}${r.commit ? ` (commit \`${r.commit}\`)` : ''}`;
+    const lines: string[] = [];
+    lines.push('# Mobile audit compared with the previous run', '');
+    lines.push(`Previous: ${stamp(reference)}. Now: ${stamp(current)}.`, '');
+    const fresh = Object.entries(newlyCaptured(reference, current));
+    if (fresh.length) {
+        lines.push('Measured for the first time, so not compared (they are from the next run on):', '');
+        for (const [config, ids] of fresh) lines.push(`- ${config}: ${ids.map((id) => `\`${id}\``).join(', ')}`);
+        lines.push('');
+    }
+    if (!rows.length) {
+        lines.push('No count of failing pages moved.');
+        return lines.join('\n');
+    }
+    lines.push(
+        regressions.length
+            ? `**${regressions.length} ${regressions.length === 1 ? 'count' : 'counts'} rose**: a page regressed on a phone, or stopped rendering.`
+            : 'Every count that moved fell.',
+        '',
+    );
+    lines.push('| Configuration | Check | Previous | Now |', '|---|---|---|---|');
+    for (const r of rows) lines.push(`| ${r.config} | ${label(r.metric)} | ${r.reference} | ${r.current} ${r.current > r.reference ? '▲' : '▼'} |`);
+    lines.push('');
+    for (const r of regressions) {
+        lines.push(`## ${label(r.metric)}, ${r.config}`, '');
+        // A count of failing routes that rose has at least one route new to it.
+        for (const id of newlyFailing(reference, current, r.config, r.metric)) lines.push(`- \`${id}\``);
+        lines.push('');
+    }
+    return lines.join('\n');
 }

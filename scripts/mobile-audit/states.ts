@@ -60,6 +60,18 @@ export const OPEN_STATES: readonly OpenState[] = [
         open: (page) => clickAndWait(page, '[data-testid="assistant-top-bar-button"]', '[role="dialog"]'),
     },
     {
+        // #5904: the product tour, opened the way a phone opens it — from the
+        // navigation drawer, which closes as the tour starts. In a test build
+        // the tour never starts on its own, so this is the only way it is seen.
+        id: 'onboarding-tour',
+        label: 'Product tour (first step)',
+        route: `${T}/dashboard`,
+        open: async (page) => {
+            await clickAndWait(page, '[data-testid="nav-toggle"]', '[data-testid="nav-drawer"]');
+            await clickAndWait(page, '[data-testid="nav-drawer"] [data-testid="start-tour-btn"]', '#driver-popover-content');
+        },
+    },
+    {
         id: 'create-modal',
         label: 'Create modal (new control)',
         route: `${T}/controls`,

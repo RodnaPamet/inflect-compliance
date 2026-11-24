@@ -31,6 +31,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { TextLink } from '@/components/ui/text-link';
 import { Heading } from '@/components/ui/typography';
 import { refreshSessionClaims } from '@/lib/auth/refresh-session-claims';
 import { ShadedRow } from '@/components/ui/shaded-row';
@@ -179,14 +180,15 @@ export function NewTenantForm({ orgSlug }: Props) {
     return (
         <div className="max-w-xl mx-auto space-y-section">
             <div>
-                <Link
+                <TextLink
                     href={`/org/${orgSlug}/tenants`}
-                    className="inline-flex items-center gap-1 text-sm text-content-muted hover:text-content-emphasis"
+                    tone="muted"
+                    className="text-sm"
                     data-testid="org-new-tenant-back"
                 >
                     <ArrowLeft className="size-4" aria-hidden="true" />
                     {t('newTenant.backToTenants')}
-                </Link>
+                </TextLink>
                 <Heading level={1} className="mt-3">
                     {t('newTenant.title')}
                 </Heading>
@@ -299,7 +301,9 @@ export function NewTenantForm({ orgSlug }: Props) {
                     </p>
                 )}
 
-                <div className="flex items-center justify-end gap-tight pt-2">
+                {/* `flex-wrap`: at 360 px the two did not fit on one line, and
+                    `justify-end` pushed Cancel past the LEFT edge. */}
+                <div className="flex flex-wrap items-center justify-end gap-tight pt-2">
                     <Link
                         href={`/org/${orgSlug}/tenants`}
                         className={buttonVariants({ variant: 'ghost', size: 'sm' })}

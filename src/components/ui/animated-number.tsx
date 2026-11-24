@@ -48,6 +48,8 @@
 import * as React from 'react';
 import NumberFlow, { type Format } from '@number-flow/react';
 
+import { activeDateLocale } from '@inflect/ui/lib/format-date';
+
 // ─── Format presets ─────────────────────────────────────────────────
 
 /**
@@ -140,7 +142,16 @@ export interface AnimatedNumberProps {
     value: number;
     /** Format preset or Intl options. Defaults to `{ kind: 'integer' }`. */
     format?: AnimatedNumberFormat;
-    /** BCP-47 locale tag(s). Defaults to the runtime/browser default. */
+    /**
+     * BCP-47 locale tag(s). Defaults to the reader's UI language — the
+     * locale the root `<Providers>` binds for every date helper
+     * (`activeDateLocale()`), so a Bulgarian page writes `50,0%`.
+     *
+     * Never let it fall to `undefined`: that is the RUNTIME default, the
+     * server process's locale during SSR and the browser's on the client.
+     * The two disagree (`50,0%` vs `50.0%`), and React logs a hydration
+     * mismatch on the accessible name.
+     */
     locale?: Intl.LocalesArgument;
     /**
      * Optional semantic hint surfaced as `data-trend`. The primitive
@@ -190,6 +201,7 @@ export function AnimatedNumber({
     suffix,
     'aria-label': ariaLabel,
 }: AnimatedNumberProps) {
+    const resolvedLocale = locale ?? activeDateLocale();
     const { intl, suffix: presetSuffix } = resolveFormat(format);
     const composedSuffix = `${presetSuffix}${suffix ?? ''}`;
     // `Number.isFinite` (not the global `isFinite`) so a stray
@@ -198,12 +210,12 @@ export function AnimatedNumber({
     const isFinite = Number.isFinite(value);
     const formatted = React.useMemo(() => {
         if (!Number.isFinite(value)) return ANIMATED_NUMBER_EMPTY;
-        const body = new Intl.NumberFormat(locale, intl).format(value);
+        const body = new Intl.NumberFormat(resolvedLocale, intl).format(value);
         return `${prefix ?? ''}${body}${composedSuffix}`;
         // The Intl options object is rebuilt every render but its
         // shape is content-equivalent across renders for the same
         // `format`; the deps below cover the same surface.
-    }, [value, locale, prefix, composedSuffix, intl]);
+    }, [value, resolvedLocale, prefix, composedSuffix, intl]);
 
     const a11yLabel = ariaLabel ?? formatted;
 
@@ -248,7 +260,7 @@ export function AnimatedNumber({
         >
             <NumberFlow
                 value={value}
-                locales={locale}
+                locales={resolvedLocale}
                 // NumberFlow's `Format` is a narrower subset of
                 // `Intl.NumberFormatOptions` (no scientific /
                 // engineering notation, etc.). Our preset resolver

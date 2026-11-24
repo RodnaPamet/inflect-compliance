@@ -152,7 +152,7 @@ export function TenantSwitcher({
                         the surface honestly reflects both. */}
                     {orgs.length > 0 && (
                         <>
-                            <p className="px-2.5 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-widest text-content-subtle">
+                            <p className="px-2.5 pt-1.5 pb-1 text-xs font-semibold uppercase tracking-widest text-content-subtle">
                                 {t('switcherOrganizations')}
                             </p>
                             {orgs.map((o) => (
@@ -170,7 +170,7 @@ export function TenantSwitcher({
                                             <span className="break-words text-content-emphasis">
                                                 {o.slug}
                                             </span>
-                                            <span className="break-words text-[10px] text-content-subtle">
+                                            <span className="break-words text-xs text-content-subtle">
                                                 {orgRoleLabel(o.role)}
                                             </span>
                                         </span>
@@ -180,7 +180,7 @@ export function TenantSwitcher({
                             <Popover.Separator />
                         </>
                     )}
-                    <p className="px-2.5 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-widest text-content-subtle">
+                    <p className="px-2.5 pt-1.5 pb-1 text-xs font-semibold uppercase tracking-widest text-content-subtle">
                         {t('switcherWorkspaces')}
                     </p>
 
@@ -212,7 +212,7 @@ export function TenantSwitcher({
                                             <span className="break-words text-content-emphasis">
                                                 {m.slug}
                                             </span>
-                                            <span className="break-words text-[10px] text-content-subtle">
+                                            <span className="break-words text-xs text-content-subtle">
                                                 {roleLabel(m.role)}
                                             </span>
                                         </span>

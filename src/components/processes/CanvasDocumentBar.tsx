@@ -200,7 +200,7 @@ export function CanvasDocumentBar({
             {/* Inline breadcrumb — the editor's own identity, not
                 a separate page header. */}
             <nav
-                className="flex items-center gap-1 text-[11px] text-content-subtle"
+                className="flex items-center gap-1 text-xs text-content-subtle"
                 aria-label={t("breadcrumb")}
                 data-canvas-document-breadcrumb="true"
             >
@@ -391,7 +391,7 @@ export function CanvasDocumentBar({
                     adjacent to the Save button. */}
                 {autosaveStatus === "pending" && (
                     <span
-                        className="text-[11px] text-content-subtle"
+                        className="text-xs text-content-subtle"
                         data-testid="autosave-status"
                         data-autosave-status="pending"
                     >
@@ -400,7 +400,7 @@ export function CanvasDocumentBar({
                 )}
                 {autosaveStatus === "saving" && (
                     <span
-                        className="text-[11px] text-content-subtle"
+                        className="text-xs text-content-subtle"
                         data-testid="autosave-status"
                         data-autosave-status="saving"
                     >
@@ -409,7 +409,7 @@ export function CanvasDocumentBar({
                 )}
                 {autosaveStatus === "saved" && (
                     <span
-                        className="text-[11px] text-content-success"
+                        className="text-xs text-content-success"
                         data-testid="autosave-status"
                         data-autosave-status="saved"
                     >
@@ -429,7 +429,7 @@ export function CanvasDocumentBar({
                     after. */}
                 {autosaveStatus === "error" && (
                     <span
-                        className="text-[11px] font-medium text-content-error"
+                        className="text-xs font-medium text-content-error"
                         data-testid="autosave-status"
                         data-autosave-status="error"
                         title={autosaveError ?? undefined}

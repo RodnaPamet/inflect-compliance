@@ -182,7 +182,10 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // `postgres-pgvector-image.yml:build-scan-push` and `:decide`, its
         // scheduled publish, before `queue-candidate-sweep.yml` ('p' < 'q').
         // Three mid-file inserts, +15/-0.
-        keyOrderSha: '59563706557582b8b1dc4f78fb181e6728c5fb29a3a69e04ad0c7274deb4eea2',
+        // Updated 2026-11-24 for the nightly whole-product mobile audit (#5899):
+        // `mobile-audit.yml:audit` and `mobile-audit.yml:notify`, before
+        // `override-freshness.yml` ('m' < 'o'). Two mid-file inserts, +10/-0.
+        keyOrderSha: 'fe8ed3630c59942fe12f978d097e6ecc6448ae5e0870e6d61d195e81cc06aacc',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,

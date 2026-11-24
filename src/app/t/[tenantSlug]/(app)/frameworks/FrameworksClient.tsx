@@ -33,6 +33,7 @@ import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 
 import { Button } from '@/components/ui/button';
+import { TEXT_LINK_HIT_AREA } from '@/components/ui/text-link';
 import { CardList } from '@/components/ui/card-list';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -310,7 +311,7 @@ export function FrameworksClient({
                             <Button
                                 variant="primary"
                                 size="sm"
-                                icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                                icon={<Plus />}
                                 id="import-framework-btn"
                                 data-testid="import-framework-btn"
                             >
@@ -348,12 +349,16 @@ export function FrameworksClient({
                                     title={
                                         <span className="inline-flex items-center gap-tight">
                                             <FwIcon
-                                                className="w-5 h-5"
+                                                className="w-5 h-5 shrink-0"
                                                 aria-hidden="true"
                                             />
+                                            {/* The card's title link is a line of its own:
+                                                20px of text, so on a touch screen it
+                                                answers a 44px square (#5924). */}
                                             <Link
                                                 href={row.href}
-                                                className="text-content-emphasis hover:underline"
+                                                className={cn('text-content-emphasis hover:underline', TEXT_LINK_HIT_AREA)}
+                                                data-testid={`fw-title-link-${row.key}`}
                                             >
                                                 {row.name}
                                             </Link>
@@ -387,7 +392,7 @@ export function FrameworksClient({
                                     )}
                                     {row.provenance && (
                                         <p
-                                            className="text-[10px] text-content-subtle"
+                                            className="text-xs text-content-subtle"
                                             data-testid={`fw-provenance-${row.key}`}
                                         >
                                             {row.provenance.provider && (

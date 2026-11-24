@@ -162,7 +162,18 @@ export function buildCspHeader(nonce: string, isDev = false): string {
             // Google Fonts stylesheet
             'https://fonts.googleapis.com',
         ],
-        'img-src': ["'self'", 'data:', 'https:'],
+        'img-src': [
+            "'self'",
+            'data:',
+            // An image the page's own (nonce-admitted) script made in memory.
+            // tldraw draws its hatched "pattern" fill to a canvas and shows it
+            // through a blob: URL; without this every process / agent canvas
+            // logged one violation per zoom level and showed no fill. It adds
+            // nothing `data:` does not already allow: both are images the page
+            // built itself, and an image cannot run script.
+            'blob:',
+            'https:',
+        ],
         'font-src': ["'self'", 'data:', 'https://fonts.gstatic.com'],
         'connect-src': [
             "'self'",

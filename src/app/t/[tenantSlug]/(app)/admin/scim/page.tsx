@@ -17,6 +17,7 @@ import { useCopyToClipboard } from '@/components/ui/hooks';
 import { CopyButton } from '@/components/ui/copy-button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { SettingRow } from '@/components/layout/SettingRow';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { Card, cardVariants } from '@/components/ui/card';
@@ -43,6 +44,9 @@ interface ScimState {
 
 export default function ScimAdminPage() {
     const t = useTranslations('admin');
+    // Role names come from the one role vocabulary, never spelled inside a
+    // sentence: a name embedded in copy stayed English on a Bulgarian page.
+    const tRoles = useTranslations('roles');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const [state, setState] = useState<ScimState | null>(null);
@@ -146,8 +150,13 @@ export default function ScimAdminPage() {
         <div className="space-y-section animate-fadeIn max-w-4xl">
             <BackAffordance />
             {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
+            {/* Below `sm` the status badge goes under the header instead of
+                squeezing it into the space beside the badge (#5874). */}
+            <SettingRow
+                align="center"
+                textSpacing="none"
+                descriptionClassName="mt-1 max-w-none"
+                title={<>
                     <PageBreadcrumbs
                         items={[
                             { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
@@ -157,20 +166,21 @@ export default function ScimAdminPage() {
                         className="mb-1"
                     />
                     <Heading level={1} className="flex items-center gap-tight">
-                        <CloudCog className="w-6 h-6 text-[var(--brand-default)]" />
+                        <CloudCog className="w-6 h-6 shrink-0 text-[var(--brand-default)]" />
                         {t('scim.title')}
                     </Heading>
-                    <p className="text-sm text-content-muted mt-1">
-                        {t('scim.subtitle')}
-                    </p>
-                    <div className="mt-3">
-                        <IdentityCrossLinks current="scim" />
-                    </div>
+                </>}
+                description={t('scim.subtitle')}
+                control={
+                    <StatusBadge id="scim-status" variant={activeTokens.length > 0 ? 'success' : 'neutral'}>
+                        {activeTokens.length > 0 ? t('scim.enabled') : t('scim.notConfigured')}
+                    </StatusBadge>
+                }
+            >
+                <div className="mt-3">
+                    <IdentityCrossLinks current="scim" />
                 </div>
-                <StatusBadge id="scim-status" variant={activeTokens.length > 0 ? 'success' : 'neutral'}>
-                    {activeTokens.length > 0 ? t('scim.enabled') : t('scim.notConfigured')}
-                </StatusBadge>
-            </div>
+            </SettingRow>
 
             {/* Endpoint Info — render the slot eagerly so #scim-endpoint-url
                 is queryable before the GET /admin/scim fetch resolves. */}
@@ -234,7 +244,7 @@ export default function ScimAdminPage() {
                     <Heading level={3}>{t('scim.tokensHeading')}</Heading>
                     <Button
                         variant="primary"
-                        icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                        icon={<Plus />}
                         onClick={() => setShowForm(true)}
                         id="generate-token-btn"
                         disabled={generating}
@@ -358,6 +368,12 @@ export default function ScimAdminPage() {
                     {t.rich('scim.roleMapBody', {
                         b: (c) => <strong className="text-content-muted">{c}</strong>,
                         s: (c) => <strong>{c}</strong>,
+                        reader: tRoles('READER'),
+                        editor: tRoles('EDITOR'),
+                        auditor: tRoles('AUDITOR'),
+                        aiAdmin: tRoles('AI_ADMIN'),
+                        admin: tRoles('ADMIN'),
+                        owner: tRoles('OWNER'),
                     })}
                 </div>
             </Card>

@@ -1,6 +1,6 @@
 'use client';
 import { useTranslations } from 'next-intl';
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSWRConfig } from 'swr';
 import { useTenantSWR, usePrefetchTenant } from '@/lib/hooks/use-tenant-swr';
@@ -54,6 +54,7 @@ import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { useCreateQueryParam, useThresholdLoadMore, useToast } from '@/components/ui/hooks';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
+import { KpiStrip } from '@/components/ui/kpi-strip';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import {
     resolveFileTypeIcon,
@@ -971,6 +972,12 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
     //   - hydratedNow set (skips SSR / first-render race)
     //   - default 'active' retention tab + no other filters
     //   - query has actually loaded data at least once
+    //   - the state was REACHED while the page was open (#5882): the
+    //     register has to have read as not-all-current first. Opening a
+    //     register that was already current used to celebrate on load,
+    //     and on a phone the toast sat bottom-centre over the list the
+    //     reader had just opened. A celebration marks the moment of
+    //     getting there — a review, an upload — not finding it so.
     // Session dedupe in `useCelebration` prevents repeat fires across
     // refreshes / re-renders.
     // EP-4 — "all current" is judged from the SERVER retention aggregate
@@ -984,12 +991,17 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
         metrics.expired === 0 &&
         metrics.expiringSoon === 0 &&
         metrics.needsReview === 0;
+    const sawEvidenceNotCurrent = useRef(false);
     useEffect(() => {
+        if (!allEvidenceCurrent) {
+            sawEvidenceNotCurrent.current = true;
+            return;
+        }
+        if (!sawEvidenceNotCurrent.current) return;
         if (!hydratedNow) return;
         if (retentionFilter !== 'active') return;
         if (anyFilterActive) return;
         if (evidenceQuery.isLoading) return;
-        if (!allEvidenceCurrent) return;
         const def = MILESTONES['evidence-all-current'];
         // The registry's copy is English; the toast reads the catalogue.
         celebrate({
@@ -1779,7 +1791,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                     `grid-cols-2 md:grid-cols-4` therefore fills exactly one
                     row at the default, and wraps to a second only for a user
                     who asked for more. */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
+                <KpiStrip>
                     {visibleKpiCards.map((card) => {
                         // Status cards drive `useKpiFilter`; freshness cards
                         // drive the `freshness` filter directly. Both axes
@@ -1871,7 +1883,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                             />
                         );
                     })}
-                </div>
+                </KpiStrip>
 
                 {/*
                   Filter toolbar — the Filter button + live search sit on
@@ -1952,7 +1964,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                             >
                                 <Button
                                     variant="primary"
-                                    icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                                    icon={<Plus />}
                                     id="add-evidence-btn"
                                 >
                                     {t.addEvidence}

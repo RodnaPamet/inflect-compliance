@@ -76,7 +76,7 @@ export function ExecutionsPanel({ ruleId }: { ruleId: string }) {
 
     return (
         <div className="space-y-tight">
-            <p className="text-[11px] uppercase tracking-wide text-content-subtle">
+            <p className="text-xs uppercase tracking-wide text-content-subtle">
                 {t('recent')}
             </p>
             {error ? (

@@ -20,6 +20,13 @@
  * critical path, never ships in SSR, and the user pays the
  * download cost only when they actually run the tour.
  *
+ * EVERY WORD COMES FROM THE CATALOGUE (#5904). The step headings and
+ * bodies, the progress line, the Next / Previous / Done buttons and the
+ * close button's name are all `onboardingTour.*` messages, handed to
+ * driver.js as config; left to itself driver.js writes "Next", "Previous",
+ * "Done", "Close" and "1 of 7" in English. The popover's phone fit lives in
+ * `src/app/globals.css` under `.inflect-onboarding-popover`.
+ *
  * INTENTIONAL SEPARATION from the existing tenant setup wizard
  * (`src/components/onboarding/OnboardingWizard.tsx`). The wizard
  * is a DB-backed multi-step config flow; this is an in-page
@@ -38,6 +45,7 @@ import {
     useRef,
     useState,
 } from 'react';
+import { useTranslations } from 'next-intl';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { useLocalStorage } from '@/components/ui/hooks';
 import {
@@ -105,6 +113,7 @@ export function OnboardingTourProvider({
 }: OnboardingTourProviderProps) {
     // Per-user completion flag. Anonymous (no userId) gets a
     // sentinel key so we don't auto-trigger before login.
+    const t = useTranslations('onboardingTour');
     const completionKey = userId ? tourCompletionKey(userId) : 'inflect:onboarding-tour:anon';
     const [completion, setCompletion] = useLocalStorage<TourCompletionRecord | null>(
         completionKey,
@@ -126,11 +135,6 @@ export function OnboardingTourProvider({
     const start = useCallback(async () => {
         if (running) return;
         if (typeof window === 'undefined') return;
-        const visibleSteps = filterStepsForCurrentPage(
-            steps,
-            (sel) => document.querySelector(sel),
-        );
-        if (visibleSteps.length === 0) return;
 
         // Lazy import — chunk only loads when start() is called.
         const [{ driver }] = await Promise.all([
@@ -142,15 +146,31 @@ export function OnboardingTourProvider({
             import('driver.js/dist/driver.css'),
         ]);
 
+        // The anchor a step points at is the first VISIBLE match outside
+        // any overlay. On a phone the desktop sidebar is in the DOM but
+        // hidden, and the navigation drawer the button sits in is a
+        // dialog that closes as the tour starts — a tap on the popover is
+        // outside it and would close it anyway, taking the highlighted
+        // item with it. A step with no such anchor is dropped, as one
+        // whose anchor is not on the page always was, so a phone's tour
+        // is its centred steps.
+        const anchors = new Map<string, Element>();
+        const visibleSteps = filterStepsForCurrentPage(steps, (sel) => {
+            const el = firstVisibleMatch(sel);
+            if (el) anchors.set(sel, el);
+            return el;
+        });
+        if (visibleSteps.length === 0) return;
+
         const driverObj = driver({
             showProgress: true,
             allowClose: true,
             popoverClass: 'inflect-onboarding-popover',
+            ...tourChromeText(t),
             steps: visibleSteps.map((s) => ({
-                element: s.selector ?? undefined,
+                element: s.selector ? anchors.get(s.selector) : undefined,
                 popover: {
-                    title: s.title,
-                    description: s.description,
+                    ...tourStepText(t, s),
                     side: s.side,
                 },
             })),
@@ -174,7 +194,7 @@ export function OnboardingTourProvider({
         driverRef.current = driverObj;
         setRunning(true);
         driverObj.drive();
-    }, [running, setCompletion, steps]);
+    }, [running, setCompletion, steps, t]);
 
     const dismiss = useCallback(() => {
         setCompletion(makeCompletionRecord('skipped'));
@@ -218,6 +238,50 @@ export function OnboardingTourProvider({
     );
 }
 
+// ─── The tour's words ─────────────────────────────────────────────────
+
+/** A translator over the `onboardingTour` namespace. */
+type TourT = ReturnType<typeof useTranslations>;
+
+/**
+ * driver.js's own chrome, in the reader's language. Its progress template
+ * keeps driver.js's `{{current}}` / `{{total}}` placeholders, which the
+ * catalogue's ICU `{current}` / `{total}` are filled with.
+ */
+export function tourChromeText(t: TourT) {
+    return {
+        nextBtnText: t('next'),
+        prevBtnText: t('previous'),
+        doneBtnText: t('done'),
+        closeBtnLabel: t('close'),
+        progressText: t('progress', { current: '{{current}}', total: '{{total}}' }),
+    };
+}
+
+/** One step's heading and body. The closing step names the restart button by its label. */
+export function tourStepText(t: TourT, step: OnboardingStep) {
+    return {
+        title: t(`steps.${step.messageKey}.title`),
+        description: t(`steps.${step.messageKey}.body`, { startLabel: t('start') }),
+    };
+}
+
+/**
+ * Where a step never anchors: inert content, or anything inside a dialog —
+ * a drawer, sheet or modal, which a tap on the popover (outside it) closes.
+ * The phone's navigation drawer is one, and its items duplicate the
+ * sidebar's.
+ */
+const NEVER_ANCHOR_IN = '[inert], [role="dialog"]';
+
+/** The first match for `selector` that has a box on screen outside any overlay, or null. */
+function firstVisibleMatch(selector: string): Element | null {
+    for (const el of Array.from(document.querySelectorAll(selector))) {
+        if (el.getClientRects().length > 0 && !el.closest(NEVER_ANCHOR_IN)) return el;
+    }
+    return null;
+}
+
 // ─── Sidebar trigger button ───────────────────────────────────────────
 
 /**
@@ -228,19 +292,30 @@ export function OnboardingTourProvider({
  */
 export function StartTourButton({
     className,
-    label = 'Take the tour',
+    label,
     id = 'start-tour-btn',
+    onStart,
 }: {
     className?: string;
     label?: string;
     id?: string;
+    /**
+     * Called before the tour starts. The phone's navigation drawer passes its
+     * close, so the tour is not run over a drawer that the first tap on the
+     * popover would close.
+     */
+    onStart?: () => void;
 }) {
     const ctx = useContext(OnboardingTourContext);
+    const t = useTranslations('onboardingTour');
     if (!ctx) return null;
     return (
         <button
             type="button"
-            onClick={() => void ctx.start()}
+            onClick={() => {
+                onStart?.();
+                void ctx.start();
+            }}
             disabled={ctx.running}
             className={
                 className ??
@@ -250,7 +325,7 @@ export function StartTourButton({
             data-testid="start-tour-btn"
             data-tour-running={ctx.running ? 'true' : 'false'}
         >
-            {label}
+            {label ?? t('start')}
         </button>
     );
 }

@@ -300,9 +300,10 @@ describe('a HIGH-tier proposal cannot be approved by a single reviewer', () => {
         await expect(
             approveAgentProposal(reviewerCtx(T1, 'alice'), proposalId),
         ).rejects.toMatchObject({
-            // The code is the condition; the message is the sentence the
-            // reviewer is shown, addressed to them and naming nobody else.
-            details: { reason: 'agent_proposal_four_eyes' },
+            // The code is the rule's own reason, so the review surfaces can
+            // word it in the reader's language (#5919); the message is the
+            // sentence the reviewer is shown, naming nobody else.
+            details: { reason: 'agent_proposal_four_eyes_already_signed' },
             message: expect.stringMatching(/already approved this proposal/),
         });
 
@@ -326,7 +327,7 @@ describe('a HIGH-tier proposal cannot be approved by a single reviewer', () => {
         await expect(
             approveAgentProposal(reviewerCtx(T1, 'owner'), proposalId),
         ).rejects.toMatchObject({
-            details: { reason: 'agent_proposal_four_eyes' },
+            details: { reason: 'agent_proposal_four_eyes_owner' },
             message: expect.stringMatching(/registered owner of the agent/),
         });
 
@@ -411,7 +412,7 @@ describe('the owner exclusion is scoped to proposals that need two', () => {
         await expect(
             approveAgentProposal(reviewerCtx(T1, 'owner'), proposalId),
         ).rejects.toMatchObject({
-            details: { reason: 'agent_proposal_four_eyes' },
+            details: { reason: 'agent_proposal_four_eyes_owner' },
             message: expect.stringMatching(/registered owner of the agent/),
         });
         expect(await signaturesOn(proposalId)).toHaveLength(0);

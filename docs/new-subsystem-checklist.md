@@ -120,9 +120,30 @@ just vanishes. The owner decisions behind these rules are in
       chevron, the active tab in view and stickiness on a phone.
 - [ ] Rows that carry actions wrap (`flex-wrap`, or stack below `sm`). No
       fixed-width row or picker (`w-64` beside buttons) that never wraps.
+- [ ] A title (and description) with a trailing button, toggle or status is a
+      `SettingRow` (`src/components/layout/SettingRow.tsx`), not a hand-rolled
+      `flex justify-between`. Below `sm` it stacks the control under the text
+      and lets it wrap; from `sm` it is the usual row, with a text column that
+      can shrink (`min-w-0`), so a long word never pushes the control out.
+- [ ] Long unbroken strings (URLs, redirect URIs, environment variable names,
+      digests) go in `<code>` or `font-mono`: the global rule in
+      `src/app/globals.css` breaks them anywhere rather than letting them run
+      off the screen. Anything else that can hold one (a raw identifier as a
+      label) carries `wrap-anywhere`.
 - [ ] Fields are 16 px on touch. The coarse-pointer rule in
       `src/app/globals.css` does this for `<Input>`, `<Textarea>`, `.input` and
       plain fields; do not override it with a smaller size.
+- [ ] Every control is at least 24 px to a finger, 44 px where it can be.
+      A stand-alone small text link ("Forgot password?", "See all", a back
+      link) is `TextLink` / `TextButton` (`src/components/ui/text-link.tsx`),
+      which wear the shared touch hit area; a link inside a sentence stays a
+      plain link. A small icon or glyph control wears `TOUCH_HIT_AREA_CLASS`
+      (`@inflect/ui/components/ui/hit-area`); leave its neighbours room. A
+      list-page title cell is `TableTitleCell` / `TableTitleButton`, which a
+      phone card renders as text on a card that opens on a tap and gives a
+      hit area on one that does not. Checkboxes, radios and ranges are
+      `Checkbox`, `RadioGroup` and `Slider` in a `<label>`, never a native
+      `<input>` (`local/no-native-choice-input`).
 - [ ] Use the shared primitives (`DataTable` cards, `Modal`/`Sheet`,
       `ToggleGroup`, `FilterToolbar`, `Combobox`), never a hand-rolled overlay,
       table or segmented row. Nothing may depend on hover.

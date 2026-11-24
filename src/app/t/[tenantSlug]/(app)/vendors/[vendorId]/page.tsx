@@ -7,7 +7,7 @@
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
-import { useEffect, useMemo, useState, useCallback, use } from 'react';
+import { useEffect, useMemo, useState, useCallback, use, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 import { vendorSendRefusal } from '@/lib/vendor-assessment-refusals';
 import Link from 'next/link';
@@ -805,6 +805,44 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
     }
 
     const fmtDate = (d: string | null) => d ? formatDate(d) : '—';
+    // The Overview's facts. `value: null` is "not set": a row on a desktop,
+    // and only a name in the phone's "Not set" line.
+    const websiteHref = normaliseHref(vendor.websiteUrl);
+    const overviewFacts: { key: string; label: string; value: ReactNode | null; hint?: ReactNode; id?: string }[] = [
+        { key: 'legalName', label: tx('detail.legalName'), value: vendor.legalName || null },
+        { key: 'domain', label: tx('detail.domain'), value: vendor.domain || null },
+        {
+            key: 'website',
+            label: tx('detail.website'),
+            value: websiteHref
+                ? <a href={websiteHref} target="_blank" rel="noopener noreferrer" className="text-content-info underline break-all">{vendor.websiteUrl}</a>
+                : null,
+        },
+        { key: 'country', label: tx('detail.country'), value: vendor.country || null },
+        { key: 'owner', label: tx('detail.owner'), value: vendor.owner?.name || null },
+        {
+            key: 'dataAccess',
+            label: tx('detail.dataAccess'),
+            value: vendor.dataAccess ? tx('form.' + (DATA_ACCESS_LABEL_KEY[vendor.dataAccess] ?? 'dataNone')) : null,
+        },
+        { key: 'subprocessor', label: tx('detail.subprocessor'), value: vendor.isSubprocessor ? tx('detail.yes') : tx('detail.no') },
+        {
+            key: 'inherentRisk',
+            label: tx('detail.inherentRisk'),
+            hint: <InfoTooltip content={tx('detail.inherentRiskHint')} aria-label={tx('detail.inherentRiskHint')} iconClassName="ml-1 align-text-bottom" />,
+            value: vendor.inherentRisk
+                ? <StatusBadge variant={CRIT_BADGE[vendor.inherentRisk]}>{tx('criticalityLabel.' + vendor.inherentRisk)}</StatusBadge>
+                : null,
+        },
+        { key: 'nextReview', label: tx('detail.nextReview'), value: vendor.nextReviewAt ? formatDate(vendor.nextReviewAt) : null },
+        {
+            key: 'contractRenewal',
+            label: tx('detail.contractRenewal'),
+            id: 'vendor-contract-renewal',
+            value: vendor.contractRenewalAt ? formatDate(vendor.contractRenewalAt) : null,
+        },
+    ];
+    const unsetFactLabels = overviewFacts.filter((f) => f.value == null).map((f) => f.label);
     const tabs: { key: Tab; label: string; count?: number }[] = [
         { key: 'overview', label: tx('detail.tabs.overview') },
         { key: 'documents', label: tx('detail.tabs.documents'), count: vendor._count?.documents || 0 },
@@ -896,22 +934,29 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
             {/* OVERVIEW */}
             {tab === 'overview' && !editing && (
                 <div className={cn(cardVariants(), 'space-y-default')}>
-                    <div className="grid grid-cols-2 gap-default text-sm">
-                        <div><span className="text-content-muted">{tx('detail.legalName')}:</span> <span className="ml-2">{vendor.legalName || '—'}</span></div>
-                        <div><span className="text-content-muted">{tx('detail.domain')}:</span> <span className="ml-2">{vendor.domain || '—'}</span></div>
-                        <div><span className="text-content-muted">{tx('detail.website')}:</span> <span className="ml-2">{normaliseHref(vendor.websiteUrl) ? <a href={normaliseHref(vendor.websiteUrl)!} target="_blank" rel="noopener noreferrer" className="text-content-info underline">{vendor.websiteUrl}</a> : '—'}</span></div>
-                        <div><span className="text-content-muted">{tx('detail.country')}:</span> <span className="ml-2">{vendor.country || '—'}</span></div>
-                        <div><span className="text-content-muted">{tx('detail.owner')}:</span> <span className="ml-2">{vendor.owner?.name || '—'}</span></div>
-                        <div><span className="text-content-muted">{tx('detail.dataAccess')}:</span> <span className="ml-2">{vendor.dataAccess ? tx('form.' + (DATA_ACCESS_LABEL_KEY[vendor.dataAccess] ?? 'dataNone')) : '—'}</span></div>
-                        <div><span className="text-content-muted">{tx('detail.subprocessor')}:</span> <span className="ml-2">{vendor.isSubprocessor ? tx('detail.yes') : tx('detail.no')}</span></div>
-                        <div>
-                            <span className="text-content-muted">{tx('detail.inherentRisk')}:</span>
-                            <InfoTooltip content={tx('detail.inherentRiskHint')} aria-label={tx('detail.inherentRiskHint')} iconClassName="ml-1 align-text-bottom" />
-                            <span className="ml-2">{vendor.inherentRisk ? <StatusBadge variant={CRIT_BADGE[vendor.inherentRisk]}>{tx('criticalityLabel.' + vendor.inherentRisk)}</StatusBadge> : '—'}</span>
-                        </div>
-                        <div><span className="text-content-muted">{tx('detail.nextReview')}:</span> <span className="ml-2">{fmtDate(vendor.nextReviewAt)}</span></div>
-                        <div id="vendor-contract-renewal" className="scroll-mt-24"><span className="text-content-muted">{tx('detail.contractRenewal')}:</span> <span className="ml-2">{fmtDate(vendor.contractRenewalAt)}</span></div>
+                    {/* On a phone an unset optional field is not a row of its
+                        own: a new vendor printed a column of "—". They are
+                        named once, in the "Not set" line below, and from `sm`
+                        up the two-column grid shows every field as before. */}
+                    <div className="grid grid-cols-1 gap-default text-sm sm:grid-cols-2" data-testid="vendor-overview-facts">
+                        {overviewFacts.map((f) => (
+                            <div
+                                key={f.key}
+                                id={f.id}
+                                className={cn(f.id && 'scroll-mt-24', f.value == null && 'hidden sm:block')}
+                                data-testid={`vendor-fact-${f.key}`}
+                            >
+                                <span className="text-content-muted">{f.label}:</span>
+                                {f.hint}
+                                <span className="ml-2">{f.value ?? '—'}</span>
+                            </div>
+                        ))}
                     </div>
+                    {unsetFactLabels.length > 0 && (
+                        <p className="text-sm text-content-muted sm:hidden" data-testid="vendor-overview-unset">
+                            {tx('detail.notSet', { fields: unsetFactLabels.join(', ') })}
+                        </p>
+                    )}
                     {/* Enrichment Fields */}
                     {(vendor.privacyPolicyUrl || vendor.securityPageUrl || vendor.certificationsJson) && (
                         <div className="border-t border-border-default pt-3 mt-3 space-y-tight">
@@ -1138,7 +1183,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                         ))}
                                 </datalist>
                             </div>
-                            <Button type="submit" variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} id="submit-doc-btn">{tx('detail.addDocument')}</Button>
+                            <Button type="submit" variant="primary" icon={<Plus />} id="submit-doc-btn">{tx('detail.addDocument')}</Button>
                         </form>
                     )}
                     {/* B4 — apply the search + type filters in-memory.

@@ -10,10 +10,12 @@
  */
 import { useTranslations } from 'next-intl';
 import { InfoTooltip } from '@/components/ui/tooltip';
+import { Slider } from '@/components/ui/slider';
 import {
     getAssetCriticality,
     presentCriticality,
     type AssetCriticalityTone,
+    type CriticalityEnum,
     ASSET_CRITICALITY_TONE_CLASSES,
 } from './asset-criticality';
 
@@ -43,8 +45,9 @@ export function AssetCriticalityBadge({
     const t = useTranslations('assets');
     const stored = presentCriticality(storedCriticality);
     const derived = getAssetCriticality(confidentiality, integrity, availability);
-    const crit: { score: number; label: string; tone: AssetCriticalityTone } = stored
-        ? { score: derived.score, label: stored.label, tone: stored.tone }
+    // `presentCriticality` returned a band, so the stored value IS its level.
+    const crit: { score: number; level: CriticalityEnum; tone: AssetCriticalityTone } = stored
+        ? { score: derived.score, level: storedCriticality as CriticalityEnum, tone: stored.tone }
         : derived;
     return (
         <div
@@ -55,7 +58,7 @@ export function AssetCriticalityBadge({
                 {t('crit.badge')}
             </p>
             <p className="text-xl font-bold">{crit.score}</p>
-            <p className="text-xs font-medium">{crit.label}</p>
+            <p className="text-xs font-medium">{t(`filterEnums.criticality.${crit.level}` as Parameters<typeof t>[0])}</p>
         </div>
     );
 }
@@ -65,6 +68,9 @@ type DimKey = 'confidentiality' | 'integrity' | 'availability';
 // Label + help are resolved from the catalog at render (label reuses the
 // top-level `assets.<key>` keys; help lives under `assets.crit.<key>Help`).
 const DIMENSION_KEYS: DimKey[] = ['confidentiality', 'integrity', 'availability'];
+
+/** One mark per level of the 1-5 scale. */
+const CRITICALITY_MARKS = [1, 2, 3, 4, 5];
 
 export interface AssetCriticalityFieldsProps {
     confidentiality: number;
@@ -96,31 +102,29 @@ export function AssetCriticalityFields({
                     return (
                         <div key={dimKey}>
                             <div className="mb-1 flex items-center gap-1.5">
-                                <label
+                                <span
                                     className="text-sm text-content-default"
-                                    htmlFor={id}
+                                    id={`${id}-label`}
                                 >
                                     {label} ·{' '}
                                     <span className="font-semibold text-content-emphasis">
                                         {values[dimKey]}
                                     </span>
-                                </label>
+                                </span>
                                 <InfoTooltip
                                     aria-label={`${t('crit.aboutPrefix')}${label.toLowerCase()}`}
                                     iconClassName="h-3.5 w-3.5"
                                     content={t(`crit.${dimKey}Help`)}
                                 />
                             </div>
-                            <input
+                            <Slider
                                 id={id}
-                                type="range"
+                                ariaLabelledBy={`${id}-label`}
                                 min={1}
                                 max={5}
+                                marks={CRITICALITY_MARKS}
                                 value={values[dimKey]}
-                                onChange={(e) =>
-                                    onChange(dimKey, Number(e.target.value))
-                                }
-                                className="w-full accent-brand-emphasis"
+                                onChange={(v) => onChange(dimKey, v)}
                             />
                         </div>
                     );
@@ -133,7 +137,7 @@ export function AssetCriticalityFields({
                         {t('crit.badge')}
                     </p>
                     <p className="text-xl font-bold">{crit.score}</p>
-                    <p className="text-[11px] font-medium">{crit.label}</p>
+                    <p className="text-xs font-medium">{t(`filterEnums.criticality.${crit.level}` as Parameters<typeof t>[0])}</p>
                 </div>
             </div>
         </div>

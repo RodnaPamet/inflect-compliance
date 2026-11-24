@@ -23,10 +23,11 @@
  *     decorative, not selectable.
  *   - `select-none` belt-and-braces — double-click can't highlight
  *     "Govern" / "Comply" / "Manage".
- *   - `text-[10px]` — one click smaller than the canonical Eyebrow.
- *     The sidebar's typographic hierarchy is row label (14px) >
- *     section header (10px) > app brand (14px). Section header is
- *     a whisper, not a headline.
+ *   - `text-xs` — the 12 px small-text floor (owner decision,
+ *     2026-11-23; it was 10 px until #5924). The sidebar's
+ *     typographic hierarchy is row label (14px) > section header
+ *     (12px, uppercase, tracked) > nothing smaller. Section header
+ *     is a whisper, not a headline.
  *   - `tracking-[0.12em]` — letter-spacing that reads as
  *     "deliberate" not "stretched". 0.1em is too tight, 0.16em
  *     feels overconfident at small sizes.
@@ -70,7 +71,7 @@ export interface NavSectionProps {
 // pt-1.5 (was pt-4) — the section name sits just under the divider hairline
 // instead of floating ~24px below it, killing the dead space between groups.
 export const NAV_SECTION_HEADER =
-    'block px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-content-subtle select-none';
+    'block px-3 pt-1.5 pb-1 text-xs font-semibold uppercase tracking-[0.12em] text-content-subtle select-none';
 
 /**
  * Soft-gradient hairline above the section (skipped on the first

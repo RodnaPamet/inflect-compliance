@@ -468,3 +468,65 @@ outline on every site (owner decision, 2026-11-22). A
 `<button>` choice with no radio inside is invisible to this check. Grid tiles
 stay unshaded by owner decision (readiness tiles, org drill-down CTAs, api-keys
 scope groups).
+
+### `no-native-choice-input`
+
+Flags a JSX `<input>` whose `type` is the literal `checkbox`, `radio` or
+`range` (as a string, a string in braces or a plain template literal, any
+letter case) in a file under `src/app/`, `src/components/` or
+`packages/ui/src/`.
+
+**Why.** The mobile re-audit of 2026-11-23 found native checkboxes, radios
+and ranges on six pages, each 13-16px: too small to tap, painted by the
+browser rather than the theme. `Checkbox`, `RadioGroup` + `RadioGroupItem`
+and `Slider` render `role="checkbox"` / `role="radio"` / `role="slider"`,
+which carry a 44px hit area on a touch screen and the semantic tokens. Put
+the control in a `<label>` with its words, so the whole row answers a tap.
+
+**What it cannot see.** A `type` it cannot read (`type={kind}`) and an input
+built with `createElement`. Shared components came into scope with #5884,
+which converted the last native boxes there (the widget picker, the
+treatment-plan milestones, the onboarding sovereignty step, the card list's
+selection box).
+
+### `no-literal-aria-label`
+
+Under `src/` and `packages/ui/src/`, flags a JSX `aria-label` whose value is a
+string literal (quoted, in braces, or a template literal with no expression)
+containing a letter in any script. The remedy is `aria-label={t('…')}` with the
+key in both message files.
+
+**Why.** An accessible name is text a screen reader speaks, and nothing on
+screen shows it, so a literal stays English on a Bulgarian page unnoticed. The
+mobile re-audit found `aria-label="Next review date"` on the new-risk date
+picker (#5884).
+
+**What it leaves alone.** A computed value, a template with an expression, and
+a literal with no letter (a dash, an arrow).
+
+**What it cannot see.** A DOM call (`setAttribute('aria-label', …)`, as the
+policy table of contents builds its `<nav>`), and a literal passed through a
+prop of another name (`ariaLabel="…"`).
+
+### `no-negative-margin-icon`
+
+Under `src/` and `packages/ui/src/`, a JSX element whose name is imported from
+`lucide-react` or from a module with an `icons` path segment
+(`@inflect/ui/components/ui/icons/glyphs`, `@/components/icons/AppIcon`) is
+refused when its `className` carries a negative margin (`-m-`, `-mx-`, `-ml-`,
+`-mr-`, … with or without a variant prefix or `!`). The remedy is to drop the
+margin and let the container space the icon: `<Button icon={<Plus />}>` sets
+`gap-tight` between the slot and the label.
+
+**Why.** Thirty-one create buttons carried `<Plus className="-ml-0.5 -mr-2.5" />`
+in the Button's icon slot. The `-mr-2.5` (-10 px) cancelled the slot's 8 px gap,
+so the plus touched the label: "+Одит", "+Доказателство" (#5880). The margin
+looked deliberate, so each new button copied it.
+
+**What it leaves alone, on purpose.** A positive margin, a negative non-margin
+utility (`-translate-y-px`, `-rotate-90`), a negative margin on an element that
+is not an imported icon (a `Command.Separator`'s `-mx-1`), a component named
+like an icon but imported from elsewhere, and a class part it cannot read.
+
+**What it cannot see.** An icon re-exported through a module with no `icons`
+segment, a class held in a constant, and a wrapper span carrying the margin.

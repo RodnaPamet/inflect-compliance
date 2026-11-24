@@ -43,6 +43,7 @@ import { toApiSearchParams } from '@/lib/filters/url-sync';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { buildVendorFilters, VENDOR_FILTER_KEYS } from './filter-defs';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
+import { KpiStrip } from '@/components/ui/kpi-strip';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
@@ -689,7 +690,7 @@ function VendorsPageInner({ initialVendors, initialKpiCounts, initialFilters, te
                     set so hiding a card in the gear actually removes it here.
                     Every prop the literal cards carried (tone, sparkline,
                     sparklineVariant, centered domain) moved into `cfg`. */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
+                <KpiStrip>
                     {visibleKpiCards.map((card) => {
                         const cfg: Record<
                             string,
@@ -740,7 +741,7 @@ function VendorsPageInner({ initialVendors, initialKpiCounts, initialFilters, te
                             />
                         );
                     })}
-                </div>
+                </KpiStrip>
                 <FilterToolbar
                     filters={liveFilters}
                     searchId="vendors-search"
@@ -749,7 +750,7 @@ function VendorsPageInner({ initialVendors, initialKpiCounts, initialFilters, te
                         permissions.canCreate ? (
                             <Button
                                 variant="primary"
-                                icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                                icon={<Plus />}
                                 onClick={() => setIsCreateOpen(true)}
                                 id="new-vendor-btn"
                             >

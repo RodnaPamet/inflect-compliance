@@ -6,6 +6,8 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useLocalizedPlanName } from '@/lib/agentic/use-localized-plan-name';
 import Link from 'next/link';
+import { TableTitleCell } from '@/components/ui/table-title-cell';
+import { TextLink } from '@/components/ui/text-link';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
@@ -39,6 +41,7 @@ import { useThresholdLoadMore } from '@inflect/ui/components/ui/hooks/use-thresh
 import { useToastWithUndo } from '@/components/ui/hooks/use-toast-with-undo';
 import { Heading } from '@/components/ui/typography';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
+import { KpiStrip } from '@/components/ui/kpi-strip';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { useKpiTrends, buildKpiSparklines, buildKpiSparklineNullable, centeredSparklineDomain, assignSparklineVariants } from '@/lib/charts/kpi-trends';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
@@ -691,12 +694,12 @@ function TestsRollupContent() {
                 {
                     id: 'name', header: t('colHeaders.name'), accessorKey: 'name',
                     cell: ({ row }) => (
-                        <Link
+                        <TableTitleCell
                             href={tenantHref(`/tests/plans/${row.original.id}`)}
-                            className="text-content-emphasis font-medium hover:text-[var(--brand-default)] transition"
+                            className="hover:text-[var(--brand-default)]"
                         >
                             {planName(row.original.name)}
-                        </Link>
+                        </TableTitleCell>
                     ),
                 },
                 {
@@ -710,9 +713,9 @@ function TestsRollupContent() {
                 {
                     id: 'control', header: t('colHeaders.control'), accessorFn: (p) => p.control?.code || p.control?.name || '—',
                     cell: ({ row }) => (
-                        <Link href={tenantHref(`/controls/${row.original.control.id}`)} className="text-content-muted hover:text-content-emphasis text-xs transition">
+                        <TextLink href={tenantHref(`/controls/${row.original.control.id}`)} tone="muted" className="text-xs">
                             {row.original.control?.code || row.original.control?.name || '—'}
-                        </Link>
+                        </TextLink>
                     ),
                 },
                 {
@@ -808,9 +811,9 @@ function TestsRollupContent() {
                     id: 'control', header: t('colHeaders.control'),
                     accessorFn: (c) => c.control?.code || c.control?.name || '',
                     cell: ({ row }) => row.original.control ? (
-                        <Link href={tenantHref(`/controls/${row.original.control.id}`)} className="text-content-muted hover:text-content-emphasis text-xs transition">
+                        <TextLink href={tenantHref(`/controls/${row.original.control.id}`)} tone="muted" className="text-xs">
                             {row.original.control.code || row.original.control.name}
-                        </Link>
+                        </TextLink>
                     ) : <span className="text-content-subtle text-xs">—</span>,
                 },
                 {
@@ -896,7 +899,7 @@ function TestsRollupContent() {
             <ListPageShell.Filters className="space-y-section">
                 {view === 'plans' && (<>
                 {/* KPI strip — clickable cards filter the table by status. */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
+                <KpiStrip>
                     {visibleKpiCards.map((card) => {
                         const cfg: Record<
                             string,
@@ -946,7 +949,7 @@ function TestsRollupContent() {
                             />
                         );
                     })}
-                </div>
+                </KpiStrip>
 
                 {/* Filter bar (Status / Last Result / Frequency / Due) +
                     live content search + column-visibility gear. Replaces

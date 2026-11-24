@@ -49,10 +49,16 @@ describe("R31 (Bundle 3) — document bar", () => {
             "src/app/t/[tenantSlug]/(app)/processes/ProcessesClient.tsx",
         );
 
-        it("no longer renders <Heading> or PageBreadcrumbs", () => {
+        it("renders no visible page title on a desktop, and no PageBreadcrumbs", () => {
             // The CRUD-page chrome above the canvas is gone. The
-            // editor owns its own identity now.
-            expect(src).not.toMatch(/<Heading\b/);
+            // editor owns its own identity now. One H1 remains, for a
+            // phone (no document bar, no sidebar on screen): from `md` up
+            // it is only the a11y landmark, so every Heading here is
+            // `md:sr-only`.
+            const shownOnDesktop = [...src.matchAll(/<Heading\b[^>]*>/g)]
+                .map((m) => m[0])
+                .filter((tag) => !tag.includes("md:sr-only"));
+            expect(shownOnDesktop).toStrictEqual([]);
             expect(src).not.toMatch(/<PageBreadcrumbs\b/);
         });
 
@@ -67,7 +73,6 @@ describe("R31 (Bundle 3) — document bar", () => {
             // The retirement comment block intentionally mentions
             // the primitive names — anchor on the actual import
             // statements so the comment is not a false positive.
-            expect(src).not.toMatch(/import\s*\{\s*Heading\b/);
             expect(src).not.toMatch(/import\s*\{\s*PageBreadcrumbs\b/);
         });
     });

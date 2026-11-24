@@ -281,4 +281,30 @@ describeFn('Audit Hash Chain — Integration', () => {
             await deleteAuditRowsByActionLike(prisma, `${structPrefix}%`);
         });
     });
+
+    describe('machine principals', () => {
+        // `system:report-delivery` and `system:webhook` are context ids, not
+        // `User` rows. Handed to the writer as-is they failed the
+        // `AuditLog.userId` foreign key (23503); the row now lands with no
+        // user id, and `actorType` says a machine acted (#5910).
+        test.each(['system:report-delivery', 'system:webhook'])(
+            '%s lands with a NULL user id instead of failing the foreign key',
+            async (principal) => {
+                const written = await appendAuditEntry({
+                    tenantId,
+                    userId: principal,
+                    actorType: 'JOB',
+                    entity: 'Test',
+                    entityId: 'machine-principal',
+                    action: testAction(`MACHINE_${principal.replace(/\W/g, '_')}`),
+                }, prisma);
+
+                const row = await prisma.auditLog.findUnique({
+                    where: { id: written.id },
+                    select: { userId: true, actorType: true },
+                });
+                expect(row).toEqual({ userId: null, actorType: 'JOB' });
+            },
+        );
+    });
 });

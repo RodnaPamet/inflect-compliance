@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card';
 import { FormField } from '@/components/ui/form-field';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Input } from '@/components/ui/input';
+import { TextButton, TextLink } from '@/components/ui/text-link';
 import { Heading } from '@/components/ui/typography';
 import { postSignInPath } from '@/lib/auth/redirect-path';
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '@/lib/auth/password-limits';
@@ -341,8 +342,11 @@ function LoginForm() {
                                         maxLength={mode === 'register' ? MAX_PASSWORD_LENGTH : undefined}
                                     />
                                 </FormField>
-                                <div className="text-right -mt-2">
-                                    <a href="/forgot-password" className="text-xs text-content-emphasis underline underline-offset-2 hover:text-[var(--brand-default)]">{t('forgotPassword')}</a>
+                                {/* The form's own gap, not `-mt-2`: the link's touch
+                                    target reaches ~14px above it and must not take
+                                    the password field's taps. */}
+                                <div className="text-right">
+                                    <TextLink href="/forgot-password" tone="underline" className="text-xs text-content-emphasis">{t('forgotPassword')}</TextLink>
                                 </div>
                                 <Button type="submit" variant="primary" size="sm" className="w-full" disabled={loading}>
                                     {loading ? t('pleaseWait') : mode === 'login' ? t('submitLogin') : t('submitRegister')}
@@ -351,9 +355,9 @@ function LoginForm() {
 
                             <div className="mt-6 text-center text-sm text-content-muted">
                                 {mode === 'login' ? (
-                                    <span>{t('noAccount')} <button onClick={() => setMode('register')} className="text-content-emphasis underline underline-offset-2 hover:text-[var(--brand-default)]">{t('registerLink')}</button></span>
+                                    <span>{t('noAccount')} <TextButton onClick={() => setMode('register')} tone="underline" className="text-content-emphasis">{t('registerLink')}</TextButton></span>
                                 ) : (
-                                    <span>{t('hasAccount')} <button onClick={() => setMode('login')} className="text-content-emphasis underline underline-offset-2 hover:text-[var(--brand-default)]">{t('signInLink')}</button></span>
+                                    <span>{t('hasAccount')} <TextButton onClick={() => setMode('login')} tone="underline" className="text-content-emphasis">{t('signInLink')}</TextButton></span>
                                 )}
                             </div>
 
@@ -385,13 +389,14 @@ function LoginForm() {
                                             value={resendEmail}
                                             onChange={(e) => setResendEmail(e.target.value)}
                                         />
-                                        <button
+                                        <TextButton
                                             type="submit"
+                                            tone="underline"
                                             disabled={resendState === 'sending' || !resendEmail}
-                                            className="text-xs text-content-emphasis underline underline-offset-2 hover:text-[var(--brand-default)] disabled:text-content-subtle disabled:no-underline"
+                                            className="shrink-0 text-xs text-content-emphasis disabled:text-content-subtle disabled:no-underline"
                                         >
                                             {resendState === 'sending' ? t('sending') : t('resend')}
-                                        </button>
+                                        </TextButton>
                                     </form>
                                 )}
                             </div>

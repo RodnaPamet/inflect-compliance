@@ -233,6 +233,21 @@ describe('the run detail renders the step ledger', () => {
         expect(row.querySelector('img')).toBeNull();
     });
 
+    it('makes each payload toggle a 44px row on a touch screen, the marker beside its label (#5924)', () => {
+        // Input and Output sit 8px apart, so the row grows (min-height and
+        // line box) rather than a hit area that would overlap the next one.
+        renderDetail([step({ seq: 0, id: 's-0', inputJson: '{"a":1}', outputJson: '{"b":2}' })]);
+        const row = document.getElementById('step-0') as HTMLElement;
+        for (const label of [D.inputLabel, D.outputLabel]) {
+            const summary = within(row).getByText(label);
+            expect(summary.tagName).toBe('SUMMARY');
+            const cls = (summary.getAttribute('class') ?? '').split(/\s+/);
+            expect(cls).toEqual(expect.arrayContaining(['pointer-coarse:min-h-11', 'pointer-coarse:leading-11']));
+            // Not a flex box: that would drop the disclosure marker.
+            expect(cls.some((c) => /(^|:)(inline-)?flex$/.test(c))).toBe(false);
+        }
+    });
+
     it('omits the payload disclosure entirely when there is none', () => {
         // A SYNTHESIS has no input; a checkpoint has neither. An empty
         // disclosure would invite a reader to open nothing.

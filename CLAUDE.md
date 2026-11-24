@@ -2044,9 +2044,13 @@ are easy to undo:
 
 - **Its own key, `admin.integrations_ingest`** (scope `admin:integrations_ingest`;
   owner decision), held and classified exactly as `agent_harness_ingest` is,
-  side-door list included. A key minted for one report does not post the other.
-  The SAME registered scanner keys verify both reports, and each verifier refuses
-  the other's contract.
+  side-door list included. A key needs this scope to post this report, but one
+  key MAY carry several ingest scopes (owner decision, 2026-11-24): "Connect a
+  scanner" on the Scanner keys card creates exactly one key per scanner, bound
+  to its agent, with the scope of every report ticked (`scannerKeyScopes`,
+  `src/lib/agentic/scanner-connect.ts`), through the api-keys route and no
+  other. The SAME registered scanner keys verify both reports, and each
+  verifier refuses the other's contract.
 - **The contract and the planner are the package's** —
   `verifyAndParseIntegrationsReport` and `planIntegrationsScan` from
   `@rodnapamet/scanent-contract/integrations-*`, imported directly (no
@@ -2083,7 +2087,9 @@ single-write-seam guard holds them); its results are the Agent surface tab on
 
 - **Its own key, `admin.agent_rules_ingest`** (scope `admin:agent_rules_ingest`;
   owner decision 3 of `scanent`'s agent-surface rules design), held and
-  classified exactly as `integrations_ingest`, side-door list included.
+  classified exactly as `integrations_ingest`, side-door list included. The
+  scope is its own; the key need not be (one scanner key may carry all three
+  ingest scopes, as above).
 - **A finding closes only on positive evidence about its ORIGIN** (owner
   decision, 2026-11-22): a later scan by the SAME scanner read the place it was
   found — an MCP server (`mcp:<URL>`) or a code root (`code:<label>`) — in full
@@ -3276,6 +3282,32 @@ abort, telling it from an engine's own ABORTED (a kill, a guard block) by
 `OPERATOR_ABORT_MESSAGE`, which only `abortWorkflowRun` writes. EMPTY_CATALOGUE
 is terminal: the abort refuses it (`isLiveRunStatus`), and its decision rows
 and metric settle as a FAILED run's.
+
+**A queued run executes in at most one place at a time** (#5854 finding 2,
+`src/lib/agentic/run-lease.ts`). `executeQueuedWorkflowRun` CLAIMS the run
+before it executes any of it: a conditional UPDATE, on the database's clock,
+that sets `WorkflowRun.leaseHolder` to a fresh attempt token only where the run
+is RUNNING and nobody holds it or the lease has lapsed. A worker that cannot
+claim does nothing (`skipped: LEASE_HELD`), after watching the lease for at
+most one TTL so a dead holder's run is taken over rather than left to the
+reaper. The holder renews while it runs and releases in `finally`. The token
+rides on the context (`RequestContext.runLeaseToken`) and is a FENCE: `updateRun`
+and `recordStep` write only while the row names it, and `isRunAborted` reads a
+run held by somebody else as stopped, so a worker that lost the run stops at the
+check where it stops for an Abort and writes nothing more (`skipped:
+LEASE_LOST`); `executeFrom` takes none of its settlement steps for it. Expiry
+alone fences nobody. The SIGTERM drain pauses only rows its own tokens hold and
+releases them; the reaper reaps a run only with no live lease and clears the one
+it reaps; an operator's Abort wins over a held lease. Inline runs (a static
+start or resume in the request) take no lease, and with no token every fence is
+a no-op. Do not add a write path for a run's row or ledger that bypasses
+`updateRun` / `recordStep`: it would not be fenced. Each `agent-run-execute`
+enqueue names its segment (`agentRunExecuteJobId`: the run's `startedAt`, or the
+`updatedAt` its #5119 resume claim left), so BullMQ drops a duplicate enqueue;
+never key it on `stepCount` or a clock read at the enqueue. A retry still
+re-RUNS a reasoning segment from its opening message, so a tool the dead attempt
+called can run again: replaying or refusing it is an open owner decision (the
+note `docs/implementation-notes/2026-11-23-fix-5854-run-claim.md`).
 
 **"Is this a reasoning engine" is `isReasoningEngine(driver)`**
 (`src/lib/agentic/agent-driver.ts`), never a comparison with `'flue'`. It is

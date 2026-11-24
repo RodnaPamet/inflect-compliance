@@ -124,8 +124,10 @@ describe('PR-A notification-assignment alert wiring', () => {
                 expect(s).toMatch(
                     new RegExp(`AssignmentNotificationKind[\\s\\S]{0,200}${kind}`),
                 );
-                // Each kind also needs a COPY entry (title/body/link).
-                expect(s).toMatch(new RegExp(`${kind}:\\s*\\{`));
+                // Each kind also needs a link entry. Its title and body are
+                // the stock sentences (#5929), which
+                // `tests/unit/stock-notifications.test.ts` holds per kind.
+                expect(s).toMatch(new RegExp(`${kind}:\\s*'\\w+'`));
             }
         });
 

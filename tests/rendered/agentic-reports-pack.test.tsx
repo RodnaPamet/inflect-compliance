@@ -192,7 +192,7 @@ describe('all six reports render', () => {
         expect(screen.queryByTestId('metric-value-assurance.workpaper_reperformance_agreement_rate')).not.toBeInTheDocument();
         // The definition is on screen beside the figure.
         expect(screen.getByTestId('metric-definition-assurance.workpaper_reperformance_agreement_rate').textContent).toContain(
-            'CONCURRED over (CONCURRED + DISSENTED)',
+            'reviews that agreed, divided by reviews that agreed or disagreed',
         );
     });
 

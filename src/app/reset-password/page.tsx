@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { FormField } from '@/components/ui/form-field';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Input } from '@/components/ui/input';
+import { TextLink } from '@/components/ui/text-link';
 import { Heading } from '@/components/ui/typography';
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '@/lib/auth/password-limits';
 import { isResetPasswordRefusal, type ResetPasswordRefusal } from '@/lib/auth/reset-password-refusals';
@@ -113,9 +114,9 @@ function ResetPasswordForm() {
                                 {t('invalidLink')}
                             </InlineNotice>
                             <div className="mt-6 text-center text-sm text-content-muted">
-                                <a href="/forgot-password" className="text-content-emphasis underline underline-offset-2 hover:text-[var(--brand-default)]">
+                                <TextLink href="/forgot-password" tone="underline" className="text-content-emphasis">
                                     {t('requestNewLink')}
-                                </a>
+                                </TextLink>
                             </div>
                         </>
                     ) : (
@@ -165,9 +166,9 @@ function ResetPasswordForm() {
                             </form>
 
                             <div className="mt-6 text-center text-sm text-content-muted">
-                                <a href="/login" className="text-content-emphasis underline underline-offset-2 hover:text-[var(--brand-default)]">
+                                <TextLink href="/login" tone="underline" className="text-content-emphasis">
                                     {t('backToSignIn')}
-                                </a>
+                                </TextLink>
                             </div>
                         </>
                     )}

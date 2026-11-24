@@ -133,7 +133,7 @@ function renderShortcut(raw: string): ReactNode {
             className={cn(
                 'ml-1 inline-flex h-5 min-w-[1.25rem] items-center justify-center',
                 'rounded border border-border-subtle bg-bg-muted px-1.5',
-                'text-[10px] font-medium text-content-muted',
+                'text-xs font-medium text-content-muted',
             )}
         >
             {prettifyKeyToken(p)}
@@ -381,10 +381,14 @@ export function CommandPalette() {
                         className="flex flex-col"
                         label={t('title')}
                     >
+                        {/* The row's vertical padding is the INPUT's, not the
+                            row's: the field is the row's full height (47px)
+                            rather than its 23px line, so the whole bar takes
+                            a tap. The row looks exactly as it did. */}
                         <div
                             className={cn(
                                 'flex items-center gap-tight border-b border-border-subtle',
-                                'px-4 py-3',
+                                'px-4',
                             )}
                         >
                             <Search
@@ -401,7 +405,7 @@ export function CommandPalette() {
                                         : t('searchPlaceholder')
                                 }
                                 className={cn(
-                                    'flex-1 bg-transparent text-sm',
+                                    'min-w-0 flex-1 bg-transparent py-3 text-sm',
                                     'text-content-emphasis placeholder:text-content-subtle',
                                     'focus:outline-none',
                                 )}
@@ -411,7 +415,7 @@ export function CommandPalette() {
                                 className={cn(
                                     'hidden shrink-0 items-center rounded border',
                                     'border-border-subtle bg-bg-muted px-1.5 py-0.5',
-                                    'text-[10px] font-medium text-content-muted',
+                                    'text-xs font-medium text-content-muted',
                                     'sm:inline-flex',
                                 )}
                             >
@@ -449,7 +453,7 @@ export function CommandPalette() {
                                             data-chip-kind={kind}
                                             data-chip-active={active ? 'true' : 'false'}
                                             className={cn(
-                                                'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] border transition-colors',
+                                                'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs border transition-colors',
                                                 active
                                                     ? 'border-[var(--brand-default)] bg-[var(--brand-subtle)] text-[var(--brand-default)]'
                                                     : 'border-border-subtle text-content-muted hover:text-content-emphasis hover:bg-bg-muted',
@@ -457,7 +461,7 @@ export function CommandPalette() {
                                             )}
                                         >
                                             <span>{entityMeta[kind].heading}</span>
-                                            <span className="text-[10px] tabular-nums opacity-80">{count}</span>
+                                            <span className="text-xs tabular-nums opacity-80">{count}</span>
                                         </button>
                                     );
                                 })}
@@ -704,7 +708,7 @@ function EntityGroup({
                         <span
                             className={cn(
                                 'shrink-0 rounded border border-border-subtle bg-bg-muted',
-                                'px-1.5 py-0.5 text-[10px] font-medium uppercase',
+                                'px-1.5 py-0.5 text-xs font-medium uppercase',
                                 'tracking-wider text-content-muted',
                             )}
                         >
@@ -814,7 +818,7 @@ function RecentsGroup({
                     )}
                 >
                     <span className="min-w-0 flex-1 break-words">{item.title}</span>
-                    <span className="text-[10px] uppercase tracking-wider text-content-subtle">
+                    <span className="text-xs uppercase tracking-wider text-content-subtle">
                         {entityMeta[item.type]?.heading ?? SEARCH_TYPE_DEFAULTS[item.type]?.category}
                     </span>
                 </Command.Item>

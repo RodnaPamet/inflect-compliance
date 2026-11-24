@@ -184,7 +184,7 @@ function ChartLegendGradient({
                     fill={`url(#${heatScale.gradientId})`}
                 />
             </svg>
-            <div className="flex justify-between font-mono text-[10px]">
+            <div className="flex justify-between font-mono text-xs">
                 <span>{minLabel}</span>
                 <span>{maxLabel}</span>
             </div>

@@ -125,10 +125,40 @@ type Baseline = Record<MobileE2eConfig, Record<RatchetedMetric, number>>;
  * Gap", and the ISO 27001 domain names in the controls browse rail (the list
  * and its selection state) — the rail renders only when the shared tenant
  * holds ISO controls, which other E2E specs install before this one runs.
+ *
+ * tapUnder24, 9 (#5869): 10 until the harness stopped counting what is not a
+ * defect. The create sheet's only small "control" was the Radix RadioGroup
+ * root, which takes focus for its radios and is not a control itself. On the
+ * controls list the selection circles are now measured by the 44px wrapper
+ * that takes the tap.
+ *
+ * tapUnder24, 3 (#5873, #5876, #5878, #5881, #5885): 9 until the tap-target
+ * batch. A clickable list card's title is text (the card is the one target);
+ * stand-alone small links are `TextLink`, the toast close and the slider thumb
+ * wear the touch hit area, the stepper is 48px on touch, native choice inputs
+ * are the Radix primitives. The three left are other issues' surfaces: the
+ * dashboard's chart marks (#5877), the command palette's 23px search field
+ * and the risk score's help button. The framework explorer's tree toggles
+ * went with #5889 (44px rows and chevrons on a coarse pointer).
+ *
+ * tapUnder24, 1 (#5884): 3 until the score chip on `risks/[riskId]` ("16 ·
+ * Критичен, обяснение", 16px tall) wore the shared touch hit area and the
+ * command palette's 23px search field took the search bar's full height. The
+ * one left is the dashboard's chart marks and legend links (#5877).
+ *
+ * tapUnder24, 0 (#5877): the dashboard's chart marks and legend links are
+ * gone. A donut legend row is the slice's link and a 44px row on touch; the
+ * radar's 8px vertices and its axis labels take no taps on a coarse pointer
+ * (the posture ladder beside it lists the same values). No fixed route has a
+ * tap target under 24px.
+ *
+ * clipped, 0 (#5875, with #5874 and #5879): the last one was the integrations
+ * page's webhook URL, a `<code>` with no space to break at. `code`, `samp` and
+ * `.font-mono` now wrap anywhere (`src/app/globals.css`).
  */
 export const SEED_BASELINE: Baseline = {
-    '390-dark-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 10, englishLeaks: 0 },
-    '360-light-bg': { clipped: 1, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 10, englishLeaks: 0 },
+    '390-dark-bg': { clipped: 0, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 0, englishLeaks: 0 },
+    '360-light-bg': { clipped: 0, inputUnder16: 0, overlayCoversControl: 0, overlayCoversText: 0, tabsNoCue: 0, tapUnder24: 0, englishLeaks: 0 },
 };
 
 /** Routes in `RECORD_ROUTES` failing each metric. */

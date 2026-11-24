@@ -22,6 +22,8 @@ export interface PolicyTemplate {
     id: string;
     title: string;
     category?: string | null;
+    /** The template's language (the library is English); its title and category are shown in it. */
+    language?: string | null;
     [key: string]: unknown;
 }
 

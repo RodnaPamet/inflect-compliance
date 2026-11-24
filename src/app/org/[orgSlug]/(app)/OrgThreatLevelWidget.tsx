@@ -86,7 +86,7 @@ export function OrgThreatLevelWidget({
                 <div className="flex items-center gap-compact">
                     <ShieldAlert className="w-5 h-5 text-content-muted" aria-hidden="true" />
                     <div>
-                        <p className="text-[11px] uppercase tracking-wide text-content-muted">{t('widgets.threatLevel')}</p>
+                        <p className="text-xs uppercase tracking-wide text-content-muted">{t('widgets.threatLevel')}</p>
                         <StatusBadge variant={TIER_VARIANT[level]} size="md" tone="solid">
                             {t(TIER_LABEL_KEY[level])}
                         </StatusBadge>
@@ -134,7 +134,7 @@ export function OrgThreatLevelWidget({
                 {TIERS.map((tier) => (
                     <span
                         key={tier}
-                        className={`text-[10px] px-1.5 py-0.5 rounded ${tier === level ? 'ring-1 ring-border-emphasis' : 'opacity-60'}`}
+                        className={`text-xs px-1.5 py-0.5 rounded ${tier === level ? 'ring-1 ring-border-emphasis' : 'opacity-60'}`}
                     >
                         <StatusBadge variant={TIER_VARIANT[tier]} size="sm">
                             {t(TIER_LABEL_KEY[tier])}

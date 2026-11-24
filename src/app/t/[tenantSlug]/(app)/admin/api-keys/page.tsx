@@ -284,7 +284,7 @@ function ScopePicker({
                     content={t('apiKeys.fullAccessTooltip')}
                 />
                 {isFullAccess && (
-                    <span className="text-[10px] text-content-warning flex items-center gap-1">
+                    <span className="text-xs text-content-warning flex items-center gap-1">
                         <AlertTriangle className="w-3.5 h-3.5" />
                         {t('apiKeys.grantsAll')}
                     </span>
@@ -295,7 +295,7 @@ function ScopePicker({
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-tight">
                     {Object.entries(SCOPE_GROUPS).map(([groupKey, group]) => (
                         <div key={groupKey} className="bg-bg-default/40 rounded-lg p-2 space-y-1">
-                            <div className="text-[10px] text-content-subtle uppercase tracking-wider font-medium">
+                            <div className="text-xs text-content-subtle uppercase tracking-wider font-medium">
                                 {t(group.labelKey)}
                             </div>
                             {group.scopes.map((scope) => {
@@ -307,7 +307,7 @@ function ScopePicker({
                                         type="button"
                                         onClick={() => toggleScope(scope)}
                                         className={`
-                                            w-full text-left text-[11px] px-2 py-1 rounded transition
+                                            w-full text-left text-xs px-2 py-1 rounded transition
                                             ${isSelected
                                                 ? 'bg-[var(--brand-subtle)] text-[var(--brand-muted)] border border-[var(--brand-default)]/40'
                                                 : 'bg-bg-elevated/30 text-content-muted border border-transparent hover:border-border-emphasis'
@@ -746,7 +746,7 @@ export default function ApiKeysPage() {
                     </p>
                 </div>
                 {!showCreate && !createdKey && (
-                    <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setShowCreate(true)} id="create-api-key-btn">
+                    <Button variant="primary" icon={<Plus />} onClick={() => setShowCreate(true)} id="create-api-key-btn">
                         {t('apiKeys.headerButton')}
                     </Button>
                 )}

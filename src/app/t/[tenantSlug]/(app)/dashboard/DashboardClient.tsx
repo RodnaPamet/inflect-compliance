@@ -1062,7 +1062,7 @@ function CustomKpiPanel({ trends }: { trends: TrendPayload | null | undefined })
                                 showLegend={false}
                                 onSegmentClick={(s) => s.href && router.push(s.href)}
                             />
-                            <div className="space-y-tight">
+                            <div className="space-y-tight pointer-coarse:space-y-0">
                                 {segments.map((seg) => (
                                     <DonutLegendRow
                                         key={seg.key}
@@ -1113,7 +1113,7 @@ function CustomKpiPanel({ trends }: { trends: TrendPayload | null | undefined })
 // A single legend row beside a status/severity donut. When `href` is
 // set it becomes a keyboard-accessible link that opens the entity list
 // filtered to this slice — the same target the donut arc navigates to.
-function DonutLegendRow({
+export function DonutLegendRow({
     label,
     value,
     dotClassName,
@@ -1147,10 +1147,15 @@ function DonutLegendRow({
     if (!href) {
         return <div className="flex items-center justify-between text-xs">{body}</div>;
     }
+    // On a touch screen the row is the slice's drill-through, so it is a
+    // 44px row (`pointer-coarse:min-h-11`) rather than a 16px line: the
+    // legend is the list a phone taps, and the arc beside it is only a
+    // convenience (docs/charts.md, "Touch"). The containers drop their gap
+    // on touch, so the rows stack as one list instead of spreading apart.
     return (
         <Link
             href={href}
-            className="group/legend flex items-center justify-between text-xs rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            className="group/legend flex items-center justify-between text-xs rounded pointer-coarse:min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             aria-label={ariaLabel}
         >
             {body}
@@ -1217,7 +1222,7 @@ function RiskDistributionSection({
                     showLegend={false}
                     onSegmentClick={(s) => s.href && router.push(s.href)}
                 />
-                <div className="space-y-tight">
+                <div className="space-y-tight pointer-coarse:space-y-0">
                     {severitySegments.map((item) => (
                         <DonutLegendRow
                             key={item.label}
@@ -1304,7 +1309,7 @@ function StatusDonutSection({
                     showLegend={false}
                     onSegmentClick={(s) => s.href && router.push(s.href)}
                 />
-                <div className="space-y-tight">
+                <div className="space-y-tight pointer-coarse:space-y-0">
                     {segments.map((item) => (
                         <DonutLegendRow
                             key={item.label}

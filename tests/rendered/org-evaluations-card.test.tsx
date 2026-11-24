@@ -101,6 +101,23 @@ describe('OrgEvaluationsCard', () => {
         }
     });
 
+    // #5924: each link is a line of its own, 17px of text, so on a phone it
+    // answers a 44px square; and the name and its "off by default" badge
+    // wrap, where at 360px the badge used to run past the screen edge.
+    it('gives each link a touch square, and lets an entry’s badge wrap under its name', () => {
+        renderCard('bg');
+        for (const testId of ['org-evals-garak-runs-link', 'org-evals-inspect-runs-link', 'org-evals-variables-link']) {
+            expect(screen.getByTestId(testId).className.split(/\s+/)).toEqual(
+                expect.arrayContaining(['relative', 'pointer-coarse:after:min-h-11', 'pointer-coarse:after:min-w-11']),
+            );
+        }
+        for (const entry of ['org-evals-garak', 'org-evals-inspect']) {
+            const badge = within(screen.getByTestId(entry)).getByText(BG.org.settings.evaluations.offByDefault);
+            const row = badge.closest('div.flex');
+            expect(row?.className.split(/\s+/)).toContain('flex-wrap');
+        }
+    });
+
     it('shows each schedule and spending cap', () => {
         renderCard();
         const garak = screen.getByTestId('org-evals-garak');

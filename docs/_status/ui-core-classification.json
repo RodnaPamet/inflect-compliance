@@ -79,6 +79,11 @@
   "derivation": "audited",
   "reason": "The header primitive is structurally generic — breadcrumbs/back/eyebrow/title/description/meta/actions are all caller-supplied, the back link's only literal is the `←` glyph (line 226), and there is no storage key or brand token. Two couplings. The import one is the substantive one: it makes a shared primitive's visible behaviour (whether the H1 is `sr-only`) depend on this product's route registry: `classifyRoute` comes from `@/lib/nav/page-segregation` (:63), a domain module whose `MAIN_PAGES`/`SUBPAGES` lists are this product's own routes, and it decides at :198 whether the H1 renders `sr-only` (:264) — a route it does not list classifies `unknown`, so a vendoring product gets a visible H1 on every page. The second coupling is prose: the `titleAdornment` docstring's worked example at :131 is a security-incident sentence (`Ransomware on the billing cluster`), removable in one comment edit. The two near misses are worth naming — `@inflect/ui/lib/cn` (:62) is a package import, outside the `@/` alias, and `@/components/nav/BackAffordance` (:70) is a sibling component namespace, not `src/app-layer` or a domain `src/lib`."
  },
+ "src/components/layout/SettingRow.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "A title-plus-control row (#5874): a column below `sm`, the usual title-left / control-right row from `sm` up, with a text column that can shrink and a control cluster that wraps. Slots only (leading, title, adornment, description, children, control) and closed spacing maps. Imports are `react` and `@inflect/ui/lib/cn` — no `src/app-layer` or domain `src/lib`. No strings, no GRC nouns, no storage, no brand tokens."
+ },
  "src/components/layout/SidebarNav.tsx": {
   "classification": "COUPLED",
   "derivation": "audited",
@@ -733,6 +738,11 @@
   "classification": "MIXED",
   "derivation": "audited",
   "reason": "Pure extension/MIME → icon mapping, correctly extracted for node tests. The labels now have a catalog key (`kind`, which `FileTypeIcon` translates), but the English `label` is still returned and rendered by callers that read it directly; the `domainKind` hint keeps its row-kind values."
+ },
+ "src/components/ui/file-picker.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "A single-file chooser (#5883): the native file input kept only to open the dialog (visually hidden, out of the tab order) behind a real `Button`, with the chosen file's name beside it; the row wraps and the name breaks anywhere, so it never widens a phone layout. Inside a `FormField` the field's id and aria land on the button. Its two strings come from next-intl (`common.filePicker`), and the caller can override the button's words. Imports are `react`, `next-intl`, `lucide-react`, `@/components/ui/button` and `@inflect/ui/lib/cn` — no `src/app-layer` or domain `src/lib`. No GRC nouns, no storage, no brand tokens."
  },
  "src/components/ui/file-type-icon.tsx": {
   "classification": "GENERIC",
@@ -1924,6 +1934,11 @@
   "derivation": "audited",
   "reason": "The hook's code is completely generic — it composes `apply`/`isActive`/`clear` callbacks over the shared FilterContextValue and has no strings, no storage and no domain import (`@/components/ui/filter` is a ui module). But its 65-line design-rationale header and several prop docs are written throughout in risk-register vocabulary: the Risks page is named as the contract this implements, and the worked examples are drawn from its fields — `Open → status=OPEN` and `Critical → impact=5,4 + likelihood=5,4` at :27-29, `status=OPEN, severity=CRITICAL` at :102, and `High-Criticality → Active` in the B2 comment at :140-143, with the `toggle` doc at :113-115 naming the Risks page outright. Every hit is prose, so the comment mask in `codeOf` hides all of it from the mechanical pass and only a reader scores it — which makes this a documentation fix: neutral examples in the header and the prop docs, after which the hook ships unchanged on its two imports, `react` and `@/components/ui/filter`."
  },
+ "src/components/ui/kpi-strip.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "A row of KPI tiles: a sideways-scrolling strip with a faded end edge below md, the caller's grid from md up, all Tailwind classes. Mechanically generic (content is the caller's children, its one label comes from the 'ui.kpiStrip' catalog, semantic tokens only, no storage) but the docstring is written in terms of the product's list pages and their bundle budgets."
+ },
  "src/components/ui/label.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
@@ -2038,6 +2053,11 @@
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Skeleton primitives and page-level composites. Every a11y string goes through `useTranslations('common.skeleton')` — t('dashboard'), t('details'), t('settings'); everything else is aria-hidden geometry. Imports are @inflect/ui/lib/cn plus local card modules. The composites are named for page SHAPES (dashboard, detail-tabs, settings, filter-toolbar), not for compliance entities, so there are no domain-props."
+ },
+ "src/components/ui/slider-control.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "The Radix half of `slider.tsx`, split out so the wrapper can load it with next/dynamic: root, track, range, mark dots and thumb with the shared touch hit area. Renders no copy of its own (the accessible name is resolved by the wrapper and passed in); no domain vocabulary, no brand fill tokens, no storage; imports Radix Slider and @inflect/ui only."
  },
  "src/components/ui/slider.tsx": {
   "classification": "MIXED",
@@ -2178,6 +2198,11 @@
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "659-line react-window grid renderer. Copy via `useTranslations(\"common.table\")` (:363-364, :622); brand only as `bg-[var(--brand-subtle)]` and a focus ring; no storage; imports are tanstack/react-window/next-intl plus siblings. The single vocabulary hit, :17 \"The risk of subtly breaking the existing 80+ tables\", is the ordinary English noun, not the GRC entity — I checked the sentence."
+ },
+ "src/components/ui/text-link.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "TextLink (Next Link or a plain anchor) and TextButton: textLinkVariants plus the shared touch hit area. Every rendered string and the href are caller-supplied. No domain vocabulary, no brand fill tokens, no storage keys; imports next/link and @inflect/ui only."
  },
  "src/components/ui/textarea.tsx": {
   "classification": "GENERIC",

@@ -222,14 +222,12 @@ export function SelectionToolbar<T extends TableRowData>({
         className,
       )}
       data-placement={placement}
-      // React 18 doesn't recognise `inert` as a known boolean attribute,
-      // so passing a JSX boolean triggers the "non-boolean attribute"
-      // warning. Conditionally spread the attribute: present (empty
-      // string) when active, omitted otherwise. HTML treats any present
-      // `inert` attribute as truthy.
-      {...(selectedCount === 0
-          ? ({ inert: "" } as Record<string, string>)
-          : {})}
+      // React 19 knows `inert` as a boolean attribute: `true` renders it,
+      // `undefined` omits it. The React 18 workaround passed `inert=""`,
+      // which React 19 reads as FALSE, so the hidden bar was never inert
+      // and every list page logged "Received an empty string for a boolean
+      // attribute `inert`" (#5924).
+      inert={selectedCount === 0 || undefined}
       role="toolbar"
       aria-label={t("table.batchActions")}
       data-testid="selection-toolbar"

@@ -112,7 +112,7 @@ export function MonitorTab({ canExecute = false }: { canExecute?: boolean } = {}
         <div className="grid grid-cols-1 gap-section p-default lg:grid-cols-3">
             <div className="space-y-section lg:col-span-2">
                 <Card>
-                    <p className="mb-default text-[11px] uppercase tracking-wide text-content-subtle">
+                    <p className="mb-default text-xs uppercase tracking-wide text-content-subtle">
                         {t('monitor.recentActivity')}
                     </p>
                     {error && !data ? (
@@ -149,7 +149,7 @@ export function MonitorTab({ canExecute = false }: { canExecute?: boolean } = {}
 
                 {stuck.length > 0 && (
                     <Card>
-                        <p className="mb-default text-[11px] uppercase tracking-wide text-content-subtle">
+                        <p className="mb-default text-xs uppercase tracking-wide text-content-subtle">
                             {t('monitor.stuckExecutions', { count: stuck.length })}
                         </p>
                         <ul className="space-y-tight" data-testid="stuck-list">

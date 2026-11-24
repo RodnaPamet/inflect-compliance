@@ -252,7 +252,11 @@ export default function AssetImportPage() {
             {/* Format info */}
             <div className={cn(cardVariants({ density: 'compact' }), 'border-border-emphasis/50')}>
                 <Heading level={3} className="mb-2">{t('import.csvFormat')}</Heading>
-                <p className="text-xs text-content-muted">{t('import.csvDesc')}</p>
+                {/* The column names are what the importer reads, literally, so they
+                    are code, not words to translate (#5924). */}
+                <p className="text-xs text-content-muted">
+                    {t.rich('import.csvDesc', { code: (chunks) => <code className="font-mono">{chunks}</code> })}
+                </p>
                 <pre className="mt-2 text-xs text-content-subtle bg-bg-page/50 p-2 rounded overflow-x-auto">
                     {/* Template-literal so the quoted-CSV example's `"` stay plain
                         text (react/no-unescaped-entities) — and it doubles as a
@@ -296,8 +300,8 @@ Prod DB,DATA_STORE,ACTIVE,DBA,Confidential,eu-west-1,5,5,4,CMDB-1042,"Auth servi
                             {
                                 id: 'criticality',
                                 header: t('import.colCriticality'),
-                                accessorFn: (r) => getAssetCriticality(r.confidentiality ?? 3, r.integrity ?? 3, r.availability ?? 3).label,
-                                cell: ({ getValue }) => <span className="text-xs">{getValue()}</span>,
+                                accessorFn: (r) => getAssetCriticality(r.confidentiality ?? 3, r.integrity ?? 3, r.availability ?? 3).level,
+                                cell: ({ getValue }) => <span className="text-xs">{t(`filterEnums.criticality.${getValue() as string}` as Parameters<typeof t>[0])}</span>,
                             },
                             { id: 'owner', header: t('import.colOwner'), accessorKey: 'owner', cell: ({ getValue }) => <span className="text-xs text-content-muted">{getValue() || '—'}</span> },
                             {

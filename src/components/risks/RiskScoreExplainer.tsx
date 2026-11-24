@@ -28,6 +28,8 @@ import { useTranslations } from 'next-intl';
 import { Popover } from '@/components/ui/popover';
 import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
+import { cn } from '@inflect/ui/lib/cn';
+import { TOUCH_HIT_AREA_CLASS } from '@inflect/ui/components/ui/hit-area';
 import type { ScoreExplanation } from '@/app-layer/usecases/risk-score-explanation';
 
 /**
@@ -227,9 +229,13 @@ export function RiskScoreExplainer({
                 </div>
             }
         >
+            {/* The chip keeps its size; on a touch screen the shared hit
+                area answers a 44px square around it (a bare score read 16px
+                tall, too small to tap). */}
             <button
                 type="button"
-                className="cursor-help bg-transparent border-0 p-0 text-inherit"
+                className={cn('relative cursor-help bg-transparent border-0 p-0 text-inherit', TOUCH_HIT_AREA_CLASS)}
+                data-testid="risk-score-explainer-trigger"
                 aria-label={label ? t('explainLabelAria', { label }) : t('explainAria')}
             >
                 {children}

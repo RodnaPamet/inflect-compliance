@@ -293,7 +293,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
                             {/* Trigger summary */}
                             <Card>
                                 <div className="space-y-tight">
-                                    <p className="text-[11px] uppercase tracking-wide text-content-subtle">
+                                    <p className="text-xs uppercase tracking-wide text-content-subtle">
                                         {t('rules.colTrigger')}
                                     </p>
                                     <p className="text-sm text-content-emphasis">
@@ -305,7 +305,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
                             {/* Action summary */}
                             <Card>
                                 <div className="space-y-tight">
-                                    <p className="text-[11px] uppercase tracking-wide text-content-subtle">
+                                    <p className="text-xs uppercase tracking-wide text-content-subtle">
                                         {t('rules.colAction')}
                                     </p>
                                     <p className="text-sm text-content-emphasis">
@@ -322,7 +322,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
                                         data-testid="rule-detail-canvas"
                                     >
                                         <div className="min-w-0 space-y-tight">
-                                            <p className="text-[11px] uppercase tracking-wide text-content-subtle">
+                                            <p className="text-xs uppercase tracking-wide text-content-subtle">
                                                 {t('ruleDetail.onCanvas')}
                                             </p>
                                             <p className="truncate text-sm text-content-emphasis">
@@ -358,7 +358,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
                             {detail && (
                                 <Card>
                                     <div className="space-y-default">
-                                        <p className="text-[11px] uppercase tracking-wide text-content-subtle">
+                                        <p className="text-xs uppercase tracking-wide text-content-subtle">
                                             {t('ruleDetail.configuration')}
                                         </p>
 

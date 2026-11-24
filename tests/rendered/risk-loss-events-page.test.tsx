@@ -284,6 +284,17 @@ describe('Loss events — recording', () => {
         expect(await screen.findByRole('radiogroup', { name: L.sourceLabel })).toBeInTheDocument();
         expect(screen.getByRole('radio', { name: L.source_USER })).toBeInTheDocument();
     });
+
+    it('caps the source group at its row, so on a phone it scrolls instead of running off the edge', async () => {
+        mount();
+        const group = await screen.findByRole('radiogroup', { name: L.sourceLabel });
+        // A flex item is as wide as its content unless it may shrink; the
+        // group's own sideways scroll and edge cue engage only inside a cap.
+        const field = screen.getByTestId('loss-event-source-field');
+        expect(field.contains(group)).toBe(true);
+        expect(field.className.split(/\s+/)).toEqual(expect.arrayContaining(['min-w-0', 'max-w-full']));
+        expect(field.parentElement?.className).toContain('flex-wrap');
+    });
 });
 
 const ROW = {

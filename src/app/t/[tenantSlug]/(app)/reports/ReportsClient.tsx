@@ -2,6 +2,7 @@
 import { useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
+import { reportTemplateText } from '@/lib/risk-report/system-templates';
 import {
     ShieldCheck,
     TrendingUp,
@@ -82,6 +83,8 @@ export function ReportsClient({
     canEdit,
 }: ReportsClientProps) {
     const tx = useTranslations('reports');
+    // A stock template's name in the reader's language; a tenant's own as written (#5924).
+    const tTemplates = useTranslations('riskReportTemplates');
     // The hub's risk-report card lists what the tenant ACTUALLY has, including
     // custom templates. Read-only and non-blocking: the card renders without it
     // and shows nothing until it arrives.
@@ -91,7 +94,7 @@ export function ReportsClient({
     // without a TenantProvider, so reaching for tenant context here would add a
     // provider dependency the component does not otherwise have — for one
     // read-only list.
-    const { data: riskReports } = useSWR<{ templates: { id: string; name: string }[] }>(
+    const { data: riskReports } = useSWR<{ templates: { id: string; name: string; type: string; description?: string | null; isSystem?: boolean }[] }>(
         `/api/t/${tenantSlug}/risks/reports`,
         async (url: string) => {
             const r = await fetch(url);
@@ -264,7 +267,7 @@ export function ReportsClient({
                                 data-testid="risk-report-templates"
                             >
                                 {(riskTemplates ?? []).slice(0, 5).map((tpl) => (
-                                    <li key={tpl.id}>• {tpl.name}</li>
+                                    <li key={tpl.id}>• {reportTemplateText(tpl, tTemplates).name}</li>
                                 ))}
                                 {(riskTemplates?.length ?? 0) > 5 && (
                                     <li className="text-content-subtle">

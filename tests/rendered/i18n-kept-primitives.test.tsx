@@ -701,9 +701,10 @@ describe.each<Locale>(['en', 'bg'])('shared primitives render their own copy —
         expectLocalised(inc.getAttribute('aria-label'), 'Increase');
     });
 
-    it('Slider: the thumb name (#3209)', () => {
+    it('Slider: the thumb name (#3209)', async () => {
         render(<Slider value={5} onChange={() => {}} min={0} max={10} />);
-        expectLocalised(screen.getByRole('slider').getAttribute('aria-label'), 'Slider');
+        // The thumb is the lazily loaded Radix part (see `slider.tsx`).
+        expectLocalised((await screen.findByRole('slider')).getAttribute('aria-label'), 'Slider');
     });
 
     it('TabSelect: the tablist name (#3209)', () => {

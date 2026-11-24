@@ -123,7 +123,7 @@ function BadgeChip({ badge, badgeLabel }: { badge: string | number; badgeLabel?:
         <span className="ml-auto inline-flex shrink-0 items-center">
             <span
                 aria-hidden="true"
-                className="rounded-full bg-bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-content-emphasis"
+                className="rounded-full bg-bg-muted px-1.5 py-0.5 text-xs font-semibold tabular-nums text-content-emphasis"
             >
                 {badge}
             </span>
@@ -163,7 +163,7 @@ export function ViewsMenu({ groups, label, ariaLabel, id, className }: ViewsMenu
                         <div key={group.id} role="presentation">
                             {gi > 0 && <Popover.Separator />}
                             {group.label && (
-                                <p className="px-2.5 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-widest text-content-subtle">
+                                <p className="px-2.5 pt-1.5 pb-1 text-xs font-semibold uppercase tracking-widest text-content-subtle">
                                     {group.label}
                                 </p>
                             )}

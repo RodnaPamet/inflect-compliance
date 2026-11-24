@@ -7,6 +7,7 @@ import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-c
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { AppIcon } from '@/components/icons/AppIcon';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { DataTable, createColumns, TableEmptyState } from '@/components/ui/table';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
@@ -18,6 +19,14 @@ import { BackAffordance } from '@/components/nav/BackAffordance';
 import { cn } from '@inflect/ui/lib/cn';
 import { apiErrorMessage } from '@/lib/api-error';
 import { parsePlanLimitMessage } from '@/lib/billing/plan-limit-message';
+import { useIsBelowMd } from '@/components/ui/hooks';
+import { isControlCategoryTheme } from '@/lib/controls/control-categories';
+import {
+    TemplateInstallDock,
+    TemplateSelectRow,
+    TemplateShowMore,
+    useProgressiveCount,
+} from '@/components/controls-shared/template-library-phone';
 
 // listControlTemplates → ControlTemplateRepository.list (ControlTemplate model).
 interface ControlTemplateRow {
@@ -49,7 +58,10 @@ export default function ControlTemplatesPage() {
     // would accept is offered the selection and the install bar.
     const canInstall = permissions.canWrite && appPermissions.controls.create;
     const t = useTranslations('controls');
-
+    // An ISO 27002 theme constant (`ORGANIZATIONAL`, …) reads as its label in
+    // every view — the table's column too, which showed the constant (#5882);
+    // any other category is the library's own text.
+    const categoryLabel = (c: string) => (isControlCategoryTheme(c) ? t(`categoryLabels.${c}`) : c);
 
     // Epic 69 — SWR-backed list (was fetch-on-mount + setState-in-effect).
     // The API returns a bare array; `mutate` powers the inline retry.
@@ -150,8 +162,25 @@ export default function ControlTemplatesPage() {
               (tpl) =>
                   (tpl.code ?? '').toLowerCase().includes(filterQuery) ||
                   (tpl.title ?? '').toLowerCase().includes(filterQuery) ||
-                  (tpl.category ?? '').toLowerCase().includes(filterQuery),
+                  (tpl.category ?? '').toLowerCase().includes(filterQuery) ||
+                  // What the reader sees is what they search for.
+                  (tpl.category ? categoryLabel(tpl.category) : '').toLowerCase().includes(filterQuery),
           );
+
+    // Below `md` (Mobile 4.3): search first, one page of cards at a time,
+    // each with a real checkbox, and the install bar pinned to the bottom of
+    // the screen. The table stays for larger screens. `false` on the server
+    // and the first render, as DataTable's own card fallback.
+    const belowMd = useIsBelowMd();
+    const phone = useProgressiveCount(filterQuery);
+    const phoneRows = filtered.slice(0, phone.count);
+    // On a phone Install is tapped in the bottom bar, screens below the
+    // notices at the top; bring the outcome into view.
+    useEffect(() => {
+        if (!belowMd) return;
+        const id = error ? 'install-error' : success ? 'install-success' : null;
+        if (id) document.getElementById(id)?.scrollIntoView?.({ block: 'center' });
+    }, [belowMd, error, success]);
 
 
     return (
@@ -166,7 +195,7 @@ export default function ControlTemplatesPage() {
             </div>
 
             {error && (
-                <InlineNotice variant="error" icon={null}>{error}</InlineNotice>
+                <InlineNotice variant="error" icon={null} id="install-error">{error}</InlineNotice>
             )}
             {success && (
                 <InlineNotice variant="success" icon={null} id="install-success">{success}</InlineNotice>
@@ -179,7 +208,7 @@ export default function ControlTemplatesPage() {
 
             {/* Install bar — bulk-install the selected templates. */}
             {canInstall && (
-                <div className={cardVariants({ density: 'compact' })}>
+                <div className={cn(cardVariants({ density: 'compact' }), 'max-md:hidden')}>
                     <div className="flex items-center justify-end">
                         <Button
                             variant="primary"
@@ -235,26 +264,85 @@ export default function ControlTemplatesPage() {
                             description={t('templates.emptyDesc')}
                         />
                     )
+                ) : belowMd ? (
+                    <div className="space-y-default p-default" id="templates-phone-list">
+                        {canInstall && (
+                            <Button
+                                variant="secondary"
+                                className="min-h-11 w-full"
+                                onClick={toggleAll}
+                                id="templates-phone-select-all"
+                            >
+                                {selectedIds.size === filtered.length
+                                    ? t('templates.phone.clearSelection')
+                                    : t('templates.phone.selectAll', { count: filtered.length })}
+                            </Button>
+                        )}
+                        <ul className="divide-y divide-border-subtle">
+                            {phoneRows.map((tpl) => {
+                                const name = tpl.code ? `${tpl.code} ${tpl.title}` : tpl.title;
+                                const boxId = `template-select-${tpl.id}`;
+                                const text = (
+                                    <>
+                                        {tpl.code && (
+                                            <code className="block whitespace-nowrap text-xs text-content-muted">{tpl.code}</code>
+                                        )}
+                                        <span className="block break-words font-medium text-content-emphasis">{tpl.title}</span>
+                                        <span className="mt-tight flex flex-wrap items-center gap-tight text-xs text-content-subtle">
+                                            {tpl.category && (
+                                                <StatusBadge variant="info">{categoryLabel(tpl.category)}</StatusBadge>
+                                            )}
+                                            <span>
+                                                {t('templates.previewSummary', {
+                                                    tasks: tpl._count?.tasks ?? 0,
+                                                    requirements: tpl._count?.requirementLinks ?? 0,
+                                                })}
+                                            </span>
+                                        </span>
+                                    </>
+                                );
+                                return (
+                                    <li key={tpl.id} className="flex items-start gap-default py-default" data-testid="template-phone-card">
+                                        {canInstall ? (
+                                            <TemplateSelectRow
+                                                id={boxId}
+                                                checked={selectedIds.has(tpl.id)}
+                                                onCheckedChange={() => toggle(tpl.id)}
+                                                label={t('templates.selectRow', { name })}
+                                            >
+                                                {text}
+                                            </TemplateSelectRow>
+                                        ) : (
+                                            <div className="min-w-0 flex-1">{text}</div>
+                                        )}
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                        {phoneRows.length < filtered.length && (
+                            <TemplateShowMore
+                                id="templates-phone-more"
+                                onClick={phone.showMore}
+                                label={t('templates.phone.showMore', { remaining: filtered.length - phoneRows.length })}
+                            />
+                        )}
+                    </div>
                 ) : (
                     (() => {
                         // #4795 — the selection exists only to install, so it is
                         // offered only to a viewer who can; each box is named.
                         const selectColumn = {
                             id: 'select', header: () => (
-                                <input
-                                    type="checkbox"
+                                <Checkbox
                                     checked={selectedIds.size === filtered.length && filtered.length > 0}
-                                    onChange={toggleAll}
-                                    className="rounded"
+                                    onCheckedChange={toggleAll}
                                     aria-label={t('templates.selectAll')}
                                 />
                             ),
                             cell: ({ row }: { row: { original: ControlTemplateRow } }) => (
-                                <input
-                                    type="checkbox"
+                                <Checkbox
                                     checked={selectedIds.has(row.original.id)}
-                                    onChange={() => toggle(row.original.id)}
-                                    className="rounded"
+                                    onCheckedChange={() => toggle(row.original.id)}
                                     aria-label={t('templates.selectRow', { name: row.original.code ? `${row.original.code} ${row.original.title}` : row.original.title })}
                                 />
                             ),
@@ -265,7 +353,7 @@ export default function ControlTemplatesPage() {
                             { accessorKey: 'title', header: t('templates.colName'), cell: ({ getValue }) => <span className="font-medium text-content-emphasis">{getValue()}</span> },
                             {
                                 accessorKey: 'category', header: t('templates.colCategory'),
-                                cell: ({ getValue }) => getValue() ? <StatusBadge variant="info">{getValue()}</StatusBadge> : null,
+                                cell: ({ getValue }) => getValue() ? <StatusBadge variant="info">{categoryLabel(getValue() as string)}</StatusBadge> : null,
                             },
                             {
                                 // Pre-install preview — what installing creates.
@@ -305,6 +393,17 @@ export default function ControlTemplatesPage() {
                     })()
                 )}
             </div>
+
+            {canInstall && (
+                <TemplateInstallDock
+                    id="templates-phone-install"
+                    installLabel={installing ? t('templates.installing') : t('templates.installSelected', { count: selectedIds.size })}
+                    onInstall={handleInstall}
+                    disabled={selectedIds.size === 0 || installing}
+                    clearLabel={selectedIds.size > 0 ? t('templates.phone.clearSelection') : undefined}
+                    onClear={() => setSelectedIds(new Set())}
+                />
+            )}
         </div>
     );
 }

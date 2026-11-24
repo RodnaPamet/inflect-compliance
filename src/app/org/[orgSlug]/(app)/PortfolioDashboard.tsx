@@ -27,15 +27,14 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Building2, Pencil, Plus, RotateCcw, Settings2, Trash2, X } from 'lucide-react';
 
-import {
-    DashboardGrid,
-    WidgetPicker,
-    type WidgetLayoutChange,
-} from '@/components/ui/dashboard-widgets';
+// From their own modules, not the barrel: the barrel also re-exports the
+// widget picker, which is loaded on demand below.
+import { DashboardGrid, type WidgetLayoutChange } from '@/components/ui/dashboard-widgets/DashboardGrid';
 import { AnimatedNumber } from '@/components/ui/animated-number';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -59,6 +58,17 @@ import { localizedWidgetTitle } from '@/lib/org-dashboard-widget-titles';
 // `<header>` block; the tenant + org dashboards drifted on
 // chrome polish even though both were built by the same team.
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+
+/**
+ * The widget picker is a modal opened on demand, with its own form controls
+ * (the `Checkbox` primitive among them). Loaded as its own chunk so those stay
+ * out of the org pages' first load: imported statically, they moved into the
+ * chunk every org route shares (+2.4 KB on each, +6.8 on this one).
+ */
+const WidgetPicker = dynamic(
+    () => import('@/components/ui/dashboard-widgets/WidgetPicker').then((m) => m.WidgetPicker),
+    { ssr: false },
+);
 
 // ─── Props ──────────────────────────────────────────────────────────
 

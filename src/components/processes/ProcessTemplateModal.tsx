@@ -57,7 +57,7 @@ export function ProcessTemplateModal({ open, setOpen, onUse }: ProcessTemplateMo
                             <p className="text-xs text-content-muted">
                                 {t(`items.${tpl.summaryKey}`)}
                             </p>
-                            <p className="text-[11px] text-content-subtle tabular-nums">
+                            <p className="text-xs text-content-subtle tabular-nums">
                                 {t('shape', {
                                     steps: tpl.nodes.length,
                                     links: tpl.edges.length,

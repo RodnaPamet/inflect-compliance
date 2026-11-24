@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Heading } from '@/components/ui/typography';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { useUnsavedChangesWarning } from '@/lib/hooks';
 import { RequiredMarker } from '@/components/ui/required-marker';
@@ -123,16 +124,7 @@ export function VendorAssessmentClient({
     // let a stray back-navigation or tab close silently discard a
     // half-completed questionnaire the respondent may have spent an hour on.
     const hasUnsavedAnswers =
-        phase === 'ready' && Object.values(answers).some((v) => {
-            if (v == null) return false;
-            if (typeof v === 'string') return v.trim().length > 0;
-            if (Array.isArray(v)) return v.length > 0;
-            if (typeof v === 'object' && 'value' in (v as object)) {
-                const inner = (v as { value: unknown }).value;
-                return inner != null && String(inner).trim().length > 0;
-            }
-            return true;
-        });
+        phase === 'ready' && Object.values(answers).some(isAnswered);
 
     // Was hand-rolled here; the canvas needed the same thing, so it moved to
     // `useUnsavedChangesWarning`. Behaviour is unchanged — same preventDefault
@@ -226,7 +218,53 @@ export function VendorAssessmentClient({
 
     if (!data) return null;
 
+    const questions = data.template.sections.flatMap((s) => s.questions);
+    const answeredCount = questions.filter((q) => isAnswered(answers[q.id])).length;
+    const questionErrors = new Map(
+        submitErrors.filter((e) => e.questionId).map((e) => [e.questionId as string, e.message]),
+    );
+    const globalErrors = submitErrors.filter((e) => !e.questionId);
+
+    /**
+     * Take the respondent to the first question with an error (#5896). On a
+     * 4,700 px form a list at the top of the page was out of sight, so Submit
+     * appeared to do nothing. The question is scrolled to the middle of the
+     * screen, clear of the sticky submit bar, and its first control focused.
+     */
+    function revealFirstError(errors: Array<{ questionId: string | null }>) {
+        const ids = new Set(errors.map((e) => e.questionId).filter(Boolean));
+        const first = questions.find((q) => ids.has(q.id));
+        // After the errors render, so the message is on screen when it lands.
+        requestAnimationFrame(() => {
+            const el = first
+                ? document.getElementById(`question-${first.id}`)
+                : document.querySelector<HTMLElement>('[data-testid="vendor-assessment-submit-errors"]');
+            if (!el) return;
+            el.scrollIntoView({ block: 'center' });
+            const control = el.querySelector<HTMLElement>('input:not([type="hidden"]):not([aria-hidden="true"]), textarea, button, [tabindex]');
+            (control ?? el).focus({ preventScroll: true });
+        });
+    }
+
+    function setAnswer(questionId: string, v: unknown) {
+        setAnswers((prev) => ({ ...prev, [questionId]: v }));
+        // An answered question loses its error; the others keep theirs.
+        if (questionErrors.has(questionId)) {
+            setSubmitErrors((prev) => prev.filter((e) => e.questionId !== questionId));
+        }
+    }
+
     async function handleSubmit() {
+        // A required question left empty is named here, before a round trip,
+        // the same way the server would refuse it.
+        const missing = questions
+            .filter((q) => q.required && !isAnswered(answers[q.id]))
+            .map((q) => ({ questionId: q.id as string | null, message: t('answerRequired') }));
+        if (missing.length > 0) {
+            setSubmitErrors(missing);
+            revealFirstError(missing);
+            return;
+        }
         setSubmitting(true);
         setSubmitErrors([]);
         try {
@@ -261,6 +299,7 @@ export function VendorAssessmentClient({
                 };
                 if (body.error === 'validation_failed' && body.fieldErrors) {
                     setSubmitErrors(body.fieldErrors);
+                    revealFirstError(body.fieldErrors);
                     return;
                 }
                 if (body.error === 'access_denied') {
@@ -281,6 +320,7 @@ export function VendorAssessmentClient({
                                         : t('submitAccessDenied'),
                         },
                     ]);
+                    revealFirstError([{ questionId: null }]);
                     return;
                 }
                 setSubmitErrors([
@@ -289,6 +329,7 @@ export function VendorAssessmentClient({
                         message: t('submitFailed'),
                     },
                 ]);
+                revealFirstError([{ questionId: null }]);
                 return;
             }
             setPhase('submitted');
@@ -300,15 +341,16 @@ export function VendorAssessmentClient({
             setSubmitErrors([
                 { questionId: null, message: t('submitNetworkFailed') },
             ]);
+            revealFirstError([{ questionId: null }]);
         } finally {
             setSubmitting(false);
         }
     }
 
     return (
-        <div className="min-h-screen bg-bg-subtle py-10 px-4">
+        <div className="min-h-screen bg-bg-subtle py-4 md:py-10 px-4">
             <div
-                className="max-w-2xl mx-auto bg-bg-default rounded-lg shadow p-8"
+                className="max-w-2xl mx-auto bg-bg-default rounded-lg shadow p-4 md:p-8"
                 data-testid="vendor-assessment-form"
             >
                 <header className="border-b pb-4 mb-6">
@@ -341,16 +383,20 @@ export function VendorAssessmentClient({
 
                 {submitErrors.length > 0 && (
                     <div
-                        className="border border-border-error bg-bg-error-emphasis text-content-error text-sm p-4 rounded mb-4"
+                        className="border border-border-error bg-bg-error-emphasis text-content-error text-sm p-4 rounded mb-4 scroll-mt-4"
                         role="alert"
+                        tabIndex={-1}
                         data-testid="vendor-assessment-submit-errors"
                     >
                         <strong>{t('fixErrors')}</strong>
                         <ul className="mt-2 list-disc list-inside">
-                            {submitErrors.map((e, i) => (
-                                <li key={`${e.questionId ?? 'global'}:${i}`}>
-                                    {e.message}
-                                </li>
+                            {/* A question's own error is shown under the
+                                question; the summary counts them. */}
+                            {questionErrors.size > 0 && (
+                                <li>{t('questionsToFix', { count: questionErrors.size })}</li>
+                            )}
+                            {globalErrors.map((e, i) => (
+                                <li key={`global:${i}`}>{e.message}</li>
                             ))}
                         </ul>
                     </div>
@@ -379,24 +425,34 @@ export function VendorAssessmentClient({
                                         key={q.id}
                                         question={q}
                                         value={answers[q.id]}
-                                        onChange={(v) =>
-                                            setAnswers((prev) => ({
-                                                ...prev,
-                                                [q.id]: v,
-                                            }))
-                                        }
+                                        error={questionErrors.get(q.id)}
+                                        onChange={(v) => setAnswer(q.id, v)}
                                     />
                                 ))}
                             </div>
                         </section>
                     ))}
 
-                    <div className="flex justify-end pt-4 border-t">
+                    {/* The submit bar: the progress, then Submit. On a phone it
+                        stays on screen at the bottom, above the home
+                        indicator, so a long form can be submitted from
+                        anywhere in it (#5896). */}
+                    <div
+                        className="flex items-center justify-between gap-compact border-t border-border-subtle pt-4 max-md:sticky max-md:bottom-0 max-md:z-10 max-md:-mx-4 max-md:bg-bg-default max-md:px-4 max-md:pb-[calc(0.75rem+env(safe-area-inset-bottom))] max-md:pt-3"
+                        data-testid="vendor-assessment-submit-bar"
+                    >
+                        <p
+                            className="text-sm text-content-muted"
+                            aria-live="polite"
+                            data-testid="vendor-assessment-progress"
+                        >
+                            {t('progress', { answered: answeredCount, total: questions.length })}
+                        </p>
                         <button
                             type="submit"
                             disabled={submitting}
                             data-testid="vendor-assessment-submit-btn"
-                            className="bg-brand-default text-content-inverted px-6 py-2 rounded-md font-medium disabled:opacity-50"
+                            className="bg-brand-default text-content-inverted px-6 py-2 rounded-md font-medium disabled:opacity-50 max-md:min-h-11 shrink-0"
                         >
                             {submitting ? t('submitting') : t('submit')}
                         </button>
@@ -405,6 +461,21 @@ export function VendorAssessmentClient({
             </div>
         </div>
     );
+}
+
+/**
+ * Whether an answer holds anything: the emptiness `submittableAnswers` omits,
+ * which is also what the progress counts and the required check refuses.
+ */
+export function isAnswered(v: unknown): boolean {
+    if (v == null) return false;
+    if (typeof v === 'string') return v.trim().length > 0;
+    if (Array.isArray(v)) return v.length > 0;
+    if (typeof v === 'object' && 'value' in (v as object)) {
+        const inner = (v as { value: unknown }).value;
+        return inner != null && String(inner).trim().length > 0;
+    }
+    return true;
 }
 
 /**
@@ -435,15 +506,56 @@ export function submittableAnswers(
     return out;
 }
 
-function QuestionField({
+function QuestionField(props: {
+    question: Question;
+    value: unknown;
+    /** This question's error, shown under it. */
+    error?: string;
+    onChange: (v: unknown) => void;
+}) {
+    const { question, error } = props;
+    const errorId = `q-${question.id}-error`;
+    return (
+        <div
+            id={`question-${question.id}`}
+            data-testid={`q-${question.id}`}
+            data-invalid={error ? '' : undefined}
+            className="scroll-mt-4"
+        >
+            <QuestionControl {...props} />
+            {error && (
+                <p id={errorId} className="mt-1 text-sm text-content-error" data-testid={`q-${question.id}-error`}>
+                    {error}
+                </p>
+            )}
+        </div>
+    );
+}
+
+/**
+ * A choice row: at least 44 px tall, and the whole row takes the tap.
+ * Yes/no is the Radix `RadioGroup` (#5906 brought it to this page). The
+ * option lists keep a native input whose type is chosen per question: the
+ * 20 px input ignores pointer events, so a tap anywhere on the row — the
+ * input included — lands on the label, which checks it; the keyboard still
+ * reaches the input itself.
+ */
+const CHOICE_ROW = 'flex min-h-11 cursor-pointer items-center gap-compact text-sm text-content-default';
+const CHOICE_INPUT = 'pointer-events-none h-5 w-5 shrink-0 accent-[var(--brand-default)]';
+
+function QuestionControl({
     question,
     value,
+    error,
     onChange,
 }: {
     question: Question;
     value: unknown;
+    error?: string;
     onChange: (v: unknown) => void;
 }) {
+    const invalid = error ? true : undefined;
+    const describedBy = error ? `q-${question.id}-error` : undefined;
     const t = useTranslations('external.vendorAssessment');
     const tCommon = useTranslations('common');
     // The question names its field (#4991): the free-text, number and
@@ -460,49 +572,51 @@ function QuestionField({
     switch (question.answerType) {
         case 'YES_NO':
             return (
-                <div data-testid={`q-${question.id}`}>
+                <>
                     {baseLabel}
-                    <div className="flex gap-default">
+                    <RadioGroup
+                        value={typeof value === 'string' ? value : ''}
+                        onValueChange={onChange}
+                        name={question.id}
+                        aria-labelledby={labelId}
+                        aria-describedby={describedBy}
+                        aria-invalid={invalid}
+                        className="flex gap-section"
+                    >
                         {['yes', 'no'].map((opt) => (
-                            <label
-                                key={opt}
-                                className="inline-flex items-center text-sm text-content-default"
-                            >
-                                <input
-                                    type="radio"
-                                    name={question.id}
-                                    value={opt}
-                                    checked={value === opt}
-                                    onChange={() => onChange(opt)}
-                                    className="mr-2"
-                                />
+                            <label key={opt} className={CHOICE_ROW}>
+                                <RadioGroupItem value={opt} />
                                 {opt === 'yes' ? tCommon('yes') : tCommon('no')}
                             </label>
                         ))}
-                    </div>
-                </div>
+                    </RadioGroup>
+                </>
             );
 
         case 'TEXT':
             return (
-                <div data-testid={`q-${question.id}`}>
+                <>
                     {baseLabel}
                     <textarea
                         aria-labelledby={labelId}
+                        aria-describedby={describedBy}
+                        aria-invalid={invalid}
                         value={typeof value === 'string' ? value : ''}
                         onChange={(e) => onChange(e.target.value)}
                         rows={4}
                         className="w-full border border-border-subtle rounded-md px-3 py-2 text-sm"
                     />
-                </div>
+                </>
             );
 
         case 'NUMBER':
             return (
-                <div data-testid={`q-${question.id}`}>
+                <>
                     {baseLabel}
                     <input
                         aria-labelledby={labelId}
+                        aria-describedby={describedBy}
+                        aria-invalid={invalid}
                         type="text"
                         inputMode="decimal"
                         pattern="-?[0-9]*\.?[0-9]*"
@@ -513,7 +627,7 @@ function QuestionField({
                         onChange={(e) => onChange(e.target.value)}
                         className="border border-border-subtle rounded-md px-3 py-2 text-sm w-40"
                     />
-                </div>
+                </>
             );
 
         case 'SCALE': {
@@ -525,9 +639,14 @@ function QuestionField({
             const labels = cfg?.labels;
             const cur = typeof value === 'number' ? value : null;
             return (
-                <div data-testid={`q-${question.id}`}>
+                <>
                     {baseLabel}
-                    <div className="flex items-center gap-tight">
+                    <div
+                        className="flex flex-wrap items-center gap-tight"
+                        role="group"
+                        aria-labelledby={labelId}
+                        aria-describedby={describedBy}
+                    >
                         {Array.from(
                             { length: max - min + 1 },
                             (_, i) => i + min,
@@ -536,7 +655,8 @@ function QuestionField({
                                 key={n}
                                 type="button"
                                 onClick={() => onChange(n)}
-                                className={`w-9 h-9 rounded-full border text-sm ${
+                                aria-pressed={cur === n}
+                                className={`w-11 h-11 md:w-9 md:h-9 rounded-full border text-sm ${
                                     cur === n
                                         ? 'bg-brand-default text-content-inverted border-brand-default'
                                         : 'bg-bg-default text-content-default border-border-subtle'
@@ -552,7 +672,7 @@ function QuestionField({
                             <span>{labels[labels.length - 1]}</span>
                         </div>
                     )}
-                </div>
+                </>
             );
         }
 
@@ -569,62 +689,64 @@ function QuestionField({
                 ? (value as string[])
                 : [];
             return (
-                <div data-testid={`q-${question.id}`}>
+                <>
                     {baseLabel}
-                    <div className="space-y-1">
+                    <div
+                        role={isMulti ? 'group' : 'radiogroup'}
+                        aria-labelledby={labelId}
+                        aria-describedby={describedBy}
+                        aria-invalid={isMulti ? undefined : invalid}
+                    >
                         {opts.map((o) => {
-                            const checked = isMulti
-                                ? arrValue.includes(o.value)
-                                : value === o.value;
+                            const checked = isMulti ? arrValue.includes(o.value) : value === o.value;
                             return (
-                                <label
-                                    key={o.value}
-                                    className="flex items-center text-sm text-content-default"
-                                >
+                                <label key={o.value} className={CHOICE_ROW}>
                                     <input
                                         type={isMulti ? 'checkbox' : 'radio'}
                                         name={question.id}
                                         value={o.value}
                                         checked={checked}
+                                        aria-invalid={isMulti ? invalid : undefined}
                                         onChange={() => {
                                             if (isMulti) {
-                                                const next = checked
-                                                    ? arrValue.filter(
-                                                          (v) => v !== o.value,
-                                                      )
-                                                    : [...arrValue, o.value];
-                                                onChange(next);
+                                                onChange(
+                                                    checked
+                                                        ? arrValue.filter((v) => v !== o.value)
+                                                        : [...arrValue, o.value],
+                                                );
                                             } else {
                                                 onChange(o.value);
                                             }
                                         }}
-                                        className="mr-2"
+                                        className={CHOICE_INPUT}
                                     />
                                     {o.label}
                                 </label>
                             );
                         })}
                     </div>
-                </div>
+                </>
             );
         }
 
         case 'FILE_UPLOAD':
             return (
-                <div data-testid={`q-${question.id}`}>
+                <>
                     {baseLabel}
                     <p className="text-xs text-content-subtle italic">
                         {t('fileUploadHint')}
                     </p>
                     <textarea
                         aria-labelledby={labelId}
+                        aria-describedby={describedBy}
+                        aria-invalid={invalid}
                         value={typeof value === 'string' ? value : ''}
                         onChange={(e) => onChange(e.target.value)}
                         rows={2}
                         placeholder={t('fileUploadPlaceholder')}
                         className="w-full border border-border-subtle rounded-md px-3 py-2 text-sm mt-1"
                     />
-                </div>
+                </>
             );
     }
 }

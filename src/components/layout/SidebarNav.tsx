@@ -327,7 +327,7 @@ export function SidebarContent({ user, onLogout, onNavClick, onToggleCollapse }:
                 in the user block below is the literal last line. */}
             {!collapsed && (
                 <div className="mx-2">
-                    <StartTourButton />
+                    <StartTourButton onStart={onNavClick} />
                 </div>
             )}
 
@@ -383,7 +383,7 @@ export function SidebarContent({ user, onLogout, onNavClick, onToggleCollapse }:
                 {!collapsed && <span className="flex-1 text-left">{tc('search')}</span>}
                 {!collapsed && (
                     <span
-                        className="hidden items-center gap-[2px] rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-content-subtle md:flex"
+                        className="hidden items-center gap-[2px] rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-xs font-medium tabular-nums text-content-subtle md:flex"
                         aria-hidden="true"
                     >
                         <span>⌘</span>

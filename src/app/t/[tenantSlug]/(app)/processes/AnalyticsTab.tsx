@@ -123,7 +123,7 @@ export function AnalyticsTab() {
             </div>
 
             <Card>
-                <p className="mb-default text-[11px] uppercase tracking-wide text-content-subtle">
+                <p className="mb-default text-xs uppercase tracking-wide text-content-subtle">
                     {t('analytics.executionsOverTime')}
                 </p>
                 {series.length >= 2 ? (
@@ -136,7 +136,7 @@ export function AnalyticsTab() {
             </Card>
 
             <Card>
-                <p className="mb-default text-[11px] uppercase tracking-wide text-content-subtle">
+                <p className="mb-default text-xs uppercase tracking-wide text-content-subtle">
                     {t('analytics.mostFired')}
                 </p>
                 {data && data.topRules.length > 0 ? (
