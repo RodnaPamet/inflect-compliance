@@ -96,8 +96,7 @@ describe('filterStepsForCurrentPage', () => {
         return {
             id,
             selector,
-            title: id,
-            description: `${id}-body`,
+            messageKey: 'welcome',
         };
     }
 
@@ -145,10 +144,15 @@ describe('DEFAULT_TOUR_STEPS — shape invariants', () => {
         expect(last.selector).toBeNull();
     });
 
-    it('every step carries a non-empty title + description', () => {
-        for (const s of DEFAULT_TOUR_STEPS) {
-            expect(s.title.length).toBeGreaterThan(0);
-            expect(s.description.length).toBeGreaterThan(0);
+    it('every step names a heading and a body that exist in both catalogues', () => {
+        for (const locale of ['en', 'bg']) {
+            const catalogue = require(`../../messages/${locale}.json`) as {
+                onboardingTour: { steps: Record<string, { title?: unknown; body?: unknown }> };
+            };
+            for (const s of DEFAULT_TOUR_STEPS) {
+                const entry = catalogue.onboardingTour.steps[s.messageKey];
+                expect([locale, s.id, typeof entry?.title, typeof entry?.body]).toEqual([locale, s.id, 'string', 'string']);
+            }
         }
     });
 

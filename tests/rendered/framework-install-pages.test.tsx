@@ -259,6 +259,23 @@ describe('the install wizard says what happened', () => {
         expect(document.getElementById('install-restore-notice')).not.toBeNull();
     });
 
+    it('lets its step names and its confirm row wrap, so neither runs past a phone\'s edge', async () => {
+        previewResponse = SINGLE_PREVIEW;
+        render(<InstallWizardPage />);
+        const install = await installButton();
+        // Button names never break, so the row must; the install action then
+        // takes the next line rather than pushing past the screen.
+        const row = screen.getByTestId('install-confirm-row');
+        expect(row.contains(install)).toBe(true);
+        expect(row.className.split(/\s+/)).toContain('flex-wrap');
+        expect(screen.getByTestId('install-steps').className.split(/\s+/)).toContain('flex-wrap');
+        // Three figures with one-word Bulgarian labels ("СЪЩЕСТВУВАТ") do not
+        // fit side by side at 360px; they stack until `sm`.
+        expect(screen.getByTestId('install-preview-figures').className.split(/\s+/)).toEqual(
+            expect.arrayContaining(['grid-cols-1', 'sm:grid-cols-3']),
+        );
+    });
+
     it('offers nothing when every control exists with all its mappings', async () => {
         previewResponse = {
             ...SINGLE_PREVIEW,

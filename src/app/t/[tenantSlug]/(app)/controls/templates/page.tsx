@@ -58,7 +58,10 @@ export default function ControlTemplatesPage() {
     // would accept is offered the selection and the install bar.
     const canInstall = permissions.canWrite && appPermissions.controls.create;
     const t = useTranslations('controls');
-
+    // An ISO 27002 theme constant (`ORGANIZATIONAL`, …) reads as its label in
+    // every view — the table's column too, which showed the constant (#5882);
+    // any other category is the library's own text.
+    const categoryLabel = (c: string) => (isControlCategoryTheme(c) ? t(`categoryLabels.${c}`) : c);
 
     // Epic 69 — SWR-backed list (was fetch-on-mount + setState-in-effect).
     // The API returns a bare array; `mutate` powers the inline retry.
@@ -159,7 +162,9 @@ export default function ControlTemplatesPage() {
               (tpl) =>
                   (tpl.code ?? '').toLowerCase().includes(filterQuery) ||
                   (tpl.title ?? '').toLowerCase().includes(filterQuery) ||
-                  (tpl.category ?? '').toLowerCase().includes(filterQuery),
+                  (tpl.category ?? '').toLowerCase().includes(filterQuery) ||
+                  // What the reader sees is what they search for.
+                  (tpl.category ? categoryLabel(tpl.category) : '').toLowerCase().includes(filterQuery),
           );
 
     // Below `md` (Mobile 4.3): search first, one page of cards at a time,
@@ -284,11 +289,8 @@ export default function ControlTemplatesPage() {
                                         )}
                                         <span className="block break-words font-medium text-content-emphasis">{tpl.title}</span>
                                         <span className="mt-tight flex flex-wrap items-center gap-tight text-xs text-content-subtle">
-                                            {/* An ISO 27002 theme constant reads as its label. */}
                                             {tpl.category && (
-                                                <StatusBadge variant="info">
-                                                    {isControlCategoryTheme(tpl.category) ? t(`categoryLabels.${tpl.category}`) : tpl.category}
-                                                </StatusBadge>
+                                                <StatusBadge variant="info">{categoryLabel(tpl.category)}</StatusBadge>
                                             )}
                                             <span>
                                                 {t('templates.previewSummary', {
@@ -351,7 +353,7 @@ export default function ControlTemplatesPage() {
                             { accessorKey: 'title', header: t('templates.colName'), cell: ({ getValue }) => <span className="font-medium text-content-emphasis">{getValue()}</span> },
                             {
                                 accessorKey: 'category', header: t('templates.colCategory'),
-                                cell: ({ getValue }) => getValue() ? <StatusBadge variant="info">{getValue()}</StatusBadge> : null,
+                                cell: ({ getValue }) => getValue() ? <StatusBadge variant="info">{categoryLabel(getValue() as string)}</StatusBadge> : null,
                             },
                             {
                                 // Pre-install preview — what installing creates.

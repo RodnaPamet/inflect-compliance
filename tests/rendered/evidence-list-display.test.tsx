@@ -12,7 +12,7 @@
  *
  * Mounted in Bulgarian, so an English string reaching the DOM is visible.
  */
-import { configure, screen, waitFor } from '@testing-library/react';
+import { act, configure, screen, waitFor } from '@testing-library/react';
 
 jest.setTimeout(180_000);
 configure({ asyncUtilTimeout: 20_000 });
@@ -168,8 +168,18 @@ describe('empty Control and Category cells, and the Title width', () => {
 });
 
 describe('the "all current" celebration', () => {
+    const ALL_CURRENT = metrics({ total: 1, expired: 0, expiringSoon: 0, needsReview: 0, current: 1 });
+    const ONE_DUE = metrics({ total: 1, expired: 0, expiringSoon: 0, needsReview: 1, current: 0 });
+
+    /** The page opens on a register with one review due; the next read finds it all current. */
+    function mountReachingAllCurrent() {
+        const server = makeServer({ rows: [evidenceRow()], metrics: ALL_CURRENT });
+        installEvidenceFetch(server);
+        return mountEvidenceClient(server, { role: 'ADMIN', initialMetrics: ONE_DUE });
+    }
+
     it('is translated, and names the 30-day window it checks', async () => {
-        mount([evidenceRow()], metrics({ total: 1, expired: 0, expiringSoon: 0, needsReview: 0, current: 1 }));
+        mountReachingAllCurrent();
         await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
         const [message, opts] = toastSuccess.mock.calls[0] as [string, { description?: string }];
         expect(message).toBe(BG.evidence.list.allCurrentMessage);
@@ -177,5 +187,17 @@ describe('the "all current" celebration', () => {
         // The English copy says 30 days, never "this week".
         expect(EN.evidence.list.allCurrentDescription).toMatch(/30 days/);
         expect(EN.evidence.list.allCurrentDescription).not.toMatch(/week/);
+    });
+
+    it('does not fire on opening a register that was already all current', async () => {
+        // On a phone the toast sat bottom-centre over the list the reader had
+        // just opened (#5882). Finding the register current is not reaching it.
+        const server = makeServer({ rows: [evidenceRow()], metrics: ALL_CURRENT });
+        installEvidenceFetch(server);
+        mountEvidenceClient(server, { role: 'ADMIN', initialMetrics: ALL_CURRENT });
+        // The page has read the aggregate again and settled.
+        await waitFor(() => expect(server.calls.some((c) => c.path === '/evidence/retention')).toBe(true));
+        await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+        expect(toastSuccess).not.toHaveBeenCalled();
     });
 });

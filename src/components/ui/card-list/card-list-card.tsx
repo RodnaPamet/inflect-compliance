@@ -244,7 +244,11 @@ export function CardListCardHeader({
         >
             <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-tight">
-                    <Heading level={3} className="truncate">
+                    {/* Below `md` the title wraps: a phone's card is the
+                        whole width there is, and a truncated name was all a
+                        reader had to tell two cards apart ("ISO/IEC 27…",
+                        #5882). A larger screen keeps one line. */}
+                    <Heading level={3} className="min-w-0 break-words md:truncate" data-testid="card-list-card-title">
                         {title}
                     </Heading>
                     {badge && (

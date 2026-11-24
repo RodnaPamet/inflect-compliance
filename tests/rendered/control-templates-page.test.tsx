@@ -185,3 +185,15 @@ describe('control templates — search and selection (#4795)', () => {
         expect(document.getElementById('install-selected-btn')).toBeNull();
     });
 });
+
+describe('control templates — a theme category reads as its label (#5882)', () => {
+    const THEMED = { id: 'tpl_3', code: 'A.8.1', title: 'User endpoint devices', category: 'TECHNOLOGICAL', description: null };
+    beforeEach(() => { TEMPLATES.push(THEMED); });
+    afterEach(() => { TEMPLATES.splice(TEMPLATES.indexOf(THEMED), 1); });
+
+    it('the table column shows the label, never the stored constant', () => {
+        render(withSWR(<ControlTemplatesPage />));
+        expect(screen.queryByText('TECHNOLOGICAL')).toBeNull();
+        expect(screen.getByText('Technological')).toBeInTheDocument();
+    });
+});

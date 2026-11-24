@@ -599,6 +599,21 @@ body {
     min-height: 44px;
   }
 
+  /* The product tour's popover (#5904; its section is at the end of this
+   * file): footer buttons and the close button reach 44px, and the title
+   * clears the larger close button. One attribute more specific than the
+   * section's own rules, which come later in the file. */
+  #driver-popover-content[role="dialog"] .driver-popover-footer-btn {
+    min-height: 44px;
+  }
+  #driver-popover-content[role="dialog"] .driver-popover-close-btn {
+    width: 44px;
+    height: 44px;
+  }
+  #driver-popover-content[role="dialog"] .driver-popover-title {
+    padding-inline-end: 40px;
+  }
+
   /* ── App-wide touch targets (mobile PR-1, WCAG 2.5.5 / Apple HIG) ──
    * Native inputs/selects using the `.input` utility get a 44px floor.
    * The React <Input>/<Button> primitives handle this themselves via
@@ -915,3 +930,76 @@ body {
     overflow-wrap: anywhere;
   }
 }
+
+/* The product tour's popover (driver.js, #5904).
+ *
+ * driver.js paints its own popover: white, 250-300px wide, and footer
+ * buttons 23.6px tall (12px text, 1.3 line height, 3px padding, a 1px
+ * border), under the 24px floor, with a close button 32 by 28. On a phone it
+ * also kept that 250px minimum and a footer that never wrapped, so the
+ * Bulgarian "Назад" / "Напред" and "1 от 7" had nowhere to go at 360px.
+ *
+ * Keyed on the popover's ID (`#driver-popover-content`, which driver.js sets
+ * on the one popover it renders) rather than on its class, because the rules
+ * must stay UNLAYERED: driver.js's stylesheet is unlayered and loads after
+ * this one, and a layered rule loses to an unlayered one whatever its
+ * specificity. Nothing here composes with a `className` — the popover is
+ * driver.js's DOM — which is what the layering guard
+ * (`tests/guards/globals-css-recipes-are-layered.test.ts`) protects.
+ *
+ * Colours are the theme's tokens, so the popover follows light and dark. */
+#driver-popover-content {
+  max-width: min(320px, calc(100vw - 32px));
+  min-width: min(250px, calc(100vw - 32px));
+  background-color: var(--bg-elevated);
+  color: var(--content-default);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+}
+#driver-popover-content .driver-popover-arrow {
+  border-color: var(--bg-elevated);
+}
+#driver-popover-content .driver-popover-title {
+  font-size: 16px;
+  padding-inline-end: 28px;
+  overflow-wrap: break-word;
+}
+#driver-popover-content .driver-popover-progress-text {
+  color: var(--content-muted);
+  font-size: 12px;
+}
+#driver-popover-content .driver-popover-footer {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+#driver-popover-content .driver-popover-footer-btn {
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+  color: var(--content-default);
+  background-color: var(--bg-default);
+  border: 1px solid var(--border-default);
+  text-shadow: none;
+}
+#driver-popover-content .driver-popover-footer-btn:hover,
+#driver-popover-content .driver-popover-footer-btn:focus-visible {
+  background-color: var(--bg-muted);
+}
+#driver-popover-content .driver-popover-navigation-btns {
+  gap: 8px;
+}
+#driver-popover-content .driver-popover-navigation-btns button + button {
+  margin-inline-start: 0;
+}
+#driver-popover-content .driver-popover-close-btn {
+  width: 32px;
+  height: 32px;
+  color: var(--content-muted);
+}
+/* On a coarse pointer its buttons and close button are 44px: those rules sit
+ * in the app-wide coarse-pointer touch-target block above, so
+ * the floors live in one place. */

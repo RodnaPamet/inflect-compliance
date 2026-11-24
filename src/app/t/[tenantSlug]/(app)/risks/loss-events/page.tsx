@@ -416,7 +416,12 @@ export default function LossEventsPage() {
                         <span className="text-xs text-content-muted">{t('lossEvents.riskLabel')}</span>
                         <RiskPicker id="loss-event-risk-picker" value={riskId} onChange={setRiskId} allowNone noneLabel={t('lossEvents.riskNone')} placeholder={t('lossEvents.riskPlaceholder')} />
                     </label>
-                    <div className="block">
+                    {/* `min-w-0 max-w-full`: a flex item is as wide as its
+                        content by default, so the three Bulgarian sources held
+                        this row open past a phone's edge and the group's own
+                        scroll and edge cue never engaged. Capped at the row,
+                        the group scrolls sideways inside it. */}
+                    <div className="block min-w-0 max-w-full" data-testid="loss-event-source-field">
                         <span className="mb-0.5 block text-xs text-content-muted">{t('lossEvents.sourceLabel')}</span>
                         {/* #4773 — a radio group with words, not three buttons reading the stored value. */}
                         <ToggleGroup
