@@ -18420,7 +18420,31 @@
     "AGENT_CIRCUIT_BREAKER_TRIPPED": "An agent's circuit breaker tripped",
     "AGENT_TOOL_MANIFEST_PIN_CHANGED": "A tool definition was approved for this workspace",
     "AGENT_RISK_ASSESSMENT_STALE": "An agent's risk assessment is out of date",
-    "AGENT_OWNER_DEPARTED": "An agent's owner has left the workspace"
+    "AGENT_OWNER_DEPARTED": "An agent's owner has left the workspace",
+    "stock": {
+      "TASK_ASSIGNED": "You were assigned a task",
+      "CONTROL_ASSIGNED": "You were assigned a control",
+      "RISK_ASSIGNED": "You were assigned a risk",
+      "ASSET_ASSIGNED": "You were assigned an asset",
+      "TASK_REVIEW_REQUESTED": "A task is awaiting your review",
+      "TASK_DUE_WEEK": "Task due in one week",
+      "TASK_DUE_DAY": "Task due tomorrow",
+      "TASK_DUE_TODAY": "Task due today",
+      "TASK_WATCH_UPDATE": "Watched task updated",
+      "NIS2_GAP_ASSIGNED": "NIS2 gap assessment assigned",
+      "EVIDENCE_APPROVED": "Evidence approved: {title}",
+      "EVIDENCE_REJECTED": "Evidence rejected: {title}",
+      "VENDOR_REVIEW_PAST_DUE": "Vendor review due: {name}",
+      "VENDOR_BREACH": "Vendor breach: {name}",
+      "VENDOR_ATTESTATION_EXPIRED": "Vendor attestation expired: {name}",
+      "INCIDENT_DEADLINE_DUE": "Deadline approaching: {report} for {reference}",
+      "INCIDENT_DEADLINE_OVERDUE": "OVERDUE: {report} for {reference}",
+      "AUTOMATION_SLA_BREACH": "Automation SLA breached",
+      "SCIM_AI_ADMIN_DEACTIVATED": "An AI admin was deactivated by your directory",
+      "FRAMEWORK_UPDATED": "{framework} updated to v{version}",
+      "FRAMEWORK_UPDATED_REVIEW": "{framework} updated to v{version}",
+      "A2A_INVITATION_ACCEPTED": "{name} accepted your A2A invitation"
+    }
   },
   "auditCodes": {
     "action": {
@@ -19301,6 +19325,68 @@
       "KILL_FAILED": "the owner-orphan pass could NOT engage its kill switch, so it may still be acting. Stop it by hand and check the pass record.",
       "SUSPEND_FAILED": "the owner-orphan pass engaged its kill switch (owner departed) but could not suspend it. Check the pass record.",
       "CONTAINED": "the owner-orphan pass suspended it and engaged its kill switch (owner departed). The kill lifts only after a completed ownership transfer, by the new owner."
+    },
+    "stock": {
+      "TASK_ASSIGNED": "{label} is now yours.",
+      "CONTROL_ASSIGNED": "{label} is now yours.",
+      "RISK_ASSIGNED": "{label} is now yours.",
+      "ASSET_ASSIGNED": "{label} is now yours.",
+      "TASK_REVIEW_REQUESTED": "{label} is ready for your sign-off — only you can complete it.",
+      "TASK_DUE_WEEK": "{label} is due in one week.",
+      "TASK_DUE_DAY": "{label} is due tomorrow.",
+      "TASK_DUE_TODAY": "{label} is due today.",
+      "TASK_WATCH_UPDATE": "{label}: {detail}",
+      "NIS2_GAP_ASSIGNED": "You have {count} to answer in the NIS2 gap assessment, for {group}.",
+      "EVIDENCE_APPROVED": "Your evidence \"{title}\" has been approved.",
+      "EVIDENCE_REJECTED": "Your evidence \"{title}\" has been rejected.",
+      "VENDOR_REVIEW_PAST_DUE": "Vendor \"{name}\" is past its scheduled review date. Re-assess the vendor or extend the review date.",
+      "VENDOR_BREACH": "Vendor domain {domain} appeared in a breach ({date})",
+      "VENDOR_ATTESTATION_EXPIRED": "{attestation} expired (period ended {date}) — assessment is stale",
+      "INCIDENT_DEADLINE_DUE": "The NIS2 Article 23 {reportLower} for incident {reference} is approaching. Prepare to file.",
+      "INCIDENT_DEADLINE_OVERDUE": "The NIS2 Article 23 {reportLower} for incident {reference} has passed without a filed report. File it now.",
+      "AUTOMATION_SLA_BREACH": "An automation rule's {minutes}m SLA window was breached.",
+      "SCIM_AI_ADMIN_DEACTIVATED": "{who} was deactivated in this workspace by your identity provider (SCIM). They held the AI admin role. Review the agents they own on the agent register.",
+      "FRAMEWORK_UPDATED": "{added} new requirement(s) affect you.",
+      "FRAMEWORK_UPDATED_REVIEW": "{added} new requirement(s) affect you, {flagged} control(s) need re-review.",
+      "A2A_INVITATION_ACCEPTED": "Read its agent card and approve it to start exchanging tasks. Nothing is exchanged until you do.",
+      "count": {
+        "one": "{n} question",
+        "other": "{n} questions"
+      },
+      "group": {
+        "CEO": "leadership",
+        "IT": "IT",
+        "HR": "HR",
+        "PROCUREMENT": "procurement",
+        "ANYONE": "anyone in the organisation"
+      },
+      "detail": {
+        "commented": "new comment added",
+        "reassigned": "reassigned",
+        "unassigned": "unassigned",
+        "status": "status changed {from} → {to}",
+        "reviewerReassigned": "reviewer reassigned",
+        "reviewerCleared": "reviewer cleared",
+        "due": "due {from} → {to}",
+        "noDueDate": "no due date"
+      },
+      "status": {
+        "OPEN": "Open",
+        "TRIAGED": "Triaged",
+        "IN_PROGRESS": "In progress",
+        "IN_REVIEW": "In review",
+        "BLOCKED": "Blocked",
+        "RESOLVED": "Resolved",
+        "CLOSED": "Closed",
+        "CANCELED": "Canceled"
+      },
+      "report": {
+        "EARLY_WARNING_24H": "24-hour early warning",
+        "DETAILED_72H": "72-hour detailed report",
+        "FINAL_1MONTH": "1-month final report"
+      },
+      "somebody": "A member",
+      "attestation": "Attestation"
     }
   },
   "agentMetrics": {

@@ -10,7 +10,15 @@ import { buildLeakCatalog, findEnglishLeaks, optionLabels } from '../../scripts/
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
 import { localizedRunSummary, type WorkflowSummaryTranslator } from '@/lib/agentic/workflow-labels';
 import type { WorkflowContext } from '@/lib/agentic/workflow-types';
-
+import {
+    NIS2_GROUP,
+    STOCK_NOTIFICATIONS,
+    localizedStockNotification,
+    nis2QuestionCount,
+    recordLabel,
+    stockNotificationText,
+    stockNotificationTitle,
+} from '@/lib/notifications/stock-notifications';
 const en = {
     nav: { back: 'Back to {section}', agents: 'Agents', controls: 'Controls' },
     filters: { clear: 'Clear filters', none: 'No results match these filters' },
@@ -232,5 +240,70 @@ describe('a sentence the product stores in English and shows as stored (#5883)',
         expect(onPage([shown as string])).toEqual([]);
         // An agent's words are data: free prose in no catalog is never judged.
         expect(onPage(['Reviewed the posture and found three controls without evidence.'])).toEqual([]);
+    });
+});
+
+describe('a stock notification stored in English and shown as stored (#5929)', () => {
+    // The assignment, task-due, watched-task and NIS2 notifications are
+    // written once, in English, and re-worded on read. While their sentences
+    // were in no catalog the detector could not tell them from tenant data.
+    // These run against the REAL catalog and the text the emitters' own
+    // templates produce, so losing the en messages, or a template drifting
+    // from them, fails here.
+    const root = path.resolve(__dirname, '..', '..');
+    const enJson = JSON.parse(readFileSync(path.join(root, 'messages', 'en.json'), 'utf8'));
+    const bgJson = JSON.parse(readFileSync(path.join(root, 'messages', 'bg.json'), 'utf8'));
+    const real = buildLeakCatalog(enJson, bgJson);
+    const onPage = (texts: string[]) => findEnglishLeaks({ texts, chromeTexts: [] }, real);
+    const at = (ns: unknown, key: string) =>
+        key.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown>)[k], ns) as string;
+    const bgBodies = (key: string, values: Record<string, string | number> = {}) =>
+        at(bgJson.notificationBodies, key).replace(/\{(\w+)\}/g, (whole, name: string) =>
+            name in values ? String(values[name]) : whole,
+        );
+    const bgTitles = (key: string, values: Record<string, string | number> = {}) =>
+        at(bgJson.notificationTitles, key).replace(/\{(\w+)\}/g, (whole, name: string) =>
+            name in values ? String(values[name]) : whole,
+        );
+
+    const label = recordLabel('Rotate keys', 'T-12');
+    const stored = [
+        {
+            type: 'TASK_ASSIGNED',
+            title: STOCK_NOTIFICATIONS.TASK_ASSIGNED.title,
+            message: stockNotificationText('TASK_ASSIGNED', { label }),
+        },
+        {
+            type: 'TASK_DUE',
+            title: STOCK_NOTIFICATIONS.TASK_DUE_DAY.title,
+            message: stockNotificationText('TASK_DUE_DAY', { label }),
+        },
+        {
+            type: 'GENERAL',
+            title: STOCK_NOTIFICATIONS.NIS2_GAP_ASSIGNED.title,
+            message: stockNotificationText('NIS2_GAP_ASSIGNED', { count: nis2QuestionCount(12), group: NIS2_GROUP.IT }),
+        },
+        {
+            // A title with a record in it: caught by its template, not as one string.
+            type: 'VENDOR_REVIEW_DUE',
+            title: stockNotificationTitle('VENDOR_REVIEW_PAST_DUE', { name: 'Northwind Cloud' }),
+            message: stockNotificationText('VENDOR_REVIEW_PAST_DUE', { name: 'Northwind Cloud' }),
+        },
+    ];
+
+    it.each(stored)('$type: the title and the body are leaks when shown as stored', ({ title, message }) => {
+        expect(onPage([title, message])).toEqual([
+            { text: title, reason: 'CATALOG' },
+            { text: message, reason: 'CATALOG' },
+        ]);
+    });
+
+    it.each(stored)('$type: neither is a leak once the page re-words it', ({ type, title, message }) => {
+        const worded = localizedStockNotification({ type, title, message }, bgTitles, bgBodies);
+        expect(worded).toBeDefined();
+        const shown = [worded!.title, worded!.message];
+        expect(shown).not.toContain(title);
+        expect(shown).not.toContain(message);
+        expect(onPage(shown)).toEqual([]);
     });
 });

@@ -47,6 +47,7 @@ import { recordVendorTlsFetch } from '@/lib/observability/integration-metrics';
 import type { BreachSignal, TlsSignal } from '@/app-layer/services/vendor-monitoring/types';
 import { env } from '@/env';
 import type { FindingSeverity } from '@prisma/client';
+import { ATTESTATION, stockNotificationText, stockNotificationTitle } from '@/lib/notifications/stock-notifications';
 
 /** Finding provenance tags — the only linkage between a Finding and a vendor. */
 export const VENDOR_BREACH_KIND = 'VENDOR_BREACH';
@@ -184,7 +185,10 @@ export async function runVendorMonitor(
                 eventType: 'ATTESTATION_EXPIRED',
                 severity: 'HIGH',
                 source: 'internal',
-                summary: `${g.reportType ?? 'Attestation'} expired (period ended ${dayStamp(g.auditPeriodEnd!)}) — assessment is stale`,
+                summary: stockNotificationText('VENDOR_ATTESTATION_EXPIRED', {
+                    attestation: g.reportType ?? ATTESTATION,
+                    date: dayStamp(g.auditPeriodEnd!),
+                }),
                 fingerprint: `attestation-expired:${vendor.id}:${g.extractionId}`,
                 detailsJson: { extractionId: g.extractionId, reportType: g.reportType, expiredAt: g.auditPeriodEnd!.toISOString() },
                 finding: {
@@ -229,7 +233,7 @@ export async function runVendorMonitor(
                 eventType: 'BREACH_DETECTED',
                 severity: 'HIGH',
                 source: signal.source,
-                summary: `Vendor domain ${domain} appeared in a breach (${dayStamp(newBreachAt)})`,
+                summary: stockNotificationText('VENDOR_BREACH', { domain, date: dayStamp(newBreachAt) }),
                 fingerprint: `breach:${vendor.id}:${breachKey}`,
                 detailsJson: { domain, latestBreachAt: signal.latestBreachAt, breaches: signal.breaches.slice(0, 20) },
                 finding: {
@@ -359,7 +363,11 @@ export async function runVendorMonitor(
                     tenantId: ctx.tenantId,
                     userId: vendor.ownerUserId!,
                     type: 'VENDOR_POSTURE_ALERT' as const,
-                    title: p.eventType === 'BREACH_DETECTED' ? `Vendor breach: ${vendor.name}` : `Vendor attestation expired: ${vendor.name}`,
+                    // Stock sentences the bell words in the reader's language (#5929).
+                    title: stockNotificationTitle(
+                        p.eventType === 'BREACH_DETECTED' ? 'VENDOR_BREACH' : 'VENDOR_ATTESTATION_EXPIRED',
+                        { name: vendor.name },
+                    ),
                     message: p.summary,
                     linkUrl,
                     dedupeKey: `${ctx.tenantId}:VENDOR_POSTURE_ALERT:${p.fingerprint}:${vendor.ownerUserId}:${dayStamp(now)}`,

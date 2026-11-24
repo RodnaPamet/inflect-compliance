@@ -28,6 +28,7 @@
  */
 import type { PrismaClient, Prisma, IncidentNotificationKind } from '@prisma/client';
 import { logger } from '@/lib/observability/logger';
+import { INCIDENT_REPORT, stockNotificationText, stockNotificationTitle } from '@/lib/notifications/stock-notifications';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -247,15 +248,12 @@ export async function processIncidentNotificationDeadlines(
             t.target === 'OVERDUE'
                 ? ('INCIDENT_DEADLINE_OVERDUE' as const)
                 : ('INCIDENT_DEADLINE_DUE' as const);
-        const kindLabel = KIND_LABELS[t.kind];
-        const title =
-            t.target === 'OVERDUE'
-                ? `OVERDUE: ${kindLabel} for ${t.reference}`
-                : `Deadline approaching: ${kindLabel} for ${t.reference}`;
-        const message =
-            t.target === 'OVERDUE'
-                ? `The NIS2 Article 23 ${kindLabel.toLowerCase()} for incident ${t.reference} has passed without a filed report. File it now.`
-                : `The NIS2 Article 23 ${kindLabel.toLowerCase()} for incident ${t.reference} is approaching. Prepare to file.`;
+        // Stock sentences the bell words in the reader's language (#5929).
+        const kindLabel = INCIDENT_REPORT[t.kind];
+        const stock = t.target === 'OVERDUE' ? 'INCIDENT_DEADLINE_OVERDUE' : 'INCIDENT_DEADLINE_DUE';
+        const params = { report: kindLabel, reportLower: kindLabel.toLowerCase(), reference: t.reference };
+        const title = stockNotificationTitle(stock, params);
+        const message = stockNotificationText(stock, params);
         const linkUrl = `/t/${t.slug}/incidents/${t.incidentId}`;
 
         for (const userId of recipients) {
@@ -289,9 +287,3 @@ export async function processIncidentNotificationDeadlines(
 
     return result;
 }
-
-const KIND_LABELS: Record<IncidentNotificationKind, string> = {
-    EARLY_WARNING_24H: '24-hour early warning',
-    DETAILED_72H: '72-hour detailed report',
-    FINAL_1MONTH: '1-month final report',
-};

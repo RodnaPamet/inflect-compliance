@@ -31,6 +31,7 @@ import type { RequestContext } from '@/app-layer/types';
 import { tenantPageLink } from '@/app-layer/notifications/tenant-link';
 import { buildSystemContext } from '@/app-layer/context-system';
 import { logEvent } from '@/app-layer/events/audit';
+import { stockNotificationText, stockNotificationTitle } from '@/lib/notifications/stock-notifications';
 
 const FRAMEWORK_UPDATE_SOURCE = 'FRAMEWORK_UPDATE';
 
@@ -227,10 +228,10 @@ export async function propagateFrameworkDelta(diffId: string): Promise<Propagate
                 select: { userId: true },
             });
             const day = diff.createdAt.toISOString().slice(0, 10);
-            const title = `${diff.frameworkKey} updated to v${diff.toVersion}`;
-            const message =
-                `${addedCodes.length} new requirement(s) affect you` +
-                (flaggedIds.length ? `, ${flaggedIds.length} control(s) need re-review.` : '.');
+            // Stock sentences the bell words in the reader's language (#5929).
+            const stock = flaggedIds.length ? 'FRAMEWORK_UPDATED_REVIEW' : 'FRAMEWORK_UPDATED';
+            const title = stockNotificationTitle(stock, { framework: diff.frameworkKey, version: diff.toVersion });
+            const message = stockNotificationText(stock, { added: addedCodes.length, flagged: flaggedIds.length });
             const linkUrl = tenantPageLink(slugByTenant.get(tenantId), '/framework-updates');
             await db.notification.createMany({
                 data: members.map((m) => ({

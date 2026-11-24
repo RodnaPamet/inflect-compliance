@@ -27,6 +27,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
 import { insertedNotificationIds } from './inserted-ids';
+import { STOCK_NOTIFICATIONS, recordLabel, stockNotificationText } from '@/lib/notifications/stock-notifications';
 
 /**
  * `updated` covers MATERIAL field edits (due-date reschedule, reviewer
@@ -51,7 +52,11 @@ export interface WatcherActivity {
      * would collapse to one bell entry (too coarse for activity).
      */
     discriminator: string;
-    /** Short human phrase for the body, e.g. "status OPEN → IN_PROGRESS". */
+    /**
+     * Short phrase for the body. The bell words it in the reader's language
+     * when it is one `stock-notifications` writes (`WATCH_DETAIL`,
+     * `watchStatusDetail`); any other is shown as written.
+     */
     detail: string;
 }
 
@@ -72,8 +77,8 @@ export async function createWatcherNotifications(
 ): Promise<{ created: number }> {
     if (watcherUserIds.length === 0) return { created: 0 };
 
-    const label = a.taskKey ? `${a.taskKey} "${a.taskTitle}"` : `"${a.taskTitle}"`;
-    const title = 'Watched task updated';
+    const label = recordLabel(a.taskTitle, a.taskKey);
+    const title = STOCK_NOTIFICATIONS.TASK_WATCH_UPDATE.title;
     const linkUrl = `/t/${a.tenantSlug}/tasks/${a.taskId}`;
 
     const rows = watcherUserIds.map((userId) => ({
@@ -81,7 +86,7 @@ export async function createWatcherNotifications(
         userId,
         type: 'TASK_WATCH_UPDATE' as const,
         title,
-        message: `${label}: ${a.detail}`,
+        message: stockNotificationText('TASK_WATCH_UPDATE', { label, detail: a.detail }),
         linkUrl,
         dedupeKey: buildWatcherDedupeKey(a, userId),
     }));
