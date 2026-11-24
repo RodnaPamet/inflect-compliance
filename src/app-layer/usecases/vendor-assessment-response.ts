@@ -65,8 +65,7 @@ export const EXTERNAL_RESPONDENT_ACTOR = {
  * WHO the rows name (#5910). This used to be `userId: 'external-respondent'`,
  * a principal no migration or seed creates. `AuditLog.userId` is a foreign
  * key to `User`, so the submit's audit insert failed (SQLSTATE 23503), rolled
- * the whole submission back, and every vendor saw "Submission failed"; the
- * per-statement audit rows the Prisma extension writes were lost silently.
+ * the whole submission back, and every vendor saw "Submission failed".
  * The rows now name the tenant's SYSTEM user (#4400), the identity other
  * non-member writers use, created on first use and unable to sign in or hold
  * standing anywhere. `actorType: 'SYSTEM'` says no person in the tenant

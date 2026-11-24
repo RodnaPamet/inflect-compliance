@@ -20,9 +20,9 @@ structured, PII-free member of the audit row's `detailsJson`:
 "actor": { "kind": "EXTERNAL_ASSESSMENT_RESPONDENT", "authenticatedBy": "ASSESSMENT_ACCESS_TOKEN" }
 ```
 
-The same context drives `runWithAuditContext` and `runInTenantContext`, so the
-per-statement rows the Prisma audit extension writes for the answer upserts
-and the status transition land too (they were failing the same FK, silently).
+The same context drives `runWithAuditContext` and `runInTenantContext`, so
+whatever the Prisma audit extension writes for the submit's statements names
+the same user.
 
 The search for other fabricated actors found two job principals in the
 `system:` namespace that reach `AuditLog.userId` through
