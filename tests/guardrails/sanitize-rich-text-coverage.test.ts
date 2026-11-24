@@ -283,6 +283,12 @@ const NON_RICH_TEXT_MODELS: Readonly<Record<string, string>> = {
         'break the very signature the row exists to prove; it is never rendered ' +
         '(the receipt list returns statements and signatures, no body), and the ' +
         'task text that reaches a run is labelled third-party and scanned there.',
+    WorkflowRunCheckpoint:
+        'transcriptJson and resultsJson hold the EXACT API bytes of the conversation a ' +
+        'Tool Runner run continues from when its segment is retried (#5854 item 3). ' +
+        'Never rendered, never returned by any route, and cleared when the run parks, is ' +
+        'held for a person or settles; sanitising them would change the bytes a thinking ' +
+        'block\'s signature binds, so the API would refuse the continued conversation.',
     WorkflowRunDeferral:
         'transcriptJson holds the EXACT API bytes of the conversation a Tool ' +
         'Runner run resumes from after a deferral (Step 2f, #5530). It is never ' +

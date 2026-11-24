@@ -242,6 +242,7 @@ model Tenant {
   agentServicePrincipalConfirmations AgentServicePrincipalConfirmation[]
   discoveredAgentAttributions       DiscoveredAgentAttribution[]
   workflowRunDeferrals              WorkflowRunDeferral[]
+  workflowRunCheckpoints            WorkflowRunCheckpoint[]
   auditWorkpapers                   AuditWorkpaper[]
   auditWorkpaperFindings            AuditWorkpaperFinding[]
   auditWorkpaperSampleReviews       AuditWorkpaperSampleReview[]

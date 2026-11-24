@@ -197,7 +197,7 @@ export function activateSkillTool(
             additionalProperties: false,
         },
         parse: (content: unknown) => asToolArgs(content),
-        run: (args: Record<string, unknown>, _context?: BetaToolRunContext) =>
-            queue.run(() => activate(binding, skills, args)),
+        run: (args: Record<string, unknown>, context?: BetaToolRunContext) =>
+            queue.run(() => activate(binding, skills, args), context?.toolUse.id),
     };
 }

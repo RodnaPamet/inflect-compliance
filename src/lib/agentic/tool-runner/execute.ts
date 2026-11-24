@@ -72,6 +72,19 @@
  * the resumed conversation settles the run by name
  * (`tool_runner_resume_transcript_refused`); nothing is stripped and retried.
  *
+ * ── A SEGMENT CONTINUED AFTER AN INTERRUPTED ATTEMPT (#5854 item 3) ────────
+ *
+ * Owner decision of 2026-11-24: a retry, a stalled-job redelivery or a lease
+ * takeover of a segment CONTINUES its conversation, never from the opening
+ * message. The parent's loop keeps a checkpoint (`drivers/checkpoint-store.ts`)
+ * of every reply that asks for tools, in the transaction that records its
+ * MODEL_CALL step, and the run's one queue names each call in flight before it
+ * runs and keeps its result once it settled; the turn's exact SDK message, and
+ * a compacted list, replace what was kept. The next attempt opens it through
+ * the deferral resume's path above, answering a call it finds in flight
+ * `TOOL_CALL_OUTCOME_UNKNOWN` and one never started `TOOL_CALL_NOT_RUN`, and
+ * runs neither again. Only an execution holding a run lease keeps or reads one.
+ *
  * The body runs BEFORE the runner reads the stop reason and runs the turn's
  * tools, so every `break` in 1-7 happens before any tool of that turn.
  *
@@ -100,7 +113,11 @@
 import { createHash, randomUUID } from 'crypto';
 
 import type Anthropic from '@anthropic-ai/sdk';
-import type { BetaMessage, BetaMessageParam } from '@anthropic-ai/sdk/resources/beta/messages/messages';
+import type {
+    BetaMessage,
+    BetaMessageParam,
+    BetaToolResultBlockParam,
+} from '@anthropic-ai/sdk/resources/beta/messages/messages';
 import type { BetaToolRunnerParams } from '@anthropic-ai/sdk/lib/tools/BetaToolRunner';
 
 import { computeInputDigest } from '@/app-layer/ai/decision-log';
@@ -123,6 +140,14 @@ import {
     readDecidedDeferral,
     readDeferredProposal,
 } from '@/lib/agentic/drivers/deferral-store';
+import {
+    keepCallResults,
+    keepsCheckpoint,
+    markCallInFlight,
+    readCheckpoint,
+    writeCheckpoint,
+    writeTurnCheckpointInTx,
+} from '@/lib/agentic/drivers/checkpoint-store';
 import { getRunRow, proposedItemsSoFar, readCompactionRecord } from '@/lib/agentic/drivers/run-store';
 import { recordStep } from '@/lib/agentic/drivers/step-recorder';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers/types';
@@ -162,11 +187,20 @@ import { recordToolRunnerDecision } from './model-decision';
 import { compactionParams, DEFAULT_TIER, lockedParams, toolDefinitionOf } from './params';
 import { activateSkillTool, skillCatalogueText, type RunSkills } from './skills';
 import {
+    CHECKPOINT_FORMAT,
+    TOOL_CALL_OUTCOME_UNKNOWN,
     TRANSCRIPT_FORMAT,
+    continuedMessages,
     decisionResult,
+    openCheckpoint,
     openTranscript,
     resumedMessages,
+    sealCheckpoint,
+    sealResults,
     sealTranscript,
+    toolResultBlockOf,
+    type ContinuedAnswer,
+    type ConversationCheckpoint,
     type DeferralTranscript,
 } from './transcript';
 import {
@@ -174,9 +208,11 @@ import {
     TOOL_RUNNER_GUARD_SOURCE,
     resumedToolsFor,
     TurnCallCounter,
+    WITHDRAWN_BEFORE_CONTINUATION,
     subagentGuardSource,
     subagentOf,
     toolRunnerToolsFor,
+    type CallCheckpointHooks,
     type LatchedDeferral,
     type RunStop,
     type ToolRunBinding,
@@ -337,6 +373,19 @@ interface LoopRuntime {
      * its transcript in that step's own transaction. `undefined` otherwise.
      */
     takeResumeMark(): ((db: PrismaTx) => Promise<void>) | undefined;
+    /**
+     * THE CONTINUATION CHECKPOINT (#5854 item 3), the parent's loop only. For a
+     * reply that asks for tools: the write that keeps it, to run inside the
+     * transaction that records its MODEL_CALL step, or `undefined` when this
+     * execution keeps no checkpoint. Resets the turn's kept results.
+     */
+    turnCheckpointInTx(request: BetaToolRunnerParams, reply: BetaMessage, stepSeq: number): ((db: PrismaTx) => Promise<void>) | undefined;
+    /** The turn's tool results as the SDK will send them: kept exactly, once the turn's calls are all answered. */
+    keepTurnResults(toolResults: BetaMessageParam): Promise<void>;
+    /** The conversation after a compaction: kept as the compacted list. */
+    checkpointCompacted(params: BetaToolRunnerParams): Promise<void>;
+    /** A CONTINUED segment's mark, taken once by its first MODEL_CALL step: the seq it continued from. */
+    takeContinuationMark(): number | undefined;
 }
 
 /** One loop: the parent's (no sub-agent) or a delegated sub-agent's. */
@@ -675,7 +724,19 @@ async function runModelLoop(
             // for this call, by shape only (Step 2H): the run's page shows it,
             // so `thread: false` is read on the run itself.
             const sent = lastRequestShape(client);
-            await recordStep(ctx, runId, rt.binding.nextSeq(), 'MODEL_CALL', {
+            const modelStepSeq = rt.binding.nextSeq();
+            // THE REPLY IS CHECKPOINTED WITH ITS STEP (#5854 item 3): a reply
+            // that asks for tools is in the continuation checkpoint exactly when
+            // its MODEL_CALL step is in the ledger, and both before any of its
+            // calls runs. The parent's loop only: a sub-agent's conversation is
+            // one call of its parent's, answered as one.
+            const resumeMark = rt.takeResumeMark();
+            const checkpoint =
+                spec.subagent === null && reply.stop_reason === 'tool_use'
+                    ? rt.turnCheckpointInTx(request, reply, modelStepSeq)
+                    : undefined;
+            const continuedFromSeq = spec.subagent === null ? rt.takeContinuationMark() : undefined;
+            await recordStep(ctx, runId, modelStepSeq, 'MODEL_CALL', {
                 status: 'DONE',
                 label: def.key,
                 tokens: usage.total,
@@ -687,9 +748,15 @@ async function runModelLoop(
                     wire: sent
                         ? { method: sent.method, path: sent.path, bodyKeys: sent.bodyKeys, threadMember: sent.threadMember }
                         : null,
+                    ...(continuedFromSeq !== undefined ? { continuedFromSeq } : {}),
                 },
                 ...label,
-            }, undefined, rt.takeResumeMark());
+            }, undefined, resumeMark || checkpoint
+                ? async (db) => {
+                      if (resumeMark) await resumeMark(db);
+                      if (checkpoint) await checkpoint(db);
+                  }
+                : undefined);
             await recordToolRunnerDecision(
                 ctx,
                 runId,
@@ -768,6 +835,9 @@ async function runModelLoop(
             // reuses the tool response it caches here, so nothing runs twice.
             if (asksForAnotherCall(reply.stop_reason) && calls < maxIterations) {
                 const toolResults = await runner.generateToolResponse();
+                // The turn's results exactly as the SDK sends them, kept before
+                // the next call (#5854 item 3). The parent's loop only.
+                if (spec.subagent === null && toolResults !== null) await rt.keepTurnResults(toolResults);
                 // A DEFERRAL latched in this turn (Step 2f): the turn is kept to
                 // park on, and nothing is sent after it. Only the parent's loop
                 // parks; a child's calls never defer.
@@ -799,7 +869,11 @@ async function runModelLoop(
                         estimatedTokensBefore: estimatedNextRequest,
                     });
                     if (compacted === 'STOPPED') break;
-                    if (compacted === 'COMPACTED') compactedAtCall = calls;
+                    if (compacted === 'COMPACTED') {
+                        compactedAtCall = calls;
+                        // The checkpoint keeps the COMPACTED list (#5854 item 3).
+                        if (spec.subagent === null) await rt.checkpointCompacted(runner.params);
+                    }
                     else rt.noteCompactionFailed();
                 }
                 if (await stoppedBeforeModelCall(rt)) break;
@@ -919,6 +993,60 @@ async function openResume(
     };
 }
 
+/** A continuation checkpoint no longer hashes to its seal (#5854 item 3): nothing is repaired. */
+export const CHECKPOINT_UNSEALED_MESSAGE =
+    'tool_runner_checkpoint_unsealed: the conversation this run was to continue from no longer matches the hash ' +
+    'written beside it, so the run stopped rather than continue from it or start again. Nothing was repaired.';
+
+/** A continuation checkpoint that cannot be continued from as it was written (#5854 item 3). */
+export const CHECKPOINT_UNREADABLE_MESSAGE =
+    'tool_runner_checkpoint_unreadable: the conversation this run was to continue from could not be read as it ' +
+    'was written, so the run stopped rather than continue from it or start again.';
+
+/** A call's start could not be recorded, so it was not made (#5854 item 3). */
+export const CALL_START_NOT_RECORDED_MESSAGE =
+    'TOOL_CALL_NOT_STARTED: the run could not record that this call was starting, so it was not made.';
+
+/** A checkpoint opened for a continued segment: the request it sends, and how each open call is answered. */
+interface OpenedContinuation {
+    readonly ok: true;
+    readonly checkpoint: ConversationCheckpoint;
+    readonly messages: BetaMessageParam[];
+    readonly answers: ReadonlyArray<{ toolUseId: string; name: string; answer: ContinuedAnswer }>;
+    readonly atSeq: number;
+    readonly elapsedMs: number;
+    readonly costTokens: number;
+}
+
+/**
+ * THE RUN'S CONTINUATION CHECKPOINT, opened (#5854 item 3), or null when it has
+ * none: the segment then opens as every segment does. The seals first, then
+ * the envelopes (`openCheckpoint`), as for a deferral's transcript; a failure
+ * halts the run, and the conversation is never started afresh in its place.
+ */
+async function openContinuation(
+    ctx: RequestContext,
+    runId: string,
+): Promise<OpenedContinuation | { ok: false; message: string } | null> {
+    const stored = await readCheckpoint(ctx, runId);
+    if (stored === null) return null;
+    if (stored === 'UNREADABLE') return { ok: false, message: CHECKPOINT_UNREADABLE_MESSAGE };
+    const opened = openCheckpoint(stored);
+    if (!opened.ok) {
+        return { ok: false, message: opened.reason === 'UNSEALED' ? CHECKPOINT_UNSEALED_MESSAGE : CHECKPOINT_UNREADABLE_MESSAGE };
+    }
+    const continued = continuedMessages(opened.checkpoint, opened.results, stored.inFlightToolUseId);
+    return {
+        ok: true,
+        checkpoint: opened.checkpoint,
+        messages: continued.messages,
+        answers: continued.answers,
+        atSeq: stored.atSeq,
+        elapsedMs: stored.elapsedMs,
+        costTokens: stored.costTokens,
+    };
+}
+
 export async function executeToolRunnerRun(
     ctx: RequestContext,
     runId: string,
@@ -997,7 +1125,29 @@ export async function executeToolRunnerRun(
         return { status, stepFailures: 0 };
     }
 
-    const clockStartMs = resume ? Date.now() - resume.elapsedMsAtPark : runStartMs;
+    // ── A SEGMENT CONTINUED AFTER AN INTERRUPTED ATTEMPT (#5854 item 3) ─────
+    // Owner decision of 2026-11-24: a retry, or a lease takeover, continues the
+    // conversation from its checkpoint, never from the opening message. Asked
+    // only when no deferral resumes the run (its transcript is the newer one:
+    // the park clears the checkpoint) and only for an execution that keeps a
+    // checkpoint (a leased one). The same checks as a resume: the seals, the
+    // envelopes, and below, the tools re-resolved and only narrowed.
+    const continuation = !resume && keepsCheckpoint(ctx) ? await openContinuation(ctx, runId) : null;
+    if (continuation && !continuation.ok) {
+        const status = await failRun(ctx, runId, continuation.message);
+        return { status, stepFailures: 0 };
+    }
+    if (continuation) costTokens = Math.max(costTokens, continuation.costTokens);
+
+    // THE WALL CLOCK CONTINUES (#5854 item 3): a continued segment starts at
+    // the stricter of the worker's base (the run's start, or a person's resume)
+    // and the unattended time it had spent at its checkpoint, so neither a
+    // retry nor a resume of a paused run buys back time it already spent.
+    const clockStartMs = resume
+        ? Date.now() - resume.elapsedMsAtPark
+        : continuation
+          ? Math.min(runStartMs, Date.now() - continuation.elapsedMs)
+          : runStartMs;
     const invocation = await resolveMcpInvocation(ctx, { actionsAlready: fromSeq });
     const caps = resolveRunCaps(invocation.policyCard?.inForce.value ?? null);
     const budget = createRunBudget({
@@ -1158,6 +1308,35 @@ export async function executeToolRunnerRun(
         if (o.verdict !== 'CLEAN') controller.abort();
     };
 
+    // ── The continuation checkpoint's hooks (#5854 item 3) ──────────────────
+    // The results of the checkpointed reply's calls, kept in memory and
+    // written whole as each settles, so a write never reads one back. Null
+    // until this segment checkpoints a reply.
+    let turnResults: BetaToolResultBlockParam[] | null = null;
+    let checkpointAtSeq: number | null = null;
+    let continuationMark: number | undefined = continuation ? continuation.atSeq : undefined;
+    const keepResults = async (results: BetaToolResultBlockParam[]): Promise<void> => {
+        turnResults = results;
+        await keepCallResults(ctx, runId, sealResults(results)).catch((err) => {
+            // The next write carries them whole: nothing is lost but this one.
+            logger.warn('tool-runner: a call result was not kept in the checkpoint', {
+                component: 'agentic',
+                runId,
+                error: err instanceof Error ? err.message : 'a non-Error value was thrown',
+            });
+        });
+    };
+    const checkpointHooks: CallCheckpointHooks = {
+        start: async (toolUseId) => {
+            if (turnResults === null) return;
+            if (!(await markCallInFlight(ctx, runId, toolUseId))) throw new Error(CALL_START_NOT_RECORDED_MESSAGE);
+        },
+        settle: async (toolUseId, outcome) => {
+            if (turnResults === null) return;
+            await keepResults([...turnResults.filter((b) => b.tool_use_id !== toolUseId), toolResultBlockOf(toolUseId, outcome)]);
+        },
+    };
+
     const binding: ToolRunBinding = {
         ctx,
         runId,
@@ -1245,12 +1424,86 @@ export async function executeToolRunnerRun(
             resumeMark = undefined;
             return mark;
         },
+        turnCheckpointInTx: (request, reply, stepSeq) => {
+            if (!keepsCheckpoint(ctx)) return undefined;
+            const sealed = sealCheckpoint({
+                format: CHECKPOINT_FORMAT,
+                // The REQUEST's model: the one the next request sends.
+                model: request.model,
+                system: request.system,
+                tools: request.tools.map(toolDefinitionOf),
+                messages: [...request.messages, { role: 'assistant', content: reply.content }],
+            });
+            turnResults = [];
+            checkpointAtSeq = stepSeq;
+            return writeTurnCheckpointInTx(ctx, runId, {
+                transcriptJson: sealed.json,
+                transcriptHash: sealed.hash,
+                ...(() => {
+                    const empty = sealResults([]);
+                    return { resultsJson: empty.json, resultsHash: empty.hash };
+                })(),
+                atSeq: stepSeq,
+                elapsedMs: Math.max(Date.now() - clockStartMs, 0),
+                costTokens,
+            });
+        },
+        keepTurnResults: async (toolResults) => {
+            if (turnResults === null || !Array.isArray(toolResults.content)) return;
+            const exact = toolResults.content.filter(
+                (b) => !!b && typeof b === 'object' && b.type === 'tool_result',
+            ) as BetaToolResultBlockParam[];
+            if (JSON.stringify(exact) === JSON.stringify(turnResults)) return;
+            await keepResults(exact);
+        },
+        checkpointCompacted: async (compactedParams) => {
+            if (turnResults === null || checkpointAtSeq === null) return;
+            const messages = compactedParams.messages;
+            const last = messages[messages.length - 1];
+            if (!last || last.role !== 'user' || !Array.isArray(last.content)) return;
+            const results = last.content.filter(
+                (b): b is BetaToolResultBlockParam => !!b && typeof b === 'object' && b.type === 'tool_result',
+            );
+            const sealed = sealCheckpoint({
+                format: CHECKPOINT_FORMAT,
+                model: compactedParams.model,
+                system: compactedParams.system,
+                tools: compactedParams.tools.map(toolDefinitionOf),
+                messages: messages.slice(0, -1),
+            });
+            const kept = sealResults(results);
+            turnResults = results;
+            await writeCheckpoint(ctx, runId, {
+                transcriptJson: sealed.json,
+                transcriptHash: sealed.hash,
+                resultsJson: kept.json,
+                resultsHash: kept.hash,
+                atSeq: checkpointAtSeq,
+                elapsedMs: Math.max(Date.now() - clockStartMs, 0),
+                costTokens,
+            }).catch((err) => {
+                // The uncompacted checkpoint stands: a continuation from it is
+                // longer, never wrong.
+                logger.warn('tool-runner: the compacted conversation was not checkpointed', {
+                    component: 'agentic',
+                    runId,
+                    error: err instanceof Error ? err.message : 'a non-Error value was thrown',
+                });
+            });
+        },
+        takeContinuationMark: () => {
+            const mark = continuationMark;
+            continuationMark = undefined;
+            return mark;
+        },
     };
 
     // ONE queue for every call of the parent, the engine's own included, so the
     // ledger's order is the order the calls were made. A delegation runs its
     // child inside this queue, on the child's own.
-    const queue = new SerialQueue();
+    // A queue that keeps the checkpoint names each call in flight before it
+    // runs and keeps its result once it settled (#5854 item 3).
+    const queue = new SerialQueue(keepsCheckpoint(ctx) ? checkpointHooks : undefined);
     const offered = toolRunnerToolsFor(invocation, binding, {
         readOnly: def.readOnly === true,
         ...(def.profile ? { profileTools: def.profile.toolNames } : {}),
@@ -1352,7 +1605,15 @@ export async function executeToolRunnerRun(
         // A resumed segment sends the transcript's tool definitions, each with
         // its runnable from THIS segment's offer, a withdrawn one refusing and a
         // newly granted one not added (Step 2f): authority only narrows.
-        tools: resume ? resumedToolsFor(resume.transcript.tools, runTools, binding, queue) : runTools,
+        //
+        // A CONTINUED segment does the same with its checkpoint's definitions
+        // (#5854 item 3): a tool withdrawn while the run was interrupted
+        // refuses, `TOOL_WITHDRAWN_BEFORE_CONTINUATION`.
+        tools: resume
+            ? resumedToolsFor(resume.transcript.tools, runTools, binding, queue)
+            : continuation
+              ? resumedToolsFor(continuation.checkpoint.tools, runTools, binding, queue, WITHDRAWN_BEFORE_CONTINUATION)
+              : runTools,
         message,
         caps,
         fromSeq,
@@ -1366,7 +1627,15 @@ export async function executeToolRunnerRun(
                       messages: resumedMessages(resume.transcript, resume.result),
                   },
               }
-            : {}),
+            : continuation
+              ? {
+                    resume: {
+                        model: continuation.checkpoint.model,
+                        system: continuation.checkpoint.system,
+                        messages: continuation.messages,
+                    },
+                }
+              : {}),
     });
     logger.info('tool-runner: dispatching', {
         component: 'agentic',
@@ -1381,7 +1650,46 @@ export async function executeToolRunnerRun(
         toolCallsPerTurnBasis: turnCaps.toolCallsPerTurn.basis,
         delegationsPerTurn: turnCaps.delegationsPerTurn.value,
         resumedFromDeferral: resume ? resume.deferralId : null,
+        continuedFromSeq: continuation ? continuation.atSeq : null,
     });
+
+    // ── The calls the interrupted attempt left open (#5854 item 3) ──────────
+    // Each is answered to the model in the continued request (above) and
+    // recorded here as a FAILED step naming how: in flight when the attempt
+    // died (`TOOL_CALL_OUTCOME_UNKNOWN`) or never started (`TOOL_CALL_NOT_RUN`).
+    // Neither is run again. Each recorded step is charged one STEPS, as every
+    // recorded step is; a cap reached here stops the run before its first call.
+    if (continuation) {
+        const storedNames = new Set(
+            continuation.checkpoint.tools.flatMap((t) => {
+                const n = (t as { name?: unknown }).name;
+                return typeof n === 'string' ? [n] : [];
+            }),
+        );
+        for (const open of continuation.answers) {
+            if (open.answer === 'KEPT') continue;
+            const halt = budget.charge('STEPS', 1);
+            if (halt) {
+                binding.stopAtCap(halt);
+                break;
+            }
+            stepFailures += 1;
+            await recordStep(ctx, runId, binding.nextSeq(), 'TOOL_CALL', {
+                ...(storedNames.has(open.name) ? { toolCalled: open.name } : {}),
+                status: 'FAILED',
+                label: open.answer === TOOL_CALL_OUTCOME_UNKNOWN ? 'tool-call-outcome-unknown' : 'tool-call-not-run',
+                output: { outcome: open.answer, continuedFromSeq: continuation.atSeq },
+            });
+        }
+        logger.info('tool-runner: continuing from a checkpoint', {
+            component: 'agentic',
+            runId,
+            continuedFromSeq: continuation.atSeq,
+            callsKept: continuation.answers.filter((a) => a.answer === 'KEPT').length,
+            callsOutcomeUnknown: continuation.answers.filter((a) => a.answer === TOOL_CALL_OUTCOME_UNKNOWN).length,
+            callsNotRun: continuation.answers.filter((a) => a.answer !== 'KEPT' && a.answer !== TOOL_CALL_OUTCOME_UNKNOWN).length,
+        });
+    }
 
     const parent = await runModelLoop(rt, {
         subagent: null,
@@ -1473,7 +1781,9 @@ export async function executeToolRunnerRun(
         // THE API REFUSED THE RESUMED CONVERSATION (Step 2f): its first request,
         // answered 400. Settled by name with the API's error type, never
         // repaired by stripping thinking blocks and trying again.
-        const refusedResume = resume !== null && parent.calls === 0 && parent.failureApi?.status === 400;
+        // A continued conversation (#5854 item 3) is refused the same way.
+        const refusedResume =
+            (resume !== null || continuation !== null) && parent.calls === 0 && parent.failureApi?.status === 400;
         const status = await failRun(
             ctx,
             runId,

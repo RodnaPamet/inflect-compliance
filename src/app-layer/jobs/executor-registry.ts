@@ -1037,8 +1037,10 @@ executorRegistry.register('agent-run-execute', async (payload) => {
     // its clock base in the payload, and an executor that kept naming two
     // fields would silently measure every resumed segment from the run's start.
     // `NamesEveryField` makes leaving it out a compile error.
-    const { tenantId, runId, clockBase } = payload;
-    const forwarded: NamesEveryField<JobPayload<'agent-run-execute'>> = { tenantId, runId, clockBase };
+    // `segment` likewise (#5854 item 3): without it a retry of a Flue or
+    // Managed Agents segment cannot tell itself from a first attempt.
+    const { tenantId, runId, clockBase, segment } = payload;
+    const forwarded: NamesEveryField<JobPayload<'agent-run-execute'>> = { tenantId, runId, clockBase, segment };
     const r = await runAgentRunExecute(forwarded);
     return makeResult(
         'agent-run-execute',

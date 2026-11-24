@@ -184,6 +184,9 @@ async function resumeOnDecision(
             tenantId: ctx.tenantId,
             runId: deferral.runId,
             clockBase: Math.max(outcome.startedAtMs, Date.now() - deferral.elapsedMsAtPark),
+            // The segment, as the job id names it (#5854 item 3): a retry of
+            // it is told from its first attempt by this.
+            segment: outcome.segmentAt.getTime(),
         },
         // ONE JOB PER SEGMENT (#5854), named by the run's claim above.
         { jobId: agentRunExecuteJobId(deferral.runId, outcome.segmentAt) },

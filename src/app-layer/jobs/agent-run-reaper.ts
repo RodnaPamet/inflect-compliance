@@ -60,6 +60,7 @@ import {
 } from '@/lib/observability/metrics';
 import { isolateEach, type IsolatedFailure } from '@/lib/agentic/failure-isolation';
 import { ENGINE_CAPS } from '@/lib/agentic/workflow-types';
+import { settleCheckpointInTx } from '@/lib/agentic/drivers/checkpoint-store';
 import { logEvent } from '../events/audit';
 import { buildSystemContext } from '../context-system';
 import { drainPages, DRAIN_PAGE_SIZE } from './drain-pages';
@@ -379,6 +380,9 @@ async function reapOneRun(run: StalledRun, now: Date): Promise<boolean> {
             data: { status: 'FAILED', completedAt: now, errorMessage: REAP_REASON, leaseHolder: null, leaseExpiresAt: null },
         });
         if (claimed.count === 0) return false;
+        // A reaped run is never continued: its continuation checkpoint
+        // settles with it (#5854 item 3).
+        await settleCheckpointInTx(db, run.tenantId, run.id);
 
         await logEvent(db, ctx, {
             action: 'WORKFLOW_RUN_REAPED',

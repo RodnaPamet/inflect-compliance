@@ -18975,6 +18975,7 @@
       "WORKFLOW_RUN_GUARD_FLAGGED": "Workflow run guard flagged",
       "WORKFLOW_RUN_REAPED": "Workflow run reaped",
       "WORKFLOW_RUN_RESUMED": "Workflow run resumed",
+      "WORKFLOW_RUN_RETRY_PAUSED": "Retried workflow run paused for a person",
       "WORKFLOW_RUN_STARTED": "Workflow run started",
       "WORKFLOW_STEP": "Workflow step",
       "WORKFLOW_STEP_ISOLATED_FAILURE": "Workflow step isolated failure"
@@ -19272,6 +19273,7 @@
       "vendor_relationship": "Vendor relationship",
       "verification_token": "Verification token",
       "workflow_run": "Workflow run",
+      "workflow_run_checkpoint": "Workflow run checkpoint",
       "workflow_run_deferral": "Workflow run deferral",
       "workflow_step": "Workflow step"
     }

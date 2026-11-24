@@ -23,6 +23,7 @@ import type { PrismaTx } from '@/lib/db-context';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { appendAuditEntry } from '@/lib/audit';
 
+import { clearCheckpointInTx } from './checkpoint-store';
 import { recordStep } from './step-recorder';
 
 /** The statuses in which a deferral still holds its run: it has not resumed or settled. */
@@ -334,6 +335,10 @@ export async function parkRun(ctx: RequestContext, input: ParkInput): Promise<'P
                     },
                 });
                 if (moved.count === 0) throw new RunNoLongerRunning();
+                // The deferral's transcript takes over from the continuation
+                // checkpoint (#5854 item 3): one copy of the conversation while
+                // the run waits, and the resumed segment checkpoints afresh.
+                await clearCheckpointInTx(db, ctx.tenantId, input.runId);
             },
         );
     } catch (err) {

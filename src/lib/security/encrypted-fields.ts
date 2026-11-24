@@ -466,6 +466,14 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // resumes or settles. `transcriptHash` beside it is a digest and stays
     // plaintext, as `WorkflowRun.contextHash` does. Never filtered or sorted on.
     WorkflowRunDeferral: ['transcriptJson'],
+    // `transcriptJson` and `resultsJson` (#5854 item 3) are the conversation a
+    // Tool Runner run CONTINUES from when its segment is retried: the request
+    // it sends next and the results of the calls its last reply asked for,
+    // which carry tenant data and can name people. Exact API bytes, as the
+    // deferral transcript's are, and cleared when the run parks, is held for a
+    // person or settles. Both hashes are digests and stay plaintext. Never
+    // filtered or sorted on.
+    WorkflowRunCheckpoint: ['transcriptJson', 'resultsJson'],
 
     // ─── Step 4c (#3680) — tenant-authored skills ──────
     // `instructions` is the procedure a tenant authored — third-party

@@ -86,6 +86,8 @@ const mockDb = {
     aiDecisionLog: { updateMany: aiDecisionUpdateMany },
     // A parked run's deferral, settled by the abort (Step 2f): none here.
     workflowRunDeferral: { updateMany: jest.fn(async () => ({ count: 0 })) },
+    // Its continuation checkpoint, settled by the abort (#5854 item 3): none here.
+    workflowRunCheckpoint: { updateMany: jest.fn(async () => ({ count: 0 })) },
     $queryRaw: queryRaw,
 };
 
