@@ -2,6 +2,7 @@
 
 /* RQ-8 — Risk correlation matrix editor + PSD validation + auto-suggest. */
 import { useState } from 'react';
+import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +18,9 @@ import { AnalyticsState } from '../_shared/AnalyticsState';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { apiErrorMessage } from '@/lib/api-error';
 import { SettingRow } from '@/components/layout/SettingRow';
+import { InlineNotice } from '@/components/ui/inline-notice';
+import { useIsBelowMd } from '@/components/ui/hooks';
+import { correlationPairs, type CorrelationPair as Pair } from './correlation-pairs';
 
 interface Matrix { riskIds: string[]; riskTitles: string[]; matrix: number[][]; isPositiveSemiDefinite: boolean; isPositiveDefinite: boolean; minEigenvalue: number }
 interface Suggestion { riskAId: string; riskBId: string; suggestedCoefficient: number; reason: string }
@@ -56,6 +60,12 @@ export default function CorrelationMatrixPage() {
     const [saveError, setSaveError] = useState<string | null>(null);
     const [sel, setSel] = useState<{ i: number; j: number } | null>(null);
     const [coef, setCoef] = useState('');
+    // Below `md` the grid gives way to a list of pairs (owner decision,
+    // 2026-11-23: a notice plus a readable list). The switch itself is CSS;
+    // this only decides where the editor opens, so it opens beside the pair
+    // that was tapped rather than below a list it may be screens away from.
+    // `false` on the server and the first render; nothing is selected then.
+    const belowMd = useIsBelowMd();
 
     /**
      * B2-1 — both correlation writes go through `useTenantMutation` on the
@@ -153,6 +163,62 @@ export default function CorrelationMatrixPage() {
         }
     };
 
+    const editor = m && sel && (
+        <div className="flex flex-wrap items-end gap-default rounded-md border border-border-emphasis p-default">
+            <span className="text-sm text-content-emphasis">{m.riskTitles[sel.i]} ↔ {m.riskTitles[sel.j]}</span>
+            <label className="block w-24 sm:w-32"><span className="text-xs text-content-muted">{t('correlations.coefficient')}</span>
+                <Input type="text" inputMode="decimal" value={coef} onChange={(e) => setCoef(e.target.value)} id="corr-coefficient" autoFocus />
+            </label>
+            <Button variant="primary" size="sm" onClick={save} id="corr-save">{t('edit.save')}</Button>
+            <Button variant="ghost" size="sm" onClick={() => { setSel(null); setSaveError(null); }}>{t('edit.cancel')}</Button>
+            {saveError && (
+                <p className="w-full text-xs text-content-error" role="alert" data-testid="corr-edit-error">{saveError}</p>
+            )}
+        </div>
+    );
+
+    const pairs = m ? correlationPairs(m.matrix) : { correlated: [], uncorrelated: [] };
+    /** One pair on a phone: both risks as links, the figure, and Edit for a writer. */
+    const renderPair = (p: Pair) => {
+        if (!m) return null;
+        const a = m.riskTitles[p.i];
+        const b = m.riskTitles[p.j];
+        const value = p.v.toFixed(2);
+        const riskLink = (idx: number) => (
+            <Link
+                href={tenantHref(`/risks/${m.riskIds[idx]}`)}
+                className="flex min-h-11 items-center break-words text-sm font-medium text-content-emphasis hover:underline"
+            >
+                {m.riskTitles[idx]}
+            </Link>
+        );
+        return (
+            <li key={`${p.i}-${p.j}`} className="space-y-tight py-tight" data-testid={`corr-pair-${p.i}-${p.j}`}>
+                <div className="flex items-center gap-default">
+                    <div className="min-w-0 flex-1">
+                        {riskLink(p.i)}
+                        {riskLink(p.j)}
+                    </div>
+                    <span className={`shrink-0 rounded-md border border-border-subtle px-2 py-1 text-sm tabular-nums ${cellClass(p.v)}`}>
+                        {value}
+                    </span>
+                    {canWrite && (
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            className="shrink-0 min-h-11"
+                            aria-label={t('correlations.phone.editAria', { a, b, value })}
+                            onClick={() => { setSel({ i: p.i, j: p.j }); setCoef(String(p.v)); setSaveError(null); }}
+                        >
+                            {t('correlations.phone.edit')}
+                        </Button>
+                    )}
+                </div>
+                {belowMd && sel?.i === p.i && sel?.j === p.j && editor}
+            </li>
+        );
+    };
+
     return (
         <div className="space-y-section">
             <BackAffordance />
@@ -211,7 +277,7 @@ export default function CorrelationMatrixPage() {
                         <InfoTooltip title={t('correlations.psdTitle')} content={t('correlations.psdHelp')} />
                         {/* The hint tells you to click a cell. Don't say that
                             to someone whose cells are inert. */}
-                        {canWrite && <span className="text-xs text-content-subtle">{t('correlations.clickHint')}</span>}
+                        {canWrite && <span className="text-xs text-content-subtle max-md:hidden">{t('correlations.clickHint')}</span>}
                     </div>
                     {/* PR-L — a non-PSD matrix is silently dropped from the
                         Monte Carlo (Cholesky fails → independent sampling).
@@ -239,7 +305,29 @@ export default function CorrelationMatrixPage() {
                             {t('correlations.notPdWarning')}
                         </div>
                     )}
-                    <div className="overflow-auto">
+                    {/* Below `md`: a notice and the pairs as a list, strongest
+                        first; the grid stays for larger screens. */}
+                    <div className="space-y-default md:hidden" data-testid="corr-phone-list">
+                        <InlineNotice variant="info" id="corr-larger-screen">{t('correlations.phone.notice')}</InlineNotice>
+                        {pairs.correlated.length === 0 ? (
+                            <p className="text-sm text-content-muted" data-testid="corr-phone-none">{t('correlations.phone.none')}</p>
+                        ) : (
+                            <ul className="divide-y divide-border-subtle" aria-label={t('correlations.phone.listAria')}>
+                                {pairs.correlated.map(renderPair)}
+                            </ul>
+                        )}
+                        {pairs.uncorrelated.length > 0 && (
+                            <details className="group" data-testid="corr-phone-uncorrelated">
+                                <summary className="flex min-h-11 cursor-pointer items-center text-sm text-content-muted">
+                                    {t('correlations.phone.uncorrelated', { count: pairs.uncorrelated.length })}
+                                </summary>
+                                <ul className="divide-y divide-border-subtle">
+                                    {pairs.uncorrelated.map(renderPair)}
+                                </ul>
+                            </details>
+                        )}
+                    </div>
+                    <div className="overflow-auto max-md:hidden">
                         <table className="border-collapse text-xs">
                             <thead>
                                 <tr>
@@ -287,19 +375,7 @@ export default function CorrelationMatrixPage() {
                         </table>
                     </div>
 
-                    {sel && (
-                        <div className="flex flex-wrap items-end gap-default rounded-md border border-border-emphasis p-default">
-                            <span className="text-sm text-content-emphasis">{m.riskTitles[sel.i]} ↔ {m.riskTitles[sel.j]}</span>
-                            <label className="block w-24 sm:w-32"><span className="text-xs text-content-muted">{t('correlations.coefficient')}</span>
-                                <Input type="text" inputMode="decimal" value={coef} onChange={(e) => setCoef(e.target.value)} id="corr-coefficient" autoFocus />
-                            </label>
-                            <Button variant="primary" size="sm" onClick={save} id="corr-save">{t('edit.save')}</Button>
-                            <Button variant="ghost" size="sm" onClick={() => { setSel(null); setSaveError(null); }}>{t('edit.cancel')}</Button>
-                            {saveError && (
-                                <p className="w-full text-xs text-content-error" role="alert" data-testid="corr-edit-error">{saveError}</p>
-                            )}
-                        </div>
-                    )}
+                    {!belowMd && editor}
                     </>
                     )}
                 </AnalyticsState>

@@ -17,6 +17,13 @@ import { planLimitRefusalOf } from '@/lib/billing/plan-limit-message';
 import { apiErrorMessage } from '@/lib/api-error';
 import { usePermissions } from '@/lib/tenant-context-provider';
 import { cn } from '@inflect/ui/lib/cn';
+import { useIsBelowMd } from '@/components/ui/hooks';
+import {
+    TemplateInstallDock,
+    TemplateSelectBox,
+    TemplateShowMore,
+    useProgressiveCount,
+} from '@/components/controls-shared/template-library-phone';
 
 // getFramework (framework/catalog.ts) — only the name is read here.
 interface FrameworkSummary {
@@ -243,6 +250,21 @@ export default function TemplateLibraryPage() {
         [sections],
     );
 
+    // Below `md` (Mobile 4.3): one page of cards at a time, a real 24px
+    // checkbox with a 44px tap, titles that wrap, and the bulk install pinned
+    // to the bottom of the screen. `false` on the server and the first
+    // render, so a larger screen renders exactly what it did.
+    const belowMd = useIsBelowMd();
+    const phone = useProgressiveCount(`${search.trim().toLowerCase()}|${category}|${section}`);
+    const shownTemplates = belowMd ? templates.slice(0, phone.count) : templates;
+    // On a phone the install is tapped in the bottom bar or on a card far
+    // below the notice; bring a refusal into view.
+    useEffect(() => {
+        if (belowMd && installError) {
+            document.getElementById('template-install-error')?.scrollIntoView?.({ block: 'center' });
+        }
+    }, [belowMd, installError]);
+
     if (loadState === 'loading') return <div className="p-8 animate-pulse text-content-muted">{tx('templates.loading')}</div>;
     if (loadState === 'failed') {
         return (
@@ -275,6 +297,7 @@ export default function TemplateLibraryPage() {
                         onClick={bulkInstall}
                         disabled={bulkInstalling}
                         id="bulk-install-btn"
+                        className="max-md:hidden"
                     >
                         {bulkInstalling ? tx('templates.installing') : tx('templates.installNSelected', { count: selected.size })}
                     </Button>
@@ -284,7 +307,7 @@ export default function TemplateLibraryPage() {
             {/* Filters — live search by code or title (#4735), then category
                 and section. */}
             <div className="flex flex-wrap gap-compact items-center" id="template-filters">
-                <div className="w-56">
+                <div className="w-full sm:w-56">
                     <Input
                         id="template-search"
                         size="sm"
@@ -329,7 +352,7 @@ export default function TemplateLibraryPage() {
 
             {/* Template cards */}
             <div className="space-y-compact" id="template-list">
-                {templates.map(t => {
+                {shownTemplates.map(t => {
                     const isExpanded = expandedTemplate === t.code;
                     const isSelected = selected.has(t.code);
                     // The template's own authored evidence, one line per
@@ -347,7 +370,14 @@ export default function TemplateLibraryPage() {
                         <div key={t.code} className={cn(cardVariants({ density: 'none' }), 'transition-colors', isSelected ? 'ring-1 ring-[var(--ring)]/50' : '')} id={`template-${t.code}`}>
                             <div className="flex items-start gap-compact">
                                 {/* Checkbox */}
-                                {canInstall && !t.installed && (
+                                {canInstall && !t.installed && (belowMd ? (
+                                    <TemplateSelectBox
+                                        id={`template-select-${t.code}`}
+                                        checked={isSelected}
+                                        onCheckedChange={() => toggleSelect(t.code)}
+                                        label={tx('templates.selectTemplateAria', { code: t.code, title: t.title })}
+                                    />
+                                ) : (
                                     <input
                                         type="checkbox"
                                         checked={isSelected}
@@ -355,7 +385,7 @@ export default function TemplateLibraryPage() {
                                         onChange={() => toggleSelect(t.code)}
                                         className="mt-1 accent-[var(--brand-default)]"
                                     />
-                                )}
+                                ))}
 
                                 {/* Main */}
                                 <div className="flex-1 min-w-0">
@@ -364,9 +394,11 @@ export default function TemplateLibraryPage() {
                                             onClick={() => setExpandedTemplate(isExpanded ? null : t.code)}
                                             className="text-left flex-1 min-w-0"
                                         >
-                                            <div className="flex items-center gap-tight">
-                                                <code className="text-xs text-[var(--brand-default)] font-mono">{t.code}</code>
-                                                <span className="text-sm font-medium text-content-emphasis truncate">{t.title}</span>
+                                            {/* Below `md` the title takes a line of its own and
+                                                wraps; the code never breaks mid-token. */}
+                                            <div className="flex items-center gap-tight max-md:flex-wrap">
+                                                <code className="text-xs text-[var(--brand-default)] font-mono whitespace-nowrap">{t.code}</code>
+                                                <span className="text-sm font-medium text-content-emphasis md:truncate max-md:order-last max-md:basis-full max-md:break-words" data-testid="template-title">{t.title}</span>
                                                 {t.installed ? (
                                                     <StatusBadge variant="success" className="flex-shrink-0">{tx('templates.installed')}</StatusBadge>
                                                 ) : (
@@ -457,7 +489,25 @@ export default function TemplateLibraryPage() {
                 {templates.length === 0 && (
                     <div className={cn(cardVariants({ density: 'none' }), 'text-center py-8 text-content-subtle')}>{tx('templates.emptyFilter')}</div>
                 )}
+                {shownTemplates.length < templates.length && (
+                    <TemplateShowMore
+                        id="template-phone-more"
+                        onClick={phone.showMore}
+                        label={tx('templates.phone.showMore', { remaining: templates.length - shownTemplates.length })}
+                    />
+                )}
             </div>
+
+            {canInstall && allTemplates.some((tpl) => !tpl.installed) && (
+                <TemplateInstallDock
+                    id="template-phone-install"
+                    installLabel={bulkInstalling ? tx('templates.installing') : tx('templates.installNSelected', { count: selected.size })}
+                    onInstall={bulkInstall}
+                    disabled={selected.size === 0 || bulkInstalling}
+                    clearLabel={selected.size > 0 ? tx('templates.phone.clearSelection') : undefined}
+                    onClear={() => setSelected(new Set())}
+                />
+            )}
         </div>
     );
 }

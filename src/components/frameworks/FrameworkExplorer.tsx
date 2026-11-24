@@ -36,7 +36,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { FileText } from 'lucide-react';
+import { ChevronLeft, FileText } from 'lucide-react';
 import { TreeView } from '@/components/ui/TreeView';
 import { TreeViewItem } from '@/components/ui/TreeViewItem';
 import { TreeExpandCollapseToggle } from '@/components/ui/TreeExpandCollapseToggle';
@@ -56,6 +56,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
+import { useIsBelowMd } from '@/components/ui/hooks';
 
 // ─── Coverage shapes (subset of the existing coverage usecase output) ──
 
@@ -175,14 +176,57 @@ export function FrameworkExplorer({
         return findNodeById(tree.nodes, selectedId);
     }, [tree.nodes, selectedId]);
 
+    // ── Phone drill-in (Mobile 4.4, owner decision 2026-11-23). ───────
+    // Below `md` the panes cannot sit side by side, and stacked, a tap on a
+    // requirement changed the detail pane far below the tree, so the tap
+    // looked like it did nothing. On a phone the tree is the page; tapping
+    // a requirement opens its detail IN PLACE of the tree, scrolled into
+    // view, and Back returns to the tree at the scroll position it left.
+    // The tree stays mounted (hidden by CSS), so its expansion survives the
+    // round trip. Desktop keeps the master/detail panes: `phoneDetail` only
+    // ever changes below `md`, and its classes are all `max-md:`.
+    const belowMd = useIsBelowMd();
+    const [phoneDetail, setPhoneDetail] = useState(false);
+    /** Where the page was scrolled when the detail opened. */
+    const treeScrollY = useRef(0);
+    /** What to do once the pane swap has painted. */
+    const pendingScroll = useRef<'detail' | 'tree' | null>(null);
+    const detailRef = useRef<HTMLDivElement | null>(null);
+    const backRef = useRef<HTMLButtonElement | null>(null);
+
+    const closePhoneDetail = useCallback(() => {
+        pendingScroll.current = 'tree';
+        setPhoneDetail(false);
+    }, []);
+
+    useEffect(() => {
+        const pending = pendingScroll.current;
+        if (!pending) return;
+        pendingScroll.current = null;
+        if (pending === 'detail') {
+            detailRef.current?.scrollIntoView({ block: 'start' });
+            backRef.current?.focus({ preventScroll: true });
+        } else {
+            window.scrollTo({ top: treeScrollY.current });
+            if (selectedId) {
+                document.getElementById(`treeitem-${selectedId}`)?.focus({ preventScroll: true });
+            }
+        }
+    }, [phoneDetail, selectedId]);
+
     const handleSelect = useCallback(
         (node: FrameworkTreeNode) => {
             setSelectedId(node.id);
             if (node.kind === 'requirement') {
                 onRequirementSelected?.(node);
+                if (belowMd) {
+                    treeScrollY.current = window.scrollY;
+                    pendingScroll.current = 'detail';
+                    setPhoneDetail(true);
+                }
             }
         },
-        [onRequirementSelected],
+        [onRequirementSelected, belowMd],
     );
 
     // Clear selection when the underlying framework changes.
@@ -190,6 +234,7 @@ export function FrameworkExplorer({
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setSelectedId(null);
         setUserExpanded(new Set());
+        setPhoneDetail(false);
     }, [tree.framework.id]);
 
     // ── Mapped/unmapped lookup for badges. ────────────────────────────
@@ -242,9 +287,13 @@ export function FrameworkExplorer({
         <div
             className="grid grid-cols-1 lg:grid-cols-[minmax(0,380px)_12rem_1fr] gap-default"
             id="framework-explorer"
+            data-phone-view={phoneDetail ? 'detail' : 'tree'}
         >
-            {/* ── Tree pane ── */}
-            <div className={cn(cardVariants({ density: 'none' }), 'flex flex-col min-h-[24rem]')}>
+            {/* ── Tree pane ── (on a phone: hidden while a detail is open) */}
+            <div
+                className={cn(cardVariants({ density: 'none' }), 'flex flex-col min-h-[24rem]', phoneDetail && 'max-md:hidden')}
+                id="framework-explorer-tree"
+            >
                 <div className="flex flex-wrap items-center gap-tight mb-3">
                     <input
                         type="text"
@@ -300,7 +349,18 @@ export function FrameworkExplorer({
                                     else next.add(node.id);
                                     handleExpandedChange(next);
                                 }}
-                                onSelect={() => handleSelect(node)}
+                                onSelect={() => {
+                                    // On a phone a section is a heading in a
+                                    // list, not a destination: a tap opens or
+                                    // closes it, as its chevron does.
+                                    if (belowMd && node.kind === 'section' && node.hasChildren && !trimmed) {
+                                        const next = new Set(expanded);
+                                        if (next.has(node.id)) next.delete(node.id);
+                                        else next.add(node.id);
+                                        handleExpandedChange(next);
+                                    }
+                                    handleSelect(node);
+                                }}
                             />
                         )}
                     />
@@ -316,8 +376,30 @@ export function FrameworkExplorer({
                 />
             </div>
 
-            {/* ── Detail pane ── */}
-            <div className={cn(cardVariants({ density: 'none' }), 'min-h-[24rem]')} id="framework-explorer-detail">
+            {/* ── Detail pane ── (on a phone: shown only while drilled in) */}
+            <div
+                ref={detailRef}
+                className={cn(
+                    cardVariants({ density: 'none' }),
+                    'min-h-[24rem] max-md:scroll-mt-32',
+                    !phoneDetail && 'max-md:hidden',
+                )}
+                id="framework-explorer-detail"
+            >
+                {phoneDetail && (
+                    <div className="border-b border-border-subtle px-2 py-tight md:hidden">
+                        <button
+                            ref={backRef}
+                            type="button"
+                            onClick={closePhoneDetail}
+                            id="framework-explorer-back"
+                            className="inline-flex min-h-11 items-center gap-tight rounded-md px-2 text-sm font-medium text-content-default hover:bg-bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-default)]"
+                        >
+                            <ChevronLeft className="size-4" aria-hidden="true" />
+                            {t('backToRequirements')}
+                        </button>
+                    </div>
+                )}
                 {!selectedNode ? (
                     <div className="h-full flex flex-col items-center justify-center text-center text-content-subtle px-6 py-10">
                         <FileText className="w-8 h-8 mb-2 opacity-60" aria-hidden="true" />
@@ -389,7 +471,7 @@ function FrameworkTreeRow({
             );
         }
         meta = (
-            <span className="text-content-subtle text-[11px]">
+            <span className="text-content-subtle text-xs">
                 {node.descendantCount}
             </span>
         );
@@ -411,7 +493,7 @@ function FrameworkTreeRow({
                 );
             } else {
                 meta = isMapped ? (
-                    <span className="text-[10px] text-content-subtle tabular-nums">
+                    <span className="text-xs text-content-subtle tabular-nums">
                         {mappedCount}
                     </span>
                 ) : (
@@ -439,7 +521,14 @@ function FrameworkTreeRow({
     return (
         <TreeViewItem
             id={node.id}
-            label={isSection ? frameworkSectionLabel(node.label, tRoot) : node.label}
+            label={
+                isSection ? (
+                    frameworkSectionLabel(node.label, tRoot)
+                ) : (
+                    // A requirement code never breaks mid-token ("A-/5.1").
+                    <span className="whitespace-nowrap">{node.label}</span>
+                )
+            }
             secondary={
                 isSection ? null : (
                     <span className="inline-flex items-center gap-1.5">
@@ -561,7 +650,7 @@ function RequirementDetail({
                         {t('mappedControls', { count: controls.length })}
                     </p>
                     {controls.length === 0 && !node.outOfScope && (
-                        <span className="text-[10px] text-content-warning">{t('unmapped')}</span>
+                        <span className="text-xs text-content-warning">{t('unmapped')}</span>
                     )}
                 </div>
                 {controls.length === 0 ? (
