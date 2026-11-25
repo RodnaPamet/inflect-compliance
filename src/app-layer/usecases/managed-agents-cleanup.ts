@@ -358,12 +358,15 @@ export function awaitsDeleteRetry(session: { readonly latest: string; readonly l
  * longer ago than any segment of a run can last.
  *
  * A worker that dies mid-run (a SIGKILL, an OOM, a pod eviction, or a SIGTERM
- * drain that pauses the run) never reaches the engine's `finally`, and the
- * next segment of the run, a BullMQ retry or a person's resume, creates a NEW
- * session: the engine never re-attaches to one. So the earlier session, which
- * holds the tenant's instructions in its `system` override and every tool
- * result the run had sent it, stays in the customer's workspace with nothing
- * but `SESSION_CREATED` on the ledger.
+ * drain that pauses the run) never reaches the engine's `finally`. A BullMQ
+ * retry or a lease takeover of the same segment RECONNECTS to the session and
+ * settles it at its own end (#5854, owner decision 2026-11-25), and the pass
+ * leaves a RUNNING run's session alone for that reason. But a run that ends
+ * without one (the reaper fails it, every retry is spent) or a person's
+ * resume, which is a NEW segment and creates a new session, leaves the
+ * earlier session, which holds the tenant's instructions in its `system`
+ * override and every tool result the run had sent it, in the customer's
+ * workspace with nothing but `SESSION_CREATED` on the ledger.
  *
  * The age is the proof that no segment still drives it: a segment's wall clock
  * runs from the run's start or a person's resume, the session is created after
@@ -421,6 +424,33 @@ async function readRecordedAgents(tenantId: string, coversUntil?: Date): Promise
         out.push({ connectionId: r.connectionId, agentId: r.anthropicAgentId });
     }
     return out;
+}
+
+/**
+ * Of these run ids, the ones still RUNNING (#5854, owner decision 2026-11-25).
+ *
+ * A RUNNING run's session is never abandoned, whatever its age: a retried or
+ * taken-over segment RECONNECTS to the session it created and continues in
+ * it. That holds with a live lease (a worker is driving it now) and without
+ * one (its worker died and BullMQ's retry, or a takeover, is on its way), so
+ * the status decides, not the lease. It is also what keeps a reconnecting
+ * segment and this pass from both acting on one session: a reconnect happens
+ * only under a lease, and a lease is held only while the run is RUNNING; a run
+ * that has left RUNNING never re-enters the SAME segment (a person's resume is
+ * a new segment, which never reconnects to an earlier segment's session). A
+ * run that stays RUNNING with nobody driving it is reaped to FAILED by the
+ * agent-run reaper, and the next pass settles its session then.
+ */
+async function readRunningRunIds(tenantId: string, runIds: readonly string[]): Promise<ReadonlySet<string>> {
+    if (runIds.length === 0) return new Set();
+    const rows = await runInTenantJobContext({ tenantId, source: CLEANUP_SOURCE }, (db) =>
+        db.workflowRun.findMany({
+            where: { tenantId, id: { in: [...runIds] }, status: 'RUNNING' },
+            select: { id: true },
+            take: runIds.length,
+        }),
+    );
+    return new Set(rows.map((r) => r.id));
 }
 
 /** Of these run ids, the ones this tenant holds. The crash window's second half. */
@@ -1110,8 +1140,9 @@ async function retryFailedDeletesFor(
  *   2. ABANDONED SESSIONS (Step 5H, #4169). Every session whose only step is
  *      `SESSION_CREATED`, recorded in the last `RECONCILE_LOOKBACK_DAYS` and
  *      longer than `ABANDONED_SESSION_MIN_AGE_MS` ago, is a session a dead
- *      worker left behind (`isAbandonedSession`). It is settled as the run
- *      would have: recorded KEPT on a connection that keeps sessions, else
+ *      worker left behind (`isAbandonedSession`), unless its run is still
+ *      RUNNING: a retried or taken-over segment reconnects to it (#5854,
+ *      `readRunningRunIds`). It is settled as the run would have: recorded KEPT on a connection that keeps sessions, else
  *      deleted and recorded DELETED (`settleAbandonedSessionsFor`,
  *      `agentic.managed_agents.abandoned_session`), at most
  *      `ABANDONED_SESSION_BATCH` per pass, oldest first.
@@ -1168,7 +1199,12 @@ export async function reconcileLostSessionDeletes(
             const { sessions } = await readLedgerSessions(tenantId, { since: new Date(now.getTime() - RECONCILE_LOOKBACK_DAYS * DAY_MS) });
             const deletedOnes = [...sessions.values()].filter((s) => s.lifecycles.has('SESSION_DELETED'));
             // Oldest first: the read is ordered by step time, and a session's CREATED is its first step.
-            const abandoned = [...sessions.values()].filter((s) => isAbandonedSession(s, now)).slice(0, ABANDONED_SESSION_BATCH);
+            const aged = [...sessions.values()].filter((s) => isAbandonedSession(s, now));
+            // …and never one whose run is still RUNNING: a retry or a takeover
+            // reconnects to it (#5854, owner decision 2026-11-25).
+            // guardrail-allow: n+1 — reason: one tenant-bound read per tenant; RLS binds each to its own tenant.
+            const running = await readRunningRunIds(tenantId, [...new Set(aged.map((s) => s.runId))]);
+            const abandoned = aged.filter((s) => !running.has(s.runId)).slice(0, ABANDONED_SESSION_BATCH);
             if (deletedOnes.length === 0 && retrying.length === 0 && abandoned.length === 0) continue;
             const connections = await readCleanupConnections(tenantId);
 

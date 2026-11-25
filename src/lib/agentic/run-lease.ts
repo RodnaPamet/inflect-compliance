@@ -274,6 +274,27 @@ export function runLeaseLost(ctx: RequestContext, row: { leaseHolder: string | n
 }
 
 /**
+ * HAS ANOTHER WORKER TAKEN THIS RUN OVER? (#5854, owner decision 2026-11-25)
+ *
+ * True only for a context that holds a lease (`runLeaseToken`) whose row now
+ * names a DIFFERENT, non-null holder: a successor claimed the run after this
+ * execution's lease lapsed. False when the row still names this token, and
+ * false when it names nobody (the SIGTERM drain or the reaper cleared it):
+ * those stop the run, they do not hand it on. A context with no token never
+ * hands anything over, and costs no query.
+ *
+ * The Managed Agents engine asks it before it touches its session once its
+ * run reads stopped: a successor RECONNECTS to that session and continues in
+ * it, so the worker it took the run from must not answer the session's open
+ * calls, interrupt it or delete it.
+ */
+export async function runLeaseTakenOver(ctx: RequestContext, runId: string): Promise<boolean> {
+    if (ctx.runLeaseToken === undefined) return false;
+    const now = await readLease(ctx.tenantId, runId);
+    return now.holder !== null && now.holder !== ctx.runLeaseToken;
+}
+
+/**
  * THE FENCE INSIDE A WRITE's TRANSACTION. True when the context holds no lease
  * (nothing to fence) or when the row still names its token; the row is then
  * locked `FOR SHARE` until the transaction ends, so a claim by another worker

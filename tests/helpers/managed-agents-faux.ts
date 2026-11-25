@@ -27,7 +27,15 @@
  * later in the same POST is read: that request is in flight when it arrives.
  * This is the weaker stop the kill-switch variance names.
  *
- * The stream does not replay. `events.list` returns the whole history.
+ * The stream does not replay. `events.list` returns the whole history, in
+ * pages of `limit` when the request names one (`page` is the offset the
+ * previous page's `next_page` named), so a paged read is held to the SDK's
+ * own cursor (#5854).
+ *
+ * `beforeEventsPost` runs, awaited, before a POST of session events is taken:
+ * a test can kill the worker there (move its lease to a dead holder), engage
+ * a kill switch, run the reconciliation, and then let the POST through or
+ * fail it at the network, as a process that died while sending would.
  *
  * ── THE CLEAN-UP SURFACE (Step 5c, #4166) ───────────────────────────────────
  *
@@ -162,6 +170,12 @@ export class ManagedAgentsFaux {
      * workspace emits `session.updated` with the patch, after the idle.
      */
     sessionEditAfterTurn: { turn: number; patch: Record<string, unknown> } | null = null;
+    /**
+     * Awaited before a POST of session events is taken. Return `'DROP'` to
+     * fail it at the network WITHOUT the workspace taking it: the sender died
+     * as it sent (#5854).
+     */
+    beforeEventsPost: ((sessionId: string, events: ReadonlyArray<Record<string, unknown>>) => Promise<'DROP' | void>) | null = null;
     private modelCallCount = 0;
     private eventPosts = 0;
     private readonly originalFetch = global.fetch;
@@ -186,6 +200,12 @@ export class ManagedAgentsFaux {
     uninstall(): void {
         global.fetch = this.originalFetch;
         for (const s of this.sessions.values()) for (const c of s.subscribers) safeClose(c);
+    }
+
+    /** Script the turns from the next model call on, numbered from 0 again. */
+    script(turns: FauxScriptedTurn[]): void {
+        this.turns = turns;
+        this.modelCallCount = 0;
     }
 
     /** The one session the run created. */
@@ -240,9 +260,23 @@ export class ManagedAgentsFaux {
         if (m && method === 'GET') {
             const s = this.sessions.get(m[1]);
             if (!s) return apiError(404, 'not_found_error', 'no such session');
-            return json({ data: [...s.history], next_page: null });
+            const limit = Number(url.searchParams.get('limit') ?? '0');
+            if (!Number.isInteger(limit) || limit <= 0) return json({ data: [...s.history], next_page: null });
+            const offset = Number(url.searchParams.get('page') ?? '0') || 0;
+            const data = s.history.slice(offset, offset + limit);
+            const next = offset + limit < s.history.length ? String(offset + limit) : null;
+            return json({ data, next_page: next });
         }
-        if (m && method === 'POST') return this.postEvents(m[1], body ?? {});
+        if (m && method === 'POST') {
+            const hook = this.beforeEventsPost;
+            if (hook) {
+                const events = Array.isArray(body?.events) ? (body?.events as Array<Record<string, unknown>>) : [];
+                if ((await hook(m[1], events)) === 'DROP') {
+                    throw new TypeError('faux: the sender died before the workspace took the events');
+                }
+            }
+            return this.postEvents(m[1], body ?? {});
+        }
         m = /^\/v1\/sessions\/([^/]+)\/events\/stream$/.exec(p);
         if (m && method === 'GET') return this.openStream(m[1], init?.signal ?? null);
         return apiError(404, 'not_found_error', `faux: ${method} ${p}`);
