@@ -168,8 +168,22 @@ export interface RequestContext {
      * first attempt's, and the engine reconnects to the session that segment
      * recorded there. It grants nothing: it only says which steps are this
      * segment's.
+     *
+     * A person's resume of a PAUSED run (the owner's second decision of
+     * 2026-11-25) reads the PAUSED segment's start here, not its own: its
+     * segment continues the paused one, and reconnects to the session the
+     * paused segment left open.
      */
     runSegmentFromSeq?: number;
+    /**
+     * This execution's segment continues a PAUSED segment (a person's resume),
+     * rather than being a first attempt or a retry of its own, and whether the
+     * resume came in time for the paused session (`IN_TIME`) or after the
+     * window in which a resume may reconnect to it (`TOO_LATE`: the engine
+     * refuses the run by name and settles the session). Set beside
+     * `runSegmentFromSeq`, only then. It grants nothing.
+     */
+    runSegmentContinuesPause?: 'IN_TIME' | 'TOO_LATE';
 }
 
 /**

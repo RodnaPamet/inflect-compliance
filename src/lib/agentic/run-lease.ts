@@ -274,24 +274,40 @@ export function runLeaseLost(ctx: RequestContext, row: { leaseHolder: string | n
 }
 
 /**
- * HAS ANOTHER WORKER TAKEN THIS RUN OVER? (#5854, owner decision 2026-11-25)
+ * WHERE A RUN THIS EXECUTION LOST HAS GONE (#5854, the owner's two decisions
+ * of 2026-11-25).
  *
- * True only for a context that holds a lease (`runLeaseToken`) whose row now
- * names a DIFFERENT, non-null holder: a successor claimed the run after this
- * execution's lease lapsed. False when the row still names this token, and
- * false when it names nobody (the SIGTERM drain or the reaper cleared it):
- * those stop the run, they do not hand it on. A context with no token never
- * hands anything over, and costs no query.
+ *   SUCCESSOR  the row names a DIFFERENT, non-null holder: another worker took
+ *              the run over after this execution's lease lapsed, and it
+ *              reconnects to the run's session and continues there.
+ *   CONTINUES  the row names nobody, and the run is neither ABORTED nor
+ *              FAILED: the SIGTERM drain PAUSED it, and a person's resume
+ *              (RUNNING again, or any status the resumed segment has since
+ *              written) reconnects to the paused segment's session.
+ *   STOPPED    the row names nobody and the run is ABORTED (an operator) or
+ *              FAILED (the reaper), or is gone: nothing will continue it, so
+ *              the execution still stops it and settles what it holds.
  *
- * The Managed Agents engine asks it before it touches its session once its
- * run reads stopped: a successor RECONNECTS to that session and continues in
- * it, so the worker it took the run from must not answer the session's open
- * calls, interrupt it or delete it.
+ * Null when the context holds no lease (every inline run, with no query) or
+ * when the row still names this token.
+ *
+ * The Managed Agents engine asks it once its run reads stopped, before it
+ * touches its session: for SUCCESSOR and CONTINUES the session is the
+ * continuation's, so this execution must not answer its open calls, interrupt
+ * it or delete it.
  */
-export async function runLeaseTakenOver(ctx: RequestContext, runId: string): Promise<boolean> {
-    if (ctx.runLeaseToken === undefined) return false;
+export type LostRunDestination = 'SUCCESSOR' | 'CONTINUES' | 'STOPPED';
+
+/** The statuses a run that nobody will continue is left in: an operator's Abort, the reaper's failure. */
+const STOPPED_RUN_STATUSES: ReadonlySet<string> = new Set(['ABORTED', 'FAILED']);
+
+export async function lostRunDestination(ctx: RequestContext, runId: string): Promise<LostRunDestination | null> {
+    if (ctx.runLeaseToken === undefined) return null;
     const now = await readLease(ctx.tenantId, runId);
-    return now.holder !== null && now.holder !== ctx.runLeaseToken;
+    if (now.holder === ctx.runLeaseToken) return null;
+    if (now.holder !== null) return 'SUCCESSOR';
+    if (now.status === null || STOPPED_RUN_STATUSES.has(now.status)) return 'STOPPED';
+    return 'CONTINUES';
 }
 
 /**

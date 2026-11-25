@@ -266,6 +266,13 @@ export async function closeCheckpointForRun(
     });
 }
 
+/** What the segment anchor says about this attempt. */
+export type SegmentAnchor =
+    /** The first attempt of its segment. `continuesFromSeq` is set when it continues a PAUSED segment. */
+    | { readonly retry: false; readonly continuesFromSeq: number | null }
+    /** A later attempt of the same segment, and where that segment began. */
+    | { readonly retry: true; readonly segmentFromSeq: number };
+
 /**
  * THE SEGMENT ANCHOR. The first attempt of a queued segment records which
  * segment it is and where in the ledger it began; a later attempt of the SAME
@@ -273,14 +280,25 @@ export async function closeCheckpointForRun(
  * its own key and learns it is a retry, and where its segment began. A key is
  * compared for equality only, never as a clock. `LEASE_LOST` when this worker
  * no longer holds the run.
+ *
+ * `continuePaused` (#5854, the owner's second decision of 2026-11-25): the
+ * segment is a person's resume of a PAUSED run, on an engine whose
+ * conversation is a session. The paused segment's anchor is still on the row
+ * (a pause keeps the checkpoint, anchor included), so the new segment takes
+ * over its START: it is anchored at the paused segment's `segmentFromSeq`
+ * under its own key, and reads that segment's part of the ledger as its own.
+ * Its retries then find the same start. A row with no anchor to continue (a
+ * paused segment from a build that sent none) anchors at `fromSeq`, as a
+ * first attempt always has.
  */
 export async function anchorSegment(
     ctx: RequestContext,
     runId: string,
     segmentKey: string,
     fromSeq: number,
-): Promise<{ retry: false } | { retry: true; segmentFromSeq: number } | 'LEASE_LOST'> {
-    let outcome: { retry: false } | { retry: true; segmentFromSeq: number } = { retry: false };
+    opts: { readonly continuePaused?: boolean } = {},
+): Promise<SegmentAnchor | 'LEASE_LOST'> {
+    let outcome: SegmentAnchor = { retry: false, continuesFromSeq: null };
     const held = await fencedWrite(ctx, runId, async (db) => {
         const row = await db.workflowRunCheckpoint.findFirst({
             where: { tenantId: ctx.tenantId, runId },
@@ -291,7 +309,9 @@ export async function anchorSegment(
             return true;
         }
         if (row?.settledAt) return true;
-        await writeOpenRow(db, ctx, runId, { segmentKey, segmentFromSeq: fromSeq });
+        const continues = opts.continuePaused === true && row?.segmentFromSeq != null ? row.segmentFromSeq : null;
+        await writeOpenRow(db, ctx, runId, { segmentKey, segmentFromSeq: continues ?? fromSeq });
+        outcome = { retry: false, continuesFromSeq: continues };
         return true;
     });
     return held ? outcome : 'LEASE_LOST';
