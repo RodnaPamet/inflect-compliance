@@ -54,7 +54,7 @@ import { resolveDriverForTenant } from '@/lib/agentic/agent-driver-policy';
 import { buildSystemContext } from '@/app-layer/context-system';
 import { getAgentDriverSetting, setAgentDriverSetting } from '@/app-layer/usecases/agent-driver-setting';
 import { getManagedAgentsSwitch, setManagedAgentsSwitch } from '@/app-layer/usecases/managed-agents-switch';
-import { runManagedAgentsProvisionOnSwitchOn } from '@/app-layer/jobs/managed-agents-provision-on-switch-on';
+import { runManagedAgentsProvisionInForce } from '@/app-layer/jobs/managed-agents-provision-in-force';
 import {
     listAvailableProvidersFor,
     removeIntegrationConnection,
@@ -427,24 +427,26 @@ describeFn('the Managed Agents switch is the workspace\'s (real DB, faux workspa
         });
     });
 
-    describe('switching it on provisions what was approved while it was off (owner decision 2026-11-25)', () => {
+    describe('the versions in force are provisioned when the engine becomes usable (owner decisions 2026-11-25)', () => {
         const enqueueMock = () => (jest.requireMock('@/app-layer/jobs/queue') as { enqueue: jest.Mock }).enqueue;
         const provisionJobs = () =>
-            enqueueMock().mock.calls.filter(([name]) => name === 'managed-agents-provision-on-switch-on');
+            enqueueMock().mock.calls.filter(([name]) => name === 'managed-agents-provision-in-force');
 
-        /** Turn the switch on, choose the engine, then run the job the switch enqueued with the worker's own body. */
+        /** The one job the last write enqueued, with the payload it named. */
+        function theJobJustEnqueued(jobsBefore: number, trigger: 'SWITCH_ON' | 'ENGINE_CHOSEN') {
+            const jobs = provisionJobs();
+            expect(jobs.length).toBe(jobsBefore + 1);
+            const payload = jobs[jobs.length - 1][1];
+            expect(payload).toEqual({ tenantId: TENANT, requestedByUserId: USERS.owner, trigger, requestId: expect.any(String) });
+            return payload;
+        }
+
+        /** Turn the switch on, then run the job it enqueued with the worker's own body. */
         async function switchOnAndRunTheJob() {
             const jobsBefore = provisionJobs().length;
             const write = await setManagedAgentsSwitch(owner(), true);
             expect(write.provisioning).toBe('QUEUED');
-            const jobs = provisionJobs();
-            expect(jobs.length).toBe(jobsBefore + 1);
-            const payload = jobs[jobs.length - 1][1];
-            expect(payload).toEqual({ tenantId: TENANT, requestedByUserId: USERS.owner, requestId: expect.any(String) });
-            // The engine choice is the owner's own act, refused while off and
-            // made again now (decision 3 keeps it; this suite moved it away).
-            if ((await getAgentDriverSetting(admin())).mode !== 'MANAGED_AGENTS') await setAgentDriverSetting(owner(), 'MANAGED_AGENTS');
-            return runManagedAgentsProvisionOnSwitchOn(payload);
+            return runManagedAgentsProvisionInForce(theJobJustEnqueued(jobsBefore, 'SWITCH_ON'));
         }
 
         async function provisionRows() {
@@ -455,22 +457,54 @@ describeFn('the Managed Agents switch is the workspace\'s (real DB, faux workspa
             });
         }
 
-        it('a version approved while off has no agent, and gets one when the switch goes on; its run then works', async () => {
+        it('the realistic order: approved while off, switch on (nothing to run on yet), connect, choose the engine; the version is provisioned and runs', async () => {
+            // No workspace connected yet, and (from the test above) the engine
+            // is not Managed Agents: the state of a workspace meeting the switch
+            // for the first time.
+            await prisma.integrationConnection.update({ where: { id: connectionId }, data: { isEnabled: false } });
+            expect((await getAgentDriverSetting(admin())).mode).toBe('STATIC');
+
             const v2 = await createAgentProfileVersion(owner(), AGENT, version());
             await submitAgentProfileVersion(owner(), AGENT, v2.version);
             await approveAgentProfileVersion(admin(), AGENT, v2.version, { instructionsHash: v2.instructionsHash });
-            expect(await prisma.agentProfileProvision.count({ where: { tenantId: TENANT, profileVersionId: v2.versionId } })).toBe(0);
+            const provisionedV2 = () => prisma.agentProfileProvision.count({ where: { tenantId: TENANT, profileVersionId: v2.versionId } });
+            expect(await provisionedV2()).toBe(0);
 
+            // 1. The switch goes on: its job finds nothing to run on, and provisions nothing.
             const writesBefore = faux.agentWrites.length;
-            const result = await switchOnAndRunTheJob();
+            expect(await switchOnAndRunTheJob()).toMatchObject({ outcome: 'NO_WORKSPACE', versions: 0, failed: [] });
+            expect(await provisionedV2()).toBe(0);
+
+            // 2. The workspace is connected (re-enabled through the product's save).
+            await upsertIntegrationConnection(admin(), {
+                id: connectionId,
+                provider: 'anthropic-workspace',
+                configJson: { workspaceId: WORKSPACE_ID },
+                isEnabled: true,
+            });
+            expect(await provisionedV2()).toBe(0);
+
+            // 3. The owner chooses the engine: that write enqueues the job, and it provisions.
+            const jobsBefore = provisionJobs().length;
+            const chose = await setAgentDriverSetting(owner(), 'MANAGED_AGENTS');
+            expect(chose.provisioning).toBe('QUEUED');
+            const result = await runManagedAgentsProvisionInForce(theJobJustEnqueued(jobsBefore, 'ENGINE_CHOSEN'));
             expect(result).toMatchObject({ outcome: 'PROVISIONED', versions: 1, created: 1, alreadyProvisioned: 0, failed: [] });
-            expect(await prisma.agentProfileProvision.count({ where: { tenantId: TENANT, profileVersionId: v2.versionId } })).toBe(1);
+            expect(await provisionedV2()).toBe(1);
             // Through the approval's own path: the profile's agent updated, as a later approval does.
             expect(faux.agentWrites.slice(writesBefore).map((w) => w.op)).toEqual(['update']);
-            expect((await provisionRows()).at(-1)?.metadataJson).toMatchObject({ outcome: 'PROVISIONED', created: 1 });
+            expect((await provisionRows()).at(-1)?.metadataJson).toMatchObject({ trigger: 'ENGINE_CHOSEN', outcome: 'PROVISIONED', created: 1 });
 
+            // No re-approval: a Test run of the version approved while off completes on the faux.
             const started = await startAgentProfileTestRun(admin(), AGENT, v2.version);
             expect(await executeQueuedWorkflowRun(TENANT, started.runId)).toMatchObject({ status: 'COMPLETED' });
+        });
+
+        it('re-saving Managed Agents enqueues nothing', async () => {
+            const jobsBefore = provisionJobs().length;
+            const again = await setAgentDriverSetting(owner(), 'MANAGED_AGENTS');
+            expect(again.provisioning).toBe('NOT_NEEDED');
+            expect(provisionJobs().length).toBe(jobsBefore);
         });
 
         it('turning it on again provisions nothing twice', async () => {
@@ -540,9 +574,9 @@ describeFn('the Managed Agents switch is the workspace\'s (real DB, faux workspa
             expect(write.provisioning).toBe('QUEUED');
             expect(await listsWorkspaceProvider(owner())).toBe(true);
             const jobs = (jest.requireMock('@/app-layer/jobs/queue') as { enqueue: jest.Mock }).enqueue.mock.calls.filter(
-                ([name]) => name === 'managed-agents-provision-on-switch-on',
+                ([name]) => name === 'managed-agents-provision-in-force',
             );
-            const result = await runManagedAgentsProvisionOnSwitchOn(jobs[jobs.length - 1][1]);
+            const result = await runManagedAgentsProvisionInForce(jobs[jobs.length - 1][1]);
             expect(result).toMatchObject({ outcome: 'NO_WORKSPACE', versions: 0, failed: [] });
             expect(faux.agentWrites.length).toBe(writesBefore);
             const ops = (await switchRows(TENANT)).map((r) => (r.detailsJson as { operation?: string }).operation);

@@ -129,7 +129,7 @@ Click **{{ui:admin.managedAgentsSwitch.turnOn}}** or **{{ui:admin.managedAgentsS
 
 When it is off, no new run starts on that engine, a run waiting to continue on it stops, and the Anthropic workspace card is hidden on the Integrations page. The {{ui:admin.agentEngines.engine.MANAGED_AGENTS.name}} engine also cannot be chosen while it is off, though moving to another engine always works. Your Anthropic workspace connection, the engine you chose and everything already in your Anthropic workspace are kept, so turning it back on carries on where you left off.
 
-When you turn it back on, any agent profile version approved while it was off is set up in your Anthropic workspace in the background, as approving it would have done. A version that is already set up is left as it is. If setting one up fails, the switch stays on and the failure is recorded in the workspace's audit log; turn the switch off and on again to try again.
+Agent profile versions approved while it was off do not need approving again. Once the switch is on, your Anthropic workspace is connected and the {{ui:admin.agentEngines.engine.MANAGED_AGENTS.name}} engine is chosen, each one is set up in your Anthropic workspace in the background, as approving it would have done. Turning the switch on and choosing the engine each start this, so the usual order (turn it on, connect the workspace, choose the engine) works. A version that is already set up is left as it is. If setting one up fails, the switch and the engine choice stay as they are and the failure is recorded in the workspace's audit log; turn the switch off and on again to try again.
 
 ### Change the engine
 

@@ -71,6 +71,8 @@ jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) => fn(mockDb)),
 }));
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn(async () => undefined) }));
+// A move TO Managed Agents enqueues provisioning (#5964); not this file's subject.
+jest.mock('@/app-layer/usecases/managed-agents-switch', () => ({ enqueueProvisionInForce: jest.fn(async () => 'QUEUED') }));
 jest.mock('@/env', () => ({ env: {} }));
 // The workspace's organization row (#4557): none, so the env-only answer stands.
 // The workspace's own Managed Agents toggle (#5964): ON, so the writer's

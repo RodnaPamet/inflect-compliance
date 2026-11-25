@@ -56,6 +56,11 @@ jest.mock('@/lib/db-context', () => ({
 }));
 
 const logEvent = jest.fn(async () => undefined);
+// The provisioning job a move TO Managed Agents enqueues (#5964).
+const mockEnqueueProvisionInForce = jest.fn(async (..._args: unknown[]) => 'QUEUED');
+jest.mock('@/app-layer/usecases/managed-agents-switch', () => ({
+    enqueueProvisionInForce: (...args: unknown[]) => mockEnqueueProvisionInForce(...args),
+}));
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: (...a: unknown[]) => logEvent(...(a as [])) }));
 
 const envBag: Record<string, string | undefined> = {};
@@ -502,6 +507,44 @@ describe('the Managed Agents engine (Step 5d)', () => {
             workspaceToggle.value = true;
             await setAgentDriverSetting(ctx, 'MANAGED_AGENTS');
             expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { agentDriver: 'MANAGED_AGENTS' } }));
+        });
+    });
+
+    describe('choosing it provisions the versions in force (#5964, owner decisions 2026-11-25)', () => {
+        it('a move TO it enqueues the job, as the chooser, after the write', async () => {
+            workspaceConnections = [{ id: 'c1' }];
+            workspaceToggle.value = true;
+            const view = await setAgentDriverSetting(ctx, 'MANAGED_AGENTS');
+            expect(mockEnqueueProvisionInForce).toHaveBeenCalledTimes(1);
+            expect(mockEnqueueProvisionInForce).toHaveBeenCalledWith(ctx, 'ENGINE_CHOSEN');
+            expect(upsert.mock.invocationCallOrder[0]).toBeLessThan(mockEnqueueProvisionInForce.mock.invocationCallOrder[0]);
+            expect(view.provisioning).toBe('QUEUED');
+        });
+
+        it('reports a failed enqueue, and the choice stands', async () => {
+            workspaceConnections = [{ id: 'c1' }];
+            workspaceToggle.value = true;
+            mockEnqueueProvisionInForce.mockResolvedValueOnce('ENQUEUE_FAILED');
+            const view = await setAgentDriverSetting(ctx, 'MANAGED_AGENTS');
+            expect(view.provisioning).toBe('ENQUEUE_FAILED');
+            expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { agentDriver: 'MANAGED_AGENTS' } }));
+        });
+
+        it('a re-save of it enqueues nothing', async () => {
+            row = { agentDriver: 'MANAGED_AGENTS' };
+            workspaceConnections = [{ id: 'c1' }];
+            workspaceToggle.value = true;
+            const view = await setAgentDriverSetting(ctx, 'MANAGED_AGENTS');
+            expect(mockEnqueueProvisionInForce).not.toHaveBeenCalled();
+            expect(view.provisioning).toBe('NOT_NEEDED');
+        });
+
+        it.each(['STATIC', 'FLUE', 'TOOL_RUNNER'] as const)('a move to %s enqueues nothing', async (to) => {
+            row = { agentDriver: 'MANAGED_AGENTS' };
+            workspaceConnections = [{ id: 'c1' }];
+            workspaceToggle.value = true;
+            expect((await setAgentDriverSetting(ctx, to)).provisioning).toBe('NOT_NEEDED');
+            expect(mockEnqueueProvisionInForce).not.toHaveBeenCalled();
         });
 
         it.each(['STATIC', 'FLUE', 'TOOL_RUNNER'] as const)('moving from it to %s is allowed while it is off', async (to) => {

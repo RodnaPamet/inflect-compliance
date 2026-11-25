@@ -58,7 +58,7 @@ the connection row directly.
 | `src/app/t/[tenantSlug]/(app)/admin/ai-features/agent-engine-display.ts`, `AgentEnginesSection.tsx` | A workspace-held OFF names the owner, not the operator |
 | `messages/en.json`, `messages/bg.json` | `admin.managedAgentsSwitch.*`, two engine sentences, the audit action label |
 | `tests/guards/managed-agents-switch-single-reader.test.ts` | One reader of the variable and the column |
-| `src/app-layer/jobs/managed-agents-provision-on-switch-on.ts`, `jobs/types.ts`, `jobs/executor-registry.ts` | The switch-on provisioning job (on demand, one attempt) |
+| `src/app-layer/jobs/managed-agents-provision-in-force.ts`, `jobs/types.ts`, `jobs/executor-registry.ts` | The provisioning job (on demand, one attempt, two triggers) |
 
 ## Decisions
 
@@ -75,11 +75,23 @@ the connection row directly.
   Without it, admission resolved STATIC and refused
   `PROFILE_NEEDS_REASONING_ENGINE`, a name that says nothing about why. It is
   asked only when the workspace chose the engine, so no other run pays the read.
-- **Switching it on provisions what was approved while it was off** (owner
-  decision 2026-11-25, #5964 comment 7162402419). A write that moves the switch
-  from off to on enqueues `managed-agents-provision-on-switch-on` after the
-  write and its audit row have committed. The job re-reads the owner who turned
-  it on (`resolveMemberContext`, still holding `admin.tenant_lifecycle`) and
+- **A version approved while off is provisioned once the engine becomes
+  usable** (owner decision 2026-11-25, #5964 comment 7162402419). Two writes
+  enqueue `managed-agents-provision-in-force`, each after it and its audit row
+  have committed, and each reports `provisioning` (`QUEUED`, `ENQUEUE_FAILED`,
+  `NOT_NEEDED`):
+  - `setManagedAgentsSwitch` moving the switch from off to on (`SWITCH_ON`);
+  - `setAgentDriverSetting` MOVING the stored engine to `MANAGED_AGENTS`
+    (`ENGINE_CHOSEN`). A re-save enqueues nothing.
+
+  The second trigger is the one that usually fires. The engine can be chosen
+  only while the switch is on and a workspace is connected, so on a
+  workspace's first switch-on the engine is not yet chosen and the switch-on
+  job provisions nothing; the realistic order (switch on, connect, choose)
+  provisions at the choice. With the switch-on trigger alone, every version
+  approved while off stayed refused `managed_agents_not_provisioned`, which is
+  what the second trigger fixes. The job re-reads the owner whose write asked
+  (`resolveMemberContext`, still holding `admin.tenant_lifecycle`) and
   runs `provisionProfilesInForce`, which calls the approval's own
   `provisionApprovedProfileVersion` for every profile's version in force
   (agents not RETIRED, at most 200 profiles, a truncation recorded). It
@@ -89,15 +101,24 @@ the connection row directly.
   version already provisioned in the workspace. Every outcome, a failure
   included, is logged and written as `MANAGED_AGENTS_PROFILES_PROVISIONED`, and
   the job result is ERROR when a version failed; nothing it does touches the
-  switch. An enqueue that fails is caught, logged and recorded
-  (`ENQUEUE_FAILED`), and the switch stays on.
+  switch or the choice. An enqueue that fails is caught, logged and recorded
+  (`ENQUEUE_FAILED`), and the write stands. Every record names its trigger.
+- **Connecting a workspace is not a trigger.** The engine cannot be chosen
+  without a connected workspace, so the realistic order is covered by the
+  choice. The remaining case, reconnecting after a removal with the engine
+  already chosen, is a save an ADMIN makes, and the job acts only as a member
+  holding `admin.tenant_lifecycle`; running it for the reconnect would mean
+  loosening that re-read or adding a second actor rule, which is more than a
+  few lines through the same job. A re-enabled connection keeps its archived
+  provision rows anyway, so provisioning would return them unchanged; a new
+  version's approval is what provisions there (Step 5d).
 - **A job, not inline.** Each version is up to three calls to the customer's
   Anthropic workspace (environment, retrieve, create or update), and a
   workspace can hold many profiles, so inline it would hold the owner's request
   for as long as the slowest answer, past the request timeout. One attempt,
   not BullMQ's retries: a provider failure between creating an agent and
-  recording it would create a second agent on an automatic retry; turning the
-  switch off and on again re-runs it, idempotently.
+  recording it would create a second agent on an automatic retry; repeating
+  either write re-runs it, idempotently.
 - **The engine cannot be chosen while the switch is off** (the same owner
   decision). `setAgentDriverSetting` refuses a move to `MANAGED_AGENTS` with
   409 `MANAGED_AGENTS_OFF` and the basis, before anything is written. A stored

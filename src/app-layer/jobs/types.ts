@@ -810,19 +810,28 @@ export interface AgentRunReaperPayload {
  * cannot re-execute a step it already committed.
  */
 /**
- * Provision a workspace's agent profiles after its owner turned the Managed
- * Agents switch on (#5964, owner decision 2026-11-25). Enqueued by
- * `setManagedAgentsSwitch` after the switch write committed.
+ * What enqueued a `managed-agents-provision-in-force` run (#5964): the Managed
+ * Agents switch moving from off to on, or the stored engine moving to
+ * Managed Agents.
  */
-export interface ManagedAgentsProvisionOnSwitchOnPayload {
-    /** The workspace whose switch was turned on. */
+export type ProvisionInForceTrigger = 'SWITCH_ON' | 'ENGINE_CHOSEN';
+
+/**
+ * Provision a workspace's agent profile versions in force as Managed Agents
+ * (#5964, owner decisions 2026-11-25). Enqueued by `setManagedAgentsSwitch`
+ * and `setAgentDriverSetting`, each after its write committed.
+ */
+export interface ManagedAgentsProvisionInForcePayload {
+    /** The workspace. */
     tenantId: string;
     /**
-     * The owner who turned it on. The job acts as them, their membership
-     * re-read when it runs (`resolveMemberContext`), as approval provisions in
-     * the approver's name.
+     * The owner whose write enqueued it. The job acts as them, their
+     * membership re-read when it runs (`resolveMemberContext`), as approval
+     * provisions in the approver's name.
      */
     requestedByUserId: string;
+    /** Which write enqueued it, recorded with the outcome. */
+    trigger: ProvisionInForceTrigger;
     /** The switch request's id, for log correlation. */
     requestId?: string;
 }
@@ -895,7 +904,7 @@ export type NamesEveryField<T> = { [K in keyof Required<T>]: T[K] };
 
 export interface JobPayloadMap {
     'agent-run-execute': AgentRunExecutePayload;
-    'managed-agents-provision-on-switch-on': ManagedAgentsProvisionOnSwitchOnPayload;
+    'managed-agents-provision-in-force': ManagedAgentsProvisionInForcePayload;
     'health-check': HealthCheckPayload;
     'nvd-cve-sync': NvdCveSyncPayload;
     'automation-runner': AutomationRunnerPayload;
@@ -1360,7 +1369,7 @@ export const JOB_DEFAULTS: Record<JobName, {
         removeOnComplete: 100,
         removeOnFail: 100,
     },
-    'managed-agents-provision-on-switch-on': {
+    'managed-agents-provision-in-force': {
         // ONE attempt. Each version's provisioning is idempotent on its own
         // record (`readProvision`), but a provider failure between creating
         // the agent at Anthropic and recording it would create a second agent

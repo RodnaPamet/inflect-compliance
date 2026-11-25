@@ -26,11 +26,15 @@
  * ON PROVISIONS WHAT WAS APPROVED WHILE IT WAS OFF (owner decision 2026-11-25,
  * comment 7162402419 on #5964). Approval provisions a version only while the
  * engine is in force, so a version approved while the switch was off has no
- * agent at Anthropic. When this write moves the switch from off to on, it
- * enqueues `managed-agents-provision-on-switch-on` AFTER the write and its audit
- * row have committed; the job runs `provisionProfilesInForce`, which calls the
+ * agent at Anthropic. Two writes enqueue `managed-agents-provision-in-force`,
+ * each AFTER it and its audit row have committed: this one when it moves the
+ * switch from off to on (`SWITCH_ON`), and `setAgentDriverSetting` when it
+ * moves the stored engine TO Managed Agents (`ENGINE_CHOSEN`). The engine can
+ * be chosen only while the switch is on and a workspace is connected, so in
+ * the realistic order (switch on, connect, choose) the second one is what
+ * provisions. The job runs `provisionProfilesInForce`, which calls the
  * approval's own `provisionApprovedProfileVersion` for every profile's version
- * in force. A job and not inline: each version is up to three calls to
+ * in force, once all three preconditions hold. A job and not inline: each version is up to three calls to
  * Anthropic, and a workspace can hold many profiles, so inline it would hold
  * the owner's request for as long as the slowest workspace answers. Nothing it
  * does can undo the switch, and every outcome is recorded
@@ -38,6 +42,7 @@
  */
 import { logEvent } from '@/app-layer/events/audit';
 import { enqueue } from '@/app-layer/jobs/queue';
+import type { ProvisionInForceTrigger } from '@/app-layer/jobs/types';
 import type { RequestContext } from '@/app-layer/types';
 import { resolveDriverForTenant } from '@/lib/agentic/agent-driver-policy';
 import type { DeploymentSwitch, WorkspaceAgentSwitchBasis } from '@/lib/agentic/agent-switches';
@@ -60,15 +65,15 @@ export interface ManagedAgentsSwitchSetting {
 }
 
 /**
- * What a write did about provisioning (#5964): `QUEUED` when it moved the
- * switch from off to on and the job was enqueued, `ENQUEUE_FAILED` when that
- * enqueue failed (logged and recorded; the switch stays on), `NOT_NEEDED`
- * otherwise.
+ * What a write did about provisioning (#5964): `QUEUED` when it was a trigger
+ * (the switch moved from off to on, or the engine moved to Managed Agents) and
+ * the job was enqueued, `ENQUEUE_FAILED` when that enqueue failed (logged and
+ * recorded; the write stands), `NOT_NEEDED` otherwise.
  */
-export type SwitchOnProvisioning = 'QUEUED' | 'ENQUEUE_FAILED' | 'NOT_NEEDED';
+export type InForceProvisioning = 'QUEUED' | 'ENQUEUE_FAILED' | 'NOT_NEEDED';
 
 export interface ManagedAgentsSwitchWrite extends ManagedAgentsSwitchSetting {
-    readonly provisioning: SwitchOnProvisioning;
+    readonly provisioning: InForceProvisioning;
 }
 
 /** OWNER-tier, and a person in their own session. */
@@ -166,25 +171,35 @@ export async function setManagedAgentsSwitch(ctx: RequestContext, enabled: boole
     // OFF → ON: provision what was approved while it was off, in the
     // background, now that the write has committed. Never inside it, and a
     // failure to enqueue never undoes it: it is logged and recorded.
-    const provisioning = !before.effective.on && after.effective.on ? await enqueueProvisionOnSwitchOn(ctx) : 'NOT_NEEDED';
+    const provisioning = !before.effective.on && after.effective.on ? await enqueueProvisionInForce(ctx, 'SWITCH_ON') : 'NOT_NEEDED';
     return { ...after, provisioning };
 }
 
-async function enqueueProvisionOnSwitchOn(ctx: RequestContext): Promise<SwitchOnProvisioning> {
+/**
+ * Enqueue `managed-agents-provision-in-force` for this workspace, acting as the
+ * caller (#5964). Called by a write AFTER it committed; never throws: a failed
+ * enqueue is logged, recorded, and reported as `ENQUEUE_FAILED`.
+ */
+export async function enqueueProvisionInForce(
+    ctx: RequestContext,
+    trigger: ProvisionInForceTrigger,
+): Promise<InForceProvisioning> {
     try {
-        await enqueue('managed-agents-provision-on-switch-on', {
+        await enqueue('managed-agents-provision-in-force', {
             tenantId: ctx.tenantId,
             requestedByUserId: ctx.userId,
+            trigger,
             requestId: ctx.requestId,
         });
         return 'QUEUED';
     } catch (err) {
-        logger.error('managed agents switch: provisioning could not be enqueued', {
+        logger.error('managed agents: provisioning could not be enqueued', {
             component: 'agentic',
             tenantId: ctx.tenantId,
+            trigger,
             error: err instanceof Error ? err.name : 'a non-Error value was thrown',
         });
-        await recordProvisionOutcome(ctx, {
+        await recordProvisionOutcome(ctx, trigger, {
             outcome: 'ENQUEUE_FAILED',
             versions: 0,
             created: 0,
@@ -196,13 +211,13 @@ async function enqueueProvisionOnSwitchOn(ctx: RequestContext): Promise<SwitchOn
     }
 }
 
-// ─── Provisioning on switch-on ──────────────────────────────────────
+// ─── Provisioning the versions in force ─────────────────────────────
 
-/** How many profiles one switch-on provisions; one past it is read to know. */
-export const PROVISION_ON_SWITCH_CAP = 200;
+/** How many profiles one run provisions; one past it is read to know. */
+export const PROVISION_IN_FORCE_CAP = 200;
 
 /**
- * What a switch-on's provisioning did, as recorded on the audit trail.
+ * What one provisioning run did, as recorded on the audit trail.
  *
  *   PROVISIONED           every version in force has an agent (created now or before);
  *   PARTIAL               at least one version failed, named in `failed`;
@@ -212,12 +227,12 @@ export const PROVISION_ON_SWITCH_CAP = 200;
  *   ENGINE_NOT_IN_FORCE   the workspace has not chosen the engine, so approval
  *                         would not have provisioned either;
  *   SWITCH_OFF            the switch was off again by the time the job ran;
- *   REQUESTER_NOT_AUTHORISED  the owner who turned it on is no longer an
- *                         active member holding the key: nothing is done in
+ *   REQUESTER_NOT_AUTHORISED  the owner whose write enqueued it is no longer
+ *                         an active member holding the key: nothing is done in
  *                         their name;
  *   ENQUEUE_FAILED        the job could not be enqueued.
  */
-export type SwitchOnProvisionOutcome =
+export type InForceProvisionOutcome =
     | 'PROVISIONED'
     | 'PARTIAL'
     | 'NOTHING_TO_PROVISION'
@@ -227,15 +242,15 @@ export type SwitchOnProvisionOutcome =
     | 'REQUESTER_NOT_AUTHORISED'
     | 'ENQUEUE_FAILED';
 
-export interface SwitchOnProvisionResult {
-    readonly outcome: SwitchOnProvisionOutcome;
+export interface InForceProvisionResult {
+    readonly outcome: InForceProvisionOutcome;
     /** Versions in force considered. */
     readonly versions: number;
     readonly created: number;
     /** Already provisioned in this workspace: not provisioned again. */
     readonly alreadyProvisioned: number;
     readonly failed: ReadonlyArray<{ readonly versionId: string; readonly reason: string }>;
-    /** More profiles than `PROVISION_ON_SWITCH_CAP`: the rest were not considered. */
+    /** More profiles than `PROVISION_IN_FORCE_CAP`: the rest were not considered. */
     readonly truncated: boolean;
 }
 
@@ -244,17 +259,21 @@ export interface SwitchOnProvisionResult {
  * through the approval's own `provisionApprovedProfileVersion` (#5964).
  *
  * Idempotent: a version already provisioned in the workspace is returned as it
- * is by `provisionManagedAgent` (`readProvision`), so a second switch-on
- * creates nothing. Never throws: every outcome, a failure included, is logged
- * and recorded, and nothing here touches the switch.
+ * is by `provisionManagedAgent` (`readProvision`), so a second run creates
+ * nothing. Never throws: every outcome, a failure included, is logged and
+ * recorded with the trigger that asked, and nothing here touches the switch or
+ * the engine choice.
  */
-export async function provisionProfilesInForce(ctx: RequestContext): Promise<SwitchOnProvisionResult> {
+export async function provisionProfilesInForce(
+    ctx: RequestContext,
+    trigger: ProvisionInForceTrigger,
+): Promise<InForceProvisionResult> {
     const nothing = { versions: 0, created: 0, alreadyProvisioned: 0, failed: [], truncated: false } as const;
-    let result: SwitchOnProvisionResult;
+    let result: InForceProvisionResult;
     try {
         result = await provisionInForce(ctx, nothing);
     } catch (err) {
-        logger.error('managed agents switch: provisioning on switch-on failed', {
+        logger.error('managed agents: provisioning the versions in force failed', {
             component: 'agentic',
             tenantId: ctx.tenantId,
             error: err instanceof Error ? err.name : 'a non-Error value was thrown',
@@ -262,9 +281,10 @@ export async function provisionProfilesInForce(ctx: RequestContext): Promise<Swi
         result = { ...nothing, outcome: 'PARTIAL', failed: [{ versionId: '*', reason: 'UNEXPECTED_ERROR' }] };
     }
     const log = result.failed.length > 0 ? logger.warn : logger.info;
-    log.call(logger, 'managed agents switch: provisioning on switch-on', {
+    log.call(logger, 'managed agents: provisioning the versions in force', {
         component: 'agentic',
         tenantId: ctx.tenantId,
+        trigger,
         outcome: result.outcome,
         versions: result.versions,
         created: result.created,
@@ -272,8 +292,8 @@ export async function provisionProfilesInForce(ctx: RequestContext): Promise<Swi
         failed: result.failed.length,
         truncated: result.truncated,
     });
-    await recordProvisionOutcome(ctx, result).catch((err) => {
-        logger.error('managed agents switch: the provisioning outcome could not be recorded', {
+    await recordProvisionOutcome(ctx, trigger, result).catch((err) => {
+        logger.error('managed agents: the provisioning outcome could not be recorded', {
             component: 'agentic',
             tenantId: ctx.tenantId,
             error: err instanceof Error ? err.name : 'a non-Error value was thrown',
@@ -284,8 +304,8 @@ export async function provisionProfilesInForce(ctx: RequestContext): Promise<Swi
 
 async function provisionInForce(
     ctx: RequestContext,
-    nothing: Omit<SwitchOnProvisionResult, 'outcome'>,
-): Promise<SwitchOnProvisionResult> {
+    nothing: Omit<InForceProvisionResult, 'outcome'>,
+): Promise<InForceProvisionResult> {
     // Each a reason to provision nothing, asked before any version is read.
     if (!(await managedAgentsDecisionFor({ tenantId: ctx.tenantId })).on) return { ...nothing, outcome: 'SWITCH_OFF' };
     const workspace = await readManagedAgentsWorkspaceState(ctx);
@@ -299,9 +319,9 @@ async function provisionInForce(
             where: { tenantId: ctx.tenantId, currentApprovedVersion: { not: null }, agent: { status: { not: 'RETIRED' } } },
             select: { id: true, currentApprovedVersion: true },
             orderBy: { id: 'asc' },
-            take: PROVISION_ON_SWITCH_CAP + 1,
+            take: PROVISION_IN_FORCE_CAP + 1,
         });
-        const considered = profiles.slice(0, PROVISION_ON_SWITCH_CAP);
+        const considered = profiles.slice(0, PROVISION_IN_FORCE_CAP);
         const versions = considered.length === 0
             ? []
             : await db.agentProfileVersion.findMany({
@@ -312,9 +332,9 @@ async function provisionInForce(
                   },
                   select: { id: true },
                   orderBy: { id: 'asc' },
-                  take: PROVISION_ON_SWITCH_CAP,
+                  take: PROVISION_IN_FORCE_CAP,
               });
-        return { versionIds: versions.map((v) => v.id), truncated: profiles.length > PROVISION_ON_SWITCH_CAP };
+        return { versionIds: versions.map((v) => v.id), truncated: profiles.length > PROVISION_IN_FORCE_CAP };
     });
     if (versionIds.length === 0) return { ...nothing, truncated, outcome: 'NOTHING_TO_PROVISION' };
 
@@ -342,19 +362,24 @@ async function provisionInForce(
     };
 }
 
-async function recordProvisionOutcome(ctx: RequestContext, result: SwitchOnProvisionResult): Promise<void> {
+async function recordProvisionOutcome(
+    ctx: RequestContext,
+    trigger: ProvisionInForceTrigger,
+    result: InForceProvisionResult,
+): Promise<void> {
     await runInTenantContext(ctx, (db) =>
         logEvent(db, ctx, {
             action: 'MANAGED_AGENTS_PROFILES_PROVISIONED',
             entityType: 'Tenant',
             entityId: ctx.tenantId,
-            details: `Managed Agents switched on: provisioning ${result.outcome}`,
+            details: `Managed Agents versions in force (${trigger}): provisioning ${result.outcome}`,
             detailsJson: {
                 category: 'access',
                 operation: 'created',
-                summary: `Managed Agents provisioning on switch-on: ${result.outcome}`,
+                summary: `Managed Agents provisioning (${trigger}): ${result.outcome}`,
             },
             metadata: {
+                trigger,
                 outcome: result.outcome,
                 versions: result.versions,
                 created: result.created,

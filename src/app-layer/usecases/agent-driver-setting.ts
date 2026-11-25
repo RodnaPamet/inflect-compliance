@@ -212,10 +212,19 @@ export async function getAgentDriverSetting(ctx: RequestContext): Promise<AgentD
  * is the kill switch an operator reaches for while a run is misbehaving, and a
  * cooldown on the way DOWN is how a safety control becomes the incident.
  */
+/**
+ * What the write did about provisioning (#5964): `QUEUED` when it moved the
+ * stored engine TO Managed Agents and enqueued the job that provisions the
+ * versions in force, `ENQUEUE_FAILED` when that enqueue failed (logged and
+ * recorded; the choice stands), `NOT_NEEDED` for every other write, a re-save
+ * of Managed Agents included.
+ */
+export type EngineChoiceProvisioning = 'QUEUED' | 'ENQUEUE_FAILED' | 'NOT_NEEDED';
+
 export async function setAgentDriverSetting(
     ctx: RequestContext,
     next: AgentDriverMode,
-): Promise<AgentDriverSetting> {
+): Promise<AgentDriverSetting & { provisioning: EngineChoiceProvisioning }> {
     if (!AGENT_DRIVER_MODES.includes(next)) {
         throw badRequest(`Unknown agent driver mode: ${next}`);
     }
@@ -304,5 +313,21 @@ export async function setAgentDriverSetting(
         envEnabled: before.envEnabled,
     });
 
-    return getAgentDriverSetting(ctx);
+    // CHOOSING THE ENGINE PROVISIONS WHAT IS IN FORCE (#5964, owner decisions
+    // 2026-11-25). A version approved while the engine was not in force has no
+    // agent, and the engine can be chosen only once the switch is on and a
+    // workspace is connected, so in the realistic order (switch on, connect,
+    // choose) this is the write that makes provisioning possible. After the
+    // write and its audit row have committed, and only for a real MOVE to the
+    // engine: a re-save provisions nothing. A failed enqueue is logged and
+    // recorded, and the choice stands. Lazily, as the integrations save does:
+    // the job's module loads the provisioning path, which no other engine's
+    // write needs.
+    let provisioning: EngineChoiceProvisioning = 'NOT_NEEDED';
+    if (next === 'MANAGED_AGENTS' && before.mode !== 'MANAGED_AGENTS') {
+        const { enqueueProvisionInForce } = await import('./managed-agents-switch');
+        provisioning = await enqueueProvisionInForce(ctx, 'ENGINE_CHOSEN');
+    }
+
+    return { ...(await getAgentDriverSetting(ctx)), provisioning };
 }
