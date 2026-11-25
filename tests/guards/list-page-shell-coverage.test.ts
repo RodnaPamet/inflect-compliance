@@ -83,6 +83,12 @@ const EXEMPTIONS: Record<string, string> = {
         'sub-table inside the multi-section /agents/reports dashboard (Integrations tab) — one card per scanner with its coverage above; not a viewport-clamped list page',
     'agents/reports/agent-surface/AgentSurfaceTab.tsx':
         'sub-table inside the multi-section /agents/reports dashboard (Agent surface tab) — one card per scanner with the servers it read above; not a viewport-clamped list page',
+    'agents/reports/probes/ProbesTab.tsx':
+        'sub-tables inside the multi-section /agents/reports dashboard (Probes tab) — one card per prober with its recent runs and open findings; not a viewport-clamped list page',
+    'agents/reports/probes/ProberKeysCard.tsx':
+        'sub-table inside the multi-section /agents/reports dashboard (Probes tab) — the prober-key register below the runs; not a viewport-clamped list page',
+    'agents/reports/probes/ApproverKeysCard.tsx':
+        'sub-table inside the multi-section /agents/reports dashboard (Probes tab) — the approver-key register, an owner-only card below the runs; not a viewport-clamped list page',
     'agents/reports/harness/ScannerKeysCard.tsx':
         'sub-table inside the multi-section /agents/reports dashboard (harness tab) — the scanner-key register, the last card below the scan history; not a viewport-clamped list page',
 

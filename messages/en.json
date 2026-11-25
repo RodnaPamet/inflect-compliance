@@ -12161,6 +12161,7 @@
       "tabHarness": "Harness matrix",
       "tabIntegrations": "Integrations",
       "tabAgentSurface": "Agent surface",
+      "tabProbes": "Probes",
       "agentSurface": {
         "readOnly": "Read only. The findings below were raised by a scanner's static rules over the tool definitions it read from tool servers and the agent skills it read from code folders; they live in the findings register, and a scan closes one only when the same scanner reads the place it was found in full and the rule no longer fires. A finding is a suggestion to confirm, not proof: the scanner kept no text, so open the tool on its server, or the skill's file, to judge it.",
         "noScansTitle": "No agent-surface rules scan",
@@ -12210,6 +12211,140 @@
           "HIGH": "High",
           "MEDIUM": "Medium",
           "LOW": "Low"
+        }
+      },
+      "probes": {
+        "readOnly": "Read only. Each run below sent fixed attacker probes to the agents an engagement named, and the findings it raised live in the findings register. A finding closes only when the same prober sends the same probe to the same agent again and the agent resists; a probe that got no answer closes nothing. Open a run to see each probe's verdict.",
+        "noRunsTitle": "No probe run",
+        "noRunsBody": "No prober has sent a report, so this page can say nothing about how the agents answer an attacker. A prober submits its signed report with an API key carrying the admin:agent_probes_ingest scope; the report is accepted only when it is signed by a prober key registered below and its engagement was approved by a key an owner registered.",
+        "sectionHeading": "Runs by {prober}",
+        "runsHeading": "Recent runs",
+        "runsTruncated": "This prober has more runs than the {count} listed here.",
+        "findingsHeading": "Open findings",
+        "noOpenFindings": "No open probe findings for this prober",
+        "findingsTruncated": "There are more open findings than this page lists. The findings register has them all.",
+        "probersNotShown": "{count, plural, one {# more prober has} other {# more probers have}} runs this page does not show.",
+        "probersWithoutRun": "{count, plural, one {# prober holding a live key has} other {# probers holding a live key have}} sent no run in the runs this page read: {names}.",
+        "windowTruncated": "There are more runs than this page read; the most recent are shown.",
+        "colStarted": "Started",
+        "colEngagement": "Engagement",
+        "colState": "Result",
+        "colCounts": "Verdicts",
+        "colTargets": "Agents reached",
+        "colSeverity": "Severity",
+        "colFinding": "Finding",
+        "colWhere": "Where",
+        "counts": "{acted} acted, {disclosed} disclosed, {resisted} resisted, {inconclusive} inconclusive",
+        "targetsReached": "{reached} of {total}",
+        "kindWithTool": "{kind}, through its tool {tool}",
+        "state": {
+          "FINDINGS": "An agent acted or disclosed",
+          "NOTHING_REACHED": "No agent was reached",
+          "STOPPED": "Stopped early",
+          "NOT_CONCLUDED": "Nothing concluded",
+          "RESISTED": "Every probe resisted",
+          "PARTLY_INCONCLUSIVE": "Resisted where answered; some probes inconclusive"
+        },
+        "kind": {
+          "mcp": "agent behind a tool server",
+          "a2a": "A2A agent",
+          "http-chat": "chat agent"
+        },
+        "verdict": {
+          "ACTED": "Acted",
+          "DISCLOSED": "Disclosed",
+          "RESISTED": "Resisted",
+          "INCONCLUSIVE": "Inconclusive"
+        },
+        "reason": {
+          "CANARY_RETURNED": "Followed an injected instruction",
+          "CANARY_ABSENT": "Did not follow the injected instruction",
+          "CREDENTIAL_SHAPE_RETURNED": "Disclosed something shaped like a credential",
+          "PLANTED_CONTEXT_RETURNED": "Disclosed its planted context",
+          "NO_LEAK": "Disclosed nothing it was asked for",
+          "NO_PLANTED_CONTEXT_GIVEN": "Not judged: the engagement planted no context to look for",
+          "NO_REPLY": "Not judged: the agent did not answer",
+          "REPLY_CUT_NOTHING_FOUND": "Not judged: the reply was cut short and nothing was found in it"
+        },
+        "targetReason": {
+          "REACHED": "answered",
+          "NO_REPLY": "did not answer",
+          "NO_PROBES_FOR_INTERFACE": "no probe in the catalogue fits its interface",
+          "NOT_RUN": "not probed in this run"
+        },
+        "stopReason": {
+          "CLOSED": "the engagement window closed",
+          "STOPPED": "a person stopped the run",
+          "NOT_YET_OPEN": "the engagement window had not opened",
+          "TARGET_NOT_NAMED": "a target the scope did not name was refused",
+          "CLASS_NOT_ALLOWED": "a probe class the scope did not allow was refused"
+        },
+        "detail": {
+          "title": "Probe run",
+          "subtitle": "By {prober}, started {started}",
+          "engagement": "Engagement {engagement}",
+          "stopped": "The run ended early: {reason}. A probe it did not send concludes nothing.",
+          "withheld": "The agents' replies and the full addresses of the agents are withheld: they are shown only to people who manage the agent register.",
+          "outcomesTruncated": "This run has more outcomes than the {count} shown.",
+          "noOutcomes": "No probe sent to this agent",
+          "tool": "through {tool}"
+        },
+        "keys": {
+          "colFingerprint": "Key fingerprint",
+          "copyFingerprint": "Copy fingerprint",
+          "colAdded": "Added",
+          "colStatus": "Status",
+          "colActions": "Actions",
+          "statusActive": "Trusted",
+          "statusRevoked": "Revoked {date}",
+          "revoke": "Revoke",
+          "revoked": "Key revoked",
+          "revokeFailed": "The key could not be revoked.",
+          "truncated": "Only the {count} most recent keys are listed."
+        },
+        "proberKeys": {
+          "heading": "Prober keys",
+          "register": "Prober key",
+          "intro": "The keys a prober signs its reports with. Each belongs to a registered agent, the prober, and a report signed by one is that agent's. The prober also needs an API key with the admin:agent_probes_ingest scope to send its report.",
+          "empty": "No prober key is registered, so no probe report can be accepted.",
+          "colProber": "Prober",
+          "revokeTitle": "Revoke this prober key?",
+          "revokeBody": "Reports signed by {prober} with this key will be refused from now on. The runs it already signed stay, and the same key cannot be registered again.",
+          "revokeConfirm": "Revoke prober key"
+        },
+        "approverKeys": {
+          "heading": "Engagement approver keys",
+          "register": "Approver key",
+          "intro": "The keys that may authorise probing your agents: each signs an engagement's scope. A report is accepted only when its scope was signed by a key listed here and still trusted when the report arrives. A key held by a prober is refused: the party that runs probes never authorises them.",
+          "empty": "No approver key is registered, so every probe report will be refused.",
+          "colLabel": "Held by",
+          "revokeTitle": "Revoke this approver key?",
+          "revokeBody": "Engagements signed by {label} will no longer authorise any report, including a run that already began. The runs already accepted stay, and the same key cannot be registered again.",
+          "revokeConfirm": "Revoke approver key"
+        },
+        "registerModal": {
+          "prober": {
+            "title": "Register a prober key",
+            "description": "The public half of the key the prober signs its reports with. Its private half never leaves the prober."
+          },
+          "approver": {
+            "title": "Register an approver key",
+            "description": "The public half of the key that signs engagement scopes. Its private half stays with the people who approve probing."
+          },
+          "agentLabel": "Prober agent",
+          "agentPlaceholder": "Choose the agent that runs the probes",
+          "agentSearch": "Search agents…",
+          "agentsTruncated": "Only the first {count} agents are offered.",
+          "noCandidates": "No agent can hold a prober key",
+          "noCandidatesHint": "Register the prober as an agent first; a retired agent cannot hold a key.",
+          "labelLabel": "Held by",
+          "labelHint": "Who holds this key, for example the security lead who approves engagements.",
+          "publicKeyLabel": "Ed25519 public key",
+          "publicKeyHint": "Hex or base64, 32 bytes.",
+          "submit": "Register key",
+          "saving": "Registering…",
+          "saved": "Key registered",
+          "failed": "The key could not be registered."
         }
       },
       "integrations": {
@@ -18919,6 +19054,7 @@
       "PROBE_APPROVER_KEY_ADDED": "Probe approver key added",
       "PROBE_APPROVER_KEY_REVOKED": "Probe approver key revoked",
       "PROBE_RUN_INGESTED": "Probe run ingested",
+      "PROBE_RUN_EXCERPTS_READ": "Probe run replies read",
       "PROCESS_CANVAS_MODULE_CHANGED": "Process canvas module changed",
       "READ": "Read",
       "READINESS_COMPUTED": "Readiness computed",

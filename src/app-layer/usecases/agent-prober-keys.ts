@@ -24,6 +24,11 @@ import { isAgentRetiredDbRefusal, RETIREMENT_KEY_ID_CAP } from '@/lib/agentic/ag
 import { badRequest, conflict, forbidden, notFound } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { harnessKeyFingerprint } from '@/lib/agentic/harness-contract';
+import type { ProberKeysView } from '@/lib/agentic/probe-run-read-model';
+
+/** How many keys the card lists, and how many register rows it offers to bind one to. */
+const PROBER_KEY_CARD_CAP = 200;
+const PROBER_CANDIDATE_CAP = 200;
 
 export const AddAgentProberKeySchema = z
     .object({
@@ -178,5 +183,48 @@ export async function revokeAgentProberKey(ctx: RequestContext, input: { keyId: 
             detailsJson: { category: 'access', entityName: 'AgentProberKey', operation: 'revoked' },
         });
         return { id: input.keyId, revoked: true };
+    });
+}
+
+/** The prober-key card's read (step 8b): the keys with their agents' names, and the agents a key may be bound to. */
+export async function getProberKeysView(ctx: RequestContext): Promise<ProberKeysView> {
+    assertMayManageKeys(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const keys = await db.agentProberKey.findMany({
+            where: { tenantId: ctx.tenantId },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take: PROBER_KEY_CARD_CAP + 1,
+            select: {
+                id: true,
+                agentId: true,
+                keyFingerprint: true,
+                createdAt: true,
+                revokedAt: true,
+                agent: { select: { name: true, deletedAt: true } },
+            },
+        });
+        const candidates = await db.registeredAgent.findMany({
+            where: { tenantId: ctx.tenantId, deletedAt: null, status: { not: 'RETIRED' } },
+            orderBy: [{ name: 'asc' }, { id: 'asc' }],
+            take: PROBER_CANDIDATE_CAP + 1,
+            select: { id: true, name: true },
+        });
+        return {
+            keys: {
+                rows: keys.slice(0, PROBER_KEY_CARD_CAP).map((k) => ({
+                    id: k.id,
+                    agentId: k.agentId,
+                    agentName: k.agent.deletedAt === null ? k.agent.name : null,
+                    keyFingerprint: k.keyFingerprint,
+                    createdAt: k.createdAt.toISOString(),
+                    revokedAt: k.revokedAt ? k.revokedAt.toISOString() : null,
+                })),
+                truncated: keys.length > PROBER_KEY_CARD_CAP,
+            },
+            candidates: {
+                rows: candidates.slice(0, PROBER_CANDIDATE_CAP),
+                truncated: candidates.length > PROBER_CANDIDATE_CAP,
+            },
+        };
     });
 }

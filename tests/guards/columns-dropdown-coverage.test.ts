@@ -103,6 +103,12 @@ const EXEMPTIONS: Record<string, string> = {
         '(b) multi-section — one card per scanner on the Integrations tab of /agents/reports, fixed columns (application, privilege, publisher, owners, last sign-in, open findings); hiding a column would hide a conclusion, or a "not known", the report exists to show.',
     'agents/reports/agent-surface/AgentSurfaceTab.tsx':
         '(b) multi-section — one card per scanner on the Agent surface tab of /agents/reports, fixed columns (severity, finding, where); hiding a column would hide where a rule fired, which is all the report says.',
+    'agents/reports/probes/ProbesTab.tsx':
+        '(b) multi-section — one card per prober on the Probes tab of /agents/reports, fixed columns (runs: started, engagement, result, verdicts, agents reached; findings: severity, finding, where); hiding a column would hide what an agent did, which is all the report says.',
+    'agents/reports/probes/ProberKeysCard.tsx':
+        '(b) multi-section — the prober-key register, a short fixed-column list (prober, fingerprint, added, status, revoke); per-column hide/show not meaningful.',
+    'agents/reports/probes/ApproverKeysCard.tsx':
+        '(b) multi-section — the approver-key register, a short fixed-column list (held by, fingerprint, added, status, revoke); per-column hide/show not meaningful.',
     'agents/reports/harness/ScannerKeysCard.tsx':
         '(b) multi-section — the scanner-key register, a short fixed-column list (scanner, fingerprint, added, status, revoke); per-column hide/show not meaningful.',
     'admin/api-keys/page.tsx':

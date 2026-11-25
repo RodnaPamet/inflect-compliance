@@ -44,7 +44,8 @@ export interface DsarRow {
     id: string;
     type: 'EXPORT' | 'ERASURE';
     status: 'RECEIVED' | 'VERIFIED' | 'IN_PROGRESS' | 'COMPLETED' | 'REJECTED' | 'CANCELED';
-    subject: { id: string; email: string | null; name: string | null };
+    /** Null once the subject is erased (#5940); the register never lists such a row. */
+    subject: { id: string; email: string | null; name: string | null } | null;
     requestedAt: string;
     verifiedAt: string | null;
     completedAt: string | null;
@@ -80,7 +81,7 @@ async function refusalOf(res: Response, fallback: string): Promise<string> {
     return apiRefusalMessage(body, fallback);
 }
 
-const subjectLabel = (s: DsarRow['subject']) => s.name ?? s.email ?? s.id;
+const subjectLabel = (s: DsarRow['subject']) => (s ? s.name ?? s.email ?? s.id : '—');
 
 /** The filter labels, each key spelled here so the i18n guard can bind it. */
 function useDsarFilterLabels(): DsarFilterLabels {
@@ -138,7 +139,7 @@ function DsarRegisterInner({ tenantSlug, initial, canManage, title, truncated = 
             if (statuses.length && !statuses.includes(r.status)) return false;
             if (types.length && !types.includes(r.type)) return false;
             if (!term) return true;
-            return [r.subject.name, r.subject.email].some((v) => v != null && v.toLowerCase().includes(term));
+            return [r.subject?.name, r.subject?.email].some((v) => v != null && v.toLowerCase().includes(term));
         });
     }, [rows, state.status, state.type, term]);
 

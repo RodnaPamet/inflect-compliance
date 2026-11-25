@@ -40,7 +40,7 @@ import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import type { HarnessScannerKeyRow, HarnessScannerKeysView } from '@/lib/agentic/harness-read-model';
 
 import { ConnectScannerSheet } from './ConnectScannerSheet';
-import { RegisterScannerKeyModal } from './RegisterScannerKeyModal';
+import { RegisterSigningKeyModal } from '../keys/RegisterSigningKeyModal';
 
 export function ScannerKeysCard({ view }: { view: HarnessScannerKeysView }) {
     const t = useTranslations('agents');
@@ -206,7 +206,7 @@ export function ScannerKeysCard({ view }: { view: HarnessScannerKeysView }) {
             )}
 
             {registering && (
-                <RegisterScannerKeyModal candidates={view.candidates} onClose={() => setRegistering(false)} />
+                <RegisterSigningKeyModal register="scanner" candidates={view.candidates} onClose={() => setRegistering(false)} />
             )}
 
             {connecting && <ConnectScannerSheet view={view} onClose={() => setConnecting(false)} />}

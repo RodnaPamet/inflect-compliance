@@ -3,10 +3,10 @@
 # NAMED CHANGES TO THE PRODUCTION VM — the VM half.
 #
 # Runs ON the VM, as root, from `vm.sh`, which the dispatch-only `VM apply`
-# workflow runs (.github/workflows/vm-apply.yml). It carries the five changes
+# workflow runs (.github/workflows/vm-apply.yml). It carries the seven actions
 # `deploy/apply.sh` has no mode for, from the capacity budget C1 runbook
-# (docs/implementation-notes/2026-11-12-capacity-c1.md), C1b, #5308 and the
-# tei-embed rollback:
+# (docs/implementation-notes/2026-11-12-capacity-c1.md), C1b, #5308, the
+# tei-embed rollback and the DSAR erasure (#5940):
 #
 #   remote.sh <action> <stage-dir>
 #
@@ -31,6 +31,18 @@
 #                                tei-embed-data volume; by compose if the live
 #                                file still defines it, by its compose labels
 #                                if not
+#   dsar-erase-preflight         #5940: in the app container, the DSAR
+#                                erasure's plan for the ONE due erasure
+#                                request (`node dist/dsar-erase.mjs --due`).
+#                                Writes nothing but the preflight stamp on
+#                                that request; refuses unless exactly one
+#                                request is due and the erasure would be
+#                                admitted
+#   dsar-erase                   #5940: the erase's own check (`--due
+#                                --check`, writes nothing), then — only if it
+#                                passed — the erasure of that request's
+#                                subject (`--due --confirm`); both refuse a
+#                                request no preflight stamped within 24 hours
 #
 # Each checks its preconditions before it changes anything, and stops if one
 # fails.
@@ -104,6 +116,33 @@ shape() {
             }
         }
         END { if (n > kept) printf "  [%d line(s) withheld: this log is public]\n", n - kept }'
+}
+
+# The DSAR erasure command's own lines, and nothing else: every line it prints
+# starts `[dsar-erase] ` and carries ids, statuses, timestamps and counts
+# (scripts/dsar-erase.ts, which also withholds a foreign error's message). A
+# line without that prefix — a compose warning, a runtime's stack — is counted
+# and withheld.
+dsar_lines() {
+    awk '
+        /^\[dsar-erase\] / { print; next }
+        { n++ }
+        END { if (n > 0) printf "  [%d line(s) withheld: this log is public]\n", n }'
+}
+
+# The erasure command, in the running app container, with fixed arguments: the
+# only words passed are `--due` and, for the write action, `--check` and
+# `--confirm`. Its exit code is the command's (pipefail).
+dsar_erase() {
+    compose -f docker-compose.prod.yml exec -T app node dist/dsar-erase.mjs "$@" 2>&1 | dsar_lines
+}
+
+# Precondition: the running app image carries the command. An image older than
+# #5940 does not, and `node` would fail with a module error instead.
+dsar_erase_present() {
+    compose -f docker-compose.prod.yml exec -T app test -f dist/dsar-erase.mjs 2>&1 | shape \
+        || { echo "precondition: the running app image has no dist/dsar-erase.mjs (older than #5940). Nothing was changed." >&2; exit 1; }
+    echo "precondition: the app container carries dist/dsar-erase.mjs"
 }
 
 case "$ACTION" in
@@ -317,6 +356,31 @@ refresh-env-prod-example)
         echo "live copy now: sha256 ${after:0:12}"
         [ "$after" = "$repo_sha" ] || { echo "the live copy does not match the repo after the install" >&2; exit 1; }
     fi
+    ;;
+
+dsar-erase-preflight)
+    # The plan. Names the one due request by id and prints the counts the
+    # owner reads before approving `dsar-erase`; exits non-zero when the
+    # erasure would be refused (none due, more than one, a named refusal, a
+    # blocker). Its one write is the stamp on the request it showed, made only
+    # when the plan passed: `dsar-erase` erases only a request stamped in the
+    # last 24 hours (owner decision 2026-11-25, third round).
+    dsar_erase_present
+    dsar_erase --due
+    ;;
+
+dsar-erase)
+    # The check, then the erasure only if it passed (set -e): the same
+    # preflight-then-write order as every other write here. Both select the
+    # due request afresh and refuse one the preflight action did not stamp
+    # within 24 hours, so if the request the owner read was cancelled and
+    # another became due, nothing is erased. The check is `--check`, never the
+    # stamping plan: a write that stamped its own request would vouch for
+    # itself. The erasure decides again, stamp included, inside its own
+    # transaction.
+    dsar_erase_present
+    dsar_erase --due --check
+    dsar_erase --due --confirm
     ;;
 
 *)

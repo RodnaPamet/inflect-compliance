@@ -10,6 +10,14 @@
 # this repository a way to run anything on production. A new action is a pull
 # request.
 #
+# THE DSAR ERASURE ACTIONS TAKE NO REQUEST ID (#5940, owner decision
+# 2026-11-25). `dsar-erase-preflight` and `dsar-erase` act on the ONE erasure
+# request the register holds as due, and refuse unless exactly one is; the
+# preflight prints its id for the owner to read before approving the write,
+# and stamps that request, and the write erases only a request stamped within
+# 24 hours (third round). An id input would be the free text this file exists
+# to refuse.
+#
 #   vm.sh <action>
 #
 # Every action that writes is preceded, in the same run, by its preflight: the
@@ -28,7 +36,7 @@ set -euo pipefail
 
 ACTION="${1:?action}"
 case "$ACTION" in
-    preflight | apply | caddy-preflight | caddy-apply | retire-lab-vhosts-preflight | retire-lab-vhosts | host-config-preflight | host-config-apply | rollback-preflight | rollback | retire-lab-containers | recreate-legacy-mcp-proving | retire-capacity-recorder | refresh-env-prod-example | retire-tei-embed) ;;
+    preflight | apply | caddy-preflight | caddy-apply | retire-lab-vhosts-preflight | retire-lab-vhosts | host-config-preflight | host-config-apply | rollback-preflight | rollback | retire-lab-containers | recreate-legacy-mcp-proving | retire-capacity-recorder | refresh-env-prod-example | retire-tei-embed | dsar-erase-preflight | dsar-erase) ;;
     *) echo "unknown action: $ACTION" >&2; exit 2 ;;
 esac
 
@@ -104,6 +112,8 @@ case "$ACTION" in
     retire-capacity-recorder)    on_vm ;;
     refresh-env-prod-example)    on_vm ;;
     retire-tei-embed)            on_vm ;;
+    dsar-erase-preflight)        on_vm ;;
+    dsar-erase)                  on_vm ;;
 esac
 
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then

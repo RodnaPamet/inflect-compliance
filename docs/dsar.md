@@ -23,15 +23,73 @@ function in `src/app-layer/jobs/dsar-erasure.ts` performs the real cascade
 against the client it is given: it is no longer a stub that throws. It is
 absent from `register-schedules` and `executor-registry`, and no route, usecase
 or job in `src/` calls it — so no scheduler fires it and no request reaches it.
-Its one entry point is the operator command `scripts/dsar-erase-user.ts`
-(`npm run dsar:erase-user`, #5802, owner decision 2026-11-25), which has no
-HTTP route. The operator procedure is `docs/runbooks/dsar-erasure.md`.
+Its one entry point is the operator command `scripts/dsar-erase.ts`
+(`npm run dsar:erase`, #5802 and #5940, owner decisions 2026-11-25), which has
+no HTTP route. In production it runs through the `VM apply` actions
+`dsar-erase-preflight` and `dsar-erase` (`node dist/dsar-erase.mjs --due` in the
+app container). The operator procedure is `docs/runbooks/dsar-erasure.md`.
 
-The command takes a user id and nothing else, prints the plan and writes nothing
-without `--confirm`, refuses a tenant's system user (`sys_` id), and refuses
-whatever `planErasure` says would refuse the delete — a membership in any status
-among it. It prints ids and counts only; it never reads the person's e-mail or
-name. Its audit record is `eraseUser`'s own.
+The command takes a **register request**, never a person: `--request <id>`, or
+`--due` for the one ERASURE request that is due (verified, past its cooling-off,
+not completed, rejected or cancelled; refused unless exactly one is). It reads
+the subject from the request and refuses, each by a named reason, a request that
+is not an erasure (`NOT_AN_ERASURE`), already completed (`ALREADY_COMPLETED`),
+rejected (`REQUEST_REJECTED`), cancelled (`REQUEST_CANCELED`), not verified
+(`NOT_VERIFIED`), still cooling off (`COOLING_OFF`), not started
+(`NOT_IN_PROGRESS`), whose subject is already erased (`SUBJECT_ALREADY_ERASED`),
+or that `evaluateDsarRejection` refuses (`REJECTION_CRITERION`, see below). It
+refuses a tenant's system user (`sys_` id), and refuses whatever `planErasure`
+says would refuse the delete — a membership in any status among it. A plan that
+`--confirm` would refuse exits 1, so a passing preflight means the write may run.
+
+**The erase is bound to the preflight that showed it** (owner decision
+2026-11-25, third round). Without `--confirm` or `--check`, the command is the
+PREFLIGHT: it prints the plan and, only when the plan would be admitted, stamps
+the request it showed (`DataSubjectRequest.erasurePreflightAt`, written only by
+`stampErasurePreflight`). That stamp is the only write a preflight makes.
+`--confirm` refuses a request no preflight stamped (`NOT_PREFLIGHTED`) or one
+stamped more than `ERASURE_PREFLIGHT_VALID_HOURS` (24) ago
+(`PREFLIGHT_EXPIRED`), and `eraseUser` asks the same again inside its
+transaction. `--check` decides as `--confirm` does and writes nothing; it is the
+`dsar-erase` action's same-run preflight, because a check that stamped would let
+the write vouch for whatever request had become due. So if the request the owner
+read is cancelled and another becomes due between the two actions, the approved
+erase refuses the other one. The stamp is kept with the surviving row, as
+evidence of which preview the erasure was approved on. It prints ids,
+statuses, timestamps and counts only; it never reads the person's e-mail or
+name. Its audit record is `eraseUser`'s own: no tenant `DSAR_COMPLETED` row is
+written for the request it completes.
+
+`--user <id>` was retired with #5940: every erasure has a register row as its
+record. A person who asks outside the product is recorded on the register first
+(`/admin/dsar-requests`), which also gives the erasure its accountable handler.
+
+### The register row survives, unlinked
+
+`DataSubjectRequest.userId` is nullable and `ON DELETE SET NULL ("userId")`
+(migration `20261125140000_dsar_request_user_set_null`, owner decision
+2026-11-25), so the register is no longer a blocker. Inside the erasure's
+transaction, before the hard delete, `fulfilErasureRequestWithin`
+(`src/app-layer/jobs/dsar-erasure-request.ts`):
+
+- moves the request being fulfilled from `IN_PROGRESS` to `COMPLETED` and sets
+  `completedAt`, by a conditional claim on that exact state; `handledById` stays
+  the admin who started it;
+- nulls `fulfilmentNotes` (free text staff wrote, which can name the person) and
+  `exportUrl` on **every** request of the subject.
+
+The hard delete then nulls `userId` on all of them. What remains is the type,
+status, dates, rejection reason and handler: evidence that the request was
+handled, pointing at nobody. **It is evidence in the database only.** The
+register lists a request through its subject's ACTIVE membership
+(`scopedToTenantMembers`, and the same predicate in the RLS policy), so no
+tenant's register shows an erased request; reading one takes a role that is not
+`app_user`.
+
+The register therefore has two writers of requests — `dsar-register.ts` (an
+admin, in a tenant) and `fulfilErasureRequestWithin` (the erasure, as the
+system) — plus the container-start format repair `dsr-legacy-decrypt.ts`.
+`tests/guards/dsar-register-writers.test.ts` holds that set.
 
 ### Which workspaces an erasure covers
 
@@ -42,17 +100,32 @@ read from the audit trail by `readErasureWorkspaces`
 transaction and before the pseudonymization, because by then no membership row
 is left to read: a workspace counts when the person's own row is there, when a
 membership writer's row names them as its entity (SCIM's lifecycle rows, the
-org-admin fan-out, the platform-admin tenant creation), or when the org trail's
-fan-out row lists it. The same function prints the command's plan.
+org-admin fan-out, the platform-admin tenant creation), when a REMOVAL names
+them as `detailsJson.targetUserId` (#5940: `MEMBER_REMOVED`,
+`MEMBER_DEACTIVATED`, `SCIM_USER_DEACTIVATED`, `ORG_ADMIN_DEPROVISIONED`,
+`ACCESS_REVIEW_DECISION_EXECUTED`), or when the org trail's fan-out row lists
+it. The same function prints the command's plan.
 
-A membership writer that records no row naming the person — credentials
-signup, SSO just-in-time provisioning, an org admin creating a tenant, the
-org-admin fan-out into a new org tenant, the staging seed — leaves nothing to
-read, so a workspace joined only that way, where the person then never acted,
-is not found. The plan lists those writers every time rather than claiming
-completeness. A membership row naming the person under an action the module
-does not list is reported as undecided, and the command refuses `--confirm`
-until it is classified.
+Some membership writers record no row naming the person at the JOIN —
+credentials signup, SSO just-in-time provisioning, an org admin creating a
+tenant, the org-admin fan-out into a new org tenant, the staging seed. Since
+#5940 their workspaces are found from the removal instead: `planErasure`
+refuses while any membership is left, so every erasure is preceded by one, and
+every removal and deactivation names the person. Two gaps remain, and the plan
+lists them every time rather than claiming completeness: a removal written
+before #5940, which carries no `targetUserId` (the trail is immutable, so they
+were not backfilled), and the tenant purge, which deletes a purged tenant's
+memberships without naming anybody and runs its own Managed Agents clean-up
+first. A membership row naming the person under an action the module does not
+list is reported as undecided, and the command refuses `--confirm` until it is
+classified. A `targetUserId` under an action it does not list is ignored: the
+key is the actor convention on many rows that say nothing about a membership.
+
+The user id in a removal row's `detailsJson` is streamed to the tenant's SIEM
+with the rest of `detailsJson` (Epic C.4), as `targetUserId` already was on the
+DSAR, access-review and org fan-out rows: an opaque id, never an e-mail. After
+the erasure the id resolves to nobody — the `User` row is gone — but the audit
+trigger permits only `userId` → NULL, so the id stays in those rows.
 
 `dsar-export.ts` is unchanged: it still throws if called and is still
 unregistered.
@@ -123,6 +196,13 @@ evaluated by the pure `evaluateDsarRejection()`:
 
 `LAST_OWNER` is checked first — it is the most common and the only one the user
 can resolve themselves.
+
+The erasure command applies it (#5940, owner decision 2026-11-25):
+`LAST_OWNER` is computed from the subject's live memberships (by the time an
+erasure may run it is 0, because `planErasure` refuses while any membership is
+left, but it is asked rather than assumed). The product holds no balance and no
+legal hold for a person, so those two are passed as absent, and every plan
+prints that they remain the operator's check.
 
 ## Audit-log pseudonymization (not deletion)
 

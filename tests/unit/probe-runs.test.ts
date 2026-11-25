@@ -23,6 +23,7 @@ import {
     planProbeFindings,
     probeFindingSourceRef,
 } from '@/app-layer/usecases/probe-runs';
+import { probeRunState } from '@/lib/agentic/probe-run-read-model';
 import { makeRequestContext } from '../helpers/make-context';
 import { createFakeScanner } from '../helpers/agent-harness-fake-scanner';
 import { acted, approverFingerprint, CHAT, probesBody } from '../helpers/probe-fake-report';
@@ -130,5 +131,37 @@ describe('the gate and the refusals before any write', () => {
         const raw = prober.serialise(probesBody(approverFingerprint(createFakeScanner().publicKeyHex), [acted(CHAT)]));
         await expect(ingestProbeReport(makeRequestContext('ADMIN'), raw)).rejects.toThrow('probe_report_refused: APPROVER_NOT_REGISTERED');
         expect(mockDb.probeRun.findFirst).not.toHaveBeenCalled();
+    });
+});
+
+describe('what the tab says first about a run (probeRunState)', () => {
+    const base = {
+        actedCount: 0,
+        disclosedCount: 0,
+        targetsReached: 1,
+        stopReason: null as string | null,
+        concluded: true,
+        outcomeCount: 3,
+        resistedCount: 3,
+    };
+
+    it('calls a run resisted only when it reached an agent, ran to its end and every outcome resisted', () => {
+        expect(probeRunState(base)).toBe('RESISTED');
+        expect(probeRunState({ ...base, resistedCount: 2 })).toBe('PARTLY_INCONCLUSIVE');
+    });
+
+    it('never calls a run of no outcome resisted (zero is never complete)', () => {
+        expect(probeRunState({ ...base, outcomeCount: 0, resistedCount: 0 })).toBe('PARTLY_INCONCLUSIVE');
+        expect(probeRunState({ ...base, targetsReached: 0, outcomeCount: 0, resistedCount: 0 })).toBe('NOTHING_REACHED');
+    });
+
+    it('puts an agent that acted or disclosed first, whatever else the run did', () => {
+        expect(probeRunState({ ...base, actedCount: 1, stopReason: 'STOPPED' })).toBe('FINDINGS');
+        expect(probeRunState({ ...base, disclosedCount: 1, targetsReached: 0 })).toBe('FINDINGS');
+    });
+
+    it('says a stopped run and a run that concluded nothing so', () => {
+        expect(probeRunState({ ...base, stopReason: 'CLOSED' })).toBe('STOPPED');
+        expect(probeRunState({ ...base, concluded: false })).toBe('NOT_CONCLUDED');
     });
 });

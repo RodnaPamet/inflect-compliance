@@ -39,7 +39,15 @@ import {
 import { createRegisteredAgent, retireRegisteredAgent } from '@/app-layer/usecases/agent-registry';
 import { addAgentProberKey, revokeAgentProberKey } from '@/app-layer/usecases/agent-prober-keys';
 import { addProbeApproverKey, revokeProbeApproverKey } from '@/app-layer/usecases/probe-approver-keys';
-import { ingestProbeReport, listProbeRuns, PROBE_FINDING_SOURCE_KIND } from '@/app-layer/usecases/probe-runs';
+import {
+    getProbeRunDetail,
+    getProbeRunInventory,
+    ingestProbeReport,
+    listProbeRuns,
+    PROBE_FINDING_SOURCE_KIND,
+} from '@/app-layer/usecases/probe-runs';
+import { getProberKeysView } from '@/app-layer/usecases/agent-prober-keys';
+import { getProbeApproverKeysView } from '@/app-layer/usecases/probe-approver-keys';
 import type { RequestContext } from '@/app-layer/types';
 
 const prisma: PrismaClient = prismaTestClient();
@@ -352,6 +360,66 @@ describe('5. two tenants', () => {
         expect(two.map((r) => r.proberAgentId)).toEqual([seeded[T2].proberAgentId]);
         // The list carries no excerpt and no endpoint.
         expect(JSON.stringify(two)).not.toContain('acme.example');
+    });
+});
+
+describe('7. the Probes tab reads (step 8b)', () => {
+    const auditorFor = (tenantId: string): RequestContext =>
+        makeRequestContext('AUDITOR', { tenantId, tenantSlug: tenantId, userId: seeded[tenantId].ownerUserId });
+
+    it("lists each prober's runs and open findings, by origin and never by endpoint", async () => {
+        await ingest(T1, probesBody(approverOf(T1), [acted(CHAT)], { engagementId: 'eng-tab-1', startedAt: '2026-11-25T11:00:00.000Z' }));
+        const view = await getProbeRunInventory(auditorFor(T1));
+        const section = view.sections.find((s) => s.proberAgentId === seeded[T1].proberAgentId);
+        expect(section).toBeDefined();
+        expect(section!.runs.some((r) => r.engagementId === 'eng-tab-1')).toBe(true);
+        const finding = section!.findings.find((f) => f.verdictReason === 'CANARY_RETURNED');
+        expect(finding?.origin).toBe('https://agents.acme.example');
+        expect(JSON.stringify(view)).not.toContain('/support/chat');
+    });
+
+    it('returns the excerpt and the endpoint to a register-key holder, and audits the read', async () => {
+        const run = await prisma.probeRun.findFirstOrThrow({ where: { tenantId: T1, engagementId: 'eng-tab-1' } });
+        const detail = await getProbeRunDetail(ctxFor(T1), run.id);
+        expect(detail.excerptsShown).toBe(true);
+        expect(detail.targets[0].endpoint).toBe(CHAT);
+        const acting = detail.outcomes.find((o) => o.verdict === 'ACTED');
+        expect(acting?.excerpt).toContain('ZEBRA-41');
+        expect(acting?.findingId).not.toBeNull();
+        const audit = await prisma.auditLog.findFirst({ where: { tenantId: T1, action: 'PROBE_RUN_EXCERPTS_READ', entityId: run.id } });
+        expect(audit).not.toBeNull();
+        expect(JSON.stringify(audit)).not.toContain('ZEBRA-41');
+    });
+
+    it('withholds the excerpt and the endpoint from a reader through the view key alone, and writes no read row', async () => {
+        const run = await prisma.probeRun.findFirstOrThrow({ where: { tenantId: T1, engagementId: 'eng-tab-1' } });
+        const before = await prisma.auditLog.count({ where: { tenantId: T1, action: 'PROBE_RUN_EXCERPTS_READ' } });
+        const detail = await getProbeRunDetail(auditorFor(T1), run.id);
+        expect(detail.excerptsShown).toBe(false);
+        expect(detail.targets.every((t) => t.endpoint === null)).toBe(true);
+        expect(detail.outcomes.every((o) => o.excerpt === null)).toBe(true);
+        expect(detail.outcomes.length).toBeGreaterThan(0);
+        expect(await prisma.auditLog.count({ where: { tenantId: T1, action: 'PROBE_RUN_EXCERPTS_READ' } })).toBe(before);
+    });
+
+    it("refuses another tenant's run as not found", async () => {
+        const run = await prisma.probeRun.findFirstOrThrow({ where: { tenantId: T1 } });
+        await expect(getProbeRunDetail(ctxFor(T2), run.id)).rejects.toThrow(/not found/i);
+    });
+
+    it('refuses the reads to a role without the inventory', async () => {
+        const editor = makeRequestContext('EDITOR', { tenantId: T1, tenantSlug: T1, userId: seeded[T1].ownerUserId });
+        await expect(getProbeRunInventory(editor)).rejects.toThrow(/agent_registry_view/);
+    });
+
+    it('reads each key card under its own register key', async () => {
+        const keys = await getProberKeysView(ctxFor(T1));
+        expect(keys.keys.rows.some((k) => k.agentId === seeded[T1].proberAgentId && k.agentName !== null)).toBe(true);
+        const approvers = await getProbeApproverKeysView(ctxFor(T1));
+        expect(approvers.rows.some((k) => k.label === 'Security lead')).toBe(true);
+        const admin = makeRequestContext('ADMIN', { tenantId: T1, tenantSlug: T1, userId: seeded[T1].ownerUserId });
+        await expect(getProbeApproverKeysView(admin)).rejects.toThrow(/admin\.tenant_lifecycle/);
+        await expect(getProberKeysView(auditorFor(T1))).rejects.toThrow(/admin\.agent_registry/);
     });
 });
 
