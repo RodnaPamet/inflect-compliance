@@ -3783,6 +3783,27 @@ organization by the workspace's OWN id or slug. Never read either variable
 directly: that reports an organization's choice as off. The Tool Runner's
 "available" is still not "chosen": the workspace owner chooses the engine.
 
+**The Managed Agents switch is a WORKSPACE's to decide** (#5964, owner
+decisions 2026-11-25), while the two above stay the organization's. An OWNER
+turns the engine on or off on Admin → AI features
+(`TenantSecuritySettings.managedAgentsEnabled`, default off; one writer,
+`usecases/managed-agents-switch.ts`, a literal `requirePermission('admin.tenant_lifecycle')`
+on the PUT, a person only, audited `MANAGED_AGENTS_SWITCH_CHANGED`; the GET is
+`admin.view`). `AGENT_MANAGED_AGENTS` is the operator's override in the same
+three states: unset leaves it to each workspace (production), `1`/`true` on for
+every workspace, anything else a veto. ONE reader, `managedAgentsDecisionFor`
+in `agent-switches-policy.ts` (pure rule: `resolveWorkspaceAgentSwitch`), read
+on every call so a toggle takes effect at once;
+`tests/guards/managed-agents-switch-single-reader.test.ts` refuses a second read
+of the variable or the column. Off refuses by name (`MANAGED_AGENTS_OFF`,
+`src/lib/agentic/managed-agents-switch.ts`): a new run at admission, a queued
+segment in the worker (FAILED `managed_agents_off`), a person's resume (the run
+stays paused), and a save or Test of the connection; the provider is hidden from
+the tenant's list (`listAvailableProvidersFor`). It KEEPS the set-up: the
+connection, the engine choice and everything at Anthropic. Never gate a
+clean-up on it (removal, purge, DSAR, the session reconciliation): turning the
+engine off must never strand what Inflect created in a customer's workspace.
+
 **A new engine passes the driver conformance suite before it is switched on**
 (Step 0b, `tests/helpers/driver-conformance.ts`). Two engine-agnostic tables
 hold the run scenarios (`CONFORMANCE_SCENARIOS`) and the admission scenario
@@ -3906,9 +3927,11 @@ each one careless edit from being undone:
 
 **The customer's own Anthropic workspace is a connection with a FIXED host, and
 its Test writes nothing** (Step 5a, #4164; `providers/anthropic-workspace/`).
-Registered only when `AGENT_MANAGED_AGENTS` is on (`managedAgentsEnabled`), and
-the Integrations card exists only when the server lists the provider. Rules that
-are each one careless edit from being undone:
+Registered in every process since #5964; the card exists only when the server
+lists the provider for the tenant, which it does only while the Managed Agents
+switch is on for it (`listAvailableProvidersFor`), and a save or Test is refused
+`MANAGED_AGENTS_OFF` otherwise. Rules that are each one careless edit from being
+undone:
 
 - **The host is `api.anthropic.com` and nothing else.** `apiHost` is a
   `vendorOrigin` rule over `ANTHROPIC_API_HOSTS` (one exact name, no suffix), so
@@ -3935,9 +3958,10 @@ are each one careless edit from being undone:
 5d, #4167). `DRIVER_IMPLEMENTED['managed-agents']` is true, flipped in a commit
 of its own so that reverting it is the rollback, and `MANAGED_AGENTS` is
 WRITTEN (deploy 2 of 2, once production ran `960503a11`). It still runs nothing
-unless the operator sets `AGENT_MANAGED_AGENTS`, which stays OFF in production
-until #5797 is settled, and an owner chooses it. Rules that are each one
-careless edit from being undone:
+unless the Managed Agents switch is on for the workspace (its owner's toggle, or
+the operator's `AGENT_MANAGED_AGENTS` override; #5964), which stays off for every
+workspace in production until #5797 is settled, and an owner chooses it. Rules
+that are each one careless edit from being undone:
 
 - **The tenant's instructions never go on the agent.** An agent can only be
   archived, never deleted, so `agentBodyFor` writes `system` = Inflect's
@@ -4025,7 +4049,7 @@ Rules that are each one careless edit from being undone:
   `setAgentDriverSetting` refuses the move TO `MANAGED_AGENTS` with a 409,
   `MANAGED_AGENTS_NO_WORKSPACE` or `MANAGED_AGENTS_AMBIGUOUS_WORKSPACE`, before
   anything is written; every move away stays instant. The page lists the engine
-  only while `AGENT_MANAGED_AGENTS` is on (or the workspace already holds it),
+  only while the Managed Agents switch is on for it (or the workspace already holds it),
   and offers it only with the workspace `CONNECTED`
   (`readWorkspaceConnectionState`, the run's own where clause, no decrypt).
 - **A profile asks for the engine its workspace chose** (`profileEngineRequestFor`
@@ -4038,6 +4062,8 @@ Rules that are each one careless edit from being undone:
   used to return `ENV_DISABLED` when Flue's and the Tool Runner's switches were
   both off, so a deployment that turned on only `AGENT_MANAGED_AGENTS` ran every
   chosen tenant static. A fourth engine's switch goes into both short-circuits.
+  Since #5964 the first one reads the Managed Agents variable as three states:
+  only `OFF` short-circuits, because UNSET leaves the answer to the workspace.
 - **A Test run on this engine tries the approved version in force.** Approval
   is what provisions a version's agent, so a version under review has none: the
   start refuses it `TEST_RUN_NEEDS_APPROVED_VERSION` before a run row exists, and
