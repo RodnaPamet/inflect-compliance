@@ -44,6 +44,7 @@ import {
 import { narrowToWhatAWorkflowAsksFor } from '@/lib/agentic/agent-driver-policy';
 import type { AgentSwitchBasis, WorkspaceAgentSwitchBasis } from '@/lib/agentic/agent-switches';
 import { managedAgentsDecisionFor, toolRunnerDecisionFor } from '@/lib/agentic/agent-switches-policy';
+import { managedAgentsOffError } from '@/lib/agentic/managed-agents-switch';
 import {
     readManagedAgentsWorkspaceState,
     type HostedWorkspaceRefusal,
@@ -220,6 +221,16 @@ export async function setAgentDriverSetting(
     }
 
     const before = await getAgentDriverSetting(ctx);
+
+    // THE MANAGED AGENTS ENGINE IS NOT CHOSEN WHILE ITS SWITCH IS OFF (#5964,
+    // owner decision 2026-11-25, comment 7162402419). Refused by name, with
+    // who decided, before anything is written: the choice would run nothing,
+    // and the section does not offer it. A stored choice made while it was on
+    // is kept when it goes off (decision 3), and moving AWAY from it is never
+    // refused, for the reason the docblock gives.
+    if (next === 'MANAGED_AGENTS' && before.mode !== 'MANAGED_AGENTS' && !before.managedAgents.envEnabled) {
+        throw managedAgentsOffError({ on: false, basis: before.managedAgents.basis });
+    }
 
     // THE MANAGED AGENTS ENGINE NEEDS A WORKSPACE TO RUN IN (Step 5d). Refused
     // by name, before anything is written, unless exactly one enabled

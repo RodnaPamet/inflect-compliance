@@ -389,6 +389,7 @@ describe('the Managed Agents engine (Step 5d)', () => {
 
     it('cannot be chosen without a connected workspace, by name, and nothing is written', async () => {
         workspaceConnections = [];
+        envBag.AGENT_MANAGED_AGENTS = '1';
         expect(await refusalOf(setAgentDriverSetting(ctx, 'MANAGED_AGENTS'))).toEqual({
             status: 409,
             reason: 'MANAGED_AGENTS_NO_WORKSPACE',
@@ -399,6 +400,7 @@ describe('the Managed Agents engine (Step 5d)', () => {
 
     it('cannot be chosen with two enabled workspaces, because a run never chooses between them', async () => {
         workspaceConnections = [{ id: 'c1' }, { id: 'c2' }];
+        envBag.AGENT_MANAGED_AGENTS = '1';
         expect(await refusalOf(setAgentDriverSetting(ctx, 'MANAGED_AGENTS'))).toEqual({
             status: 409,
             reason: 'MANAGED_AGENTS_AMBIGUOUS_WORKSPACE',
@@ -476,6 +478,38 @@ describe('the Managed Agents engine (Step 5d)', () => {
                 ? { driver: 'managed-agents', reason: null }
                 : { driver: 'static', reason: 'DRIVER_NOT_IMPLEMENTED' },
         );
+    });
+
+    describe('it is not chosen while its switch is off (#5964, owner decision 2026-11-25)', () => {
+        it.each([
+            ['the workspace has not turned it on', undefined, false, 'WORKSPACE_OFF'],
+            ['the operator vetoed it, over a workspace that turned it on', '0', true, 'DEPLOYMENT_OFF'],
+        ] as const)('refused with MANAGED_AGENTS_OFF when %s, and nothing is written', async (_label, variable, toggle, basis) => {
+            workspaceConnections = [{ id: 'c1' }];
+            workspaceToggle.value = toggle;
+            if (variable !== undefined) envBag.AGENT_MANAGED_AGENTS = variable;
+            const refused = await setAgentDriverSetting(ctx, 'MANAGED_AGENTS').then(
+                () => null,
+                (err: { status?: number; details?: unknown }) => ({ status: err.status, details: err.details }),
+            );
+            expect(refused).toEqual({ status: 409, details: { reason: 'MANAGED_AGENTS_OFF', basis } });
+            expect(upsert).not.toHaveBeenCalled();
+            expect(logEvent).not.toHaveBeenCalled();
+        });
+
+        it('allowed while the workspace has it on', async () => {
+            workspaceConnections = [{ id: 'c1' }];
+            workspaceToggle.value = true;
+            await setAgentDriverSetting(ctx, 'MANAGED_AGENTS');
+            expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { agentDriver: 'MANAGED_AGENTS' } }));
+        });
+
+        it.each(['STATIC', 'FLUE', 'TOOL_RUNNER'] as const)('moving from it to %s is allowed while it is off', async (to) => {
+            row = { agentDriver: 'MANAGED_AGENTS' };
+            workspaceConnections = [{ id: 'c1' }];
+            await setAgentDriverSetting(ctx, to);
+            expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { agentDriver: to } }));
+        });
     });
 
     describe('with AGENT_MANAGED_AGENTS unset, the workspace decides (#5964)', () => {

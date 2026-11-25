@@ -73,12 +73,13 @@ jest.mock('@/lib/db-context', () => ({
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn(async () => undefined) }));
 jest.mock('@/env', () => ({ env: {} }));
 // The workspace's organization row (#4557): none, so the env-only answer stands.
-// The workspace's own Managed Agents toggle (#5964): no settings row, so off.
+// The workspace's own Managed Agents toggle (#5964): ON, so the writer's
+// answer for MANAGED_AGENTS is about the rollout stage, not the switch.
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
         tenant: { findUnique: jest.fn(async () => ({ organization: null })) },
-        tenantSecuritySettings: { findFirst: jest.fn(async () => null) },
+        tenantSecuritySettings: { findFirst: jest.fn(async () => ({ managedAgentsEnabled: true })) },
     },
 }));
 jest.mock('@/lib/observability', () => ({
