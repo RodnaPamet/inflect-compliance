@@ -371,22 +371,24 @@ describe('audit extension — how each operation names the row it touched', () =
 
 describe('audit extension — the changed-field diff', () => {
     it('diffs an update against the RETURNED row, redacting sensitive fields', async () => {
+        // A model with no person column: `User.name` is one (#5950), and its
+        // value is withheld whatever this case is about.
         await op('update')({
-            model: 'User',
+            model: 'Risk',
             operation: 'update',
-            args: { where: { id: 'u1' }, data: { name: 'Ada', passwordHash: 'raw' } },
+            args: { where: { id: 'r1' }, data: { title: 'Ada', passwordHash: 'raw' } },
             query: async (): Promise<unknown> => ({
-                id: 'u1',
-                name: 'Ada',
+                id: 'r1',
+                title: 'Ada',
                 passwordHash: '$2b$hash',
             }),
         });
 
         const entry = soleAuditEntry();
-        expect(entry.diffJson?.changedFields).toStrictEqual(['name', 'passwordHash']);
-        expect(entry.diffJson?.after.name).toBe('Ada');
+        expect(entry.diffJson?.changedFields).toStrictEqual(['title', 'passwordHash']);
+        expect(entry.diffJson?.after.title).toBe('Ada');
         expect(entry.diffJson?.after.passwordHash).not.toBe('$2b$hash');
-        expect(entry.detailsJson.changedFields).toStrictEqual(['name', 'passwordHash']);
+        expect(entry.detailsJson.changedFields).toStrictEqual(['title', 'passwordHash']);
     });
 
     it('diffs an UPSERT off args.update — upserts have no args.data', async () => {

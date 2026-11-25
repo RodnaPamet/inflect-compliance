@@ -7,6 +7,7 @@ import { withSoftDeleteExtension } from './soft-delete';
 import { withPiiEncryptionExtension } from './security/pii-middleware';
 import { withEncryptionExtension } from './db/encryption-middleware';
 import { ENCRYPTED_FIELDS } from './security/encrypted-fields';
+import { personColumnsOf } from './security/person-columns';
 import { withRlsTripwireExtension } from './db/rls-middleware';
 import { DB_POOL_MAX, DB_POOL_CONNECTION_TIMEOUT_MS } from './db/concurrency-limits';
 import { logger as auditMiddlewareLogger } from '@/lib/observability/logger';
@@ -147,9 +148,22 @@ export function buildDiffJson(
     // says nothing about it is worse than one that says "these were written".
     if (changedFields.length === 0 && undiffableFields.length === 0) return null;
 
+    // ═══ PERSON COLUMNS ARE NAMED, NEVER RECORDED (#5950) ═══
+    //
+    // A person's name, address or login (`PERSON_COLUMNS`) is compared like any
+    // plaintext column, so it is reported in `changedFields` only when it moved;
+    // but its value goes in neither `after` nor `before`. It is listed again in
+    // `withheldFields` so a reader can tell "changed, value not recorded" from
+    // "changed, value absent from the result". An audit row cannot be erased
+    // and `detailsJson` streams to the tenant's SIEM, so a value written here is
+    // one nobody can take back; the row's `entityId` names the record instead.
+    const person = personColumnsOf(model);
+    const withheldFields = changedFields.filter((f) => person.has(f));
+    const recordedFields = changedFields.filter((f) => !person.has(f));
+
     // Build redacted "after" snapshot from result, limited to changed fields
     const afterRaw: Record<string, unknown> = {};
-    for (const field of changedFields) {
+    for (const field of recordedFields) {
         if (result && typeof result === 'object' && field in result) {
             afterRaw[field] = (result as Record<string, unknown>)[field];
         }
@@ -160,13 +174,14 @@ export function buildDiffJson(
     return {
         changedFields,
         ...(undiffableFields.length > 0 ? { undiffableFields } : {}),
+        ...(withheldFields.length > 0 ? { withheldFields } : {}),
         after,
         // ON THE ROW, not inferred by a reader. Whether these fields were
         // COMPARED or merely NAMED is the difference between evidence and a
         // restatement of the request, and a consumer cannot tell them apart
         // from the field list alone.
         changedFieldsAreDiffed: diffed,
-        ...(diffed ? { before: redactSensitiveFields(pick(priorState, changedFields)) } : {}),
+        ...(diffed ? { before: redactSensitiveFields(pick(priorState, recordedFields)) } : {}),
     };
 }
 
@@ -341,6 +356,7 @@ function buildAuditExtension() {
             };
             if (diffJson) {
                 detailsJson.changedFields = diffJson.changedFields;
+                if (diffJson.withheldFields) detailsJson.withheldFields = diffJson.withheldFields;
                 detailsJson.after = diffJson.after;
             }
             detailsJson.summary = `${action} ${model}${entityId !== 'unknown' ? ` ${entityId}` : ''}`;
