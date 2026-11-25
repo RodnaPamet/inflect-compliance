@@ -52,7 +52,9 @@ describe('buildTaskAssignedDigestEmail', () => {
 describe('enqueueEmail — TASK_ASSIGNED builds the body the payload asks for', () => {
     function fakeDb() {
         const create = jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'out-1', ...data }));
-        return { db: { notificationOutbox: withSkipDuplicates(create) } as never, create };
+        // No Tenant row: the single-task email reads as the default (English) workspace.
+        const tenant = { findUnique: jest.fn(async () => null) };
+        return { db: { notificationOutbox: withSkipDuplicates(create), tenant } as never, create };
     }
 
     it('a payload with `tasks` gets the digest body', async () => {

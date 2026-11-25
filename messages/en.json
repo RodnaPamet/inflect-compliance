@@ -19335,12 +19335,29 @@
         "PROCUREMENT": "procurement",
         "ANYONE": "anyone in the organisation"
       }
+    },
+    "taskAssignedEmail": {
+      "subject": "Task assigned to you: {task}",
+      "heading": "Task assigned to you",
+      "greeting": "Hi {name},",
+      "assigned": "You have been assigned a {type} task:",
+      "assignedBy": "You have been assigned a {type} task by {assigner}:",
+      "viewText": "View your tasks: {link}",
+      "viewButton": "View Tasks",
+      "signOff": "— Inflect Compliance",
+      "type": {
+        "AUDIT_FINDING": "audit_finding",
+        "CONTROL_GAP": "control_gap",
+        "INCIDENT": "incident",
+        "IMPROVEMENT": "improvement",
+        "TASK": "task"
+      }
     }
   },
   "workspaceLanguage": {
     "section": "Workspace",
     "title": "Workspace language",
-    "description": "The language the product uses when it writes text into this workspace's records for you. Today that is the titles of the tasks a NIS2 gap assessment dispatch creates. Records already written keep their wording, and anyone can still edit them.",
+    "description": "The language the product uses for text it writes on this workspace's behalf. Today that is the titles of the tasks a NIS2 gap assessment dispatch creates, and the email a person receives when a task is assigned to them. Records already written keep their wording, and anyone can still edit them.",
     "notInterface": "It does not change anyone's interface language. Each person chooses that in their own browser.",
     "label": "Default language",
     "save": "Save",

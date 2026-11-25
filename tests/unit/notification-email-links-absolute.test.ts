@@ -22,8 +22,10 @@ import {
     buildPolicyApprovalRequestedEmail,
     buildPolicyDecisionEmail,
     buildTaskAssignedEmail,
+    TASK_ASSIGNED_EMAIL_NAMESPACE,
     type EmailTemplateResult,
 } from '@/app-layer/notifications/templates';
+import { workspaceTranslator, type WorkspaceTranslator } from '@/lib/i18n/workspace-text';
 import {
     buildDeadlineDigestEmail,
     buildEvidenceExpiryDigestEmail,
@@ -91,8 +93,13 @@ const leaver = {
 };
 
 describe('every in-app link in an email body is absolute against APP_URL', () => {
+    let enT: WorkspaceTranslator;
+    beforeAll(async () => {
+        enT = await workspaceTranslator('en', TASK_ASSIGNED_EMAIL_NAMESPACE);
+    });
+
     it.each([
-        ['task assigned', () => buildTaskAssignedEmail({ taskTitle: 'T', taskType: 'TASK', assigneeName: 'A', tenantSlug: 'acme' })],
+        ['task assigned', () => buildTaskAssignedEmail({ taskTitle: 'T', taskType: 'TASK', assigneeName: 'A', tenantSlug: 'acme' }, enT)],
         ['evidence expiring', () => buildEvidenceExpiringEmail({ evidenceTitle: 'E', daysRemaining: 5, retentionUntil: '2026-11-01', recipientName: 'A', tenantSlug: 'acme' })],
         ['policy approval requested', () => buildPolicyApprovalRequestedEmail({ policyTitle: 'P', requesterName: 'R', approverName: 'A', tenantSlug: 'acme' })],
         ['policy decision', () => buildPolicyDecisionEmail({ policyTitle: 'P', decision: 'APPROVED', deciderName: 'D', requesterName: 'R', tenantSlug: 'acme' })],
