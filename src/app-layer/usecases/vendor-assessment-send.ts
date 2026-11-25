@@ -253,8 +253,13 @@ export async function sendAssessment(
             action: 'VENDOR_ASSESSMENT_SENT',
             entityType: 'VendorAssessment',
             entityId: assessment.id,
+            // No respondent address (#5950, owner decision 2026-11-25): the
+            // respondent is a person with no account here, and the row names
+            // the ASSESSMENT (`entityId`), which holds the address while it
+            // exists. An audit row outlives an erasure and `detailsJson`
+            // streams to the tenant's SIEM.
             details:
-                `Sent assessment "${template.name}" to ${respondentEmail} ` +
+                `Sent assessment "${template.name}" ` +
                 `(vendor=${vendor.name}, expires=${expiresAt.toISOString()})`,
             detailsJson: {
                 category: 'entity_lifecycle',
@@ -263,7 +268,6 @@ export async function sendAssessment(
                 after: {
                     vendorId: vendor.id,
                     templateVersionId: template.id,
-                    respondentEmail,
                     expiresAt: expiresAt.toISOString(),
                     notificationQueued: outboxResult !== null,
                 },
@@ -365,12 +369,13 @@ export async function resendAssessmentInvite(
             action: 'VENDOR_ASSESSMENT_RESENT',
             entityType: 'VendorAssessment',
             entityId: assessment.id,
-            details: `Resent assessment invite to ${assessment.respondentEmail} (fresh link, expires ${expiresAt.toISOString()})`,
+            // No respondent address (#5950): `entityId` is the assessment.
+            details: `Resent assessment invite (fresh link, expires ${expiresAt.toISOString()})`,
             detailsJson: {
                 category: 'entity_lifecycle',
                 entityName: 'VendorAssessment',
                 operation: 'sent',
-                after: { respondentEmail: assessment.respondentEmail, expiresAt: expiresAt.toISOString(), notificationQueued: outboxResult !== null, revocationLifted },
+                after: { expiresAt: expiresAt.toISOString(), notificationQueued: outboxResult !== null, revocationLifted },
                 summary: 'Vendor assessment invitation resent',
             },
         });

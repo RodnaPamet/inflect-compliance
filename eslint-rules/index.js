@@ -73,5 +73,6 @@ module.exports = {
         'no-negative-margin-icon': require('./rules/no-negative-margin-icon'),
         'no-literal-aria-label': require('./rules/no-literal-aria-label'),
         'no-sub-12px-text': require('./rules/no-sub-12px-text'),
+        'no-person-identity-in-audit-payload': require('./rules/no-person-identity-in-audit-payload'),
     },
 };

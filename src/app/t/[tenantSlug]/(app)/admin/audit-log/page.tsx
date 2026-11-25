@@ -64,6 +64,9 @@ export default async function AuditLogPage({
         // entry's `detailsJson.summary` when it has no sentence.
         details: auditLogDetailsText(r.details, r.detailsJson),
         userName: r.user?.name ?? null,
+        // The person the row is about. Rows name them by id only (#5950), so
+        // the read resolved it; once they no longer exist only the id is left.
+        person: r.person === null ? null : (r.person.label ?? r.person.id),
     }));
     // An AUDITOR reaches this page without `admin.view` (owner decision
     // 2026-10-29), so the Admin crumb would lead them to the forbidden page.
@@ -97,6 +100,7 @@ export default async function AuditLogPage({
                     action: t('action'),
                     entity: t('entity'),
                     details: t('details'),
+                    person: t('auditPerson'),
                     noEntries: t('noEntries'),
                     older: t('auditLogOlder'),
                     newest: t('auditLogNewest'),

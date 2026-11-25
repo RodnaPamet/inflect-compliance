@@ -530,3 +530,30 @@ like an icon but imported from elsewhere, and a class part it cannot read.
 
 **What it cannot see.** An icon re-exported through a module with no `icons`
 segment, a class held in a constant, and a wrapper span carrying the margin.
+
+### `no-person-identity-in-audit-payload`
+
+Under `src/`, flags a person's e-mail address or name in the stored payload of
+an audit write (#5950, owner decision 2026-11-25): the `details`, `detailsJson`,
+`metadata`, `metadataJson` and `diffJson` members of a call to an audit writer
+(`logEvent`, `appendAuditEntry`, `appendOrgAuditEntry`, …), any property named
+`detailsJson` wherever it is written, and a wrapper's positional payload named
+in the `payloadArgs` option (`emitScimAudit`'s fourth argument). It reports a
+key or a read named `email`, `…Email`, `displayName`, `fullName`, `givenName`,
+`userName` and the other name fields, and `<person>.name` on a person-shaped
+object (`user`, `membership.user`, `subjectUser`, `employee`, …). The remedy is
+the person's id: `detailsJson.targetUserId`, or the row's own record.
+
+**Why.** An audit row is immutable and hash-chained, so a DSAR erasure cannot
+remove what it says, and `detailsJson` streams to the tenant's SIEM. A reader
+resolves the id while the person exists (`src/lib/audit/audit-person.ts`).
+
+**What it leaves alone.** A bare `.name` (a control's, a vendor's, a
+campaign's); the arguments of a call whose name contains `hash`; members of the
+call that are not stored. It follows an identifier one step to a `const`
+initialiser only when the payload uses the whole value: `auditor.id` and
+`after[f]` contribute one member, judged by its own name.
+
+**What it cannot see.** A value that reaches the payload through a function
+call's return, a `let`, a parameter, or a wrapper not named in `payloadArgs`
+that takes the payload positionally.

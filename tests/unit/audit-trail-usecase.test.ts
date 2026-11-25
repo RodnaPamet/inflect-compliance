@@ -24,6 +24,7 @@ jest.mock('@/app-layer/repositories/AuditLogRepository', () => ({
     AuditLogRepository: {
         list: jest.fn(),
         listPage: jest.fn(),
+        resolvePeople: jest.fn(async () => new Map()),
     },
 }));
 
@@ -65,8 +66,14 @@ describe('listAuditLogs', () => {
 
 describe('listAuditLogPage — the Audit log page', () => {
     it.each([['ADMIN', adminCtx], ['AUDITOR', auditorCtx]])('reads one page for %s, from the cursor given', async (_r, ctx) => {
-        (AuditLogRepository.listPage as jest.Mock).mockResolvedValue({ rows: [{ id: 'a-1' }], nextCursor: 'c-2' });
-        await expect(listAuditLogPage(ctx, { cursor: 'c-1' })).resolves.toEqual({ rows: [{ id: 'a-1' }], nextCursor: 'c-2' });
+        (AuditLogRepository.listPage as jest.Mock).mockResolvedValue({
+            rows: [{ id: 'a-1', action: 'RISK_CREATED', entity: 'Risk', entityId: 'r-1', detailsJson: null }],
+            nextCursor: 'c-2',
+        });
+        await expect(listAuditLogPage(ctx, { cursor: 'c-1' })).resolves.toEqual({
+            rows: [{ id: 'a-1', action: 'RISK_CREATED', entity: 'Risk', entityId: 'r-1', detailsJson: null, person: null }],
+            nextCursor: 'c-2',
+        });
         expect(AuditLogRepository.listPage).toHaveBeenCalledWith(mockDb, ctx, { cursor: 'c-1', limit: AUDIT_LOG_PAGE_SIZE });
     });
 
@@ -74,6 +81,30 @@ describe('listAuditLogPage — the Audit log page', () => {
         (AuditLogRepository.listPage as jest.Mock).mockResolvedValue({ rows: [], nextCursor: null });
         await listAuditLogPage(adminCtx);
         expect(AuditLogRepository.listPage).toHaveBeenCalledWith(mockDb, adminCtx, { cursor: null, limit: AUDIT_LOG_PAGE_SIZE });
+    });
+
+    // #5950: a row names the person it is about by id only; the read resolves
+    // the id while the person exists and hands the bare id once they do not.
+    it('resolves the person each row names by id, and keeps the bare id when nobody resolves', async () => {
+        (AuditLogRepository.listPage as jest.Mock).mockResolvedValue({
+            rows: [
+                { id: 'a-1', action: 'MEMBER_REMOVED', entity: 'TenantMembership', entityId: 'm-1', detailsJson: { targetUserId: 'u-1' } },
+                { id: 'a-2', action: 'MEMBER_REMOVED', entity: 'TenantMembership', entityId: 'm-2', detailsJson: { targetUserId: 'u-gone' } },
+                { id: 'a-3', action: 'RISK_CREATED', entity: 'Risk', entityId: 'r-1', detailsJson: null },
+            ],
+            nextCursor: null,
+        });
+        (AuditLogRepository.resolvePeople as jest.Mock).mockResolvedValueOnce(new Map([['user:u-1', 'Alice Example']]));
+        const page = await listAuditLogPage(adminCtx);
+        expect(page.rows.map((r) => r.person)).toEqual([
+            { id: 'u-1', label: 'Alice Example' },
+            { id: 'u-gone', label: null },
+            null,
+        ]);
+        expect(AuditLogRepository.resolvePeople).toHaveBeenCalledWith(mockDb, adminCtx, [
+            { kind: 'user', id: 'u-1' },
+            { kind: 'user', id: 'u-gone' },
+        ]);
     });
 
     it.each([['EDITOR', editorCtx], ['READER', readerCtx]])('rejects %s (audit gate) before reading', async (_r, ctx) => {

@@ -396,6 +396,25 @@ regulation may force) · **Mechanism** · **Owner** · **Cleanup wiring** ·
 - **Default / Floor / ceiling:** **deferred to legal.** The retention period under
   our SOC 2 commitments is a regulatory decision, not an engineering one.
 - **Mechanism:** append-only; never soft-deleted.
+- **What a row may say about a person (#5950, owner decision 2026-11-25):** a
+  row written since that change names a person by **id only**: the user id
+  (`detailsJson.targetUserId`, or the row's `entityId` when that is the
+  person's record), never an e-mail address or a name, in `details` or in
+  `detailsJson`. A person with no account yet (an invitee, a vendor
+  assessment's respondent) is named by the record that holds the address
+  (the invite, the assessment). A reader resolves the id while the person
+  exists; after an erasure only the id remains. The lint rule
+  `local/no-person-identity-in-audit-payload` holds every writer to it.
+- **Rows written before that change keep what they hold.** Some carry a
+  person's e-mail address or name in `details` or `detailsJson` (among them
+  `MEMBER_REMOVED`, `MEMBER_DEACTIVATED`, `MEMBER_ROLE_CHANGED`,
+  `ACCESS_REVIEW_DECISION_EXECUTED`, the invite, auditor, SCIM and employee
+  rows; the implementation note
+  `docs/implementation-notes/2026-11-25-fix-5950-audit-ids-only.md` lists
+  every writer). They are not rewritten and cannot be: the entry hash covers
+  both columns, and the immutability trigger permits one change only,
+  `userId` → NULL at an erasure. A DSAR erasure therefore leaves that text in
+  those rows.
 - **On tenant deletion:** every tenant-scoped regulatory artefact is in
   `TENANT_PURGE_RETAINED` and the purge skips it — including access-review
   campaigns, whole, since 2026-10-18. Skipping is not sufficient where a

@@ -587,6 +587,17 @@ structured `detailsJson` ships; actor is opaque `userId` +
 (original + 2 retries) with linear backoff (1 s, 2 s). Kill-switch
 via `AUDIT_STREAM_RETRY_ENABLED=0`.
 
+**An audit row names a person by id only** (#5950, owner decision
+2026-11-25): no e-mail address and no name, in `details` or `detailsJson`.
+The person is `detailsJson.targetUserId`, or the row's `entityId` when that
+is their record; a person with no account yet (an invitee, a vendor
+respondent) is named by the record holding the address. The trail is
+immutable, so an erasure leaves only the id. A reader resolves the id while
+the person exists (`auditPersonRef` in `src/lib/audit/audit-person.ts`, read
+by the Audit log page; the org page resolves an invite's id). The lint rule
+`local/no-person-identity-in-audit-payload` holds every writer, with no
+exemption list. Rows written before #5950 keep what they hold.
+
 **C.5 — Server-side rich-text sanitisation.** Use
 `sanitizeRichTextHtml` / `sanitizePlainText` /
 `sanitizePolicyContent` from `@/lib/security/sanitize` BEFORE

@@ -140,6 +140,17 @@ describe('resendAssessmentInvite', () => {
         expect((audit?.[2] as unknown as { detailsJson: { after: { revocationLifted: boolean } } }).detailsJson.after.revocationLifted).toBe(true);
     });
 
+    // #5950 (owner decision 2026-11-25): the respondent is named by the
+    // assessment (`entityId`), never by address, in details or detailsJson.
+    it('names the respondent by the assessment id only: no address in the audit row', async () => {
+        mockTx.vendorAssessment.findFirst.mockResolvedValue(row());
+        await resendAssessmentInvite(makeCtx(), 'a1');
+        const audit = mockLog.mock.calls.find((c) => (c[2] as { action: string }).action === 'VENDOR_ASSESSMENT_RESENT')?.[2] as
+            unknown as { entityId: string; details?: string; detailsJson?: unknown };
+        expect(audit.entityId).toBe('a1');
+        expect(JSON.stringify({ details: audit.details, detailsJson: audit.detailsJson })).not.toContain('security@vendor.example');
+    });
+
     it('re-stamps sentAt and sentByUserId', async () => {
         mockTx.vendorAssessment.findFirst.mockResolvedValue(row());
         await resendAssessmentInvite(makeCtx(), 'a1');

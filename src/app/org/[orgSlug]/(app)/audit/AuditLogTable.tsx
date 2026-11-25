@@ -49,6 +49,12 @@ interface AuditRow {
     actor: UserRef | null;
     target: UserRef | null;
     detailsJson: unknown;
+    /**
+     * The invitee of an invite row, resolved by the read from the invite id
+     * the row carries (#5950). Optional: a row the read did not resolve, or a
+     * fixture that predates the field, has none.
+     */
+    invitee?: { email: string } | null;
     requestId: string | null;
     entryHash: string;
     previousHash: string | null;
@@ -225,8 +231,14 @@ export function summarize(t: OrgTranslate, row: AuditRow): string {
                 : '';
         case 'ORG_INVITE_CREATED':
         case 'ORG_INVITE_REVOKED':
+            // A row written since #5950 names the invite, never its address:
+            // the read resolves the invite while it exists. A row written
+            // before keeps the address it holds; the trail is immutable.
             return t('audit.inviteSummary', {
-                email: readableField(typeof d.email === 'string' ? d.email : null) ?? '—',
+                email:
+                    readableField(row.invitee?.email ?? null) ??
+                    readableField(typeof d.email === 'string' ? d.email : null) ??
+                    '—',
                 role: word(t, ORG_ROLE_LABEL_KEY, d.role),
             });
         case 'ORG_INVITE_REDEEMED':

@@ -163,9 +163,11 @@ export async function createOrgInviteToken(
             actorType: 'USER',
             action: OrgAuditAction.ORG_INVITE_CREATED,
             targetUserId: existingUser?.id ?? null,
+            // The invite by id, never its address (#5950, owner decision
+            // 2026-11-25). The invitee may have no account yet; the org audit
+            // page resolves `inviteId` to the address while the invite exists.
             detailsJson: {
                 inviteId: invite.id,
-                email: normalizedEmail,
                 role: input.role,
                 expiresAt: expiresAt.toISOString(),
             },
@@ -239,9 +241,9 @@ export async function revokeOrgInvite(
             actorType: 'USER',
             action: OrgAuditAction.ORG_INVITE_REVOKED,
             targetUserId: null,
+            // By id, never the address (#5950).
             detailsJson: {
                 inviteId: invite.id,
-                email: invite.email,
                 role: invite.role,
             },
             requestId: ctx.requestId,

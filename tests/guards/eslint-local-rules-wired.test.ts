@@ -49,6 +49,7 @@ const LOCAL_RULES = [
     'no-negative-margin-icon',
     'no-sub-12px-text',
     'no-literal-aria-label',
+    'no-person-identity-in-audit-payload',
 ] as const;
 
 describe('local ESLint rules are wired at error', () => {

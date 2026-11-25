@@ -82,7 +82,8 @@ describe('AuditLogRepository.listPage', () => {
         const { db, findMany } = dbReturning([]);
         await AuditLogRepository.listPage(db, ctx, { limit: 2 });
         expect(Object.keys(findMany.mock.calls[0][0].select as object).sort()).toEqual(
-            ['action', 'createdAt', 'details', 'detailsJson', 'entity', 'id', 'user'],
+            // `entityId` can name the person a row is about (#5950).
+            ['action', 'createdAt', 'details', 'detailsJson', 'entity', 'entityId', 'id', 'user'],
         );
     });
 });

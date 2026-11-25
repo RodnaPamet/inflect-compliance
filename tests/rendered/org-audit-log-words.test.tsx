@@ -93,6 +93,26 @@ afterEach(() => {
     delete (globalThis as { fetch?: unknown }).fetch;
 });
 
+describe('the org audit log — an invite row written since #5950', () => {
+    // The row names the invite, never its address; the read resolves the
+    // invite and hands the address as `invitee`. A row the read could not
+    // resolve (the invite is gone) shows a dash, never an id-shaped guess.
+    it('shows the invitee the read resolved, and a dash when it resolved none', () => {
+        render(
+            <AuditLogTable
+                orgSlug="acme"
+                initialRows={[
+                    { ...row('ORG_INVITE_CREATED', { inviteId: 'inv-1', role: 'ORG_ADMIN' }), invitee: { email: 'resolved@example.com' } },
+                    { ...row('ORG_INVITE_REVOKED', { inviteId: 'inv-2', role: 'ORG_READER' }), invitee: null },
+                ] as never}
+                initialNextCursor={null}
+            />,
+        );
+        expect(screen.getByText('resolved@example.com as Org admin')).toBeInTheDocument();
+        expect(screen.getByText('— as Org reader')).toBeInTheDocument();
+    });
+});
+
 describe('the org audit log', () => {
     it('labels and summarizes every action it used not to know, in words', () => {
         render(<AuditLogTable orgSlug="acme" initialRows={NEW_ACTIONS.map(([a, d]) => row(a, d)) as never} initialNextCursor={null} />);
