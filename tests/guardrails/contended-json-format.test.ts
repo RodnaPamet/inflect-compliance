@@ -316,7 +316,12 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // docs/notices/2026-11-23-anthropic-hosted-managed-agents.md, after the
         // TypeSafe notice ('2026-10' < '2026-11'). Recomputed with this guard's
         // own `keyOrder` over the merged file.
-        keyOrderSha: 'e212fccbf33756a9873437dcfd62eaa56a15f0f06c77cc355b917b1ddc87b8b1',
+        //
+        // Moved 2026-11-25 by one sorted ADDITION, docs/calendar-push-design.md
+        // (epic #5937), before `docs/calendar-surface-do-not-touch.md`
+        // ('pu' < 'su'), +3/-0 against main; the previous digest matched main's
+        // file before the insert.
+        keyOrderSha: 'dae2395d4d5a2a688326c4a41c1f785e6e1db135341c7651c62fc02c9c2e903d',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in

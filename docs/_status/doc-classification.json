@@ -146,6 +146,9 @@
         "docs/branch-divergence-o64va-analysis.md": {
             "class": "historical"
         },
+        "docs/calendar-push-design.md": {
+            "class": "living"
+        },
         "docs/calendar-surface-do-not-touch.md": {
             "class": "authoritative"
         },

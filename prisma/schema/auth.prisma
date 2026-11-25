@@ -2148,7 +2148,10 @@ model UserCalendarConnection {
   userId         String
   /// 'google-calendar' | 'outlook-calendar'.
   provider       String
-  /// encryptField(JSON.stringify({ accessToken, refreshToken, expiresAt })).
+  /// JSON.stringify({ accessToken, refreshToken, expiresAt }), sealed by the
+  /// Epic B extension under the tenant's DEK (`v2:`; it is in ENCRYPTED_FIELDS,
+  /// so both rotation sweeps cover it). Rows written before #5937 are `v1:`
+  /// (global KEK) and still read; their next write moves them. '' = revoked.
   tokenEncrypted String
   /// The scopes actually GRANTED, which may be narrower than those requested —
   /// a user can decline individual scopes on the Google consent screen, and a

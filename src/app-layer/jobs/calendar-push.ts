@@ -114,12 +114,19 @@ export async function runCalendarPushDispatch(_payload: CalendarPushDispatchPayl
  * problem with no compensating benefit.
  *
  * NOTE this is currently a bounded enumeration and nothing more. The actual
- * push needs a provider WRITER — the Google / Graph client — which is C2, and
- * C2 is blocked on an unresolved consent-model decision. Wiring the loop to a
- * writer that does not exist would mean either a stub that silently no-ops in
- * production or a fake that makes the job look tested when it is not. So the
- * job is registered, scheduled and enumerating, and the writer is the one
- * remaining seam.
+ * push needs a provider WRITER — the Google / Graph `CalendarWriter` — which
+ * does not exist yet. It is NOT blocked on the consent model: that was decided
+ * in #1999 (Microsoft: a tenant admin consents once for the organisation, then
+ * each person signs in for their own delegated token; Google: each person
+ * consents) and confirmed by the owner on 2026-11-25. The writer is step 2 of
+ * epic #5937, designed in docs/calendar-push-design.md, including how this
+ * loop calls `sweepUserCalendar` and reads each token under a non-bypass job
+ * context so the tenant DEK resolves.
+ *
+ * Wiring the loop to a writer that does not exist would mean either a stub
+ * that silently no-ops in production or a fake that makes the job look tested
+ * when it is not. So the job is registered, scheduled and enumerating, and the
+ * writer is the one remaining seam.
  */
 export async function runCalendarPushTenant(payload: CalendarPushTenantPayload) {
     if (!payload.tenantId) throw new Error('calendar-push-tenant requires tenantId');

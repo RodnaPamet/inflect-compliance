@@ -16,12 +16,18 @@ import {
     exchangeCalendarCode,
     refreshCalendarToken,
     resolveCalendarAccessToken,
+    createPkcePair,
+    pkceChallengeFor,
+    CalendarNoRefreshTokenError,
     GOOGLE_CALENDAR_SCOPES,
     MICROSOFT_CALENDAR_SCOPES,
     type CalendarToken,
 } from '@/app-layer/integrations/providers/calendar/token';
 
 const REDIRECT = 'https://app.example.test/api/integrations/calendar/callback';
+/** RFC 7636 Appendix B's worked example — a fixed verifier and its S256 challenge. */
+const VERIFIER = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+const CHALLENGE = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
 const NOW_MS = 1_800_000_000_000;
 
 type FetchFn = jest.Mock<ReturnType<typeof fetch>, Parameters<typeof fetch>>;
@@ -61,7 +67,7 @@ function sentBody(f: FetchFn, call = 0): URLSearchParams {
 
 describe('the Google authorize URL', () => {
     const url = () =>
-        new URL(buildCalendarAuthorizeUrl({ provider: 'google-calendar', redirectUri: REDIRECT, state: 's1' }));
+        new URL(buildCalendarAuthorizeUrl({ provider: 'google-calendar', redirectUri: REDIRECT, state: 's1', codeChallenge: CHALLENGE }));
 
     it('asks for calendar.events, NOT full calendar access', () => {
         // The narrower scope is what Google's verification asks us to justify.
@@ -95,6 +101,7 @@ describe('the Microsoft authorize URL', () => {
                 provider: 'outlook-calendar',
                 redirectUri: REDIRECT,
                 state: 's1',
+                codeChallenge: CHALLENGE,
                 entraTenantId: 'contoso.onmicrosoft.com',
             }),
         );
@@ -154,7 +161,7 @@ describe('code exchange', () => {
         const f = okFetch({ refresh_token: undefined });
         await expect(
             exchangeCalendarCode(
-                { provider: 'google-calendar', code: 'c', redirectUri: REDIRECT },
+                { provider: 'google-calendar', code: 'c', redirectUri: REDIRECT, codeVerifier: VERIFIER },
                 { fetchImpl: f as unknown as typeof fetch, now: () => NOW_MS },
             ),
         ).rejects.toThrow(/refresh token/i);
@@ -163,7 +170,7 @@ describe('code exchange', () => {
     it('computes expiresAt from the INJECTED clock', async () => {
         const f = okFetch();
         const t = await exchangeCalendarCode(
-            { provider: 'google-calendar', code: 'c', redirectUri: REDIRECT },
+            { provider: 'google-calendar', code: 'c', redirectUri: REDIRECT, codeVerifier: VERIFIER },
             { fetchImpl: f as unknown as typeof fetch, now: () => NOW_MS },
         );
         expect(t.expiresAt).toBe(Math.floor(NOW_MS / 1000) + 3600);
@@ -172,14 +179,14 @@ describe('code exchange', () => {
     it('posts to the provider’s own token endpoint', async () => {
         const g = okFetch();
         await exchangeCalendarCode(
-            { provider: 'google-calendar', code: 'c', redirectUri: REDIRECT },
+            { provider: 'google-calendar', code: 'c', redirectUri: REDIRECT, codeVerifier: VERIFIER },
             { fetchImpl: g as unknown as typeof fetch, now: () => NOW_MS },
         );
         expect(String(g.mock.calls[0][0])).toContain('oauth2.googleapis.com');
 
         const m = okFetch();
         await exchangeCalendarCode(
-            { provider: 'outlook-calendar', code: 'c', redirectUri: REDIRECT, entraTenantId: 'contoso' },
+            { provider: 'outlook-calendar', code: 'c', redirectUri: REDIRECT, codeVerifier: VERIFIER, entraTenantId: 'contoso' },
             { fetchImpl: m as unknown as typeof fetch, now: () => NOW_MS },
         );
         expect(String(m.mock.calls[0][0])).toContain('login.microsoftonline.com/contoso');
@@ -329,5 +336,77 @@ describe('the token POST goes through the 400-classifier', () => {
                 { fetchImpl: f as unknown as typeof fetch, now: () => NOW_MS },
             ),
         ).rejects.toThrow(/token refresh failed: 400/i);
+    });
+});
+
+describe('PKCE — both providers, S256, the verifier only on the token POST', () => {
+    it('derives the S256 challenge RFC 7636 specifies', () => {
+        expect(pkceChallengeFor(VERIFIER)).toBe(CHALLENGE);
+    });
+
+    it('creates a fresh, well-formed pair each time', () => {
+        const a = createPkcePair();
+        const b = createPkcePair();
+        expect(a.codeVerifier).toMatch(/^[A-Za-z0-9_-]{43}$/);
+        expect(a.codeChallenge).toBe(pkceChallengeFor(a.codeVerifier));
+        expect(a.codeVerifier).not.toBe(b.codeVerifier);
+    });
+
+    it.each(['google-calendar', 'outlook-calendar'] as const)(
+        '%s: the authorize URL carries the challenge with method S256, and never the verifier',
+        (provider) => {
+            const url = new URL(
+                buildCalendarAuthorizeUrl({ provider, redirectUri: REDIRECT, state: 's1', codeChallenge: CHALLENGE }),
+            );
+            expect(url.searchParams.get('code_challenge')).toBe(CHALLENGE);
+            expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+            expect(url.toString()).not.toContain(VERIFIER);
+        },
+    );
+
+    it.each(['google-calendar', 'outlook-calendar'] as const)(
+        '%s: an authorize URL without a challenge is refused',
+        (provider) => {
+            expect(() =>
+                buildCalendarAuthorizeUrl({ provider, redirectUri: REDIRECT, state: 's1', codeChallenge: '' }),
+            ).toThrow(/PKCE/);
+        },
+    );
+
+    it.each(['google-calendar', 'outlook-calendar'] as const)(
+        '%s: the code exchange sends the verifier',
+        async (provider) => {
+            const f = okFetch();
+            await exchangeCalendarCode(
+                { provider, code: 'c', redirectUri: REDIRECT, codeVerifier: VERIFIER, entraTenantId: 'contoso' },
+                { fetchImpl: f as unknown as typeof fetch, now: () => NOW_MS },
+            );
+            expect(sentBody(f).get('code_verifier')).toBe(VERIFIER);
+            expect(sentBody(f).get('grant_type')).toBe('authorization_code');
+        },
+    );
+
+    it.each(['', 'short', 'x'.repeat(129), `${'a'.repeat(42)}!`])(
+        'an absent or malformed verifier (%j) is refused BEFORE the single-use code is spent',
+        async (bad) => {
+            const f = okFetch();
+            await expect(
+                exchangeCalendarCode(
+                    { provider: 'google-calendar', code: 'c', redirectUri: REDIRECT, codeVerifier: bad },
+                    { fetchImpl: f as unknown as typeof fetch, now: () => NOW_MS },
+                ),
+            ).rejects.toThrow(/PKCE/);
+            expect(f).not.toHaveBeenCalled();
+        },
+    );
+
+    it('a missing refresh token is a TYPED error the callback can tell apart', async () => {
+        const f = okFetch({ refresh_token: undefined });
+        await expect(
+            exchangeCalendarCode(
+                { provider: 'google-calendar', code: 'c', redirectUri: REDIRECT, codeVerifier: VERIFIER },
+                { fetchImpl: f as unknown as typeof fetch, now: () => NOW_MS },
+            ),
+        ).rejects.toBeInstanceOf(CalendarNoRefreshTokenError);
     });
 });

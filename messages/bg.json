@@ -18672,6 +18672,8 @@
       "BUNDLE_FROZEN": "Замразяване на пакет",
       "CALENDAR_ADMIN_CONSENT_GRANTED": "Даване на администраторско съгласие за календара",
       "CALENDAR_ADMIN_CONSENT_REVOKED": "Оттегляне на администраторско съгласие за календара",
+      "CALENDAR_CONNECT_FAILED": "Неуспешно свързване на личен календар",
+      "CALENDAR_CONNECTED": "Свързване на личен календар",
       "CONTROL_APPLICABILITY_CHANGED": "Промяна на приложимостта на контрола",
       "CONTROL_CONTRIBUTOR_ADDED": "Добавяне на сътрудник към контрола",
       "CONTROL_CONTRIBUTOR_REMOVED": "Премахване на сътрудник от контрола",

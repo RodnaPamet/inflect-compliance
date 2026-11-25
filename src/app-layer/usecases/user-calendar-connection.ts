@@ -1,13 +1,32 @@
 /**
  * A user's consent to push their own compliance deadlines to their own calendar.
  *
- * ═══ WHY THE TOKEN IS ENCRYPTED HERE AND NOT BY THE MANIFEST ═══
+ * ═══ THE TOKEN IS ENCRYPTED BY THE MANIFEST, UNDER THE TENANT'S OWN KEY ═══
  *
- * `encryptField` / `decryptField` are called EXPLICITLY at this layer, and
- * `UserCalendarConnection` is deliberately absent from `ENCRYPTED_FIELDS`.
- * That follows `IntegrationConnection`, whose own note in the manifest explains
- * the split: a credential does not live in a manifest-managed column, it goes
- * through a dedicated `*Encrypted` field written and read by its usecase.
+ * `UserCalendarConnection.tokenEncrypted` is in `ENCRYPTED_FIELDS`, so the
+ * Prisma encryption extension writes it as a `v2:` ciphertext under the
+ * tenant's DEK and decrypts it on read. This module hands it PLAINTEXT JSON and
+ * reads plaintext JSON back; it never calls `encryptField` itself.
+ *
+ * It used to. Until #5937 the usecase called `encryptField` explicitly, which
+ * is the GLOBAL key (`v1:`), and the model was absent from the manifest, so
+ * neither rotation sweep saw the column: a master-KEK rotation followed by
+ * retiring `DATA_ENCRYPTION_KEY_PREVIOUS` would have left every stored calendar
+ * token undecryptable, and a tenant-DEK rotation never touched it at all. Being
+ * in the manifest is what puts it in both sweeps (`jobs/key-rotation.ts`
+ * re-encrypts `v1:` values, `jobs/tenant-dek-rotation.ts` re-encrypts `v2:`).
+ *
+ * Rows written before the move are `v1:` and keep reading: the extension
+ * dispatches per value on the envelope prefix. Each is rewritten `v2:` the next
+ * time it is WRITTEN — a reconnect, or the push's first token refresh, which an
+ * hour-long access token makes the first push run. No backfill is needed for
+ * correctness, and until then a `v1:` row is still covered by the master-KEK
+ * sweep. See docs/calendar-push-design.md.
+ *
+ * A READ must run where the tenant's DEK resolves: inside `runInTenantContext`
+ * (a request) or `runInTenantJobContext` (a job, with a non-bypass source).
+ * Under a bypass source the extension cannot decrypt a `v2:` value, and this
+ * module refuses the ciphertext it would be handed rather than parse it.
  *
  * The whole OAuth payload is ONE ciphertext blob rather than three columns, so
  * a partial write cannot leave a refresh token stranded without the expiry that
@@ -32,9 +51,10 @@
  */
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
-import { encryptField, decryptField } from '@/lib/security/encryption';
-import { badRequest, notFound } from '@/lib/errors/types';
+import { isEncryptedValue } from '@/lib/security/encryption';
+import { badRequest, notFound, InternalError } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
+import { logEvent } from '../events/audit';
 
 /** The providers a user may connect. */
 export const CALENDAR_PROVIDERS = ['google-calendar', 'outlook-calendar'] as const;
@@ -91,7 +111,9 @@ export async function saveCalendarConnection(
         throw badRequest('Calendar consent did not return a refresh token — reconnect and grant offline access');
     }
 
-    const tokenEncrypted = encryptField(JSON.stringify(input.token));
+    // Plaintext here; the encryption extension seals it under the tenant DEK on
+    // the write (see the module note). The column name predates the move.
+    const tokenEncrypted = JSON.stringify(input.token);
 
     return runInTenantContext(ctx, async (db) => {
         const row = await db.userCalendarConnection.upsert({
@@ -123,6 +145,20 @@ export async function saveCalendarConnection(
             // NEVER the token, the scopes' values, or the user's email.
             scopeCount: input.scopesGranted.length,
         });
+        await logEvent(db, ctx, {
+            action: 'CALENDAR_CONNECTED',
+            entityType: 'UserCalendarConnection',
+            entityId: row.id,
+            details: `Personal calendar connected (${input.provider})`,
+            detailsJson: {
+                category: 'access',
+                operation: 'grant',
+                summary: `Personal calendar connected (${input.provider})`,
+            },
+            // The provider and how many scopes were granted. Never the token,
+            // the code, or the scope values.
+            metadata: { provider: input.provider, scopeCount: input.scopesGranted.length },
+        });
         return toSummary(row);
     });
 }
@@ -145,7 +181,7 @@ export async function readCalendarToken(
             select: { id: true, tokenEncrypted: true, revokedAt: true },
         });
         if (!row || row.revokedAt) return null;
-        return { connectionId: row.id, token: JSON.parse(decryptField(row.tokenEncrypted)) as CalendarTokenPayload };
+        return { connectionId: row.id, token: parseStoredToken(row.tokenEncrypted) };
     });
 }
 
@@ -161,7 +197,9 @@ export async function updateCalendarToken(
         // token because a refresh was already in flight.
         await db.userCalendarConnection.updateMany({
             where: { tenantId: ctx.tenantId, userId: ctx.userId, provider, revokedAt: null },
-            data: { tokenEncrypted: encryptField(JSON.stringify(token)) },
+            // Plaintext; sealed `v2:` by the extension. This is also the write
+            // that moves a pre-#5937 `v1:` row onto the tenant key.
+            data: { tokenEncrypted: JSON.stringify(token) },
         });
     });
 }
@@ -194,6 +232,82 @@ export async function revokeCalendarConnection(
             reason: reason.slice(0, 200),
         });
     });
+}
+
+/**
+ * The outcomes the callback sends the person back with, as `?calendar=<outcome>`
+ * on `/t/<slug>/calendar`. A closed set, so the Connect control (step 4) can
+ * word each one and nothing else reaches the URL — a provider's own error code
+ * or description is never reflected.
+ */
+export const CALENDAR_CONNECT_OUTCOMES = [
+    'connected',
+    /** The person declined at the provider (`error=access_denied`). */
+    'connect_declined',
+    /** The provider answered with any other error. */
+    'provider_error',
+    /** Microsoft: the tenant-wide admin consent was withdrawn mid-flow. */
+    'consent_withdrawn',
+    /** The exchange succeeded but issued no refresh token. */
+    'no_refresh_token',
+    /** The flow cookie was absent, forged, expired, or for another state/person. */
+    'flow_invalid',
+    /** The code exchange or the save failed. */
+    'connect_failed',
+] as const;
+export type CalendarConnectOutcome = (typeof CALENDAR_CONNECT_OUTCOMES)[number];
+
+/**
+ * Record a connect that did not complete, for a callback that resolved a
+ * tenant context. Audited and logged with the OUTCOME and the provider's error
+ * CODE only: never the authorization code, a token, the verifier, or the
+ * provider's `error_description`, which is prose that can carry an email
+ * address or a directory name.
+ */
+export async function recordCalendarConnectFailure(
+    ctx: RequestContext,
+    input: { provider: CalendarProviderId; outcome: Exclude<CalendarConnectOutcome, 'connected'>; providerErrorCode?: string | null },
+): Promise<void> {
+    // The provider's code is OAuth's own vocabulary (`access_denied`,
+    // `invalid_scope`, …); anything outside its shape is dropped, not stored.
+    const providerErrorCode =
+        input.providerErrorCode && /^[a-z_]{1,64}$/.test(input.providerErrorCode) ? input.providerErrorCode : undefined;
+    logger.warn('calendar connect did not complete', {
+        component: 'user-calendar-connection',
+        tenantId: ctx.tenantId,
+        provider: input.provider,
+        outcome: input.outcome,
+        providerErrorCode,
+    });
+    await runInTenantContext(ctx, async (db) => {
+        await logEvent(db, ctx, {
+            action: 'CALENDAR_CONNECT_FAILED',
+            // No connection row exists for a connect that never completed, so
+            // the subject is the person who tried.
+            entityType: 'User',
+            entityId: ctx.userId,
+            details: `Personal calendar connect did not complete (${input.provider}: ${input.outcome})`,
+            detailsJson: {
+                category: 'access',
+                operation: 'grant_failed',
+                summary: `Personal calendar connect did not complete (${input.provider}: ${input.outcome})`,
+                reason: input.outcome,
+            },
+            metadata: { provider: input.provider, outcome: input.outcome, providerErrorCode },
+        });
+    });
+}
+
+/**
+ * The stored payload, or a refusal. A value still carrying an envelope prefix
+ * is a ciphertext the extension could not decrypt (no DEK in this context) —
+ * parsing it would throw an error quoting it, and using it would be worse.
+ */
+function parseStoredToken(stored: string): CalendarTokenPayload {
+    if (!stored || isEncryptedValue(stored)) {
+        throw new InternalError('calendar token could not be decrypted in this context');
+    }
+    return JSON.parse(stored) as CalendarTokenPayload;
 }
 
 /** What the settings surface shows. Never includes the token. */

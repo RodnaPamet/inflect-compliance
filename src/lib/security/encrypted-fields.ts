@@ -168,6 +168,16 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  documenting it as "never the raw secret".
     AutomationRule: ['webhookSecretEncrypted'],
 
+    // ─── Personal calendar connection (#5937) ──────────
+    //  The user's Google / Microsoft OAuth payload (access token, refresh
+    //  token, expiry) as ONE JSON string. Written explicitly under the global
+    //  KEK (`v1:`) until #5937, which left it outside both rotation sweeps; in
+    //  the manifest it is sealed under the tenant's DEK (`v2:`) and swept by
+    //  both. Pre-move `v1:` rows read through the per-value dispatch and are
+    //  rewritten `v2:` on their next write. `usecases/user-calendar-connection.ts`
+    //  is its only reader and writer, and an empty string marks a revoked row.
+    UserCalendarConnection: ['tokenEncrypted'],
+
     // ─── JML identity writes ───────────────────────────
     //  `detail` is free text about a NAMED person's access change: the
     //  provider's rejection message for a failed disable, or the human reason a
