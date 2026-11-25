@@ -306,7 +306,10 @@ puts at Anthropic:
     when the window holds no line. A real run whose table shows `missing` 0 on
     every endpoint it called is the evidence the switch waits for; an endpoint
     reading 0 in all three columns was not called in the window, and says
-    nothing either way.
+    nothing either way. The lines live in the containers' own logs, so a new
+    image (Watchtower replaces `app` and `worker` on every publish) starts them
+    afresh: run the check after the run and before the next deploy, within the
+    48 hours.
   - **Events from someone else holding the workspace's key are not detected**
     (decision 8). Every real tool call still goes through Inflect's checks.
   - **The run timeline** says, beside each span-derived decision row, that the
