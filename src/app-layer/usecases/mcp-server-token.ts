@@ -46,7 +46,7 @@
 import { randomBytes } from 'node:crypto';
 
 import { runInTenantContext } from '@/lib/db-context';
-import { decryptField, encryptField } from '@/lib/security/encryption';
+import { sealTenantSecret, openTenantSecret } from '@/lib/security/tenant-sealed';
 import { assertCanAdmin } from '../policies/common';
 import { logEvent } from '@/app-layer/events/audit';
 import { badRequest, notFound } from '@/lib/errors/types';
@@ -128,7 +128,7 @@ export async function mintMcpServerToken(
     let secrets: Record<string, unknown> = {};
     if (row.secretEncrypted) {
         try {
-            secrets = JSON.parse(decryptField(row.secretEncrypted)) as Record<string, unknown>;
+            secrets = JSON.parse(await openTenantSecret(ctx.tenantId, row.secretEncrypted)) as Record<string, unknown>;
         } catch {
             // A secret blob that will not decrypt must NOT be overwritten with a
             // fresh one: that would destroy whatever it holds in order to add a
@@ -200,7 +200,7 @@ export async function mintMcpServerToken(
         await db.integrationConnection.update({
             where: { id: row.id },
             data: {
-                secretEncrypted: encryptField(
+                secretEncrypted: await sealTenantSecret(ctx.tenantId,
                     JSON.stringify({ ...secrets, authorization: token }),
                 ),
             },

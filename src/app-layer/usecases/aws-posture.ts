@@ -18,7 +18,7 @@ import { buildSystemContext } from '../context-system';
 import { runInTenantContext } from '@/lib/db-context';
 import { markAuthFailure, clearAuthFailure } from '../integrations/connection-health';
 import { shouldBypassQueueRetry } from '../integrations/http-resilience';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { logger } from '@/lib/observability/logger';
 import {
     AwsPostureProvider,
@@ -83,7 +83,7 @@ export async function runAwsPostureCollection(input: {
         const check = (config.benchmark ?? 'soc2').toLowerCase();
         const automationKey = `${AWS_POSTURE_PROVIDER}.${check}`;
         const secrets: AwsPostureSecrets = conn.secretEncrypted
-            ? (JSON.parse(decryptField(conn.secretEncrypted)) as AwsPostureSecrets)
+            ? (JSON.parse(await openTenantSecret(ctx.tenantId, conn.secretEncrypted)) as AwsPostureSecrets)
             : {};
         const secretVals = [secrets.accessKeyId, secrets.secretAccessKey, secrets.sessionToken, secrets.externalId].filter((v): v is string => !!v);
 

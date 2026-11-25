@@ -33,7 +33,7 @@ import { buildSystemContext } from '../context-system';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { markAuthFailure, clearAuthFailure } from '../integrations/connection-health';
 import { shouldBypassQueueRetry } from '../integrations/http-resilience';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { logger } from '@/lib/observability/logger';
 import { recordSyncTruncated, recordIdentityDeprovisioned, recordDeprovisionRefused } from '@/lib/observability/integration-metrics';
 import {
@@ -275,7 +275,7 @@ export async function runIdentitySync(input: {
     let resolved: ReturnType<typeof registry.getProvider> | NonNullable<typeof input.provider> | undefined;
     try {
         secrets = conn.secretEncrypted
-            ? (JSON.parse(decryptField(conn.secretEncrypted)) as Record<string, unknown>)
+            ? (JSON.parse(await openTenantSecret(ctx.tenantId, conn.secretEncrypted)) as Record<string, unknown>)
             : {};
         // Resolve the provider (registry instance in prod; injected in tests).
         resolved = input.provider ?? registry.getProvider(conn.provider);

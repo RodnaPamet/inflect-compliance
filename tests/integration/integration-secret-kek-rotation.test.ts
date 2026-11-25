@@ -54,8 +54,8 @@ d('IntegrationConnection.secretEncrypted — master-key rotation', () => {
         tenantIds.push(tenant.id);
         const email = `${slug}@example.test`;
         const user = await prisma.user.create({ data: { email, emailHash: hashForLookup(email), name: label } });
-        // Exactly what every writer of the column does (the guard
-        // `kek-sealed-columns-are-rotated` holds that they all do).
+        // What every writer of the column wrote before #5969, and what
+        // `sealTenantSecret` still writes while its brake is off.
         const connection = await prisma.integrationConnection.create({
             data: {
                 tenantId: tenant.id,

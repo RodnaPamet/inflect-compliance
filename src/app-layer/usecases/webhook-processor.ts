@@ -25,7 +25,7 @@ import type { WebhookProcessResult } from '../integrations/types';
 import { PrismaSyncMappingStore } from '../integrations/prisma-sync-store';
 import { PrismaLocalStore } from '../integrations/prisma-local-store';
 import { extractSignature, verifyHmacSha256, verifyGitHubSignature } from '../integrations/webhook-crypto';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { logger } from '@/lib/observability/logger';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { getPermissionsForRole } from '@/lib/permissions';
@@ -59,7 +59,7 @@ export type WebhookResult =
  * Three states, not two.
  *
  * `absent`         — no secret configured. An operator action.
- * `undecryptable`  — decryptField threw. Usually DEK drift or a rotation gone
+ * `undecryptable`  — openTenantSecret threw. Usually DEK drift or a rotation gone
  *                    wrong: an INFRASTRUCTURE alarm.
  * `malformed`      — decrypted fine but is not JSON. A data-shape bug.
  *
@@ -73,11 +73,11 @@ type SecretState =
     | { state: 'undecryptable' }
     | { state: 'malformed' };
 
-function decryptWebhookSecret(secretEncrypted: string | null): SecretState {
+async function decryptWebhookSecret(tenantId: string, secretEncrypted: string | null): Promise<SecretState> {
     if (!secretEncrypted) return { state: 'absent' };
     let plaintext: string;
     try {
-        plaintext = decryptField(secretEncrypted);
+        plaintext = await openTenantSecret(tenantId, secretEncrypted);
     } catch {
         return { state: 'undecryptable' };
     }
@@ -266,7 +266,7 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
     // first would route a tenant's data to the other tenant. Refuse to guess.
     const matches: typeof connections = [];
     for (const conn of connections) {
-        const secretState = decryptWebhookSecret(conn.secretEncrypted);
+        const secretState = await decryptWebhookSecret(conn.tenantId, conn.secretEncrypted);
         if (secretState.state !== 'ok') {
             // Emitted per-connection, not hoisted: a fleet-wide misconfiguration
             // has to be visible per connection to be actionable.
@@ -382,7 +382,7 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
 
     if (isWebhookEventProvider(providerImpl)) {
         try {
-            const secrets = secretsOf(decryptWebhookSecret(matchedConnection.secretEncrypted));
+            const secrets = secretsOf(await decryptWebhookSecret(matchedConnection.tenantId, matchedConnection.secretEncrypted));
             const webhookSecret = getWebhookSecret(secrets);
 
             // Verify using provider's own verification method
@@ -420,7 +420,7 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
                 },
                 {
                     ...(matchedConnection.configJson as Record<string, unknown>),
-                    ...secretsOf(decryptWebhookSecret(matchedConnection.secretEncrypted)),
+                    ...secretsOf(await decryptWebhookSecret(matchedConnection.tenantId, matchedConnection.secretEncrypted)),
                 }
             );
 
@@ -531,7 +531,7 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
         try {
             // Build complete connection config by merging stored config + decrypted secrets.
             // This ensures the orchestrator gets all required fields (e.g. owner, repo, token for GitHub).
-            const connectionSecrets = secretsOf(decryptWebhookSecret(matchedConnection.secretEncrypted));
+            const connectionSecrets = secretsOf(await decryptWebhookSecret(matchedConnection.tenantId, matchedConnection.secretEncrypted));
             const connectionConfig = {
                 ...(matchedConnection.configJson as Record<string, unknown>),
                 ...connectionSecrets,

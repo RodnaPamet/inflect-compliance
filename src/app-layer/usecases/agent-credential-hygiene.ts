@@ -34,7 +34,7 @@ import type { Prisma } from '@prisma/client';
 
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logger } from '@/lib/observability/logger';
 import { recordAgentCredentialHygiene } from '@/lib/observability/integration-metrics';
@@ -95,11 +95,15 @@ function scopeStrings(scopes: Prisma.JsonValue): string[] {
  * the grant. `invalid` when the resolver refuses the configuration as partial:
  * a definite answer, and not an app-only grant. Neither ever throws out of here.
  */
-function grantKindOf(configJson: unknown, secretEncrypted: string | null): ConnectionGrantKind {
+async function grantKindOf(
+    tenantId: string,
+    configJson: unknown,
+    secretEncrypted: string | null,
+): Promise<ConnectionGrantKind> {
     let secrets: Record<string, unknown> = {};
     if (secretEncrypted) {
         try {
-            const parsed: unknown = JSON.parse(decryptField(secretEncrypted));
+            const parsed: unknown = JSON.parse(await openTenantSecret(tenantId, secretEncrypted));
             if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return 'unreadable';
             secrets = parsed as Record<string, unknown>;
         } catch {
@@ -214,12 +218,13 @@ export async function runAgentCredentialHygiene(input: {
                           })
                       ).map((m) => m.userId),
             );
-            const connectionFacts: ConnectionFacts[] = connections.map((c) => ({
+            const connectionFacts: ConnectionFacts[] = [];
+            for (const c of connections) connectionFacts.push({
                 id: c.id,
                 name: c.name,
-                grantKind: grantKindOf(c.configJson, c.secretEncrypted),
+                grantKind: await grantKindOf(ctx.tenantId, c.configJson, c.secretEncrypted),
                 namedOwnerUserId: c.ownerUserId !== null && activeOwners.has(c.ownerUserId) ? c.ownerUserId : null,
-            }));
+            });
             const keyFacts: KeyFacts[] = keys.map((k) => ({
                 id: k.id,
                 name: k.name,

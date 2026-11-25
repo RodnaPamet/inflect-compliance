@@ -35,7 +35,7 @@
 import { probeManifest, profileFirstPage } from '@/lib/mcp/client';
 import { LEGACY_MCP_PROVIDER_ID } from '@/app-layer/integrations/providers/legacy-mcp';
 import { runInTenantContext } from '@/lib/db-context';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { badRequest } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
 import {
@@ -118,7 +118,7 @@ export async function profileLegacyConnection(
 
     const config = (conn.configJson ?? {}) as Record<string, unknown>;
     const url = typeof config.endpointUrl === 'string' ? config.endpointUrl.trim() : '';
-    const token = readBearerToken(conn.secretEncrypted);
+    const token = await readBearerToken(ctx.tenantId, conn.secretEncrypted);
     if (!url || !token) {
         throw badRequest('This connection is missing its endpoint or bearer token.');
     }
@@ -222,10 +222,10 @@ function deniedEntry(name: string): ProfiledColumn {
     };
 }
 
-function readBearerToken(encrypted: string | null): string {
+async function readBearerToken(tenantId: string, encrypted: string | null): Promise<string> {
     if (!encrypted) return '';
     try {
-        const parsed: unknown = JSON.parse(decryptField(encrypted));
+        const parsed: unknown = JSON.parse(await openTenantSecret(tenantId, encrypted));
         if (!parsed || typeof parsed !== 'object') return '';
         const token = (parsed as Record<string, unknown>).bearerToken;
         return typeof token === 'string' ? token.trim() : '';

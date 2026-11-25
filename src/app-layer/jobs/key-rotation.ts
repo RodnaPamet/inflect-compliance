@@ -11,12 +11,15 @@
  *      `DATA_ENCRYPTION_KEY_PREVIOUS` is retired.
  *
  *   2. **Re-encrypt v1 ciphertexts.** Any field in `ENCRYPTED_FIELDS`,
- *      the tenant-scoped PII columns or `KEK_SEALED_COLUMNS` (#5942)
+ *      the tenant-scoped PII columns or `TENANT_SEALED_COLUMNS` (#5942)
  *      that still holds a `v1:` envelope was written under the
  *      global KEK (either pre-B.2, or via a bypass source). Those
  *      values need to round-trip through the dual-KEK decrypt +
  *      primary-KEK encrypt so a future operator can remove the
- *      previous-key env var without losing access.
+ *      previous-key env var without losing access. A
+ *      `TENANT_SEALED_COLUMNS` value is re-sealed through
+ *      `sealTenantSecret` instead (#5969), which moves it under the
+ *      tenant's own key (`v2:`) once that brake is off.
  *
  *      v2 ciphertexts are out of scope — they're wrapped under the
  *      tenant DEK, not the master KEK, so master rotation leaves
@@ -71,7 +74,8 @@ import {
     isWrappedDek,
 } from '@/lib/security/tenant-keys';
 import { clearTenantDekCache } from '@/lib/security/tenant-key-manager';
-import { ENCRYPTED_FIELDS, KEK_SEALED_COLUMNS } from '@/lib/security/encrypted-fields';
+import { ENCRYPTED_FIELDS, TENANT_SEALED_COLUMNS } from '@/lib/security/encrypted-fields';
+import { sealTenantSecret } from '@/lib/security/tenant-sealed';
 import {
     PII_ENCRYPTED_COLUMNS,
     PII_GLOBAL_MODELS,
@@ -197,6 +201,12 @@ async function rewriteV1Field(
     model: string,
     field: string,
     batchSize: number,
+    /**
+     * How a decrypted value is sealed again. The master key by default; a
+     * `TENANT_SEALED_COLUMNS` column passes `sealTenantSecret` for its tenant
+     * (#5969).
+     */
+    seal: (plaintext: string) => string | Promise<string> = encryptField,
 ): Promise<KeyRotationPerFieldResult> {
     assertIdentifier(model, 'model');
     assertIdentifier(field, 'field');
@@ -290,8 +300,9 @@ async function rewriteV1Field(
 
             let fresh: string;
             try {
-                // Always under the current primary KEK.
-                fresh = encryptField(plaintext);
+                // Under the current primary KEK, or the tenant's own key for
+                // a tenant-sealed column once its brake is off.
+                fresh = await seal(plaintext);
             } catch (err) {
                 out.errors++;
                 logger.error('key-rotation.encrypt_failed', {
@@ -442,18 +453,26 @@ export async function runKeyRotation(
             //
             // ── AND THE COLUMNS SEALED OUTSIDE THE MANIFEST (#5942) ──
             //
-            // `KEK_SEALED_COLUMNS` — every integration's credentials — were
+            // `TENANT_SEALED_COLUMNS` — every integration's credentials — were
             // written with `encryptField` and swept by nothing, the same
-            // defect one table over. Every one carries `tenantId`.
-            const rotatable: Array<[string, readonly string[]]> = [
-                ...Object.entries(ENCRYPTED_FIELDS),
-                ...Object.entries(KEK_SEALED_COLUMNS),
+            // defect one table over. Every one carries `tenantId`. Their `v1:`
+            // values are re-sealed through `sealTenantSecret` (#5969), so a
+            // rotation also moves them under the tenant's own key.
+            const tenantSeal = (plaintext: string): Promise<string> =>
+                sealTenantSecret(options.tenantId, plaintext);
+            const rotatable: Array<[string, readonly string[], (plaintext: string) => string | Promise<string>]> = [
+                ...Object.entries(ENCRYPTED_FIELDS).map(
+                    ([m, f]) => [m, f, encryptField] as [string, readonly string[], typeof encryptField],
+                ),
+                ...Object.entries(TENANT_SEALED_COLUMNS).map(
+                    ([m, f]) => [m, f, tenantSeal] as [string, readonly string[], typeof tenantSeal],
+                ),
                 ...PII_TENANT_SCOPED_MODELS.map(
-                    (m) => [m, PII_ENCRYPTED_COLUMNS[m] ?? []] as [string, readonly string[]],
+                    (m) => [m, PII_ENCRYPTED_COLUMNS[m] ?? [], encryptField] as [string, readonly string[], typeof encryptField],
                 ),
             ];
 
-            for (const [model, fields] of rotatable) {
+            for (const [model, fields, seal] of rotatable) {
                 // Probe — does this model have a tenantId column? We
                 // infer from the Prisma model by attempting a small
                 // COUNT(*). Cheaper than walking DMMF; the probe
@@ -467,6 +486,7 @@ export async function runKeyRotation(
                         model,
                         field,
                         batchSize,
+                        seal,
                     );
                     perField.push(result);
                     totalScanned += result.scanned;

@@ -279,7 +279,7 @@ export async function resolveDirectoryProvisioner(
 
     let connection: Record<string, unknown>;
     try {
-        connection = mergeConnection(conns[0]);
+        connection = await mergeConnection(ctx.tenantId, conns[0]);
     } catch (err) {
         return {
             kind: 'none',

@@ -197,25 +197,25 @@ describe('the shape on the wire', () => {
  * a neighbour that happens to compensate.
  */
 describe('selfAccountIdsFromConnection — the derivation itself', () => {
-    it('names both binds and drops the ones that are blank', () => {
+    it('names both binds and drops the ones that are blank', async () => {
         expect(
-            selfAccountIdsFromConnection({
+            await selfAccountIdsFromConnection('t1', {
                 configJson: {},
                 secretEncrypted: JSON.stringify({ writeBindDN: 'writer@corp.example', bindDN: '   ' }),
             }),
         ).toStrictEqual(['writer@corp.example']);
     });
 
-    it('returns an empty list when the connection names no bind at all', () => {
+    it('returns an empty list when the connection names no bind at all', async () => {
         expect(
-            selfAccountIdsFromConnection({ configJson: {}, secretEncrypted: JSON.stringify({}) }),
+            await selfAccountIdsFromConnection('t1', { configJson: {}, secretEncrypted: JSON.stringify({}) }),
         ).toStrictEqual([]);
     });
 
-    it('falls back to configJson rather than throwing when the secrets will not decrypt', () => {
+    it('falls back to configJson rather than throwing when the secrets will not decrypt', async () => {
         // A dry run that protects one bind beats one that protects neither.
         expect(
-            selfAccountIdsFromConnection({
+            await selfAccountIdsFromConnection('t1', {
                 configJson: { bindDN: 'reader@corp.example' },
                 secretEncrypted: 'not-json-at-all{',
             }),

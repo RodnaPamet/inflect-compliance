@@ -39,7 +39,7 @@ import type { Prisma } from '@prisma/client';
 
 import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 
 /** The provider id of the customer's workspace connection (Step 5a). */
 export const ANTHROPIC_WORKSPACE_PROVIDER = 'anthropic-workspace';
@@ -79,7 +79,7 @@ export async function readWorkspaceConnection(
     const workspaceId = typeof config.workspaceId === 'string' ? config.workspaceId.trim() : '';
     let apiKey = '';
     try {
-        const secrets: unknown = row.secretEncrypted ? JSON.parse(decryptField(row.secretEncrypted)) : null;
+        const secrets: unknown = row.secretEncrypted ? JSON.parse(await openTenantSecret(ctx.tenantId, row.secretEncrypted)) : null;
         const value = (secrets as { apiKey?: unknown } | null)?.apiKey;
         apiKey = typeof value === 'string' ? value.trim() : '';
     } catch {

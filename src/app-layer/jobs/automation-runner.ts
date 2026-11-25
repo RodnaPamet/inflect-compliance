@@ -58,7 +58,7 @@ import { recordCheckOutcome } from '@/lib/observability/integration-metrics';
 import type { CheckInput, CheckResult } from '../integrations/types';
 import { integrationEvidenceText } from '../integrations/evidence-text';
 import { sanitizePlainText } from '@/lib/security/sanitize';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -279,10 +279,10 @@ export async function findDueAutomationControls(
 /**
  * Decrypt connection secrets safely.
  */
-function decryptSecrets(secretEncrypted: string | null): Record<string, unknown> {
+async function decryptSecrets(tenantId: string, secretEncrypted: string | null): Promise<Record<string, unknown>> {
     if (!secretEncrypted) return {};
     try {
-        return JSON.parse(decryptField(secretEncrypted));
+        return JSON.parse(await openTenantSecret(tenantId, secretEncrypted));
     } catch {
         return {};
     }
@@ -363,7 +363,7 @@ export async function executeControlAutomation(
     let result: CheckResult;
 
     try {
-        const secrets = decryptSecrets(connection.secretEncrypted);
+        const secrets = await decryptSecrets(control.tenantId, connection.secretEncrypted);
         const checkInput: CheckInput = {
             automationKey: control.automationKey,
             parsed,

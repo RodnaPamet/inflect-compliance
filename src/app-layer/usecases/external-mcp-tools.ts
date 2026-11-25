@@ -33,7 +33,7 @@
  */
 import { z } from 'zod';
 
-import { decryptField, encryptField } from '@/lib/security/encryption';
+import { openTenantSecret, sealTenantSecret } from '@/lib/security/tenant-sealed';
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, externalServiceError, notFound } from '@/lib/errors/types';
 import { listTools, McpClientError } from '@/app-layer/integrations/mcp/client';
@@ -180,13 +180,15 @@ function persistRotatedRefreshToken(
     secrets: Record<string, unknown>,
 ): (rotated: string) => Promise<void> {
     return async (rotated) => {
+        const sealed = await sealTenantSecret(
+            ctx.tenantId,
+            JSON.stringify({ ...secrets, refreshToken: rotated }),
+        );
         await runInTenantContext(ctx, (db) =>
             db.integrationConnection.update({
                 where: { id: connectionId },
                 data: {
-                    secretEncrypted: encryptField(
-                        JSON.stringify({ ...secrets, refreshToken: rotated }),
-                    ),
+                    secretEncrypted: sealed,
                 },
             }),
         );
@@ -217,7 +219,7 @@ export async function listExternalMcpTools(
     if (!url) throw notFound('MCP server connection has no URL configured');
 
     const secrets = connection.secretEncrypted
-        ? (JSON.parse(decryptField(connection.secretEncrypted)) as Record<string, unknown>)
+        ? (JSON.parse(await openTenantSecret(ctx.tenantId, connection.secretEncrypted)) as Record<string, unknown>)
         : {};
     // Through the SHARED resolver, exactly as the runtime does.
     //
@@ -647,7 +649,7 @@ export async function resolveGrantedExternalTools(
         let secrets: Record<string, unknown>;
         try {
             secrets = connection.secretEncrypted
-                ? (JSON.parse(decryptField(connection.secretEncrypted)) as Record<string, unknown>)
+                ? (JSON.parse(await openTenantSecret(ctx.tenantId, connection.secretEncrypted)) as Record<string, unknown>)
                 : {};
         } catch (err) {
             logger.warn('mcp.external_secret_unreadable', {

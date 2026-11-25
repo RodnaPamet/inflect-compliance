@@ -53,7 +53,7 @@
  */
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { logger } from '@/lib/observability/logger';
 import { recordAgentServicePrincipalDisable } from '@/lib/observability/integration-metrics';
 import { coerceStoredMode } from '@/lib/integrations/external-write-ladder';
@@ -255,7 +255,7 @@ async function request(ctx: RequestContext, input: { readonly agentId: string })
     let authorization: string | undefined;
     try {
         const secrets = connection.secretEncrypted
-            ? (JSON.parse(decryptField(connection.secretEncrypted)) as Record<string, unknown>)
+            ? (JSON.parse(await openTenantSecret(ctx.tenantId, connection.secretEncrypted)) as Record<string, unknown>)
             : {};
         // The SHARED resolver — the one the dispatch and the Test button use.
         authorization = await authorizationFor(
