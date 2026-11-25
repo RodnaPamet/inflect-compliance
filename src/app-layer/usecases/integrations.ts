@@ -415,7 +415,7 @@ export async function upsertIntegrationConnection(
     // and the guard has to treat it as one.
     const willBeEnabled = input.isEnabled ?? true;
 
-    return runInTenantContext(ctx, async (db) => {
+    const saved = await runInTenantContext(ctx, async (db) => {
         if (input.id) {
             // Update existing
             const existing = await db.integrationConnection.findFirst({
@@ -589,6 +589,20 @@ export async function upsertIntegrationConnection(
 
         return created;
     });
+
+    // #4173 (owner decision 3 of 2026-11-25): a workspace that CONNECTS its
+    // own Anthropic workspace no longer runs in Inflect's, so what Inflect
+    // created for it there is cleaned up by recorded id (Step 5c's clean-up)
+    // and its hosted opt-in is withdrawn. After the save has COMMITTED, and
+    // never failing it: what the first attempt leaves stays OPEN and is
+    // retried by the data-lifecycle job.
+    if (saved.provider === ANTHROPIC_WORKSPACE_PROVIDER && saved.isEnabled) {
+        // Lazily: the clean-up loads the Anthropic SDK seam, which no other
+        // connection's save needs.
+        const { cleanUpHostedOnOwnWorkspaceConnected } = await import('@/app-layer/usecases/hosted-managed-agents-own-workspace');
+        await cleanUpHostedOnOwnWorkspaceConnected(ctx, saved.id);
+    }
+    return saved;
 }
 
 /**
