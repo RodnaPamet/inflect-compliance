@@ -12,6 +12,21 @@ Google classes it as **sensitive**. Until the app passes Google's verification
 for it, people who connect see Google's "unverified app" screen, and the OAuth
 client is limited to 100 external users. This is item 6 of #5957.
 
+## Owner decisions (2026-11-25)
+
+- **The scope is `calendar.events`.** Verification goes ahead with it, as
+  `GOOGLE_CALENDAR_SCOPES` already asks. No narrower scope is adopted, so
+  nobody already connected has to reconnect.
+- **The OAuth client is still in Testing, and that is the first thing to
+  change.** In Testing, Google's refresh tokens expire after seven days, so
+  every Google calendar connection stops within a week of being made, and the
+  panel shows it as stopped. Set the publishing status to **In production**
+  before anyone relies on the push. Until verification passes, people still
+  see the "unverified app" screen and the client stays capped at 100 users,
+  but connections stop expiring.
+- **Still open: where the public home page and privacy policy live.** See
+  "Before you submit" below.
+
 The OAuth client is the deployment's `GOOGLE_CLIENT_ID`. It also serves
 **Sign in with Google**, whose scopes (`openid email profile`, `src/auth.ts`)
 are not sensitive.
@@ -69,12 +84,13 @@ by its client ID, and mark it **Trusted** (or Limited). Tell customers so.
 > because it never creates, shares or deletes calendars and never reads
 > calendar settings.
 
-A reviewer may ask why an even narrower scope was not used. Check the console
-for one that covers creating, updating and deleting events in the person's own
-primary calendar (Google has added such scopes, for example
-`calendar.events.owned`, and their sensitivity class is Google's to state). If
-one fits, switching is a code change to `GOOGLE_CALENDAR_SCOPES` and a
-reconnect for everyone already connected, so decide it before submitting.
+A reviewer may ask why an even narrower scope was not used (Google has added
+some, for example `calendar.events.owned`). The owner decided on 2026-11-25 to
+verify with `calendar.events`. Answer with the paragraph above: Inflect only
+writes, by id, events it created itself in the person's primary calendar, and
+reads nothing else. If a reviewer requires a narrower scope, switching is a code
+change to `GOOGLE_CALENDAR_SCOPES` and a reconnect for everyone already
+connected.
 
 Facts it rests on, for a reviewer's follow-up questions:
 
