@@ -162,10 +162,13 @@ The system tolerates mixed state at every stage. A given environment can sit at 
            any remaining v1 ciphertexts under the new KEK, including
            the TENANT-SCOPED pii-middleware columns (#5070) and every
            integration's credentials (`IntegrationConnection.secretEncrypted`,
-           listed in `KEK_SEALED_COLUMNS`, #5942). Before #5942 the job
+           listed in `TENANT_SEALED_COLUMNS`, #5942). Before #5942 the job
            skipped those credentials, so step d made every integration
            unreadable; the job's per-field result now names
-           `IntegrationConnection.secretEncrypted`.
+           `IntegrationConnection.secretEncrypted`. Those credentials are
+           re-sealed through `sealTenantSecret` (#5969), which writes the
+           master key while its brake (`TENANT_SEALED_UNDER_TENANT_KEY`)
+           is off and the tenant's own key once it is on.
         c2. ONCE, for the GLOBAL PII columns the per-tenant job cannot
            reach (User and Account carry no tenantId, so its sweep
            skips them by design):
@@ -325,7 +328,7 @@ Grep the structured log stream for these keys when troubleshooting:
 
 1. **`AuditLog` is not encrypted.** It carries the hash-chained integrity contract; encrypting the fields would break `entryHash` and our immutability trigger. Investigation needs plaintext audit entries anyway.
 
-2. **Per-tenant DEK rotation is implemented.** Both master-KEK rotation and per-tenant DEK rotation are shipped. `rotateTenantDek` in `src/lib/security/tenant-key-manager.ts` generates a fresh DEK, moves the old wrapped DEK into `Tenant.previousEncryptedDek`, and the `tenant-dek-rotation` BullMQ sweep re-encrypts every v2 ciphertext for that tenant. The admin surface is `POST /api/t/:slug/admin/tenant-dek-rotation` (OWNER-only). See the "Field Encryption" section of `CLAUDE.md` for the full flow.
+2. **Per-tenant DEK rotation is implemented.** Both master-KEK rotation and per-tenant DEK rotation are shipped. `rotateTenantDek` in `src/lib/security/tenant-key-manager.ts` generates a fresh DEK, moves the old wrapped DEK into `Tenant.previousEncryptedDek`, and the `tenant-dek-rotation` BullMQ sweep re-encrypts every v2 ciphertext for that tenant: the manifest's columns and `TENANT_SEALED_COLUMNS`, the integration credentials sealed under the tenant's key by `sealTenantSecret` (#5969). A credential still under the master key (`v1:`) is not the tenant DEK's to rewrite; a master-key rotation of the tenant moves it onto the tenant's key once `TENANT_SEALED_UNDER_TENANT_KEY` is on. The admin surface is `POST /api/t/:slug/admin/tenant-dek-rotation` (OWNER-only). See the "Field Encryption" section of `CLAUDE.md` for the full flow.
 
 3. **Raw-SQL paths bypass the middleware.** Seeds, backfill scripts, and `$queryRawUnsafe` calls see on-disk ciphertext. This is intentional (the backfill scripts rely on it) but means debugging against a Prisma Studio session will show ciphertext for encrypted columns on production-like databases.
 

@@ -110,7 +110,8 @@ import {
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { badRequest, conflict, forbidden, notFound } from '@/lib/errors/types';
 import { logger } from '@/lib/observability';
-import { decryptField, keyedChangeDigest } from '@/lib/security/encryption';
+import { keyedChangeDigest } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
 // ── Bounds ──────────────────────────────────────────────────────────────────
@@ -306,14 +307,14 @@ async function loadPassportSources(
  * runtime could not mint a token from it either. The WARN names the connection
  * and nothing about the value.
  */
-function readSecrets(
+async function readSecrets(
     ctx: RequestContext,
     connectionId: string,
     secretEncrypted: string | null,
-): PassportConnectionSource['secrets'] {
+): Promise<PassportConnectionSource['secrets']> {
     if (secretEncrypted === null) return null;
     try {
-        const parsed: unknown = JSON.parse(decryptField(secretEncrypted));
+        const parsed: unknown = JSON.parse(await openTenantSecret(ctx.tenantId, secretEncrypted));
         if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return SECRET_UNREADABLE;
         return parsed as Record<string, unknown>;
     } catch {
@@ -327,11 +328,15 @@ function readSecrets(
 }
 
 /** Build every loaded connection's passport. Sorted by connection id. */
-function buildPassports(ctx: RequestContext, loaded: LoadedSources): IntegrationPassport[] {
+async function buildPassports(ctx: RequestContext, loaded: LoadedSources): Promise<IntegrationPassport[]> {
     // The ciphertext is taken off the row here and goes nowhere but the one
     // decrypt; the rest of the row is exactly `PassportConnectionSource`'s
-    // stored columns, and the builder picks each of those by name.
-    return loaded.connections.map(({ secretEncrypted, ...row }) => {
+    // stored columns, and the builder picks each of those by name. Each
+    // secret is opened first, once, and handed to the builder.
+    const opened = await Promise.all(
+        loaded.connections.map(({ id, secretEncrypted }) => readSecrets(ctx, id, secretEncrypted)),
+    );
+    return loaded.connections.map(({ secretEncrypted: _ciphertext, ...row }, i) => {
         const url = endpointUrlOf(row.configJson);
         return buildIntegrationPassport({
             connection: {
@@ -340,7 +345,7 @@ function buildPassports(ctx: RequestContext, loaded: LoadedSources): Integration
                 // a path or query can hold a credential, and a passport is
                 // read by every evidence reader.
                 endpointUrlDigest: url === null ? null : keyedChangeDigest(ENDPOINT_DIGEST_DOMAIN, url),
-                secrets: readSecrets(ctx, row.id, secretEncrypted),
+                secrets: opened[i],
                 ownerMembershipActive: row.ownerUserId !== null && loaded.activeOwnerIds.has(row.ownerUserId),
             },
             pins: loaded.pins,
@@ -754,7 +759,7 @@ export async function runIntegrationPassportSweep(
 
     // Built even when a read was truncated: the planner raises the state
     // findings of the rows that WERE read, and plans nothing else.
-    const passports = buildPassports(ctx, read.loaded);
+    const passports = await buildPassports(ctx, read.loaded);
     const priorHadConnections = read.prior.status === 'VERIFIED' ? read.prior.bundle.connections.length > 0 : read.prior.status === 'UNVERIFIABLE';
 
     if (read.loaded.truncated.length === 0 && passports.length === 0 && !priorHadConnections) {
@@ -1001,7 +1006,7 @@ export async function getIntegrationPassportView(
         return { loaded, prior, findings, owner };
     });
 
-    const [current] = buildPassports(ctx, read.loaded);
+    const [current] = await buildPassports(ctx, read.loaded);
     const priorPassport =
         read.prior.status === 'VERIFIED'
             ? read.prior.bundle.connections.find((p) => p.connectionId === connectionId) ?? null

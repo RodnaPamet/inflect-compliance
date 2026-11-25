@@ -12,7 +12,7 @@ import type { RequestContext } from '../../../types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertCanAdmin } from '../../../policies/common';
 import { logEvent } from '../../../events/audit';
-import { encryptField, decryptField } from '@/lib/security/encryption';
+import { sealTenantSecret, openTenantSecret } from '@/lib/security/tenant-sealed';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { validateProviderConfig } from '../../config-schema';
 import {
@@ -82,7 +82,7 @@ export async function completeSharePointConnect(
                         SHAREPOINT_PROVIDER,
                         config as unknown as Record<string, unknown>,
                     ) as unknown as Prisma.InputJsonValue,
-                    secretEncrypted: encryptField(JSON.stringify(secret)),
+                    secretEncrypted: await sealTenantSecret(ctx.tenantId, JSON.stringify(secret)),
                     isEnabled: true,
                 },
             });
@@ -137,14 +137,14 @@ export async function getSharePointClient(
     return runInTenantContext(ctx, async (db) => {
         const conn = await loadConnection(db, ctx, connectionId);
         if (!conn.secretEncrypted) throw badRequest('SharePoint connection is missing credentials — reconnect');
-        const secret = JSON.parse(decryptField(conn.secretEncrypted)) as SharePointSecret;
+        const secret = JSON.parse(await openTenantSecret(ctx.tenantId, conn.secretEncrypted)) as SharePointSecret;
         const config = (conn.configJson ?? {}) as unknown as SharePointConfigJson;
 
         const { accessToken } = await resolveSharePointAccessToken(secret, {
             persist: async (rotated) => {
                 await db.integrationConnection.update({
                     where: { id: conn.id },
-                    data: { secretEncrypted: encryptField(JSON.stringify(rotated)) },
+                    data: { secretEncrypted: await sealTenantSecret(ctx.tenantId, JSON.stringify(rotated)) },
                 });
             },
         });

@@ -47,7 +47,7 @@
  *
  * @module integrations/identity-writer-factory
  */
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { logger } from '@/lib/observability/logger';
 import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
 import { runInTenantContext } from '@/lib/db-context';
@@ -271,16 +271,19 @@ export function createSnapshotWriter(
  * would hand the AD provisioner an empty bag, and every create would fail once
  * per person with nothing said about why.
  */
-export function mergeConnection(conn: {
-    configJson: unknown;
-    secretEncrypted: string | null;
-}): Record<string, unknown> {
+export async function mergeConnection(
+    tenantId: string,
+    conn: {
+        configJson: unknown;
+        secretEncrypted: string | null;
+    },
+): Promise<Record<string, unknown>> {
     const config = (conn.configJson ?? {}) as Record<string, unknown>;
     // Explicit rather than a `catch → {}`. A connection whose secrets do not
     // decrypt must refuse by name: silently continuing with an empty secret bag
     // produces a writer that fails once per account with nothing said about why.
     const secrets: Record<string, unknown> = conn.secretEncrypted
-        ? (JSON.parse(decryptField(conn.secretEncrypted)) as Record<string, unknown>)
+        ? (JSON.parse(await openTenantSecret(tenantId, conn.secretEncrypted)) as Record<string, unknown>)
         : {};
     return { ...config, ...secrets };
 }
@@ -310,25 +313,31 @@ export function mergeConnection(conn: {
  * failure itself, not the degraded result. Same merge, one caller keeps the
  * outcome.
  */
-function mergedOrNull(conn: {
-    configJson: unknown;
-    secretEncrypted: string | null;
-}): { merged: Record<string, unknown> | null; config: Record<string, unknown> } {
+async function mergedOrNull(
+    tenantId: string,
+    conn: {
+        configJson: unknown;
+        secretEncrypted: string | null;
+    },
+): Promise<{ merged: Record<string, unknown> | null; config: Record<string, unknown> }> {
     const config = (conn.configJson ?? {}) as Record<string, unknown>;
     try {
-        return { merged: mergeConnection(conn), config };
+        return { merged: await mergeConnection(tenantId, conn), config };
     } catch {
         return { merged: null, config };
     }
 }
 
-export function selfAccountIdsFromConnection(conn: {
-    configJson: unknown;
-    secretEncrypted: string | null;
-}): string[] {
+export async function selfAccountIdsFromConnection(
+    tenantId: string,
+    conn: {
+        configJson: unknown;
+        secretEncrypted: string | null;
+    },
+): Promise<string[]> {
     let merged: Record<string, unknown>;
     try {
-        merged = mergeConnection(conn);
+        merged = await mergeConnection(tenantId, conn);
     } catch (err) {
         merged = (conn.configJson ?? {}) as Record<string, unknown>;
         logger.warn('dry-run self-account ids fell back to config: secrets did not decrypt', {
@@ -452,7 +461,7 @@ export async function resolveDirectoryWriter(
     // a value long before it reaches here; this is the second lock, on the door
     // that actually opens the connection.
     if (mode !== 'AUTOMATIC') {
-        const selfIds = selfAccountIdsFromConnection(conns[0]);
+        const selfIds = await selfAccountIdsFromConnection(ctx.tenantId, conns[0]);
         // THE DRY RUN IS WHERE THIS BELONGS. The rung deliberately opens no
         // socket, so it cannot verify the bind works — but it can report
         // whether one is configured at all, which is the difference between
@@ -462,13 +471,13 @@ export async function resolveDirectoryWriter(
             kind: 'snapshot',
             writer: createSnapshotWriter(ctx, provider, conns[0].id, selfIds),
             close: NOOP_CLOSE,
-            readiness: describeWriteReadiness({ provider, ...mergedOrNull(conns[0]) }),
+            readiness: describeWriteReadiness({ provider, ...(await mergedOrNull(ctx.tenantId, conns[0])) }),
         };
     }
 
     let connection: Record<string, unknown>;
     try {
-        connection = mergeConnection(conns[0]);
+        connection = await mergeConnection(ctx.tenantId, conns[0]);
     } catch (err) {
         return {
             kind: 'none',

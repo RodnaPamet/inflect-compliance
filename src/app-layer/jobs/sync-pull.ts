@@ -3,7 +3,7 @@ import '../integrations/bootstrap'; // populate the provider registry in THIS mo
 import { integrationRegistry } from '../integrations/registry';
 import { PrismaSyncMappingStore } from '../integrations/prisma-sync-store';
 import { PrismaLocalStore } from '../integrations/prisma-local-store';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { logger } from '@/lib/observability/logger';
 import { SyncPullPayload } from './types';
 
@@ -44,7 +44,7 @@ export async function runSyncPull(payload: SyncPullPayload): Promise<void> {
     let secrets: Record<string, unknown> = {};
     if (connection.secretEncrypted) {
         try {
-            secrets = JSON.parse(decryptField(connection.secretEncrypted));
+            secrets = JSON.parse(await openTenantSecret(connection.tenantId, connection.secretEncrypted));
         } catch (err) {
             logger.error('Failed to decrypt connection secrets for sync-pull sync', {
                 component: 'sync-pull',

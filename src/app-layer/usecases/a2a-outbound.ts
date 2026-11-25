@@ -41,7 +41,7 @@ import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { logger } from '@/lib/observability/logger';
 import { recordA2aMessage as recordA2aMetric } from '@/lib/observability/integration-metrics';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { canonicalJson } from '@/lib/canonical-json';
 import {
     clampForInboundA2a,
@@ -481,7 +481,7 @@ export async function sendA2aJournalRow(
     let authorization: string | undefined;
     try {
         const secrets = connection.secretEncrypted
-            ? (JSON.parse(decryptField(connection.secretEncrypted)) as Record<string, unknown>)
+            ? (JSON.parse(await openTenantSecret(ctx.tenantId, connection.secretEncrypted)) as Record<string, unknown>)
             : {};
         authorization = typeof secrets.authorization === 'string' && secrets.authorization.trim() !== ''
             ? secrets.authorization.trim()
@@ -737,7 +737,7 @@ export async function pollAcceptedA2aSend(
     let authorization: string | undefined;
     try {
         const secrets = connection.secretEncrypted
-            ? (JSON.parse(decryptField(connection.secretEncrypted)) as Record<string, unknown>)
+            ? (JSON.parse(await openTenantSecret(ctx.tenantId, connection.secretEncrypted)) as Record<string, unknown>)
             : {};
         authorization = typeof secrets.authorization === 'string' && secrets.authorization.trim() !== ''
             ? secrets.authorization.trim()

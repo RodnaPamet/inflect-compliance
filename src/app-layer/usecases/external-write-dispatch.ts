@@ -65,7 +65,7 @@
 import { PrismaClient } from '@prisma/client';
 
 import { logger } from '@/lib/observability/logger';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { callTool } from '@/app-layer/integrations/mcp/client';
 import { authorizationFor } from '@/app-layer/integrations/mcp/token';
 import { coerceStoredMode } from '@/lib/integrations/external-write-ladder';
@@ -486,7 +486,7 @@ export async function runExternalWriteDispatch(input: {
         let authorization: string | undefined;
         try {
             const secrets = connection.secretEncrypted
-                ? (JSON.parse(decryptField(connection.secretEncrypted)) as Record<string, unknown>)
+                ? (JSON.parse(await openTenantSecret(ctx.tenantId, connection.secretEncrypted)) as Record<string, unknown>)
                 : {};
             // The SHARED resolver, so this pass and the "Test connection" button
             // agree about what a credential means. Its own docstring is explicit

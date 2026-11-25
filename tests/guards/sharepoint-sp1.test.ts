@@ -47,7 +47,7 @@ describe('SP-1 SharePoint provider', () => {
         expect(t).toMatch(/Files\.ReadWrite\.All/);
         expect(t).toMatch(/prompt: 'consent'/);
         // The token pair is stored encrypted by the service.
-        expect(read(`${SP}/service.ts`)).toMatch(/encryptField\(JSON\.stringify/);
+        expect(read(`${SP}/service.ts`)).toMatch(/sealTenantSecret\(ctx\.tenantId, JSON\.stringify/);
     });
 
     it('the admin connection routes exist + are admin-gated', () => {

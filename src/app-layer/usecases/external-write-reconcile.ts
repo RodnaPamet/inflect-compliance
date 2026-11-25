@@ -77,7 +77,7 @@ import { PrismaClient } from '@prisma/client';
 import type { RequestContext } from '@/app-layer/types';
 
 import { logger } from '@/lib/observability/logger';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { callTool } from '@/app-layer/integrations/mcp/client';
 import { authorizationFor } from '@/app-layer/integrations/mcp/token';
 import { parseExternalToolName } from '@/lib/mcp/external-tool-name';
@@ -419,7 +419,7 @@ async function readJournalRowState(
     let authorization: string | undefined;
     try {
         const secrets = connection.secretEncrypted
-            ? (JSON.parse(decryptField(connection.secretEncrypted)) as Record<string, unknown>)
+            ? (JSON.parse(await openTenantSecret(ctx.tenantId, connection.secretEncrypted)) as Record<string, unknown>)
             : {};
         authorization = await authorizationFor(
             connection.id,

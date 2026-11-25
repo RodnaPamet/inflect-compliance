@@ -15,7 +15,7 @@ import { buildSystemContext } from '../context-system';
 import { runInTenantContext } from '@/lib/db-context';
 import { markAuthFailure, clearAuthFailure } from '../integrations/connection-health';
 import { shouldBypassQueueRetry } from '../integrations/http-resilience';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { logger } from '@/lib/observability/logger';
 import type { ScheduledCheckProvider } from '../integrations/types';
 import { frameworkCodesForControl, type CloudPostureControlMapEntry } from '../integrations/cloud-posture/powerpipe-core';
@@ -74,7 +74,7 @@ export async function runCloudPostureCollection(input: CloudPostureCollectInput)
         const config = (conn.configJson ?? {}) as Record<string, unknown>;
         const check = String(config.benchmark ?? 'soc2').toLowerCase();
         const automationKey = `${input.cloud}.${check}`;
-        const secrets: Record<string, unknown> = conn.secretEncrypted ? (JSON.parse(decryptField(conn.secretEncrypted)) as Record<string, unknown>) : {};
+        const secrets: Record<string, unknown> = conn.secretEncrypted ? (JSON.parse(await openTenantSecret(ctx.tenantId, conn.secretEncrypted)) as Record<string, unknown>) : {};
 
         const execution = await db.integrationExecution.create({
             data: { tenantId: ctx.tenantId, connectionId: conn.id, provider: input.cloud, automationKey, status: 'RUNNING', triggeredBy: 'scheduled', executedAt: now },

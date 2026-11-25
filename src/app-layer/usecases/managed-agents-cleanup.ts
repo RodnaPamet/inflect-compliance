@@ -94,7 +94,7 @@ import {
     recordManagedAgentsLostDelete,
 } from '@/lib/observability/integration-metrics';
 import { logger } from '@/lib/observability/logger';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 
 /** The job name every write here is attributed to. */
 export const CLEANUP_SOURCE = 'managed-agents-cleanup';
@@ -202,12 +202,15 @@ async function hasHostedFootprint(tenantId: string): Promise<boolean> {
     });
 }
 
-function connectionFromRow(row: { id: string; configJson: unknown; secretEncrypted: string | null }): CleanupConnection {
+async function connectionFromRow(
+    tenantId: string,
+    row: { id: string; configJson: unknown; secretEncrypted: string | null },
+): Promise<CleanupConnection> {
     const config = (row.configJson ?? {}) as Record<string, unknown>;
     const workspaceId = typeof config.workspaceId === 'string' ? config.workspaceId.trim() : '';
     let apiKey: string | null = null;
     try {
-        const secrets: unknown = row.secretEncrypted ? JSON.parse(decryptField(row.secretEncrypted)) : null;
+        const secrets: unknown = row.secretEncrypted ? JSON.parse(await openTenantSecret(tenantId, row.secretEncrypted)) : null;
         const value = (secrets as { apiKey?: unknown } | null)?.apiKey;
         apiKey = typeof value === 'string' && value.trim() ? value.trim() : null;
     } catch {
@@ -234,7 +237,7 @@ async function readCleanupConnections(tenantId: string, connectionId?: string): 
             take: 50,
         }),
     );
-    const own = rows.map(connectionFromRow);
+    const own = await Promise.all(rows.map((row) => connectionFromRow(tenantId, row)));
     if (connectionId) return own;
     return (await hasHostedFootprint(tenantId)) ? [...own, hostedCleanupConnection()] : own;
 }

@@ -39,7 +39,7 @@
  * while granting more than it said — the shape `external-prior-state-read`'s
  * header names.
  */
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { runInTenantContext } from '@/lib/db-context';
 import { logger } from '@/lib/observability/logger';
 import {
@@ -153,7 +153,7 @@ export async function resolveEntraEntitlementConnection(
     let secrets: Record<string, unknown> = {};
     if (row.secretEncrypted) {
         try {
-            secrets = JSON.parse(decryptField(row.secretEncrypted)) as Record<string, unknown>;
+            secrets = JSON.parse(await openTenantSecret(ctx.tenantId, row.secretEncrypted)) as Record<string, unknown>;
         } catch (err) {
             // The MESSAGE only. A decrypt failure's cause is useful; its
             // ciphertext is not, and this sentence reaches an operator.

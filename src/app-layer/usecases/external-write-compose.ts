@@ -57,7 +57,7 @@ import { refusalForValue } from '@/lib/integrations/parameter-constraints';
 import { parseExternalToolName } from '@/lib/mcp/external-tool-name';
 import { callTool } from '@/app-layer/integrations/mcp/client';
 import { authorizationFor } from '@/app-layer/integrations/mcp/token';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { NO_POLICY_CARD } from '@/lib/agentic/policy-card';
 import { logger } from '@/lib/observability/logger';
 
@@ -492,7 +492,7 @@ export async function composeExternalWriteProposal(
     let authorization: string | undefined;
     try {
         const secrets = connection.secretEncrypted
-            ? (JSON.parse(decryptField(connection.secretEncrypted)) as Record<string, unknown>)
+            ? (JSON.parse(await openTenantSecret(ctx.tenantId, connection.secretEncrypted)) as Record<string, unknown>)
             : {};
         // The SHARED resolver, so this surface and the dispatch agree about what
         // a credential means — and so a connection configured for OAuth is not

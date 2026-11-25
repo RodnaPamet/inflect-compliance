@@ -28,7 +28,7 @@ import { isScheduledCheckProvider } from '../integrations/types';
 import { isPostureProvider } from '../integrations/posture-providers';
 import type { CheckResult, EvidencePayload, ConnectionValidationResult } from '../integrations/types';
 import { integrationEvidenceText } from '../integrations/evidence-text';
-import { encryptField, decryptField } from '@/lib/security/encryption';
+import { openTenantSecret, sealTenantSecret } from '@/lib/security/tenant-sealed';
 import { ANTHROPIC_WORKSPACE_PROVIDER } from '@/lib/agentic/managed-agents/store';
 import { managedAgentsOnFor } from '@/lib/agentic/agent-switches-policy';
 import { assertManagedAgentsOn } from '@/lib/agentic/managed-agents-switch';
@@ -394,7 +394,7 @@ export async function upsertIntegrationConnection(
     /*
         Kept for the staleness comparison below (#5476), and the canonical form
         is the point. Comparing CIPHERTEXTS would report every save as a
-        rotation, because `encryptField` uses a fresh IV and the same plaintext
+        rotation, because sealing uses a fresh IV and the same plaintext
         encrypts differently every time.
     */
     let suppliedSecretCanonical: string | undefined;
@@ -404,7 +404,7 @@ export async function upsertIntegrationConnection(
             secretFields: providerImpl.configSchema.secretFields ?? [],
         });
         suppliedSecretCanonical = canonicalSecret(validatedSecrets);
-        secretEncrypted = encryptField(JSON.stringify(validatedSecrets));
+        secretEncrypted = await sealTenantSecret(ctx.tenantId, JSON.stringify(validatedSecrets));
     }
 
     // Validate BEFORE anything is written. configJson was previously stored
@@ -517,13 +517,13 @@ export async function upsertIntegrationConnection(
                 real change from a re-save of the same value — an unreadable one
                 is reported rather than assumed current.
             */
-            const previousCredential = ((): StoredCredential => {
+            const previousCredential = await (async (): Promise<StoredCredential> => {
                 if (!existing.secretEncrypted) return { kind: 'none' };
                 try {
                     return {
                         kind: 'readable',
                         canonical: canonicalSecret(
-                            decryptConnectionSecrets(existing.secretEncrypted),
+                            await decryptConnectionSecrets(ctx.tenantId, existing.secretEncrypted),
                         ),
                     };
                 } catch {
@@ -737,7 +737,7 @@ export async function testConnectionCredentials(
         }
 
         storedConfig = (connection.configJson as Record<string, unknown>) ?? {};
-        storedSecrets = decryptConnectionSecrets(connection.secretEncrypted);
+        storedSecrets = await decryptConnectionSecrets(ctx.tenantId, connection.secretEncrypted);
 
         // ═══ THE SAME REFUSAL THE SAVE PATH MAKES, FOR THE SAME REASON ═══
         //
@@ -783,10 +783,11 @@ export async function testConnectionCredentials(
     const persistSecret = testsStoredSecrets
         ? async (patch: Record<string, unknown>) => {
               Object.assign(storedSecrets, patch);
+              const sealed = await sealTenantSecret(ctx.tenantId, JSON.stringify(storedSecrets));
               await runInTenantContext(ctx, (db) =>
                   db.integrationConnection.update({
                       where: { id: connectionId },
-                      data: { secretEncrypted: encryptField(JSON.stringify(storedSecrets)) },
+                      data: { secretEncrypted: sealed },
                   }),
               );
           }
@@ -824,10 +825,13 @@ function canonicalSecret(secrets: Record<string, unknown>): string {
     );
 }
 
-function decryptConnectionSecrets(secretEncrypted: string | null): Record<string, unknown> {
+async function decryptConnectionSecrets(
+    tenantId: string,
+    secretEncrypted: string | null,
+): Promise<Record<string, unknown>> {
     if (!secretEncrypted) return {};
     try {
-        return JSON.parse(decryptField(secretEncrypted));
+        return JSON.parse(await openTenantSecret(tenantId, secretEncrypted));
     } catch {
         logger.error('Failed to decrypt integration secrets', { component: 'integrations' });
         return {};
@@ -892,7 +896,7 @@ export async function runAutomationForControl(
         let result: CheckResult;
 
         try {
-            const secrets = decryptConnectionSecrets(connection.secretEncrypted);
+            const secrets = await decryptConnectionSecrets(ctx.tenantId, connection.secretEncrypted);
             result = await provider.runCheck({
                 automationKey: control.automationKey,
                 parsed,
@@ -1551,7 +1555,7 @@ export async function listConnectedAccounts(
                     select: { id: true, configJson: true, secretEncrypted: true },
                 });
                 for (const c of conns) {
-                    selfIdsByConnection.set(c.id, selfAccountIdsFromConnection(c));
+                    selfIdsByConnection.set(c.id, await selfAccountIdsFromConnection(ctx.tenantId, c));
                 }
             }
 

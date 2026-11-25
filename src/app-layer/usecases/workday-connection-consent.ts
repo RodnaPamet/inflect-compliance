@@ -34,7 +34,7 @@
  *
  * @module usecases/workday-connection-consent
  */
-import { decryptField, encryptField } from '@/lib/security/encryption';
+import { sealTenantSecret, openTenantSecret } from '@/lib/security/tenant-sealed';
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, notFound } from '@/lib/errors/types';
 import {
@@ -77,7 +77,7 @@ async function workdayCredentialsFor(
 
     const config = (connection.configJson ?? {}) as Record<string, unknown>;
     const secrets = connection.secretEncrypted
-        ? (JSON.parse(decryptField(connection.secretEncrypted)) as Record<string, unknown>)
+        ? (JSON.parse(await openTenantSecret(ctx.tenantId, connection.secretEncrypted)) as Record<string, unknown>)
         : {};
 
     const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
@@ -140,7 +140,7 @@ export async function completeWorkdayConsent(
         await db.integrationConnection.update({
             where: { id: input.connectionId },
             data: {
-                secretEncrypted: encryptField(
+                secretEncrypted: await sealTenantSecret(ctx.tenantId,
                     JSON.stringify({
                         ...creds.secrets,
                         accessToken: secret.accessToken,

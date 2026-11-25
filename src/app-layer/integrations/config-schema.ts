@@ -533,7 +533,7 @@ export function redirectsStoredCredential(
  *
  * `validateProviderConfig` throws `Unknown configuration field` on a key a
  * provider does not declare. The secrets bag had no validation at all — it went
- * straight to `encryptField(JSON.stringify(...))` — and `mergeConnection`
+ * straight to `sealTenantSecret(tenantId, JSON.stringify(...))` — and `mergeConnection`
  * returns `{ ...config, ...secrets }`, so a secret SHADOWS a config field of
  * the same name.
  *

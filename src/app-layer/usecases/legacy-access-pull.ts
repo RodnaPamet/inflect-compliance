@@ -59,7 +59,7 @@ import { acquireSyncLock, releaseSyncLock } from '@/app-layer/integrations/conne
 import { clearAuthFailure, markAuthFailure } from '@/app-layer/integrations/connection-health';
 import { IntegrationAuthError } from '@/app-layer/integrations/http-resilience';
 import { LEGACY_MCP_PROVIDER_ID } from '@/app-layer/integrations/providers/legacy-mcp';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { logger } from '@/lib/observability/logger';
 import { pullSnapshot, type LegacyMcpClientError } from '@/lib/mcp/client';
 import {
@@ -236,7 +236,7 @@ async function pullUnderLock(
 
     const config = (conn.configJson ?? {}) as Record<string, unknown>;
     const url = typeof config.endpointUrl === 'string' ? config.endpointUrl.trim() : '';
-    const secrets = readSecrets(conn.secretEncrypted);
+    const secrets = await readSecrets(ctx.tenantId, conn.secretEncrypted);
     const token = typeof secrets.bearerToken === 'string' ? secrets.bearerToken.trim() : '';
     if (!url || !token) {
         await failExecution(bookkeeping, executionId, 'Connection is missing its endpoint or bearer token');
@@ -520,10 +520,10 @@ function emptyResult(status: LegacyPullResult['status']): LegacyPullResult {
     };
 }
 
-function readSecrets(encrypted: string | null): Record<string, unknown> {
+async function readSecrets(tenantId: string, encrypted: string | null): Promise<Record<string, unknown>> {
     if (!encrypted) return {};
     try {
-        const parsed: unknown = JSON.parse(decryptField(encrypted));
+        const parsed: unknown = JSON.parse(await openTenantSecret(tenantId, encrypted));
         return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
     } catch {
         // A secret that will not decrypt or parse reads as ABSENT, which the

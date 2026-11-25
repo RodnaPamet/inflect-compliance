@@ -17,8 +17,9 @@
  *      was primed in the web process, and this worker's cache may still
  *      hold the OLD key as the current one (#5057).
  *
- *   2. For each (model, field) in the encrypted-fields manifest that
- *      has a `tenantId` column, walk rows carrying a v2 ciphertext:
+ *   2. For each (model, field) in the encrypted-fields manifest, and in
+ *      `TENANT_SEALED_COLUMNS` (#5969), that has a `tenantId` column, walk
+ *      rows carrying a v2 ciphertext:
  *        - Decrypt under the previous DEK (NOT the dual-key helper —
  *          rows that primary-decrypt are by definition not what we
  *          want to rewrite, and silently re-encrypting them is just
@@ -71,7 +72,7 @@ import {
     clearTenantDekCache,
     clearTenantPreviousDekCache,
 } from '@/lib/security/tenant-key-manager';
-import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
+import { ENCRYPTED_FIELDS, TENANT_SEALED_COLUMNS } from '@/lib/security/encrypted-fields';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -548,7 +549,15 @@ export async function runTenantDekRotation(
             // sweep so the progress payload can include `fieldsTotal`
             // from the very first update.
             const fieldsToSweep: Array<{ model: string; field: string }> = [];
-            for (const [model, fields] of Object.entries(ENCRYPTED_FIELDS)) {
+            // The manifest, and the columns sealed explicitly under the
+            // tenant's key through `sealTenantSecret` (#5969): every
+            // integration's credentials. Their `v2:` values are the same
+            // envelope under the same key, so the same sweep rewrites them.
+            const sweepable: Array<[string, readonly string[]]> = [
+                ...Object.entries(ENCRYPTED_FIELDS),
+                ...Object.entries(TENANT_SEALED_COLUMNS),
+            ];
+            for (const [model, fields] of sweepable) {
                 const hasTenantId = await modelHasTenantIdColumn(model);
                 if (!hasTenantId) continue;
                 for (const field of fields) {

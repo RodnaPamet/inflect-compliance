@@ -53,7 +53,7 @@
 import { timingSafeEqual } from 'node:crypto';
 
 import { prisma } from '@/lib/prisma';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { logger } from '@/lib/observability/logger';
 
 /**
@@ -246,7 +246,7 @@ export async function authenticateGrantCaller(
     let secrets: Record<string, unknown> = {};
     if (row.secretEncrypted) {
         try {
-            secrets = JSON.parse(decryptField(row.secretEncrypted)) as Record<string, unknown>;
+            secrets = JSON.parse(await openTenantSecret(row.tenantId, row.secretEncrypted)) as Record<string, unknown>;
         } catch (err) {
             // A decrypt failure is NOT a mismatch. Reporting it as one would
             // tell an operator their token is wrong when their key is.

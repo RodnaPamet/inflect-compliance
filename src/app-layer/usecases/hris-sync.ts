@@ -33,7 +33,7 @@ import { createTask } from './task';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { markAuthFailure, clearAuthFailure } from '../integrations/connection-health';
 import { shouldBypassQueueRetry } from '../integrations/http-resilience';
-import { decryptField, encryptField } from '@/lib/security/encryption';
+import { sealTenantSecret, openTenantSecret } from '@/lib/security/tenant-sealed';
 import { logger } from '@/lib/observability/logger';
 import { recordSyncTruncated } from '@/lib/observability/integration-metrics';
 import {
@@ -408,7 +408,7 @@ export async function runHrisSync(input: {
     let secrets: Record<string, unknown>;
     let resolved: ReturnType<typeof registry.getProvider> | HrisSyncProvider | undefined;
     try {
-        secrets = conn.secretEncrypted ? (JSON.parse(decryptField(conn.secretEncrypted)) as Record<string, unknown>) : {};
+        secrets = conn.secretEncrypted ? (JSON.parse(await openTenantSecret(ctx.tenantId, conn.secretEncrypted)) as Record<string, unknown>) : {};
         resolved = input.provider ?? registry.getProvider(conn.provider);
     } catch (e) {
         const msg = 'The connection secret could not be read; re-enter the credentials on the connection';
@@ -473,10 +473,11 @@ export async function runHrisSync(input: {
             // hole was worth closing, but it was never every failure.
             persistSecret: async (patch) => {
                 Object.assign(secrets, patch);
+                const sealed = await sealTenantSecret(ctx.tenantId, JSON.stringify(secrets));
                 await shortTx((db) =>
                     db.integrationConnection.update({
                         where: { id: conn.id },
-                        data: { secretEncrypted: encryptField(JSON.stringify(secrets)) },
+                        data: { secretEncrypted: sealed },
                     }),
                 );
             },
