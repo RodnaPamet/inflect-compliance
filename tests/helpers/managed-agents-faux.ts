@@ -46,6 +46,14 @@
  * session or agent, or a session a crash left unrecorded. `unreachable` makes
  * every request fail at the network, and `authStatus` answers every request
  * with that status, so a test can take the provider away and give it back.
+ *
+ * ── THE WORKSPACE A RESPONSE NAMES (#5854 finding 4) ────────────────────────
+ *
+ * Every response names, in its own `anthropic-workspace-id` header, the
+ * workspace the request named, as Anthropic does: errors, the event stream's
+ * response and the clean-up's included. `answerWorkspace` changes that for the
+ * requests it matches (by method and path, optionally from the Nth match on):
+ * `NONE` sends no header, `OTHER` names `FAUX_OTHER_WORKSPACE`.
  */
 
 export interface FauxScriptedTurn {
@@ -54,6 +62,20 @@ export interface FauxScriptedTurn {
 }
 
 export const FAUX_ORIGIN = 'https://api.anthropic.com';
+
+/** The workspace an `answerWorkspace: { answer: 'OTHER' }` response names: never one a test configures. */
+export const FAUX_OTHER_WORKSPACE = 'wrkspc_fauxSomeoneElse';
+
+/** Which responses name which workspace, while set (#5854 finding 4). */
+export interface FauxWorkspaceAnswer {
+    readonly answer: 'NONE' | 'OTHER';
+    /** Only requests of this method; all when absent. */
+    readonly method?: string;
+    /** Only requests whose path matches; all when absent. */
+    readonly path?: RegExp;
+    /** From the Nth matching request on (1-based); from the first when absent. */
+    readonly fromNth?: number;
+}
 
 /** The `usage.active_seconds` every session's retrieve answers with by default (#4173). */
 export const FAUX_SESSION_ACTIVE_SECONDS = 12.5;
@@ -166,6 +188,12 @@ export class ManagedAgentsFaux {
     /** Every `sessions.retrieve` is answered with this status while set (#4173): a usage read that fails. */
     failSessionRetrieve: number | null = null;
     drop: FauxDrop | null = null;
+    /** The responses that do NOT name the request's workspace, while set (#5854 finding 4). */
+    answerWorkspace: FauxWorkspaceAnswer | null = null;
+    /** Matches counted per rule, so a new rule counts from one. */
+    private readonly answerWorkspaceSeen = new WeakMap<FauxWorkspaceAnswer, number>();
+    /** What each response named, in request order: the workspace id, or null for none. */
+    readonly answeredWorkspaces: Array<{ method: string; path: string; workspace: string | null }> = [];
     /**
      * An unreliable network: the Nth request matching (1-based) is TAKEN by the
      * workspace, and then the connection drops before its response arrives. The
@@ -194,6 +222,7 @@ export class ManagedAgentsFaux {
     install(): void {
         global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
             const response = await this.serve(input, init);
+            this.nameWorkspace(input, init, response);
             const lose = this.loseResponse;
             if (lose) {
                 const url = new URL(typeof input === 'string' || input instanceof URL ? String(input) : input.url);
@@ -206,6 +235,27 @@ export class ManagedAgentsFaux {
             }
             return response;
         }) as typeof fetch;
+    }
+
+    /**
+     * The response names the workspace the request named, as Anthropic's do,
+     * unless `answerWorkspace` matches the request.
+     */
+    private nameWorkspace(input: RequestInfo | URL, init: RequestInit | undefined, response: Response): void {
+        const url = new URL(typeof input === 'string' || input instanceof URL ? String(input) : input.url);
+        if (url.origin !== FAUX_ORIGIN) return;
+        const method = (init?.method ?? 'GET').toUpperCase();
+        const asked = new Headers(init?.headers).get('anthropic-workspace-id');
+        const rule = this.answerWorkspace;
+        let named: string | null = asked;
+        if (rule && (!rule.method || rule.method === method) && (!rule.path || rule.path.test(url.pathname))) {
+            const seen = (this.answerWorkspaceSeen.get(rule) ?? 0) + 1;
+            this.answerWorkspaceSeen.set(rule, seen);
+            if (seen >= (rule.fromNth ?? 1)) named = rule.answer === 'OTHER' ? FAUX_OTHER_WORKSPACE : null;
+        }
+        if (named) response.headers.set('anthropic-workspace-id', named);
+        else response.headers.delete('anthropic-workspace-id');
+        this.answeredWorkspaces.push({ method, path: url.pathname, workspace: named });
     }
 
     uninstall(): void {

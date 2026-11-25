@@ -26,6 +26,10 @@
  *     deleted at settle. A run the SIGTERM drain pauses keeps its hosted
  *     session for a person's resume, which reconnects to it the same way (the
  *     owner's second decision of that day), and it is deleted at settle too.
+ *   • A response from another workspace fails the run by name, as it does in a
+ *     tenant's own (#5854 finding 4): the event stream's answer is never read,
+ *     no tool runs, and the session is still deleted through answers from
+ *     Inflect's own workspace. A response naming none passes.
  *   • With the constant false, the same tenant's engine choice is refused and
  *     its run is refused by name before anything is sent.
  *
@@ -353,6 +357,40 @@ describeFn('a hosted Managed Agents run, through the module seam (real DB, faux 
         ]);
         const calls = await modelCallSteps(started.runId);
         expect(calls.find((c) => c.reconnectedToSession === sessionId)).toMatchObject({ workspace: 'HOSTED' });
+    });
+
+    it('a hosted run whose event stream answers from another workspace fails by name, runs no tool, and its session is still deleted (#5854 finding 4)', async () => {
+        const resultsBefore = faux.toolResults.length;
+        faux.answerWorkspace = { answer: 'OTHER', method: 'GET', path: /\/events\/stream$/ };
+        try {
+            const started = await startAgentProfileTestRun(reviewer(), AGENT, 1);
+            await executeQueuedWorkflowRun(TENANT, started.runId);
+            const row = await prisma.workflowRun.findUniqueOrThrow({ where: { id: started.runId }, select: { status: true, errorMessage: true } });
+            expect(row.status).toBe('FAILED');
+            expect(row.errorMessage).toMatch(/^managed_agents_workspace_mismatch: a response from Anthropic named a different workspace/);
+            expect(row.errorMessage).not.toContain(HOSTED_WORKSPACE);
+            // Nothing behind the stream's answer was read: no tool ran, nothing was answered.
+            expect(await prisma.workflowStep.count({ where: { tenantId: TENANT, runId: started.runId, kind: 'TOOL_CALL' } })).toBe(0);
+            expect(faux.toolResults.length).toBe(resultsBefore);
+            // Settled through answers from Inflect's own workspace: deleted, and recorded so.
+            const steps = await sessionSteps(started.runId);
+            expect(steps.map((s) => s.lifecycle)).toEqual(['SESSION_CREATED', 'SESSION_DELETED']);
+            expect(faux.holdsSession(steps[0].sessionId as string)).toBe(false);
+        } finally {
+            faux.answerWorkspace = null;
+        }
+    });
+
+    it('a hosted run whose responses name no workspace completes: a missing header passes (#5854 finding 4)', async () => {
+        faux.answerWorkspace = { answer: 'NONE' };
+        try {
+            const started = await startAgentProfileTestRun(reviewer(), AGENT, 1);
+            expect(await executeQueuedWorkflowRun(TENANT, started.runId)).toMatchObject({ status: 'COMPLETED' });
+            const steps = await sessionSteps(started.runId);
+            expect(steps.map((s) => s.lifecycle)).toEqual(['SESSION_CREATED', 'SESSION_DELETED']);
+        } finally {
+            faux.answerWorkspace = null;
+        }
     });
 
     it('every request carried Inflect\'s key and workspace', () => {

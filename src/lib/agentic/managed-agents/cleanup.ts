@@ -26,7 +26,9 @@
  *
  * Every item ends a pass with a named outcome (`CleanupItemOutcome`). Done is
  * `DONE` or `ALREADY_GONE` (a 404: there is nothing left to delete) and
- * nothing else. A 401/403 is `AUTH_REFUSED`, never done. A session whose status
+ * nothing else. A 401/403 is `AUTH_REFUSED`, never done. An answer naming
+ * another workspace is `WORKSPACE_MISMATCH`, never done, whatever its status
+ * (#5854 finding 4), and it halts the pass as a refused key does. A session whose status
  * is still `running` is `SESSION_STILL_RUNNING`: Anthropic refuses its delete,
  * and the pass does not interrupt a run it cannot see. An agent is archived
  * only after its crash-window listing succeeded, so a later pass can still
@@ -41,6 +43,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 
 import { sessionMetadataFor } from './definition';
+import { isManagedAgentsWorkspaceMismatch } from './workspace-header';
 
 /** What happened to one session or agent in a pass. */
 export type CleanupItemOutcome =
@@ -52,6 +55,12 @@ export type CleanupItemOutcome =
     | 'SESSION_STILL_RUNNING'
     /** 401 or 403: the key no longer opens the workspace. Never done. */
     | 'AUTH_REFUSED'
+    /**
+     * The answer named a different workspace than the connection's (#5854
+     * finding 4): nothing it said is believed, a 404 or a 2xx included, so the
+     * object is never counted removed on it. Never done.
+     */
+    | 'WORKSPACE_MISMATCH'
     /** No answer: the network, a timeout, a refused connection. */
     | 'PROVIDER_UNREACHABLE'
     /** A 5xx. */
@@ -75,6 +84,7 @@ export function isDoneOutcome(outcome: CleanupItemOutcome): boolean {
  * left: the reason that most needs a person comes first.
  */
 export const CLEANUP_REASON_ORDER: readonly CleanupItemOutcome[] = [
+    'WORKSPACE_MISMATCH',
     'AUTH_REFUSED',
     'PROVIDER_UNREACHABLE',
     'PROVIDER_ERROR',
@@ -85,9 +95,14 @@ export const CLEANUP_REASON_ORDER: readonly CleanupItemOutcome[] = [
     'PROVIDER_REFUSED',
 ];
 
-/** The outcome of a thrown SDK error, read off its `status`, never its message. */
+/**
+ * The outcome of a thrown SDK error, read off its `status`, never its message.
+ * A response from another workspace is asked FIRST: it carries no status, and
+ * whatever status the answer had is not one to believe (#5854 finding 4).
+ */
 export function outcomeOfError(err: unknown, signal?: AbortSignal | null): CleanupItemOutcome {
     if (signal?.aborted) return 'DEADLINE';
+    if (isManagedAgentsWorkspaceMismatch(err)) return 'WORKSPACE_MISMATCH';
     const status = err && typeof err === 'object' && typeof (err as { status?: unknown }).status === 'number'
         ? (err as { status: number }).status
         : null;
@@ -229,7 +244,7 @@ export async function runCleanupPass(client: Anthropic, plan: CleanupPlan, optio
     // without being sent, rather than retried into the deadline.
     let halted: CleanupItemOutcome | null = null;
     const halting = (o: CleanupItemOutcome): CleanupItemOutcome => {
-        if (o === 'AUTH_REFUSED' || o === 'PROVIDER_UNREACHABLE' || o === 'DEADLINE') halted = o;
+        if (o === 'AUTH_REFUSED' || o === 'WORKSPACE_MISMATCH' || o === 'PROVIDER_UNREACHABLE' || o === 'DEADLINE') halted = o;
         return o;
     };
     const stopped = (): CleanupItemOutcome | null => halted ?? (signal?.aborted ? 'DEADLINE' : null);

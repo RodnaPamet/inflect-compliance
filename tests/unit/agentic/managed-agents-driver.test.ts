@@ -76,6 +76,8 @@ const mockState = {
     keepSessions: false,
     connections: 1,
     provisions: [] as Array<Record<string, unknown>>,
+    /** What `recordManagedAgentsWorkspaceHeader` counted, provisioning included. */
+    workspaceHeader: [] as Array<{ endpoint: string; answered: string; response: string }>,
 };
 
 function mockAborted(): boolean {
@@ -99,7 +101,13 @@ jest.mock('@/lib/agentic/kill-switch', () => ({
     ),
 }));
 
-jest.mock('@/lib/observability/integration-metrics', () => ({ recordAgentKillRefusal: jest.fn() }));
+jest.mock('@/lib/observability/integration-metrics', () => ({
+    recordAgentKillRefusal: jest.fn(),
+    // Every response the engine's client checks (#5854 finding 4), counted here.
+    recordManagedAgentsWorkspaceHeader: (attrs: { endpoint: string; answered: string; response: string }) => {
+        mockState.workspaceHeader.push(attrs);
+    },
+}));
 jest.mock('@/lib/observability/metrics', () => ({
     recordWorkflowContextIntegrityHalt: jest.fn(),
     recordAiDecisionLogged: jest.fn(),
@@ -418,6 +426,7 @@ function reset(run: ConformanceRun): void {
     mockState.keepSessions = false;
     mockState.connections = 1;
     mockState.provisions = [];
+    mockState.workspaceHeader = [];
 }
 
 const skillsMounted = (run: ConformanceRun) => (run.skills?.repository?.length ?? 0) + (run.skills?.tenant?.length ?? 0) > 0;
@@ -1121,3 +1130,114 @@ function lifecycle(): string[] {
         .filter((s) => s.rec.label === 'managed-agents-session')
         .map((s) => (s.rec.input as { lifecycle: string }).lifecycle);
 }
+
+// ─── #5854 finding 4: the workspace a response names ────────────────
+
+describe('a response from another workspace fails the call (#5854 finding 4, owner decision 2026-11-25)', () => {
+    const counted = (answered: string) => mockState.workspaceHeader.filter((c) => c.answered === answered);
+    const streamOpens = () => faux.requests.filter((r) => r.method === 'GET' && r.path.endsWith('/events/stream')).length;
+
+    it('positive control: the faux names the request\'s workspace, every response matches, and the run completes', async () => {
+        await drive({ tools: [LIST_RISKS], turns: [callRisks, { text: 'done' }] });
+        expect(mockState.settlement?.status).toBe('COMPLETED');
+        expect(mockState.workspaceHeader.length).toBeGreaterThan(5);
+        expect(counted('match')).toHaveLength(mockState.workspaceHeader.length);
+        expect(faux.answeredWorkspaces.every((a) => a.workspace === 'wrkspc_faux')).toBe(true);
+    });
+
+    it('a session create answered from another workspace fails the run by name; no tool runs, no message is sent, and the session it may have made is found and deleted', async () => {
+        const outcome = await drive(
+            { tools: [LIST_RISKS], turns: [callRisks, { text: 'done' }] },
+            { before: () => { faux.answerWorkspace = { answer: 'OTHER', method: 'POST', path: /^\/v1\/sessions$/ }; } },
+        );
+        expect(outcome.status).toBe('FAILED');
+        expect(mockState.settlement?.reason).toMatch(/^managed_agents_workspace_mismatch: a response from Anthropic named a different workspace/);
+        // The sentence names no workspace, neither ours nor theirs.
+        expect(mockState.settlement?.reason).not.toMatch(/wrkspc_/);
+        expect(mockState.funnelCalls).toEqual([]);
+        expect(mockState.ledger.filter((st) => st.kind === 'TOOL_CALL')).toEqual([]);
+        expect(faux.modelInputs).toEqual([]);
+        expect(faux.requests.filter((r) => r.method === 'POST' && r.path.endsWith('/events'))).toEqual([]);
+        // Not believed is not "not created": found by this run's metadata through
+        // answers from the right workspace, recorded and deleted.
+        expect(lifecycle()).toEqual(['SESSION_CREATED', 'SESSION_DELETED']);
+        const found = mockState.ledger.find((st) => (st.rec.input as { lifecycle?: string }).lifecycle === 'SESSION_CREATED');
+        expect((found?.rec.input as { foundUnrecorded?: string }).foundUnrecorded).toBe('AFTER_LOST_CREATE');
+        expectEverySessionDeleted();
+        // Sent once: the SDK does not retry a call middleware failed.
+        expect(faux.sessionCreates).toHaveLength(1);
+        expect(counted('mismatch').map((c) => c.endpoint)).toEqual(['sessions.create']);
+    });
+
+    it.each([
+        ['the first stream\'s response', { fromNth: 1 }, null],
+        ['the stream reopened after a drop', { fromNth: 2 }, { onType: 'agent.custom_tool_use', hide: false, times: 1 }],
+    ] as const)('a mismatch on %s fails the run by name; the events behind it are never read, nothing is run or answered, and the session is still deleted', async (_label, rule, drop) => {
+        const outcome = await drive(
+            { tools: [LIST_RISKS], turns: [callRisks, { text: 'done' }] },
+            {
+                before: () => {
+                    faux.answerWorkspace = { answer: 'OTHER', method: 'GET', path: /\/events\/stream$/, ...rule };
+                    if (drop) faux.drop = { ...drop };
+                },
+            },
+        );
+        expect(outcome.status).toBe('FAILED');
+        expect(mockState.settlement?.reason).toMatch(/^managed_agents_workspace_mismatch: /);
+        // The call the model asked for was never run, and nothing answered it:
+        // the session is not driven on answers that may be somebody else's.
+        expect(mockState.funnelCalls).toEqual([]);
+        expect(faux.toolResults).toEqual([]);
+        expect(faux.interrupts).toEqual([]);
+        // Not a drop: the stream is not reopened into the same answer.
+        expect(streamOpens()).toBe(rule.fromNth);
+        // Settled through answers from the right workspace: deleted, and recorded so.
+        expectEverySessionDeleted();
+        expect(lifecycle()).toEqual(['SESSION_CREATED', 'SESSION_DELETED']);
+        expect(counted('mismatch').map((c) => c.endpoint)).toEqual(['sessions.events.stream']);
+    });
+
+    it('a delete answered from another workspace is recorded failed, never deleted, and the run fails by name', async () => {
+        const outcome = await drive(
+            { tools: [LIST_RISKS], turns: [{ text: 'done' }] },
+            { before: () => { faux.answerWorkspace = { answer: 'OTHER', method: 'DELETE' }; } },
+        );
+        // The faux did delete it; the answer said so from the wrong workspace,
+        // so the engine does not believe it.
+        expect(faux.deletes).toHaveLength(1);
+        expect(lifecycle()).toEqual(['SESSION_CREATED', 'SESSION_DELETE_FAILED']);
+        const failed = mockState.ledger.find((st) => (st.rec.input as { lifecycle?: string }).lifecycle === 'SESSION_DELETE_FAILED');
+        expect(failed?.rec.input).toMatchObject({ providerStatus: null, providerErrorType: 'workspace_mismatch' });
+        expect(outcome.status).toBe('FAILED');
+        expect(mockState.settlement?.reason).toMatch(/^managed_agents_workspace_mismatch: /);
+    });
+
+    it('an agent read answered from another workspace refuses the run by name before any session exists', async () => {
+        const outcome = await drive(
+            { tools: [LIST_RISKS], turns: [{ text: 'done' }] },
+            { afterProvision: () => { faux.answerWorkspace = { answer: 'OTHER', method: 'GET', path: /^\/v1\/agents\// }; } },
+        );
+        expect(outcome.status).toBe('FAILED');
+        expect(mockState.settlement?.reason).toMatch(/^managed_agents_workspace_mismatch: /);
+        expect(faux.sessionCreates).toEqual([]);
+    });
+
+    it('a response naming no workspace passes, is counted by endpoint, and the run completes', async () => {
+        await drive(
+            { tools: [LIST_RISKS], turns: [callRisks, { text: 'done' }] },
+            { before: () => { faux.answerWorkspace = { answer: 'NONE' }; } },
+        );
+        expect(mockState.settlement?.status).toBe('COMPLETED');
+        expect(mockState.funnelCalls.map((c) => c.name)).toEqual(['list_risks']);
+        expectEverySessionDeleted();
+        expect(lifecycle()).toEqual(['SESSION_CREATED', 'SESSION_DELETED']);
+        expect(counted('mismatch')).toEqual([]);
+        expect(counted('missing')).toHaveLength(mockState.workspaceHeader.length);
+        expect(new Set(counted('missing').map((c) => c.endpoint))).toEqual(
+            new Set([
+                'environments.create', 'agents.create', 'sessions.list', 'agents.retrieve', 'environments.retrieve',
+                'sessions.create', 'sessions.events.stream', 'sessions.events.send', 'sessions.retrieve', 'sessions.delete',
+            ]),
+        );
+    });
+});

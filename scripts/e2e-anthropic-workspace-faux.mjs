@@ -46,6 +46,13 @@
  * idles `end_turn`. A delete is refused while the session is running, as
  * Anthropic refuses it. The stream does not replay; the event list does.
  *
+ * EVERY RESPONSE NAMES ITS WORKSPACE (#5854 finding 4): the `anthropic-workspace-id`
+ * response header names the workspace the request named, as Anthropic's do, on
+ * every `/v1/` answer (errors and the event stream's included). A spec can change
+ * that for one workspace: `POST /__faux/workspace-answer?workspace=…&answer=none`
+ * sends no header, `answer=other` names another workspace, `answer=echo` restores
+ * the default. The Test's own key-specific answers above are unchanged.
+ *
  * Any other method or path is a 405 / 404. Every request is COUNTED, by method,
  * path and workspace (never a header value): `GET /__faux/requests?workspace=…`
  * returns one workspace's, and `GET /__faux/sessions?workspace=…` the sessions it
@@ -62,6 +69,9 @@ const IN_FLIGHT_MS = 15;
 
 /** Every request, by method, path and workspace. */
 const seen = [];
+/** workspaceId → 'none' | 'other': what its responses name instead of itself (#5854 finding 4). */
+const workspaceAnswers = new Map();
+const SOMEONE_ELSE = 'wrkspc_e2eSomeoneElse';
 /** workspaceId → { agents: Map<id, version[]>, environments: [], sessions: Map<id, session> } */
 const workspaces = new Map();
 let idSeq = 0;
@@ -238,6 +248,14 @@ const server = createServer(async (req, res) => {
         const requests = seen.filter((r) => only === null || r.workspace === only).map(({ method, path }) => ({ method, path }));
         return reply(res, 200, { requests });
     }
+    if (url.pathname === '/__faux/workspace-answer' && req.method === 'POST') {
+        const target = url.searchParams.get('workspace') ?? '';
+        const answer = url.searchParams.get('answer');
+        if (!target || !['none', 'other', 'echo'].includes(answer ?? '')) return apiError(res, 400, 'invalid_request_error', 'faux: workspace and answer=none|other|echo');
+        if (answer === 'echo') workspaceAnswers.delete(target);
+        else workspaceAnswers.set(target, answer);
+        return reply(res, 200, { workspace: target, answer });
+    }
     if (url.pathname === '/__faux/sessions') {
         const ws = workspaces.get(url.searchParams.get('workspace') ?? '');
         const all = ws ? [...ws.sessions.values()] : [];
@@ -251,6 +269,12 @@ const server = createServer(async (req, res) => {
     const workspaceId = req.headers['anthropic-workspace-id'];
     seen.push({ method: req.method, path: url.pathname, workspace: typeof workspaceId === 'string' ? workspaceId : null });
     if (!url.pathname.startsWith('/v1/')) return apiError(res, 404, 'not_found_error', 'not found');
+    // The response names the workspace the request named (#5854 finding 4),
+    // merged by `writeHead` into every answer below, the stream's included.
+    if (typeof workspaceId === 'string' && workspaceId) {
+        const answer = workspaceAnswers.get(workspaceId);
+        if (answer !== 'none') res.setHeader('anthropic-workspace-id', answer === 'other' ? SOMEONE_ELSE : workspaceId);
+    }
     if (!req.headers['anthropic-version'] || !String(req.headers['anthropic-beta'] ?? '').includes(BETA) || !workspaceId) {
         return apiError(res, 400, 'invalid_request_error', 'missing header');
     }
@@ -269,7 +293,7 @@ const server = createServer(async (req, res) => {
             return reply(res, 200, { data, next_page: null }, { 'anthropic-workspace-id': String(workspaceId) });
         }
         if (key === OTHER_WORKSPACE) {
-            return reply(res, 200, { data: [], next_page: null }, { 'anthropic-workspace-id': 'wrkspc_e2eSomeoneElse' });
+            return reply(res, 200, { data: [], next_page: null }, { 'anthropic-workspace-id': SOMEONE_ELSE });
         }
         return apiError(res, 401, 'authentication_error', 'invalid x-api-key');
     }
