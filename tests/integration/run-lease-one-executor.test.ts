@@ -388,6 +388,9 @@ describeFn('one run executes in at most one place at a time (#5854)', () => {
         const row = await prisma.workflowRun.findUniqueOrThrow({ where: { id: started.runId }, select: { startedAt: true } });
         const startCall = jest.mocked(enqueue).mock.calls.find(([name]) => name === 'agent-run-execute');
         expect(startCall?.[2]).toEqual({ jobId: agentRunExecuteJobId(started.runId, row.startedAt) });
+        // …and the payload names the same segment, so a retry of it can tell
+        // itself from its first attempt (#5854 item 3).
+        expect(startCall?.[1]).toMatchObject({ segment: row.startedAt.getTime() });
 
         // Two resumes of one run are two segments with two ids, never one: a
         // reused id would be a job BullMQ drops and a run nobody executes.
@@ -400,6 +403,7 @@ describeFn('one run executes in at most one place at a time (#5854)', () => {
             const call = jest.mocked(enqueue).mock.calls.find(([name]) => name === 'agent-run-execute');
             const jobId = (call?.[2] as { jobId?: string } | undefined)?.jobId ?? '';
             expect(jobId).toMatch(new RegExp(`^agent-run-${started.runId}-\\d+$`));
+            expect(jobId).toBe(`agent-run-${started.runId}-${(call?.[1] as { segment?: number }).segment}`);
             resumeIds.push(jobId);
         }
         expect(new Set([agentRunExecuteJobId(started.runId, row.startedAt), ...resumeIds]).size).toBe(3);

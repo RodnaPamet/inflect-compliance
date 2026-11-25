@@ -268,6 +268,38 @@ export function isReasoningEngine(driver: AgentDriver): boolean {
 }
 
 /**
+ * HOW AN ENGINE RECOVERS A SEGMENT WHOSE ATTEMPT WAS INTERRUPTED (#5854 item 3,
+ * owner decision 2026-11-24): a BullMQ retry, a stalled-job redelivery or a
+ * lease takeover of the same segment.
+ *
+ *   • `LEDGER` — the static engine resumes after the ledger's last step: each
+ *     step is one declared call, so a step already made is never made again.
+ *   • `CHECKPOINT` — the engine CONTINUES THE CONVERSATION from the checkpoint
+ *     it kept (`WorkflowRunCheckpoint`): the Tool Runner.
+ *   • `PAUSE_ON_RETRY` — the engine cannot continue a conversation Inflect
+ *     keeps, so a retried segment that already made a call PAUSES for a person
+ *     rather than start again from its opening message: Flue (its runtime
+ *     resumes only from its own durable store, which Inflect does not
+ *     configure) and Managed Agents (its conversation lives in a session at
+ *     Anthropic, and a run never re-attaches to one).
+ *
+ * A `Record<AgentDriver, …>`, so a new engine fails `tsc` until somebody
+ * decides how it recovers.
+ */
+export type SegmentRecovery = 'LEDGER' | 'CHECKPOINT' | 'PAUSE_ON_RETRY';
+
+const SEGMENT_RECOVERY: Readonly<Record<AgentDriver, SegmentRecovery>> = {
+    static: 'LEDGER',
+    flue: 'PAUSE_ON_RETRY',
+    'tool-runner': 'CHECKPOINT',
+    'managed-agents': 'PAUSE_ON_RETRY',
+};
+
+export function segmentRecoveryOf(driver: AgentDriver): SegmentRecovery {
+    return SEGMENT_RECOVERY[driver];
+}
+
+/**
  * THE MODE A RUN RECORDS FOR THE DRIVER THAT WALKED IT (#4270): the value
  * `WorkflowRun.driver` stores and the run metrics' `driver` label carries.
  *

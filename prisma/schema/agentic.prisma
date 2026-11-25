@@ -661,6 +661,9 @@ model WorkflowRun {
   /// The tool calls this run deferred to a person (Step 2f, #5530): one row per
   /// deferral, the proposal it waits for and the transcript it resumes from.
   deferrals          WorkflowRunDeferral[]
+  /// Where this run continues from when a retry or a lease takeover picks it
+  /// up (#5854 item 3): at most one row, by `@@unique([tenantId, runId])`.
+  checkpoints        WorkflowRunCheckpoint[]
 
   @@index([tenantId, status, startedAt])
   @@index([tenantId, agentId])
@@ -3272,6 +3275,76 @@ model WorkflowRunDeferral {
 
   @@unique([tenantId, proposalId])
   @@index([tenantId, runId])
+}
+
+/// WHERE A RUN CONTINUES FROM WHEN IT IS RETRIED (#5854 item 3; owner
+/// decision 2026-11-24, option 2 of the run-claim note): one row per run.
+///
+/// A Tool Runner run CONTINUES ITS CONVERSATION when its segment is retried or
+/// a lease takeover picks it up. It does not start again from the opening
+/// message, and a tool call the failed attempt made is not made again. The
+/// engine checkpoints the conversation at every reply that asks for tools, in
+/// the transaction that records that reply's MODEL_CALL step, and each call's
+/// result as it settles. The next attempt opens the checkpoint through the
+/// deferral resume's path (seal, envelope, tools re-resolved and only
+/// narrowed).
+///
+/// Its own table, not a column on `WorkflowRun` or on `WorkflowRunDeferral`:
+/// the run row is read whole (`getRunRow`) and returned whole by every
+/// `updateRun`, so a transcript there would be decrypted on every turn's
+/// accounting write; and a deferral row IS a proposal the run waits on
+/// (`proposalId` unique, one-way status), which a checkpoint is not.
+///
+/// The SEGMENT ANCHOR (`segmentKey`, `segmentFromSeq`) is engine-neutral: the
+/// first attempt of a queued reasoning segment records which segment it is
+/// and where its ledger began, so a retry of the same segment on an engine
+/// that cannot continue a conversation (Flue, Managed Agents) can tell that it
+/// is a retry and PAUSE for a person rather than restart.
+///
+/// Written ONLY by `src/lib/agentic/drivers/checkpoint-store.ts`, and fenced
+/// on the run lease. CLEARED when the run parks or is held for a person, and
+/// SETTLED (cleared, `settledAt` stamped, frozen by trigger) when it ends; the
+/// hashes are kept. `app_user` holds no DELETE: the row goes with its run.
+model WorkflowRunCheckpoint {
+  id                String    @id @default(cuid())
+  tenantId          String
+  runId             String
+  /// The next request less its last turn's tool results: `system`, the tool
+  /// definitions, the model and every message through the last assistant
+  /// reply that asked for tools. Exact API bytes, never sanitised or
+  /// re-serialised (a thinking block's signature binds them). Encrypted
+  /// (Epic B). NULL when there is nothing to continue from.
+  transcriptJson    String?
+  /// Hex SHA-256 of the plaintext transcript. A digest, so not encrypted.
+  transcriptHash    String?
+  /// That reply's tool results so far, in the shape the SDK sends them. Encrypted (Epic B).
+  resultsJson       String?
+  /// Hex SHA-256 of the plaintext results.
+  resultsHash       String?
+  /// The `tool_use` id of the call executing right now, written before the
+  /// call starts and cleared when its result is kept. A call named here when
+  /// the worker died is answered `TOOL_CALL_OUTCOME_UNKNOWN`, never re-run.
+  inFlightToolUseId String?
+  /// The seq of the MODEL_CALL step whose reply the transcript ends with.
+  atSeq             Int?
+  /// The run's unattended milliseconds when the transcript was written.
+  elapsedMs         Int?
+  /// The run's tokens when the transcript was written.
+  costTokens        Int?
+  /// The queued segment the run's attempts execute: the epoch milliseconds of
+  /// the transition that authorised it, as its job id names it.
+  segmentKey        String?
+  /// Where that segment's first attempt began in the ledger.
+  segmentFromSeq    Int?
+  /// When the run ended. A settled row holds no content and never changes.
+  settledAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  run    WorkflowRun @relation(fields: [runId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([tenantId, runId])
 }
 
 model DiscoveredAgentAttribution {

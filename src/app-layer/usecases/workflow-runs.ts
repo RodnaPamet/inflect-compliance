@@ -121,6 +121,13 @@ import {
 } from '@/lib/observability/metrics';
 import { getRunRow } from '@/lib/agentic/drivers/run-store';
 import {
+    anchorSegment,
+    closeCheckpointForRun,
+    pauseRetriedSegment,
+    segmentMadeCalls,
+    settleCheckpointInTx,
+} from '@/lib/agentic/drivers/checkpoint-store';
+import {
     readWaitingDeferral,
     readWaitingDeferralsForRuns,
     settleOpenDeferrals,
@@ -132,7 +139,7 @@ import { captureReviewAttributionAfterRun } from './agent-harness-attribution';
 import { captureAuditNarrativeAfterRun } from './audit-workpaper-narrative';
 import { selectRunDriver, requestedDriver } from '@/lib/agentic/drivers';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers';
-import { isReasoningEngine, recordedModeOf, type AgentDriver } from '@/lib/agentic/agent-driver';
+import { isReasoningEngine, recordedModeOf, segmentRecoveryOf, type AgentDriver } from '@/lib/agentic/agent-driver';
 import { readRecordedRunDriver, readRecordedRunDrivers } from '@/lib/agentic/agent-driver-stored-mode';
 import {
     estimateTokens,
@@ -692,7 +699,9 @@ export async function startWorkflowRun(
         // ONE JOB PER SEGMENT (#5854): named by the run and its start, so a
         // second enqueue of this segment is a duplicate BullMQ drops. See
         // `agentRunExecuteJobId`.
-        await enqueue('agent-run-execute', { tenantId: ctx.tenantId, runId: run.id }, {
+        // `segment` names it in the payload too (#5854 item 3), so a retry of
+        // it can tell itself from its first attempt.
+        await enqueue('agent-run-execute', { tenantId: ctx.tenantId, runId: run.id, segment: run.startedAt.getTime() }, {
             jobId: agentRunExecuteJobId(run.id, run.startedAt),
         });
         // RUNNING is what `createSealedRun` wrote (the column's default), and
@@ -1026,6 +1035,8 @@ export async function resumeWorkflowRun(
             // retry keeps this base and a wedged segment cannot buy a fresh
             // hour per attempt.
             clockBase: Date.now(),
+            // The segment, as the job id names it (#5854 item 3).
+            segment: segmentAt.getTime(),
         }, {
             // ONE JOB PER SEGMENT (#5854), named by the claim above.
             jobId: agentRunExecuteJobId(runId, segmentAt),
@@ -1122,6 +1133,9 @@ export async function abortWorkflowRun(ctx: RequestContext, runId: string): Prom
             // NOT_RESUMED and its transcript is cleared, in this transaction.
             // The proposal stays in the queue as an ordinary proposal.
             await settleOpenDeferralsInTx(db, ctx, runId);
+            // …and its continuation checkpoint settles (#5854 item 3): an
+            // aborted run is never continued, and its conversation is cleared.
+            await settleCheckpointInTx(db, ctx.tenantId, runId);
         });
     } catch (err) {
         // No row matched: the run settled after the read above. Say which way,
@@ -1392,6 +1406,9 @@ async function executeFrom(
         // suspension found at the resume, a refused transcript, any settlement
         // that is not a park) settles it and clears its transcript (Step 2f).
         await settleDeferralsAfterRun(runCtx, runId, outcome.status);
+        // Its continuation checkpoint is kept, cleared or settled by the status
+        // the row now holds (#5854 item 3).
+        await closeCheckpointAfterRun(runCtx, runId);
         // A FINISHED run's unreviewed model calls are stamped "no human
         // review" here (#4896), at the one seam that sees every settlement.
         await settleRunDecisionLog(runCtx, runId, outcome.status);
@@ -1422,6 +1439,10 @@ async function executeFrom(
         // rather than stamped unreviewed (#5366).
         const settled = await yieldToOperatorAbort(runCtx, runId, { status: 'FAILED', stepFailures: 0 });
         await settleDeferralsAfterRun(runCtx, runId, 'FAILED');
+        // A throw leaves the run RUNNING for BullMQ's retry, which CONTINUES
+        // from the checkpoint (#5854 item 3): it is kept unless the row says
+        // the run ended (an operator's abort).
+        await closeCheckpointAfterRun(runCtx, runId);
         recordAgentRunSettled({ driver: driverLabel, outcome: settled.status === 'ABORTED' ? 'aborted' : 'failed' });
         // The caller fails the run; nobody reviews what it did before the throw.
         await settleRunDecisionLog(runCtx, runId, 'FAILED');
@@ -1454,6 +1475,21 @@ async function settleDeferralsAfterRun(ctx: RequestContext, runId: string, statu
     if (NOT_SETTLED_RUN_STATUSES.has(status)) return;
     await settleOpenDeferrals(ctx, runId).catch(() => {
         logger.warn('workflow run: open deferral not settled after the run ended', {
+            component: 'workflow-runs',
+            tenantId: ctx.tenantId,
+        });
+    });
+}
+
+/**
+ * Keep, clear or settle the run's continuation checkpoint by the status its row
+ * now holds (#5854 item 3; `closeCheckpointForRun`). NEVER THROWS, for the
+ * reason `settleDeferralsAfterRun` gives: a row left open is closed by the next
+ * touch, and the cascade removes it with the run.
+ */
+async function closeCheckpointAfterRun(ctx: RequestContext, runId: string): Promise<void> {
+    await closeCheckpointForRun(ctx, runId).catch(() => {
+        logger.warn('workflow run: continuation checkpoint not closed after the run ended', {
             component: 'workflow-runs',
             tenantId: ctx.tenantId,
         });
@@ -1935,6 +1971,13 @@ export async function executeQueuedWorkflowRun(
     runId: string,
     opts: {
         clockBase?: number;
+        /**
+         * The segment this job executes: the epoch milliseconds of the
+         * transition that authorised it, as its job id names it (#5854 item 3).
+         * Absent on a job enqueued by a build that sent none: then a retry
+         * cannot be told from a first attempt, and nothing pauses.
+         */
+        segment?: number;
         /** The lease's TTL and renewal interval. Tests shorten them; the job never passes them. */
         leaseTiming?: RunLeaseTiming;
     } = {},
@@ -1988,6 +2031,7 @@ export async function executeQueuedWorkflowRun(
                 runId,
                 'workflow_definition_missing: the workflow this run was started from no longer exists.',
             );
+            await closeCheckpointAfterRun({ tenantId, userId: row.startedByUserId ?? 'system', runLeaseToken: claim.token } as RequestContext, runId);
             return { skipped: 'NO_DEFINITION' };
         }
 
@@ -1999,6 +2043,7 @@ export async function executeQueuedWorkflowRun(
                     'is no longer ACTIVE, so the run does not resume on its behalf.',
             );
             await settleDeferralsAfterRun({ tenantId, userId: row.startedByUserId ?? 'system', runLeaseToken: claim.token } as RequestContext, runId, 'FAILED');
+            await closeCheckpointAfterRun({ tenantId, userId: row.startedByUserId ?? 'system', runLeaseToken: claim.token } as RequestContext, runId);
             return { skipped: 'AGENT_NOT_ACTIVE' };
         }
 
@@ -2011,6 +2056,7 @@ export async function executeQueuedWorkflowRun(
                     'no longer holds an active membership in this workspace.',
             );
             await settleDeferralsAfterRun({ tenantId, userId: row.startedByUserId ?? 'system', runLeaseToken: claim.token } as RequestContext, runId, 'FAILED');
+            await closeCheckpointAfterRun({ tenantId, userId: row.startedByUserId ?? 'system', runLeaseToken: claim.token } as RequestContext, runId);
             return { skipped: 'PRINCIPAL_REVOKED' };
         }
         // THE LEASE RIDES ON THE CONTEXT (#5854): every write the engine makes
@@ -2028,6 +2074,7 @@ export async function executeQueuedWorkflowRun(
                         'read as it was pinned, so the run does not continue.',
                 );
                 await settleDeferralsAfterRun(ctx, runId, 'FAILED');
+                await closeCheckpointAfterRun(ctx, runId);
                 return { skipped: 'NO_DEFINITION' };
             }
         }
@@ -2064,16 +2111,61 @@ export async function executeQueuedWorkflowRun(
             });
         }
 
+        // The ledger's answer OR the counter's, whichever is further on — see
+        // `resumePositionOf` for why neither alone is safe. Read AFTER the
+        // claim, so a predecessor's last step is in it.
+        const fromSeq = resumePositionOf(ledger._max.seq ?? -1, row.stepCount);
+
+        // ═══ A RETRY ON AN ENGINE THAT CANNOT CONTINUE ITS CONVERSATION ═══
+        // (#5854 item 3, owner decision 2026-11-24)
+        //
+        // The Tool Runner continues a retried segment from its checkpoint, and
+        // the static engine from its ledger. Flue and Managed Agents cannot
+        // (see `segmentRecoveryOf`), and before this a retry started them again
+        // from the opening message, so a call the dead attempt made was made
+        // again. Now the first attempt of a segment anchors it (`segment` names
+        // it, as its job id does), and a LATER attempt of the same segment that
+        // finds a call in its own part of the ledger PAUSES the run for a
+        // person, at a `retry-paused` checkpoint, instead of restarting. A
+        // retry that finds no call restarts, as nothing was done twice.
+        const segmentDriver = selectRunDriver(def, permitted).driver;
+        if (
+            segmentRecoveryOf(segmentDriver) === 'PAUSE_ON_RETRY' &&
+            typeof opts.segment === 'number' &&
+            Number.isSafeInteger(opts.segment) &&
+            opts.segment >= 0
+        ) {
+            const anchor = await anchorSegment(ctx, runId, String(opts.segment), fromSeq);
+            if (anchor === 'LEASE_LOST') return { skipped: 'LEASE_LOST' };
+            if (anchor.retry && (await segmentMadeCalls(ctx, runId, anchor.segmentFromSeq))) {
+                const paused = await pauseRetriedSegment(ctx, runId, {
+                    checkpointSeq: fromSeq,
+                    segmentFromSeq: anchor.segmentFromSeq,
+                    engine: recordedModeOf(segmentDriver),
+                });
+                logger.warn('workflow run: a retried segment had already made calls; paused for a person', {
+                    component: 'workflow-runs',
+                    tenantId: ctx.tenantId,
+                    runId,
+                    engine: segmentDriver,
+                    outcome: paused,
+                });
+                if (paused === 'LEASE_LOST') return { skipped: 'LEASE_LOST' };
+                if (paused === 'NOT_RUNNING') {
+                    const now = await readRunSettlementState(ctx, runId);
+                    return { skipped: `NOT_RUNNING:${now?.status ?? 'UNKNOWN'}` };
+                }
+                return { status: 'PAUSED', stepFailures: 0 };
+            }
+        }
+
         let driven: RunDriverOutcome;
         try {
             driven = await executeFrom(
                 ctx,
                 runId,
                 def,
-                // The ledger's answer OR the counter's, whichever is further on —
-                // see `resumePositionOf` for why neither alone is safe. Read AFTER
-                // the claim, so a predecessor's last step is in it.
-                resumePositionOf(ledger._max.seq ?? -1, row.stepCount),
+                fromSeq,
                 clock.baseMs,
                 permitted,
             );

@@ -210,7 +210,7 @@ describeFn('the run input is scanned before the run exists, whichever engine wou
                 select: { driver: true, agentId: true },
             });
             expect(row).toEqual({ driver: mode, agentId: f.agentId });
-            expect(enqueue).toHaveBeenCalledWith('agent-run-execute', { tenantId: f.tenantId, runId: res.runId }, { jobId: expect.stringMatching(/^agent-run-/) });
+            expect(enqueue).toHaveBeenCalledWith('agent-run-execute', { tenantId: f.tenantId, runId: res.runId, segment: expect.any(Number) }, { jobId: expect.stringMatching(/^agent-run-/) });
             await prisma.workflowStep.deleteMany({ where: { runId: res.runId } });
             await prisma.workflowRun.delete({ where: { id: res.runId } });
         }, 60_000);

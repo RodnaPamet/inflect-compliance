@@ -232,7 +232,7 @@ describe('the workflow mounts exactly its declared skills, through the real moun
                 return { name, version: s.metadata.version, contentHash: skillContentHash(s.instructions) };
             }),
         );
-        expect(jest.mocked(enqueue)).toHaveBeenCalledWith('agent-run-execute', { tenantId: T1, runId }, { jobId: expect.stringMatching(/^agent-run-/) });
+        expect(jest.mocked(enqueue)).toHaveBeenCalledWith('agent-run-execute', { tenantId: T1, runId, segment: expect.any(Number) }, { jobId: expect.stringMatching(/^agent-run-/) });
     });
 
     it('a static run of the same workflow mounts nothing, and records that as an empty list', async () => {

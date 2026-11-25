@@ -826,6 +826,16 @@ export interface AgentRunExecutePayload {
      * finite time between the run's start and now, falling back to `startedAt`.
      */
     clockBase?: number;
+    /**
+     * WHICH SEGMENT this job executes (#5854 item 3): the epoch milliseconds
+     * of the transition that authorised it, the same instant its job id names
+     * (`agentRunExecuteJobId`). A BullMQ retry re-delivers the same payload, so
+     * every attempt of one segment carries one value, and the first attempt
+     * anchors it: a later attempt of the same segment knows it is a retry.
+     * Compared for equality only, never as a clock. Absent on a job a build
+     * that sent none enqueued: then no attempt is treated as a retry.
+     */
+    segment?: number;
 }
 
 /**

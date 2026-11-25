@@ -269,7 +269,7 @@ function runnableToolFor(offered: OfferedTool, binding: ToolRunBinding, queue: S
         input_schema: schema as { type: 'object'; [key: string]: unknown },
         parse: (content: unknown) => asToolArgs(content),
         run: (args: Record<string, unknown>, context?: BetaToolRunContext) =>
-            queue.run(() => ledgeredCall(offered, binding, args, context?.toolUse.id ?? `${name}:unidentified`)),
+            queue.run(() => ledgeredCall(offered, binding, args, context?.toolUse.id ?? `${name}:unidentified`), context?.toolUse.id),
     };
 }
 
@@ -397,6 +397,35 @@ export const TOOL_WITHDRAWN_DURING_WAIT_MESSAGE =
     'This tool was withdrawn from this agent while the run waited for a person, so the call was refused.';
 
 /**
+ * A tool the checkpoint names that the run no longer holds when it CONTINUES
+ * after an interrupted attempt (#5854 item 3): the sibling of
+ * `TOOL_WITHDRAWN_DURING_WAIT`, for a gap nobody waited through.
+ */
+export const TOOL_WITHDRAWN_BEFORE_CONTINUATION = 'TOOL_WITHDRAWN_BEFORE_CONTINUATION';
+
+/** What the model reads when it calls a tool withdrawn while the run was interrupted. */
+export const TOOL_WITHDRAWN_BEFORE_CONTINUATION_MESSAGE =
+    'This tool was withdrawn from this agent while the run was interrupted, so the call was refused.';
+
+/** Why a stored tool the new offer no longer carries refuses, and what the model reads. */
+export interface WithdrawnToolRefusal {
+    readonly code: string;
+    readonly message: string;
+}
+
+/** The refusal of a resumed segment (Step 2f), the default. */
+export const WITHDRAWN_DURING_WAIT: WithdrawnToolRefusal = {
+    code: TOOL_WITHDRAWN_DURING_WAIT,
+    message: TOOL_WITHDRAWN_DURING_WAIT_MESSAGE,
+};
+
+/** The refusal of a continued segment (#5854 item 3). */
+export const WITHDRAWN_BEFORE_CONTINUATION: WithdrawnToolRefusal = {
+    code: TOOL_WITHDRAWN_BEFORE_CONTINUATION,
+    message: TOOL_WITHDRAWN_BEFORE_CONTINUATION_MESSAGE,
+};
+
+/**
  * THE TOOLS OF A RESUMED SEGMENT (Step 2f, "4. Who decides", step 4).
  *
  * The request sends the transcript's tool DEFINITIONS as stored, so the prefix a
@@ -412,6 +441,12 @@ export function resumedToolsFor(
     offered: readonly BetaRunnableTool[],
     binding: ToolRunBinding,
     queue: SerialQueue,
+    /**
+     * How a withdrawn tool refuses: the deferral's wait by default, or a
+     * continued segment's interruption (#5854 item 3). The same rule either
+     * way: authority only narrows.
+     */
+    refusal: WithdrawnToolRefusal = WITHDRAWN_DURING_WAIT,
 ): BetaRunnableTool[] {
     const byName = new Map(offered.map((t) => [t.name, t]));
     return stored.map((definition) => {
@@ -426,7 +461,7 @@ export function resumedToolsFor(
         return {
             ...definition,
             parse: (content: unknown) => asToolArgs(content),
-            run: () =>
+            run: (_args: unknown, context?: BetaToolRunContext) =>
                 queue.run(async () => {
                     const halt = binding.budget.charge('STEPS', 1);
                     if (halt) {
@@ -438,21 +473,61 @@ export function resumedToolsFor(
                         toolCalled: label,
                         status: 'FAILED',
                         label,
-                        output: { refused: TOOL_WITHDRAWN_DURING_WAIT },
+                        output: { refused: refusal.code },
                         ...subagentOf(binding),
                     });
-                    throw new Error(TOOL_WITHDRAWN_DURING_WAIT_MESSAGE);
-                }),
+                    throw new Error(refusal.message);
+                }, context?.toolUse.id),
         } as unknown as BetaRunnableTool;
     });
+}
+
+/**
+ * What a queue tells the run's checkpoint about each call it runs (#5854 item
+ * 3), keyed by the model's `tool_use` id. Only the parent's queue of a run
+ * executed under a lease carries them; a sub-agent's queue and every other
+ * engine's carry none.
+ */
+export interface CallCheckpointHooks {
+    /**
+     * Name the call in flight BEFORE it starts. A call whose start could not be
+     * recorded is not made: the hook throws, and the model reads the refusal.
+     */
+    start(toolUseId: string): Promise<void>;
+    /** Keep the call's result once it settled. Never throws. */
+    settle(toolUseId: string, outcome: { readonly returned: unknown } | { readonly threw: unknown }): Promise<void>;
 }
 
 /** Runs one task at a time, in the order they were queued. */
 export class SerialQueue {
     private tail: Promise<unknown> = Promise.resolve();
 
-    run<T>(task: () => Promise<T>): Promise<T> {
-        const next = this.tail.then(task, task);
+    constructor(private readonly hooks?: CallCheckpointHooks) {}
+
+    /**
+     * Queue one task. A task that is a model's tool call names its `tool_use`
+     * id, so a queue that keeps a checkpoint records the call in flight before
+     * it starts and its result once it settled, inside the queue: one call at a
+     * time, in the order the calls were made.
+     */
+    run<T>(task: () => Promise<T>, toolUseId?: string): Promise<T> {
+        const hooks = this.hooks;
+        const work =
+            hooks && toolUseId !== undefined
+                ? async (): Promise<T> => {
+                      await hooks.start(toolUseId);
+                      let result: T;
+                      try {
+                          result = await task();
+                      } catch (err) {
+                          await hooks.settle(toolUseId, { threw: err });
+                          throw err;
+                      }
+                      await hooks.settle(toolUseId, { returned: result });
+                      return result;
+                  }
+                : task;
+        const next = this.tail.then(work, work);
         // The queue continues past a failed task; the failure goes to its caller.
         this.tail = next.catch(() => undefined);
         return next;

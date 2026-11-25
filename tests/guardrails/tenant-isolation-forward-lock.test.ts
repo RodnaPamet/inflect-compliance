@@ -153,6 +153,10 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     PeerInvitation: "tests/integration/peer-invitations.test.ts",
     AgentSpendingAuthority: "tests/integration/agent-spending-authority.test.ts",
     WorkflowRunDeferral: "tests/integration/workflow-run-deferral.test.ts",
+    // #5854 item 3: through the real store with RLS live, B reads none of A's
+    // checkpoint and cannot write one for A's run; each tenant's continued
+    // conversation carries only its own content.
+    WorkflowRunCheckpoint: "tests/integration/tool-runner-continues-its-conversation.test.ts",
 };
 
 /**

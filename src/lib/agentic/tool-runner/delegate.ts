@@ -421,6 +421,6 @@ export function delegateTool(dc: DelegationContext, queue: SerialQueue): BetaRun
         },
         parse: (content: unknown) => asToolArgs(content),
         run: (args: Record<string, unknown>, context?: BetaToolRunContext) =>
-            queue.run(() => delegate(dc, args, context?.toolUse.id ?? `${DELEGATE_TOOL_NAME}:unidentified`)),
+            queue.run(() => delegate(dc, args, context?.toolUse.id ?? `${DELEGATE_TOOL_NAME}:unidentified`), context?.toolUse.id),
     };
 }

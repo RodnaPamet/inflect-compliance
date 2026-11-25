@@ -367,6 +367,11 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // readable, only the code worse.
     'src/app-layer/usecases/agent-circuit-breaker.ts — identifier bound elsewhere',
     'src/lib/agentic/circuit-breaker-store.ts — identifier bound elsewhere',
+    // #5854 item 3: the retry pause's audit row names the run (`entityId`) and
+    // where the paused segment began, ids and integers. The checkpoint's
+    // transcript and results are never in scope at a sink: the store holds
+    // them as opaque strings and logs nothing about them.
+    'src/lib/agentic/drivers/checkpoint-store.ts — identifier bound elsewhere',
     // RELOCATION BROUGHT IT INTO SCOPE, rather than new logging (#3323). The
     // grant endpoint moved from `src/app/api/t/<slug>/admin/mcp/entra-grant` to
     // `src/app/api/mcp/entra-grant` because the first path's EDGE contract
@@ -913,7 +918,17 @@ const SINK_FLOOR = 30;
 // `run-lease.ts`'s two renewal warns (tenant id, run id, `err.message`) and
 // two in `workflow-runs.ts`'s lease-release warn (tenant id, run id). No model
 // text, transcript or tool argument is in scope at any of them.
-const MEASURED_HOLES = 242;
+// 242 -> 249 on 2026-11-24 (#5854 item 3, a retried run continues its
+// conversation). Seven holes, all `identifier bound elsewhere` over ids and
+// counts: the run id in the three new Tool Runner log lines (a result not kept,
+// a compacted list not checkpointed, a continuation's call counts), the run id
+// and the paused segment's start in the retry pause's audit row, and the run
+// id, engine and outcome in `workflow-runs.ts`'s retry-pause warn (one shared
+// with its checkpoint-close warn's tenant id). The pause's `reason` was made a
+// literal so the rule reads it. No transcript, result or tool argument is in
+// scope at any of them: the checkpoint's content is only ever an opaque string
+// passed to the store.
+const MEASURED_HOLES = 249;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -978,7 +993,12 @@ const MEASURED_HOLES = 242;
 // info line, the surface refusal's AUTHZ_DENIED row, the composer refusal's and
 // the exact-value parameter refusal's. Raising the denominator by more than the
 // numerator TIGHTENS the ratio: (225+6)/130 = 1.777.
-const MEASURED_SINKS = 130;
+//
+// 130 -> 136: #5854 item 3's six sinks — three Tool Runner log lines, the
+// retry pause's audit row, and two `workflow-runs.ts` warns (the checkpoint
+// close, the retry pause). Raising the denominator TIGHTENS the ratio:
+// (249+6)/136 = 1.875 against (242+6)/130 = 1.908.
+const MEASURED_SINKS = 136;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;
