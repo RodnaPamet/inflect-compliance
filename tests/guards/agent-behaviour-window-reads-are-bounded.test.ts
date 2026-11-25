@@ -333,6 +333,8 @@ describe('AgentBehaviourWindow — the reads that make unbounded growth safe', (
             'src/lib/agentic/circuit-breaker-store.ts',
             // Lists the model as an activity-feed entity to redact; no call.
             'src/lib/mcp/tools/dashboard-redaction.ts',
+            // Classifies `toolNames` for the audit diff (#5950); no call.
+            'src/lib/security/person-columns.ts',
         ]);
         expect(ALL_SITES.length).toBe(8);
     });
