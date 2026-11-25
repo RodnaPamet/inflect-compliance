@@ -658,6 +658,8 @@ export const AGENT_ADMIN_API_STATIC_SEGMENTS: readonly string[] = [
     'owner-orphan-pass',
     'parameter-sets',
     'peers',
+    'probe-runs',
+    'prober-keys',
     'reports',
     'review-quality',
     'skills',
@@ -683,6 +685,8 @@ export const AGENT_ADMIN_API_STATIC_SEGMENTS: readonly string[] = [
  *     scanner's ingest key, which AUDITOR does not hold
  *   - `/api/t/[slug]/admin/agents/agent-rule-scans` the agent-surface rules
  *     scan list, the same twin; its POST is the scanner's third ingest key
+ *   - `/api/t/[slug]/admin/agents/probe-runs`     the probe-run list (no
+ *     excerpt, no endpoint); its POST is a prober's ingest key
  *   - `/api/t/[slug]/admin/agents/reports`        the governance pack
  *   - `/api/t/[slug]/admin/mcp/quarantine`        the quarantine triage read
  *     (#4898). Its route takes the view key and its usecase refuses an AUDITOR
@@ -701,6 +705,7 @@ export const AUDITOR_ADMIN_READ_PATHS: readonly string[] = [
     '/api/t/[slug]/admin/agents/harness-estates',
     '/api/t/[slug]/admin/agents/integration-scans',
     '/api/t/[slug]/admin/agents/agent-rule-scans',
+    '/api/t/[slug]/admin/agents/probe-runs',
     '/api/t/[slug]/admin/agents/reports',
     // The quarantine triage read (#4898). Admitted at the edge so the usecase
     // can apply the Owner's switch: an AUDITOR reads it only while an owner has

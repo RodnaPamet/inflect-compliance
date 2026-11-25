@@ -15,6 +15,8 @@
  *                 agent is unrevoked" holds without reference to a clock
  *   scanner keys  `AgentHarnessScannerKey.revokedAt` / `revokedByUserId`, through
  *                 that table's one write seam
+ *   prober keys   `AgentProberKey.revokedAt` / `revokedByUserId`, through that
+ *                 table's one write seam (step 8a)
  *   A2A inbound   `PeerAgentInboundCredential.revokedAt` / `revokedByUserId` on
  *                 every live credential naming the agent as receiver (#3679),
  *                 through that table's one write seam
@@ -75,6 +77,7 @@ import { AgentPolicyCardRepository } from '../repositories/AgentPolicyCardReposi
 import { RegisteredAgentToolRepository } from '../repositories/RegisteredAgentToolRepository';
 import type { RequestContext } from '../types';
 import { revokeScannerKeysForAgentInTx } from './agent-harness-scanner-keys';
+import { revokeProberKeysForAgentInTx } from './agent-prober-keys';
 import { revokePeerInboundCredentialsForAgentInTx } from './a2a-peer-credentials';
 import { withdrawRetiredAgentEvidenceInTx } from './agentic-evidence-emission';
 import { settleRetiredAgentDeferralsInTx } from './workflow-run-deferrals';
@@ -125,6 +128,9 @@ export async function applyRetirementCascadeInTx(
 
     // ── Harness scanner signing keys ─────────────────────────────────
     const scanner = await revokeScannerKeysForAgentInTx(db, ctx, agentId, now);
+
+    // ── Prober signing keys ──────────────────────────────────────────
+    const prober = await revokeProberKeysForAgentInTx(db, ctx, agentId, now);
 
     // ── Inbound A2A credentials ──────────────────────────────────────
     const peerCredentials = await revokePeerInboundCredentialsForAgentInTx(
@@ -194,6 +200,10 @@ export async function applyRetirementCascadeInTx(
             count: scanner.count,
             ...boundedIds(scanner.ids, scanner.count, RETIREMENT_KEY_ID_CAP),
         },
+        proberKeys: {
+            count: prober.count,
+            ...boundedIds(prober.ids, prober.count, RETIREMENT_KEY_ID_CAP),
+        },
         peerInboundCredentials: {
             count: peerCredentials.count,
             ...boundedIds(peerCredentials.ids, peerCredentials.count, RETIREMENT_KEY_ID_CAP),
@@ -260,6 +270,7 @@ export async function writeRetirementAuditRows(
             summary:
                 `Retired registered agent ${agent.id}: ${cascade.apiKeysRevoked} API key(s) and ` +
                 `${cascade.scannerKeysRevoked} scanner key(s) and ` +
+                `${cascade.proberKeysRevoked} prober key(s) and ` +
                 `${cascade.peerInboundCredentialsRevoked} inbound A2A credential(s) revoked, ` +
                 `${cascade.toolGrantsDropped} tool grant(s) dropped, ` +
                 `${cascade.proposalsExpired} pending proposal(s) expired, ` +
@@ -269,6 +280,7 @@ export async function writeRetirementAuditRows(
                 apiKeysRevoked: cascade.apiKeysRevoked,
                 liveApiKeysRevoked: cascade.liveApiKeysRevoked,
                 scannerKeysRevoked: cascade.scannerKeysRevoked,
+                proberKeysRevoked: cascade.proberKeysRevoked,
                 peerInboundCredentialsRevoked: cascade.peerInboundCredentialsRevoked,
                 toolGrantsDropped: cascade.toolGrantsDropped,
                 proposalsExpired: cascade.proposalsExpired,
@@ -316,6 +328,24 @@ export async function writeRetirementAuditRows(
                 keyIds: effects.scannerKeys.ids,
                 count: effects.scannerKeys.count,
                 idsTruncated: effects.scannerKeys.idsTruncated,
+            },
+        });
+    }
+
+    if (effects.proberKeys.count > 0) {
+        await logEvent(db, ctx, {
+            action: 'AGENT_RETIREMENT_PROBER_KEYS_REVOKED',
+            entityType: 'RegisteredAgent',
+            entityId: agent.id,
+            detailsJson: {
+                category: 'access',
+                entityName: 'AgentProberKey',
+                operation: 'revoked',
+                reason: 'agent_retired',
+                summary: `Revoked ${effects.proberKeys.count} prober key(s) of retired agent ${agent.id}`,
+                keyIds: effects.proberKeys.ids,
+                count: effects.proberKeys.count,
+                idsTruncated: effects.proberKeys.idsTruncated,
             },
         });
     }

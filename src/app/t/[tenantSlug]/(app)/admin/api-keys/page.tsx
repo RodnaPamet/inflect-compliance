@@ -136,10 +136,11 @@ const SCOPE_GROUPS: Record<string, { labelKey: string; scopes: string[] }> = {
     // the third-party applications a directory has granted access to: its own
     // scope by owner decision, so a key posts one kind of report and not both.
     // `admin:agent_rules_ingest` is the third report's, the agent-surface rules.
+    // `admin:agent_probes_ingest` is a prober's: the probe-run report.
     // `admin:agent_registry_view` (#3710) too: reading the agent inventory,
     // owner references included, is what an agent reviewing discovered agents
     // needs, and no wildcard carries it — ticking it is the only way to grant it.
-    admin:      { labelKey: 'scopeGroup.admin',      scopes: ['admin:read', 'admin:write', 'admin:external_tools', 'admin:harness_ingest', 'admin:integrations_ingest', 'admin:agent_rules_ingest', 'admin:agent_registry_view'] },
+    admin:      { labelKey: 'scopeGroup.admin',      scopes: ['admin:read', 'admin:write', 'admin:external_tools', 'admin:harness_ingest', 'admin:integrations_ingest', 'admin:agent_rules_ingest', 'admin:agent_probes_ingest', 'admin:agent_registry_view'] },
     // The MCP capability markers. They map to NO permissions in
     // SCOPE_ACTION_MAP — each one is an empty action list — because they are
     // checked as capabilities by the MCP boundary rather than granting anything

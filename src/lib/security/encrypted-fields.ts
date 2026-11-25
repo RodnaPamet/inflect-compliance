@@ -428,6 +428,15 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // `justification` for the same reason: an owner's rationale for carrying a
     // risk, which names systems and people. Never filtered or sorted on.
     AgentHarnessAcceptance: ['justification'],
+    // Probe runs (active flavour, step 8a). A target's full `endpoint` can
+    // carry in its path what only the estate should see, so it is stored
+    // encrypted and named elsewhere by its origin and a keyed digest. An
+    // outcome's `excerpt` is what the probed agent SAID (at most 280
+    // characters, secret shapes masked by the prober and refused by the
+    // contract): kept encrypted and read only by register-key holders (owner
+    // decision, 2026-11-25). Neither is filtered or sorted on.
+    ProbeRunTarget: ['endpoint'],
+    ProbeRunOutcome: ['excerpt'],
     // A review run's stored owner suggestion (#3728). Both columns are MODEL
     // OUTPUT: `signalsJson` holds the evidence pointers the suggestion rested
     // on (free text the model wrote, bounded and schema-checked by the skill's

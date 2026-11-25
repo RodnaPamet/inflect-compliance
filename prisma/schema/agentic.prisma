@@ -947,6 +947,10 @@ model RegisteredAgent {
   /// The agent-surface rules scans this agent signed, when it is a scanner
   /// (`scanent-agent-rules/1`), with the same key as its harness scans.
   agentRuleScans     AgentRuleScan[]
+  /// The keys this agent signs probe reports with, when it is a prober
+  /// (`scanent-probes/1`), and the runs it signed.
+  proberKeys         AgentProberKey[]
+  probeRuns          ProbeRun[]
   /// The client estate this agent scans, when it is a scanner (#3678). At most
   /// one: `@@unique([tenantId, scannerAgentId])` on the estate.
   harnessEstates     AgentHarnessEstate[]
@@ -4560,4 +4564,189 @@ model AgentSpendingAuthority {
   /// One envelope per agent per rail.
   @@unique([tenantId, agentId, rail])
   @@index([tenantId, status])
+}
+
+// ─── Probe runs (active flavour, step 8a) ─────────────────────────────────
+//
+// The ingest of a prober's signed report, `scanent-probes/1`: what a run of
+// fixed attacker probes (`scanent-probe`) made agents in an authorised
+// engagement do. Two registers decide whose reports count, and one usecase,
+// `usecases/probe-runs.ts`, is the only writer of the three run tables.
+
+/// A key a PROBER signs its reports with (owner decision, 2026-11-25): the
+/// twin of `AgentHarnessScannerKey`, held in a register of its own so a
+/// scanner key never vouches for a probe report. The prober is a register row;
+/// retiring it revokes the key (`agent-retirement-cascade.ts`), and an insert
+/// for a retired agent is refused by `agent_retired_refuses_authority()`.
+/// Written only by `usecases/agent-prober-keys.ts`.
+model AgentProberKey {
+  id              String    @id @default(cuid())
+  tenantId        String
+  /// The prober, as a register row. A report signed by this key is that agent's.
+  agentId         String
+  /// Ed25519 public key as the contract carries it: hex or base64, raw 32 bytes.
+  publicKey       String
+  /// `harnessKeyFingerprint` of the key: sha256 of its SPKI DER. Unique per
+  /// tenant, so one key cannot be registered twice under two spellings.
+  keyFingerprint  String
+  createdByUserId String
+  createdAt       DateTime  @default(now())
+  /// A revoked key verifies nothing; the row stays for the runs it signed.
+  revokedAt       DateTime?
+  revokedByUserId String?
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent  RegisteredAgent @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  runs   ProbeRun[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, keyFingerprint])
+  @@index([tenantId, agentId])
+}
+
+/// A key that may AUTHORISE an engagement: it signs the engagement scope the
+/// prober runs under (`scanent-engagement-scope/1`). Registered by an OWNER
+/// (`admin.tenant_lifecycle`; owner decision, 2026-11-25), because who may
+/// authorise probing the estate's agents is the tenant owner's decision. A
+/// report whose scope signer is not a LIVE key here is refused at ingest. It
+/// belongs to no agent: a person approves, never a prober. A key live in one
+/// of the two registers is refused in the other (trigger). Written only by
+/// `usecases/probe-approver-keys.ts`.
+model ProbeApproverKey {
+  id              String    @id @default(cuid())
+  tenantId        String
+  /// A name for the people who hold the key, sanitised plain text.
+  label           String
+  publicKey       String
+  keyFingerprint  String
+  createdByUserId String
+  createdAt       DateTime  @default(now())
+  revokedAt       DateTime?
+  revokedByUserId String?
+
+  tenant Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  runs   ProbeRun[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, keyFingerprint])
+}
+
+/// One verified, ingested probe report.
+model ProbeRun {
+  id                     String   @id @default(cuid())
+  tenantId               String
+  /// The prober: the registered agent its signing key belongs to. The report
+  /// names no agent.
+  proberAgentId          String
+  proberKeyId            String
+  /// The registered approver key that signed the engagement's scope.
+  approverKeyId          String
+  engagementId           String
+  /// `sha256:` digest of the signed scope the run ran under.
+  scopeDigest            String
+  scopeSignerFingerprint String
+  catalogueDigest        String
+  catalogueProbes        Int
+  startedAt              DateTime
+  endedAt                DateTime
+  /// Why the run ended early (`STOPPED`, `CLOSED`, …), or NULL when every
+  /// planned probe was sent.
+  stopReason             String?
+  surfaceDigest          String
+  /// DERIVED (`probeReportConcluded`): some outcome is not INCONCLUSIVE. A
+  /// report cannot declare it.
+  concluded              Boolean
+  /// sha256 over the canonical JSON of the report without its signature.
+  /// Unique per tenant: the same report twice is a replay.
+  reportDigest           String
+  signature              String
+  targetCount            Int
+  targetsReached         Int
+  outcomeCount           Int
+  actedCount             Int
+  disclosedCount         Int
+  resistedCount          Int
+  inconclusiveCount      Int
+  findingCount           Int
+  createdAt              DateTime @default(now())
+
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  prober      RegisteredAgent   @relation(fields: [proberAgentId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  proberKey   AgentProberKey    @relation(fields: [proberKeyId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  approverKey ProbeApproverKey  @relation(fields: [approverKeyId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  targets     ProbeRunTarget[]
+  outcomes    ProbeRunOutcome[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, reportDigest])
+  @@index([tenantId, startedAt])
+  @@index([tenantId, proberAgentId])
+  @@index([tenantId, proberKeyId])
+  @@index([tenantId, approverKeyId])
+}
+
+/// One target of a run: an agent endpoint the scope named.
+model ProbeRunTarget {
+  id             String   @id @default(cuid())
+  tenantId       String
+  runId          String
+  /// The full endpoint, ENCRYPTED (Epic B): a path can carry what only the
+  /// estate should see. Never in a finding, an audit row or evidence.
+  endpoint       String
+  /// `keyedChangeDigest('probe-target', endpoint)`: under the lookup-hash key,
+  /// which a KEK rotation does not move, so a finding's reference stays put.
+  endpointDigest String
+  /// Scheme and host of the endpoint: what a person reads in its place.
+  origin         String
+  /// `mcp` | `a2a` | `http-chat`.
+  kind           String
+  reached        Boolean
+  /// `REACHED` | `NO_REPLY` | `NO_PROBES_FOR_INTERFACE` | `NOT_RUN`.
+  targetReason   String
+  createdAt      DateTime @default(now())
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  run      ProbeRun          @relation(fields: [runId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  outcomes ProbeRunOutcome[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, runId, endpointDigest])
+  @@index([tenantId, endpointDigest])
+}
+
+/// One probe sent to one target in one run, and its verdict.
+model ProbeRunOutcome {
+  id            String   @id @default(cuid())
+  tenantId      String
+  runId         String
+  targetId      String
+  /// `<class>.<category>.<n>`, the catalogue's id.
+  probeId       String
+  /// `canary` | `disclosure`.
+  probeClass    String
+  /// `ACTED` | `DISCLOSED` | `RESISTED` | `INCONCLUSIVE`.
+  verdict       String
+  /// The contract reason the verdict follows from (`CANARY_RETURNED`, …).
+  verdictReason String
+  /// The MCP tool called: set exactly for an outcome of an MCP target.
+  tool          String?
+  /// `sha256:` of the reply, when there was one.
+  replyDigest   String?
+  /// What the agent said, at most 280 characters, secrets masked by the prober
+  /// and refused by the contract. Set exactly beside ACTED or DISCLOSED.
+  /// ENCRYPTED (Epic B), read only by register-key holders, and never written
+  /// to a finding, an audit row or evidence (owner decision, 2026-11-25).
+  excerpt       String?
+  /// The Finding reference this outcome speaks to:
+  /// `probe:<probeId>@<endpointDigest>[#<tool>]@<proberAgentId>`.
+  sourceRef     String
+  createdAt     DateTime @default(now())
+
+  tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  run    ProbeRun       @relation(fields: [runId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  target ProbeRunTarget @relation(fields: [targetId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@index([tenantId, runId])
+  @@index([tenantId, targetId])
+  @@index([tenantId, sourceRef])
 }
