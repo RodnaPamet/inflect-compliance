@@ -112,6 +112,11 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             // is fetching. Exact path in PUBLIC_PATH_EXACT. It reads no
             // database row and names no tenant: only deployment config.
             'bots',
+            // The public home page and privacy policy (#5957), required by
+            // Google's OAuth verification. Static copy only: they read no
+            // database row and name no tenant. Exact paths in PUBLIC_PATH_EXACT.
+            'about',
+            'privacy',
         ]);
 
         // Get immediate children of app/ that are page directories

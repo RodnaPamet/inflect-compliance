@@ -18354,6 +18354,118 @@
       "optOutHeading": "Opting out",
       "optOutBody": "Add this to your robots.txt. It is read again at the start of every check, so the monitor stops at its next check:",
       "contact": "To reach the operator of this deployment about the monitor, use the contact details published on this site."
+    },
+    "legal": {
+      "name": "\"Inflect\" Ltd. (Инфлект ЕООД)",
+      "address": "ul. \"Tsacho Shishkov\" 52, entr. A, fl. 6, apt. 15, 5500 Lovech, Bulgaria"
+    },
+    "publicAbout": {
+      "metaTitle": "Inflect: compliance management",
+      "title": "Inflect",
+      "tagline": "One place to run an information-security and compliance programme.",
+      "intro": "Inflect helps an organisation run its compliance programme in one place: the controls it operates, the evidence that they work, its risks, policies, audits, and the people and systems they cover.",
+      "featuresHeading": "What Inflect does",
+      "features": {
+        "frameworks": "Maps controls to frameworks such as ISO/IEC 27001, SOC 2 and NIS2, and tracks their tests and evidence.",
+        "registers": "Keeps the risk register, policies, findings, incidents and vendor assessments an audit asks for.",
+        "access": "Connects to identity providers, HR systems and other tools to check who has access, and reports what changed.",
+        "calendar": "Puts the deadlines a person is responsible for into their own Google or Outlook calendar, if they choose to connect it."
+      },
+      "accessHeading": "Who can use it",
+      "accessBody": "Inflect is used by organisations that have an account. Their members sign in with their work account.",
+      "signIn": "Sign in",
+      "privacyLink": "Privacy policy",
+      "operator": "Inflect is operated by {name}, UIC {uic}, {address}.",
+      "contact": "Questions about your data: <mail></mail>"
+    },
+    "privacyPolicy": {
+      "metaTitle": "Privacy policy | Inflect",
+      "title": "Privacy policy",
+      "effective": "Effective {date}",
+      "backToAbout": "About Inflect",
+      "sections": {
+        "scope": {
+          "heading": "About this policy",
+          "p1": "This policy explains how Inflect handles personal data: what it collects, why, who it shares it with, how long it keeps it, and the rights you have.",
+          "p2": "It applies to people who use Inflect through an organisation's account, to people who visit these public pages, and to anyone who connects a Google or Microsoft account to Inflect."
+        },
+        "controller": {
+          "heading": "Who is responsible",
+          "p1": "Inflect is operated by {name}, a company registered in Bulgaria under UIC {uic}, with its registered address at {address}.",
+          "p2": "For any question about your personal data, or to exercise your rights, write to <mail></mail>."
+        },
+        "roles": {
+          "heading": "Our two roles",
+          "p1": "For your account (your name, email address, how you sign in and your sessions) Inflect is the controller: we decide how that data is used, and this policy describes it.",
+          "p2": "For the content an organisation puts into its workspace (its controls, risks, evidence, employee and directory records, and similar) the organisation is the controller, and Inflect processes that data on its behalf under its agreement with us. If your question is about that content, ask your organisation first; we will help it answer."
+        },
+        "data": {
+          "heading": "What we collect",
+          "p1": "Account data: your name and email address and, if you sign in with Google or Microsoft, the name and picture they share. If you use a password, we store only a salted hash of it.",
+          "p2": "Sign-in and security data: when and from where you signed in (IP address and browser), your active sessions, your multi-factor authentication settings, and a log of significant actions. Entries in that log refer to people by an internal identifier, not by name or email address.",
+          "p3": "Workspace content: what you and your colleagues enter or upload, and what the organisation's connected systems, such as an identity provider or HR system, send to Inflect. Business content is encrypted with a key that belongs to the workspace.",
+          "p4": "Email: the address we send invitations, sign-in messages and notifications to, and the content of those messages.",
+          "p5": "We do not use advertising or analytics trackers."
+        },
+        "purposes": {
+          "heading": "Why we use it",
+          "p1": "To provide the service your organisation uses and to let you sign in to it. This rests on the contract with your organisation and our legitimate interest in providing the service.",
+          "p2": "To keep the service secure: detecting abuse, preventing unauthorised access and investigating incidents. This rests on our legitimate interest and our legal obligations.",
+          "p3": "To send the emails the service needs, such as invitations, password resets and the notifications you or your organisation set up.",
+          "p4": "To meet legal obligations, for example keeping records that accounting or tax law requires, and answering lawful requests from authorities."
+        },
+        "google": {
+          "heading": "Google and Microsoft accounts",
+          "p1": "Signing in: if you sign in with Google or Microsoft, we receive your name, email address and profile picture, and use them only to identify you and show your name in Inflect.",
+          "p2": "Calendar: you can connect your own Google Calendar or Outlook calendar so that the compliance deadlines you are responsible for appear in it. Connecting is optional and is done by you, from the Schedule page.",
+          "p3": "For Google, Inflect asks for permission to manage events in your calendar (the calendar.events scope). For Microsoft, your organisation's administrator authorises Inflect once, and you sign in. Inflect uses this access only to create, update and delete the events it adds. It does not read your other events, your contacts or your calendar settings.",
+          "p4": "Inflect writes one all-day event for each open deadline you own or are assigned in the next 90 days: its title, its date, a short description and a link to the item in Inflect. Each event is private and shown as free.",
+          "p5": "Inflect stores the access and refresh tokens Google or Microsoft gives it, encrypted with your workspace's own key; the permissions you granted; when you connected and when your calendar was last updated; and, for each event it added, the event's identifier, a fingerprint of its content and the result of the last update. It stores no content from your calendar.",
+          "p6": "When you disconnect, Inflect deletes the events it added and then destroys the tokens; for Google it also revokes its access. If some events cannot be removed, it keeps trying every night for up to seven days, then destroys the tokens. If Google or Microsoft stops accepting the access, the tokens are destroyed at once.",
+          "p7": "Calendar data is used only to provide this feature. We do not sell it, use it for advertising or use it to train AI models, and no one at Inflect reads it except to investigate a problem you report, or where the law requires.",
+          "p8": "Inflect's use and transfer to any other app of information received from Google APIs will adhere to the <policy>Google API Services User Data Policy</policy>, including the Limited Use requirements."
+        },
+        "processors": {
+          "heading": "Who processes data for us",
+          "p1": "We use a small number of service providers, each bound by contract to process data only on our instructions:",
+          "items": {
+            "hosting": "Google Cloud hosts the service and its backups in the European Union (Belgium).",
+            "email": "An email delivery provider sends the messages the service needs.",
+            "signin": "Google and Microsoft, when you choose to sign in with them or connect a calendar.",
+            "billing": "Stripe, for organisations that pay by card. We do not store card details.",
+            "ai": "AI providers (Anthropic, OpenRouter), only for organisations that turn on Inflect's AI features, and only with what each feature needs.",
+            "hibp": "Have I Been Pwned, to check that a new password has not appeared in a known breach. Only the first five characters of a hash of the password are sent, never the password or your email address."
+          },
+          "a1": "When an organisation connects its own systems, for example Okta, Microsoft Entra ID, Google Workspace, BambooHR, Workday or ServiceNow, data moves between Inflect and those systems at the organisation's direction.",
+          "a2": "Some providers process data outside the European Economic Area. Where they do, the transfer relies on the safeguards the GDPR requires, such as an adequacy decision or the European Commission's standard contractual clauses.",
+          "a3": "We do not sell personal data."
+        },
+        "retention": {
+          "heading": "How long we keep it",
+          "p1": "Account data is kept while you have an account. When an organisation removes you, your access to its workspace ends at once. If you ask us to erase your account, we do so once the request is verified, unless the law requires us to keep something.",
+          "p2": "Sessions expire on their own, and sign-in security records are kept only as long as they serve security.",
+          "p3": "Items deleted inside a workspace are removed permanently after 90 days. When an organisation closes its workspace, its data is deleted 90 days later, except records that the law or audit rules require it to keep.",
+          "p4": "The log of significant actions is kept as a tamper-evident record. After an erasure, its entries refer only to an internal identifier that no longer leads to you.",
+          "p5": "Backups are kept for 14 days."
+        },
+        "security": {
+          "heading": "How we protect it",
+          "p1": "Data is encrypted in transit and at rest, and business content is encrypted with a key that belongs to each workspace. Access inside a workspace follows the roles the organisation assigns, and the database keeps each organisation's data apart from every other's. Multi-factor authentication and single sign-on are available."
+        },
+        "cookies": {
+          "heading": "Cookies",
+          "p1": "Inflect uses only the cookies it needs to work: one that keeps you signed in, a few that protect sign-in against forgery and carry you through it, and one that remembers your language. It sets no advertising or analytics cookies."
+        },
+        "rights": {
+          "heading": "Your rights",
+          "p1": "You can ask us for a copy of your personal data, to correct it, to delete it, to restrict or object to how we use it, and to receive it in a portable form. Write to <mail></mail>. We may need to confirm your identity first, and we answer within one month.",
+          "p2": "If you think we have handled your data unlawfully, you can complain to the Bulgarian Commission for Personal Data Protection (cpdp.bg) or to the supervisory authority where you live."
+        },
+        "changes": {
+          "heading": "Changes",
+          "p1": "We post any change to this policy on this page with a new effective date, and tell members by email or in Inflect before a significant change takes effect."
+        }
+      }
     }
   },
   "billing": {
