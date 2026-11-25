@@ -14803,8 +14803,8 @@
     "consentGoneWhileConnected": "Your administrator withdrew Outlook access for your organisation, so Outlook is not updated until they authorise it again.",
     "refusal": {
       "NOT_CONFIGURED": "{provider} is not set up in this installation of Inflect, so it cannot be connected.",
-      "ADMIN_CONSENT_NOT_GRANTED": "Your organisation has not authorised Outlook yet. Ask your administrator to authorise it for your organisation; then you can connect.",
-      "ADMIN_CONSENT_WITHDRAWN": "Your administrator withdrew Outlook access for your organisation. Ask them to authorise it again; then you can connect."
+      "ADMIN_CONSENT_NOT_GRANTED": "Your organisation has not authorised Outlook yet. Ask your administrator to authorise it on Admin → Integrations; then you can connect.",
+      "ADMIN_CONSENT_WITHDRAWN": "Your administrator withdrew Outlook access for your organisation. Ask them to authorise it again on Admin → Integrations; then you can connect."
     },
     "connect": "Connect {provider}",
     "reconnect": "Reconnect {provider}",

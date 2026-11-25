@@ -49,15 +49,7 @@ export const PROVIDER_ORDER = Object.keys(PROVIDER_NAME_KEY) as CalendarProvider
 
 export type OutcomeTone = 'success' | 'info' | 'error';
 
-/**
- * Outcomes this control words ahead of the server's set: `consent_required`
- * (Microsoft answered that the organisation's grant is missing — AADSTS65001 /
- * AADSTS90094 at the personal callback) is added to `CALENDAR_CONNECT_OUTCOMES`
- * by step 3 (#5952). Worded here so the message ships whichever lands first;
- * once both have, this union is redundant and can go.
- */
-export type PendingConnectOutcome = 'consent_required';
-export type WordedConnectOutcome = CalendarConnectOutcome | PendingConnectOutcome;
+export type WordedConnectOutcome = CalendarConnectOutcome;
 
 /** One message per callback outcome, and the notice's tone. */
 export const OUTCOME_COPY = {
