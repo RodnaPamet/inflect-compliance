@@ -4015,11 +4015,25 @@ Rules that are each one careless edit from being undone:
   `tests/e2e/managed-agents-engine.spec.ts` runs `tests/e2e/run-queued-agent-run.ts`
   for its one run id, with both seam flags set; the faux keeps each workspace id
   apart (`/__faux/sessions?workspace=…`), so specs never see each other's objects.
-- **Known limit: a DSAR erasure misses a tenant where the person never acted**
-  (#5802). It finds the person's tenants from their own audit rows, so a member
-  added by SCIM, SSO or org provisioning who never acted keeps any KEPT session
-  there. The fix belongs with the erasure's operator entry point, which does not
-  exist yet (`eraseUser` has no caller in `src/`).
+- **A DSAR erasure finds its workspaces from membership history, not only the
+  person's own actions** (#5802, owner decision 2026-11-25).
+  `readErasureWorkspaces` (`src/app-layer/jobs/dsar-erasure-workspaces.ts`) is
+  the ONE reader, called by `eraseUser` inside its transaction before the
+  pseudonymization and by the operator command `scripts/dsar-erase-user.ts`
+  (`npm run dsar:erase-user`, no HTTP route) for its plan. A workspace counts on
+  the person's own row, a `TenantMembership` row naming them as `entityId`
+  under an action in `MEMBERSHIP_RECORD_ACTIONS` (SCIM, the org-admin fan-out,
+  platform-admin tenant creation), or an org-trail fan-out row listing it. An
+  action is listed, never inferred: an unlisted one is reported undecided and
+  the command refuses `--confirm`, because the clean-up deletes every kept
+  session in a workspace, not the person's alone. The writers that record no
+  row naming the person (credentials signup, SSO JIT, `createTenantUnderOrg`,
+  the fan-out into a new org tenant, the staging seed) are
+  `MEMBERSHIP_WRITERS_WITHOUT_A_SUBJECT_ROW`, printed with every plan: a
+  workspace joined only that way, where the person never acted, is still not
+  found. The command takes a user id only, refuses a `sys_` id and anything
+  `planErasure` blocks (a membership in any status among it), and prints ids and
+  counts only. Runbook: `docs/runbooks/dsar-erasure.md`.
 
 **What Inflect created in a customer's workspace is removed by recorded id on
 purge, connection removal and DSAR erasure** (Step 5c, #4166;
@@ -4053,9 +4067,9 @@ undone:
   owner decision). An empty ledger is DONE with the outcome `NOTHING_RECORDED`,
   never a bare DONE, and a truncated ledger read is `LEDGER_TRUNCATED`.
 - **The DSAR clean-up runs after `eraseUser`'s transaction commits, never inside
-  it**, over the tenants named by the subject's own audit rows (a membership is
-  a RESTRICT blocker, so none survives to erasure), and its records name
-  tenants and connections, never the person.
+  it**, over the tenants `readErasureWorkspaces` found (a membership is a
+  RESTRICT blocker, so none survives to erasure to be read instead), and its
+  records name tenants and connections, never the person.
 - **The record's outcome column is `outcome`, not `reason`.** A write to a model
   outside the encryption manifest encrypts EVERY manifest field name it
   carries, and `reason` is one: a CHECK on it then refuses ciphertext. Name a

@@ -3,10 +3,9 @@
  *
  * STAGE 3 — `eraseUser` EXECUTES. It is still NOT registered in
  * register-schedules / executor-registry and nothing in `src/` calls it, so
- * no scheduler and no route can reach it; whether it gets an operator entry
- * point (who may run it, for which subject, with what audit record) is a
- * separate decision and deliberately not taken here. What changed is that the
- * function is no longer a stub: called, it writes.
+ * no scheduler and no route can reach it. Its one entry point is the
+ * operator command `scripts/dsar-erase-user.ts` (#5802, owner decision
+ * 2026-11-25): operator-only, with no HTTP route.
  *
  * THE TWO GATES ON `AuditLog`, AND WHICH ONE THIS DEPENDS ON. There are two,
  * and only one was ever loosened:
@@ -41,6 +40,7 @@ import {
 } from '@/lib/audit/erasure-record';
 import type { ErasureRecordRow } from '@/lib/audit/erasure-record';
 import { ConflictError } from '@/lib/errors/types';
+import { readErasureWorkspaces } from './dsar-erasure-workspaces';
 
 /** Hours that must elapse after VERIFIED before erasure may fire. */
 export const COOLING_OFF_HOURS = DSAR_COOLING_OFF_HOURS;
@@ -284,19 +284,38 @@ export async function eraseUser(
 
 /**
  * What runs after an erasure commits, given the tenants where the subject
- * held a membership. Never throws. A parameter so a test can observe it; the
+ * held a membership (`readErasureWorkspaces`, #5802). Never throws. A parameter so a test can observe it; the
  * default is the one production uses.
  */
 export type ErasureAfterCommit = (tenantIds: readonly string[]) => Promise<void>;
 
 async function deleteKeptManagedAgentsSessions(tenantIds: readonly string[]): Promise<void> {
-    if (tenantIds.length === 0) return;
+    await deleteKeptManagedAgentsSessionsAfterErasure(tenantIds);
+}
+
+/** One clean-up record the after-commit step opened: ids and a status, nobody's name. */
+export interface ErasureCleanupOutcome {
+    tenantId: string;
+    connectionId: string;
+    status: string;
+    reason: string | null;
+}
+
+/**
+ * The default after-commit step, returning what it opened so the operator
+ * command (`scripts/dsar-erase-user.ts`) can report it. Never throws.
+ */
+export async function deleteKeptManagedAgentsSessionsAfterErasure(
+    tenantIds: readonly string[],
+): Promise<ErasureCleanupOutcome[]> {
+    if (tenantIds.length === 0) return [];
     try {
         const { openDsarErasureCleanups } = await import('@/app-layer/usecases/managed-agents-cleanup');
-        await openDsarErasureCleanups(tenantIds);
+        return await openDsarErasureCleanups(tenantIds);
     } catch {
         // `openDsarErasureCleanups` logs and meters its own failures; this
         // catches only a failure to load it, which must not undo nothing.
+        return [];
     }
 }
 
@@ -481,6 +500,19 @@ async function eraseUserWithin(db: ErasureDb, userId: string): Promise<{ receipt
             throw new ErasureBlockedError(userId, plan.blockers);
         }
 
+        // ── THE WORKSPACES, FOR THE AFTER-COMMIT CLEAN-UP (#5802) ──
+        //
+        // Every tenant where the subject held a membership, from the audit
+        // trail: their own rows AND the rows each membership writer emits
+        // naming them (SCIM, org provisioning, tenant creation). Read HERE —
+        // after the plan has shown this connection is unconstrained, and
+        // before the pseudonymization below nulls the subject's own rows, the
+        // half of the evidence that would then be gone. One reader for the
+        // erasure and the operator command's plan, so neither keeps a
+        // narrower rule. A `TenantMembership` row is a RESTRICT blocker, so
+        // none survives to this point to be read instead.
+        const workspaces = await readErasureWorkspaces(tx, userId);
+
         // ── PSEUDONYMIZE ───────────────────────────────────────────
         //
         // `where` carries the subject id and nothing else: the trigger grades
@@ -577,13 +609,9 @@ async function eraseUserWithin(db: ErasureDb, userId: string): Promise<{ receipt
                 auditRowsTolerated,
             },
             // THE TENANTS WHERE THE SUBJECT HELD A MEMBERSHIP, for the
-            // after-commit clean-up above. Read off the subject's own audit
-            // rows, captured before the pseudonymization: a `TenantMembership`
-            // row is a RESTRICT blocker, so none survives to this point, and
-            // what a member did in a tenant (accepting its invite among it) is
-            // an audit row naming them. A member who never acted in a tenant
-            // leaves no such row; the Step 5c note records that gap (#4166).
-            tenantIds: [...new Set(rowsBefore.map((r) => r.tenantId))].sort(),
+            // after-commit clean-up above: `readErasureWorkspaces`, read
+            // before the pseudonymization (#5802).
+            tenantIds: workspaces.tenantIds,
         };
     });
 }
@@ -605,8 +633,8 @@ async function eraseUserWithin(db: ErasureDb, userId: string): Promise<{ receipt
 // `eraseUser` executes now. That does NOT make this redundant: it answers,
 // before anything irreversible is attempted, which references would refuse the
 // hard delete — and since #5595 `eraseUser` asks it first, inside its own
-// transaction, and refuses when it lists any blocker. Nothing outside this
-// module calls either of them yet.
+// transaction, and refuses when it lists any blocker. Outside this module only
+// the operator command `scripts/dsar-erase-user.ts` calls them (#5802).
 //
 // WHY IT READS THE CATALOG RATHER THAN THE PRISMA SCHEMA. The question this
 // answers — "which FKs would refuse the Stage 2 hard-delete" — must be
