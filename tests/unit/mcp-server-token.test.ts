@@ -39,6 +39,16 @@ jest.mock('@/lib/security/encryption', () => ({
     encryptField: (v: string) => v,
     decryptField: (v: string) => v,
 }));
+// The column is sealed through the tenant-key helpers (#5969). Route them through
+// the encryption stub above, so this file's seal is the one it already asserts on;
+// the tenant-key path itself is proved against a real database in
+// tests/integration/integration-secret-tenant-key.test.ts.
+jest.mock('@/lib/security/tenant-sealed', () => ({
+    sealTenantSecret: async (_tenantId: string, plaintext: string) =>
+        (jest.requireMock('@/lib/security/encryption') as typeof import('@/lib/security/encryption')).encryptField(plaintext),
+    openTenantSecret: async (_tenantId: string, ciphertext: string) =>
+        (jest.requireMock('@/lib/security/encryption') as typeof import('@/lib/security/encryption')).decryptField(ciphertext),
+}));
 
 import {
     describeMintRefusal,

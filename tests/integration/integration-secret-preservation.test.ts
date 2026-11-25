@@ -23,7 +23,7 @@ import { randomUUID } from 'node:crypto';
 
 import { prismaTestClient } from '../helpers/db';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { generateAndWrapDek } from '@/lib/security/tenant-keys';
 import { upsertIntegrationConnection } from '@/app-layer/usecases/integrations';
 import type { RequestContext } from '@/app-layer/types';
@@ -95,7 +95,7 @@ describe('an edit with no secrets preserves the stored one', () => {
         // so a re-encrypt of the same plaintext would decrypt correctly and still
         // mean the row was rewritten.
         expect(after.secretEncrypted).toBe(before.secretEncrypted);
-        expect(JSON.parse(decryptField(after.secretEncrypted!))).toEqual({
+        expect(JSON.parse(await openTenantSecret(after.tenantId, after.secretEncrypted!))).toEqual({
             authorization: SECRET,
         });
     });
@@ -126,7 +126,7 @@ describe('an edit with no secrets preserves the stored one', () => {
             where: { id: created.id },
         });
         expect(after.secretEncrypted).not.toBe(before.secretEncrypted);
-        expect(JSON.parse(decryptField(after.secretEncrypted!))).toEqual({
+        expect(JSON.parse(await openTenantSecret(after.tenantId, after.secretEncrypted!))).toEqual({
             authorization: rotated,
         });
     });
@@ -178,6 +178,6 @@ describe('an edit with no secrets preserves the stored one', () => {
             where: { id: created.id },
         });
         expect(after.secretEncrypted).not.toBe(before.secretEncrypted);
-        expect(JSON.parse(decryptField(after.secretEncrypted!))).toEqual({ authorization: '' });
+        expect(JSON.parse(await openTenantSecret(after.tenantId, after.secretEncrypted!))).toEqual({ authorization: '' });
     });
 });
