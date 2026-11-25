@@ -222,14 +222,19 @@ the disconnect deleted.
 | --- | --- |
 | `graph.insert` · `201` · `same_date` | Graph made new events: it does not hold a deleted event's `transactionId` against a new create, at least after this long |
 | `graph.insert_existing` · 2xx | Graph answered with the DELETED event. If the events are missing from Outlook, Inflect is recording ids of deleted events: report it |
-| `graph.insert_duplicate` · 409/400 · code, then `graph.duplicate_not_found` | Graph refuses the repeat and the lookup cannot find the deleted event: these deadlines fail every night. Report it |
+| `graph.insert_duplicate` · 409/400 · code, then `graph.duplicate_not_found`, then `graph.insert` · `201` | Graph remembers the deleted event's id; the writer created the event again under a derived id. Check the events are back in Outlook, once each |
 | `graph.insert` · 4xx · code, with no events back | A refusal the writer does not recognise as a duplicate. Report the code |
 
 Repeat the same steps with **Google Calendar** if you can. Google keeps a
-deleted event as cancelled under its id, so a reconnect's create may answer
-`google.insert` · `409` · `duplicate`; the writer then takes the cancelled event
-as the existing one, and the deadline would stay hidden until it changes. Check
-whether the events come back in Google Calendar, and report what you see.
+deleted event as cancelled under its id, so a reconnect's create answers
+`google.insert` · `409` · `duplicate`. The writer then writes the event's
+content to that id with `status: confirmed`, which un-cancels it. Check that
+the events come back in Google Calendar, once each, and report what you see.
+
+The same path brings back a deadline that left the calendar and returned
+without a reconnect: a task marked done and then reopened, or reassigned away
+and back. To check it, mark a pushed task done, wait for a push (the event
+goes), reopen it, wait for the next push (the event comes back).
 
 For the crash form, watch for it instead: a `graph.insert_existing` or
 `graph.insert_duplicate` row in a week with no disconnect is the writer meeting

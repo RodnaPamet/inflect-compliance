@@ -9,9 +9,13 @@
  *
  *   insert  200 → the event's id (which is OUR id: Google accepts a
  *                 caller-chosen id from the base32hex alphabet).
- *           409 → the id is already taken, i.e. a previous attempt created the
- *                 event and died before recording it. The event exists under
- *                 our id, so that IS the remote id. No second event.
+ *           409 → the id is already taken: a previous attempt created the
+ *                 event and died before recording it, OR Inflect deleted it
+ *                 earlier and Google keeps the id as a CANCELLED event (a
+ *                 finished deadline reopened, a reconnect). Either way the
+ *                 event's content is written to that id with
+ *                 `status: confirmed`, which also un-cancels it. No second
+ *                 event, and none left cancelled while recorded as pushed.
  *   patch   404 / 410 → the event is gone from Google entirely. It is created
  *                 again under `recreatedClientEventId(old id)`, and the sweep
  *                 records the new id. A patch also sends `status: confirmed`,
@@ -61,6 +65,9 @@ const EVENTS_URL = 'https://www.googleapis.com/calendar/v3/calendars/primary/eve
 /** The private extended property naming the event as Inflect's. */
 export const GOOGLE_MARKER_PROPERTY = 'inflectEventId';
 
+/** How many derived ids one write may try before it gives up until the next run. */
+const MAX_RECREATE_DEPTH = 3;
+
 /** Google's 403 reasons that mean "slow down", not "you may not". */
 const GOOGLE_QUOTA_REASONS = new Set(['rateLimitExceeded', 'userRateLimitExceeded', 'quotaExceeded']);
 
@@ -74,7 +81,7 @@ export function createGoogleCalendarWriter(opts: {
         deps: opts.deps,
     });
 
-    async function insert(clientEventId: string, event: PushableEvent): Promise<{ remoteEventId: string }> {
+    async function insert(clientEventId: string, event: PushableEvent, depth = 0): Promise<{ remoteEventId: string }> {
         let res: Response;
         try {
             res = await send('POST', EVENTS_URL, {
@@ -88,8 +95,15 @@ export function createGoogleCalendarWriter(opts: {
         }
         if (!res.ok) {
             observeCalendarVendor({ operation: 'google.insert', status: res.status, code: await googleErrorReason(res) });
-            // A previous attempt created it under this id and never recorded it.
-            if (res.status === 409) return { remoteEventId: clientEventId };
+            // The id is taken: either a previous attempt created this event and
+            // never recorded it, or Inflect deleted it earlier and Google keeps
+            // a deleted event's id as a CANCELLED event (a finished deadline
+            // reopened, a reassignment undone, a disconnect then a reconnect).
+            // Answering with the id alone left the second case cancelled for
+            // ever, recorded as pushed. Writing our content with
+            // `status: confirmed` is right in both cases: it is the event we
+            // meant to create either way.
+            if (res.status === 409) return confirmAt(clientEventId, event, depth);
             throw new CalendarWriteError('insert', res.status);
         }
         const { id, body } = await readEventBody(res);
@@ -102,23 +116,37 @@ export function createGoogleCalendarWriter(opts: {
         return { remoteEventId: id };
     }
 
+    /**
+     * Write the event's content to an existing id with `status: confirmed`,
+     * which also un-cancels an event deleted earlier. An id that is gone for
+     * good (404 / 410) is created again under a derived id, at most
+     * `MAX_RECREATE_DEPTH` times in one call, so a chain of taken ids is a
+     * per-event failure retried next run, never a loop.
+     */
+    async function confirmAt(remoteEventId: string, event: PushableEvent, depth = 0): Promise<{ remoteEventId: string }> {
+        let res: Response;
+        try {
+            res = await send('PATCH', eventUrl(remoteEventId), { ...googleEventBody(event), status: 'confirmed' });
+        } catch (err) {
+            if (err instanceof IntegrationTerminalError && isGoneStatus(err.status)) {
+                return recreate(remoteEventId, event, depth);
+            }
+            throw err;
+        }
+        if (isGoneStatus(res.status)) return recreate(remoteEventId, event, depth);
+        if (!res.ok) throw new CalendarWriteError('update', res.status);
+        return { remoteEventId };
+    }
+
+    function recreate(goneId: string, event: PushableEvent, depth: number): Promise<{ remoteEventId: string }> {
+        if (depth >= MAX_RECREATE_DEPTH) throw new CalendarWriteError('insert (every derived id is taken)', 409);
+        return insert(recreatedClientEventId(goneId), event, depth + 1);
+    }
+
     return {
         insert: ({ clientEventId, event }) => insert(clientEventId, event),
 
-        async patch({ remoteEventId, event }) {
-            let res: Response;
-            try {
-                res = await send('PATCH', eventUrl(remoteEventId), { ...googleEventBody(event), status: 'confirmed' });
-            } catch (err) {
-                if (err instanceof IntegrationTerminalError && isGoneStatus(err.status)) {
-                    return insert(recreatedClientEventId(remoteEventId), event);
-                }
-                throw err;
-            }
-            if (isGoneStatus(res.status)) return insert(recreatedClientEventId(remoteEventId), event);
-            if (!res.ok) throw new CalendarWriteError('update', res.status);
-            return { remoteEventId };
-        },
+        patch: ({ remoteEventId, event }) => confirmAt(remoteEventId, event),
 
         async remove({ remoteEventId }) {
             let res: Response;

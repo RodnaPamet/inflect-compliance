@@ -209,17 +209,16 @@ describe('Graph', () => {
         ]);
     });
 
-    it('graph.insert_duplicate (a duplicate-coded 400) then graph.duplicate_not_found', async () => {
-        const err = await graph([
+    it('graph.insert_duplicate (a duplicate-coded 400), graph.duplicate_not_found, then the create under a derived id', async () => {
+        await graph([
             json(400, { error: { code: 'ErrorDuplicateTransactionId', message: TITLE } }),
             json(200, { value: [] }),
-        ])
-            .insert({ clientEventId: CLIENT_ID, event: EVENT })
-            .catch((e) => e);
-        expect(err).toBeInstanceOf(CalendarWriteError);
+            json(201, { id: 'AAMk-again' }),
+        ]).insert({ clientEventId: CLIENT_ID, event: EVENT });
         expect(lines()).toEqual([
             { provider: 'graph', operation: 'graph.insert_duplicate', status: 400, code: 'ErrorDuplicateTransactionId' },
             { provider: 'graph', operation: 'graph.duplicate_not_found', status: 200, code: null },
+            expect.objectContaining({ provider: 'graph', operation: 'graph.insert', status: 201, code: null }),
         ]);
     });
 
@@ -277,7 +276,11 @@ describe('Google', () => {
     });
 
     it('google.insert: a retried insert\'s 409 with Google\'s reason', async () => {
-        await google([json(409, { error: { code: 409, errors: [{ reason: 'duplicate' }], message: TITLE } })]).insert({
+        await google([
+            json(409, { error: { code: 409, errors: [{ reason: 'duplicate' }], message: TITLE } }),
+            // The content written to the taken id, confirmed (un-cancels it).
+            json(200, { id: CLIENT_ID }),
+        ]).insert({
             clientEventId: CLIENT_ID,
             event: EVENT,
         });

@@ -27,8 +27,12 @@
  *                               carries (`singleValueExtendedProperties`,
  *                               value = our client id), which `$filter` on
  *                               extended properties is documented to support.
- *                               Found → its id. Not found → a per-event
- *                               failure, retried by the next run.
+ *                               Found → its id. Not found → Graph remembers
+ *                               a DELETED event under that id (a finished
+ *                               deadline reopened, a reconnect), so it is
+ *                               created under a derived id, at most three
+ *                               times in one call; past that, a per-event
+ *                               failure retried by the next run.
  *
  * Which of these Graph actually answers is an OPEN item of #5937, to be
  * recorded against a real mailbox; see the design note. Every answer is
@@ -71,6 +75,9 @@ import {
 } from './calendar-http';
 import { allDayDateShape, createdBeforeAnswer, observeCalendarVendor } from './vendor-observation';
 
+/** How many derived ids one write may try before it gives up until the next run. */
+const MAX_RECREATE_DEPTH = 3;
+
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 const EVENTS_URL = `${GRAPH}/me/events`;
 
@@ -91,7 +98,7 @@ export function createGraphCalendarWriter(opts: {
         deps: opts.deps,
     });
 
-    async function insert(clientEventId: string, event: PushableEvent): Promise<{ remoteEventId: string }> {
+    async function insert(clientEventId: string, event: PushableEvent, depth = 0): Promise<{ remoteEventId: string }> {
         let res: Response;
         try {
             res = await send('POST', EVENTS_URL, {
@@ -122,7 +129,15 @@ export function createGraphCalendarWriter(opts: {
             observeCalendarVendor({ operation: 'graph.insert_duplicate', status: res.status, code });
             const found = await findByClientEventId(clientEventId);
             if (found) return { remoteEventId: found };
-            throw new CalendarWriteError('insert (duplicate not found)', res.status);
+            // Graph refused the transactionId and no event in the calendar
+            // carries it: the event it remembers was deleted (by Inflect,
+            // after a finished deadline or a disconnect, or by hand). Create it
+            // under a derived id, at most MAX_RECREATE_DEPTH times in one call,
+            // so a chain of remembered ids is a per-event failure retried next
+            // run rather than a loop. Until #5957 this threw, and the event
+            // never came back.
+            if (depth >= MAX_RECREATE_DEPTH) throw new CalendarWriteError('insert (duplicate not found)', res.status);
+            return insert(recreatedClientEventId(clientEventId), event, depth + 1);
         }
         observeCalendarVendor({ operation: 'graph.insert', status: res.status, code });
         throw new CalendarWriteError('insert', res.status);

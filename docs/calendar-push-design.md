@@ -335,7 +335,7 @@ freshly refreshed token; a second 401 is the provider's real answer.
 | --- | --- | --- |
 | Calendar | `primary` | `/me/events` (the default calendar) |
 | Insert | `POST events` with `id = clientEventId` | `POST /me/events` with `transactionId = clientEventId`; every request sends `Prefer: IdType="ImmutableId"` |
-| A retried insert | `409` → the event exists under OUR id: `remoteEventId = clientEventId` | 2xx with an id → that id. `409`, or a `400` whose error code names a duplicate → found by our marker (`$filter` on the single-value extended property); not found → a per-event failure. **Unverified against a real mailbox** — see the Roadmap |
+| A retried insert | `409` → the id is taken: our content is written to it with `status: confirmed` (`remoteEventId = clientEventId`), which also un-cancels an event Inflect deleted earlier under that id | 2xx with an id → that id. `409`, or a `400` whose error code names a duplicate → found by our marker (`$filter` on the single-value extended property); not found → created under a derived id, at most three times, then a per-event failure. **Unverified against a real mailbox** — see the Roadmap |
 | Update | `PATCH events/{id}` with `status: confirmed` (an event deleted by hand is kept by Google as `cancelled`) | `PATCH /me/events/{id}` |
 | Update of a gone event | `404`/`410` → created again under `recreatedClientEventId(old id)`; the sweep records the new id | `404` → the same |
 | Delete | `DELETE events/{id}`; `404`/`410` is done | `DELETE /me/events/{id}`; `404`/`410` is done |
@@ -512,8 +512,9 @@ Step 2 shipped (see "Push" and "Disconnect" above). What it could not settle:
   documentation says Graph de-duplicates a create on `transactionId` and does
   not say what the duplicate POST answers. The writer was built with no access
   to a real mailbox and handles every plausible shape (an id → taken; `409` or
-  a duplicate-coded `400` → looked up by our marker; anything else → a per-event
-  failure retried next run). Which shape Graph returns is to be recorded
+  a duplicate-coded `400` → looked up by our marker, and when no live event
+  carries it, created under a derived id at most three times; anything else →
+  a per-event failure retried next run). Which shape Graph returns is to be recorded
   against a real mailbox (scenario c: a reconnect repeats every
   `transactionId`; the crash form cannot be produced on purpose), and the
   writer narrowed to it.
