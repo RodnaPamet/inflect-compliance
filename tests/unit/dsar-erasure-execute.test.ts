@@ -81,6 +81,11 @@ function makeFakeDb(
          * default: a catalog with nothing to block.
          */
         fks?: Array<{ table_name: string; column_name: string; confdeltype: string; rows: number }>;
+        /**
+         * Rows the workspace read (#5802) returns beside the subject's own:
+         * membership records other writers emitted naming the subject.
+         */
+        membershipRecords?: Array<{ tenantId: string; action: string }>;
     } = {},
 ): FakeDb {
     const {
@@ -89,6 +94,7 @@ function makeFakeDb(
         deleteError,
         rowsCommittedMidTransaction = 0,
         fks = [],
+        membershipRecords = [],
     } = options;
     const updatedRows = auditRows + rowsCommittedMidTransaction;
 
@@ -162,6 +168,22 @@ function makeFakeDb(
             if (sql.includes('current_user')) return [{ role: 'postgres', tenant: null }];
             if (sql.includes('FROM "User" WHERE')) return [{ n: subjectVisible ? 1 : 0 }];
             if (sql.includes('pg_constraint')) return fks.map(({ rows: _rows, ...fk }) => fk);
+            // The workspace read (#5802): the subject's own rows, grouped the
+            // way the reader groups them, and any membership records.
+            if (sql.includes(`"entity" = 'TenantMembership'`) && sql.includes('FROM "AuditLog"')) {
+                if (values[2] !== 0) return [];
+                const own = Array.from({ length: auditRows }, (_, i) => (i % 2 === 0 ? 'tenant-a' : 'tenant-b'));
+                return [
+                    ...[...new Set(own)].map((tenantId) => ({
+                        tenantId, userId: values[0], entity: 'Control', entityId: null, action: 'CONTROL_UPDATED',
+                        rows: own.filter((t) => t === tenantId).length,
+                    })),
+                    ...membershipRecords.map((r) => ({
+                        tenantId: r.tenantId, userId: null, entity: 'TenantMembership', entityId: values[0], action: r.action, rows: 1,
+                    })),
+                ];
+            }
+            if (sql.includes('FROM "OrgAuditLog"') && sql.includes('ANY($2::text[])')) return [];
             const counted = /count\(\*\)::bigint AS n FROM "([^"]+)" WHERE "([^"]+)"/.exec(sql);
             if (counted) {
                 const fk = fks.find((f) => f.table_name === counted[1] && f.column_name === counted[2]);
@@ -229,6 +251,13 @@ describe('eraseUser — the cascade', () => {
             '$raw:$queryRawUnsafe',     // the subject's own row
             '$raw:$queryRawUnsafe',     // every FK into "User"
         ];
+        // #5802 — the workspace read, after the plan and before the first
+        // write: the pseudonymization nulls the subject's own rows, half of
+        // what it reads.
+        const DISCOVERY_READS = [
+            '$raw:$queryRawUnsafe',     // AuditLog: own rows + membership records
+            '$raw:$queryRawUnsafe',     // OrgAuditLog: org-admin fan-outs
+        ];
         const RAW_APPEND = [
             '$raw:$executeRawUnsafe',   // pg_advisory_xact_lock for this tenant
             '$raw:$queryRawUnsafe',     // chain tip
@@ -238,6 +267,7 @@ describe('eraseUser — the cascade', () => {
             '$transaction',
             'user:findUnique',
             ...PLAN_READS,
+            ...DISCOVERY_READS,
             'auditLog:findMany',
             'auditLog:updateMany',
             ...RAW_APPEND,
@@ -556,6 +586,16 @@ describe('eraseUser — the provider clean-up runs AFTER the commit, never insid
         });
         // The fixture's rows span two tenants; the hook ran with the erasure committed.
         expect(seen).toEqual([{ tenants: ['tenant-a', 'tenant-b'], committed: true }]);
+    });
+
+    it('hands the hook a workspace where the subject never acted but a membership writer named them (#5802)', async () => {
+        // tenant-c holds no row the subject wrote: SCIM added them there.
+        // Before #5802 the tenants came off the subject's own rows only, and
+        // tenant-c was never cleaned up.
+        const fake = makeFakeDb({ membershipRecords: [{ tenantId: 'tenant-c', action: 'SCIM_USER_CREATED' }] });
+        const seen: Array<readonly string[]> = [];
+        await eraseUser(SUBJECT, { db: fake.db, afterCommit: async (tenants) => { seen.push(tenants); } });
+        expect(seen).toEqual([['tenant-a', 'tenant-b', 'tenant-c']]);
     });
 
     it('never runs the hook for an erasure that rolled back', async () => {
