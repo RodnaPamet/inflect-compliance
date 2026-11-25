@@ -29,6 +29,8 @@ import {
     ALL_DAY_DATE_SHAPES,
     CALENDAR_VENDOR_OPERATIONS,
 } from '@/app-layer/integrations/providers/calendar/vendor-observation';
+import { WORKSPACE_HEADER_TALLY_MESSAGE } from '@/lib/agentic/managed-agents/workspace-header';
+import { MANAGED_AGENTS_ENDPOINT_NAMES } from '@/lib/agentic/tool-runner/client';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -711,5 +713,173 @@ esac
         expect([...lists[0]].sort()).toEqual([...CALENDAR_VENDOR_OPERATIONS].sort());
         expect([...lists[1]].sort()).toEqual([...new Set(CALENDAR_VENDOR_OPERATIONS.map((o) => o.split('.')[0]))].sort());
         expect([...lists[2]].sort()).toEqual([...ALL_DAY_DATE_SHAPES].sort());
+    });
+});
+
+/**
+ * managed-agents-workspace-header (#5962): the sums of the Managed Agents
+ * engine's `managed-agents: workspace-header tally` lines, so the owner reads
+ * which endpoints answered with the workspace header from a table and nobody
+ * reads a raw log. The log is public, so the output is the table and fixed
+ * text: no line, timestamp or id from the logs.
+ */
+describe('managed-agents-workspace-header', () => {
+    const SENTINEL = 'SENTINELVALUE';
+    const SECRET = 'sk-ant-api03-SENTINELsecretKEY'; // pragma: allowlist secret
+    /** A tally line as pino writes it in production, with the bindings the logger adds. */
+    const tally = (kind: string, endpoints: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+        JSON.stringify({
+            level: 30,
+            time: 1795622214508,
+            pid: 7,
+            hostname: `host-${SENTINEL}`,
+            requestId: `req-${SENTINEL}`,
+            tenantId: `tenant-${SENTINEL}`,
+            route: `job:agent-run-${SENTINEL}`,
+            component: 'agentic',
+            kind,
+            endpoints,
+            ...extra,
+            msg: 'managed-agents: workspace-header tally',
+        });
+    const c = (match: number, missing: number, mismatch: number) => ({ match, missing, mismatch });
+    const WORKER_LINES = [
+        tally('OWN', {
+            'agents.retrieve': c(1, 0, 0),
+            'environments.retrieve': c(1, 0, 0),
+            'sessions.create': c(1, 0, 0),
+            'sessions.events.send': c(2, 0, 0),
+            'sessions.events.stream': c(0, 1, 0),
+            'sessions.delete': c(0, 0, 1),
+            'sessions.list': c(1, 0, 0),
+        }),
+        tally('OWN', { 'sessions.events.send': c(1, 0, 0), 'sessions.events.stream': c(2, 0, 0), 'sessions.retrieve': c(3, 1, 0) }),
+        tally('HOSTED', { 'sessions.delete': c(1, 0, 0) }),
+        // Unrelated lines holding ids and secrets: never read.
+        JSON.stringify({ level: 30, component: 'agentic', runId: `run-${SENTINEL}`, method: 'GET', path: `/v1/sessions/sesn_${SENTINEL}`, refused: null, msg: 'managed-agents: request' }),
+        JSON.stringify({ level: 50, tenantId: `tenant-${SENTINEL}`, apiKey: SECRET, workspaceId: `wrkspc_${SENTINEL}`, msg: 'managed-agents: the run failed' }),
+        `plain text ${SECRET} "sessions.create":{"match":999,"missing":999,"mismatch":999}`,
+    ];
+    const APP_LINES = [
+        tally('OWN', { 'environments.create': c(1, 0, 0), 'agents.create': c(1, 0, 0), 'agents.update': c(0, 2, 0) }),
+        // Hostile or malformed tally lines: an unknown kind, an unknown endpoint,
+        // a non-numeric or overlong count, and an extra field. Only well-formed
+        // counts of known names are summed, and nothing of them is printed.
+        tally(`ADMIN${SENTINEL}`, { [`sessions.${SENTINEL}`]: c(5, 5, 5), 'agents.archive': c(1, 0, 0) }, { note: SECRET }),
+        tally('OWN', { 'sessions.create': { match: `1${SENTINEL}`, missing: 0, mismatch: 0 }, 'sessions.events.list': c(1234567890, 0, 0) }),
+        JSON.stringify({ level: 30, msg: `calendar.vendor_observation ${SENTINEL}` }),
+    ];
+    const FAKE_DOCKER = `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$FAKE_ROOT/calls"
+case "$1" in
+ps) echo "id-\${3##*=}" ;;
+logs) f="$FAKE_ROOT/\${*: -1}.log"; [ -f "$f" ] && cat "$f" ;;
+*) echo "fake docker: $1" >&2; exit 2 ;;
+esac
+`;
+
+    function run(logs: { app: string[]; worker: string[] }) {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vm-check-ma-'));
+        const bin = path.join(root, 'bin');
+        fs.mkdirSync(bin);
+        fs.writeFileSync(path.join(bin, 'docker'), FAKE_DOCKER, { mode: 0o755 });
+        fs.writeFileSync(path.join(root, 'id-app.log'), logs.app.map((l) => `${l}\n`).join(''));
+        fs.writeFileSync(path.join(root, 'id-worker.log'), logs.worker.map((l) => `${l}\n`).join(''));
+        const p = spawnSync('bash', [path.join(REPO_ROOT, 'deploy/vm-check/remote.sh'), 'managed-agents-workspace-header'], {
+            env: { NODE_ENV: 'test', PATH: `${bin}:/usr/bin:/bin`, FAKE_ROOT: root },
+            encoding: 'utf8',
+        });
+        const calls = fs.existsSync(path.join(root, 'calls')) ? fs.readFileSync(path.join(root, 'calls'), 'utf8') : '';
+        fs.rmSync(root, { recursive: true, force: true });
+        return { status: p.status, stdout: p.stdout, stderr: p.stderr, calls };
+    }
+
+    const HEADER = [
+        '## Managed Agents workspace header, last 48 hours (#5962)',
+        '',
+        'Sums of the engine\'s `managed-agents: workspace-header tally` lines: per endpoint, the responses that named the configured Anthropic workspace (match), named none (missing) or named another (mismatch). A container\'s log starts when the container does, so the window is shorter after a new image.',
+        '',
+    ];
+    const table = (rows: Record<string, [number, number, number]>) => [
+        '| Endpoint | Match | Missing | Mismatch |',
+        '| --- | --- | --- | --- |',
+        ...MANAGED_AGENTS_ENDPOINT_NAMES.map((n) => `| ${n} | ${(rows[n] ?? [0, 0, 0]).join(' | ')} |`),
+    ];
+
+    const ok = run({ app: APP_LINES, worker: WORKER_LINES });
+
+    it('prints the summed table per workspace kind and endpoint, and nothing else', () => {
+        expect(ok.status).toBe(0);
+        expect(ok.stderr).toBe('');
+        expect(ok.stdout).toBe(
+            [
+                ...HEADER,
+                'Tally lines read: 6 (one per client: a run segment, a provisioning or a clean-up pass)',
+                '',
+                '### OWN workspace: 4 tally lines',
+                '',
+                ...table({
+                    'agents.create': [1, 0, 0],
+                    'agents.retrieve': [1, 0, 0],
+                    'agents.update': [0, 2, 0],
+                    'environments.create': [1, 0, 0],
+                    'environments.retrieve': [1, 0, 0],
+                    'sessions.create': [1, 0, 0],
+                    'sessions.list': [1, 0, 0],
+                    'sessions.retrieve': [3, 1, 0],
+                    'sessions.delete': [0, 0, 1],
+                    'sessions.events.send': [3, 0, 0],
+                    'sessions.events.stream': [2, 1, 0],
+                }),
+                '',
+                '### HOSTED workspace: 1 tally lines',
+                '',
+                ...table({ 'sessions.delete': [1, 0, 0] }),
+                '',
+                '### (other) workspace: 1 tally lines',
+                '',
+                ...table({ 'agents.archive': [1, 0, 0] }),
+                '',
+            ].join('\n'),
+        );
+    });
+
+    it('prints no id, timestamp, secret or raw line from the logs', () => {
+        expect(ok.stdout).not.toContain(SENTINEL);
+        expect(ok.stdout.toLowerCase()).not.toContain(SENTINEL.toLowerCase());
+        expect(ok.stdout).not.toMatch(/sk-ant|wrkspc_|sesn_|tenant|1795622214508|hostname|"/);
+        expect(ok.stdout).not.toContain('999');
+    });
+
+    it('reads 48 hours of both the app’s and the worker’s logs, and nothing else of docker', () => {
+        expect(ok.calls.split('\n').filter(Boolean)).toEqual([
+            'ps -qf label=com.docker.compose.service=app',
+            'logs --since 48h id-app',
+            'ps -qf label=com.docker.compose.service=worker',
+            'logs --since 48h id-worker',
+        ]);
+    });
+
+    it('an empty window says so, and that it is not evidence', () => {
+        const r = run({ app: [JSON.stringify({ level: 30, msg: `something else ${SENTINEL}` })], worker: [] });
+        expect(r.status).toBe(0);
+        expect(r.stdout).toBe(
+            [
+                ...HEADER,
+                'No tally lines in the window. That is not evidence about any endpoint: no Managed Agents run, provisioning or clean-up finished inside it, or a container restarted after one did.',
+                '',
+            ].join('\n'),
+        );
+    });
+
+    it('its endpoint names are the engine’s own, in the engine’s order', () => {
+        const program = read('deploy/vm-check/remote.sh').split("MANAGED_AGENTS_TALLY_SUMMER='")[1].split("\n'\n")[0];
+        const lists = [...program.matchAll(/split\("([^"]+)", names, " "\)/g)].map((m) => m[1].split(' '));
+        expect(lists).toEqual([[...MANAGED_AGENTS_ENDPOINT_NAMES]]);
+        expect(MANAGED_AGENTS_ENDPOINT_NAMES).toHaveLength(13);
+    });
+
+    it('its message is the one the engine writes', () => {
+        expect(code('deploy/vm-check/remote.sh').filter((l) => l.includes(`grep -F '"msg":"${WORKSPACE_HEADER_TALLY_MESSAGE}"'`))).toHaveLength(1);
     });
 });

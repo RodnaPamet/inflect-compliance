@@ -193,7 +193,12 @@ export async function runManagedAgentsDriver(
         if (!slot.ok) return refuse(slot.reason);
     }
 
-    const choice = managedAgentsClientFor({ apiKey: connection.apiKey, workspaceId: connection.workspaceId, runId });
+    const choice = managedAgentsClientFor({
+        apiKey: connection.apiKey,
+        workspaceId: connection.workspaceId,
+        workspaceKind: connection.kind,
+        runId,
+    });
     if (!choice.ok) return refuse(choice.reason);
 
     logger.warn('managed-agents: starting a run on the Managed Agents engine', {

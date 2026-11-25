@@ -335,7 +335,7 @@ import { provisionManagedAgent } from '@/lib/agentic/managed-agents/provision';
 import { agentToolsFor, sessionBudgetFor, toolsHashOf, writtenEnvironmentHash } from '@/lib/agentic/managed-agents/definition';
 import { MANAGED_AGENTS_SPAN_PROVIDER } from '@/lib/agentic/managed-agents/model-decision';
 import { NOT_OFFERED_TOOL_RESULT, STOPPED_TOOL_RESULT } from '@/lib/agentic/managed-agents/execute';
-import { managedAgentsClientFor } from '@/lib/agentic/tool-runner/client';
+import { MANAGED_AGENTS_ENDPOINT_NAMES, managedAgentsClientFor, managedAgentsEndpointOf } from '@/lib/agentic/tool-runner/client';
 import { toolRunnerSuppliedToolNamesFor } from '@/lib/agentic/tool-runner/supplied-tools';
 import { pinForRow } from '@/lib/agentic/flue/skills/mount-gate';
 import { describeDriverConformance, type ConformanceVariance } from '../../helpers/driver-conformance';
@@ -439,7 +439,7 @@ async function provision(run: ConformanceRun, def: WorkflowDefinition): Promise<
         mountsSkills: skillsMounted(run),
     });
     if (!shaped.ok) throw new Error(`provisioning refused: ${shaped.reason}`);
-    const choice = managedAgentsClientFor({ apiKey: 'sk-ant-faux-workspace-key', workspaceId: 'wrkspc_faux' }); // pragma: allowlist secret
+    const choice = managedAgentsClientFor({ apiKey: 'sk-ant-faux-workspace-key', workspaceId: 'wrkspc_faux', workspaceKind: 'TENANT' }); // pragma: allowlist secret
     if (!choice.ok) throw new Error(choice.reason);
     await provisionManagedAgent(context(), choice.client, {
         profileId: 'profile-1',
@@ -567,7 +567,7 @@ describe('Step 5b hardening', () => {
     it('the tenant\'s instructions are in the session override and never in an agents.create or agents.update body', async () => {
         await drive({ tools: [LIST_RISKS], turns: [callRisks, { text: 'done' }] });
         // A second version re-provisions as an UPDATE of the same agent.
-        const choice = managedAgentsClientFor({ apiKey: 'sk-ant-faux', workspaceId: 'wrkspc_faux' }); // pragma: allowlist secret
+        const choice = managedAgentsClientFor({ apiKey: 'sk-ant-faux', workspaceId: 'wrkspc_faux', workspaceKind: 'TENANT' }); // pragma: allowlist secret
         if (!choice.ok) throw new Error(choice.reason);
         await provisionManagedAgent(context(), choice.client, {
             profileId: 'profile-1',
@@ -588,7 +588,7 @@ describe('Step 5b hardening', () => {
     describe('an agent edited or archived in the Console is replaced by a NEW agent at the next approval, not updated (#5854)', () => {
         /** The next version's approval, through the engine's own provisioner. */
         async function approveNext(profileVersionId: string) {
-            const choice = managedAgentsClientFor({ apiKey: 'sk-ant-faux', workspaceId: 'wrkspc_faux' }); // pragma: allowlist secret
+            const choice = managedAgentsClientFor({ apiKey: 'sk-ant-faux', workspaceId: 'wrkspc_faux', workspaceKind: 'TENANT' }); // pragma: allowlist secret
             if (!choice.ok) throw new Error(choice.reason);
             return provisionManagedAgent(context(), choice.client, {
                 profileId: 'profile-1',
@@ -1239,5 +1239,77 @@ describe('a response from another workspace fails the call (#5854 finding 4, own
                 'sessions.create', 'sessions.events.stream', 'sessions.events.send', 'sessions.retrieve', 'sessions.delete',
             ]),
         );
+    });
+});
+
+// ─── #5962: the evidence for the missing-header switch ──────────────
+
+describe('a run writes ONE workspace-header tally line, counts by endpoint and no id (#5962)', () => {
+    const { logger } = jest.requireActual('@/lib/observability/logger') as typeof import('@/lib/observability/logger');
+    const TALLY = 'managed-agents: workspace-header tally';
+
+    it('match, missing and mismatch on several endpoints are summed per endpoint into one line', async () => {
+        const info = jest.spyOn(logger, 'info');
+        let firstOfRun = 0;
+        try {
+            const outcome = await drive(
+                { tools: [LIST_RISKS], turns: [callRisks, { text: 'done' }] },
+                {
+                    // The run's stream answers naming no workspace…
+                    before: () => {
+                        faux.answerWorkspace = { answer: 'NONE', method: 'GET', path: /\/events\/stream$/ };
+                    },
+                    // …and only the run's responses are its client's: the provisioning used its own.
+                    afterProvision: () => {
+                        firstOfRun = faux.answeredWorkspaces.length;
+                        // …and once the run sends its first event, the delete answers from another workspace.
+                        faux.beforeEventsPost = async () => {
+                            faux.answerWorkspace = { answer: 'OTHER', method: 'DELETE' };
+                        };
+                    },
+                },
+            );
+            expect(outcome.status).toBe('FAILED');
+            expect(mockState.settlement?.reason).toMatch(/^managed_agents_workspace_mismatch: /);
+
+            const lines = info.mock.calls.filter(([message]) => message === TALLY);
+            expect(lines).toHaveLength(1);
+            const fields = lines[0][1] as { component: string; kind: string; endpoints: Record<string, Record<string, number>> };
+            expect(Object.keys(fields).sort()).toEqual(['component', 'endpoints', 'kind']);
+            expect(fields.kind).toBe('OWN');
+
+            // The expected counts, from what the faux answered each of the run's requests.
+            const expected: Record<string, { match: number; missing: number; mismatch: number }> = {};
+            for (const a of faux.answeredWorkspaces.slice(firstOfRun)) {
+                const name = managedAgentsEndpointOf(a.method, a.path) ?? `not an endpoint: ${a.method} ${a.path}`;
+                const c = (expected[name] ??= { match: 0, missing: 0, mismatch: 0 });
+                if (a.workspace === 'wrkspc_faux') c.match += 1;
+                else if (a.workspace === null) c.missing += 1;
+                else c.mismatch += 1;
+            }
+            expect(fields.endpoints).toEqual(expected);
+            expect(fields.endpoints['sessions.events.stream']).toEqual({ match: 0, missing: 1, mismatch: 0 });
+            expect(fields.endpoints['sessions.delete']).toEqual({ match: 0, missing: 0, mismatch: 1 });
+            expect(fields.endpoints['sessions.events.send'].match).toBeGreaterThan(0);
+            expect(fields.endpoints['sessions.create']).toEqual({ match: 1, missing: 0, mismatch: 0 });
+            // Every key is an endpoint's fixed name, never a path or an id.
+            expect(Object.keys(fields.endpoints).filter((k) => !MANAGED_AGENTS_ENDPOINT_NAMES.includes(k))).toEqual([]);
+            // No workspace, run, tenant, session or agent id, and no key.
+            expect(JSON.stringify(lines)).not.toMatch(/wrkspc_|run-|tenant|sesn|agent_|sk-ant/);
+        } finally {
+            info.mockRestore();
+        }
+    });
+
+    it('a run refused before it sends anything writes no tally line', async () => {
+        const info = jest.spyOn(logger, 'info');
+        try {
+            reset({ tools: [LIST_RISKS], turns: [] });
+            await runManagedAgentsDriver(context(), 'run-x', definitionFor(['list_risks'], false), 0, Date.now());
+            expect(faux.requests).toEqual([]);
+            expect(info.mock.calls.filter(([message]) => message === TALLY)).toEqual([]);
+        } finally {
+            info.mockRestore();
+        }
     });
 });

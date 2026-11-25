@@ -36,7 +36,7 @@ import { ManagedAgentsFaux } from '../../helpers/managed-agents-faux';
 const KEY = 'sk-ant-faux-key'; // pragma: allowlist secret -- a placeholder for the faux
 
 function client() {
-    const choice = managedAgentsClientFor({ apiKey: KEY, workspaceId: 'wrkspc_unit' });
+    const choice = managedAgentsClientFor({ apiKey: KEY, workspaceId: 'wrkspc_unit', workspaceKind: 'TENANT' });
     if (!choice.ok) throw new Error(choice.reason);
     return choice.client;
 }

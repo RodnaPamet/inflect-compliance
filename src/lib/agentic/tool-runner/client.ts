@@ -86,8 +86,10 @@ import {
     bindWorkspaceHeaderLatch,
     checkResponseWorkspace,
     newWorkspaceHeaderLatch,
+    workspaceHeaderKindOf,
     type WorkspaceHeaderLatch,
 } from '@/lib/agentic/managed-agents/workspace-header';
+import type { ManagedAgentsWorkspaceKind } from '@/lib/agentic/managed-agents/workspace';
 import { forbidden } from '@/lib/errors/types';
 import { logger } from '@/lib/observability';
 import type { ProfileModelTier } from '@/lib/agentic/agent-profile';
@@ -412,6 +414,14 @@ const MANAGED_AGENTS_ROUTES: ReadonlyArray<{ readonly name: string; readonly met
     { name: 'agents.archive', method: 'POST', path: ARCHIVE_AGENT },
 ];
 
+/**
+ * Every name a response is counted under, in route order: the endpoints the
+ * workspace-header tally line carries and the `VM check` action
+ * `managed-agents-workspace-header` reads (#5962), which a guard holds equal to
+ * this list.
+ */
+export const MANAGED_AGENTS_ENDPOINT_NAMES: readonly string[] = MANAGED_AGENTS_ROUTES.map((r) => r.name);
+
 /** The name of the engine route a request takes, or null for one the engine never calls. */
 export function managedAgentsEndpointOf(method: string, pathname: string): string | null {
     const m = method.toUpperCase();
@@ -619,13 +629,15 @@ export function managedAgentsOrigin(): string {
 export function managedAgentsClientFor(input: {
     readonly apiKey: string;
     readonly workspaceId: string;
+    /** Whose workspace it is: the tally line names it (#5962). */
+    readonly workspaceKind: ManagedAgentsWorkspaceKind;
     readonly runId?: string;
 }): ManagedAgentsClientChoice {
     const apiKey = input.apiKey.trim();
     if (!apiKey) return { ok: false, reason: 'WORKSPACE_KEY_MISSING' };
     if (env.ANTHROPIC_CUSTOM_HEADERS?.trim()) return { ok: false, reason: 'SDK_AMBIENT_HEADERS_SET' };
     const origin = managedAgentsOrigin();
-    const latch = newWorkspaceHeaderLatch();
+    const latch = newWorkspaceHeaderLatch(workspaceHeaderKindOf(input.workspaceKind));
     const client = new Anthropic({
         apiKey,
         baseURL: origin,

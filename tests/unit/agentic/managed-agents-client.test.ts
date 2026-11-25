@@ -37,6 +37,8 @@ import {
     REFUSE_MISSING_WORKSPACE_HEADER,
     failsTheCall,
     isManagedAgentsWorkspaceMismatch,
+    logWorkspaceHeaderTally,
+    workspaceHeaderKindOf,
     workspaceMismatchSeen,
 } from '@/lib/agentic/managed-agents/workspace-header';
 import { managedAgentsClientFor } from '@/lib/agentic/tool-runner/client';
@@ -72,7 +74,7 @@ describe('managedAgentsClientFor', () => {
                 headers: { 'content-type': 'application/json' },
             });
         }) as typeof fetch;
-        const choice = managedAgentsClientFor({ apiKey: ' sk-ant-connection-key ', workspaceId: 'wrkspc_abc' }); // pragma: allowlist secret
+        const choice = managedAgentsClientFor({ apiKey: ' sk-ant-connection-key ', workspaceId: 'wrkspc_abc', workspaceKind: 'TENANT' }); // pragma: allowlist secret
         if (!choice.ok) throw new Error(choice.reason);
         await choice.client.beta.sessions.retrieve('sesn_1');
         expect(seen).toEqual([
@@ -83,7 +85,7 @@ describe('managedAgentsClientFor', () => {
     it('refuses a request outside the engine\'s calls before it leaves', async () => {
         const fetched = jest.fn();
         global.fetch = fetched as unknown as typeof fetch;
-        const choice = managedAgentsClientFor({ apiKey: 'k', workspaceId: 'wrkspc_abc' });
+        const choice = managedAgentsClientFor({ apiKey: 'k', workspaceId: 'wrkspc_abc', workspaceKind: 'TENANT' });
         if (!choice.ok) throw new Error(choice.reason);
         await expect(
             choice.client.beta.messages.create({ model: 'claude-sonnet-5-5', max_tokens: 1, messages: [{ role: 'user', content: 'x' }] }),
@@ -92,9 +94,9 @@ describe('managedAgentsClientFor', () => {
     });
 
     it('builds nothing for an empty key or with ambient SDK headers set', () => {
-        expect(managedAgentsClientFor({ apiKey: '  ', workspaceId: 'wrkspc_abc' })).toEqual({ ok: false, reason: 'WORKSPACE_KEY_MISSING' });
+        expect(managedAgentsClientFor({ apiKey: '  ', workspaceId: 'wrkspc_abc', workspaceKind: 'TENANT' })).toEqual({ ok: false, reason: 'WORKSPACE_KEY_MISSING' });
         mockEnv.ANTHROPIC_CUSTOM_HEADERS = 'anthropic-beta: x';
-        expect(managedAgentsClientFor({ apiKey: 'k', workspaceId: 'wrkspc_abc' })).toEqual({ ok: false, reason: 'SDK_AMBIENT_HEADERS_SET' });
+        expect(managedAgentsClientFor({ apiKey: 'k', workspaceId: 'wrkspc_abc', workspaceKind: 'TENANT' })).toEqual({ ok: false, reason: 'SDK_AMBIENT_HEADERS_SET' });
         expect(sdk.default).not.toHaveBeenCalled();
     });
 
@@ -112,13 +114,13 @@ describe('managedAgentsClientFor', () => {
             // One flag is not a Playwright run: Anthropic's host, as everywhere.
             process.env.NEXT_TEST_MODE = '1';
             mockEnv.AUTH_TEST_MODE = undefined;
-            const pinned = managedAgentsClientFor({ apiKey: 'k', workspaceId: 'wrkspc_abc' });
+            const pinned = managedAgentsClientFor({ apiKey: 'k', workspaceId: 'wrkspc_abc', workspaceKind: 'TENANT' });
             if (!pinned.ok) throw new Error(pinned.reason);
             await pinned.client.beta.sessions.retrieve('sesn_1');
             // Both flags: the constant loopback port, and the middleware pins THAT
             // origin, so nothing else is reachable from it either.
             mockEnv.AUTH_TEST_MODE = '1';
-            const faux = managedAgentsClientFor({ apiKey: 'k', workspaceId: 'wrkspc_abc' });
+            const faux = managedAgentsClientFor({ apiKey: 'k', workspaceId: 'wrkspc_abc', workspaceKind: 'TENANT' });
             if (!faux.ok) throw new Error(faux.reason);
             await faux.client.beta.sessions.retrieve('sesn_1');
             expect(urls.map((u) => new URL(u).origin)).toEqual(['https://api.anthropic.com', 'http://127.0.0.1:3008']);
@@ -130,8 +132,8 @@ describe('managedAgentsClientFor', () => {
     });
 
     it('builds a new client per call', () => {
-        const a = managedAgentsClientFor({ apiKey: 'k1', workspaceId: 'wrkspc_a' });
-        const b = managedAgentsClientFor({ apiKey: 'k2', workspaceId: 'wrkspc_b' });
+        const a = managedAgentsClientFor({ apiKey: 'k1', workspaceId: 'wrkspc_a', workspaceKind: 'TENANT' });
+        const b = managedAgentsClientFor({ apiKey: 'k2', workspaceId: 'wrkspc_b', workspaceKind: 'TENANT' });
         if (!a.ok || !b.ok) throw new Error('refused');
         expect(a.client).not.toBe(b.client);
         expect(sdk.default).toHaveBeenCalledTimes(2);
@@ -153,7 +155,7 @@ describe('every response names the workspace the client was built for (#5854 fin
         });
 
     function built(): Anthropic {
-        const choice = managedAgentsClientFor({ apiKey: 'k', workspaceId: 'wrkspc_abc' });
+        const choice = managedAgentsClientFor({ apiKey: 'k', workspaceId: 'wrkspc_abc', workspaceKind: 'TENANT' });
         if (!choice.ok) throw new Error(choice.reason);
         return choice.client;
     }
@@ -235,6 +237,60 @@ describe('every response names the workspace the client was built for (#5854 fin
         const client = built();
         await expect(client.beta.sessions.retrieve('sesn_1')).resolves.toMatchObject({ id: 'sesn_1' });
         expect(workspaceMismatchSeen(client)).toBeNull();
+    });
+
+    describe('the tally line (#5962)', () => {
+        const TALLY = 'managed-agents: workspace-header tally';
+        const tallies = (info: jest.SpyInstance) => info.mock.calls.filter(([message]) => message === TALLY).map(([, fields]) => fields);
+
+        it('counts every answer on its client, writes it once, and never counts a response twice', async () => {
+            const info = jest.spyOn(logger, 'info');
+            try {
+                // The SDK holds the fetch it was built with, so the answers are queued, not swapped.
+                const answers: Array<string | null> = ['wrkspc_abc', null, 'wrkspc_abc', 'wrkspc_other'];
+                global.fetch = (async () => json(200, answers.shift() as string | null)) as typeof fetch;
+                const choice = managedAgentsClientFor({ apiKey: 'k', workspaceId: 'wrkspc_abc', workspaceKind: 'HOSTED' });
+                if (!choice.ok) throw new Error(choice.reason);
+                const client = choice.client;
+                await client.beta.sessions.retrieve('sesn_1');
+                await client.beta.sessions.retrieve('sesn_1');
+                await client.beta.agents.retrieve('agent_1');
+                expect(tallies(info)).toEqual([]);
+                logWorkspaceHeaderTally(client);
+                expect(tallies(info)).toEqual([
+                    {
+                        component: 'agentic',
+                        kind: 'HOSTED',
+                        endpoints: {
+                            'agents.retrieve': { match: 1, missing: 0, mismatch: 0 },
+                            'sessions.retrieve': { match: 1, missing: 1, mismatch: 0 },
+                        },
+                    },
+                ]);
+                // Nothing new since: no second line.
+                logWorkspaceHeaderTally(client);
+                expect(tallies(info)).toHaveLength(1);
+                // A later response is counted once, in the next line only.
+                await expect(client.beta.sessions.delete('sesn_1')).rejects.toBeInstanceOf(ManagedAgentsWorkspaceMismatchError);
+                logWorkspaceHeaderTally(client);
+                expect(tallies(info)[1]).toEqual({ component: 'agentic', kind: 'HOSTED', endpoints: { 'sessions.delete': { match: 0, missing: 0, mismatch: 1 } } });
+            } finally {
+                info.mockRestore();
+            }
+        });
+
+        it('a tenant\'s own workspace is OWN, and a client that heard nothing writes nothing', () => {
+            const info = jest.spyOn(logger, 'info');
+            try {
+                logWorkspaceHeaderTally(built());
+                logWorkspaceHeaderTally({});
+                expect(tallies(info)).toEqual([]);
+                expect(workspaceHeaderKindOf('TENANT')).toBe('OWN');
+                expect(workspaceHeaderKindOf('HOSTED')).toBe('HOSTED');
+            } finally {
+                info.mockRestore();
+            }
+        });
     });
 });
 

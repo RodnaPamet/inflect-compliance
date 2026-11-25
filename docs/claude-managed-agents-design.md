@@ -292,6 +292,24 @@ puts at Anthropic:
     `agentic.managed_agents.workspace_header` by endpoint, and is logged once
     per client without ids; refusing it too is one source constant
     (`REFUSE_MISSING_WORKSPACE_HEADER`), flipped on 5H part 2's evidence.
+  - **That evidence is read with the `VM check` action
+    `managed-agents-workspace-header` (#5962).** Production has no metrics
+    backend, so the counter above goes nowhere there. Each answer is also
+    counted on the client, and when a run segment, a provisioning or a clean-up
+    pass is done with its client it writes ONE log line,
+    `managed-agents: workspace-header tally`: per endpoint (the thirteen names
+    the counter uses), how many responses matched, named no workspace or named
+    another, and whether the workspace was the customer's own (`OWN`) or
+    Inflect's (`HOSTED`), with no workspace, run or tenant id and no key. The
+    check sums the app's and the worker's lines over the last 48 hours into a
+    table per kind and endpoint, prints nothing else of the logs, and says so
+    when the window holds no line. A real run whose table shows `missing` 0 on
+    every endpoint it called is the evidence the switch waits for; an endpoint
+    reading 0 in all three columns was not called in the window, and says
+    nothing either way. The lines live in the containers' own logs, so a new
+    image (Watchtower replaces `app` and `worker` on every publish) starts them
+    afresh: run the check after the run and before the next deploy, within the
+    48 hours.
   - **Events from someone else holding the workspace's key are not detected**
     (decision 8). Every real tool call still goes through Inflect's checks.
   - **The run timeline** says, beside each span-derived decision row, that the

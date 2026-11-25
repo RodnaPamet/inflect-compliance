@@ -4031,7 +4031,14 @@ that are each one careless edit from being undone:
   halting. NO header passes, counted on `agentic.managed_agents.workspace_header`
   by endpoint and logged once per client without ids; refusing it is
   `REFUSE_MISSING_WORKSPACE_HEADER`, a source constant flipped only on 5H part
-  2's evidence that every endpoint a run uses sends the header. The faux
+  2's evidence that every endpoint a run uses sends the header. That evidence is
+  read with the `VM check` action `managed-agents-workspace-header` (#5962), not
+  the counter, which production sends nowhere: each client also counts on its
+  latch and writes ONE `managed-agents: workspace-header tally` line when its
+  run segment, provisioning or clean-up pass is done with it
+  (`logWorkspaceHeaderTally`; per endpoint match / missing / mismatch, and `OWN`
+  or `HOSTED`, no id), and the check sums 48 hours of those lines into a table.
+  Count only in `checkResponseWorkspace`, and pass no id to the line. The faux
   transports echo the request's workspace; `answerWorkspace` (Jest) and
   `/__faux/workspace-answer` (E2E) make them send none or another.
 - **Every call goes through `runGuardedTool`** with the prefix
