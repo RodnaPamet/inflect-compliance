@@ -43,14 +43,30 @@
  *
  * @module usecases/calendar-consent-health
  */
-import type { RequestContext } from '../types';
 import { IntegrationAuthError, IntegrationRateLimitedError } from '../integrations/http-resilience';
-import { revokeCalendarConnection, type CalendarProviderId } from './user-calendar-connection';
+import {
+    calendarJobRun,
+    revokeCalendarConnectionForPush,
+    type CalendarProviderId,
+} from './user-calendar-connection';
 import {
     recordCalendarConsentRevoked,
     recordCalendarPushOutcome,
 } from '@/lib/observability/integration-metrics';
 import { logger } from '@/lib/observability/logger';
+
+/**
+ * Whose connection a push run is for. Not a `RequestContext`: the push is the
+ * job's work on a person's connection, not a request from them, and it needs
+ * no role — only which connection to stop when consent is gone.
+ */
+export interface CalendarPushPrincipal {
+    tenantId: string;
+    userId: string;
+}
+
+/** Stops a connection. The push path's revoke, under the job's own tenant context. */
+export type CalendarRevoke = (reason: string) => Promise<void>;
 
 /** What one user's push run concluded. */
 export type PushOutcome = 'pushed' | 'nothing-to-do' | 'revoked' | 'throttled' | 'failed';
@@ -81,8 +97,8 @@ export function isThrottled(err: unknown): err is IntegrationRateLimitedError {
 /**
  * Record a withdrawn consent and stop scheduling this connection.
  *
- * Reuses `revokeCalendarConnection`, so the token is destroyed and the row
- * survives — the row being the only record that events were pushed under it,
+ * Reuses the connection usecase's one revoke write, so the token is destroyed
+ * and the row survives — the row being the only record that events were pushed under it,
  * which C4's cleanup still needs.
  *
  * The reason is a FIXED phrase, never the provider's body. A provider error can
@@ -90,12 +106,20 @@ export function isThrottled(err: unknown): err is IntegrationRateLimitedError {
  * rendered in the user's settings page.
  */
 export async function markConsentRevoked(
-    ctx: RequestContext,
+    ctx: CalendarPushPrincipal,
     provider: CalendarProviderId,
     err: unknown,
+    revoke?: CalendarRevoke,
 ): Promise<void> {
     const detail = err instanceof IntegrationAuthError ? `HTTP ${err.status}` : 'unknown';
-    await revokeCalendarConnection(ctx, provider, `Access was withdrawn at the provider (${detail}). Reconnect to resume.`);
+    const reason = `Access was withdrawn at the provider (${detail}). Reconnect to resume.`;
+    await (revoke
+        ? revoke(reason)
+        : revokeCalendarConnectionForPush(
+              calendarJobRun(ctx.tenantId),
+              { tenantId: ctx.tenantId, userId: ctx.userId, provider },
+              reason,
+          ));
     recordCalendarConsentRevoked({ provider });
     logger.warn('calendar consent revoked — connection will not be scheduled again until reconnected', {
         component: 'calendar-consent-health',
@@ -120,9 +144,10 @@ export async function markConsentRevoked(
  * one — the same conflation C3's outcome type exists to prevent.
  */
 export async function runUserPushGuarded(
-    ctx: RequestContext,
+    ctx: CalendarPushPrincipal,
     provider: CalendarProviderId,
     push: () => Promise<{ changed: boolean }>,
+    deps: { revoke?: CalendarRevoke } = {},
 ): Promise<PushOutcome> {
     try {
         const { changed } = await push();
@@ -131,7 +156,7 @@ export async function runUserPushGuarded(
         return outcome;
     } catch (err) {
         if (isRevokedConsent(err)) {
-            await markConsentRevoked(ctx, provider, err);
+            await markConsentRevoked(ctx, provider, err, deps.revoke);
             recordCalendarPushOutcome({ provider, outcome: 'revoked' });
             return 'revoked';
         }

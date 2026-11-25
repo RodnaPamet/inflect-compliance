@@ -420,3 +420,46 @@ export async function resolveCalendarAccessToken(
     if (deps.persist) await deps.persist(rotated);
     return { accessToken: rotated.accessToken, rotated };
 }
+
+// ─── Revocation (disconnect) ─────────────────────────────────────────
+
+const GOOGLE_REVOKE = 'https://oauth2.googleapis.com/revoke';
+
+/**
+ * Revoke a Google grant at the provider, after a disconnect has removed the
+ * pushed events (#5937 step 2).
+ *
+ * The REFRESH token is revoked: Google revokes the grant behind it, so the
+ * access tokens minted from it stop working too. Microsoft has no per-token
+ * revocation for a delegated grant, so an Outlook disconnect only destroys the
+ * stored token and there is no Microsoft twin of this function.
+ *
+ * Best effort and NEVER THROWS: the local token is destroyed whatever Google
+ * answers, and a disconnect the person asked for must not fail because
+ * Google's revocation endpoint had a bad minute. Returns whether Google
+ * confirmed, for the caller's log line. Google answers 200 on success and 400
+ * for a token it no longer knows (already revoked), which is also "revoked".
+ */
+export async function revokeGoogleCalendarToken(
+    refreshToken: string,
+    deps: { fetchImpl?: typeof fetch } = {},
+): Promise<'revoked' | 'not-confirmed'> {
+    if (!refreshToken) return 'not-confirmed';
+    try {
+        const res = await fetchOAuthToken(
+            GOOGLE_REVOKE,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ token: refreshToken }),
+            },
+            deps.fetchImpl,
+        );
+        return res.ok || res.status === 400 ? 'revoked' : 'not-confirmed';
+    } catch (err) {
+        // `fetchOAuthToken` raises a 400 `invalid_grant` as IntegrationAuthError:
+        // a token Google no longer honours is a revoked one.
+        if ((err as { name?: string } | null)?.name === 'IntegrationAuthError') return 'revoked';
+        return 'not-confirmed';
+    }
+}

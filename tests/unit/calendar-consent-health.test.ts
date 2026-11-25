@@ -24,8 +24,11 @@ const revokeCalendarConnection = jest.fn<
 const recordCalendarPushOutcome = jest.fn();
 const recordCalendarConsentRevoked = jest.fn();
 
+// The push path's revoke: `(run, identity, reason)`, under the job's own tenant
+// context — the job has no request, so the reason is still the THIRD argument.
 jest.mock('@/app-layer/usecases/user-calendar-connection', () => ({
-    revokeCalendarConnection: (...a: unknown[]) =>
+    calendarJobRun: (tenantId: string) => ({ tenantId }),
+    revokeCalendarConnectionForPush: (...a: unknown[]) =>
         revokeCalendarConnection(...(a as [unknown, string, string])),
 }));
 // Spread the real module and override only what this file asserts on. A factory
@@ -92,6 +95,8 @@ describe('a revocation is recorded and the connection stopped', () => {
         });
         expect(out).toBe('revoked');
         expect(revokeCalendarConnection).toHaveBeenCalledTimes(1);
+        // The connection revoked is THIS person's, for THIS provider.
+        expect(revokeCalendarConnection.mock.calls[0][1]).toEqual({ tenantId: 't1', userId: 'u1', provider: PROVIDER });
         expect(recordCalendarConsentRevoked).toHaveBeenCalledWith({ provider: PROVIDER });
     });
 
@@ -142,6 +147,15 @@ describe('one user’s failure does not take the batch', () => {
         await runUserPushGuarded(ctx, PROVIDER, async () => { throw new Error('null is not an object'); });
         expect(revokeCalendarConnection).not.toHaveBeenCalled();
         expect(recordCalendarPushOutcome).toHaveBeenCalledWith({ provider: PROVIDER, outcome: 'failed' });
+    });
+});
+
+describe('a caller can supply its own revoke', () => {
+    it('a disconnect path revokes through the function it passes, not the job default', async () => {
+        const revoke = jest.fn(async () => undefined);
+        await runUserPushGuarded(ctx, PROVIDER, async () => { throw new IntegrationAuthError(401, 'https://x'); }, { revoke });
+        expect(revoke).toHaveBeenCalledWith(expect.stringMatching(/withdrawn at the provider \(HTTP 401\)/));
+        expect(revokeCalendarConnection).not.toHaveBeenCalled();
     });
 });
 

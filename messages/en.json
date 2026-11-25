@@ -18674,6 +18674,7 @@
       "CALENDAR_ADMIN_CONSENT_REVOKED": "Calendar admin consent revoked",
       "CALENDAR_CONNECT_FAILED": "Personal calendar connection failed",
       "CALENDAR_CONNECTED": "Personal calendar connected",
+      "CALENDAR_DISCONNECTED": "Personal calendar disconnected",
       "CONTROL_APPLICABILITY_CHANGED": "Control applicability changed",
       "CONTROL_CONTRIBUTOR_ADDED": "Control contributor added",
       "CONTROL_CONTRIBUTOR_REMOVED": "Control contributor removed",
@@ -19356,6 +19357,34 @@
         "INCIDENT": "incident",
         "IMPROVEMENT": "improvement",
         "TASK": "task"
+      }
+    },
+    "calendarPush": {
+      "title": "{type}: {name}",
+      "openInInflect": "Open in Inflect: {link}",
+      "eventType": {
+        "evidence-review": "Evidence review",
+        "policy-review": "Policy review",
+        "vendor-review": "Vendor review",
+        "vendor-renewal": "Contract renewal",
+        "vendor-document-expiry": "Document expires",
+        "vendor-assessment-review": "Vendor reassessment",
+        "audit-cycle": "Audit cycle",
+        "access-review-due": "Access review",
+        "control-review": "Control review",
+        "control-test-due": "Test due",
+        "control-exception-expiry": "Exception expires",
+        "training-due": "Training due",
+        "incident-notification-due": "Incident notification",
+        "task-due": "Task due",
+        "risk-review": "Risk review",
+        "risk-target": "Risk mitigation target",
+        "treatment-milestone-due": "Milestone",
+        "treatment-plan-target": "Plan target",
+        "finding-due": "Finding due",
+        "agent-harness-acceptance-expiry": "Harness acceptance expires",
+        "vulnerability-remediation-due": "Vulnerability fix due",
+        "audit-scheduled": "Audit scheduled"
       }
     }
   },

@@ -41,15 +41,42 @@
  * result distinguishes them explicitly rather than leaving the caller to infer
  * it from a count.
  *
+ * ═══ ONLY THE PERSON'S OWN DEADLINES (owner decision 2026-11-25) ═══
+ *
+ * An OWNER or ADMIN can see every deadline in the workspace; pushing all of
+ * them would put hundreds of other people's tasks into one personal calendar,
+ * and send them to Google or Microsoft. So a deadline is pushed only when the
+ * person is its owner or assignee — the calendar page's "My deadlines"
+ * semantics, `ownerUserId === userId`, applied by the aggregation itself
+ * (`ownedBy`). `training` carries no owner (do-not-touch §6) and is never
+ * pushed. The per-source permission gate still runs first: owning a deadline
+ * in a source the person may not see does not push it.
+ *
+ * ═══ THE WORKSPACE'S LANGUAGE (owner decision 2026-11-25) ═══
+ *
+ * The product's own wording — "Evidence review:", the link line — is written
+ * in `Tenant.defaultLocale` through the `workspaceText.calendarPush`
+ * catalogue. A job sees no browser cookie, and the person who reads the event
+ * is reading the workspace's record. Titles of the items themselves are the
+ * workspace's own text and go as written.
+ *
  * @module usecases/calendar-push-generate
  */
 import type { RequestContext } from '../types';
 import { resolveMemberContext } from '../context-system';
-import { getComplianceCalendarEvents } from './compliance-calendar';
+import { getComplianceCalendarEvents, calendarSourceTypes } from './compliance-calendar';
 import type { PushableEvent } from './calendar-event-reconcile';
+import type { CalendarEvent, CalendarSourceName } from '../schemas/calendar.schemas';
+import { DEFAULT_LOCALE, type Locale } from '@/lib/locale-constants';
+import { workspaceTranslator } from '@/lib/i18n/workspace-text';
 
 /** How far ahead a push looks. */
 export const PUSH_WINDOW_DAYS = 90;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The catalogue namespace for the product's own wording in a pushed event. */
+export const CALENDAR_PUSH_TEXT_NAMESPACE = 'workspaceText.calendarPush';
 
 export type GenerateOutcome =
     /** The member is not ACTIVE. Push nothing; remove everything. */
@@ -59,8 +86,21 @@ export type GenerateOutcome =
      * empty window: everything previously pushed must be removed.
      */
     | { kind: 'no-visible-sources'; omittedSources: string[] }
-    /** A normal generation. `events` may still legitimately be empty. */
-    | { kind: 'generated'; events: PushableEvent[]; omittedSources: string[] };
+    /**
+     * A normal generation. `events` may still legitimately be empty.
+     *
+     * `held` names what this generation could NOT vouch for: the event types of
+     * sources that failed or hit their cap (`sourceKeys`), or everything when
+     * the aggregation's total cap bit (`all`). An event absent from such a
+     * source may simply not have been read, so its calendar entry must not be
+     * deleted tonight and re-created tomorrow.
+     */
+    | {
+          kind: 'generated';
+          events: PushableEvent[];
+          omittedSources: string[];
+          held?: { sourceKeys: string[]; all: boolean };
+      };
 
 interface GenerateDeps {
     resolveContext?: typeof resolveMemberContext;
@@ -76,12 +116,20 @@ interface GenerateDeps {
  * cannot express that.
  */
 export async function generatePushableEvents(
-    input: { tenantId: string; userId: string },
+    input: {
+        tenantId: string;
+        userId: string;
+        /** The workspace's default language. Absent reads as the default locale. */
+        locale?: Locale;
+        /** The deployment's public origin. Absent or null: no link line. */
+        publicOrigin?: string | null;
+    },
     deps: GenerateDeps = {},
 ): Promise<GenerateOutcome> {
     const resolve = deps.resolveContext ?? resolveMemberContext;
     const aggregate = deps.aggregate ?? getComplianceCalendarEvents;
     const now = deps.now ? deps.now() : new Date();
+    const locale = input.locale ?? DEFAULT_LOCALE;
 
     const memberCtx = await resolve({
         tenantId: input.tenantId,
@@ -96,65 +144,82 @@ export async function generatePushableEvents(
     // produces claims the PERSON acted — at 04:00, from a job they did not run.
     const ctx: RequestContext = { ...memberCtx, actorType: 'JOB' };
 
-    const to = new Date(now.getTime() + PUSH_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-    const response = await aggregate(ctx, { from: now, to, now });
+    // The window starts at the START OF TODAY (UTC), not at `now`. Day deadlines
+    // are stored at UTC midnight, so a window from `now` — the job runs at
+    // 03:00 — would drop today's deadlines and delete them from the person's
+    // calendar on the very day they fall due.
+    const from = new Date(Math.floor(now.getTime() / DAY_MS) * DAY_MS);
+    const to = new Date(from.getTime() + PUSH_WINDOW_DAYS * DAY_MS);
+    const response = await aggregate(ctx, { from, to, now, ownedBy: input.userId, locale });
 
     const omittedSources = [...(response.omittedSources ?? [])].map(String);
+    const failedSources = [...(response.failedSources ?? [])];
+    const cappedSources = [...(response.truncation?.sources ?? [])];
 
-    // The distinction the caller cannot make from an event count.
-    if (response.events.length === 0 && omittedSources.length > 0 && !hasVisibleSource(response)) {
+    // The distinction the caller cannot make from an event count. A source that
+    // FAILED was visible — it was attempted — so an outage is never read as a
+    // lost permission, which would delete the person's whole calendar because a
+    // database was briefly slow.
+    if (response.events.length === 0 && omittedSources.length > 0 && failedSources.length === 0) {
         return { kind: 'no-visible-sources', omittedSources };
     }
 
+    const linkLine = await linkLineWriter(locale, input.publicOrigin ?? null);
+    const heldSources = [...new Set<CalendarSourceName>([...failedSources, ...cappedSources])];
+    const held =
+        heldSources.length > 0 || response.truncation?.totalCapped
+            ? {
+                  sourceKeys: heldSources.flatMap((name) => [...calendarSourceTypes(name)]),
+                  all: response.truncation?.totalCapped === true,
+              }
+            : undefined;
+
     return {
         kind: 'generated',
-        events: response.events.map(toPushable),
+        events: response.events.map((e) => toPushable(e, linkLine)),
         omittedSources,
+        ...(held ? { held } : {}),
     };
 }
 
 /**
- * Did ANY source actually run?
+ * The description's link line, in the workspace's language, or nothing.
  *
- * `omittedSources` alone cannot answer it — a user who can see one source out
- * of nineteen has eighteen omitted and is perfectly healthy. The signal is
- * whether the omitted set covers everything the aggregation knows about, which
- * is why this compares against the response rather than a hardcoded 19. The
- * repo has contradicted itself on that number three times (17 / 16-of-17 / 19);
- * a fourth hardcoded copy would drift the same way.
+ * An event in somebody's calendar is read outside Inflect, so a relative link
+ * is useless there: with no configured public origin (`APP_URL`) there is no
+ * link line at all rather than a broken one.
  */
-function hasVisibleSource(response: {
-    omittedSources?: readonly unknown[];
-    erroredSources?: readonly unknown[];
-    events: readonly unknown[];
-}): boolean {
-    // A source that ERRORED was visible to this user — it was attempted. Only
-    // an omitted source was filtered out on permissions, and treating an
-    // outage as a permission loss would delete a user's whole calendar because
-    // a database was briefly slow.
-    return (response.erroredSources?.length ?? 0) > 0 || response.events.length > 0;
+async function linkLineWriter(
+    locale: Locale,
+    publicOrigin: string | null,
+): Promise<(href: string) => string | null> {
+    if (!publicOrigin) return () => null;
+    const origin = publicOrigin.replace(/\/+$/, '');
+    const t = await workspaceTranslator(locale, CALENDAR_PUSH_TEXT_NAMESPACE);
+    return (href) => (href.startsWith('/') ? t('openInInflect', { link: `${origin}${href}` }) : null);
 }
 
 /** Map an aggregation event onto the shape the reconciler and providers use. */
-function toPushable(e: {
-    entityType: string;
-    entityId: string;
-    title: string;
-    date: string;
-    end?: string;
-    detail?: string;
-}): PushableEvent {
+function toPushable(
+    e: Pick<CalendarEvent, 'type' | 'entityId' | 'title' | 'date' | 'end' | 'detail' | 'href'>,
+    linkLine: (href: string) => string | null,
+): PushableEvent {
+    const link = e.href ? linkLine(e.href) : null;
+    const description = [e.detail, link].filter((part): part is string => !!part && part.length > 0).join('\n\n');
     return {
-        // The reconciler's identity is (sourceKey, sourceEntityId). Using the
-        // aggregation's own entityType/entityId rather than its composite `id`
-        // keeps the mapping stable when the event TYPE changes for the same
-        // underlying row — a due-date event becoming an overdue event must
-        // patch the existing calendar entry, not orphan it and create another.
-        sourceKey: e.entityType,
+        // The reconciler's identity is (sourceKey, sourceEntityId). The event
+        // TYPE, not the entity type, is the key: one row can carry two
+        // deadlines — a risk's review date and its target date, a vendor's
+        // review and its contract renewal — and keyed on the entity they would
+        // share one calendar event and overwrite each other every night. A type
+        // names a deadline column and never changes for the same row; the
+        // composite `id` is not used because its format is the page's, not a
+        // contract.
+        sourceKey: e.type,
         sourceEntityId: e.entityId,
         title: e.title,
         startsAt: e.date,
         endsAt: e.end ?? null,
-        description: e.detail ?? null,
+        description: description.length > 0 ? description : null,
     };
 }

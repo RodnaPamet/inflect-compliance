@@ -50,7 +50,7 @@
  * @module usecases/user-calendar-connection
  */
 import type { RequestContext } from '../types';
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, runInTenantJobContext, type PrismaTx } from '@/lib/db-context';
 import { isEncryptedValue } from '@/lib/security/encryption';
 import { badRequest, notFound, InternalError } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
@@ -80,6 +80,19 @@ export interface CalendarConnectionSummary {
     revokedReason: string | null;
     lastPushedAt: Date | null;
     scopesGranted: string[];
+    /**
+     * Set while a disconnect is still removing pushed events (#5937 step 2):
+     * the token is kept until they are gone or the retry window closes.
+     */
+    disconnectRequestedAt: Date | null;
+    /**
+     * Events Inflect pushed under this connection that are still recorded as
+     * in the person's calendar. On a live connection that is just what has
+     * been pushed. On a revoked or disconnecting one it is what a disconnect
+     * could not (yet) remove — the events the person may have to delete by
+     * hand, which the Connect control (step 4) tells them about.
+     */
+    undeletedEventCount: number;
 }
 
 /**
@@ -100,7 +113,7 @@ export async function saveCalendarConnection(
         token: CalendarTokenPayload;
         scopesGranted: string[];
     },
-): Promise<CalendarConnectionSummary> {
+): Promise<Omit<CalendarConnectionSummary, 'undeletedEventCount'>> {
     if (!isCalendarProviderId(input.provider)) {
         throw badRequest(`Unknown calendar provider: ${input.provider}`);
     }
@@ -136,6 +149,10 @@ export async function saveCalendarConnection(
                 scopesGranted: input.scopesGranted,
                 revokedAt: null,
                 revokedReason: null,
+                // A reconnect ends a disconnect that was still removing events:
+                // the person wants the calendar back, and the next push
+                // reconciles whatever is left against the mapping table.
+                disconnectRequestedAt: null,
             },
         });
         logger.info('calendar connection saved', {
@@ -220,16 +237,174 @@ export async function revokeCalendarConnection(
     reason: string,
 ): Promise<void> {
     await runInTenantContext(ctx, async (db) => {
-        const res = await db.userCalendarConnection.updateMany({
-            where: { tenantId: ctx.tenantId, userId: ctx.userId, provider },
-            data: { revokedAt: new Date(), revokedReason: reason.slice(0, 200), tokenEncrypted: '' },
-        });
-        if (res.count === 0) throw notFound('No calendar connection to revoke');
+        const count = await revokeIn(db, { tenantId: ctx.tenantId, userId: ctx.userId, provider }, reason);
+        if (count === 0) throw notFound('No calendar connection to revoke');
+    });
+}
+
+/** The one write that revokes: token destroyed, row kept, disconnect state cleared. */
+async function revokeIn(db: PrismaTx, identity: CalendarConnectionIdentity, reason: string): Promise<number> {
+    const res = await db.userCalendarConnection.updateMany({
+        where: { tenantId: identity.tenantId, userId: identity.userId, provider: identity.provider },
+        data: {
+            revokedAt: new Date(),
+            revokedReason: reason.slice(0, 200),
+            tokenEncrypted: '',
+            disconnectRequestedAt: null,
+        },
+    });
+    if (res.count > 0) {
         logger.info('calendar connection revoked', {
             component: 'user-calendar-connection',
-            tenantId: ctx.tenantId,
-            provider,
+            tenantId: identity.tenantId,
+            provider: identity.provider,
             reason: reason.slice(0, 200),
+        });
+    }
+    return res.count;
+}
+
+// ─── The push path (#5937 step 2) ─────────────────────────────────────
+
+/** One person's connection to one provider, as the push job names it. */
+export interface CalendarConnectionIdentity {
+    tenantId: string;
+    userId: string;
+    provider: CalendarProviderId;
+}
+
+/** The push job's own name: never a KEK-bypass label, so the tenant DEK resolves. */
+export const CALENDAR_PUSH_JOB_SOURCE = 'calendar-push';
+
+/**
+ * Where a push-path read or write runs. The nightly job has no request, so it
+ * binds the tenant with `runInTenantJobContext` under its OWN name — a bypass
+ * label (`'job'`) would turn the tenant DEK off and the token read would come
+ * back as ciphertext, which `parseStoredToken` refuses. A disconnect arrives in
+ * a request and runs in the person's own `runInTenantContext`.
+ */
+export type CalendarTenantRun = <T>(callback: (db: PrismaTx) => Promise<T>) => Promise<T>;
+
+export function calendarJobRun(tenantId: string): CalendarTenantRun {
+    return (callback) => runInTenantJobContext({ tenantId, source: CALENDAR_PUSH_JOB_SOURCE }, callback);
+}
+
+export function calendarRequestRun(ctx: RequestContext): CalendarTenantRun {
+    return (callback) => runInTenantContext(ctx, callback);
+}
+
+/**
+ * A live connection's token, its disconnect state, and — for Microsoft — the
+ * directory its token was issued in. Null for a revoked or absent connection.
+ *
+ * The directory is the workspace's recorded admin consent
+ * (`TenantCalendarConsent.externalTenantId`), the authority the connect flow
+ * sent the person to. A refresh must go to the SAME authority; sending it to
+ * the deployment's own directory would be refused as `invalid_grant` and read
+ * as a withdrawn consent. It is read whether or not Inflect's record of the
+ * consent has since been withdrawn: whether Microsoft still honours the grant
+ * is Microsoft's answer, and a refused refresh revokes the connection.
+ */
+export async function readCalendarConnectionForPush(
+    run: CalendarTenantRun,
+    identity: CalendarConnectionIdentity,
+): Promise<{
+    connectionId: string;
+    token: CalendarTokenPayload;
+    disconnectRequestedAt: Date | null;
+    entraTenantId: string | undefined;
+} | null> {
+    return run(async (db) => {
+        const row = await db.userCalendarConnection.findUnique({
+            where: {
+                tenantId_userId_provider: {
+                    tenantId: identity.tenantId,
+                    userId: identity.userId,
+                    provider: identity.provider,
+                },
+            },
+            select: { id: true, tokenEncrypted: true, revokedAt: true, disconnectRequestedAt: true },
+        });
+        if (!row || row.revokedAt) return null;
+        let entraTenantId: string | undefined;
+        if (identity.provider === 'outlook-calendar') {
+            const consent = await db.tenantCalendarConsent.findUnique({
+                where: { tenantId_provider: { tenantId: identity.tenantId, provider: identity.provider } },
+                select: { externalTenantId: true },
+            });
+            entraTenantId = consent?.externalTenantId ?? undefined;
+        }
+        return {
+            connectionId: row.id,
+            token: parseStoredToken(row.tokenEncrypted),
+            disconnectRequestedAt: row.disconnectRequestedAt,
+            entraTenantId,
+        };
+    });
+}
+
+/**
+ * Persist a rotated token. Called by `resolveCalendarAccessToken` BEFORE the
+ * new token is used, because Microsoft invalidates the refresh token it
+ * replaced. A connection revoked in the meantime matches nothing.
+ */
+export async function persistCalendarTokenForPush(
+    run: CalendarTenantRun,
+    identity: CalendarConnectionIdentity,
+    token: CalendarTokenPayload,
+): Promise<void> {
+    await run(async (db) => {
+        await db.userCalendarConnection.updateMany({
+            where: { tenantId: identity.tenantId, userId: identity.userId, provider: identity.provider, revokedAt: null },
+            data: { tokenEncrypted: JSON.stringify(token) },
+        });
+    });
+}
+
+/** Revoke from the push path. Silent when the connection is already gone. */
+export async function revokeCalendarConnectionForPush(
+    run: CalendarTenantRun,
+    identity: CalendarConnectionIdentity,
+    reason: string,
+): Promise<void> {
+    await run((db) => revokeIn(db, identity, reason));
+}
+
+/** Stamp a completed push. */
+export async function stampCalendarPushed(
+    run: CalendarTenantRun,
+    identity: CalendarConnectionIdentity,
+    at: Date,
+): Promise<void> {
+    await run(async (db) => {
+        await db.userCalendarConnection.updateMany({
+            where: { tenantId: identity.tenantId, userId: identity.userId, provider: identity.provider, revokedAt: null },
+            data: { lastPushedAt: at },
+        });
+    });
+}
+
+/**
+ * Mark a connection as disconnecting: the person asked to disconnect and some
+ * pushed events are still in their calendar. The token is KEPT so the nightly
+ * run can finish the removals. An earlier stamp is kept, so the retry window
+ * is measured from the first request, not the last.
+ */
+export async function markCalendarDisconnecting(
+    run: CalendarTenantRun,
+    identity: CalendarConnectionIdentity,
+    at: Date,
+): Promise<void> {
+    await run(async (db) => {
+        await db.userCalendarConnection.updateMany({
+            where: {
+                tenantId: identity.tenantId,
+                userId: identity.userId,
+                provider: identity.provider,
+                revokedAt: null,
+                disconnectRequestedAt: null,
+            },
+            data: { disconnectRequestedAt: at },
         });
     });
 }
@@ -320,7 +495,13 @@ export async function listCalendarConnections(
             orderBy: { provider: 'asc' },
             take: CALENDAR_PROVIDERS.length,
         });
-        return rows.map(toSummary);
+        const counts = await db.userCalendarEventMapping.groupBy({
+            by: ['provider'],
+            where: { tenantId: ctx.tenantId, userId: ctx.userId, NOT: { remoteEventId: '' } },
+            _count: { _all: true },
+        });
+        const byProvider = new Map(counts.map((c) => [c.provider, c._count._all]));
+        return rows.map((row) => ({ ...toSummary(row), undeletedEventCount: byProvider.get(row.provider) ?? 0 }));
     });
 }
 
@@ -332,7 +513,8 @@ function toSummary(row: {
     revokedReason: string | null;
     lastPushedAt: Date | null;
     scopesGranted: string[];
-}): CalendarConnectionSummary {
+    disconnectRequestedAt?: Date | null;
+}): Omit<CalendarConnectionSummary, 'undeletedEventCount'> {
     return {
         id: row.id,
         provider: row.provider as CalendarProviderId,
@@ -341,5 +523,6 @@ function toSummary(row: {
         revokedReason: row.revokedReason,
         lastPushedAt: row.lastPushedAt,
         scopesGranted: row.scopesGranted,
+        disconnectRequestedAt: row.disconnectRequestedAt ?? null,
     };
 }

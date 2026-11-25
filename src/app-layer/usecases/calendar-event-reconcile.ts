@@ -33,8 +33,11 @@
  *     completed and we recorded it;
  *   - the deterministic `clientEventId`, supplied at CREATION, covers the case
  *     where the previous attempt created the event and died before recording
- *     the id. Both providers accept a caller-specified id and reject a
- *     duplicate, so the retry gets a conflict instead of a second event.
+ *     the id. Google accepts it as the event id and answers a duplicate with
+ *     409; Graph takes no caller-chosen id, so the writer sends it as
+ *     `transactionId` and as a marker property it can find the event by
+ *     (`integrations/providers/calendar/graph-writer.ts`). Either way the retry
+ *     resolves to the existing event instead of creating a second one.
  *
  * @module usecases/calendar-event-reconcile
  */
@@ -156,6 +159,16 @@ export function reconcileCalendarEvents(input: {
     desired: readonly PushableEvent[];
     /** Every mapping row this user currently has for this provider. */
     existing: readonly ExistingMapping[];
+    /**
+     * Deletes to WITHHOLD this run, because the generation could not vouch for
+     * their absence. `sourceKeys` names the sources that failed or were capped
+     * (an absent event there may simply not have been read); `all` holds every
+     * delete (the aggregation's total cap bit, so any source may be short).
+     *
+     * A permission the person LOST is never held: that source is OMITTED, not
+     * failed, and its deletes are the revoke direction this module exists for.
+     */
+    holdDeletes?: { sourceKeys: ReadonlySet<string>; all: boolean };
 }): ReconcileAction[] {
     const actions: ReconcileAction[] = [];
     const existingByKey = new Map(input.existing.map((m) => [key(m.sourceKey, m.sourceEntityId), m]));
@@ -193,6 +206,10 @@ export function reconcileCalendarEvents(input: {
     for (const m of input.existing) {
         if (desiredKeys.has(key(m.sourceKey, m.sourceEntityId))) continue;
         if (!m.remoteEventId) continue; // never made it remote; the row is just noise
+        // Not read this run is not gone. A source that failed or hit its cap
+        // would otherwise have every event in it deleted tonight and created
+        // again tomorrow.
+        if (input.holdDeletes?.all || input.holdDeletes?.sourceKeys.has(m.sourceKey)) continue;
         // Absent from `desired` means one of: the deadline was deleted, it fell
         // out of the window, or THE USER LOST THE PERMISSION THAT SHOWED IT.
         // The three are indistinguishable here and the response is the same —

@@ -206,3 +206,39 @@ describe('the client event id', () => {
         expect(a).not.toBe(b);
     });
 });
+
+describe('deletes the generation could not vouch for are HELD (#5937 step 2)', () => {
+    const task = ev({ sourceKey: 'task-due', sourceEntityId: 'task-1' });
+    const risk = ev({ sourceKey: 'risk-review', sourceEntityId: 'risk-1' });
+
+    it('a source that failed or hit its cap keeps its events — unread is not gone', () => {
+        const actions = reconcileCalendarEvents({
+            identity: IDENTITY,
+            desired: [],
+            existing: [mapped(task), mapped(risk, { remoteEventId: 'remote-2' })],
+            holdDeletes: { sourceKeys: new Set(['task-due']), all: false },
+        });
+        expect(actions).toEqual([{ kind: 'delete', sourceKey: 'risk-review', sourceEntityId: 'risk-1', remoteEventId: 'remote-2' }]);
+    });
+
+    it('a total cap holds every delete', () => {
+        const actions = reconcileCalendarEvents({
+            identity: IDENTITY,
+            desired: [],
+            existing: [mapped(task), mapped(risk)],
+            holdDeletes: { sourceKeys: new Set(), all: true },
+        });
+        expect(actions).toEqual([]);
+    });
+
+    it('a hold never stops an insert or a patch', () => {
+        const changed = { ...task, title: 'renamed' };
+        const actions = reconcileCalendarEvents({
+            identity: IDENTITY,
+            desired: [changed, risk],
+            existing: [mapped(task)],
+            holdDeletes: { sourceKeys: new Set(['task-due', 'risk-review']), all: true },
+        });
+        expect(actions.map((a) => a.kind).sort()).toEqual(['insert', 'patch']);
+    });
+});

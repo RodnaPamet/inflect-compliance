@@ -1,10 +1,11 @@
 # Calendar push — design
 
 > **Status: living design** — the connection (connect, callback, token
-> storage, admin consent routes) is built and hardened; the writer, the admin
-> consent page and the Connect control are not. Epic #5937 tracks the steps,
-> one pull request each. The `Current state` section is true today; the
-> `Roadmap` section is the plan for steps 2–4.
+> storage, admin consent routes) and the writer (step 2: the nightly push of
+> a person's own deadlines, and disconnect) are built; the admin consent page
+> and the Connect control are not. Epic #5937 tracks the steps, one pull
+> request each. The `Current state` section is true today; the `Roadmap`
+> section holds step 2's open items and the plan for steps 3–4.
 
 What this feature is for: a person connects their own Google or Microsoft
 calendar, and the compliance deadlines they are responsible for appear in it,
@@ -12,8 +13,8 @@ kept current, and removed when they stop applying or the person disconnects.
 
 Companion documents: [`calendar-surface-do-not-touch.md`](calendar-surface-do-not-touch.md)
 (the parts of the calendar that are already right and must not be "fixed"),
-[`sub-processors.md`](sub-processors.md) (the `calendar` row, which must be
-updated in the same pull request that first writes to a calendar), and
+[`sub-processors.md`](sub-processors.md) (the `calendar` row, which says what
+the writer sends), and
 [`data-retention.md`](data-retention.md) (`UserCalendarConnection`,
 `UserCalendarEventMapping`).
 
@@ -142,7 +143,7 @@ and the model was outside the manifest, so neither sweep touched it. Rows from
 then are still `v1:` and still read, because the extension dispatches per value
 on the envelope prefix. Each moves to `v2:` on its next write: a reconnect, or
 the writer's first token refresh — access tokens live an hour, so the first push
-run after step 2 ships refreshes every live connection. No backfill was written:
+run refreshes every live connection. No backfill was written:
 until a row moves it stays covered by the master-KEK sweep, and the population
 is small (no control in the product starts a connection).
 
@@ -159,137 +160,193 @@ Revoking keeps the row and writes the token as `''`.
 read and withdraw the workspace's grant; Entra returns to
 `/api/integrations/calendar/admin-callback`. No page calls them.
 
-### Push
+### Push (step 2)
 
 `calendar-push-dispatch` runs daily at 03:00 UTC and enqueues one
-`calendar-push-tenant` per workspace with a live connection. That job
-enumerates the workspace's connections and writes nothing (`pushed: 0`).
-`generatePushableEvents`, `reconcileCalendarEvents` and `sweepUserCalendar`
-exist and are unit-tested, and have no production caller. There is no
-`CalendarWriter` implementation. **Nothing is written to any calendar.**
+`calendar-push-tenant` per workspace with a live connection. That job visits
+the workspace's live connections one person at a time
+(`jobs/calendar-push.ts`), and for each:
 
-## Roadmap (future direction)
+1. reads the token with `runInTenantJobContext({ tenantId, source:
+   'calendar-push' })` — the job's own, non-bypass source, so the workspace's
+   DEK resolves — together with, for Microsoft, the directory the token was
+   issued in (`TenantCalendarConsent.externalTenantId`, the authority a refresh
+   must go to);
+2. builds the provider's writer over it;
+3. runs `sweepUserCalendar` with a Prisma-backed `MappingStore` on
+   `UserCalendarEventMapping` (`usecases/calendar-mapping-store.ts`, one short
+   transaction per call, never held across a provider request);
+4. stamps `lastPushedAt`.
 
-### Step 2 — the writer
+Each person's run is wrapped in `runUserPushGuarded`, so one person's failure
+never stops the next: a refused token revokes that connection (once, token
+destroyed, row kept), a throttle stops that person's run for the night, and
+anything else is counted `failed`. The orchestration is
+`usecases/calendar-push-person.ts`.
 
 #### What is pushed
 
 - **Sources.** What `getComplianceCalendarEvents` returns for the person, under
   their live membership (`resolveMemberContext` via `generatePushableEvents`),
-  over the next `PUSH_WINDOW_DAYS` (90). That keeps the calendar's per-source
-  authorization (do-not-touch §1) as the only authority.
-- **Owned deadlines only — recommended, and an owner decision.** An OWNER or
-  ADMIN can see every deadline in the workspace; pushing all of them would put
-  hundreds of other people's tasks into one personal calendar. The
-  recommendation is the calendar page's "My deadlines" semantics: push a
-  deadline only when the person is its owner or assignee. `training` cannot
-  take part (do-not-touch §6) and is not pushed. This also keeps what leaves
-  for Google or Microsoft to the person's own work.
-- **Fields.** An all-day event on the deadline's date (a deadline is a date,
-  and a timed event would move across a timezone boundary). Title: the
-  aggregation's title. Description: its detail line and a link to the item in
-  Inflect, built from the public origin. No attendees, no location, shown as
-  free (`transparency: transparent` / `showAs: free`), private visibility, the
-  provider's default reminders. A private marker identifies the event as
-  Inflect's (`extendedProperties.private` on Google, a single-value extended
-  property on Graph), so support can tell ours from the person's own.
-- **Language.** The aggregation's prefixes ("Evidence review: …") are English
-  today. Pushed text uses the workspace's `Tenant.defaultLocale`, the language
-  the product writes into the workspace's records, not the browser cookie a
-  job cannot see. Translating the prefixes means giving the aggregation a
-  locale parameter; the titles of the items themselves are the workspace's own
-  text and stay as written.
+  from the start of the current UTC day over the next `PUSH_WINDOW_DAYS` (90).
+  The calendar's per-source authorization (do-not-touch §1) is the only
+  authority. The window starts at the start of the day, not at the job's
+  03:00, because day deadlines are stored at UTC midnight: a window from `now`
+  would delete a deadline from the person's calendar on the day it falls due.
+  A deadline whose day has passed leaves the window and is removed on the next
+  run.
+- **Only the person's own deadlines (owner decision 2026-11-25).** A deadline
+  is pushed only when the person is its owner or assignee — the calendar
+  page's "My deadlines" semantics, `ownerUserId === userId`. The aggregation
+  applies it (`ownedBy`), after its per-source permission gate and before its
+  total cap. `training` carries no owner (do-not-touch §6) and is never
+  pushed. What leaves for Google or Microsoft is the person's own work and
+  nobody else's.
+- **Fields.** An all-day event on the deadline's date. Title: the deadline
+  kind and the item's own title, composed as the calendar page composes it.
+  Description: the item's detail line and an absolute link to it, built from
+  `APP_URL` (no link line when that is unset — a relative link is useless in a
+  calendar outside Inflect). No attendees, no location, shown as free
+  (`transparency: transparent` / `showAs: free`), private
+  (`visibility: private` / `sensitivity: private`), the calendar's default
+  reminders. A private marker holds the event's client id
+  (`extendedProperties.private.inflectEventId` on Google, a single-value
+  extended property on Graph), so support can tell ours from the person's own.
+  A duration source (an audit cycle) is pushed as one all-day event on its
+  start date.
+- **Language (owner decision 2026-11-25).** The product's own wording — the
+  deadline kind ("Evidence review"), the link line ("Open in Inflect: …") — is
+  written in the workspace's `Tenant.defaultLocale` from the
+  `workspaceText.calendarPush` catalogue (`en`, `bg`), read once per workspace
+  per run. The aggregation takes it as `locale`. A job sees no browser cookie,
+  and the reader of the event is reading the workspace's record. The titles of
+  the items themselves are the workspace's own text and go as written. The
+  English wording is the calendar page's English, unchanged; a unit test holds
+  the two catalogues equal for every event type in both languages. The detail
+  line is data and is not translated (one source, a treatment plan, writes
+  "`<strategy>` strategy" there).
+- **Identity.** A mapping row is keyed on the event TYPE and the entity id, not
+  the entity type: one row can carry two deadlines (a risk's review and target
+  dates, a vendor's review and contract renewal), which keyed on the entity
+  would share one calendar event and overwrite each other every night.
 
-#### The `CalendarWriter` contract
+#### The writers
 
-The interface already exists in `usecases/calendar-reconcile-sweep.ts`:
-`insert({ clientEventId, event }) → { remoteEventId }`,
-`patch({ remoteEventId, event })`, `remove({ remoteEventId })`. Two
-implementations, under `integrations/providers/calendar/`, each taking an
-access-token supplier (`resolveCalendarAccessToken` with `persist` bound to
-`updateCalendarToken`) and going through `resilientFetch`, so 401/403 become
-`IntegrationAuthError` and 429 becomes `IntegrationRateLimitedError` — the two
-errors the sweep treats as connection-level.
+`CalendarWriter` is `insert({ clientEventId, event }) → { remoteEventId }`,
+`patch({ remoteEventId, event }) → void | { remoteEventId }` and
+`remove({ remoteEventId })` (`usecases/calendar-reconcile-sweep.ts`). The two
+implementations are `integrations/providers/calendar/google-writer.ts` and
+`graph-writer.ts`, over a shared seam (`calendar-http.ts`): every request goes
+through `createResilientFetch` over the bounded fetch, so 401/403 become
+`IntegrationAuthError` and an exhausted 429 `IntegrationRateLimitedError`, the
+two errors the sweep treats as connection-level. A 401 is retried once with a
+freshly refreshed token; a second 401 is the provider's real answer.
 
 | | Google Calendar API v3 | Microsoft Graph v1.0 |
 | --- | --- | --- |
-| Calendar | `primary` | `/me/calendar` (the default) |
-| Insert | `POST events` with `id = clientEventId` (lowercase hex is valid base32hex) | `POST /me/events` with `transactionId = clientEventId`, header `Prefer: IdType="ImmutableId"` |
-| A retried insert | `409` → the event exists under OUR id: `remoteEventId = clientEventId` | Graph de-duplicates on `transactionId`; the exact answer to a duplicate is verified against a real mailbox in step 2 and recorded in its PR |
-| Update | `PATCH events/{id}` | `PATCH /me/events/{id}` |
-| Delete | `DELETE events/{id}`; `404`/`410` is done | `DELETE /me/events/{id}`; `404` is done |
-
-Graph does not accept a caller-chosen event id, which `calendar-event-reconcile.ts`'s
-idempotency note assumes of both providers; `transactionId` is Graph's
-equivalent, and the immutable-id header keeps the stored id valid when the
-person moves the event between calendars.
+| Calendar | `primary` | `/me/events` (the default calendar) |
+| Insert | `POST events` with `id = clientEventId` | `POST /me/events` with `transactionId = clientEventId`; every request sends `Prefer: IdType="ImmutableId"` |
+| A retried insert | `409` → the event exists under OUR id: `remoteEventId = clientEventId` | 2xx with an id → that id. `409`, or a `400` whose error code names a duplicate → found by our marker (`$filter` on the single-value extended property); not found → a per-event failure. **Unverified against a real mailbox** — see the Roadmap |
+| Update | `PATCH events/{id}` with `status: confirmed` (an event deleted by hand is kept by Google as `cancelled`) | `PATCH /me/events/{id}` |
+| Update of a gone event | `404`/`410` → created again under `recreatedClientEventId(old id)`; the sweep records the new id | `404` → the same |
+| Delete | `DELETE events/{id}`; `404`/`410` is done | `DELETE /me/events/{id}`; `404`/`410` is done |
+| Throttle | `429`, and `403` with reason `rateLimitExceeded` / `userRateLimitExceeded` / `quotaExceeded`, which the writer hands the resilient layer as a 429 so a busy morning is not read as a lost credential | `429` with `Retry-After` |
 
 #### Idempotency and reconciliation
 
-Unchanged from what exists: `UserCalendarEventMapping` is the record of every
-pushed event; the deterministic `clientEventId` makes a retried create a no-op;
-`contentHash` detects a change without reading the remote; a failed remote
-delete keeps the row in `PENDING_DELETE` for the next run; a person who may see
-nothing any more (`refused` / `no-visible-sources`) has everything removed. An
-event the person edited by hand is overwritten on the next change to the
-deadline and otherwise left alone; one they deleted by hand is re-created only
-when the deadline changes (a `patch` of a deleted event returns 404/410, which
-the writer turns into a fresh insert).
+`UserCalendarEventMapping` is the record of every pushed event; the
+deterministic `clientEventId` makes a retried create a no-op; `contentHash`
+detects a change without reading the remote; a failed remote delete keeps the
+row in `PENDING_DELETE` for the next run; a person who may see nothing any more
+(`refused` / `no-visible-sources`) has everything removed. An event the person
+edited by hand is overwritten on the next change to the deadline and otherwise
+left alone; one they deleted by hand is re-created when the deadline changes.
+
+A source that FAILED or hit its per-source cap, or a total cap that bit, may
+not have been read in full, so the deletes it would imply are HELD for that run
+(`held` on the generation, `holdDeletes` on the reconciler): an absent event
+there may simply be unread, and deleting it tonight would re-create it
+tomorrow. A permission the person LOST is never held — that source is omitted,
+not failed, and its deletes are the revoke direction. The generation reads the
+aggregation's `failedSources`; it read a field the response never carries
+before step 2, so an outage could have been taken for a lost permission.
 
 #### Rate limits
 
-Google applies a per-user-per-minute quota and a daily project quota, and
-answers `403 rateLimitExceeded` / `429`. Graph allows four concurrent requests
-per mailbox and a request budget per app per mailbox per ten minutes, and
-answers `429` with `Retry-After`. So: writes for one person are sequential;
-each run caps the actions per person (a first push of a long backlog spreads
-over several nights instead of meeting the quota); a rate-limit answer is
-connection-level, stops that person's run, and the next run resumes from the
-mapping table. No retry inside a run honours a provider's `Retry-After`
-beyond the job's own budget.
+A person's writes are sequential, and people are visited sequentially. Each
+run makes at most `PUSH_ACTIONS_PER_PERSON_PER_RUN` (50) provider calls per
+person; removals go first, so the cap never holds a removal behind a backlog of
+new deadlines, and new deadlines go nearest first. A first push of a long
+backlog spreads over several nights. Inside one call the resilient layer makes
+at most two attempts and absorbs a `Retry-After` of at most five seconds; a
+longer one ends that person's run as throttled, and the next run resumes from
+the mapping table.
 
 #### Token expiry and revocation
 
 `resolveCalendarAccessToken` refreshes inside a 60-second skew and persists a
-rotated token BEFORE using it (Microsoft invalidates the old refresh token).
-A refusal (`400 invalid_grant`, or `401` after a fresh refresh) is
+rotated token BEFORE using it (Microsoft invalidates the old refresh token);
+that write is also what moves a pre-#5937 `v1:` row onto the workspace key. A
+refusal (`400 invalid_grant`, or `401` after a fresh refresh) is
 `IntegrationAuthError`; `calendar-consent-health.ts` marks the connection
-revoked once, destroys the token and stops scheduling it, and the person sees
-"reconnect". Events already pushed stay in their calendar while there is no
-token to reach them; the mapping rows are kept, so a reconnect resumes and the
-next run patches or removes them by their stored ids.
+revoked once, destroys the token and stops scheduling it. Events already pushed
+stay in the calendar while there is no token to reach them; the mapping rows
+are kept, so a reconnect resumes and the next run patches or removes them by
+their stored ids.
 
-#### Wiring into `calendar-push-tenant`
+The push does not consult Inflect's record of the Microsoft admin consent: a
+withdrawal recorded in Inflect stops new connections, and whether Microsoft
+still honours each person's grant is Microsoft's answer at the next refresh —
+the behaviour `revokeAdminConsent` already documents.
 
-For each live connection, inside `runUserPushGuarded` (one person's failure
-never stops the batch):
+### Disconnect
 
-1. read the token with `runInTenantJobContext({ tenantId, source: 'calendar-push' })`
-   — a non-bypass source, or the DEK does not resolve and the read is refused;
-2. build the provider's writer;
-3. `sweepUserCalendar({ tenantId, userId, provider }, { store, writer })`, with a
-   Prisma-backed `MappingStore` on `UserCalendarEventMapping`;
-4. stamp `lastPushedAt`.
+`DELETE /calendar/connections?provider=…` (`disconnectCalendar`) removes the
+pushed events FIRST — up to `DISCONNECT_INLINE_REMOVALS` (25) in the request —
+and destroys the token only when none is left; for Google it then revokes the
+grant at `oauth2.googleapis.com/revoke` (best effort; the local token is gone
+whatever Google answers). Microsoft has no per-token revocation for a delegated
+grant, so the token is only destroyed. The answer is `204`.
 
-The job returns the counts the sweep reports. The REVOKE direction (removing
-events a person may no longer see) is cheap to compute and only its deletes
-reach a provider, so step 2 also considers a second, more frequent schedule
-that runs the sweep with inserts and patches suppressed.
+When some removals fail or are left over, or the provider throttles, the
+connection is marked as disconnecting (`UserCalendarConnection.disconnectRequestedAt`)
+and KEEPS its token; the answer is `202` with `{ status: 'disconnecting',
+removed, remaining }`. The nightly run retries only the removals for it (no
+generation), and revokes when they are done or after `DISCONNECT_RETRY_DAYS`
+(7) from the first request, whichever is first. What could not be removed stays
+recorded in the mapping table, and `GET /calendar/connections` reports how
+many per provider (`undeletedEventCount`); the Connect control (step 4) tells
+the person. A token refused during a disconnect can remove nothing, so the
+connection ends at once and the events stay recorded. A reconnect clears the
+disconnecting state. Every disconnect is audited `CALENDAR_DISCONNECTED`
+(provider, outcome, counts — never a token, an event id or a title).
 
-#### Disconnect
+## Roadmap (future direction)
 
-`DELETE /calendar/connections?provider=…` deletes the pushed remote events
-FIRST and drops the token after (`deleteAllForDisconnect`, then
-`revokeCalendarConnection`). Reversed, the events are stranded with no
-credential left to reach them. When some deletes fail, the connection is
-marked as disconnecting, keeps its token, and the nightly run retries only the
-deletes; after a bounded number of days the token is dropped anyway and the
-person is told which events could not be removed. Google's token is then also
-revoked at `oauth2.googleapis.com/revoke`; Microsoft has no per-token
-revocation for a delegated grant, so the refresh token is simply destroyed.
+### Step 2 — open items
 
-The same pull request updates the `calendar` row of `sub-processors.md` to say
-what is written.
+Step 2 shipped (see "Push" and "Disconnect" above). What it could not settle:
+
+- **Graph's answer to a duplicate `transactionId` is unverified.** Microsoft's
+  documentation says Graph de-duplicates a create on `transactionId` and does
+  not say what the duplicate POST answers. The writer was built with no access
+  to a real mailbox and handles every plausible shape (an id → taken; `409` or
+  a duplicate-coded `400` → looked up by our marker; anything else → a per-event
+  failure retried next run). Which shape Graph returns is to be recorded
+  against a real mailbox, and the writer narrowed to it.
+- **Graph all-day events in UTC are unverified.** Events are created with
+  `isAllDay` and midnight-to-midnight `UTC`. Whether Outlook shows them on the
+  same date for a mailbox in another time zone has not been observed. Reading
+  the mailbox's own zone needs `MailboxSettings.Read`, which is not requested.
+- **A Graph patch of an event the person deleted by hand is unverified.** With
+  immutable ids the event may still resolve from Deleted Items, where a patch
+  would not put it back in the calendar.
+- **A more frequent revoke-only sweep was considered and not built.** Removing
+  events a person may no longer see is cheap to compute, and only its deletes
+  reach a provider, so it could run more often than the daily push. Step 2
+  keeps one daily run: the leak window is one day, the deletes already go first
+  under the per-person cap, and a second schedule adds a job, an outcome metric
+  and its own retry policy. It is one schedule entry when wanted.
 
 ### Step 3 — the Microsoft admin consent page
 
