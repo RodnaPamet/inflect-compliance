@@ -258,6 +258,35 @@ describe('callback: every failure redirects to its outcome, never a JSON error',
         expectOutcome(location, 'provider_error');
     });
 
+    it.each([
+        // Design point 1: an admin consent removed in the Entra portal is seen
+        // only here. Mapped from Entra's codes; unverified against a real
+        // directory (docs/calendar-push-design.md).
+        [{ error: 'consent_required' }, 'consent_required'],
+        [{ error: 'invalid_client', error_description: 'AADSTS65001: The user or administrator has not consented. jane@x.test' }, 'consent_required'],
+        [{ error: 'access_denied', error_description: 'AADSTS90094: The grant requires admin permission. Contoso' }, 'consent_required'],
+        [{ error: 'access_denied', error_description: 'AADSTS65004: User declined to consent. jane@x.test' }, 'connect_declined'],
+    ])('Outlook: %j → %s, from the codes only', async (q, outcome) => {
+        const f = await bound('outlook-calendar');
+        const { location } = await callback({ state: f.state, ...q }, f.cookie);
+        expectOutcome(location, outcome);
+        expect(exchangeCalendarCode).not.toHaveBeenCalled();
+        expect(recordCalendarConnectFailure).toHaveBeenCalledWith(expect.anything(), {
+            provider: 'outlook-calendar',
+            outcome,
+            providerErrorCode: q.error,
+        });
+        const recorded = JSON.stringify([recordCalendarConnectFailure.mock.calls, location?.toString()]);
+        expect(recorded).not.toContain('jane');
+        expect(recorded).not.toContain('Contoso');
+    });
+
+    it('Google: consent_required is not read as a Microsoft organisation consent', async () => {
+        const f = await bound('google-calendar');
+        const { location } = await callback({ state: f.state, error: 'consent_required' }, f.cookie);
+        expectOutcome(location, 'provider_error');
+    });
+
     it('no code and no error → provider_error', async () => {
         const f = await bound();
         const { location } = await callback({ state: f.state }, f.cookie);

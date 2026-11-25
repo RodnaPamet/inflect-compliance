@@ -1,11 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { getTenantCtx } from '@/app-layer/context';
-import { recordAdminConsent } from '@/app-layer/usecases/tenant-calendar-consent';
+import type { RequestContext } from '@/app-layer/types';
+import { resolvePublicOrigin } from '@/lib/http/request-origin';
+import { assertPermission } from '@/lib/security/assert-permission';
+import {
+    CALENDAR_ADMIN_CALLBACK_PATH,
+    clearCalendarAdminConsentFlow,
+    readCalendarAdminConsentFlow,
+} from '@/app-layer/integrations/providers/calendar/admin-consent-flow';
+import {
+    isEntraTenantId,
+    readEntraError,
+    type EntraErrorKind,
+} from '@/app-layer/integrations/providers/calendar/entra-errors';
+import {
+    recordAdminConsent,
+    recordAdminConsentFailure,
+    type CalendarAdminConsentOutcome,
+} from '@/app-layer/usecases/tenant-calendar-consent';
 import { logger } from '@/lib/observability/logger';
 
+/** Entra's error, as the consent card words it. */
+const OUTCOME_FOR_ENTRA_ERROR: Record<EntraErrorKind, Exclude<CalendarAdminConsentOutcome, 'consent_granted'>> = {
+    DECLINED: 'consent_declined',
+    // On the admin flow, "consent is required" is the grant itself not being
+    // given; there is no narrower remedy than trying again.
+    CONSENT_REQUIRED: 'consent_declined',
+    NOT_DIRECTORY_ADMIN: 'not_directory_admin',
+    APP_NOT_IN_DIRECTORY: 'app_not_in_directory',
+    OTHER: 'provider_error',
+};
+
 /**
- * Where Entra returns after a tenant admin grants consent.
+ * Where Entra returns after a workspace administrator grants (or refuses)
+ * organisation-wide consent.
  *
  * ═══ THIS CALLBACK RECEIVES NO AUTHORIZATION CODE ═══
  *
@@ -15,67 +44,138 @@ import { logger } from '@/lib/observability/logger';
  * error — which is the single most likely way to get this wrong, because every
  * other OAuth callback in the codebase looks for a code.
  *
- * ═══ WHY IT SITS OUTSIDE /t/[tenantSlug] ═══
+ * ═══ THE FLOW IS SEALED, AND NAMES WHO ASKED ═══
  *
- * Entra redirects to ONE fixed URI. The tenant is recovered from the
- * `cal_admin_state` cookie, which carries `<state>.<tenantSlug>` — the
- * SharePoint pattern. Splitting on the FIRST dot is safe because state is a
- * UUID and contains none.
+ * Entra redirects to ONE fixed URI, outside /t/[tenantSlug]. The workspace and
+ * the administrator who started the flow are recovered from the signed flow
+ * cookie (`admin-consent-flow.ts`), sent only to this path. A missing, forged,
+ * expired or mismatched cookie is a refusal, never a "try anyway": the grant
+ * covers every person in a workspace. The session must be the administrator
+ * who started it, and must STILL hold `admin.manage` — a grant is recorded
+ * with its author, and the author must be one who may grant.
  *
- * The state comparison is the CSRF defence for a tenant-wide authorisation, so
- * a missing or mismatched cookie is a refusal, never a "try anyway".
+ * ═══ EVERY OUTCOME IS A REDIRECT ═══
+ *
+ * The administrator arrives here in a browser tab from Microsoft. A thrown
+ * error used to leave them on the API wrapper's JSON body. Every path below
+ * ends in a redirect to `/t/<slug>/admin/integrations?calendar=<outcome>`, the
+ * outcome from the closed `CALENDAR_ADMIN_CONSENT_OUTCOMES`, and the flow
+ * cookie is spent whatever happened. With no signed flow naming a workspace,
+ * the redirect goes to `/tenants`, the workspace picker. The origin is
+ * `resolvePublicOrigin`, the one the consent route built `redirect_uri` from.
+ *
+ * ═══ WHAT IS RECORDED ═══
+ *
+ * A grant is audited `CALENDAR_ADMIN_CONSENT_GRANTED` by `recordAdminConsent`.
+ * Failures after the workspace context resolves are audited
+ * `CALENDAR_ADMIN_CONSENT_FAILED`; failures before it are logged only, because
+ * nothing trustworthy names a workspace to audit into. Neither ever carries
+ * Entra's `error_description`: only its OAuth error code and the AADSTS number.
  */
 export const GET = withApiErrorHandling(async (req: NextRequest) => {
     const url = req.nextUrl;
-    const returnedState = url.searchParams.get('state') ?? '';
-    const cookie = req.cookies.get('cal_admin_state')?.value ?? '';
+    const origin = resolvePublicOrigin(req);
+    const provider = 'outlook-calendar' as const;
 
-    const dot = cookie.indexOf('.');
-    const cookieState = dot < 0 ? '' : cookie.slice(0, dot);
-    const tenantSlug = dot < 0 ? '' : cookie.slice(dot + 1);
+    const back = (slug: string | null, outcome: CalendarAdminConsentOutcome) => {
+        const to = new URL(slug ? `/t/${encodeURIComponent(slug)}/admin/integrations` : '/tenants', origin);
+        to.searchParams.set('calendar', outcome);
+        const res = NextResponse.redirect(to);
+        clearCalendarAdminConsentFlow(res);
+        return res;
+    };
 
-    if (!cookieState || !tenantSlug || cookieState !== returnedState) {
-        // Never proceed on a state mismatch. This grant covers every user in a
-        // tenant; a forged one is not a thing to be lenient about.
-        logger.warn('calendar admin-consent callback rejected: state mismatch', {
+    const read = readCalendarAdminConsentFlow(req, url.searchParams.get('state'));
+    if (!read.ok) {
+        logger.warn('calendar admin-consent callback rejected: flow not bound', {
             component: 'calendar-admin-callback',
-            hasCookie: Boolean(cookie),
+            reason: read.reason,
         });
-        return NextResponse.redirect(new URL('/no-tenant?calendar=consent_failed', url.origin));
+        return back(read.tenantSlug, 'flow_invalid');
+    }
+    const { flow } = read;
+    const tenantSlug = flow.tenantSlug;
+
+    let ctx: RequestContext;
+    try {
+        ctx = await getTenantCtx({ tenantSlug }, req);
+    } catch (err) {
+        logger.warn('calendar admin-consent callback rejected: no tenant context', {
+            component: 'calendar-admin-callback',
+            tenantSlug,
+            error: err instanceof Error ? err.name : 'unknown',
+        });
+        return back(tenantSlug, 'consent_failed');
+    }
+
+    const fail = async (
+        outcome: Exclude<CalendarAdminConsentOutcome, 'consent_granted'>,
+        codes: { providerErrorCode?: string | null; aadstsCode?: string | null } = {},
+    ) => {
+        try {
+            await recordAdminConsentFailure(ctx, { provider, outcome, ...codes });
+        } catch (err) {
+            // The audit row records a failure; failing to write it must not
+            // leave the administrator on an error page.
+            logger.error('calendar admin-consent callback could not record a failure', {
+                component: 'calendar-admin-callback',
+                tenantId: ctx.tenantId,
+                error: err instanceof Error ? err.name : 'unknown',
+            });
+        }
+        return back(tenantSlug, outcome);
+    };
+
+    // Another person's session: the grant would be recorded under somebody who
+    // never asked for it.
+    if (ctx.userId !== flow.userId) {
+        logger.warn('calendar admin-consent callback rejected: flow started by another member', {
+            component: 'calendar-admin-callback',
+            tenantId: ctx.tenantId,
+        });
+        return fail('flow_invalid');
+    }
+
+    // The administrator's authority is asked again here, not only at the
+    // start: it can be withdrawn inside the ten-minute window, and a refusal
+    // writes the same AUTHZ_DENIED row the route gate would.
+    try {
+        await assertPermission(ctx, 'admin.manage', { method: 'GET', path: CALENDAR_ADMIN_CALLBACK_PATH });
+    } catch {
+        return fail('not_permitted');
     }
 
     // Entra sends `admin_consent=True` on success, and `error` + a description
-    // when the admin declines or lacks the role. Both are absences of a code,
-    // so they must be told apart explicitly rather than by "no code = failed".
-    const granted = (url.searchParams.get('admin_consent') ?? '').toLowerCase() === 'true';
-    const errorCode = url.searchParams.get('error');
-    if (!granted || errorCode) {
-        logger.info('calendar admin consent not granted', {
-            component: 'calendar-admin-callback',
-            tenantSlug,
-            // The CODE only. `error_description` is provider prose that can
-            // carry a tenant name or an admin's UPN.
-            errorCode,
+    // when the administrator declines or cannot grant. Both are absences of a
+    // code, so they must be told apart explicitly.
+    const errorParam = url.searchParams.get('error');
+    if (errorParam) {
+        const reading = readEntraError(errorParam, url.searchParams.get('error_description'), 'admin');
+        return fail(OUTCOME_FOR_ENTRA_ERROR[reading.kind], {
+            providerErrorCode: reading.errorCode,
+            aadstsCode: reading.aadstsCode,
         });
-        const back = new URL(`/t/${tenantSlug}/admin/integrations`, url.origin);
-        back.searchParams.set('calendar', errorCode ? 'consent_declined' : 'consent_failed');
-        return NextResponse.redirect(back);
+    }
+    const granted = (url.searchParams.get('admin_consent') ?? '').toLowerCase() === 'true';
+    if (!granted) return fail('provider_error');
+
+    // The directory we were ACTUALLY consented in. Later authorize URLs go to
+    // it, so it is only ever stored as the GUID Entra sends; anything else in
+    // that position is not a directory we can send people to.
+    const tenantParam = url.searchParams.get('tenant');
+    if (tenantParam !== null && !isEntraTenantId(tenantParam)) return fail('provider_error');
+    const externalTenantId = tenantParam;
+
+    try {
+        await recordAdminConsent(ctx, { provider, externalTenantId });
+    } catch (err) {
+        logger.warn('calendar admin-consent callback: the grant could not be recorded', {
+            component: 'calendar-admin-callback',
+            tenantId: ctx.tenantId,
+            error: err instanceof Error ? err.name : 'unknown',
+        });
+        return fail('consent_failed');
     }
 
-    // The Entra tenant we were ACTUALLY consented in. Subsequent authorize URLs
-    // must use it — guessing again would send users to the wrong authority, and
-    // a multi-tenant admin can legitimately consent in a directory that is not
-    // the one we would have assumed.
-    const externalTenantId = url.searchParams.get('tenant');
-
-    const ctx = await getTenantCtx({ tenantSlug }, req);
-    await recordAdminConsent(ctx, { provider: 'outlook-calendar', externalTenantId });
-
-    const back = new URL(`/t/${tenantSlug}/admin/integrations`, url.origin);
-    back.searchParams.set('calendar', 'consent_granted');
-    const res = NextResponse.redirect(back);
-    // Single-use: the state has done its job and a lingering cookie is a
-    // replayable token for a tenant-wide grant.
-    res.cookies.delete('cal_admin_state');
-    return res;
+    return back(tenantSlug, 'consent_granted');
 });

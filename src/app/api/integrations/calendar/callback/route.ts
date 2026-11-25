@@ -18,6 +18,7 @@ import {
     type CalendarConnectOutcome,
 } from '@/app-layer/usecases/user-calendar-connection';
 import { getConsentStates, requiresAdminConsent } from '@/app-layer/usecases/tenant-calendar-consent';
+import { readEntraError } from '@/app-layer/integrations/providers/calendar/entra-errors';
 import { logger } from '@/lib/observability/logger';
 
 /**
@@ -125,6 +126,20 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
     // from a failed exchange: different remedies, so different outcomes.
     const errorCode = url.searchParams.get('error');
     if (errorCode) {
+        if (provider === 'outlook-calendar') {
+            // Entra's answer is read from its code and AADSTS number only. A
+            // missing organisation-wide consent is its own outcome: Inflect's
+            // record of the grant is a memory, and an administrator who removed
+            // it in the Entra portal is seen only here (design point 1).
+            const reading = readEntraError(errorCode, url.searchParams.get('error_description'), 'user');
+            const outcome =
+                reading.kind === 'CONSENT_REQUIRED'
+                    ? 'consent_required'
+                    : reading.kind === 'DECLINED'
+                      ? 'connect_declined'
+                      : 'provider_error';
+            return fail(outcome, reading.errorCode);
+        }
         return fail(errorCode === 'access_denied' ? 'connect_declined' : 'provider_error', errorCode);
     }
 

@@ -37,9 +37,12 @@ import {
     recordAdminConsent,
     revokeAdminConsent,
     getConsentStates,
+    getAdminConsentOverview,
+    recordAdminConsentFailure,
     requiresAdminConsent,
     ADMIN_CONSENT_PROVIDERS,
 } from '@/app-layer/usecases/tenant-calendar-consent';
+import { readEntraError } from '@/app-layer/integrations/providers/calendar/entra-errors';
 import { makeRequestContext } from '../helpers/make-context';
 
 const ctx = makeRequestContext('ADMIN', { tenantId: 't1', userId: 'admin-1' });
@@ -205,5 +208,85 @@ describe('withdrawing does not touch individual connections', () => {
     it('caps the reason', async () => {
         await revokeAdminConsent(ctx, PROVIDER, 'y'.repeat(500));
         expect(db.tenantCalendarConsent.updateMany.mock.calls[0][0].data.revokedReason).toHaveLength(200);
+    });
+});
+
+describe('the consent card\'s read names who granted', () => {
+    it('loads the granting member and keeps an absent row an answer', async () => {
+        db.tenantCalendarConsent.findMany.mockResolvedValue([
+            { ...row(), grantedBy: { name: 'Ada Admin', email: 'ada@acme.test' } },
+        ]);
+        const [state] = await getAdminConsentOverview(ctx);
+        expect(state).toMatchObject({
+            provider: PROVIDER,
+            granted: true,
+            externalTenantId: 'entra-abc',
+            grantedBy: { name: 'Ada Admin', email: 'ada@acme.test' },
+        });
+        expect(db.tenantCalendarConsent.findMany.mock.calls[0][0]).toMatchObject({
+            where: { tenantId: 't1' },
+            take: ADMIN_CONSENT_PROVIDERS.length,
+        });
+
+        db.tenantCalendarConsent.findMany.mockResolvedValue([]);
+        expect((await getAdminConsentOverview(ctx))[0]).toMatchObject({ granted: false, grantedBy: null });
+    });
+});
+
+describe('a consent that did not complete is audited with codes only', () => {
+    it('writes CALENDAR_ADMIN_CONSENT_FAILED as an access event, with the outcome and the bare codes', async () => {
+        await recordAdminConsentFailure(ctx, {
+            provider: PROVIDER,
+            outcome: 'consent_declined',
+            providerErrorCode: 'access_denied',
+            aadstsCode: 'AADSTS65004',
+        });
+        const payload = logEvent.mock.calls[0][2] as unknown as {
+            action: string;
+            detailsJson: { category: string; operation: string; reason: string };
+            metadata: Record<string, unknown>;
+        };
+        expect(payload.action).toBe('CALENDAR_ADMIN_CONSENT_FAILED');
+        expect(payload.detailsJson).toMatchObject({ category: 'access', operation: 'grant_failed', reason: 'consent_declined' });
+        expect(payload.metadata).toEqual({
+            provider: PROVIDER,
+            outcome: 'consent_declined',
+            providerErrorCode: 'access_denied',
+            aadstsCode: 'AADSTS65004',
+        });
+    });
+
+    it('drops a code that is not code-shaped rather than storing it', async () => {
+        await recordAdminConsentFailure(ctx, {
+            provider: PROVIDER,
+            outcome: 'provider_error',
+            providerErrorCode: 'Jane Admin <jane@x.test>',
+            aadstsCode: 'AADSTS65004: jane@x.test',
+        });
+        const payload = logEvent.mock.calls[0][2] as unknown as { metadata: Record<string, unknown> };
+        expect(payload.metadata.providerErrorCode).toBeUndefined();
+        expect(payload.metadata.aadstsCode).toBeUndefined();
+    });
+});
+
+describe('Entra\'s error is read from its codes, never its prose', () => {
+    it('takes the AADSTS number only from the START of the description', () => {
+        expect(readEntraError('access_denied', 'AADSTS65004: User declined.', 'admin').aadstsCode).toBe('AADSTS65004');
+        // A number quoted later in the prose is not lifted out.
+        expect(readEntraError('access_denied', 'User x said AADSTS90094 earlier', 'admin')).toEqual({
+            kind: 'DECLINED',
+            errorCode: 'access_denied',
+            aadstsCode: null,
+        });
+    });
+
+    it('AADSTS90094 is a non-administrator on the admin flow, and a missing grant on a person\'s own', () => {
+        expect(readEntraError('access_denied', 'AADSTS90094: x', 'admin').kind).toBe('NOT_DIRECTORY_ADMIN');
+        expect(readEntraError('access_denied', 'AADSTS90094: x', 'user').kind).toBe('CONSENT_REQUIRED');
+    });
+
+    it('an unknown code with no number is OTHER', () => {
+        expect(readEntraError('temporarily_unavailable', null, 'user').kind).toBe('OTHER');
+        expect(readEntraError(null, null, 'user')).toEqual({ kind: 'OTHER', errorCode: null, aadstsCode: null });
     });
 });
