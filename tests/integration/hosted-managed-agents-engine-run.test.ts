@@ -17,6 +17,9 @@
  *   • Every request carries Inflect's key and workspace, the session is always
  *     deleted at settle (decision 4 is MA-C2's only), the ledger records the
  *     workspace kind, and the run holds a hosted slot.
+ *   • The session time Inflect pays for (`usage.active_seconds`) is read
+ *     before the delete and recorded on the run (#4173); a read that fails is
+ *     recorded as unknown, never zero, and the session is still deleted.
  *   • A worker that dies mid-run is taken over, and the takeover RECONNECTS
  *     to the hosted session and continues there, as a run in a tenant's own
  *     workspace does (#5854, owner decision 2026-11-25); the session is still
@@ -67,7 +70,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
-import { ManagedAgentsFaux } from '../helpers/managed-agents-faux';
+import { FAUX_SESSION_ACTIVE_SECONDS, ManagedAgentsFaux } from '../helpers/managed-agents-faux';
 import { makeRequestContext } from '../helpers/make-context';
 import { deleteAuditRowsForTenants, deleteAuditRowsForUsers } from '../helpers/audit-cleanup';
 import { __resetAuditStreamForTests } from '@/app-layer/events/audit-stream';
@@ -227,8 +230,15 @@ describeFn('a hosted Managed Agents run, through the module seam (real DB, faux 
         expect(outcome).toMatchObject({ status: 'COMPLETED' });
 
         // The run took a hosted slot, and its ledger records the workspace kind.
-        const run = await prisma.workflowRun.findUniqueOrThrow({ where: { id: started.runId }, select: { hostedManagedAgents: true, costTokens: true } });
+        const run = await prisma.workflowRun.findUniqueOrThrow({
+            where: { id: started.runId },
+            select: { hostedManagedAgents: true, costTokens: true, hostedSessionSeconds: true, hostedSessionsUnmetered: true },
+        });
         expect(run.hostedManagedAgents).toBe(true);
+        // The session time Inflect pays for, read off the session's usage
+        // before the delete, recorded per tenant beside the tokens (#4173).
+        expect(run).toMatchObject({ hostedSessionSeconds: FAUX_SESSION_ACTIVE_SECONDS, hostedSessionsUnmetered: 0 });
+        expect(run.costTokens).toBeGreaterThan(0);
         const steps = await sessionSteps(started.runId);
         expect(steps.map((s) => s.lifecycle)).toEqual(['SESSION_CREATED', 'SESSION_DELETED']);
         expect(steps[0]).toMatchObject({ connectionId: INFLECT_HOSTED_CONNECTION_ID, workspaceKind: 'HOSTED' });
@@ -272,6 +282,28 @@ describeFn('a hosted Managed Agents run, through the module seam (real DB, faux 
         ]);
         const calls = await modelCallSteps(started.runId);
         expect(calls.find((c) => c.reconnectedToSession === sessionId)).toMatchObject({ workspace: 'HOSTED' });
+        // One session, metered once, by the segment that settled it (#4173).
+        expect(await prisma.workflowRun.findUniqueOrThrow({
+            where: { id: started.runId },
+            select: { hostedSessionSeconds: true, hostedSessionsUnmetered: true },
+        })).toEqual({ hostedSessionSeconds: FAUX_SESSION_ACTIVE_SECONDS, hostedSessionsUnmetered: 0 });
+    });
+
+    it('a session whose usage cannot be read is recorded as UNKNOWN, never zero, and is still deleted (#4173)', async () => {
+        faux.failSessionRetrieve = 503;
+        try {
+            const started = await startAgentProfileTestRun(reviewer(), AGENT, 1);
+            expect(await executeQueuedWorkflowRun(TENANT, started.runId)).toMatchObject({ status: 'COMPLETED' });
+            const steps = await sessionSteps(started.runId);
+            expect(steps.map((s) => s.lifecycle)).toEqual(['SESSION_CREATED', 'SESSION_DELETED']);
+            expect(faux.holdsSession(steps[0].sessionId as string)).toBe(false);
+            expect(await prisma.workflowRun.findUniqueOrThrow({
+                where: { id: started.runId },
+                select: { hostedSessionSeconds: true, hostedSessionsUnmetered: true },
+            })).toEqual({ hostedSessionSeconds: null, hostedSessionsUnmetered: 1 });
+        } finally {
+            faux.failSessionRetrieve = null;
+        }
     });
 
     it('every request carried Inflect\'s key and workspace', () => {

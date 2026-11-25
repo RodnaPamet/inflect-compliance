@@ -55,6 +55,9 @@ export interface FauxScriptedTurn {
 
 export const FAUX_ORIGIN = 'https://api.anthropic.com';
 
+/** The `usage.active_seconds` every session's retrieve answers with by default (#4173). */
+export const FAUX_SESSION_ACTIVE_SECONDS = 12.5;
+
 /** How long a model request is in flight: the window in which an interrupt is honoured after it. */
 export const IN_FLIGHT_MS = 15;
 
@@ -154,6 +157,14 @@ export class ManagedAgentsFaux {
     failDelete: number | null = null;
     /** `sessions.create` is refused with this status and error message. */
     failSessionCreate: { status: number; message: string } | null = null;
+    /**
+     * The `usage` a `sessions.retrieve` answers with (#4173): the session's
+     * cumulative usage, `active_seconds` being what its runtime is priced on.
+     * `null` leaves the member out, as an answer without usage would.
+     */
+    sessionUsage: Record<string, unknown> | null = { active_seconds: FAUX_SESSION_ACTIVE_SECONDS, input_tokens: 0, output_tokens: 0 };
+    /** Every `sessions.retrieve` is answered with this status while set (#4173): a usage read that fails. */
+    failSessionRetrieve: number | null = null;
     drop: FauxDrop | null = null;
     /**
      * An unreliable network: the Nth request matching (1-based) is TAKEN by the
@@ -251,6 +262,7 @@ export class ManagedAgentsFaux {
         if (method === 'POST' && p === '/v1/sessions') return this.createSession(body ?? {});
         m = /^\/v1\/sessions\/([^/]+)$/.exec(p);
         if (m && method === 'GET') {
+            if (this.failSessionRetrieve !== null) return apiError(this.failSessionRetrieve, 'api_error', 'retrieve failed');
             const s = this.sessions.get(m[1]);
             if (!s || s.deleted) return apiError(404, 'not_found_error', 'no such session');
             return json(this.sessionObject(s));
@@ -336,6 +348,7 @@ export class ManagedAgentsFaux {
             archived_at: s.archived ? s.createdAt : null,
             created_at: s.createdAt,
             environment_id: s.environmentId,
+            ...(this.sessionUsage ? { usage: this.sessionUsage } : {}),
         };
     }
 

@@ -30,6 +30,19 @@ jest.mock('@/env', () => {
         }),
     };
 });
+// Watched, not replaced (#4173): a run in the tenant's OWN workspace meters
+// no hosted session time, so this is never called here.
+const mockRecordHostedSessionUsage = jest.fn();
+jest.mock('@/lib/observability/metrics', () => {
+    const actual = jest.requireActual('@/lib/observability/metrics') as typeof import('@/lib/observability/metrics');
+    return {
+        ...actual,
+        recordHostedSessionUsage: (...args: Parameters<typeof actual.recordHostedSessionUsage>) => {
+            mockRecordHostedSessionUsage(...args);
+            return actual.recordHostedSessionUsage(...args);
+        },
+    };
+});
 jest.mock('@/app-layer/jobs/queue', () => ({
     ...jest.requireActual('@/app-layer/jobs/queue'),
     enqueue: jest.fn(async () => undefined),
@@ -235,6 +248,13 @@ describeFn('the Managed Agents engine, on (real DB, faux workspace)', () => {
         expect(faux.deletes).toContain(steps[0].sessionId);
         // Both model calls wrote a span-derived Art 12 row.
         expect(await prisma.aiDecisionLog.count({ where: { tenantId: TENANT, provider: MANAGED_AGENTS_SPAN_PROVIDER } })).toBe(2);
+        // The customer's own workspace: its session time is the customer's, and
+        // nothing new is recorded, though the session answered with its usage (#4173).
+        expect(await prisma.workflowRun.findUniqueOrThrow({
+            where: { id: runId },
+            select: { hostedManagedAgents: true, hostedSessionSeconds: true, hostedSessionsUnmetered: true },
+        })).toEqual({ hostedManagedAgents: false, hostedSessionSeconds: null, hostedSessionsUnmetered: 0 });
+        expect(mockRecordHostedSessionUsage).not.toHaveBeenCalled();
     });
 
     it('a session a dead segment left unrecorded is found at the next segment\'s start, recorded and deleted (#5854)', async () => {
