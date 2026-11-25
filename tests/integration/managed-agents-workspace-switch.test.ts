@@ -54,6 +54,7 @@ import { resolveDriverForTenant } from '@/lib/agentic/agent-driver-policy';
 import { buildSystemContext } from '@/app-layer/context-system';
 import { getAgentDriverSetting, setAgentDriverSetting } from '@/app-layer/usecases/agent-driver-setting';
 import { getManagedAgentsSwitch, setManagedAgentsSwitch } from '@/app-layer/usecases/managed-agents-switch';
+import { runManagedAgentsProvisionOnSwitchOn } from '@/app-layer/jobs/managed-agents-provision-on-switch-on';
 import {
     listAvailableProvidersFor,
     removeIntegrationConnection,
@@ -63,6 +64,7 @@ import {
 import {
     approveAgentProfileVersion,
     createAgentProfile,
+    createAgentProfileVersion,
     startAgentProfileTestRun,
     submitAgentProfileVersion,
 } from '@/app-layer/usecases/agent-profiles';
@@ -240,7 +242,13 @@ describeFn('the Managed Agents switch is the workspace\'s (real DB, faux workspa
                 effective: { on: false, basis: 'WORKSPACE_OFF' },
             });
             const after = await setManagedAgentsSwitch(owner(), true);
-            expect(after).toEqual({ enabled: true, deployment: 'UNSET', effective: { on: true, basis: 'WORKSPACE_ON' } });
+            expect(after).toEqual({
+                enabled: true,
+                deployment: 'UNSET',
+                effective: { on: true, basis: 'WORKSPACE_ON' },
+                // Off to on: the job that provisions what was approved while off.
+                provisioning: 'QUEUED',
+            });
             // Saying it again changes nothing and writes no second row.
             await setManagedAgentsSwitch(owner(), true);
 
@@ -263,7 +271,13 @@ describeFn('the Managed Agents switch is the workspace\'s (real DB, faux workspa
             envOverride.AGENT_MANAGED_AGENTS = '0';
             try {
                 const after = await setManagedAgentsSwitch(otherOwner(), true);
-                expect(after).toEqual({ enabled: true, deployment: 'OFF', effective: { on: false, basis: 'DEPLOYMENT_OFF' } });
+                expect(after).toEqual({
+                    enabled: true,
+                    deployment: 'OFF',
+                    effective: { on: false, basis: 'DEPLOYMENT_OFF' },
+                    // The effective answer did not move: nothing to provision.
+                    provisioning: 'NOT_NEEDED',
+                });
             } finally {
                 envOverride.AGENT_MANAGED_AGENTS = undefined;
             }
@@ -402,25 +416,138 @@ describeFn('the Managed Agents switch is the workspace\'s (real DB, faux workspa
             expect(await managedAgentsDecisionFor({ tenantId: OTHER })).toEqual({ on: true, basis: 'WORKSPACE_ON' });
         });
 
-        it('the clean-up still reaches the switched-off workspace\'s connection', async () => {
-            const { anthropicAgentId } = await prisma.agentProfileProvision.findFirstOrThrow({
-                where: { tenantId: TENANT, connectionId },
-                select: { anthropicAgentId: true },
+        it('the engine cannot be chosen again while the switch is off; moving away from it can (owner decision 2026-11-25)', async () => {
+            await setAgentDriverSetting(owner(), 'STATIC');
+            expect((await getAgentDriverSetting(admin())).mode).toBe('STATIC');
+            await expect(setAgentDriverSetting(owner(), 'MANAGED_AGENTS')).rejects.toMatchObject({
+                status: 409,
+                details: { reason: 'MANAGED_AGENTS_OFF', basis: 'WORKSPACE_OFF' },
             });
+            expect((await getAgentDriverSetting(admin())).mode).toBe('STATIC');
+        });
+    });
+
+    describe('switching it on provisions what was approved while it was off (owner decision 2026-11-25)', () => {
+        const enqueueMock = () => (jest.requireMock('@/app-layer/jobs/queue') as { enqueue: jest.Mock }).enqueue;
+        const provisionJobs = () =>
+            enqueueMock().mock.calls.filter(([name]) => name === 'managed-agents-provision-on-switch-on');
+
+        /** Turn the switch on, choose the engine, then run the job the switch enqueued with the worker's own body. */
+        async function switchOnAndRunTheJob() {
+            const jobsBefore = provisionJobs().length;
+            const write = await setManagedAgentsSwitch(owner(), true);
+            expect(write.provisioning).toBe('QUEUED');
+            const jobs = provisionJobs();
+            expect(jobs.length).toBe(jobsBefore + 1);
+            const payload = jobs[jobs.length - 1][1];
+            expect(payload).toEqual({ tenantId: TENANT, requestedByUserId: USERS.owner, requestId: expect.any(String) });
+            // The engine choice is the owner's own act, refused while off and
+            // made again now (decision 3 keeps it; this suite moved it away).
+            if ((await getAgentDriverSetting(admin())).mode !== 'MANAGED_AGENTS') await setAgentDriverSetting(owner(), 'MANAGED_AGENTS');
+            return runManagedAgentsProvisionOnSwitchOn(payload);
+        }
+
+        async function provisionRows() {
+            return prisma.auditLog.findMany({
+                where: { tenantId: TENANT, action: 'MANAGED_AGENTS_PROFILES_PROVISIONED' },
+                orderBy: { createdAt: 'asc' },
+                select: { metadataJson: true },
+            });
+        }
+
+        it('a version approved while off has no agent, and gets one when the switch goes on; its run then works', async () => {
+            const v2 = await createAgentProfileVersion(owner(), AGENT, version());
+            await submitAgentProfileVersion(owner(), AGENT, v2.version);
+            await approveAgentProfileVersion(admin(), AGENT, v2.version, { instructionsHash: v2.instructionsHash });
+            expect(await prisma.agentProfileProvision.count({ where: { tenantId: TENANT, profileVersionId: v2.versionId } })).toBe(0);
+
+            const writesBefore = faux.agentWrites.length;
+            const result = await switchOnAndRunTheJob();
+            expect(result).toMatchObject({ outcome: 'PROVISIONED', versions: 1, created: 1, alreadyProvisioned: 0, failed: [] });
+            expect(await prisma.agentProfileProvision.count({ where: { tenantId: TENANT, profileVersionId: v2.versionId } })).toBe(1);
+            // Through the approval's own path: the profile's agent updated, as a later approval does.
+            expect(faux.agentWrites.slice(writesBefore).map((w) => w.op)).toEqual(['update']);
+            expect((await provisionRows()).at(-1)?.metadataJson).toMatchObject({ outcome: 'PROVISIONED', created: 1 });
+
+            const started = await startAgentProfileTestRun(admin(), AGENT, v2.version);
+            expect(await executeQueuedWorkflowRun(TENANT, started.runId)).toMatchObject({ status: 'COMPLETED' });
+        });
+
+        it('turning it on again provisions nothing twice', async () => {
+            await setManagedAgentsSwitch(owner(), false);
+            const writesBefore = faux.agentWrites.length;
+            const provisionsBefore = await prisma.agentProfileProvision.count({ where: { tenantId: TENANT } });
+            const result = await switchOnAndRunTheJob();
+            expect(result).toMatchObject({ outcome: 'PROVISIONED', versions: 1, created: 0, alreadyProvisioned: 1, failed: [] });
+            expect(faux.agentWrites.length).toBe(writesBefore);
+            expect(await prisma.agentProfileProvision.count({ where: { tenantId: TENANT } })).toBe(provisionsBefore);
+        });
+
+        it('a provisioning failure leaves the switch on and is recorded', async () => {
+            await setManagedAgentsSwitch(owner(), false);
+            const v3 = await createAgentProfileVersion(owner(), AGENT, version());
+            await submitAgentProfileVersion(owner(), AGENT, v3.version);
+            await approveAgentProfileVersion(admin(), AGENT, v3.version, { instructionsHash: v3.instructionsHash });
+
+            faux.unreachable = true;
+            let result;
+            try {
+                result = await switchOnAndRunTheJob();
+            } finally {
+                faux.unreachable = false;
+            }
+            expect(result).toMatchObject({ outcome: 'PARTIAL', created: 0, failed: [{ versionId: v3.versionId, reason: 'PROVIDER_ERROR' }] });
+            expect(await storedToggle(TENANT)).toBe(true);
+            expect(await managedAgentsDecisionFor({ tenantId: TENANT })).toEqual({ on: true, basis: 'WORKSPACE_ON' });
+            expect((await provisionRows()).at(-1)?.metadataJson).toMatchObject({
+                outcome: 'PARTIAL',
+                failed: [{ versionId: v3.versionId, reason: 'PROVIDER_ERROR' }],
+            });
+        });
+
+        it('a job that cannot be enqueued leaves the switch on and is recorded', async () => {
+            await setManagedAgentsSwitch(owner(), false);
+            enqueueMock().mockRejectedValueOnce(new Error('redis is down'));
+            const write = await setManagedAgentsSwitch(owner(), true);
+            expect(write).toMatchObject({ enabled: true, effective: { on: true }, provisioning: 'ENQUEUE_FAILED' });
+            expect(await storedToggle(TENANT)).toBe(true);
+            expect((await provisionRows()).at(-1)?.metadataJson).toMatchObject({ outcome: 'ENQUEUE_FAILED' });
+        });
+
+        it('turning it off enqueues nothing', async () => {
+            const before = provisionJobs().length;
+            expect((await setManagedAgentsSwitch(owner(), false)).provisioning).toBe('NOT_NEEDED');
+            expect(provisionJobs().length).toBe(before);
+        });
+    });
+
+    describe('the clean-up, and a switch-on with no workspace', () => {
+        it('the clean-up still reaches the switched-off workspace\'s connection', async () => {
+            expect(await managedAgentsDecisionFor({ tenantId: TENANT })).toMatchObject({ on: false });
+            const agentIds = (
+                await prisma.agentProfileProvision.findMany({ where: { tenantId: TENANT, connectionId }, select: { anthropicAgentId: true } })
+            ).map((r) => r.anthropicAgentId);
+            expect(agentIds.length).toBeGreaterThan(0);
             await removeIntegrationConnection(admin(), connectionId);
-            expect(faux.archives).toContain(anthropicAgentId);
+            for (const id of agentIds) expect(faux.archives).toContain(id);
             const cleanups = await prisma.managedAgentsCleanup.findMany({ where: { tenantId: TENANT, connectionId }, select: { status: true } });
             expect(cleanups.map((c) => c.status)).toEqual(['DONE']);
         });
 
-        it('turning it back on lists the provider again', async () => {
-            await setManagedAgentsSwitch(owner(), true);
+        it('turning it back on with no workspace connected lists the provider and provisions nothing, without failing', async () => {
+            const writesBefore = faux.agentWrites.length;
+            const write = await setManagedAgentsSwitch(owner(), true);
+            expect(write.provisioning).toBe('QUEUED');
             expect(await listsWorkspaceProvider(owner())).toBe(true);
-            expect((await switchRows(TENANT)).map((r) => (r.detailsJson as { operation?: string }).operation)).toEqual([
-                'grant',
-                'revoke',
-                'grant',
-            ]);
+            const jobs = (jest.requireMock('@/app-layer/jobs/queue') as { enqueue: jest.Mock }).enqueue.mock.calls.filter(
+                ([name]) => name === 'managed-agents-provision-on-switch-on',
+            );
+            const result = await runManagedAgentsProvisionOnSwitchOn(jobs[jobs.length - 1][1]);
+            expect(result).toMatchObject({ outcome: 'NO_WORKSPACE', versions: 0, failed: [] });
+            expect(faux.agentWrites.length).toBe(writesBefore);
+            const ops = (await switchRows(TENANT)).map((r) => (r.detailsJson as { operation?: string }).operation);
+            expect(ops[0]).toBe('grant');
+            expect(ops.at(-1)).toBe('grant');
         });
     });
 });

@@ -136,8 +136,10 @@ describe('an executor that computes a refusal must report one', () => {
             // refusals throw (the job fails with the sentence) rather than
             // ride in `details`. 56 since `knowledge-index` (vector store
             // Phase 2.1), which carries its outcome as `status` and reports it.
-            callSites: 56,
-            carryingASignal: 11,
+            // 57 since `managed-agents-provision-on-switch-on` (#5964), which
+            // carries its outcome as `status` and reports ERROR on a failure.
+            callSites: 57,
+            carryingASignal: 12,
             withoutASignal: 45,
         });
     });

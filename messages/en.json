@@ -19002,6 +19002,7 @@
       "FRAMEWORK_REORDERED": "Framework reordered",
       "HOSTED_MANAGED_AGENTS_OPT_IN_CHANGED": "Hosted agents opt-in changed",
       "MANAGED_AGENTS_SWITCH_CHANGED": "Managed Agents engine switch changed",
+      "MANAGED_AGENTS_PROFILES_PROVISIONED": "Managed Agents profiles provisioned",
       "HOST_CONSUMER_CREATED": "Host consumer created",
       "HOST_CONSUMER_KILL_ENGAGED": "Host consumer kill engaged",
       "HOST_CONSUMER_KILL_LIFTED": "Host consumer kill lifted",

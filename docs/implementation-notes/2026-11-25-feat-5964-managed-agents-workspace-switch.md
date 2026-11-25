@@ -58,6 +58,7 @@ the connection row directly.
 | `src/app/t/[tenantSlug]/(app)/admin/ai-features/agent-engine-display.ts`, `AgentEnginesSection.tsx` | A workspace-held OFF names the owner, not the operator |
 | `messages/en.json`, `messages/bg.json` | `admin.managedAgentsSwitch.*`, two engine sentences, the audit action label |
 | `tests/guards/managed-agents-switch-single-reader.test.ts` | One reader of the variable and the column |
+| `src/app-layer/jobs/managed-agents-provision-on-switch-on.ts`, `jobs/types.ts`, `jobs/executor-registry.ts` | The switch-on provisioning job (on demand, one attempt) |
 
 ## Decisions
 
@@ -74,6 +75,34 @@ the connection row directly.
   Without it, admission resolved STATIC and refused
   `PROFILE_NEEDS_REASONING_ENGINE`, a name that says nothing about why. It is
   asked only when the workspace chose the engine, so no other run pays the read.
+- **Switching it on provisions what was approved while it was off** (owner
+  decision 2026-11-25, #5964 comment 7162402419). A write that moves the switch
+  from off to on enqueues `managed-agents-provision-on-switch-on` after the
+  write and its audit row have committed. The job re-reads the owner who turned
+  it on (`resolveMemberContext`, still holding `admin.tenant_lifecycle`) and
+  runs `provisionProfilesInForce`, which calls the approval's own
+  `provisionApprovedProfileVersion` for every profile's version in force
+  (agents not RETIRED, at most 200 profiles, a truncation recorded). It
+  provisions nothing, without failing, when the switch is off again, no usable
+  Anthropic workspace exists, or the workspace has not chosen the engine. It is
+  idempotent because `provisionManagedAgent` returns an existing record for a
+  version already provisioned in the workspace. Every outcome, a failure
+  included, is logged and written as `MANAGED_AGENTS_PROFILES_PROVISIONED`, and
+  the job result is ERROR when a version failed; nothing it does touches the
+  switch. An enqueue that fails is caught, logged and recorded
+  (`ENQUEUE_FAILED`), and the switch stays on.
+- **A job, not inline.** Each version is up to three calls to the customer's
+  Anthropic workspace (environment, retrieve, create or update), and a
+  workspace can hold many profiles, so inline it would hold the owner's request
+  for as long as the slowest answer, past the request timeout. One attempt,
+  not BullMQ's retries: a provider failure between creating an agent and
+  recording it would create a second agent on an automatic retry; turning the
+  switch off and on again re-runs it, idempotently.
+- **The engine cannot be chosen while the switch is off** (the same owner
+  decision). `setAgentDriverSetting` refuses a move to `MANAGED_AGENTS` with
+  409 `MANAGED_AGENTS_OFF` and the basis, before anything is written. A stored
+  choice made while it was on is kept when it goes off, and moving away from it
+  is always allowed.
 - **Writes are accepted in every deployment state**, as an organization's
   switches are; the section disables its button when the operator decides and
   says what the saved choice will do once they stop. The audit row records the
@@ -85,14 +114,9 @@ the connection row directly.
 - **No backfill.** With the variable unset no workspace could reach the engine
   before the column existed, so `false` keeps every workspace where it was;
   with it set, the column is not read.
-- **The engine choice is still writable while the switch is off**, as Flue's and
-  the Tool Runner's are while theirs are: the section does not offer it, and a
-  stored choice is part of the set-up decision 3 keeps.
 - **Approval while off provisions nothing**: provisioning asks
-  `resolveDriverForTenant`, which now answers static. A version approved while
-  off has no agent when the switch comes back on, and its run is refused
-  `managed_agents_not_provisioned` until a version is approved again. Not
-  changed here: provisioning while off would create objects at Anthropic for an
+  `resolveDriverForTenant`, which answers static. The switch-on job above is
+  what provisions such a version, so nothing is created at Anthropic for an
   engine the owner turned off.
 - **The org switches' `AGENT_SWITCHES` list is unchanged.** It is what an
   organization's settings page writes, and this switch is not an organization's.

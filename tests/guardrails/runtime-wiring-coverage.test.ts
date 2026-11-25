@@ -65,6 +65,9 @@ const ON_DEMAND_JOBS: Readonly<Record<string, string>> = {
     'agent-recert-packs-prepare': 'Dispatched by requestAgentReviewPacks in '
         + 'app-layer/usecases/access-review-agent.ts, behind POST /api/t/:slug/access-reviews/:id/agent-packs, '
         + 'one job per campaign with a fixed id.',
+    'managed-agents-provision-on-switch-on': 'Enqueued by setManagedAgentsSwitch (#5964) after an owner turns '
+        + 'the Managed Agents switch on: provisions every agent profile version in force through the '
+        + 'approval\'s own usecase, once per switch-on.',
     'agent-run-execute': 'Enqueued by startWorkflowRun AND by resumeWorkflowRun when the resolved driver is flue. '
         + 'A reasoning loop decides for itself how many tools to call and how long to keep '
         + 'going, so it belongs in the worker rather than a web request; the static engine, '

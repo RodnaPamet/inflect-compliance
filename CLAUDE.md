@@ -3803,6 +3803,17 @@ the tenant's list (`listAvailableProvidersFor`). It KEEPS the set-up: the
 connection, the engine choice and everything at Anthropic. Never gate a
 clean-up on it (removal, purge, DSAR, the session reconciliation): turning the
 engine off must never strand what Inflect created in a customer's workspace.
+Two more owner decisions (2026-11-25, #5964 comment 7162402419): while it is
+off, `setAgentDriverSetting` refuses a move TO `MANAGED_AGENTS` (409
+`MANAGED_AGENTS_OFF`, with the basis) and every move away stays instant; and a
+write that moves it from off to on enqueues `managed-agents-provision-on-switch-on`
+AFTER the write commits, which provisions every profile's version in force
+through the approval's own `provisionApprovedProfileVersion` (no second path),
+acting as the owner who turned it on. It is idempotent (`readProvision`), does
+nothing without a usable workspace, never touches the switch, and records every
+outcome, failures and an enqueue that failed included
+(`MANAGED_AGENTS_PROFILES_PROVISIONED`). A job, not inline: up to three calls to
+Anthropic per version, over every profile.
 
 **A new engine passes the driver conformance suite before it is switched on**
 (Step 0b, `tests/helpers/driver-conformance.ts`). Two engine-agnostic tables

@@ -1023,6 +1023,39 @@ executorRegistry.register('tenant-dek-rotation', async (payload, ctx) => {
 // (it was already settled, its definition is gone, or its principal lost
 // access). The alternative — reporting 0/0/0 — would make a refusal
 // indistinguishable from a job that did nothing at all.
+// ── managed-agents-provision-on-switch-on (#5964) ────────────────────
+//
+// One run per switch-on: provisions each agent profile's version in force,
+// through the approval's own usecase. ERROR when any version failed, so the
+// job history does not read green over a version a run would refuse.
+executorRegistry.register('managed-agents-provision-on-switch-on', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runManagedAgentsProvisionOnSwitchOn } = await import('./managed-agents-provision-on-switch-on');
+    const { tenantId, requestedByUserId, requestId } = payload;
+    const forwarded: NamesEveryField<JobPayload<'managed-agents-provision-on-switch-on'>> = {
+        tenantId,
+        requestedByUserId,
+        requestId,
+    };
+    const r = await runManagedAgentsProvisionOnSwitchOn(forwarded);
+    return makeResult(
+        'managed-agents-provision-on-switch-on',
+        startedAt,
+        startMs,
+        r.versions,
+        r.created + r.alreadyProvisioned,
+        r.failed.length,
+        { tenantId, status: r.outcome, created: r.created, alreadyProvisioned: r.alreadyProvisioned, failed: r.failed },
+        r.failed.length > 0
+            ? {
+                  status: 'ERROR',
+                  errorMessage: `managed-agents-provision-on-switch-on: ${r.failed.length} version(s) not provisioned`,
+              }
+            : { status: 'PASSED' },
+    );
+});
+
 executorRegistry.register('agent-run-execute', async (payload) => {
     const startedAt = new Date().toISOString();
     const startMs = performance.now();

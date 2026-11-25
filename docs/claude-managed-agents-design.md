@@ -173,7 +173,12 @@ puts at Anthropic:
   refuses a person's resume, each by name (`MANAGED_AGENTS_OFF`,
   `managed_agents_off`), and hides the card; the connection, the engine choice
   and what Inflect created in the workspace are kept, and the clean-ups (removal,
-  purge, DSAR, the session reconciliation) never ask the switch.
+  purge, DSAR, the session reconciliation) never ask the switch. While it is off
+  the engine cannot be chosen (`MANAGED_AGENTS_OFF`; moving away always works),
+  and turning it on enqueues `managed-agents-provision-on-switch-on`, which
+  provisions every profile's version in force through approval's own
+  provisioning, idempotently, recording every outcome (owner decisions
+  2026-11-25).
 - **The Managed Agents engine is built (Step 5b, #4165) and turned on
   (Step 5d, #4167).** The driver (`src/lib/agentic/managed-agents/`) provisions
   an approved profile version as one agent per profile (Inflect's preamble as
