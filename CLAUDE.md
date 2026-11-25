@@ -2149,6 +2149,18 @@ easy to undo:
   does not compile without a title). INCONCLUSIVE (no reply, a reply cut short,
   no planted context given) and an absent outcome close nothing: an agent that
   did not answer has not been shown to resist.
+- **A month of runs is `PROBE_RUNS` evidence** (step 8c, owner decisions
+  2026-11-25), on ASI01, ASI02, ISO A.8.29 and SOC 2 CC4.1, for a tenant that
+  has ever registered a prober key. It is the harness kind's twin: the same
+  emitter, the same one-way status correction (`harnessStatusCorrection`), the
+  same closed-month re-emission (`reconcileClosedProbePeriods`). APPROVED only
+  when every run in the month concluded, none was stopped, and every prober
+  whose key was live in the month sent one (`probeArtefactCompleteness`); a
+  month with no run is NO PROBE RUN RECEIVED, never clean. What the agents DID
+  never decides the status: an ACTED outcome is a finding, not a gap. The facts
+  (`ProbeRunFact`) carry no endpoint, excerpt, tool or agent name BY SHAPE, and
+  the load `select`s none of them; do not add one, because `Evidence.content`
+  is the widest surface the product has.
 
 **The stale-estate alert** (`usecases/agent-harness-estate-staleness.ts`, a
 daily job since #3741) judges each estate with `computeEstateHealth` and nothing
