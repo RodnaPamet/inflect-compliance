@@ -2120,24 +2120,39 @@ export async function executeQueuedWorkflowRun(
         // (#5854 item 3, owner decision 2026-11-24)
         //
         // The Tool Runner continues a retried segment from its checkpoint, and
-        // the static engine from its ledger. Flue and Managed Agents cannot
-        // (see `segmentRecoveryOf`), and before this a retry started them again
-        // from the opening message, so a call the dead attempt made was made
-        // again. Now the first attempt of a segment anchors it (`segment` names
-        // it, as its job id does), and a LATER attempt of the same segment that
-        // finds a call in its own part of the ledger PAUSES the run for a
-        // person, at a `retry-paused` checkpoint, instead of restarting. A
-        // retry that finds no call restarts, as nothing was done twice.
+        // the static engine from its ledger. Flue cannot (see
+        // `segmentRecoveryOf`), and before this a retry started it again from
+        // the opening message, so a call the dead attempt made was made again.
+        // Now the first attempt of a segment anchors it (`segment` names it, as
+        // its job id does), and a LATER attempt of the same segment that finds
+        // a call in its own part of the ledger PAUSES the run for a person, at
+        // a `retry-paused` checkpoint, instead of restarting. A retry that
+        // finds no call restarts, as nothing was done twice.
+        //
+        // ═══ A RETRY ON AN ENGINE WHOSE CONVERSATION IS A SESSION ═══
+        // (#5854, owner decision 2026-11-25)
+        //
+        // Managed Agents is anchored the same way and is never paused: the
+        // engine RECONNECTS to the session its segment recorded and continues
+        // there. It learns where its segment began from the context
+        // (`runSegmentFromSeq`): a first attempt's own `fromSeq`, under which
+        // the ledger holds nothing of its own, or the first attempt's on a
+        // retry or a takeover. A job naming no segment (an older build's)
+        // carries none, and the engine creates its session as before.
         const segmentDriver = selectRunDriver(def, permitted).driver;
+        const recovery = segmentRecoveryOf(segmentDriver);
+        let execCtx: RequestContext = ctx;
         if (
-            segmentRecoveryOf(segmentDriver) === 'PAUSE_ON_RETRY' &&
+            (recovery === 'PAUSE_ON_RETRY' || recovery === 'SESSION') &&
             typeof opts.segment === 'number' &&
             Number.isSafeInteger(opts.segment) &&
             opts.segment >= 0
         ) {
             const anchor = await anchorSegment(ctx, runId, String(opts.segment), fromSeq);
             if (anchor === 'LEASE_LOST') return { skipped: 'LEASE_LOST' };
-            if (anchor.retry && (await segmentMadeCalls(ctx, runId, anchor.segmentFromSeq))) {
+            if (recovery === 'SESSION') {
+                execCtx = { ...ctx, runSegmentFromSeq: anchor.retry ? anchor.segmentFromSeq : fromSeq };
+            } else if (anchor.retry && (await segmentMadeCalls(ctx, runId, anchor.segmentFromSeq))) {
                 const paused = await pauseRetriedSegment(ctx, runId, {
                     checkpointSeq: fromSeq,
                     segmentFromSeq: anchor.segmentFromSeq,
@@ -2162,7 +2177,7 @@ export async function executeQueuedWorkflowRun(
         let driven: RunDriverOutcome;
         try {
             driven = await executeFrom(
-                ctx,
+                execCtx,
                 runId,
                 def,
                 fromSeq,

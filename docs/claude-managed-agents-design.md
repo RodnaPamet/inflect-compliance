@@ -124,8 +124,9 @@ puts at Anthropic:
   `SESSION_DELETED` on the run's ledger once it goes (#5843); it settles a
   session a dead worker abandoned, recorded only `SESSION_CREATED` and older
   than any run segment can last, by deleting it, or recording it kept when the
-  connection keeps sessions (Step 5H, #4169); and it deletes a session recorded
-  DELETED that still exists. Nothing has been created in a
+  connection keeps sessions (Step 5H, #4169), and never one whose run is still
+  RUNNING, which a retry or a takeover reconnects to (decision 9); and it
+  deletes a session recorded DELETED that still exists. Nothing has been created in a
   customer's workspace in production yet: the engine runs from Step 5d, and
   `AGENT_MANAGED_AGENTS` is off there (#5797).
   - **Known limit (#5802).** A DSAR erasure finds the person's tenants from
@@ -198,6 +199,26 @@ puts at Anthropic:
     the pinned agent's sessions through the crash window's own call, takes
     those whose metadata names this tenant and this run and that the run's
     ledger does not hold, records them and settles them.
+  - **A retried or taken-over segment reconnects to its session (decision 9,
+    #5854).** It does not pause for a person, and it never makes a second
+    session for the segment. The worker anchors the segment and hands the
+    engine where it began (`RequestContext.runSegmentFromSeq`); the engine
+    reads its own part of the ledger (`readSegmentLedger`) and, when the newest
+    session there was never settled, re-runs the agent and environment drift
+    checks, reads the session (gone or ended by Anthropic: the run FAILS by
+    name, `managed_agents_reconnect_session_gone` / `_terminated`), reads its
+    history paged and bounded (5,000 events; past that the run fails
+    `managed_agents_session_history_truncated`), and answers every custom-tool
+    call with no result the Tool Runner's way: a result kept on the run's
+    checkpoint as kept, the call the checkpoint names in flight
+    `TOOL_CALL_OUTCOME_UNKNOWN`, any other `TOOL_CALL_NOT_RUN`. No call is run
+    again. The checkpoint is the Tool Runner's `WorkflowRunCheckpoint` row,
+    pointing at the session and span instead of holding a transcript. A
+    session an earlier attempt already deleted or kept, or stopped (an
+    interrupt in its history), is not continued, by name. The first
+    `MODEL_CALL` of a reconnected segment records the session and the event it
+    picked up after. A worker whose lease another worker took leaves the
+    session alone: no answer, no interrupt, no delete.
   - **The client checks bodies against an allowlist (#5854).** Each POST may
     carry only the members the engine writes, an agent's `system` must be
     Inflect's preamble byte for byte, and a session's events may only be
@@ -629,6 +650,19 @@ marked PROPOSED, NOT IN EFFECT. The customer notice,
    key can already act in it directly. Inflect's funnel still checks every
    real tool call the agent makes. No detection is built. The engine-settings
    page says so in one sentence.
+9. **What a retried segment does with the session its dead attempt created.**
+   Before this, a run never re-attached to a session: a retried segment that
+   had already made a call paused for a person (#5854 item 3, the fallback
+   Flue keeps), and one that had not started a new session.
+   **Decided (owner, 2026-11-25):** a retried, or lease-taken-over, Managed
+   Agents segment that already made a tool call does NOT pause. It RECONNECTS
+   to the session it created and continues there, reading the session's event
+   history and answering each pending custom-tool call the way the Tool Runner
+   continuation does: a kept result as kept, the call in flight
+   `TOOL_CALL_OUTCOME_UNKNOWN`, a call not run `TOOL_CALL_NOT_RUN`. The
+   reconciliation leaves such a session alone while its run is live. Flue keeps
+   the pause, because its runtime cannot resume. See
+   `docs/implementation-notes/2026-11-25-fix-5854-ma-reattach.md`.
 
 ## Roadmap (future direction)
 

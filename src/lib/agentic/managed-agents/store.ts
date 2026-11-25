@@ -21,6 +21,10 @@
  *   readRecordedSessionIds    the sessions this run's ledger already names
  *                             (#5854), so a segment's start settles only the
  *                             ones a dead segment never recorded.
+ *   readSegmentLedger         a segment's own steps: the session a retried or
+ *                             taken-over segment reconnects to, the spans its
+ *                             dead attempt recorded and any guard verdict it
+ *                             latched (#5854, owner decision 2026-11-25).
  *   recordProvision           the ONE writer of `AgentProfileProvision`.
  *   recordEnvironmentHashOnFirstUse
  *                             fills a NULL `environmentHash` once (#5854):
@@ -300,6 +304,103 @@ export async function readRecordedSessionIds(
         }
     }
     return { sessionIds, truncated: steps.length > RUN_SESSION_STEPS_READ_CAP };
+}
+
+/** How many ledger steps one read of a segment takes; one more is read so a truncation is a fact held. */
+export const SEGMENT_LEDGER_READ_CAP = 1_000;
+
+/** One session a segment's ledger records, by its steps. */
+export interface SegmentSession {
+    readonly sessionId: string;
+    readonly connectionId: string | null;
+    /** The seq of its `SESSION_CREATED` step. */
+    readonly createdSeq: number;
+    /** The lifecycle of its latest step. `SESSION_CREATED` alone means nobody settled it. */
+    latest: string;
+    /**
+     * Recorded by a segment's start because a dead attempt never recorded it
+     * (`settleUnrecordedSessions`): the opening message never reached it, and
+     * it is settled by that start, never continued.
+     */
+    readonly foundUnrecorded: boolean;
+}
+
+/** A guard verdict a step of the segment carries. */
+export interface SegmentVerdict {
+    readonly seq: number;
+    readonly verdict: 'FLAGGED' | 'QUARANTINED';
+    readonly ruleIds: readonly string[];
+}
+
+/** What a segment's own part of the ledger says about its session. */
+export interface SegmentLedger {
+    /** In the order they were created. */
+    readonly sessions: readonly SegmentSession[];
+    /** The span event each MODEL_CALL step recorded (`spanEventId`). */
+    readonly spanEventIds: ReadonlySet<string>;
+    /** Every MODEL_CALL and TOOL_CALL step whose guard verdict was not CLEAN. */
+    readonly verdicts: readonly SegmentVerdict[];
+    readonly truncated: boolean;
+}
+
+/**
+ * A SEGMENT'S OWN PART OF THE LEDGER (#5854, owner decision 2026-11-25): its
+ * session steps, its MODEL_CALL steps' span ids and every guard verdict a
+ * MODEL_CALL or TOOL_CALL step carries, at or after `fromSeq`. A retried or
+ * taken-over segment reads it to find the session to reconnect to, the events
+ * the dead attempt already accounted for, and a verdict that attempt latched
+ * and died before it could act on. One more row than the cap is read, so a
+ * truncation is held, and the caller refuses rather than reconnect on part.
+ */
+export async function readSegmentLedger(ctx: RequestContext, runId: string, fromSeq: number): Promise<SegmentLedger> {
+    const steps = await runInTenantContext(ctx, (db) =>
+        db.workflowStep.findMany({
+            where: { tenantId: ctx.tenantId, runId, seq: { gte: fromSeq }, kind: { in: ['SYNTHESIS', 'MODEL_CALL', 'TOOL_CALL'] } },
+            select: { seq: true, kind: true, inputJson: true, guardVerdict: true, guardRuleIds: true },
+            orderBy: [{ seq: 'asc' }, { id: 'asc' }],
+            take: SEGMENT_LEDGER_READ_CAP + 1,
+        }),
+    );
+    const sessions = new Map<string, SegmentSession>();
+    const spanEventIds = new Set<string>();
+    const verdicts: SegmentVerdict[] = [];
+    for (const step of steps.slice(0, SEGMENT_LEDGER_READ_CAP)) {
+        if (step.guardVerdict === 'FLAGGED' || step.guardVerdict === 'QUARANTINED') {
+            verdicts.push({ seq: step.seq, verdict: step.guardVerdict, ruleIds: [...(step.guardRuleIds ?? [])] });
+        }
+        let input: Record<string, unknown> = {};
+        try {
+            const parsed: unknown = step.inputJson ? JSON.parse(step.inputJson) : null;
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) input = parsed as Record<string, unknown>;
+        } catch {
+            input = {};
+        }
+        if (step.kind === 'MODEL_CALL') {
+            if (typeof input.spanEventId === 'string') spanEventIds.add(input.spanEventId);
+            continue;
+        }
+        if (step.kind !== 'SYNTHESIS') continue;
+        const { lifecycle, sessionId, connectionId } = input;
+        if (typeof lifecycle !== 'string' || !lifecycle.startsWith('SESSION_') || typeof sessionId !== 'string') continue;
+        const known = sessions.get(sessionId);
+        if (known) {
+            known.latest = lifecycle;
+            continue;
+        }
+        sessions.set(sessionId, {
+            sessionId,
+            connectionId: typeof connectionId === 'string' ? connectionId : null,
+            createdSeq: step.seq,
+            latest: lifecycle,
+            foundUnrecorded: typeof input.foundUnrecorded === 'string',
+        });
+    }
+    return {
+        sessions: [...sessions.values()].sort((a, b) => a.createdSeq - b.createdSeq),
+        spanEventIds,
+        verdicts,
+        truncated: steps.length > SEGMENT_LEDGER_READ_CAP,
+    };
 }
 
 /** THE ONE WRITER of `AgentProfileProvision`. */
