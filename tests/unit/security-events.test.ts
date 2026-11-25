@@ -47,6 +47,8 @@ import {
     recordLoginSuccess,
     hashEmailForLog,
 } from '@/lib/auth/security-events';
+import { createHash } from 'node:crypto';
+import { hashForLookup } from '@/lib/security/encryption';
 
 beforeEach(() => {
     mockFindFirst.mockReset();
@@ -231,5 +233,24 @@ describe('security-events — privacy invariants', () => {
         expect(a).toBe(b);
         expect(a).toMatch(/^[a-f0-9]+$/);
         expect(a.length).toBeGreaterThanOrEqual(8);
+    });
+
+    it('a sign-in row carries the deployment KEYED lookup hash, not the old unsalted one (#5950)', async () => {
+        mockFindFirst.mockResolvedValue({ tenantId: 'tnt_1' });
+        await recordLoginSuccess({ email: 'alice@example.com', userId: 'usr_1', method: 'credentials' });
+        const payload = mockAppendAuditEntry.mock.calls[0][0] as {
+            detailsJson: { auth: { identifierHash: string } };
+        };
+        const stored = payload.detailsJson.auth.identifierHash;
+        // Equal to `User.emailHash` for the same address: HMAC under the lookup key.
+        expect(stored).toBe(hashForLookup('alice@example.com'));
+        expect(stored).toMatch(/^[0-9a-f]{64}$/);
+        // Not what anybody can compute from a guessed address without the key.
+        const unsalted = createHash('sha256').update('alice@example.com').digest('hex');
+        expect(stored).not.toBe(unsalted.slice(0, 16));
+        expect(stored).not.toBe(unsalted);
+        // The log line carries the same value, so a log and a row still correlate.
+        const [, fields] = mockLoggerInfo.mock.calls[0] as [string, Record<string, unknown>];
+        expect(fields.identifierHash).toBe(stored);
     });
 });

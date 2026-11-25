@@ -23,16 +23,15 @@
  * ## What is NEVER emitted
  *   - Plaintext passwords (obviously)
  *   - Raw verification / password-reset tokens
- *   - The plaintext email address in structured metadata — only a
- *     deterministic SHA-256 hash, so log pipelines can still count
- *     per-identifier volume without leaking the identifier itself
+ *   - The plaintext email address in structured metadata — only the
+ *     deployment's keyed lookup hash (`hashEmailForLog`), so log pipelines
+ *     can still count per-identifier volume without leaking the identifier
  */
-
-import crypto from 'node:crypto';
 
 import prisma from '@/lib/prisma';
 import { appendAuditEntry } from '@/lib/audit';
 import { logger } from '@/lib/observability/logger';
+import { hashForLookup } from '@/lib/security/encryption';
 
 // ── Event catalog ──────────────────────────────────────────────────────
 //
@@ -85,13 +84,25 @@ export interface LoginFailurePayload extends AuthEventBase {
 // ── Helpers ────────────────────────────────────────────────────────────
 
 /**
- * Deterministic hash of the normalised email for metadata / logs. Same
- * value every time so Grafana can count per-identifier attempts without
- * ever seeing the raw address.
+ * The deployment's keyed lookup hash of the normalised email, for audit
+ * metadata and logs (#5950 part 2, owner decision 2026-11-25). Same value
+ * every time, so Grafana can count per-identifier attempts without ever
+ * seeing the raw address.
+ *
+ * It is `hashForLookup` — HMAC-SHA256 under `LOOKUP_HASH_KEY` (or the master
+ * key while that is unset), 64 hex characters — and so equal to the
+ * `User.emailHash` of the same address. It was a 16-character prefix of an
+ * UNSALTED SHA-256, which anybody could reverse for a guessed address by
+ * hashing it; this one needs the deployment key.
+ *
+ * Nothing reads it to match rows: it is written to the auth audit rows'
+ * `detailsJson.auth.identifierHash` and to log lines, and read by people. So
+ * the change moves no lookup. Rows written before it keep their old 16-character
+ * value, and an old value and a new one for the same address do not compare
+ * equal.
  */
 export function hashEmailForLog(email: string): string {
-    const normalised = (email ?? '').trim().toLowerCase();
-    return crypto.createHash('sha256').update(normalised).digest('hex').slice(0, 16);
+    return hashForLookup(email ?? '');
 }
 
 async function resolvePrimaryTenantId(userId: string): Promise<string | null> {
