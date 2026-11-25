@@ -92,8 +92,11 @@ DELETE /calendar/connections → disconnectCalendar
 - **The Microsoft refresh goes to the recorded directory.** The token was
   issued at `TenantCalendarConsent.externalTenantId`; refreshing at the
   deployment's own directory would be refused and read as a withdrawn consent.
-  Inflect's record of a withdrawn admin consent does not stop pushes — that is
-  `revokeAdminConsent`'s documented behaviour, and whether it should is put to
-  the owner.
-- **No second, more frequent revoke-only schedule.** Considered, per the
-  design; one daily run with removals first is the shipped shape.
+  Inflect's record of a withdrawn (or never-recorded) admin consent stops the
+  push at once (owner decision 2026-11-25): the run sends nothing and keeps the
+  connection, so a re-grant resumes it. A disconnect's removals are not held.
+- **Finished deadlines leave the calendar** (owner decision 2026-11-25). The
+  generation drops `status: 'done'` events after the visibility check, so an
+  all-done person is an empty set, not `no-visible-sources`.
+- **No second, more frequent revoke-only schedule** (owner decision
+  2026-11-25); one daily run with removals first is the shipped shape.

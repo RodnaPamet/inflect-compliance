@@ -52,6 +52,13 @@
  * pushed. The per-source permission gate still runs first: owning a deadline
  * in a source the person may not see does not push it.
  *
+ * ═══ ONLY WHAT IS STILL TO DO (owner decision 2026-11-25) ═══
+ *
+ * A deadline whose item is finished (`status === 'done'`) is not pushed, and
+ * one already pushed is removed at the next run. It is still counted as
+ * visible: a person whose deadlines are all done may still see their sources,
+ * which is not the `no-visible-sources` case.
+ *
  * ═══ THE WORKSPACE'S LANGUAGE (owner decision 2026-11-25) ═══
  *
  * The product's own wording — "Evidence review:", the link line — is written
@@ -176,7 +183,10 @@ export async function generatePushableEvents(
 
     return {
         kind: 'generated',
-        events: response.events.map((e) => toPushable(e, linkLine)),
+        // A finished deadline leaves the calendar (owner decision 2026-11-25):
+        // the calendar shows what is still to do. Dropping it from the set is
+        // enough; the reconcile removes an event that is no longer generated.
+        events: response.events.filter((e) => e.status !== 'done').map((e) => toPushable(e, linkLine)),
         omittedSources,
         ...(held ? { held } : {}),
     };
