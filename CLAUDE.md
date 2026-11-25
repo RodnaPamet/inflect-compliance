@@ -4021,21 +4021,63 @@ Rules that are each one careless edit from being undone:
   person's own actions** (#5802, owner decision 2026-11-25).
   `readErasureWorkspaces` (`src/app-layer/jobs/dsar-erasure-workspaces.ts`) is
   the ONE reader, called by `eraseUser` inside its transaction before the
-  pseudonymization and by the operator command `scripts/dsar-erase-user.ts`
-  (`npm run dsar:erase-user`, no HTTP route) for its plan. A workspace counts on
+  pseudonymization and by the operator command `scripts/dsar-erase.ts`
+  (`npm run dsar:erase`, no HTTP route) for its plan. A workspace counts on
   the person's own row, a `TenantMembership` row naming them as `entityId`
   under an action in `MEMBERSHIP_RECORD_ACTIONS` (SCIM, the org-admin fan-out,
-  platform-admin tenant creation), or an org-trail fan-out row listing it. An
-  action is listed, never inferred: an unlisted one is reported undecided and
-  the command refuses `--confirm`, because the clean-up deletes every kept
-  session in a workspace, not the person's alone. The writers that record no
-  row naming the person (credentials signup, SSO JIT, `createTenantUnderOrg`,
-  the fan-out into a new org tenant, the staging seed) are
-  `MEMBERSHIP_WRITERS_WITHOUT_A_SUBJECT_ROW`, printed with every plan: a
-  workspace joined only that way, where the person never acted, is still not
-  found. The command takes a user id only, refuses a `sys_` id and anything
-  `planErasure` blocks (a membership in any status among it), and prints ids and
-  counts only. Runbook: `docs/runbooks/dsar-erasure.md`.
+  platform-admin tenant creation), a REMOVAL naming them as
+  `detailsJson.targetUserId` under an action in `TARGET_RECORD_ACTIONS`, or an
+  org-trail fan-out row listing it. An action is listed, never inferred: an
+  unlisted `TenantMembership` row is reported undecided and the command refuses
+  `--confirm`, because the clean-up deletes every kept session in a workspace,
+  not the person's alone; a `targetUserId` under an unlisted action is ignored,
+  since dozens of rows about no membership carry that key.
+- **Every removal names the person, and every erasure is preceded by one**
+  (#5940, owner decision 2026-11-25). `MEMBER_REMOVED`, `MEMBER_DEACTIVATED` and
+  `SCIM_USER_DEACTIVATED` carry `detailsJson.targetUserId`, the key
+  `ORG_ADMIN_DEPROVISIONED` and `ACCESS_REVIEW_DECISION_EXECUTED` already
+  carried, so a workspace joined through a writer that records no row at the
+  join (credentials signup, SSO JIT, `createTenantUnderOrg`, the fan-out into a
+  new org tenant, the staging seed) is found from its removal: `planErasure`
+  refuses while any membership is left. Do not drop the key from a removal, and
+  a new removal or deactivation writer adds it and its action to
+  `TARGET_RECORD_ACTIONS`. Removals written before #5940 carry no key and were
+  not backfilled (the trail is immutable); they, and the tenant purge, are
+  `MEMBERSHIP_WRITERS_WITHOUT_A_SUBJECT_ROW`, printed with every plan.
+- **The erasure fulfils a DSAR register REQUEST** (#5940). The command takes
+  `--request <id>` (or `--due`, the ONE due request) — never a user id: `--user`
+  was retired, so every erasure has a register row as its record. The subject
+  is read from the request, which is refused by name unless it is an ERASURE,
+  verified, past `DSAR_COOLING_OFF_HOURS`, IN_PROGRESS (an admin starts it while
+  the person is still a member and stays its `handledById`), not completed,
+  rejected or cancelled, and clear of `evaluateDsarRejection` (`LAST_OWNER` from
+  memberships; balance and legal hold are the operator's check, printed on every
+  plan). `eraseUser` decides again inside its transaction and, through the
+  register's second writer `fulfilErasureRequestWithin`
+  (`jobs/dsar-erasure-request.ts`), completes the request and nulls
+  `fulfilmentNotes` and `exportUrl` on every request of the subject; no tenant
+  `DSAR_COMPLETED` row is written. `DataSubjectRequest.userId` is
+  `ON DELETE SET NULL ("userId")` (migration `20261125140000`), so the request
+  survives unlinked: evidence in the database only, since no tenant's RLS policy
+  matches a NULL subject. `tests/guards/dsar-register-writers.test.ts` holds the
+  table's writers. Production runs it through the `VM apply` actions
+  `dsar-erase-preflight` / `dsar-erase` (`node dist/dsar-erase.mjs --due` in the
+  app container), which take no parameter and refuse unless exactly one request
+  is due. It prints ids and counts only. Runbook: `docs/runbooks/dsar-erasure.md`.
+- **The erase is bound to the preflight that showed it** (#5940, owner decision
+  2026-11-25, third round). The preflight (no `--confirm`, no `--check`), and
+  only when its plan would be admitted, stamps the request it showed:
+  `DataSubjectRequest.erasurePreflightAt`, whose one writer is
+  `stampErasurePreflight` (held by the writers guard), and the only write a
+  preflight makes. `--confirm` refuses a request with no stamp
+  (`NOT_PREFLIGHTED`) or one older than `ERASURE_PREFLIGHT_VALID_HOURS` (24,
+  `PREFLIGHT_EXPIRED`), and `eraseUser` asks it again in its transaction for
+  any named request, so the local `--request` path needs its own preflight too.
+  The `dsar-erase` action's same-run preflight is `--check`, which decides as
+  `--confirm` does and writes nothing. Never make it the stamping plan: the
+  write would stamp whatever request is due now and erase it, which is the
+  substitution the stamp exists to stop. The stamp is never cleared; it
+  survives with the row as evidence.
 
 **What Inflect created in a customer's workspace is removed by recorded id on
 purge, connection removal and DSAR erasure** (Step 5c, #4166;

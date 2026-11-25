@@ -106,7 +106,7 @@ a `userId` but stores no contact PII).
 | `ControlTestRun` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `ControlTestStep` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `Cve` | Configuration | No | Global reference catalog — upserted daily by `nvd-cve-sync`; never tenant-deleted (no tenantId) | Indefinite global reference data (refreshed, not retained per-tenant) |
-| `DataSubjectRequest` | Regulatory artefact | ind. | None — retained indefinitely (DSAR compliance record) | DEFINED — retained as Art. 17 compliance evidence (see docs/dsar.md) |
+| `DataSubjectRequest` | Regulatory artefact | ind. | None — retained indefinitely (DSAR compliance record); survives the subject's erasure unlinked: `userId` is `ON DELETE SET NULL ("userId")` and the erasure nulls `fulfilmentNotes` / `exportUrl` (#5940) | DEFINED — retained as Art. 17 compliance evidence (see docs/dsar.md) |
 | `Evidence` | Business record | No | retentionUntil sweep (`runEvidenceRetentionSweep`, the dedicated 04:00 `retention-sweep` cron — the cross-model sweep SKIPS Evidence rather than calling it) + archive → 365-day hard purge + soft-delete | DEFINED — template for the rest |
 | `EvidenceControlLink` | Business record | No | None today — cascade on parent/tenant delete only (Evidence or Control delete) | Indefinite while tenant active — review w/ compliance |
 | `EvidenceRiskLink` | Business record | No | None today — cascade on parent/tenant delete only (Evidence or Risk delete) | Indefinite while tenant active — review w/ compliance |

@@ -100,6 +100,12 @@ export type Disposition = 'PSEUDONYMIZE' | 'DELETE';
  *   session / account — DELETE. Same JSDoc clause ("its `onDelete: Cascade`
  *     children"); both FKs are ON DELETE CASCADE in the init migration
  *     (lines 819 and 816), so they go with the User row by definition.
+ *   dataSubjectRequest — PSEUDONYMIZE. #5940 (owner decision 2026-11-25):
+ *     the DSAR register row survives the erasure as evidence that the request
+ *     was handled. `eraseUser` nulls `fulfilmentNotes` and `exportUrl` on the
+ *     subject's requests and completes the one it fulfils; `userId` goes to
+ *     NULL by its FK, `ON DELETE SET NULL ("userId")` (migration
+ *     20261125140000_dsar_request_user_set_null).
  *
  * NOTE the deliberate omissions. Authored content (`Task`, `Control`,
  * `Policy`, … — ON DELETE SET NULL) is "retained, attribution anonymized"
@@ -116,6 +122,7 @@ export const ERASURE_DISPOSITIONS: Record<string, Disposition> = {
     user: 'DELETE',
     session: 'DELETE',
     account: 'DELETE',
+    dataSubjectRequest: 'PSEUDONYMIZE',
 };
 
 /** The columns of an AuditLog row the probe models. */

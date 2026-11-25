@@ -173,4 +173,14 @@ await build({
     outfile: 'dist/seed-vendor-questionnaires.mjs',
 });
 
-console.log('✓ built dist/worker.mjs + dist/scheduler.mjs + dist/seed-self-assessments.mjs + dist/seed-policy-templates.mjs + dist/seed-risk-templates.mjs + dist/seed-vendor-questionnaires.mjs + dist/seed-control-template-tasks.mjs + dist/seed-framework-catalogs.mjs + dist/sync-framework-libraries.mjs + dist/backfill-task-checklists.mjs + dist/decrypt-legacy-dsr-fields.mjs + dist/catalog-check.mjs');
+// The DSAR erasure command (#5940). Run in the `app` container by the
+// `dsar-erase-preflight` / `dsar-erase` VM apply actions
+// (`deploy/vm-apply/remote.sh`) as `node dist/dsar-erase.mjs --due`; the image
+// carries no source tree and no `tsx`, so it ships bundled like the rest.
+await build({
+    ...common,
+    entryPoints: ['scripts/dsar-erase-main.ts'],
+    outfile: 'dist/dsar-erase.mjs',
+});
+
+console.log('✓ built dist/dsar-erase.mjs + dist/worker.mjs + dist/scheduler.mjs + dist/seed-self-assessments.mjs + dist/seed-policy-templates.mjs + dist/seed-risk-templates.mjs + dist/seed-vendor-questionnaires.mjs + dist/seed-control-template-tasks.mjs + dist/seed-framework-catalogs.mjs + dist/sync-framework-libraries.mjs + dist/backfill-task-checklists.mjs + dist/decrypt-legacy-dsr-fields.mjs + dist/catalog-check.mjs');

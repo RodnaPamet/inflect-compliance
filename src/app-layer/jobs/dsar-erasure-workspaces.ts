@@ -24,7 +24,7 @@
  * the tenant set. `readErasureWorkspaces` is the only reader. `eraseUser`
  * calls it inside its own transaction, before the pseudonymization (which
  * nulls the subject's own rows), and hands its tenants to the Managed Agents
- * clean-up; the operator command `scripts/dsar-erase-user.ts` calls it to
+ * clean-up; the operator command `scripts/dsar-erase.ts` calls it to
  * print the plan. Neither keeps a narrower rule of its own.
  *
  * ── WHAT COUNTS, AND WHY EACH ──────────────────────────────────────────
@@ -41,6 +41,19 @@
  *                     (`actorType: SCIM`, `userId: null`), org provisioning
  *                     its per-tenant fan-out, and the platform-admin tenant
  *                     creation its grant.
+ *   TARGET_RECORD     `detailsJson.targetUserId` is the subject, and the action
+ *                     is in `TARGET_RECORD_ACTIONS`: a REMOVAL or deactivation
+ *                     of their membership (#5940, owner decision 2026-11-25).
+ *                     Every erasure is preceded by one, because `planErasure`
+ *                     refuses while any membership row is left, so this is
+ *                     what finds a workspace joined through a writer that
+ *                     records no row naming the person at the JOIN (credentials
+ *                     signup, SSO JIT, `createTenantUnderOrg`, the org fan-out
+ *                     into a new tenant, the staging seed). A `targetUserId`
+ *                     under an action NOT listed is ignored, not undecided:
+ *                     that key is the actor convention on dozens of rows (a
+ *                     DSAR transition, a session revocation, an MFA reset)
+ *                     which say nothing about a membership.
  *   ORG_TENANT_FANOUT `OrgAuditLog.targetUserId` is the subject and the action
  *                     is an org-admin fan-out, whose `detailsJson.tenantIds`
  *                     names each tenant the fan-out reached. An org invite
@@ -62,17 +75,19 @@
  *
  * ── WHAT IT CANNOT SEE ─────────────────────────────────────────────────
  *
- * `MEMBERSHIP_WRITERS_WITHOUT_A_SUBJECT_ROW` lists the membership writers
- * that write no audit row naming the subject at all. A person who joined a
- * workspace only that way, and never acted there, is not found, and no read
- * of the audit trail can find them. The plan reports that list on every
- * read rather than claiming completeness.
+ * `MEMBERSHIP_WRITERS_WITHOUT_A_SUBJECT_ROW` lists what still leaves no row
+ * naming the subject. Since #5940 that is no longer "the writers that record
+ * no row at the join" — the removal that precedes every erasure names them —
+ * but the removals written BEFORE #5940, which carry no `targetUserId` (no
+ * backfill: the trail is immutable), and the tenant purge, which deletes a
+ * purged tenant's memberships without naming anybody. The plan reports that
+ * list on every read rather than claiming completeness.
  *
  * @module app-layer/jobs/dsar-erasure-workspaces
  */
 
 /** Why a tenant is in the plan. */
-export type WorkspaceEvidenceKind = 'OWN_ACTION' | 'MEMBERSHIP_RECORD' | 'ORG_TENANT_FANOUT';
+export type WorkspaceEvidenceKind = 'OWN_ACTION' | 'MEMBERSHIP_RECORD' | 'TARGET_RECORD' | 'ORG_TENANT_FANOUT';
 
 /**
  * `AuditLog` actions that record the subject holding a membership when they
@@ -94,6 +109,26 @@ export const MEMBERSHIP_RECORD_ACTIONS: Readonly<Record<string, string>> = Objec
 });
 
 /**
+ * `AuditLog` actions that record the END of the subject's membership and name
+ * them as `detailsJson.targetUserId` (#5940). Read off the writers, each named
+ * beside its actions. Only these count: the key alone is not membership
+ * evidence (see TARGET_RECORD above).
+ */
+export const TARGET_RECORD_ACTIONS: Readonly<Record<string, string>> = Object.freeze({
+    // usecases/tenant-admin.ts — the members page.
+    MEMBER_REMOVED: 'tenant-admin.ts: removeTenantMember (the membership row is deleted)',
+    MEMBER_DEACTIVATED: 'tenant-admin.ts: deactivateTenantMember',
+    // usecases/scim-users.ts — `emitScimAudit` adds the key on a deactivation.
+    SCIM_USER_DEACTIVATED: 'scim-users.ts: scimPatchUser / scimPutUser / scimDeleteUser deactivation',
+    // usecases/org-members.ts — `emitOrgMembershipAudit`, one row per tenant.
+    ORG_ADMIN_DEPROVISIONED: 'org-members.ts: removeOrgMember / changeOrgMemberRole fan-in (org-provisioning.ts)',
+    // usecases/access-review.ts — the close's execution row. A REVOKE
+    // deactivates and a MODIFY changes the role; either way the subject held a
+    // membership in the campaign's tenant.
+    ACCESS_REVIEW_DECISION_EXECUTED: 'access-review.ts: closeAccessReview execution of a decision',
+});
+
+/**
  * `OrgAuditLog` actions whose `detailsJson.tenantIds` lists the tenants an
  * org-admin fan-out gave (or took) an ADMIN membership in, for `targetUserId`.
  */
@@ -105,16 +140,19 @@ export const ORG_TENANT_FANOUT_ACTIONS: readonly string[] = Object.freeze([
 ]);
 
 /**
- * The allowlisted `TenantMembership` writers (tests/guardrails/no-auto-join)
- * that write NO audit row naming the subject. A workspace joined only through
- * one of these, where the person then never acted, is invisible to this read.
+ * What leaves no audit row naming the subject, so a workspace reached only
+ * that way, where the person then never acted, is invisible to this read.
+ *
+ * The five allowlisted `TenantMembership` writers (tests/guardrails/no-auto-join)
+ * that record no row at the JOIN — credentials signup (`auth/register`), SSO
+ * JIT (`sso.ts`), `createTenantUnderOrg`, the fan-out into a new org tenant
+ * (`provisionAllOrgAdminsToTenant`) and the staging seed — are covered since
+ * #5940 by the REMOVAL that must precede every erasure (TARGET_RECORD). What
+ * is left is listed here.
  */
 export const MEMBERSHIP_WRITERS_WITHOUT_A_SUBJECT_ROW: readonly string[] = Object.freeze([
-    'src/app/api/auth/register/route.ts (credentials self-service signup: tenant + OWNER membership, no audit row)',
-    'src/app-layer/usecases/sso.ts (linkExternalIdentity JIT provisioning: user + membership, no audit row)',
-    'src/app-layer/usecases/org-tenants.ts (createTenantUnderOrg: the creator\'s OWNER membership, no audit row)',
-    'src/app-layer/usecases/org-provisioning.ts (provisionAllOrgAdminsToTenant, the fan-out into a NEW org tenant: no row of either trail)',
-    'src/app/api/staging/seed/route.ts (staging-only seed: no audit row)',
+    'a removal written before #5940 (MEMBER_REMOVED / MEMBER_DEACTIVATED / SCIM_USER_DEACTIVATED with no detailsJson.targetUserId) of a membership joined through credentials signup, SSO JIT, createTenantUnderOrg, the org fan-out into a new tenant or the staging seed: not backfilled, the trail is immutable',
+    'src/app-layer/usecases/tenant-purge.ts (the purge deletes a purged tenant\'s memberships and names nobody; it runs its own Managed Agents clean-up before it does)',
 ]);
 
 /**
@@ -128,6 +166,12 @@ export interface AuditEvidenceRow {
     entity: string;
     entityId: string | null;
     action: string;
+    /**
+     * `detailsJson.targetUserId` when it is the subject AND the action is in
+     * `TARGET_RECORD_ACTIONS`, null otherwise. Optional so evidence built
+     * before #5940 still classifies (read as null).
+     */
+    targetUserId?: string | null;
     /** How many rows this evidence row stands for. Defaults to 1. */
     rows?: number;
 }
@@ -191,12 +235,17 @@ export function erasureWorkspacesFrom(
         const rows = row.rows ?? 1;
         const ownAction = row.userId === subjectId;
         const namesMembership = row.entity === 'TenantMembership' && row.entityId === subjectId;
-        if (!ownAction && !namesMembership) continue;
+        // Listed, never inferred: the key under an unlisted action is ignored.
+        const targetsSubject = row.targetUserId === subjectId
+            && Object.prototype.hasOwnProperty.call(TARGET_RECORD_ACTIONS, row.action);
+        if (!ownAction && !namesMembership && !targetsSubject) continue;
         if (ownAction) add(row.tenantId, 'OWN_ACTION', rows);
+        // A row counted once: an own-action row adds its rows there.
+        if (targetsSubject) add(row.tenantId, 'TARGET_RECORD', ownAction ? 0 : rows);
         if (!namesMembership) continue;
         if (Object.prototype.hasOwnProperty.call(MEMBERSHIP_RECORD_ACTIONS, row.action)) {
-            add(row.tenantId, 'MEMBERSHIP_RECORD', ownAction ? 0 : rows);
-        } else if (!ownAction) {
+            add(row.tenantId, 'MEMBERSHIP_RECORD', ownAction || targetsSubject ? 0 : rows);
+        } else if (!ownAction && !targetsSubject) {
             // An own-action row already counts; only a row that would add a
             // tenant on an unclassified action is held back.
             undecided.push({ trail: 'AuditLog', tenantId: row.tenantId, action: row.action, reason: 'UNLISTED_MEMBERSHIP_ACTION', rows });
@@ -265,8 +314,11 @@ export class ErasureWorkspaceDiscoveryTruncatedError extends Error {
 /**
  * Grouped, so a subject with a long history reads one row per (tenant,
  * action, entity, how it names them) rather than one per audit entry. The
- * two CASE columns keep the subject's id where the row names them and drop
- * every other value, which is also what keeps the grouping small.
+ * three CASE columns keep the subject's id where the row names them and drop
+ * every other value, which is also what keeps the grouping small. The
+ * `targetUserId` arm is read only under a listed action ($4), so an unrelated
+ * row carrying the key (a DSAR transition, a session revocation) is neither
+ * read nor grouped.
  *
  * No index serves `userId` or `entityId` alone, so this is a scan of the
  * trail; the erasure's own `findMany({ where: { userId } })` already is.
@@ -276,11 +328,14 @@ const AUDIT_EVIDENCE_SQL = `SELECT "tenantId",
        "entity",
        CASE WHEN "entity" = 'TenantMembership' AND "entityId" = $1 THEN "entityId" END AS "entityId",
        "action",
+       CASE WHEN "action" = ANY($4::text[]) AND "detailsJson"->>'targetUserId' = $1 THEN $1 END AS "targetUserId",
        count(*)::int AS "rows"
   FROM "AuditLog"
- WHERE "userId" = $1 OR ("entity" = 'TenantMembership' AND "entityId" = $1)
- GROUP BY 1, 2, 3, 4, 5
- ORDER BY 1, 2 NULLS LAST, 3, 4 NULLS LAST, 5
+ WHERE "userId" = $1
+    OR ("entity" = 'TenantMembership' AND "entityId" = $1)
+    OR ("action" = ANY($4::text[]) AND "detailsJson"->>'targetUserId' = $1)
+ GROUP BY 1, 2, 3, 4, 5, 6
+ ORDER BY 1, 2 NULLS LAST, 3, 4 NULLS LAST, 5, 6 NULLS LAST
  LIMIT $2 OFFSET $3`;
 
 const ORG_FANOUT_EVIDENCE_SQL = `SELECT "id", "targetUserId", "action"::text AS "action", "detailsJson"
@@ -331,7 +386,13 @@ export async function readErasureWorkspaces(
     const maxPages = options.maxPages ?? DISCOVERY_MAX_PAGES;
 
     const audit = await readPaged('AuditLog', pageSize, maxPages, (limit, offset) =>
-        db.$queryRawUnsafe<AuditEvidenceRow[]>(AUDIT_EVIDENCE_SQL, subjectId, limit, offset),
+        db.$queryRawUnsafe<AuditEvidenceRow[]>(
+            AUDIT_EVIDENCE_SQL,
+            subjectId,
+            limit,
+            offset,
+            Object.keys(TARGET_RECORD_ACTIONS),
+        ),
     );
     const orgFanout = await readPaged('OrgAuditLog', pageSize, maxPages, (limit, offset) =>
         db.$queryRawUnsafe<OrgFanoutEvidenceRow[]>(

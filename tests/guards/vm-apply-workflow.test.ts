@@ -33,6 +33,8 @@ import * as os from 'os';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 
+import { allCallExpressionsOf } from '../helpers/source-blocks';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
 
@@ -159,12 +161,15 @@ describe('the action list is the same in the workflow and the script', () => {
 });
 
 describe('every write is preceded by its preflight, in the same run', () => {
-    const REMOTE_ACTIONS = ['retire-lab-containers', 'recreate-legacy-mcp-proving', 'retire-capacity-recorder', 'refresh-env-prod-example', 'retire-tei-embed'];
+    const REMOTE_ACTIONS = ['retire-lab-containers', 'recreate-legacy-mcp-proving', 'retire-capacity-recorder', 'refresh-env-prod-example', 'retire-tei-embed', 'dsar-erase-preflight', 'dsar-erase'];
     const isPreflight = (a: string) => a === 'preflight' || a.endsWith('-preflight');
 
     it('a preflight action never writes', () => {
         const d = dispatch();
-        const bodies = choices.filter(isPreflight).map((a) => d.get(a) ?? '');
+        // apply.sh's preflights run its `preflight` helper; a remote preflight
+        // runs remote.sh, whose branch is held below. (`dsar-erase-preflight`
+        // writes nothing but its stamp on the request it showed, #5940.)
+        const bodies = choices.filter((a) => isPreflight(a) && !REMOTE_ACTIONS.includes(a)).map((a) => d.get(a) ?? '');
         expect(bodies.length).toBeGreaterThan(0);
         expect(bodies.filter((b) => !/^preflight(\s|$)/.test(b))).toEqual([]);
     });
@@ -275,6 +280,74 @@ describe('the OrangeHRM lab', () => {
     });
 });
 
+describe('the DSAR erasure runs the one due request, with fixed arguments, preflight first (#5940)', () => {
+    /** remote.sh's branch for `action`, to its `;;`, trimmed. */
+    const branch = (action: string) => {
+        const lines = code(REMOTE_SH);
+        const start = lines.findIndex((l) => l === `${action})`);
+        const end = lines.findIndex((l, i) => i > start && l.trim() === ';;');
+        if (start < 0 || end < 0) throw new Error(`remote.sh has no ${action} branch`);
+        return lines.slice(start + 1, end).map((l) => l.trim());
+    };
+
+    it('takes no request id: the workflow still has one input, a choice', () => {
+        expect(Object.keys(inputs)).toEqual(['action']);
+        expect(choices).toEqual(expect.arrayContaining(['dsar-erase-preflight', 'dsar-erase']));
+    });
+
+    it('the preflight plans and stamps, never confirms; the write checks without stamping, then confirms', () => {
+        // The preflight's one write is the stamp on the request it showed
+        // (third round): the plain `--due` run, and only there.
+        expect(branch('dsar-erase-preflight')).toEqual(['dsar_erase_present', 'dsar_erase --due']);
+        // The write's same-run preflight is `--check`, which writes nothing and
+        // requires the stamp: were it the stamping plan, the write would stamp
+        // whatever request is due now and then erase it — the request the
+        // owner never read.
+        expect(branch('dsar-erase')).toEqual(['dsar_erase_present', 'dsar_erase --due --check', 'dsar_erase --due --confirm']);
+        // `--confirm` is written nowhere else in remote.sh, and the stamping
+        // form (`--due` alone) only in the preflight.
+        expect(code(REMOTE_SH).filter((l) => l.includes('--confirm'))).toEqual(['    dsar_erase --due --confirm']);
+        expect(code(REMOTE_SH).filter((l) => l.trim() === 'dsar_erase --due')).toHaveLength(1);
+    });
+
+    it('runs the bundled command in the app container, passing its fixed words through and nothing else', () => {
+        const body = shellFunction(REMOTE_SH, 'dsar_erase').split('\n').slice(1, -1).map((l) => l.trim());
+        expect(body).toEqual(['compose -f docker-compose.prod.yml exec -T app node dist/dsar-erase.mjs "$@" 2>&1 | dsar_lines']);
+        // Every caller passes literals: no variable reaches the command line.
+        const callers = code(REMOTE_SH).map((l) => l.trim()).filter((l) => /^dsar_erase\s/.test(l));
+        expect(callers.length).toBe(3);
+        expect(callers.filter((l) => !/^dsar_erase --due( --check| --confirm)?$/.test(l))).toEqual([]);
+    });
+
+    it('the build ships the command the actions run', () => {
+        // The build call naming the bundle, comments masked and bounded to the call.
+        const calls = allCallExpressionsOf(read('scripts/build-worker.mjs'), 'build').filter((c) =>
+            c.includes("outfile: 'dist/dsar-erase.mjs'"),
+        );
+        expect(calls).toHaveLength(1);
+        expect(calls[0]).toContain("entryPoints: ['scripts/dsar-erase-main.ts'],");
+    });
+
+    it('dsar_lines keeps the command\'s own lines and withholds everything else', () => {
+        const SECRET = 'sekret';
+        const input = [
+            '[dsar-erase] request ckreq0000000000000000001 type=ERASURE status=IN_PROGRESS',
+            `WARN[0000] The "PW=${SECRET}" variable is not set. Defaulting to a blank string.`,
+            `Error: connect ECONNREFUSED postgres://u:${SECRET}@db/x`,
+            ` [dsar-erase] an indented line is not the command's`,
+            '[dsar-erase] workspaces where the subject held a membership: 2',
+            '',
+        ].join('\n');
+        const out = execFileSync('bash', ['-c', `${shellFunction(REMOTE_SH, 'dsar_lines')}\ndsar_lines`], { input, encoding: 'utf8' });
+        expect(out.split('\n').filter((l) => l.includes(SECRET))).toEqual([]);
+        expect(out.split('\n').filter(Boolean)).toEqual([
+            '[dsar-erase] request ckreq0000000000000000001 type=ERASURE status=IN_PROGRESS',
+            '[dsar-erase] workspaces where the subject held a membership: 2',
+            '  [3 line(s) withheld: this log is public]',
+        ]);
+    });
+});
+
 describe('the capacity recorder is retired through the same path it was installed by', () => {
     /** remote.sh's `retire-capacity-recorder)` branch, to its `;;`. */
     const branch = () => {
@@ -363,8 +436,12 @@ describe('the scripts it runs print shape, never content', () => {
         // word is not a call).
         const unquoted = (l: string) => l.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""');
         const calls = lines.filter((l) => l.trim() !== DEFINITION && /(^|[\s;&|(!{])compose\s/.test(unquoted(l)));
-        expect(calls.length).toBe(4);
-        expect(calls.filter((l) => !/\bcompose\s[^|]*2>&1 \| shape\b/.test(l))).toEqual([]);
+        expect(calls.length).toBe(6);
+        // One exception, the DSAR erasure command (#5940), whose own lines are
+        // the report and which `dsar_lines` keeps by their prefix: held below.
+        const DSAR_RUN = 'compose -f docker-compose.prod.yml exec -T app node dist/dsar-erase.mjs "$@" 2>&1 | dsar_lines';
+        expect(calls.filter((l) => l.trim() === DSAR_RUN)).toHaveLength(1);
+        expect(calls.filter((l) => l.trim() !== DSAR_RUN && !/\bcompose\s[^|]*2>&1 \| shape\b/.test(l))).toEqual([]);
     });
 
     it('remote.sh calls docker only to list, inspect named fields, remove containers and run compose', () => {

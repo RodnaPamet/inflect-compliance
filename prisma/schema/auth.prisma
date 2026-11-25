@@ -2301,13 +2301,27 @@ model TenantScimToken {
 /// + dsar-erasure.ts and docs/dsar.md for the multi-PR sequence).
 model DataSubjectRequest {
   id              String                   @id @default(cuid())
-  userId          String
-  user            User                     @relation(fields: [userId], references: [id])
+  /// The subject. NULL once they are erased (#5940): the FK is
+  /// `ON DELETE SET NULL ("userId")`, so the request survives as evidence
+  /// that it was handled and stops pointing at the person. `eraseUser`
+  /// nulls `fulfilmentNotes` and `exportUrl` in the same transaction. A
+  /// NULL row matches no tenant's RLS policy: it is evidence in the
+  /// database only.
+  userId          String?
+  user            User?                    @relation(fields: [userId], references: [id], onDelete: SetNull)
   type            DataSubjectRequestType
   status          DataSubjectRequestStatus @default(RECEIVED)
   requestedAt     DateTime                 @default(now())
   verifiedAt      DateTime?
   completedAt     DateTime?
+  /// When a `dsar-erase` preflight last showed this request as an erasure
+  /// it would admit (#5940, owner decision 2026-11-25, third round).
+  /// `dsar-erase` erases only a request stamped within
+  /// `ERASURE_PREFLIGHT_VALID_HOURS` (`jobs/dsar-erasure-request.ts`), so the
+  /// approved write acts on the request the owner read and on no other.
+  /// Written only by `stampErasurePreflight`, and never cleared: the row
+  /// survives the erasure as evidence, and the stamp is part of it.
+  erasurePreflightAt DateTime?
   /// One of the DSAR_REJECTION_REASONS constants (src/lib/dsar.ts) when
   /// status = REJECTED.
   rejectionReason String?

@@ -527,6 +527,11 @@ export async function deactivateTenantMember(
                 entityName: 'TenantMembership',
                 fromStatus: 'ACTIVE',
                 toStatus: 'DEACTIVATED',
+                // The person, by id (#5940, owner decision 2026-11-25): a DSAR
+                // erasure finds this workspace from this row
+                // (`readErasureWorkspaces`, TARGET_RECORD). `entityId` is the
+                // membership, which no longer names anybody once it is gone.
+                targetUserId: membership.userId,
             },
         });
 
@@ -612,6 +617,9 @@ export async function removeTenantMember(
                 entityName: 'TenantMembership',
                 operation: 'delete',
                 event: 'member_removed',
+                // The person, by id (#5940): the membership row this names is
+                // deleted, so without it nothing ties the removal to them.
+                targetUserId: membership.userId,
             },
         });
 

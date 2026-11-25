@@ -96,7 +96,7 @@
  * child tables. So the surface is RECORDED from the run: the client handed
  * to `eraseUser` is a proxy that logs every `(delegate, method)` pair the
  * function issues, against real Postgres. The denominator is whatever that
- * run touched — 2 delegate tables — and each one is then checked against the
+ * run touched — 3 delegate tables since #5940 — and each one is checked against the
  * disposition declared for it in `ERASURE_DISPOSITIONS`. A cascade that
  * widened to a third table would fail the surface test rather than slip
  * past a per-table check that never knew to look.
@@ -445,18 +445,22 @@ describeFn('#2287 Stage 3 — erasure pseudonymizes the audit trail, per table, 
 
     // ── The per-table split: the surface first, then each table ──
 
-    it('TABLE SURFACE — the erasure touches exactly 2 delegate tables, each with a declared disposition', () => {
+    it('TABLE SURFACE — the erasure touches exactly 3 delegate tables, each with a declared disposition', () => {
         // Recorded from the run, not listed here. This is the denominator for
         // the two per-table tests that follow: if the cascade ever reaches a
         // third table, this fails rather than the new table going unchecked.
         const touched = [...new Set(recordedOps.map((op) => op.table))].sort();
-        expect(touched).toEqual([RAW_TABLE, 'auditLog', 'user']);
+        // `dataSubjectRequest` since #5940: the subject's register requests
+        // lose `fulfilmentNotes` and `exportUrl` before the delete (this
+        // fixture holds none, so the write matches nothing).
+        expect(touched).toEqual([RAW_TABLE, 'auditLog', 'dataSubjectRequest', 'user']);
 
         for (const table of touched.filter((t) => t !== RAW_TABLE)) {
             expect(Object.keys(ERASURE_DISPOSITIONS)).toContain(table);
         }
         expect(ERASURE_DISPOSITIONS.auditLog).toBe('PSEUDONYMIZE');
         expect(ERASURE_DISPOSITIONS.user).toBe('DELETE');
+        expect(ERASURE_DISPOSITIONS.dataSubjectRequest).toBe('PSEUDONYMIZE');
 
         // And the VERBS, per table — the split is not only which tables but
         // which operation each one received. `auditLog` must never see a
@@ -469,6 +473,7 @@ describeFn('#2287 Stage 3 — erasure pseudonymizes the audit trail, per table, 
             [...new Set(recordedOps.filter((op) => op.table === table).map((op) => op.method))].sort();
         expect(methodsOf('auditLog')).toEqual(['findMany', 'updateMany']);
         expect(methodsOf('user')).toEqual(['delete', 'findUnique']);
+        expect(methodsOf('dataSubjectRequest')).toEqual(['updateMany']);
     });
 
     it('TABLE SURFACE — the raw SQL only APPENDS, and reaches no table but AuditLog', () => {
@@ -517,8 +522,10 @@ describeFn('#2287 Stage 3 — erasure pseudonymizes the audit trail, per table, 
     });
 
     it('TABLE SURFACE — the up-front plan (#5595) is READ-ONLY and runs before any write', () => {
-        const firstAuditOp = recordedOps.findIndex((op) => op.table === 'auditLog');
-        const before = recordedOps.slice(0, firstAuditOp);
+        // The first write is the register's (#5940), then the audit table's.
+        const firstWrite = recordedOps.findIndex((op) => op.table === 'dataSubjectRequest' || op.table === 'auditLog');
+        expect(recordedOps[firstWrite].table).toBe('dataSubjectRequest');
+        const before = recordedOps.slice(0, firstWrite);
 
         // Nothing but raw reads and the subject's own visibility control sits
         // in front of the first audit-table call.
