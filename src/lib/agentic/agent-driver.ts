@@ -360,8 +360,9 @@ export interface AgentDriverTerms {
      */
     readonly toolRunnerEnvEnabled?: boolean;
     /**
-     * The Managed Agents engine's switch, `AGENT_MANAGED_AGENTS`, read through
-     * `managedAgentsEnabled` (Step 5b). Optional, and absent reads as OFF, as
+     * The Managed Agents engine's switch for this workspace, read through
+     * `managedAgentsDecisionFor` (Step 5b; the workspace's own since #5964,
+     * with `AGENT_MANAGED_AGENTS` as the operator's override). Optional, and absent reads as OFF, as
      * the Tool Runner's does. It answers only a tenant that chose
      * `MANAGED_AGENTS`, and only while `DRIVER_IMPLEMENTED` says the build has
      * the engine (Step 5d).

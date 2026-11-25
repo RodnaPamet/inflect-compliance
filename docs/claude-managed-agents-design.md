@@ -131,7 +131,8 @@ puts at Anthropic:
   is; and it
   deletes a session recorded DELETED that still exists. Nothing has been created in a
   customer's workspace in production yet: the engine runs from Step 5d, and
-  `AGENT_MANAGED_AGENTS` is off there (#5797).
+  it is off for every workspace there (#5797; since #5964 that is each
+  workspace's own switch, off by default, with `AGENT_MANAGED_AGENTS` unset).
   - **Which tenants a DSAR erasure reaches (#5802).** The erasure reads them
     from membership history in the audit trail, not only from the person's own
     rows (`readErasureWorkspaces`, owner decision 2026-11-25), so a member added
@@ -143,7 +144,7 @@ puts at Anthropic:
     from its removal. A removal written before #5940 names nobody; the
     command's plan says so.
 - **A customer can connect its own Anthropic workspace (Step 5a, #4164),
-  behind the opt-in `AGENT_MANAGED_AGENTS` switch.** The `anthropic-workspace`
+  while the Managed Agents switch is on for its workspace (#5964).** The `anthropic-workspace`
   provider (`src/app-layer/integrations/providers/anthropic-workspace/`) stores
   the workspace ID and keep-sessions choice in the connection's config and the
   API key encrypted as every connection secret. The host is fixed: `apiHost` is a
@@ -154,8 +155,31 @@ puts at Anthropic:
   passes only when the response names the configured workspace. It creates
   nothing in the workspace and never calls `markAuthFailure`. The Admin →
   Integrations card says what Inflect will create there and offers "Keep sessions
-  in my workspace", off by default (decision 4). With the switch unset the
-  provider is not registered and the card does not render.
+  in my workspace", off by default (decision 4). The provider is registered in
+  every process since #5964; while the switch is off for a workspace the card
+  is not listed for it and a save or a Test is refused `MANAGED_AGENTS_OFF`.
+- **The Managed Agents switch is the workspace's (#5964, owner decisions
+  2026-11-25).** An owner turns the engine on or off on Admin → AI features
+  (`TenantSecuritySettings.managedAgentsEnabled`, default off; one writer,
+  `usecases/managed-agents-switch.ts`, behind `admin.tenant_lifecycle`, a person
+  only, audited `MANAGED_AGENTS_SWITCH_CHANGED`). `AGENT_MANAGED_AGENTS` is the
+  operator's override, in the three states of the other agent switches: unset
+  leaves it to each workspace, `1`/`true` turns it on for every workspace, and
+  any other value turns it off for every workspace. One function decides,
+  `managedAgentsDecisionFor` (`src/lib/agentic/agent-switches-policy.ts`), read
+  on every call, so a toggle takes effect at once; the run gate, the engine
+  page and the integrations surface all ask it, and a guard refuses a second
+  read of the variable. Off refuses a new run, fails a queued segment and
+  refuses a person's resume, each by name (`MANAGED_AGENTS_OFF`,
+  `managed_agents_off`), and hides the card; the connection, the engine choice
+  and what Inflect created in the workspace are kept, and the clean-ups (removal,
+  purge, DSAR, the session reconciliation) never ask the switch. While it is off
+  the engine cannot be chosen (`MANAGED_AGENTS_OFF`; moving away always works),
+  and turning it on, or then choosing the engine, enqueues
+  `managed-agents-provision-in-force`, which provisions every profile's version
+  in force through approval's own provisioning once the switch, one workspace
+  and the engine all hold, idempotently, recording every outcome (owner
+  decisions 2026-11-25).
 - **The Managed Agents engine is built (Step 5b, #4165) and turned on
   (Step 5d, #4167).** The driver (`src/lib/agentic/managed-agents/`) provisions
   an approved profile version as one agent per profile (Inflect's preamble as
@@ -173,13 +197,13 @@ puts at Anthropic:
   - **What selects it.** `DRIVER_IMPLEMENTED['managed-agents']` is true (its own
     commit, so reverting it is the rollback) and `MANAGED_AGENTS` is a WRITTEN
     driver mode. A workspace can choose it on Admin → AI features only while
-    `AGENT_MANAGED_AGENTS` is on and exactly one Anthropic workspace is
-    connected and enabled; the setting refuses it otherwise
+    the Managed Agents switch is on for it (#5964) and exactly one Anthropic
+    workspace is connected and enabled; the setting refuses it otherwise
     (`MANAGED_AGENTS_NO_WORKSPACE`, `MANAGED_AGENTS_AMBIGUOUS_WORKSPACE`). The
     page explains the engine in plain words: the conversation exists in the
     customer's workspace until the run ends, unless the connection keeps it
     (decision 4), and Inflect cannot see each call's prompt (decision 3).
-    `AGENT_MANAGED_AGENTS` stays off in production until #5797 is settled.
+    In production every workspace's switch stays off until #5797 is settled.
   - **What runs on it.** A profile of a workspace that chose it asks for it.
     Approval provisions the version's agent, so a Test run tries the approved
     version in force (`TEST_RUN_NEEDS_APPROVED_VERSION` for one under review).

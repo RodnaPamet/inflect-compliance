@@ -16,7 +16,7 @@ import {
     listIntegrationConnections,
     upsertIntegrationConnection,
     removeIntegrationConnection,
-    listAvailableProviders,
+    listAvailableProvidersFor,
     updateConnectionTestStatus,
     testConnectionCredentials,
 } from '@/app-layer/usecases/integrations';
@@ -99,7 +99,9 @@ export const GET = withApiErrorHandling(
                 webhookUrl: `${baseUrl}/api/integrations/webhooks/${c.provider}`,
             };
         }),
-        availableProviders: listAvailableProviders(),
+        // Per workspace (#5964): the Anthropic workspace only while the
+        // Managed Agents switch is on for it.
+        availableProviders: await listAvailableProvidersFor(ctx),
         webhookBaseUrl: `${baseUrl}/api/integrations/webhooks`,
     });
     }),

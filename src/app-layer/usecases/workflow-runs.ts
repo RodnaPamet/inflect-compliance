@@ -139,6 +139,8 @@ import { logger } from '@/lib/observability/logger';
 import { captureReviewAttributionAfterRun } from './agent-harness-attribution';
 import { captureAuditNarrativeAfterRun } from './audit-workpaper-narrative';
 import { selectRunDriver, requestedDriver } from '@/lib/agentic/drivers';
+import { managedAgentsDecisionFor } from '@/lib/agentic/agent-switches-policy';
+import { managedAgentsOffError, managedAgentsOffMessage } from '@/lib/agentic/managed-agents-switch';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers';
 import { isReasoningEngine, recordedModeOf, segmentRecoveryOf, type AgentDriver } from '@/lib/agentic/agent-driver';
 import { readRecordedRunDriver, readRecordedRunDrivers } from '@/lib/agentic/agent-driver-stored-mode';
@@ -786,6 +788,17 @@ export async function resumeWorkflowRun(
     const { run, def } = await loadRunAndDef(ctx, runId);
     if (run.status !== 'AWAITING_APPROVAL' && run.status !== 'PAUSED') {
         throw badRequest(`Run is ${run.status}, cannot resume`);
+    }
+
+    // ── THE MANAGED AGENTS SWITCH (#5964) ───────────────────────────────────
+    //
+    // A run that RECORDED the Managed Agents engine (its pinned definition asks
+    // for it) does not resume while the switch is off for the workspace.
+    // Refused by name, before anything is claimed or dispatched, and the run is
+    // left as it is: turning the switch back on lets the same person resume it.
+    if (requestedDriver(def) === 'managed-agents') {
+        const managedAgents = await managedAgentsDecisionFor({ tenantId: ctx.tenantId });
+        if (!managedAgents.on) throw managedAgentsOffError(managedAgents);
     }
 
     // ── A RUN THAT WAITS ON A PROPOSAL IS CONTINUED BY ITS DECISION (Step 2f) ──
@@ -2115,6 +2128,31 @@ export async function executeQueuedWorkflowRun(
         // Both arms above have already failed and returned a run with no
         // definition; this only tells the compiler so.
         if (!def) return { skipped: 'NO_DEFINITION' };
+
+        // ═══ THE MANAGED AGENTS SWITCH (#5964) ═══
+        //
+        // A run whose pinned definition asks for the Managed Agents engine (it
+        // RECORDED that engine at admission) does not continue while the
+        // switch is off for its workspace: the owner turned the engine off, or
+        // the operator vetoed it, after the run was queued. FAILED by name
+        // rather than continued, because a queued segment has nobody to wait
+        // for, and rather than moved to the built-in engine, which would settle
+        // a profile run with an answer it never produced. A session an earlier
+        // segment left open is settled by the session reconciliation, which
+        // never asks the switch.
+        if (requestedDriver(def) === 'managed-agents') {
+            const managedAgents = await managedAgentsDecisionFor({ tenantId: ctx.tenantId });
+            if (!managedAgents.on) {
+                await failRun(
+                    ctx,
+                    runId,
+                    `managed_agents_off: ${managedAgentsOffMessage(managedAgents.basis)} The run does not continue.`,
+                );
+                await settleDeferralsAfterRun(ctx, runId, 'FAILED');
+                await closeCheckpointAfterRun(ctx, runId);
+                return { skipped: 'MANAGED_AGENTS_OFF' };
+            }
+        }
 
         const permitted = (
             await resolveDriverForRun(ctx.tenantId, {

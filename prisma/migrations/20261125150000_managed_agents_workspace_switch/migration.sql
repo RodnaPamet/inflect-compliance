@@ -1,0 +1,15 @@
+-- The Managed Agents switch moves to the workspace (#5964, owner decisions
+-- 2026-11-25).
+--
+-- TenantSecuritySettings."managedAgentsEnabled": an OWNER's per-workspace
+-- toggle on Admin -> AI features, default false. One writer
+-- (usecases/managed-agents-switch.ts). It is read only while the operator's
+-- `AGENT_MANAGED_AGENTS` is unset; `1`/`true` still turns the engine on for
+-- every workspace and any other set value still turns it off for every one.
+--
+-- ADDITIVE ONLY: one Boolean column with a constant default (no table rewrite
+-- on Postgres 11+). No backfill: with the variable unset no workspace could
+-- reach the engine before this column existed, so false keeps every workspace
+-- where it was; with it set the column is not read. Old containers never
+-- select it, so a rolling deploy is safe in both directions.
+ALTER TABLE "TenantSecuritySettings" ADD COLUMN "managedAgentsEnabled" BOOLEAN NOT NULL DEFAULT false;

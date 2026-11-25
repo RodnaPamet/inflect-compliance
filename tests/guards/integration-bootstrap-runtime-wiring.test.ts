@@ -67,8 +67,8 @@ const EXPECTED_PROVIDER_IDS = [
     // external write's, so `upsertIntegrationConnection` must know it.
     'a2a-peer',
     // Step 5a of docs/claude-managed-agents-design.md: the customer's own
-    // Anthropic workspace. Registered only behind AGENT_MANAGED_AGENTS, which
-    // jest.setup.js turns on so this census sees what an operator can register.
+    // Anthropic workspace. Registered in every process since #5964; listing,
+    // saving and testing it are gated per workspace by the Managed Agents switch.
     'anthropic-workspace',
 ].sort();
 

@@ -57,6 +57,10 @@ const ADMIN_ONLY_ROUTES = [
     // decides whether the workspace's data may be stored by Inflect's own
     // sub-processor, and the usecase refuses a key, an agent and a job.
     'admin/hosted-managed-agents/route.ts',
+    // The Managed Agents switch, the workspace's half (#5964). GET admin.view
+    // (every admin sees whether the engine is on); PUT admin.tenant_lifecycle,
+    // and the usecase refuses a key, an agent and a job.
+    'admin/managed-agents/route.ts',
     'admin/calendar/consent/route.ts',
     // Legacy access recertification (Step 2a). Both admin.manage: PUT decides
     // which legacy column means email and which means employeeNumber, and GET

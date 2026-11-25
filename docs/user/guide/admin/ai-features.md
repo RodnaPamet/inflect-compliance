@@ -17,15 +17,17 @@ Click **{{ui:nav.admin}}** at the bottom of the sidebar. Under {{ui:admin.sectio
 | Open the page | Owner, Admin |
 | Turn AI features on or off | Owner |
 | Change {{ui:admin.aiResidency.title}} | Owner, Admin |
+| See whether the {{ui:admin.managedAgentsSwitch.heading}} is on | Owner, Admin |
+| Turn the {{ui:admin.managedAgentsSwitch.heading}} on or off | Owner |
 | Read {{ui:admin.agentEngines.title}} | Owner, Admin |
 | Change the engine, and see what a run still needs | Owner |
 | See and change {{ui:admin.agentOversight.heading}} | Owner |
 
-An Admin sees the sentence **{{ui:admin.aiFeatures.forbidden}}** in place of the switches, **{{ui:admin.agentEngines.ownerOnly}}** in place of the engine choice, and **{{ui:admin.agentOversight.forbidden}}** in place of {{ui:admin.agentOversight.heading}}. Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}**.
+An Admin sees the sentence **{{ui:admin.aiFeatures.forbidden}}** in place of the switches, **{{ui:admin.managedAgentsSwitch.ownerOnly}}** beside the {{ui:admin.managedAgentsSwitch.heading}}, **{{ui:admin.agentEngines.ownerOnly}}** in place of the engine choice, and **{{ui:admin.agentOversight.forbidden}}** in place of {{ui:admin.agentOversight.heading}}. Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}**.
 
 ## What you see
 
-The page has four parts, one under the other.
+The page has five parts, one under the other.
 
 ### The AI switches
 
@@ -58,6 +60,14 @@ Every switch is on until somebody turns it off. The badge says what is actually 
 
 When **{{ui:admin.aiResidency.localLabel}}** is selected, a note explains what that means on this deployment: whether it has a local model gateway, and which features stop rather than send data out.
 
+### {{ui:admin.managedAgentsSwitch.heading}}
+
+{{ui:admin.managedAgentsSwitch.description}}
+
+A badge shows **{{ui:admin.managedAgentsSwitch.on}}** or **{{ui:admin.managedAgentsSwitch.off}}**, and an Owner gets a **{{ui:admin.managedAgentsSwitch.turnOn}}** or **{{ui:admin.managedAgentsSwitch.turnOff}}** button. It starts off.
+
+The deployment's operator can also decide for every workspace at once. Then a note says so, either **{{ui:admin.managedAgentsSwitch.operatorOn}}** or **{{ui:admin.managedAgentsSwitch.operatorOff}}**, and the button is greyed out. The choice saved for this workspace is kept, and it applies again once the operator leaves the decision to each workspace.
+
 ### {{ui:admin.agentEngines.title}}
 
 {{ui:admin.agentEngines.description}}
@@ -70,7 +80,7 @@ A badge names the engine that runs agents now, and a sentence below it says why:
 | {{ui:admin.agentEngines.engine.FLUE.name}} | {{ui:admin.agentEngines.engine.FLUE.description}} |
 | {{ui:admin.agentEngines.engine.TOOL_RUNNER.name}} | {{ui:admin.agentEngines.engine.TOOL_RUNNER.description}} |
 
-The Flue and Tool Runner engines can be chosen only once the deployment's operator has turned them on; until then they are greyed out. The built-in engine can always be chosen. For the Tool Runner engine, your organization may also have to turn it on, in the organization's settings.
+The Flue and Tool Runner engines can be chosen only once the deployment's operator has turned them on; until then they are greyed out. The built-in engine can always be chosen. For the Tool Runner engine, your organization may also have to turn it on, in the organization's settings. The {{ui:admin.agentEngines.engine.MANAGED_AGENTS.name}} engine is listed only while the {{ui:admin.managedAgentsSwitch.heading}} above is on, and can be chosen once your Anthropic workspace is connected on the Integrations page.
 
 For an Owner, a checklist follows: **{{ui:admin.agentEngines.wiringHeading}}**, or **{{ui:admin.agentEngines.wiringHeadingToolRunner}}**. Each line is met or not, and some carry a **{{ui:admin.agentEngines.fix}}** link to the page that sets them up. Lines marked **{{ui:admin.agentEngines.operatorTerm}}** or **{{ui:admin.agentEngines.organizationTerm}}** are not yours to change from here.
 
@@ -113,6 +123,14 @@ Select **{{ui:admin.aiResidency.externalLabel}}** or **{{ui:admin.aiResidency.lo
 
 Click **{{ui:admin.agentOversight.turnOff}}** or **{{ui:admin.agentOversight.turnOn}}** beside it. The change is saved at once and recorded in the workspace's audit log. Each button changes only its own switch. An API key or an agent cannot change these, only an Owner signed in.
 
+### Turn the {{ui:admin.managedAgentsSwitch.heading}} on or off
+
+Click **{{ui:admin.managedAgentsSwitch.turnOn}}** or **{{ui:admin.managedAgentsSwitch.turnOff}}**. The change takes effect at once and is recorded in the workspace's audit log. An API key or an agent cannot change it, only an Owner signed in.
+
+When it is off, no new run starts on that engine, a run waiting to continue on it stops, and the Anthropic workspace card is hidden on the Integrations page. The {{ui:admin.agentEngines.engine.MANAGED_AGENTS.name}} engine also cannot be chosen while it is off, though moving to another engine always works. Your Anthropic workspace connection, the engine you chose and everything already in your Anthropic workspace are kept, so turning it back on carries on where you left off.
+
+Agent profile versions approved while it was off do not need approving again. Once the switch is on, your Anthropic workspace is connected and the {{ui:admin.agentEngines.engine.MANAGED_AGENTS.name}} engine is chosen, each one is set up in your Anthropic workspace in the background, as approving it would have done. Turning the switch on and choosing the engine each start this, so the usual order (turn it on, connect the workspace, choose the engine) works. A version that is already set up is left as it is. If setting one up fails, the switch and the engine choice stay as they are and the failure is recorded in the workspace's audit log; turn the switch off and on again to try again.
+
 ### Change the engine
 
 Select an engine. A dialog asks you to confirm, and explains what changes: runs already in progress stay on the engine they started on, and new runs use the new one. Click **{{ui:admin.agentEngines.confirmLabel}}**. You can switch back at any time.
@@ -126,6 +144,8 @@ Select an engine. A dialog asks you to confirm, and explains what changes: runs 
 | **{{ui:admin.aiFeatures.saveFailedHeading}}**, with the reason the server gave | A switch did not change | Fix what it names, or try again |
 | **{{ui:admin.aiResidency.loadFailed}}** | The setting did not load | Click **{{ui:common.error.tryAgain}}** |
 | **{{ui:admin.aiResidency.saveFailed}}**, or the reason the server gave | The choice was not saved | Try again |
+| **{{ui:admin.managedAgentsSwitch.loadFailed}}** | The Managed Agents setting did not load | Click **{{ui:common.error.tryAgain}}** |
+| **{{ui:admin.managedAgentsSwitch.saveFailedHeading}}**, with the reason | The switch did not change | Try again |
 | **{{ui:admin.agentEngines.loadFailed}}** | The engine setting did not load | Click **{{ui:common.error.tryAgain}}** |
 | **{{ui:admin.agentEngines.wiringLoadFailed}}** | The checklist did not load | Reload the page |
 | **{{ui:admin.agentOversight.loadFailed}}** | The agent oversight switches did not load | Click **{{ui:common.error.tryAgain}}** |

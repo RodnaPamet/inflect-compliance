@@ -15,6 +15,9 @@
  * - "Where AI runs" sits behind `admin.manage`, the key of the
  *   security-settings endpoint it reads and writes. Somebody without it is
  *   told an administrator decides, not shown a section that would 403.
+ * - "Managed Agents engine" (#5964) renders for every admin, above "Agent
+ *   engines": its GET is `admin.view` and its PUT `admin.tenant_lifecycle`,
+ *   so it shows an owner the toggle and anyone else the state.
  * - The "Agent engines" section renders for every admin (owner decision
  *   2026-10-25, #4139). It reads `GET /admin/agent-driver`, which is
  *   `admin.view`, and it decides for itself whether to offer the control.
@@ -36,6 +39,7 @@ import { AiResidencySection } from './AiResidencySection';
 import { AgentEnginesSection } from './AgentEnginesSection';
 import { AgentOversightSection } from './AgentOversightSection';
 import { HostedAgentsSection } from './HostedAgentsSection';
+import { ManagedAgentsSwitchSection } from './ManagedAgentsSwitchSection';
 
 export default function AiFeaturesPage() {
     const t = useTranslations('admin');
@@ -79,6 +83,8 @@ export default function AiFeaturesPage() {
             >
                 <AiResidencySection />
             </RequirePermission>
+
+            <ManagedAgentsSwitchSection />
 
             <AgentEnginesSection />
 

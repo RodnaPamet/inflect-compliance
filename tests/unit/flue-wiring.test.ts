@@ -46,7 +46,11 @@ jest.mock('@/env', () => ({ env: new Proxy({}, { get: (_t, k: string) => envBag[
 const orgRow: { value: { agentProfilesEnabled: boolean; agentToolRunnerEnabled: boolean } | null } = { value: null };
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
-    default: { tenant: { findUnique: jest.fn(async () => ({ organization: orgRow.value })) } },
+    default: {
+        tenant: { findUnique: jest.fn(async () => ({ organization: orgRow.value })) },
+        // The workspace's own Managed Agents toggle (#5964): never set here.
+        tenantSecuritySettings: { findFirst: jest.fn(async () => null) },
+    },
 }));
 
 jest.mock('@/lib/observability', () => ({

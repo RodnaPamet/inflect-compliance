@@ -809,6 +809,33 @@ export interface AgentRunReaperPayload {
  * wherever the enqueuer guessed. That is what makes the retry safe: the run
  * cannot re-execute a step it already committed.
  */
+/**
+ * What enqueued a `managed-agents-provision-in-force` run (#5964): the Managed
+ * Agents switch moving from off to on, or the stored engine moving to
+ * Managed Agents.
+ */
+export type ProvisionInForceTrigger = 'SWITCH_ON' | 'ENGINE_CHOSEN';
+
+/**
+ * Provision a workspace's agent profile versions in force as Managed Agents
+ * (#5964, owner decisions 2026-11-25). Enqueued by `setManagedAgentsSwitch`
+ * and `setAgentDriverSetting`, each after its write committed.
+ */
+export interface ManagedAgentsProvisionInForcePayload {
+    /** The workspace. */
+    tenantId: string;
+    /**
+     * The owner whose write enqueued it. The job acts as them, their
+     * membership re-read when it runs (`resolveMemberContext`), as approval
+     * provisions in the approver's name.
+     */
+    requestedByUserId: string;
+    /** Which write enqueued it, recorded with the outcome. */
+    trigger: ProvisionInForceTrigger;
+    /** The switch request's id, for log correlation. */
+    requestId?: string;
+}
+
 export interface AgentRunExecutePayload {
     /** Tenant whose run this is. Required for isolation. */
     tenantId: string;
@@ -877,6 +904,7 @@ export type NamesEveryField<T> = { [K in keyof Required<T>]: T[K] };
 
 export interface JobPayloadMap {
     'agent-run-execute': AgentRunExecutePayload;
+    'managed-agents-provision-in-force': ManagedAgentsProvisionInForcePayload;
     'health-check': HealthCheckPayload;
     'nvd-cve-sync': NvdCveSyncPayload;
     'automation-runner': AutomationRunnerPayload;
@@ -1340,6 +1368,17 @@ export const JOB_DEFAULTS: Record<JobName, {
         backoff: { type: 'fixed', delay: 1_000 },
         removeOnComplete: 100,
         removeOnFail: 100,
+    },
+    'managed-agents-provision-in-force': {
+        // ONE attempt. Each version's provisioning is idempotent on its own
+        // record (`readProvision`), but a provider failure between creating
+        // the agent at Anthropic and recording it would create a second agent
+        // on an automatic retry. A failure is recorded on the audit trail
+        // instead, and turning the switch off and on again re-runs it.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 0 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
     },
     'agent-run-execute': {
         // RETRIED, and the retry is the point. A SIGTERM mid-run leaves the

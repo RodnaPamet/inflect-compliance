@@ -38,7 +38,6 @@ import { ServiceNowProvider } from './providers/servicenow';
 import { McpServerProvider } from './providers/mcp-server-provider';
 import { A2aPeerProvider } from './providers/a2a-peer-provider';
 import { AnthropicWorkspaceProvider } from './providers/anthropic-workspace';
-import { managedAgentsEnabled } from '@/lib/agentic/managed-agents-switch';
 import { ServiceNowClient } from './providers/servicenow/client';
 import { ServiceNowChangeMapper } from './providers/servicenow/mapper';
 
@@ -117,15 +116,17 @@ registry.register(new McpServerProvider());
 registry.register(new A2aPeerProvider());
 
 // The customer's own Anthropic workspace (Step 5a of
-// docs/claude-managed-agents-design.md). Behind the opt-in AGENT_MANAGED_AGENTS
-// switch: with it unset the provider is not registered, so a connection can be
-// neither saved nor tested (`upsertIntegrationConnection` and
-// `testConnectionCredentials` refuse a provider the registry does not know),
-// and the integrations page, which offers the card only for a provider the
-// server lists, shows none.
-if (managedAgentsEnabled()) {
-    registry.register(new AnthropicWorkspaceProvider());
-}
+// docs/claude-managed-agents-design.md). ALWAYS registered since #5964: the
+// Managed Agents switch is now a WORKSPACE's to decide (owner decisions
+// 2026-11-25), and the registry is per process, so it can no longer be the
+// gate. Listing, saving and testing the connection are gated per tenant by
+// `managedAgentsDecisionFor` instead (`listAvailableProvidersFor`,
+// `upsertIntegrationConnection`, `testConnectionCredentials`). Nothing else
+// reaches the provider: it declares no checks, so the automation runner never
+// resolves it, and its connection holds no webhook signing secret. The
+// clean-ups read the connection row directly and never ask the switch, so a
+// workspace that turned the engine off is still cleaned up.
+registry.register(new AnthropicWorkspaceProvider());
 
 // Future providers:
 // registry.register(new GitLabProvider());

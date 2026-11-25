@@ -56,6 +56,11 @@ jest.mock('@/lib/db-context', () => ({
 }));
 
 const logEvent = jest.fn(async () => undefined);
+// The provisioning job a move TO Managed Agents enqueues (#5964).
+const mockEnqueueProvisionInForce = jest.fn(async (..._args: unknown[]) => 'QUEUED');
+jest.mock('@/app-layer/usecases/managed-agents-switch', () => ({
+    enqueueProvisionInForce: (...args: unknown[]) => mockEnqueueProvisionInForce(...args),
+}));
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: (...a: unknown[]) => logEvent(...(a as [])) }));
 
 const envBag: Record<string, string | undefined> = {};
@@ -63,9 +68,14 @@ jest.mock('@/env', () => ({ env: new Proxy({}, { get: (_t, k: string) => envBag[
 // The workspace's organization row (#4557). `null` — no organization — unless a
 // test sets one, so every env-only case reads exactly as it did before.
 const orgRow: { value: { agentProfilesEnabled: boolean; agentToolRunnerEnabled: boolean } | null } = { value: null };
+// The workspace's own Managed Agents toggle (#5964): off unless a test sets it.
+const workspaceToggle = { value: false };
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
-    default: { tenant: { findUnique: jest.fn(async () => ({ organization: orgRow.value })) } },
+    default: {
+        tenant: { findUnique: jest.fn(async () => ({ organization: orgRow.value })) },
+        tenantSecuritySettings: { findFirst: jest.fn(async () => ({ managedAgentsEnabled: workspaceToggle.value })) },
+    },
 }));
 
 jest.mock('@/lib/observability', () => ({
@@ -108,6 +118,7 @@ const ctx = makeRequestContext('OWNER');
 
 beforeEach(() => {
     orgRow.value = null;
+    workspaceToggle.value = false;
     jest.clearAllMocks();
     row = { agentDriver: 'STATIC' };
     for (const k of Object.keys(envBag)) delete envBag[k];
@@ -383,6 +394,7 @@ describe('the Managed Agents engine (Step 5d)', () => {
 
     it('cannot be chosen without a connected workspace, by name, and nothing is written', async () => {
         workspaceConnections = [];
+        envBag.AGENT_MANAGED_AGENTS = '1';
         expect(await refusalOf(setAgentDriverSetting(ctx, 'MANAGED_AGENTS'))).toEqual({
             status: 409,
             reason: 'MANAGED_AGENTS_NO_WORKSPACE',
@@ -393,6 +405,7 @@ describe('the Managed Agents engine (Step 5d)', () => {
 
     it('cannot be chosen with two enabled workspaces, because a run never chooses between them', async () => {
         workspaceConnections = [{ id: 'c1' }, { id: 'c2' }];
+        envBag.AGENT_MANAGED_AGENTS = '1';
         expect(await refusalOf(setAgentDriverSetting(ctx, 'MANAGED_AGENTS'))).toEqual({
             status: 409,
             reason: 'MANAGED_AGENTS_AMBIGUOUS_WORKSPACE',
@@ -442,6 +455,7 @@ describe('the Managed Agents engine (Step 5d)', () => {
         const view = await getAgentDriverSetting(ctx);
         expect(view.managedAgents).toEqual({
             envEnabled: true,
+            basis: 'DEPLOYMENT_ON',
             implemented: DRIVER_IMPLEMENTED['managed-agents'],
             workspace: 'CONNECTED',
             // Step 6b: its own workspace wins, so no hosted term is named.
@@ -469,6 +483,118 @@ describe('the Managed Agents engine (Step 5d)', () => {
                 ? { driver: 'managed-agents', reason: null }
                 : { driver: 'static', reason: 'DRIVER_NOT_IMPLEMENTED' },
         );
+    });
+
+    describe('it is not chosen while its switch is off (#5964, owner decision 2026-11-25)', () => {
+        it.each([
+            ['the workspace has not turned it on', undefined, false, 'WORKSPACE_OFF'],
+            ['the operator vetoed it, over a workspace that turned it on', '0', true, 'DEPLOYMENT_OFF'],
+        ] as const)('refused with MANAGED_AGENTS_OFF when %s, and nothing is written', async (_label, variable, toggle, basis) => {
+            workspaceConnections = [{ id: 'c1' }];
+            workspaceToggle.value = toggle;
+            if (variable !== undefined) envBag.AGENT_MANAGED_AGENTS = variable;
+            const refused = await setAgentDriverSetting(ctx, 'MANAGED_AGENTS').then(
+                () => null,
+                (err: { status?: number; details?: unknown }) => ({ status: err.status, details: err.details }),
+            );
+            expect(refused).toEqual({ status: 409, details: { reason: 'MANAGED_AGENTS_OFF', basis } });
+            expect(upsert).not.toHaveBeenCalled();
+            expect(logEvent).not.toHaveBeenCalled();
+        });
+
+        it('allowed while the workspace has it on', async () => {
+            workspaceConnections = [{ id: 'c1' }];
+            workspaceToggle.value = true;
+            await setAgentDriverSetting(ctx, 'MANAGED_AGENTS');
+            expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { agentDriver: 'MANAGED_AGENTS' } }));
+        });
+    });
+
+    describe('choosing it provisions the versions in force (#5964, owner decisions 2026-11-25)', () => {
+        it('a move TO it enqueues the job, as the chooser, after the write', async () => {
+            workspaceConnections = [{ id: 'c1' }];
+            workspaceToggle.value = true;
+            const view = await setAgentDriverSetting(ctx, 'MANAGED_AGENTS');
+            expect(mockEnqueueProvisionInForce).toHaveBeenCalledTimes(1);
+            expect(mockEnqueueProvisionInForce).toHaveBeenCalledWith(ctx, 'ENGINE_CHOSEN');
+            expect(upsert.mock.invocationCallOrder[0]).toBeLessThan(mockEnqueueProvisionInForce.mock.invocationCallOrder[0]);
+            expect(view.provisioning).toBe('QUEUED');
+        });
+
+        it('reports a failed enqueue, and the choice stands', async () => {
+            workspaceConnections = [{ id: 'c1' }];
+            workspaceToggle.value = true;
+            mockEnqueueProvisionInForce.mockResolvedValueOnce('ENQUEUE_FAILED');
+            const view = await setAgentDriverSetting(ctx, 'MANAGED_AGENTS');
+            expect(view.provisioning).toBe('ENQUEUE_FAILED');
+            expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { agentDriver: 'MANAGED_AGENTS' } }));
+        });
+
+        it('a re-save of it enqueues nothing', async () => {
+            row = { agentDriver: 'MANAGED_AGENTS' };
+            workspaceConnections = [{ id: 'c1' }];
+            workspaceToggle.value = true;
+            const view = await setAgentDriverSetting(ctx, 'MANAGED_AGENTS');
+            expect(mockEnqueueProvisionInForce).not.toHaveBeenCalled();
+            expect(view.provisioning).toBe('NOT_NEEDED');
+        });
+
+        it.each(['STATIC', 'FLUE', 'TOOL_RUNNER'] as const)('a move to %s enqueues nothing', async (to) => {
+            row = { agentDriver: 'MANAGED_AGENTS' };
+            workspaceConnections = [{ id: 'c1' }];
+            workspaceToggle.value = true;
+            expect((await setAgentDriverSetting(ctx, to)).provisioning).toBe('NOT_NEEDED');
+            expect(mockEnqueueProvisionInForce).not.toHaveBeenCalled();
+        });
+
+        it.each(['STATIC', 'FLUE', 'TOOL_RUNNER'] as const)('moving from it to %s is allowed while it is off', async (to) => {
+            row = { agentDriver: 'MANAGED_AGENTS' };
+            workspaceConnections = [{ id: 'c1' }];
+            await setAgentDriverSetting(ctx, to);
+            expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { agentDriver: to } }));
+        });
+    });
+
+    describe('with AGENT_MANAGED_AGENTS unset, the workspace decides (#5964)', () => {
+        it('on when its owner turned it on, saying so, and the engine is in force', async () => {
+            workspaceToggle.value = true;
+            workspaceConnections = [{ id: 'c1' }];
+            envBag.AGENT_PROFILES_TENANTS = ctx.tenantSlug ?? '';
+            row = { agentDriver: 'MANAGED_AGENTS' };
+            const view = await getAgentDriverSetting(ctx);
+            expect(view.managedAgents).toMatchObject({ envEnabled: true, basis: 'WORKSPACE_ON' });
+            expect(view.effective).toEqual({ driver: 'managed-agents', reason: null });
+        });
+
+        it('off while its owner has not, naming the workspace as who holds it', async () => {
+            workspaceConnections = [{ id: 'c1' }];
+            envBag.AGENT_PROFILES_TENANTS = ctx.tenantSlug ?? '';
+            row = { agentDriver: 'MANAGED_AGENTS' };
+            const view = await getAgentDriverSetting(ctx);
+            expect(view.managedAgents).toMatchObject({ envEnabled: false, basis: 'WORKSPACE_OFF' });
+            expect(view.effective).toEqual({ driver: 'static', reason: 'ENV_DISABLED' });
+        });
+
+        it('the operator\'s 0 vetoes a workspace that turned it on', async () => {
+            workspaceToggle.value = true;
+            envBag.AGENT_MANAGED_AGENTS = '0';
+            row = { agentDriver: 'MANAGED_AGENTS' };
+            const view = await getAgentDriverSetting(ctx);
+            expect(view.managedAgents).toMatchObject({ envEnabled: false, basis: 'DEPLOYMENT_OFF' });
+        });
+
+        it('records the basis beside the switch when the engine choice changes', async () => {
+            workspaceToggle.value = true;
+            workspaceConnections = [{ id: 'c1' }];
+            await setAgentDriverSetting(ctx, 'MANAGED_AGENTS');
+            expect(logEvent).toHaveBeenCalledWith(
+                expect.anything(),
+                expect.anything(),
+                expect.objectContaining({
+                    metadata: expect.objectContaining({ managedAgentsEnvEnabled: true, managedAgentsBasis: 'WORKSPACE_ON' }),
+                }),
+            );
+        });
     });
 
     it('reads static, naming why, when the profile surface is off for the workspace', async () => {

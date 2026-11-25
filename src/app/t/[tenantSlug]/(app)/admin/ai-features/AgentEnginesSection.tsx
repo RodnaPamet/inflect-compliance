@@ -217,6 +217,13 @@ export function AgentEnginesSection() {
                                 {t('deploymentOffOrganization')}
                             </span>
                         )}
+                        {/* The workspace's owner can turn the Managed Agents
+                            engine on in the section above (#5964). */}
+                        {state.managedAgents?.basis === 'WORKSPACE_OFF' && (
+                            <span data-testid="agent-engines-workspace-can-enable-managed-agents" className="mt-1 block">
+                                {t('deploymentOffWorkspaceManagedAgents')}
+                            </span>
+                        )}
                     </InlineNotice>
                 )}
 

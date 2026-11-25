@@ -33,8 +33,12 @@ import {
     type AgentDriverDecision,
 } from './agent-driver';
 import { readDeploymentSwitch } from './agent-switches';
-import { managedAgentsEnabled } from './managed-agents-switch';
-import { agentProfilesOnFor, toolRunnerDecisionFor } from './agent-switches-policy';
+import {
+    agentProfilesOnFor,
+    managedAgentsDecisionFor,
+    managedAgentsDeployment,
+    toolRunnerDecisionFor,
+} from './agent-switches-policy';
 import { listWorkflowDefinitions } from './workflow-registry';
 
 /**
@@ -48,12 +52,6 @@ import { listWorkflowDefinitions } from './workflow-registry';
  */
 export async function resolveDriverForTenant(tenantId: string): Promise<AgentDriverDecision> {
     const envEnabled = flueEnvEnabled(env.AGENT_DRIVER_FLUE);
-    // The Managed Agents switch (Step 5b) is a third engine's, and a deployment
-    // that turns on only it must still read the tenant's choice (Step 5d): the
-    // two short-circuits below used to name only Flue and the Tool Runner, so
-    // they answered ENV_DISABLED for every tenant there, the chosen engine
-    // included.
-    const managedAgentsEnvEnabled = managedAgentsEnabled();
 
     // Short-circuit BEFORE any query. When every engine's switch is off the
     // tenant's value cannot change the answer, so reading it would be a
@@ -62,18 +60,33 @@ export async function resolveDriverForTenant(tenantId: string): Promise<AgentDri
     // that has not enabled this. The Tool Runner's switch is OFF only when the
     // deployment says so; UNSET leaves it to the tenant's organization (#4557),
     // which is one read, and only on that path.
-    if (!envEnabled && !managedAgentsEnvEnabled && readDeploymentSwitch(env.AGENT_DRIVER_TOOL_RUNNER) === 'OFF') {
+    //
+    // The Managed Agents switch (Step 5b) is a third engine's, and since #5964
+    // the WORKSPACE decides it while `AGENT_MANAGED_AGENTS` is unset: it is
+    // off for every tenant only when the operator set the variable to
+    // something other than on. Reading it as a boolean here (unset = off) would
+    // answer ENV_DISABLED for a workspace whose owner turned the engine on.
+    if (
+        !envEnabled &&
+        managedAgentsDeployment() === 'OFF' &&
+        readDeploymentSwitch(env.AGENT_DRIVER_TOOL_RUNNER) === 'OFF'
+    ) {
         return { driver: STATIC_DRIVER, reason: 'ENV_DISABLED' };
     }
 
     let toolRunnerEnvEnabled = false;
+    let managedAgentsEnvEnabled = false;
     let stored: string | null = null;
     try {
-        // The organization's half of the Tool Runner switch (#4557), read only
-        // when the deployment left it open. Inside the same `try` as the
+        // The organization's half of the Tool Runner switch (#4557) and the
+        // workspace's half of the Managed Agents switch (#5964), each read
+        // only when the deployment left it open. Inside the same `try` as the
         // stored mode, so an unread switch takes the same fallback: static,
         // never a grant.
-        toolRunnerEnvEnabled = (await toolRunnerDecisionFor({ tenantId })).on;
+        [toolRunnerEnvEnabled, managedAgentsEnvEnabled] = await Promise.all([
+            toolRunnerDecisionFor({ tenantId }).then((d) => d.on),
+            managedAgentsDecisionFor({ tenantId }).then((d) => d.on),
+        ]);
         if (!envEnabled && !toolRunnerEnvEnabled && !managedAgentsEnvEnabled) {
             return { driver: STATIC_DRIVER, reason: 'ENV_DISABLED' };
         }

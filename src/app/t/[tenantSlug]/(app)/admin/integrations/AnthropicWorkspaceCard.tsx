@@ -6,9 +6,10 @@
  *
  * The PAGE decides whether this card exists: it renders it only when the
  * server lists the `anthropic-workspace` provider, which the server does only
- * when `AGENT_MANAGED_AGENTS` is on (the provider is registered behind it). So
- * a deployment with the switch off shows no card, and the generic connection
- * form never offers the provider either (`CARD_OWNED_PROVIDERS`).
+ * while the Managed Agents switch is on for the workspace (#5964: its owner's
+ * toggle on Admin → AI features, or the operator's `AGENT_MANAGED_AGENTS`
+ * override). So a workspace with the switch off shows no card, and the generic
+ * connection form never offers the provider either (`CARD_OWNED_PROVIDERS`).
  *
  * The card offers three things and no host: the workspace ID, the API key and
  * "Keep sessions in my workspace", OFF unless ticked (owner decision 4). It

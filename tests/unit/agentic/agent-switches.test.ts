@@ -10,6 +10,7 @@ import {
     needsOrganization,
     readDeploymentSwitch,
     resolveAgentSwitch,
+    resolveWorkspaceAgentSwitch,
     switchActor,
     type AgentSwitchBasis,
     type DeploymentSwitch,
@@ -88,7 +89,34 @@ describe('who holds a switch, for the checklist', () => {
         ['DEPLOYMENT_OFF', 'operator'],
         ['TENANT_ALLOWLIST', 'operator'],
         ['NO_ORGANIZATION', 'operator'],
+        ['WORKSPACE_ON', 'tenant'],
+        ['WORKSPACE_OFF', 'tenant'],
     ] as const)('%s is held by the %s', (basis, actor) => {
         expect(switchActor(basis)).toBe(actor);
+    });
+});
+
+describe('the Managed Agents switch: the workspace decides, the deployment overrides (#5964)', () => {
+    const DEPLOYMENT: DeploymentSwitch[] = ['ON', 'OFF', 'UNSET'];
+    const expected = (deployment: DeploymentSwitch, workspace: boolean) => {
+        if (deployment === 'ON') return { on: true, basis: 'DEPLOYMENT_ON' };
+        if (deployment === 'OFF') return { on: false, basis: 'DEPLOYMENT_OFF' };
+        return workspace ? { on: true, basis: 'WORKSPACE_ON' } : { on: false, basis: 'WORKSPACE_OFF' };
+    };
+    const rows = DEPLOYMENT.flatMap((d) => [true, false].map((w) => [d, w] as const));
+
+    it.each(rows)('deployment %s, workspace toggle %p', (deployment, workspace) => {
+        expect(resolveWorkspaceAgentSwitch({ deployment, workspace })).toEqual(expected(deployment, workspace));
+    });
+
+    it('the three properties the owner decided, stated directly', () => {
+        // Any value other than on is a veto, over a workspace that turned it on.
+        expect(resolveWorkspaceAgentSwitch({ deployment: readDeploymentSwitch('0'), workspace: true }).on).toBe(false);
+        expect(resolveWorkspaceAgentSwitch({ deployment: readDeploymentSwitch('yes'), workspace: true }).on).toBe(false);
+        // On is on everywhere, a workspace that has not turned it on included.
+        expect(resolveWorkspaceAgentSwitch({ deployment: readDeploymentSwitch('true'), workspace: false }).on).toBe(true);
+        // Unset leaves it to the workspace, in both directions.
+        expect(resolveWorkspaceAgentSwitch({ deployment: readDeploymentSwitch(undefined), workspace: true }).on).toBe(true);
+        expect(resolveWorkspaceAgentSwitch({ deployment: readDeploymentSwitch(''), workspace: false }).on).toBe(false);
     });
 });

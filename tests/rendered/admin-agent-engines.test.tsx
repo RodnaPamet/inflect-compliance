@@ -708,6 +708,43 @@ describe('the Managed Agents engine (Step 5d)', () => {
         },
     );
 
+    it('when the WORKSPACE holds the switch and left it off, the reason names its owner, not the operator (#5964)', () => {
+        const off = setting({
+            mode: 'MANAGED_AGENTS',
+            effective: { driver: 'static', reason: 'ENV_DISABLED' },
+            managedAgents: { envEnabled: false, basis: 'WORKSPACE_OFF', implemented: true, workspace: 'CONNECTED' },
+        });
+        const { unmount } = arrange({ setting: off, canChange: false });
+        const expected = at(EN.admin.agentEngines, 'reasonManagedAgents.WORKSPACE_OFF') as string;
+        expect(screen.getByTestId('agent-engines-headline')).toHaveTextContent(expected);
+        expect(typeof at(BG.admin.agentEngines, 'reasonManagedAgents.WORKSPACE_OFF')).toBe('string');
+        // The switch term is the workspace's: no "Set on the deployment" beside it.
+        const envTerm = screen.getByTestId('agent-engines-term-ENV');
+        expect(envTerm).toHaveTextContent(MA.managedAgentsTerm.ENV);
+        expect(envTerm).not.toHaveTextContent(COPY.operatorTerm);
+        unmount();
+
+        // An owner on a deployment with every engine off is told they can turn
+        // this one on above.
+        arrange({ setting: { ...off, envEnabled: false }, canChange: true, wiring: WIRING_BLOCKED });
+        expect(screen.getByTestId('agent-engines-workspace-can-enable-managed-agents')).toHaveTextContent(
+            at(EN.admin.agentEngines, 'deploymentOffWorkspaceManagedAgents') as string,
+        );
+    });
+
+    it('when the operator vetoed it, the reason still names the operator', () => {
+        const vetoed = setting({
+            mode: 'MANAGED_AGENTS',
+            effective: { driver: 'static', reason: 'ENV_DISABLED' },
+            managedAgents: { envEnabled: false, basis: 'DEPLOYMENT_OFF', implemented: true, workspace: 'CONNECTED' },
+        });
+        arrange({ setting: vetoed, canChange: false });
+        expect(screen.getByTestId('agent-engines-headline')).toHaveTextContent(
+            at(EN.admin.agentEngines, 'reasonManagedAgents.ENV_DISABLED') as string,
+        );
+        expect(screen.getByTestId('agent-engines-term-ENV')).toHaveTextContent(COPY.operatorTerm);
+    });
+
     it('right after the change, a checklist still about the OLD engine is not shown as this one\'s', () => {
         // The setting refetch landed first: the workspace is on Managed Agents,
         // and the checklist in hand is still Flue's, whose WORKFLOW and

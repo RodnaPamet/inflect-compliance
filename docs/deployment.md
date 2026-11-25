@@ -232,6 +232,31 @@ To turn it off again, remove the line from the compose file in a pull request,
 merge, and apply (`preflight`, then `apply`); the next web event is held again. The switch takes effect at the
 next event; executions that have already been queued run to completion.
 
+### The Managed Agents engine (`AGENT_MANAGED_AGENTS`), an operator override
+
+Whether a workspace may run agents on the Managed Agents engine, in its own
+connected Anthropic workspace, is **that workspace's owner's decision** (#5964,
+owner decisions 2026-11-25): a toggle on Admin → AI features, off by default,
+which takes effect at once with no restart. `AGENT_MANAGED_AGENTS` no longer
+turns the engine on. It **overrides** the workspaces, read in the same three
+states as `AGENT_PROFILES` and `AGENT_DRIVER_TOOL_RUNNER`:
+
+- **Unset** (or blank): each workspace's owner decides. This is production.
+- **`1` or `true`**: on for every workspace, whatever its owner chose.
+- **Any other value**, `0` and a typo included: off for every workspace, a
+  veto.
+
+Off, for whatever reason, refuses new Managed Agents runs by name
+(`MANAGED_AGENTS_OFF`), fails a queued run's next segment
+(`managed_agents_off: …`), refuses a person's resume of a paused one, and hides
+the Anthropic workspace card (saving or testing the connection is refused). It
+keeps the connection, the engine choice and what Inflect created in the
+customer's workspace, and the clean-ups (connection removal, tenant purge, DSAR
+erasure, the session reconciliation) still reach it. The variable is read on
+every request; setting it takes the usual restart of the process that reads
+it. The `anthropic-workspace` integration provider is registered in every
+process whatever the variable says.
+
 ---
 
 ## The production VM's Compose file is repo-canonical

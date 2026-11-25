@@ -250,6 +250,10 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // out runs the clean-up. Read by the "Agents hosted by Inflect" section of
     // Admin → AI features, which renders nothing until hosting is offered.
     't/[tenantSlug]/admin/hosted-managed-agents/route.ts',
+    // #5964 — the Managed Agents switch, the workspace's own (owner decisions
+    // 2026-11-25). Read by the "Managed Agents engine" section of Admin → AI
+    // features, above Agent engines; an owner changes it there, in person.
+    't/[tenantSlug]/admin/managed-agents/route.ts',
     // The owner's checklist in that section: which of the six terms are
     // satisfied and which one blocks. Read-only, on the PUT's tenant-lifecycle key.
     't/[tenantSlug]/admin/flue-wiring/route.ts',

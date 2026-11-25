@@ -42,9 +42,9 @@ import {
     type StoredDriverMode,
 } from '@/lib/agentic/agent-driver';
 import { narrowToWhatAWorkflowAsksFor } from '@/lib/agentic/agent-driver-policy';
-import type { AgentSwitchBasis } from '@/lib/agentic/agent-switches';
-import { toolRunnerDecisionFor } from '@/lib/agentic/agent-switches-policy';
-import { managedAgentsEnabled } from '@/lib/agentic/managed-agents-switch';
+import type { AgentSwitchBasis, WorkspaceAgentSwitchBasis } from '@/lib/agentic/agent-switches';
+import { managedAgentsDecisionFor, toolRunnerDecisionFor } from '@/lib/agentic/agent-switches-policy';
+import { managedAgentsOffError } from '@/lib/agentic/managed-agents-switch';
 import {
     readManagedAgentsWorkspaceState,
     type HostedWorkspaceRefusal,
@@ -111,11 +111,16 @@ export interface AgentDriverSetting {
      */
     toolRunner: { envEnabled: boolean; implemented: boolean; basis: AgentSwitchBasis };
     /**
-     * The same two terms for the Managed Agents engine (Step 5d, #4167), whose
-     * operator switch is `AGENT_MANAGED_AGENTS`, and the one thing only it
-     * needs before it may be chosen: exactly one enabled Anthropic workspace
-     * connection (`workspace`). The page offers the engine only when the switch
-     * is on and the workspace is `CONNECTED`; the writer refuses it without one.
+     * The same two terms for the Managed Agents engine (Step 5d, #4167), and
+     * the one thing only it needs before it may be chosen: exactly one enabled
+     * Anthropic workspace connection (`workspace`). The page offers the engine
+     * only when the switch is on and the workspace is `CONNECTED`; the writer
+     * refuses it without one.
+     *
+     * Since #5964 the switch is the WORKSPACE's: with `AGENT_MANAGED_AGENTS`
+     * unset, an owner turns it on above this section. `envEnabled` is
+     * therefore "on for this workspace", whoever decided, and `basis` says who
+     * did (`managedAgentsDecisionFor`).
      *
      * Since Step 6b the workspace may instead be INFLECT's own (`HOSTED`): no
      * connection of the tenant's, and every hosted term holds (the source
@@ -128,6 +133,7 @@ export interface AgentDriverSetting {
      */
     managedAgents: {
         envEnabled: boolean;
+        basis: WorkspaceAgentSwitchBasis;
         implemented: boolean;
         workspace: ManagedAgentsWorkspaceState;
         hostedRefusal: HostedWorkspaceRefusal | null;
@@ -153,7 +159,8 @@ export async function getAgentDriverSetting(ctx: RequestContext): Promise<AgentD
     const envEnabled = flueEnvEnabled(env.AGENT_DRIVER_FLUE);
     const toolRunnerSwitch = await toolRunnerDecisionFor({ tenantId: ctx.tenantId });
     const toolRunnerEnvEnabled = toolRunnerSwitch.on;
-    const managedAgentsEnvEnabled = managedAgentsEnabled();
+    const managedAgentsSwitch = await managedAgentsDecisionFor({ tenantId: ctx.tenantId });
+    const managedAgentsEnvEnabled = managedAgentsSwitch.on;
     const workspace = await readManagedAgentsWorkspaceState(ctx);
     // FOUR terms, not three. `resolveAgentDriver` ANDs env, tenant and the
     // build flag; `narrowToWhatAWorkflowAsksFor` applies the fourth — no
@@ -181,6 +188,7 @@ export async function getAgentDriverSetting(ctx: RequestContext): Promise<AgentD
         },
         managedAgents: {
             envEnabled: managedAgentsEnvEnabled,
+            basis: managedAgentsSwitch.basis,
             implemented: DRIVER_IMPLEMENTED['managed-agents'],
             workspace: workspace.state,
             hostedRefusal: workspace.hostedRefusal,
@@ -204,15 +212,34 @@ export async function getAgentDriverSetting(ctx: RequestContext): Promise<AgentD
  * is the kill switch an operator reaches for while a run is misbehaving, and a
  * cooldown on the way DOWN is how a safety control becomes the incident.
  */
+/**
+ * What the write did about provisioning (#5964): `QUEUED` when it moved the
+ * stored engine TO Managed Agents and enqueued the job that provisions the
+ * versions in force, `ENQUEUE_FAILED` when that enqueue failed (logged and
+ * recorded; the choice stands), `NOT_NEEDED` for every other write, a re-save
+ * of Managed Agents included.
+ */
+export type EngineChoiceProvisioning = 'QUEUED' | 'ENQUEUE_FAILED' | 'NOT_NEEDED';
+
 export async function setAgentDriverSetting(
     ctx: RequestContext,
     next: AgentDriverMode,
-): Promise<AgentDriverSetting> {
+): Promise<AgentDriverSetting & { provisioning: EngineChoiceProvisioning }> {
     if (!AGENT_DRIVER_MODES.includes(next)) {
         throw badRequest(`Unknown agent driver mode: ${next}`);
     }
 
     const before = await getAgentDriverSetting(ctx);
+
+    // THE MANAGED AGENTS ENGINE IS NOT CHOSEN WHILE ITS SWITCH IS OFF (#5964,
+    // owner decision 2026-11-25, comment 7162402419). Refused by name, with
+    // who decided, before anything is written: the choice would run nothing,
+    // and the section does not offer it. A stored choice made while it was on
+    // is kept when it goes off (decision 3), and moving AWAY from it is never
+    // refused, for the reason the docblock gives.
+    if (next === 'MANAGED_AGENTS' && before.mode !== 'MANAGED_AGENTS' && !before.managedAgents.envEnabled) {
+        throw managedAgentsOffError({ on: false, basis: before.managedAgents.basis });
+    }
 
     // THE MANAGED AGENTS ENGINE NEEDS A WORKSPACE TO RUN IN (Step 5d). Refused
     // by name, before anything is written, unless exactly one enabled
@@ -271,6 +298,7 @@ export async function setAgentDriverSetting(
                 toolRunnerBasis: before.toolRunner.basis,
                 toolRunnerImplemented: before.toolRunner.implemented,
                 managedAgentsEnvEnabled: before.managedAgents.envEnabled,
+                managedAgentsBasis: before.managedAgents.basis,
                 managedAgentsImplemented: before.managedAgents.implemented,
                 managedAgentsWorkspace: before.managedAgents.workspace,
             },
@@ -285,5 +313,21 @@ export async function setAgentDriverSetting(
         envEnabled: before.envEnabled,
     });
 
-    return getAgentDriverSetting(ctx);
+    // CHOOSING THE ENGINE PROVISIONS WHAT IS IN FORCE (#5964, owner decisions
+    // 2026-11-25). A version approved while the engine was not in force has no
+    // agent, and the engine can be chosen only once the switch is on and a
+    // workspace is connected, so in the realistic order (switch on, connect,
+    // choose) this is the write that makes provisioning possible. After the
+    // write and its audit row have committed, and only for a real MOVE to the
+    // engine: a re-save provisions nothing. A failed enqueue is logged and
+    // recorded, and the choice stands. Lazily, as the integrations save does:
+    // the job's module loads the provisioning path, which no other engine's
+    // write needs.
+    let provisioning: EngineChoiceProvisioning = 'NOT_NEEDED';
+    if (next === 'MANAGED_AGENTS' && before.mode !== 'MANAGED_AGENTS') {
+        const { enqueueProvisionInForce } = await import('./managed-agents-switch');
+        provisioning = await enqueueProvisionInForce(ctx, 'ENGINE_CHOSEN');
+    }
+
+    return { ...(await getAgentDriverSetting(ctx)), provisioning };
 }
