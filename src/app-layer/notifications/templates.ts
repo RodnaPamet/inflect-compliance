@@ -119,37 +119,47 @@ export interface TaskAssignedDigestPayload {
     tenantSlug: string;
 }
 
-export function buildTaskAssignedDigestEmail(payload: TaskAssignedDigestPayload): EmailTemplateResult {
+/**
+ * Written in the workspace's default language, as the single-task email is
+ * (owner decision 2026-11-25): the language a person reads must not depend on
+ * whether their tasks arrived one at a time or in one bulk Assign. `t` is the
+ * same translator over `TASK_ASSIGNED_EMAIL_NAMESPACE`. A digest always names
+ * two or more tasks, so its sentences carry no plural forms.
+ */
+export function buildTaskAssignedDigestEmail(payload: TaskAssignedDigestPayload, t: WorkspaceTranslator): EmailTemplateResult {
     const { tasks, assigneeName, assignerName, tenantSlug } = payload;
     const count = tasks.length;
-    const byLine = assignerName ? ` by ${assignerName}` : '';
     const link = appLink(`/t/${tenantSlug}/tasks`);
-    const line = (t: TaskAssignedDigestPayload['tasks'][number]) =>
-        `${t.taskKey ? `[${t.taskKey}] ` : ''}${t.taskTitle}`;
+    const assignedKey = assignerName ? 'digestAssignedBy' : 'digestAssigned';
+    const line = (task: TaskAssignedDigestPayload['tasks'][number]) =>
+        `${task.taskKey ? `[${task.taskKey}] ` : ''}${task.taskTitle}`;
 
     return {
-        subject: `${count} tasks assigned to you`,
+        subject: t('digestSubject', { count }),
         bodyText: [
-            `Hi ${assigneeName},`,
+            t('greeting', { name: assigneeName }),
             '',
-            `You have been assigned ${count} tasks${byLine}:`,
+            t(assignedKey, { count, assigner: assignerName ?? '' }),
             '',
-            ...tasks.map((t) => `  ${line(t)}`),
+            ...tasks.map((task) => `  ${line(task)}`),
             '',
-            `View your tasks: ${link}`,
+            t('viewText', { link }),
             '',
-            '— Inflect Compliance',
+            t('signOff'),
         ].join('\n'),
         bodyHtml: `
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
-  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 16px;">${count} tasks assigned to you</h2>
-  <p style="color: #444; line-height: 1.5;">Hi ${escapeHtml(assigneeName)},</p>
-  <p style="color: #444; line-height: 1.5;">You have been assigned <strong>${count}</strong> tasks${byLine ? ` by <strong>${escapeHtml(assignerName!)}</strong>` : ''}:</p>
+  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 16px;">${escapeHtml(t('digestSubject', { count }))}</h2>
+  <p style="color: #444; line-height: 1.5;">${htmlMessage(t, 'greeting', { name: escapeHtml(assigneeName) })}</p>
+  <p style="color: #444; line-height: 1.5;">${htmlMessage(t, assignedKey, {
+      count: `<strong>${count}</strong>`,
+      assigner: `<strong>${escapeHtml(assignerName ?? '')}</strong>`,
+  })}</p>
   <div style="background: #f4f6fa; border-left: 4px solid #4f46e5; padding: 12px 16px; margin: 16px 0; border-radius: 4px;">
-    ${tasks.map((t) => `<div style="padding: 2px 0;"><strong>${escapeHtml(line(t))}</strong></div>`).join('\n    ')}
+    ${tasks.map((task) => `<div style="padding: 2px 0;"><strong>${escapeHtml(line(task))}</strong></div>`).join('\n    ')}
   </div>
-  <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">View Tasks</a>
-  <p style="color: #999; font-size: 12px; margin-top: 24px;">— Inflect Compliance</p>
+  <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">${escapeHtml(t('viewButton'))}</a>
+  <p style="color: #999; font-size: 12px; margin-top: 24px;">${escapeHtml(t('signOff'))}</p>
 </div>`.trim(),
     };
 }
