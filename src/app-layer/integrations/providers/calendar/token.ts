@@ -40,6 +40,7 @@
  *
  * @module integrations/providers/calendar/token
  */
+import { createHash, randomBytes } from 'crypto';
 import { env } from '@/env';
 import { fetchOAuthToken } from '../../oauth-token-fetch';
 
@@ -95,6 +96,55 @@ function msAuthorityBase(tenantId: string): string {
     return `https://login.microsoftonline.com/${encodeURIComponent(tenantId)}`;
 }
 
+// ─── PKCE (RFC 7636) ─────────────────────────────────────────────────
+
+/**
+ * A fresh PKCE pair for ONE authorization round trip.
+ *
+ * S256 only. `plain` sends the verifier itself as the challenge, so a code
+ * intercepted together with the authorize URL is exchangeable — no protection
+ * at all. Both providers accept S256 from a confidential web client alongside
+ * its client secret.
+ *
+ * 32 random bytes → a 43-character base64url verifier, inside RFC 7636's
+ * 43..128 range and from its unreserved alphabet.
+ *
+ * The VERIFIER never goes in a URL. The connect route seals it into the flow
+ * cookie (`oauth-flow.ts`) and only the challenge travels to the provider; the
+ * callback reads the verifier back from that cookie and sends it on the token
+ * POST, where the provider checks it against the challenge it was given.
+ */
+export function createPkcePair(): { codeVerifier: string; codeChallenge: string } {
+    const codeVerifier = randomBytes(32).toString('base64url');
+    return { codeVerifier, codeChallenge: pkceChallengeFor(codeVerifier) };
+}
+
+/** `BASE64URL(SHA256(ASCII(code_verifier)))` — RFC 7636 §4.2. */
+export function pkceChallengeFor(codeVerifier: string): string {
+    return createHash('sha256').update(codeVerifier, 'ascii').digest('base64url');
+}
+
+/** RFC 7636 §4.1: 43..128 characters from the unreserved set. */
+const PKCE_VERIFIER_SHAPE = /^[A-Za-z0-9\-._~]{43,128}$/;
+
+export function isPkceVerifier(value: unknown): value is string {
+    return typeof value === 'string' && PKCE_VERIFIER_SHAPE.test(value);
+}
+
+/**
+ * The code exchange returned no refresh token.
+ *
+ * A TYPED error rather than a message, because the callback must tell the user
+ * something different for it ("reconnect and grant offline access") than for a
+ * failed exchange, and matching on prose is how that distinction rots.
+ */
+export class CalendarNoRefreshTokenError extends Error {
+    constructor() {
+        super('Calendar consent did not return a refresh token — reconnect and grant offline access');
+        this.name = 'CalendarNoRefreshTokenError';
+    }
+}
+
 // ─── Consent URLs ────────────────────────────────────────────────────
 
 /**
@@ -145,9 +195,17 @@ export function buildCalendarAuthorizeUrl(opts: {
     provider: CalendarProvider;
     redirectUri: string;
     state: string;
+    /**
+     * `pkceChallengeFor(verifier)`. REQUIRED, not optional: an authorize URL
+     * without it is the unprotected flow, and making it optional is how one
+     * provider quietly ends up without it.
+     */
+    codeChallenge: string;
     entraTenantId?: string;
     env?: Partial<MsEnv>;
 }): string {
+    if (!opts.codeChallenge) throw new Error('Calendar authorize URL requires a PKCE code challenge');
+    const pkce = { code_challenge: opts.codeChallenge, code_challenge_method: 'S256' };
     if (opts.provider === 'google-calendar') {
         const params = new URLSearchParams({
             client_id: env.GOOGLE_CLIENT_ID,
@@ -155,6 +213,7 @@ export function buildCalendarAuthorizeUrl(opts: {
             response_type: 'code',
             scope: GOOGLE_CALENDAR_SCOPES.join(' '),
             state: opts.state,
+            ...pkce,
             // BOTH are required to get a refresh token from Google, and
             // omitting either is the classic way to ship a connection that
             // works until the first expiry. `access_type=offline` asks for one;
@@ -174,6 +233,7 @@ export function buildCalendarAuthorizeUrl(opts: {
         response_type: 'code',
         scope: MICROSOFT_CALENDAR_SCOPES.join(' '),
         state: opts.state,
+        ...pkce,
         // No `prompt=consent`. The admin has consented for the tenant; forcing
         // a prompt would show every user a consent screen the design exists to
         // remove, and on a tenant with user consent disabled it would fail.
@@ -241,11 +301,19 @@ export async function exchangeCalendarCode(
         provider: CalendarProvider;
         code: string;
         redirectUri: string;
+        /** The verifier whose challenge went on the authorize URL. REQUIRED. */
+        codeVerifier: string;
         entraTenantId?: string;
         env?: Partial<MsEnv>;
     },
     deps: { fetchImpl?: typeof fetch; now?: () => number } = {},
 ): Promise<CalendarToken> {
+    // Refused BEFORE any request: an exchange without a verifier is the one
+    // the provider would refuse anyway, and sending the code without it spends
+    // a single-use code for nothing.
+    if (!isPkceVerifier(opts.codeVerifier)) {
+        throw new Error('Calendar code exchange requires the PKCE code verifier');
+    }
     const nowMs = deps.now ? deps.now() : Date.now();
     const data = await postToken(
         tokenEndpoint(opts.provider, opts.env, opts.entraTenantId),
@@ -254,6 +322,7 @@ export async function exchangeCalendarCode(
             grant_type: 'authorization_code',
             code: opts.code,
             redirect_uri: opts.redirectUri,
+            code_verifier: opts.codeVerifier,
         },
         deps.fetchImpl,
         'code exchange',
@@ -262,9 +331,7 @@ export async function exchangeCalendarCode(
         // Without one the connection works until the first expiry and then
         // dies silently overnight. Fail at consent, while the user is present
         // and can re-run it.
-        throw new Error(
-            'Calendar consent did not return a refresh token — reconnect and grant offline access',
-        );
+        throw new CalendarNoRefreshTokenError();
     }
     return {
         accessToken: data.access_token,

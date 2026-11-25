@@ -119,6 +119,13 @@ import {
     type CapBesideKill,
 } from '@/lib/agentic/drivers/run-settlement';
 import { getRunRow, proposedItemsSoFar } from '@/lib/agentic/drivers/run-store';
+import {
+    keepCallResults,
+    keepsCheckpoint,
+    markCallInFlight,
+    readCheckpoint,
+    writeTurnCheckpointInTx,
+} from '@/lib/agentic/drivers/checkpoint-store';
 import { recordStep } from '@/lib/agentic/drivers/step-recorder';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers/types';
 import { asToolArgs, stepVerdictOf, type StepGuardObservation } from '@/lib/agentic/engine-tools';
@@ -136,14 +143,17 @@ import {
     type KillVerdict,
 } from '@/lib/agentic/kill-switch';
 import { createRunBudget, resolveRunCaps, type RunCapHalt } from '@/lib/agentic/run-caps';
+import { runLeaseTakenOver } from '@/lib/agentic/run-lease';
 import { activateSkillTool, skillCatalogueText, type RunSkills } from '@/lib/agentic/tool-runner/skills';
 import {
     SerialQueue,
     TurnCallCounter,
     toolRunnerToolsFor,
+    type CallCheckpointHooks,
     type RunStop,
     type ToolRunBinding,
 } from '@/lib/agentic/tool-runner/tools';
+import { TOOL_CALL_OUTCOME_UNKNOWN } from '@/lib/agentic/tool-runner/transcript';
 import { readTurnCaps } from '@/lib/agentic/turn-caps-policy';
 import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
@@ -166,8 +176,27 @@ import {
 } from './definition';
 import { listCrashWindow } from './cleanup';
 import { recordManagedAgentsDecision, type InflectSentInput } from './model-decision';
+import {
+    CALL_START_NOT_RECORDED_MESSAGE,
+    answerOpenCalls,
+    keptResultOf,
+    openSessionCheckpoint,
+    planReconnect,
+    sealKeptResults,
+    sealSessionCheckpoint,
+    type HistoryEvent,
+    type KeptCallResult,
+    type OpenedSessionCheckpoint,
+    type ReconnectAnswer,
+} from './reconnect';
 import { sessionStepRecord, type SessionLifecycle } from './session-ledger';
-import { readRecordedSessionIds, recordEnvironmentHashOnFirstUse, type ProvisionRecord } from './store';
+import {
+    readRecordedSessionIds,
+    readSegmentLedger,
+    recordEnvironmentHashOnFirstUse,
+    type ProvisionRecord,
+    type SegmentSession,
+} from './store';
 import type { ManagedAgentsWorkspaceKind } from './workspace';
 
 const RANK: Record<StepGuardObservation['verdict'], number> = { CLEAN: 0, FLAGGED: 1, QUARANTINED: 2 };
@@ -200,15 +229,27 @@ const SETTLE_POLL_MS = 200;
 export const AGENT_DRIFTED_PREFIX = `${MANAGED_AGENTS_PREFIX}_agent_drifted`;
 
 /**
+ * What a refusal before the session says was sent. A reconnecting segment
+ * (#5854, 2026-11-25) had already sent the session the run's opening message
+ * and its earlier results, so "Nothing was sent" would be false: it says the
+ * run did not continue there instead.
+ */
+function sentClause(reconnecting: boolean): string {
+    return reconnecting
+        ? 'The run had begun in a session before its worker stopped, and it was not continued there.'
+        : 'Nothing was sent.';
+}
+
+/**
  * The remedy is the one that works (#5854): a version is approved once, and
  * approving the NEXT version provisions a new agent in place of one edited or
  * archived in the Console (`provisionManagedAgent`). The old agent stays
  * recorded, so removing the connection or purging the workspace archives it.
  */
-export function agentDriftedMessage(drift: string): string {
+export function agentDriftedMessage(drift: string, reconnecting = false): string {
     return (
         `${AGENT_DRIFTED_PREFIX}: the agent in your Anthropic workspace no longer matches what Inflect provisioned for `
-        + `this profile version (${drift}). Nothing was sent. Someone may have edited or archived it in the Anthropic `
+        + `this profile version (${drift}). ${sentClause(reconnecting)} Someone may have edited or archived it in the Anthropic `
         + 'Console. Approve a new version of this profile: approval provisions a new agent for it, and the old agent is '
         + 'archived when the connection is removed.'
     );
@@ -222,7 +263,7 @@ export const ENVIRONMENT_DRIFTED_PREFIX = `${MANAGED_AGENTS_PREFIX}_environment_
  * approving anything; a changed one matches again once its settings are put
  * back, because only the settings are compared.
  */
-export function environmentDriftedMessage(drift: string): string {
+export function environmentDriftedMessage(drift: string, reconnecting = false): string {
     const remedy =
         drift === 'ARCHIVED'
             ? 'It was archived, and Inflect makes one environment per connection and does not make another, so no run can start in it.'
@@ -230,7 +271,7 @@ export function environmentDriftedMessage(drift: string): string {
               + 'no MCP servers, no package managers and no packages, and runs can start again.';
     return (
         `${ENVIRONMENT_DRIFTED_PREFIX}: the environment in your Anthropic workspace no longer matches what Inflect `
-        + `provisioned for this connection (${drift}). Nothing was sent. ${remedy}`
+        + `provisioned for this connection (${drift}). ${sentClause(reconnecting)} ${remedy}`
     );
 }
 
@@ -241,6 +282,11 @@ export const ENVIRONMENT_UNREADABLE_MESSAGE =
 export const AGENT_UNREADABLE_MESSAGE =
     `${MANAGED_AGENTS_PREFIX}_agent_unreadable: the agent this profile version was provisioned as could not be read `
     + 'from your Anthropic workspace, so its configuration could not be checked. Nothing was sent.';
+
+/** A refusal written for a fresh session, said of a reconnecting one (#5854). */
+function asReconnecting(message: string, reconnecting: boolean): string {
+    return reconnecting ? message.replace('Nothing was sent.', sentClause(true)) : message;
+}
 
 export const MODEL_UNPRICED_MESSAGE =
     `${MANAGED_AGENTS_PREFIX}_model_unpriced: no list price is known for this profile's model, so no spend cap could `
@@ -253,6 +299,66 @@ export function sessionNotCreatedMessage(code: { status: number | null; type: st
     const what = code.status !== null ? `provider status ${code.status}${code.type ? ` (${code.type})` : ''}` : 'the provider did not answer';
     return `${SESSION_NOT_CREATED_PREFIX}: ${what}. Nothing was run.`;
 }
+
+// ── A reconnecting segment's refusals (#5854, owner decision 2026-11-25) ────
+
+/** How many events of a session's history one read takes at most; one more is a truncation, refused. */
+export const SESSION_HISTORY_READ_CAP = 5_000;
+
+/** The page size of a session's history read. */
+export const SESSION_HISTORY_PAGE_SIZE = 100;
+
+/** Why a retried or taken-over segment did not continue in its session. */
+export type ReconnectRefusal =
+    | 'SESSION_GONE'
+    | 'SESSION_TERMINATED'
+    | 'SESSION_UNREADABLE'
+    | 'SESSION_SETTLED_EARLIER'
+    | 'SESSION_STOPPED_EARLIER'
+    | 'WORKSPACE_CHANGED'
+    | 'LEDGER_TRUNCATED'
+    | 'CHECKPOINT_UNREADABLE';
+
+/** The sentence a reconnecting segment's refusal settles the run with. Never the session's content. */
+export function reconnectRefusalMessage(reason: ReconnectRefusal): string {
+    const p = `${MANAGED_AGENTS_PREFIX}_reconnect`;
+    const tail = 'A run never starts a second session for the same segment, so it stopped. Start the run again.';
+    switch (reason) {
+        case 'SESSION_GONE':
+            return `${p}_session_gone: this run's worker stopped, and the session the run was continuing in is no longer in the Anthropic workspace. ${tail}`;
+        case 'SESSION_TERMINATED':
+            return `${p}_session_terminated: this run's worker stopped, and Anthropic had ended the session the run was continuing in. ${tail}`;
+        case 'SESSION_UNREADABLE':
+            return `${p}_session_unreadable: this run's worker stopped, and the session the run was continuing in could not be read, so it was not continued unchecked. ${tail}`;
+        case 'SESSION_SETTLED_EARLIER':
+            return (
+                `${p}_session_settled: an earlier attempt of this segment had already deleted or kept its session and then `
+                + `stopped before the run was settled, so there is no session to continue in. ${tail}`
+            );
+        case 'SESSION_STOPPED_EARLIER':
+            return (
+                `${p}_session_stopped: an earlier attempt of this segment had already stopped its session (a kill, an `
+                + 'abort, a cap or a guard verdict) and then stopped before the run was settled, so the run is not continued.'
+            );
+        case 'WORKSPACE_CHANGED':
+            return (
+                `${p}_workspace_changed: the session this run was continuing in belongs to a different Anthropic workspace `
+                + `connection than the one in use now. ${tail}`
+            );
+        case 'LEDGER_TRUNCATED':
+            return `${p}_ledger_truncated: this segment's ledger is longer than one read, so the session to continue in could not be told for certain. ${tail}`;
+        case 'CHECKPOINT_UNREADABLE':
+            return (
+                `${p}_checkpoint_unreadable: the record of which tool calls this run had made could not be read as it was `
+                + 'written, so the run stopped rather than guess which calls had run.'
+            );
+    }
+}
+
+export const SESSION_HISTORY_TRUNCATED_MESSAGE =
+    `${MANAGED_AGENTS_PREFIX}_session_history_truncated: the session's event history is longer than `
+    + `${SESSION_HISTORY_READ_CAP} events, so it could not be read in full, and the run stopped rather than continue on `
+    + 'part of it.';
 
 export const KILL_UNREADABLE_MESSAGE =
     `${MANAGED_AGENTS_PREFIX}_kill_switch_unreadable: the kill switch could not be read, so the run stopped rather `
@@ -423,6 +529,18 @@ export async function executeManagedAgentsRun(
         sessionEdited: boolean;
         /** The stop is draining the session: no latch may cut the drain's own read. */
         draining: boolean;
+        /**
+         * ANOTHER WORKER TOOK THE RUN OVER (#5854, owner decision 2026-11-25):
+         * this execution's lease lapsed and a successor claimed the run. The
+         * successor reconnects to the session and continues in it, so this
+         * execution leaves it exactly as it is: no answer, no interrupt, no
+         * delete. Its own writes are already fenced.
+         */
+        handedOver: boolean;
+        /** The session's history holds an interrupt an earlier attempt sent (a reconnect refuses it). */
+        stoppedEarlier: boolean;
+        /** The session's history is longer than one bounded read (refused by name). */
+        historyTruncated: boolean;
     } = {
         capHalt: null,
         killVerdict: null,
@@ -436,6 +554,9 @@ export async function executeManagedAgentsRun(
         beyondCustomTools: false,
         sessionEdited: false,
         draining: false,
+        handedOver: false,
+        stoppedEarlier: false,
+        historyTruncated: false,
     };
     // Aborted by every stop: it ends the read of the stream, never a call the
     // stop itself makes (the interrupt, the drain, the delete).
@@ -450,17 +571,20 @@ export async function executeManagedAgentsRun(
     let modelCalls = 0;
 
     const stopped = (): RunStop | null => {
-        if (state.operatorAborted) return { kind: 'OPERATOR_ABORT' };
+        // A run handed to a successor refuses every call as an Abort would;
+        // nothing it refuses is ever sent to the session.
+        if (state.handedOver || state.operatorAborted) return { kind: 'OPERATOR_ABORT' };
         if (state.killVerdict || state.killUnreadable) return { kind: 'KILL' };
         if (state.breakerOpen || state.breakerUnreadable) return { kind: 'BREAKER' };
         if (state.capHalt) return { kind: 'CAP', halt: state.capHalt };
         if (state.worst !== 'CLEAN') return { kind: 'GUARD' };
         return null;
     };
-    const isStopped = (): boolean => stopped() !== null || state.beyondCustomTools || state.sessionEdited;
+    const isStopped = (): boolean =>
+        stopped() !== null || state.beyondCustomTools || state.sessionEdited || state.stoppedEarlier || state.historyTruncated;
 
     const checkKill = async (): Promise<boolean> => {
-        if (state.killVerdict || state.killUnreadable || state.operatorAborted) return true;
+        if (state.killVerdict || state.killUnreadable || state.operatorAborted || state.handedOver) return true;
         let found: KillVerdict | null;
         try {
             found = await resolveKillState(ctx.tenantId, ctx.agentId ?? null);
@@ -477,6 +601,17 @@ export async function executeManagedAgentsRun(
         if (!found) {
             // AN OPERATOR'S ABORT STOPS THE RUN WHERE A KILL DOES (#5366).
             if (!(await isRunAborted(ctx, runId))) return false;
+            // …and so does a lost lease. A lease ANOTHER worker now holds is a
+            // takeover (#5854, 2026-11-25): the successor continues in this
+            // run's session, so this execution must leave it untouched. A read
+            // that fails is read as a takeover too: leaving a session alone is
+            // recoverable (the reconciliation settles it once the run has
+            // ended), and deleting a session a successor drives is not.
+            if (await runLeaseTakenOver(ctx, runId).catch(() => true)) {
+                state.handedOver = true;
+                abortRead();
+                return true;
+            }
             state.operatorAborted = true;
             abortRead();
             return true;
@@ -556,8 +691,35 @@ export async function executeManagedAgentsRun(
         },
     };
 
+    // ── The call record a reconnecting segment reads (#5854, 2026-11-25) ───
+    // The run's ONE checkpoint row, as the Tool Runner keeps it: every turn's
+    // MODEL_CALL step points it at the session and the span (in the step's
+    // own transaction), the call about to run is named in flight before it
+    // reaches the funnel, and its result is kept once it settles. Only an
+    // execution holding a run lease keeps one (`keepsCheckpoint`): only it is
+    // retried or taken over. Null until this segment checkpoints a turn.
+    let keptResults: KeptCallResult[] | null = null;
+    const checkpointHooks: CallCheckpointHooks = {
+        start: async (callId) => {
+            if (keptResults === null) return;
+            if (!(await markCallInFlight(ctx, runId, callId))) throw new Error(CALL_START_NOT_RECORDED_MESSAGE);
+        },
+        settle: async (callId, outcome) => {
+            if (keptResults === null) return;
+            keptResults = [...keptResults.filter((r) => r.id !== callId), keptResultOf(callId, outcome)];
+            await keepCallResults(ctx, runId, sealKeptResults(keptResults)).catch((err) => {
+                // The next write carries them whole: nothing is lost but this one.
+                logger.warn('managed-agents: a call result was not kept in the checkpoint', {
+                    component: 'agentic',
+                    runId: run.runId,
+                    error: err instanceof Error ? err.message : 'a non-Error value was thrown',
+                });
+            });
+        },
+    };
+
     // ── The offer, over the engine-neutral core, with this engine's prefix ──
-    const queue = new SerialQueue();
+    const queue = new SerialQueue(keepsCheckpoint(ctx) ? checkpointHooks : undefined);
     const offered = toolRunnerToolsFor(invocation, binding, {
         readOnly: def.readOnly === true,
         ...(def.profile ? { profileTools: def.profile.toolNames } : {}),
@@ -606,6 +768,55 @@ export async function executeManagedAgentsRun(
 
     const pinned = route.provision;
 
+    // ── A RETRIED OR TAKEN-OVER SEGMENT RECONNECTS (#5854, 2026-11-25) ──────
+    // Owner decision: a segment the worker retries, or another worker takes
+    // over, RECONNECTS to the session it created and continues there. The
+    // worker says where the segment began (`runSegmentFromSeq`); its own part
+    // of the ledger names the session. The NEWEST session the segment created
+    // (one a segment's start found unrecorded is never continued: the opening
+    // never reached it) decides: none, and this attempt creates one as every
+    // first attempt does; one nobody settled, and it is reconnected to; one an
+    // earlier attempt deleted or kept, and the run is refused by name: a
+    // segment never gets a second session. Read before anything is settled
+    // here, so the segment's start cannot confuse its own settlements for the
+    // dead attempt's.
+    let reconnectTo: SegmentSession | null = null;
+    let segmentVerdicts: ReadonlyArray<{ seq: number; verdict: 'FLAGGED' | 'QUARANTINED'; ruleIds: readonly string[] }> = [];
+    let recordedSpanIds: ReadonlySet<string> = new Set();
+    if (ctx.runSegmentFromSeq !== undefined) {
+        const segment = await readSegmentLedger(ctx, runId, ctx.runSegmentFromSeq);
+        if (segment.truncated) {
+            const status = await failRun(ctx, runId, reconnectRefusalMessage('LEDGER_TRUNCATED'));
+            return { status, stepFailures: 0 };
+        }
+        const own = segment.sessions.filter((x) => !x.foundUnrecorded);
+        const newest = own.length > 0 ? own[own.length - 1] : null;
+        if (newest && newest.latest !== 'SESSION_CREATED') {
+            const status = await failRun(ctx, runId, reconnectRefusalMessage('SESSION_SETTLED_EARLIER'));
+            return { status, stepFailures: 0 };
+        }
+        if (newest && newest.connectionId !== route.connectionId) {
+            // Left for the reconciliation, which reaches it through its own
+            // connection once this run has settled.
+            const status = await failRun(ctx, runId, reconnectRefusalMessage('WORKSPACE_CHANGED'));
+            return { status, stepFailures: 0 };
+        }
+        if (newest) {
+            reconnectTo = newest;
+            segmentVerdicts = segment.verdicts.filter((v) => v.seq > newest.createdSeq);
+            recordedSpanIds = segment.spanEventIds;
+        }
+    }
+    const reconnecting = reconnectTo !== null;
+    // Log fields are read off this object, so each value's name is its own.
+    const segmentFacts = { reconnecting } as const;
+    /** A refusal of a reconnecting segment settles its session first: the run ends here. */
+    const refuseAfterSession = async (refusal: string, stepFailures = 0): Promise<RunDriverOutcome> => {
+        if (reconnectTo) await settleSession(ctx, runId, client, reconnectTo.sessionId, route, binding, true);
+        const status = await failRun(ctx, runId, refusal);
+        return { status, stepFailures };
+    };
+
     // ── A DEAD SEGMENT'S UNRECORDED SESSION (Step 5H, #5854) ────────────────
     // A worker that died after `sessions.create` answered and before
     // `SESSION_CREATED` was written left a session no ledger names, which only
@@ -617,7 +828,9 @@ export async function executeManagedAgentsRun(
     // cannot reach is left to the purge and a connection removal, as before.
     await settleUnrecordedSessions(ctx, runId, client, pinned.anthropicAgentId, route, binding, 'AT_SEGMENT_START');
 
-    // ── DRIFT: the agent at the pinned version, before the session exists ───
+    // ── DRIFT: the agent at the pinned version, before the session is used ──
+    // Asked again by a reconnecting segment (#5854): a Console edit made while
+    // the worker was down refuses the run rather than continue under it.
     let agent: RetrievedAgent;
     try {
         agent = (await client.beta.agents.retrieve(pinned.anthropicAgentId, { version: pinned.anthropicAgentVersion })) as unknown as RetrievedAgent;
@@ -628,17 +841,15 @@ export async function executeManagedAgentsRun(
             providerStatus: providerCodeOf(err).status,
             providerErrorType: providerCodeOf(err).type,
         });
-        const status = await failRun(ctx, runId, AGENT_UNREADABLE_MESSAGE);
-        return { status, stepFailures: 0 };
+        return refuseAfterSession(asReconnecting(AGENT_UNREADABLE_MESSAGE, reconnecting));
     }
     const found = { drift: agentDrift(agent, pinned) };
     if (found.drift) {
-        logger.warn('managed-agents: the provisioned agent drifted; refusing the run', { component: 'agentic', runId: run.runId, drift: found.drift });
-        const status = await failRun(ctx, runId, agentDriftedMessage(found.drift));
-        return { status, stepFailures: 0 };
+        logger.warn('managed-agents: the provisioned agent drifted; refusing the run', { component: 'agentic', runId: run.runId, drift: found.drift, reconnecting: segmentFacts.reconnecting });
+        return refuseAfterSession(agentDriftedMessage(found.drift, reconnecting));
     }
 
-    // ── THE ENVIRONMENT, read again before the session exists (#5854) ──────
+    // ── THE ENVIRONMENT, read again before the session is used (#5854) ─────
     // The same rule as the agent: compared with what Inflect WROTE. A row from
     // before the hash was recorded is not refused for that: its first run
     // records what Inflect wrote (`writtenEnvironmentHash`), never what it
@@ -653,8 +864,7 @@ export async function executeManagedAgentsRun(
             providerStatus: providerCodeOf(err).status,
             providerErrorType: providerCodeOf(err).type,
         });
-        const status = await failRun(ctx, runId, ENVIRONMENT_UNREADABLE_MESSAGE);
-        return { status, stepFailures: 0 };
+        return refuseAfterSession(asReconnecting(ENVIRONMENT_UNREADABLE_MESSAGE, reconnecting));
     }
     const environmentHash = pinned.environmentHash ?? writtenEnvironmentHash(route.connectionId);
     if (pinned.environmentHash === null) {
@@ -666,23 +876,9 @@ export async function executeManagedAgentsRun(
             component: 'agentic',
             runId: run.runId,
             drift: environmentFound.drift,
+            reconnecting: segmentFacts.reconnecting,
         });
-        const status = await failRun(ctx, runId, environmentDriftedMessage(environmentFound.drift));
-        return { status, stepFailures: 0 };
-    }
-
-    // What the run has LEFT, not its whole cap (Step 5H, #4169): a resumed
-    // run's earlier segments spent part of it, and each segment's session is a
-    // new one with a budget of its own, so a whole-cap backstop per session
-    // would let a run's sessions together spend its cap once per segment.
-    const sessionBudget = sessionBudgetFor({
-        model: route.model,
-        tokensLimit: budget.remaining('TOKENS'),
-        runtimeMsLimit: budget.remaining('RUNTIME_MS'),
-    });
-    if (!sessionBudget) {
-        const status = await failRun(ctx, runId, MODEL_UNPRICED_MESSAGE);
-        return { status, stepFailures: 0 };
+        return refuseAfterSession(environmentDriftedMessage(environmentFound.drift, reconnecting));
     }
 
     const system = sessionSystemFor(def, skillCatalogueText(skills.documents));
@@ -694,45 +890,120 @@ export async function executeManagedAgentsRun(
         system,
         sent: [...sent],
     });
+    const opening = { type: 'user.message' as const, content: [{ type: 'text' as const, text: message }] };
 
-    // ── The session ─────────────────────────────────────────────────────────
-    // A refusal is SETTLED with the provider's codes, never thrown (Step 5H,
-    // #4169): the SDK's error message carries the response body, and a throw
-    // would put it in the worker's `job failed` log line and BullMQ's stored
-    // failure, then retry the run into another session create.
     let sessionId: string;
-    try {
-        const session = await client.beta.sessions.create({
-            agent: {
-                type: 'agent_with_overrides',
-                id: pinned.anthropicAgentId,
-                version: pinned.anthropicAgentVersion,
-                system,
-            },
-            environment_id: pinned.environmentId,
-            budget: sessionBudget,
-            metadata: sessionMetadataFor(ctx.tenantId, runId),
-        }, SEND_ONCE);
-        sessionId = session.id;
-    } catch (err) {
-        const code = providerCodeOf(err);
-        logger.warn('managed-agents: the session could not be created', {
+    /** What the `SESSION_CREATED` step records, for a session this attempt created. */
+    let createdSessionFacts: Record<string, unknown> | null = null;
+    /** The call record a reconnecting segment answers the session's open calls from. */
+    let reconnectCheckpoint: OpenedSessionCheckpoint | null = null;
+    if (reconnectTo) {
+        sessionId = reconnectTo.sessionId;
+        // ── THE SESSION, READ BEFORE IT IS CONTINUED ────────────────────────
+        // Gone (404) or ended by Anthropic, it is not continued, and no second
+        // session is made for the segment. A gone one is recorded so, so the
+        // reconciliation does not chase it; a terminated one is deleted.
+        // Log fields are read off this object, so each value's name is its own.
+        const sessionRead = { status: '' };
+        try {
+            sessionRead.status = (await client.beta.sessions.retrieve(sessionId)).status;
+        } catch (err) {
+            const code = providerCodeOf(err);
+            logger.warn('managed-agents: the session to reconnect to could not be read', {
+                component: 'agentic', runId: run.runId, providerStatus: code.status, providerErrorType: code.type,
+            });
+            if (code.status === 404) {
+                await recordSessionStep(ctx, runId, binding.nextSeq(), 'SESSION_DELETED', {
+                    sessionId, connectionId: route.connectionId, foundGone: true,
+                }).catch(() => undefined);
+                const status = await failRun(ctx, runId, reconnectRefusalMessage('SESSION_GONE'));
+                return { status, stepFailures: 1 };
+            }
+            // Not known to be gone: left as the ledger has it, for the
+            // reconciliation once the run has settled.
+            const status = await failRun(ctx, runId, reconnectRefusalMessage('SESSION_UNREADABLE'));
+            return { status, stepFailures: 1 };
+        }
+        if (sessionRead.status === 'terminated') return refuseAfterSession(reconnectRefusalMessage('SESSION_TERMINATED'), 1);
+        // ── THE CALL RECORD: what ran, and what was running ─────────────────
+        const stored = keepsCheckpoint(ctx) ? await readCheckpoint(ctx, runId) : null;
+        const opened = stored === 'UNREADABLE' ? null : openSessionCheckpoint(stored, sessionId);
+        if (!opened || !opened.ok) return refuseAfterSession(reconnectRefusalMessage('CHECKPOINT_UNREADABLE'), 1);
+        reconnectCheckpoint = opened.checkpoint;
+        // A VERDICT THE DEAD ATTEMPT LATCHED and died before acting on: the run
+        // stops as that attempt would have, before a kept result it flagged
+        // could reach the model.
+        for (const v of segmentVerdicts) {
+            noteVerdict({ toolCallId: `reconnect-ledger:${v.seq}`, tool: 'ledger', slice: 'result', verdict: v.verdict, ruleIds: v.ruleIds });
+        }
+        logger.warn('managed-agents: reconnecting to the session a retried segment created', {
             component: 'agentic',
             runId: run.runId,
-            providerStatus: code.status,
-            providerErrorType: code.type,
+            sessionStatus: sessionRead.status,
+            keptResults: reconnectCheckpoint.kept.size,
+            callInFlight: reconnectCheckpoint.inFlightCallId !== null,
         });
-        // NO ANSWER IS NOT "NOT CREATED" (Step 5H, #4169). The request may have
-        // reached Anthropic and made a session whose id never came back, and
-        // nothing would record it. Find it as the purge's crash window does:
-        // sessions listed by the pinned agent only, taken only when their
-        // metadata names this tenant AND this run. Each is recorded, then
-        // settled like any other (deleted, or recorded kept). Never throws.
-        if (code.status === null) {
-            await settleUnrecordedSessions(ctx, runId, client, pinned.anthropicAgentId, route, binding, 'AFTER_LOST_CREATE');
+    } else {
+        // What the run has LEFT, not its whole cap (Step 5H, #4169): a resumed
+        // run's earlier segments spent part of it, and each segment's session is a
+        // new one with a budget of its own, so a whole-cap backstop per session
+        // would let a run's sessions together spend its cap once per segment.
+        const sessionBudget = sessionBudgetFor({
+            model: route.model,
+            tokensLimit: budget.remaining('TOKENS'),
+            runtimeMsLimit: budget.remaining('RUNTIME_MS'),
+        });
+        if (!sessionBudget) {
+            const status = await failRun(ctx, runId, MODEL_UNPRICED_MESSAGE);
+            return { status, stepFailures: 0 };
         }
-        const status = await failRun(ctx, runId, sessionNotCreatedMessage(code));
-        return { status, stepFailures: 1 };
+
+        // ── The session ─────────────────────────────────────────────────────
+        // A refusal is SETTLED with the provider's codes, never thrown (Step 5H,
+        // #4169): the SDK's error message carries the response body, and a throw
+        // would put it in the worker's `job failed` log line and BullMQ's stored
+        // failure, then retry the run into another session create.
+        try {
+            const session = await client.beta.sessions.create({
+                agent: {
+                    type: 'agent_with_overrides',
+                    id: pinned.anthropicAgentId,
+                    version: pinned.anthropicAgentVersion,
+                    system,
+                },
+                environment_id: pinned.environmentId,
+                budget: sessionBudget,
+                metadata: sessionMetadataFor(ctx.tenantId, runId),
+            }, SEND_ONCE);
+            sessionId = session.id;
+        } catch (err) {
+            const code = providerCodeOf(err);
+            logger.warn('managed-agents: the session could not be created', {
+                component: 'agentic',
+                runId: run.runId,
+                providerStatus: code.status,
+                providerErrorType: code.type,
+            });
+            // NO ANSWER IS NOT "NOT CREATED" (Step 5H, #4169). The request may have
+            // reached Anthropic and made a session whose id never came back, and
+            // nothing would record it. Find it as the purge's crash window does:
+            // sessions listed by the pinned agent only, taken only when their
+            // metadata names this tenant AND this run. Each is recorded, then
+            // settled like any other (deleted, or recorded kept). Never throws.
+            if (code.status === null) {
+                await settleUnrecordedSessions(ctx, runId, client, pinned.anthropicAgentId, route, binding, 'AFTER_LOST_CREATE');
+            }
+            const status = await failRun(ctx, runId, sessionNotCreatedMessage(code));
+            return { status, stepFailures: 1 };
+        }
+        createdSessionFacts = {
+            sessionId,
+            connectionId: route.connectionId,
+            workspaceKind: route.workspaceKind,
+            agentId: pinned.anthropicAgentId,
+            agentVersion: pinned.anthropicAgentVersion,
+            budgetCents: sessionBudget.max_list_cost.amount,
+        };
     }
     // The wall clock: the read of the stream stops at the run's deadline.
     let wallTimer: ReturnType<typeof setTimeout> | null = null;
@@ -757,6 +1028,12 @@ export async function executeManagedAgentsRun(
     let end: SessionEnd | null = null;
     let streamLost = false;
     let failure: string | null = null;
+    /** The first MODEL_CALL a reconnected segment records says so (#5854). */
+    let reconnectMark: { sessionId: string; afterEventId: string | null } | null = null;
+    /** The reconnect's history replay is still to run (once, before anything is sent). */
+    let segmentReplayPending = reconnecting;
+    /** What a reconnect sends when the stream opens: the opening it never sent, or its open calls' answers. */
+    let reconnectOutbox: { opening: boolean; answers: readonly ReconnectAnswer[] } | null = null;
 
     const answer = async (results: Array<{ id: string; text: string; isError: boolean }>, interrupt: boolean): Promise<void> => {
         const fresh = results.filter((r) => !answered.has(r.id));
@@ -789,23 +1066,23 @@ export async function executeManagedAgentsRun(
                 await answer([{ id, text: NOT_OFFERED_TOOL_RESULT, isError: true }], false);
                 continue;
             }
-            let text: string;
-            let isError = false;
+            // Built as the checkpoint keeps it (`keptResultOf`), so a result a
+            // reconnecting segment sends as kept is exactly this answer (#5854).
+            let result: KeptCallResult;
             try {
                 const out = await runnable.run(asToolArgs(call.input), {
                     toolUse: call.event,
                     toolUseBlock: call.event,
                 } as unknown as BetaToolRunContext);
-                text = typeof out === 'string' ? out : JSON.stringify(out);
+                result = keptResultOf(id, { returned: out });
             } catch (err) {
-                isError = true;
-                text = err instanceof Error ? err.message : 'The tool call failed.';
+                result = keptResultOf(id, { threw: err });
             }
             // A stop found AT the call (a cap, a guard verdict on its result, a
             // kill read when it finished): its result is not sent. The stop
             // answers it `is_error` with the run's own sentence.
             if (isStopped()) return;
-            await answer([{ id, text, isError }], false);
+            await answer([result], false);
         }
     };
 
@@ -819,7 +1096,28 @@ export async function executeManagedAgentsRun(
         const input = inflectSent();
         const decisionDigest = computeInputDigest(input);
         const text = turnText.join('\n');
-        await recordStep(ctx, runId, binding.nextSeq(), 'MODEL_CALL', {
+        const stepSeq = binding.nextSeq();
+        const mark = reconnectMark;
+        reconnectMark = null;
+        // THE TURN'S CHECKPOINT (#5854, 2026-11-25), in the step's own
+        // transaction: it points at this session and this span, with no result
+        // kept yet and nothing in flight. Only a leased execution keeps one.
+        const turnCheckpoint = keepsCheckpoint(ctx)
+            ? (() => {
+                  const pointer = sealSessionCheckpoint({ sessionId, spanEventId: ev.id });
+                  const results = sealKeptResults([]);
+                  return writeTurnCheckpointInTx(ctx, runId, {
+                      transcriptJson: pointer.json,
+                      transcriptHash: pointer.hash,
+                      resultsJson: results.json,
+                      resultsHash: results.hash,
+                      atSeq: stepSeq,
+                      elapsedMs: Math.max(Date.now() - runStartMs, 0),
+                      costTokens,
+                  });
+              })()
+            : undefined;
+        await recordStep(ctx, runId, stepSeq, 'MODEL_CALL', {
             status: ev.is_error ? 'FAILED' : 'DONE',
             label: def.key,
             tokens: tokensIn + tokensOut,
@@ -837,8 +1135,12 @@ export async function executeManagedAgentsRun(
                 // tokens are Inflect's to pay, recorded per tenant here and in
                 // the run's `costTokens`.
                 workspace: route.workspaceKind,
+                // The first model call of a RECONNECTED segment (#5854,
+                // 2026-11-25) says so, and from which session event it picked up.
+                ...(mark ? { reconnectedToSession: mark.sessionId, reconnectedAfterEventId: mark.afterEventId } : {}),
             },
-        });
+        }, undefined, turnCheckpoint);
+        if (turnCheckpoint) keptResults = [];
         await recordManagedAgentsDecision(
             ctx,
             runId,
@@ -864,9 +1166,10 @@ export async function executeManagedAgentsRun(
         if (!isStopped()) await checkBreaker();
     };
 
-    const handle = async (ev: AnyEvent): Promise<void> => {
+    const handle = async (ev: AnyEvent, replaying = false): Promise<void> => {
         // The kill switch and the run's own status, on EVERY event handled.
-        await checkKill();
+        // A reconnect's replay of the history reads them once around it.
+        if (!replaying) await checkKill();
         switch (ev.type) {
             case 'agent.message': {
                 const text = messageText(ev.content);
@@ -890,7 +1193,9 @@ export async function executeManagedAgentsRun(
                 return;
             case 'span.model_request_end':
                 await onSpanEnd(ev);
-                if (!isStopped()) await runQueuedCalls();
+                // A replayed turn's calls are never run: they are answered by
+                // the reconnect's rule once the history is read (#5854).
+                if (!replaying && !isStopped()) await runQueuedCalls();
                 return;
             case 'agent.tool_use':
             case 'agent.mcp_tool_use':
@@ -912,7 +1217,7 @@ export async function executeManagedAgentsRun(
             case 'session.status_idle': {
                 const reason = ev.stop_reason?.type;
                 if (reason === 'requires_action') {
-                    if (!isStopped()) await runQueuedCalls();
+                    if (!replaying && !isStopped()) await runQueuedCalls();
                     return;
                 }
                 end = reason === 'end_turn' || reason === undefined ? 'end_turn' : reason;
@@ -941,6 +1246,86 @@ export async function executeManagedAgentsRun(
         ev.type === 'session.status_idle' && ev.stop_reason?.type === 'requires_action';
 
     /**
+     * THE RECONNECT'S REPLAY (#5854, owner decision 2026-11-25), once, over
+     * the session's whole history before anything is sent:
+     *
+     *   1. an interrupt in the history means an earlier attempt STOPPED the
+     *      session: it is not continued (`SESSION_STOPPED_EARLIER`);
+     *   2. every event up to the last span the ledger recorded was accounted
+     *      for by the attempt that recorded it: only its bookkeeping is redone
+     *      (the turn count, the calls still open, a reach beyond custom tools
+     *      or an edit of the session, which stop the run as they would have);
+     *   3. every event after it is handled as the stream would have handled it
+     *      (a model call recorded, with the reconnect named on it; text
+     *      scanned), except that no call is run;
+     *   4. each custom-tool call with no result event is answered by the Tool
+     *      Runner's rule (`answerOpenCalls`): kept, `TOOL_CALL_OUTCOME_UNKNOWN`
+     *      or `TOOL_CALL_NOT_RUN`. The last two are FAILED steps, charged one
+     *      STEPS each. None is run again.
+     *
+     * The answers, or the opening message the dead attempt never sent, go out
+     * when the stream opens (`reconnectOutbox`).
+     */
+    const replayForReconnect = async (events: readonly AnyEvent[]): Promise<void> => {
+        const plan = planReconnect(events as unknown as readonly HistoryEvent[], recordedSpanIds);
+        if (plan.stoppedEarlier) {
+            state.stoppedEarlier = true;
+            abortRead();
+            return;
+        }
+        for (const id of plan.answered) answered.add(id);
+        reconnectMark = { sessionId, afterEventId: plan.lastEventId };
+        if (plan.openingSent) sent.push(opening);
+        for (const [i, ev] of events.entries()) {
+            const id = (ev as { id?: unknown }).id;
+            if (typeof id !== 'string' || handled.has(id)) continue;
+            handled.add(id);
+            if (i <= plan.accountedThrough) {
+                if (ev.type === 'agent.message') continue;
+                if (ev.type === 'span.model_request_end') {
+                    modelCalls += 1;
+                    turnText = [];
+                    turnTextVerdict = 'CLEAN';
+                    turnTextRuleIds = [];
+                    continue;
+                }
+            }
+            await handle(ev, true);
+            if (end !== null || isStopped()) return;
+        }
+        if (await checkKill()) return;
+        const answers = answerOpenCalls(
+            plan.openCalls.filter((c) => !answered.has(c.id)),
+            reconnectCheckpoint ?? { kept: new Map(), inFlightCallId: null },
+        );
+        for (const a of answers) {
+            if (a.answer === 'KEPT') continue;
+            const halt = budget.charge('STEPS', 1);
+            if (halt) {
+                binding.stopAtCap(halt);
+                return;
+            }
+            stepFailures += 1;
+            await recordStep(ctx, runId, binding.nextSeq(), 'TOOL_CALL', {
+                ...(runnables.has(a.name) ? { toolCalled: a.name } : {}),
+                status: 'FAILED',
+                label: a.answer === TOOL_CALL_OUTCOME_UNKNOWN ? 'tool-call-outcome-unknown' : 'tool-call-not-run',
+                output: { outcome: a.answer, reconnectedToSession: sessionId },
+            });
+        }
+        logger.info('managed-agents: reconnected to the session', {
+            component: 'agentic',
+            runId: run.runId,
+            historyEvents: events.length,
+            callsKept: answers.filter((a) => a.answer === 'KEPT').length,
+            callsOutcomeUnknown: answers.filter((a) => a.answer === TOOL_CALL_OUTCOME_UNKNOWN).length,
+            callsNotRun: answers.filter((a) => a.answer !== 'KEPT' && a.answer !== TOOL_CALL_OUTCOME_UNKNOWN).length,
+            openingSent: plan.openingSent,
+        });
+        reconnectOutbox = { opening: !plan.openingSent, answers };
+    };
+
+    /**
      * Read the stream until the session ends, the run stops or it drops.
      * Returns false on a DROP: a failure to open the stream, to read the
      * history or to read the next event. A failure while HANDLING an event (a
@@ -960,16 +1345,24 @@ export async function executeManagedAgentsRun(
         }
         if (reconnecting) {
             // The stream does not replay: read the whole history, dedupe by id.
-            let history: AnyEvent[];
-            try {
-                history = [];
-                for await (const ev of client.beta.sessions.events.list(sessionId, {})) history.push(ev);
-            } catch (err) {
-                return isStopped() || dropped(err);
+            // Paged and bounded (#5854): a history past the cap is refused by
+            // name, never continued on part of it.
+            const history = await readSessionHistory(client, sessionId, streamController.signal);
+            if (history.kind === 'TRUNCATED') {
+                state.historyTruncated = true;
+                abortRead();
+                return true;
             }
-            for (const ev of history) {
-                await processEvent(ev);
+            if (history.kind === 'FAILED') return isStopped() || dropped(history.error);
+            if (segmentReplayPending) {
+                segmentReplayPending = false;
+                await replayForReconnect(history.events);
                 if (end !== null || isStopped()) return true;
+            } else {
+                for (const ev of history.events) {
+                    await processEvent(ev);
+                    if (end !== null || isStopped()) return true;
+                }
             }
         }
         await onOpen();
@@ -992,27 +1385,36 @@ export async function executeManagedAgentsRun(
 
     try {
         // The id, in the ledger, before anything else: a crash from here on
-        // leaves a record Step 5c deletes by id.
-        await recordSessionStep(ctx, runId, binding.nextSeq(), 'SESSION_CREATED', {
-            sessionId,
-            connectionId: route.connectionId,
-            workspaceKind: route.workspaceKind,
-            agentId: pinned.anthropicAgentId,
-            agentVersion: pinned.anthropicAgentVersion,
-            budgetCents: sessionBudget.max_list_cost.amount,
-        });
+        // leaves a record Step 5c deletes by id, and a retry reconnects to.
+        if (createdSessionFacts) await recordSessionStep(ctx, runId, binding.nextSeq(), 'SESSION_CREATED', createdSessionFacts);
         armWallClock();
-        let first = true;
+        // A reconnecting segment has sent its opening already (or sends it from
+        // the outbox): its first read replays the history instead.
+        let first = !reconnecting;
         let reconnects = 0;
-        for (;;) {
+        // A reconnect that latched a stop before reading anything (a verdict
+        // the dead attempt recorded) goes straight to the stop.
+        while (!isStopped()) {
             // A thrown error here is a failure to drive the session, not a
             // drop: it reaches the catch below, and the run fails and settles.
             const done = await readStream(async () => {
-                if (!first) return;
-                const opening = { type: 'user.message' as const, content: [{ type: 'text' as const, text: message }] };
-                await client.beta.sessions.events.send(sessionId, { events: [opening] }, SEND_ONCE);
-                sent.push(opening);
-                first = false;
+                if (first) {
+                    await client.beta.sessions.events.send(sessionId, { events: [opening] }, SEND_ONCE);
+                    sent.push(opening);
+                    first = false;
+                    return;
+                }
+                const outbox = reconnectOutbox;
+                reconnectOutbox = null;
+                if (!outbox || isStopped()) return;
+                if (outbox.opening) {
+                    await client.beta.sessions.events.send(sessionId, { events: [opening] }, SEND_ONCE);
+                    sent.push(opening);
+                    return;
+                }
+                if (outbox.answers.length > 0) {
+                    await answer(outbox.answers.map((a) => ({ id: a.id, text: a.text, isError: a.isError })), false);
+                }
             }, !first);
             if (done || end !== null || isStopped()) break;
             reconnects += 1;
@@ -1023,7 +1425,8 @@ export async function executeManagedAgentsRun(
         }
 
         // ── THE STOP: answer pending is_error, interrupt, drain to idle ──────
-        if ((isStopped() || streamLost) && end === null) {
+        // Not for a run handed to a successor (#5854): the session is its now.
+        if ((isStopped() || streamLost) && end === null && !state.handedOver) {
             state.draining = true;
             for (let round = 0; round < MAX_STOP_ROUNDS && end === null; round += 1) {
                 const unanswered = [...pending.keys()].filter((id) => !answered.has(id));
@@ -1066,12 +1469,18 @@ export async function executeManagedAgentsRun(
         logger.error('managed-agents: the run failed', { component: 'agentic', runId: run.runId, providerStatus: code.status, providerErrorType: code.type });
     } finally {
         if (wallTimer) clearTimeout(wallTimer);
-        await settleSession(ctx, runId, client, sessionId, route, binding, end === null);
+        // A run handed to a successor leaves the session to it (#5854); the
+        // settle asks again before it touches the session, for a takeover this
+        // execution never read.
+        if (!state.handedOver) await settleSession(ctx, runId, client, sessionId, route, binding, end === null);
     }
 
     // ── Settlement ──────────────────────────────────────────────────────────
     await updateRun(ctx, runId, { costTokens, stepCount: seq });
 
+    // Handed over: nothing lands (every write is fenced), and the worker
+    // reports the lost lease (`executeFrom`), not this status.
+    if (state.handedOver) return { status: 'ABORTED', stepFailures };
     if (state.operatorAborted) return { status: 'ABORTED', stepFailures };
     if (state.killVerdict) {
         const beside: CapBesideKill | null = state.capHalt
@@ -1105,6 +1514,14 @@ export async function executeManagedAgentsRun(
         const status = await failRun(ctx, runId, SESSION_EDITED_MESSAGE);
         return { status, stepFailures: stepFailures + 1 };
     }
+    if (state.stoppedEarlier) {
+        const status = await failRun(ctx, runId, reconnectRefusalMessage('SESSION_STOPPED_EARLIER'));
+        return { status, stepFailures: stepFailures + 1 };
+    }
+    if (state.historyTruncated) {
+        const status = await failRun(ctx, runId, SESSION_HISTORY_TRUNCATED_MESSAGE);
+        return { status, stepFailures: stepFailures + 1 };
+    }
     if (failure !== null) {
         const status = await failRun(ctx, runId, `${MANAGED_AGENTS_PREFIX}_run_failed: ${failure}`);
         return { status, stepFailures: stepFailures + 1 };
@@ -1126,6 +1543,32 @@ export async function executeManagedAgentsRun(
     const completed = await updateRun(ctx, runId, { status: 'COMPLETED', completedAt: new Date(), stepCount: seq, costTokens });
     if (!completed) return { status: 'ABORTED', stepFailures };
     return { status: 'COMPLETED', stepFailures };
+}
+
+/** A session's history, read whole, or why not. */
+type SessionHistoryRead =
+    | { readonly kind: 'READ'; readonly events: AnyEvent[] }
+    | { readonly kind: 'TRUNCATED' }
+    | { readonly kind: 'FAILED'; readonly error: unknown };
+
+/**
+ * A SESSION'S WHOLE HISTORY, PAGED AND BOUNDED (#5854, 2026-11-25): pages of
+ * `SESSION_HISTORY_PAGE_SIZE` through the SDK's own cursor, oldest first, and
+ * at most `SESSION_HISTORY_READ_CAP` events. One more is a TRUNCATION, a fact
+ * the caller refuses by name rather than continue on part of the history. A
+ * read that fails is a drop, as a failed stream is.
+ */
+async function readSessionHistory(client: Anthropic, sessionId: string, signal: AbortSignal): Promise<SessionHistoryRead> {
+    const events: AnyEvent[] = [];
+    try {
+        for await (const ev of client.beta.sessions.events.list(sessionId, { limit: SESSION_HISTORY_PAGE_SIZE }, { signal })) {
+            events.push(ev);
+            if (events.length > SESSION_HISTORY_READ_CAP) return { kind: 'TRUNCATED' };
+        }
+    } catch (error) {
+        return { kind: 'FAILED', error };
+    }
+    return { kind: 'READ', events };
 }
 
 /** One step recording the session's lifecycle: ids and codes, never content. */
@@ -1219,7 +1662,22 @@ async function settleSession(
     binding: ToolRunBinding,
     mayBeRunning: boolean,
 ): Promise<void> {
+    // A SUCCESSOR HOLDS THE RUN (#5854, owner decision 2026-11-25): it has
+    // reconnected, or will, to this session and continues in it. This
+    // execution neither records it kept nor interrupts or deletes it. A read
+    // that fails is read as a takeover: a session left alone is settled by the
+    // reconciliation once the run has ended; one deleted under a successor is
+    // a run lost. A context with no lease asks nothing.
+    const handedOver = async (): Promise<boolean> => {
+        if (!(await runLeaseTakenOver(ctx, runId).catch(() => true))) return false;
+        logger.warn('managed-agents: another worker holds the run; its session is left to it', {
+            component: 'agentic',
+            runId: binding.runId,
+        });
+        return true;
+    };
     try {
+        if (await handedOver()) return;
         if (route.keepSessions) {
             await recordSessionStep(ctx, runId, binding.nextSeq(), 'SESSION_KEPT', { sessionId, connectionId: route.connectionId });
             return;
@@ -1244,6 +1702,8 @@ async function settleSession(
             }
             await wait(SETTLE_POLL_MS);
         }
+        // Asked again right before the one write that cannot be undone.
+        if (await handedOver()) return;
         try {
             await client.beta.sessions.delete(sessionId);
             await recordSessionStep(ctx, runId, binding.nextSeq(), 'SESSION_DELETED', { sessionId, connectionId: route.connectionId });

@@ -3,12 +3,17 @@
  * FOR A PERSON (#5854 item 3; owner decision 2026-11-24).
  *
  * Flue continues a conversation only from its own durable store, which Inflect
- * does not configure, and a Managed Agents run never re-attaches to a session
- * at Anthropic. So neither can continue a retried segment the way the Tool
- * Runner does. Before this, a retry started them again from the opening
- * message and a call the dead attempt made was made again. Now a retry of a
- * segment that already made a call PAUSES the run at a `retry-paused`
- * checkpoint instead, before any engine runs.
+ * does not configure, so it cannot continue a retried segment the way the Tool
+ * Runner does. Before this, a retry started it again from the opening message
+ * and a call the dead attempt made was made again. Now a retry of a segment
+ * that already made a call PAUSES the run at a `retry-paused` checkpoint
+ * instead, before any engine runs.
+ *
+ * MANAGED AGENTS NO LONGER PAUSES (owner decision 2026-11-25): a retried or
+ * taken-over segment RECONNECTS to the session it created and continues there.
+ * So the worker anchors its segment as it does Flue's, never pauses it, and
+ * hands the engine where the segment began (`runSegmentFromSeq`). The
+ * reconnect itself is held in `managed-agents-reconnect.test.ts`.
  *
  * Real database and the worker's own body (`executeQueuedWorkflowRun`) with
  * its run lease. The ENGINE is a stand-in: the deployment permits Flue (or
@@ -22,6 +27,8 @@ const engine = {
     /** While a run is admitted, the deployment permits the Tool Runner, which a profile run asks for. */
     admitting: false,
     invocations: 0,
+    /** Where each invocation was told its segment began (`runSegmentFromSeq`). */
+    segmentFromSeqs: [] as Array<number | undefined>,
     /** What the fake engine does once it is reached. */
     behaviour: 'CALL_THEN_THROW' as 'CALL_THEN_THROW' | 'THROW' | 'CALL_THEN_DIE' | 'COMPLETE',
 };
@@ -54,6 +61,7 @@ jest.mock('@/lib/agentic/drivers', () => {
     const { updateRun } = jest.requireActual('@/lib/agentic/drivers/run-settlement');
     const fake = async (ctx: unknown, runId: string, _def: unknown, fromSeq: number) => {
         engine.invocations += 1;
+        engine.segmentFromSeqs.push((ctx as { runSegmentFromSeq?: number }).runSegmentFromSeq);
         if (engine.behaviour === 'THROW') throw new Error('the database connection was reset');
         if (engine.behaviour !== 'COMPLETE') {
             await recordStep(ctx, runId, fromSeq, 'TOOL_CALL', { toolCalled: 'list_risks', status: 'DONE', label: 'list_risks' });
@@ -205,6 +213,7 @@ describeFn('a retried segment on an engine that cannot continue its conversation
     beforeEach(() => {
         _resetInFlightRunsForTesting();
         engine.invocations = 0;
+        engine.segmentFromSeqs = [];
     });
 
     afterAll(async () => {
@@ -214,7 +223,7 @@ describeFn('a retried segment on an engine that cannot continue its conversation
         __resetAuditStreamForTests();
     });
 
-    for (const under of ['flue', 'managed-agents'] as const) {
+    for (const under of ['flue'] as const) {
         it(`${under}: a retry of a segment that already made a call pauses at a retry-paused checkpoint, and the engine is not run again`, async () => {
             engine.under = under;
             const { runId, segment } = await newRun();
@@ -248,7 +257,7 @@ describeFn('a retried segment on an engine that cannot continue its conversation
     }
 
     it('a lease takeover of a segment that already made a call pauses too', async () => {
-        engine.under = 'managed-agents';
+        engine.under = 'flue';
         const { runId, segment } = await newRun();
 
         engine.behaviour = 'CALL_THEN_DIE';
@@ -258,6 +267,57 @@ describeFn('a retried segment on an engine that cannot continue its conversation
         engine.behaviour = 'COMPLETE';
         expect(await execute(runId, segment)).toEqual({ status: 'PAUSED', stepFailures: 0 });
         expect(engine.invocations).toBe(1);
+    });
+
+    it('managed-agents: a retry of a segment that already made a call is NOT paused; the engine runs again, told where its segment began, and reconnects itself', async () => {
+        engine.under = 'managed-agents';
+        const { runId, segment } = await newRun();
+
+        engine.behaviour = 'CALL_THEN_THROW';
+        await expect(execute(runId, segment)).rejects.toThrow(/connection was reset/);
+        expect((await runRow(runId)).status).toBe('RUNNING');
+
+        engine.behaviour = 'COMPLETE';
+        expect(await execute(runId, segment)).toEqual({ status: 'COMPLETED', stepFailures: 0 });
+        expect(engine.invocations).toBe(2);
+        // The first attempt is told its own start; the retry the FIRST
+        // attempt's, behind the call it made (seq 0), which is how the engine
+        // finds the session that call ran in.
+        expect(engine.segmentFromSeqs).toEqual([0, 0]);
+        expect((await stepsOf(runId)).map((s) => s.kind)).toEqual(['TOOL_CALL']);
+        expect(await prisma.auditLog.count({ where: { tenantId: TENANT, entityId: runId, action: 'WORKFLOW_RUN_RETRY_PAUSED' } })).toBe(0);
+    });
+
+    it('managed-agents: a lease takeover is not paused either', async () => {
+        engine.under = 'managed-agents';
+        const { runId, segment } = await newRun();
+
+        engine.behaviour = 'CALL_THEN_DIE';
+        expect(await execute(runId, segment)).toEqual({ skipped: 'LEASE_LOST' });
+
+        engine.behaviour = 'COMPLETE';
+        expect(await execute(runId, segment)).toEqual({ status: 'COMPLETED', stepFailures: 0 });
+        expect(engine.invocations).toBe(2);
+        expect(engine.segmentFromSeqs).toEqual([0, 0]);
+    });
+
+    it('managed-agents: a NEW segment is told its own start, behind every earlier step', async () => {
+        engine.under = 'managed-agents';
+        const { runId, segment } = await newRun();
+        engine.behaviour = 'CALL_THEN_THROW';
+        await expect(execute(runId, segment)).rejects.toThrow();
+        // A person's resume authorises a new segment, past the call.
+        engine.behaviour = 'COMPLETE';
+        expect(await execute(runId, segment + 60_000)).toEqual({ status: 'COMPLETED', stepFailures: 0 });
+        expect(engine.segmentFromSeqs).toEqual([0, 1]);
+    });
+
+    it('managed-agents: a job from a build that named no segment carries none, and the engine does not reconnect', async () => {
+        engine.under = 'managed-agents';
+        const { runId } = await newRun();
+        engine.behaviour = 'COMPLETE';
+        expect(await execute(runId)).toEqual({ status: 'COMPLETED', stepFailures: 0 });
+        expect(engine.segmentFromSeqs).toEqual([undefined]);
     });
 
     it('a retry of a segment that made no call starts it again: nothing would be done twice', async () => {
@@ -298,12 +358,12 @@ describeFn('a retried segment on an engine that cannot continue its conversation
         expect(engine.invocations).toBe(2);
     });
 
-    it('the Tool Runner is never paused on a retry: it continues from its checkpoint instead', async () => {
+    it('the Tool Runner and Managed Agents are never paused on a retry: they continue from a checkpoint and a session instead', async () => {
         // The classification decides, not the engine's name.
         const { segmentRecoveryOf } = jest.requireActual('@/lib/agentic/agent-driver') as typeof import('@/lib/agentic/agent-driver');
         expect(segmentRecoveryOf('tool-runner')).toBe('CHECKPOINT');
         expect(segmentRecoveryOf('static')).toBe('LEDGER');
         expect(segmentRecoveryOf('flue')).toBe('PAUSE_ON_RETRY');
-        expect(segmentRecoveryOf('managed-agents')).toBe('PAUSE_ON_RETRY');
+        expect(segmentRecoveryOf('managed-agents')).toBe('SESSION');
     });
 });

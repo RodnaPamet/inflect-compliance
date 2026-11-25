@@ -5,6 +5,7 @@
  * Every link into the app goes through `appLink`, which makes it absolute
  * against `APP_URL` (#4130): a relative href does not open from a mail client.
  */
+import type { WorkspaceTranslator } from '@/lib/i18n/workspace-text';
 import { appLink } from './app-link';
 
 export interface EmailTemplateResult {
@@ -24,37 +25,82 @@ export interface TaskAssignedPayload {
     tenantSlug: string;
 }
 
-export function buildTaskAssignedEmail(payload: TaskAssignedPayload): EmailTemplateResult {
+/**
+ * The catalogue namespace this email's wording lives in. The email is written
+ * in the WORKSPACE's default language (owner decision 2026-11-25): there is no
+ * per-person locale, and an outbox row is sent exactly as it was rendered, so
+ * the language is chosen once, at enqueue (`enqueueEmail`), from
+ * `Tenant.defaultLocale`. The English catalogue reproduces the email as it
+ * was before, byte for byte, task type spelling included.
+ */
+export const TASK_ASSIGNED_EMAIL_NAMESPACE = 'workspaceText.taskAssignedEmail';
+
+/** The task types the catalogue words; any other value is shown as before. */
+const WORDED_TASK_TYPES: ReadonlySet<string> = new Set([
+    'AUDIT_FINDING',
+    'CONTROL_GAP',
+    'INCIDENT',
+    'IMPROVEMENT',
+    'TASK',
+]);
+
+/**
+ * `t` is a translator over `TASK_ASSIGNED_EMAIL_NAMESPACE` in the workspace's
+ * language (`workspaceTranslator`). Only the product's own wording is
+ * translated: the task key and title and the people's names are data and go
+ * out as written.
+ */
+export function buildTaskAssignedEmail(payload: TaskAssignedPayload, t: WorkspaceTranslator): EmailTemplateResult {
     const { taskTitle, taskKey, taskType, assigneeName, assignerName, tenantSlug } = payload;
     const keyLabel = taskKey ? `[${taskKey}] ` : '';
-    const byLine = assignerName ? ` by ${assignerName}` : '';
     const link = appLink(`/t/${tenantSlug}/tasks`);
+    const type = WORDED_TASK_TYPES.has(taskType) ? t(`type.${taskType}`) : taskType.toLowerCase();
+    const assignedKey = assignerName ? 'assignedBy' : 'assigned';
 
     return {
-        subject: `Task assigned to you: ${keyLabel}${taskTitle}`,
+        subject: t('subject', { task: `${keyLabel}${taskTitle}` }),
         bodyText: [
-            `Hi ${assigneeName},`,
+            t('greeting', { name: assigneeName }),
             '',
-            `You have been assigned a ${taskType.toLowerCase()} task${byLine}:`,
+            t(assignedKey, { type, assigner: assignerName ?? '' }),
             '',
             `  ${keyLabel}${taskTitle}`,
             '',
-            `View your tasks: ${link}`,
+            t('viewText', { link }),
             '',
-            '— Inflect Compliance',
+            t('signOff'),
         ].join('\n'),
         bodyHtml: `
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
-  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 16px;">Task assigned to you</h2>
-  <p style="color: #444; line-height: 1.5;">Hi ${escapeHtml(assigneeName)},</p>
-  <p style="color: #444; line-height: 1.5;">You have been assigned a <strong>${escapeHtml(taskType.toLowerCase())}</strong> task${byLine ? ` by <strong>${escapeHtml(assignerName!)}</strong>` : ''}:</p>
+  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 16px;">${escapeHtml(t('heading'))}</h2>
+  <p style="color: #444; line-height: 1.5;">${htmlMessage(t, 'greeting', { name: escapeHtml(assigneeName) })}</p>
+  <p style="color: #444; line-height: 1.5;">${htmlMessage(t, assignedKey, {
+      type: `<strong>${escapeHtml(type)}</strong>`,
+      assigner: `<strong>${escapeHtml(assignerName ?? '')}</strong>`,
+  })}</p>
   <div style="background: #f4f6fa; border-left: 4px solid #4f46e5; padding: 12px 16px; margin: 16px 0; border-radius: 4px;">
     <strong>${escapeHtml(keyLabel)}${escapeHtml(taskTitle)}</strong>
   </div>
-  <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">View Tasks</a>
-  <p style="color: #999; font-size: 12px; margin-top: 24px;">— Inflect Compliance</p>
+  <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">${escapeHtml(t('viewButton'))}</a>
+  <p style="color: #999; font-size: 12px; margin-top: 24px;">${escapeHtml(t('signOff'))}</p>
 </div>`.trim(),
     };
+}
+
+/**
+ * A catalogue message as HTML. The message's own text is escaped; each value
+ * is a ready-made HTML fragment the caller built (and escaped). The values go
+ * through the translator as opaque tokens, so escaping the text never touches
+ * a fragment, and a fragment never passes through the escape twice.
+ */
+function htmlMessage(t: WorkspaceTranslator, key: string, html: Record<string, string>): string {
+    const names = Object.keys(html);
+    const token = (i: number) => `\u0000${i}\u0000`;
+    let out = escapeHtml(t(key, Object.fromEntries(names.map((name, i) => [name, token(i)]))));
+    names.forEach((name, i) => {
+        out = out.split(token(i)).join(html[name]);
+    });
+    return out;
 }
 
 // ─── Task Assigned — bulk digest ───
@@ -73,37 +119,47 @@ export interface TaskAssignedDigestPayload {
     tenantSlug: string;
 }
 
-export function buildTaskAssignedDigestEmail(payload: TaskAssignedDigestPayload): EmailTemplateResult {
+/**
+ * Written in the workspace's default language, as the single-task email is
+ * (owner decision 2026-11-25): the language a person reads must not depend on
+ * whether their tasks arrived one at a time or in one bulk Assign. `t` is the
+ * same translator over `TASK_ASSIGNED_EMAIL_NAMESPACE`. A digest always names
+ * two or more tasks, so its sentences carry no plural forms.
+ */
+export function buildTaskAssignedDigestEmail(payload: TaskAssignedDigestPayload, t: WorkspaceTranslator): EmailTemplateResult {
     const { tasks, assigneeName, assignerName, tenantSlug } = payload;
     const count = tasks.length;
-    const byLine = assignerName ? ` by ${assignerName}` : '';
     const link = appLink(`/t/${tenantSlug}/tasks`);
-    const line = (t: TaskAssignedDigestPayload['tasks'][number]) =>
-        `${t.taskKey ? `[${t.taskKey}] ` : ''}${t.taskTitle}`;
+    const assignedKey = assignerName ? 'digestAssignedBy' : 'digestAssigned';
+    const line = (task: TaskAssignedDigestPayload['tasks'][number]) =>
+        `${task.taskKey ? `[${task.taskKey}] ` : ''}${task.taskTitle}`;
 
     return {
-        subject: `${count} tasks assigned to you`,
+        subject: t('digestSubject', { count }),
         bodyText: [
-            `Hi ${assigneeName},`,
+            t('greeting', { name: assigneeName }),
             '',
-            `You have been assigned ${count} tasks${byLine}:`,
+            t(assignedKey, { count, assigner: assignerName ?? '' }),
             '',
-            ...tasks.map((t) => `  ${line(t)}`),
+            ...tasks.map((task) => `  ${line(task)}`),
             '',
-            `View your tasks: ${link}`,
+            t('viewText', { link }),
             '',
-            '— Inflect Compliance',
+            t('signOff'),
         ].join('\n'),
         bodyHtml: `
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
-  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 16px;">${count} tasks assigned to you</h2>
-  <p style="color: #444; line-height: 1.5;">Hi ${escapeHtml(assigneeName)},</p>
-  <p style="color: #444; line-height: 1.5;">You have been assigned <strong>${count}</strong> tasks${byLine ? ` by <strong>${escapeHtml(assignerName!)}</strong>` : ''}:</p>
+  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 16px;">${escapeHtml(t('digestSubject', { count }))}</h2>
+  <p style="color: #444; line-height: 1.5;">${htmlMessage(t, 'greeting', { name: escapeHtml(assigneeName) })}</p>
+  <p style="color: #444; line-height: 1.5;">${htmlMessage(t, assignedKey, {
+      count: `<strong>${count}</strong>`,
+      assigner: `<strong>${escapeHtml(assignerName ?? '')}</strong>`,
+  })}</p>
   <div style="background: #f4f6fa; border-left: 4px solid #4f46e5; padding: 12px 16px; margin: 16px 0; border-radius: 4px;">
-    ${tasks.map((t) => `<div style="padding: 2px 0;"><strong>${escapeHtml(line(t))}</strong></div>`).join('\n    ')}
+    ${tasks.map((task) => `<div style="padding: 2px 0;"><strong>${escapeHtml(line(task))}</strong></div>`).join('\n    ')}
   </div>
-  <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">View Tasks</a>
-  <p style="color: #999; font-size: 12px; margin-top: 24px;">— Inflect Compliance</p>
+  <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">${escapeHtml(t('viewButton'))}</a>
+  <p style="color: #999; font-size: 12px; margin-top: 24px;">${escapeHtml(t('signOff'))}</p>
 </div>`.trim(),
     };
 }

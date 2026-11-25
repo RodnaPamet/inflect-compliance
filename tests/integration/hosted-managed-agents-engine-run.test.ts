@@ -17,6 +17,10 @@
  *   • Every request carries Inflect's key and workspace, the session is always
  *     deleted at settle (decision 4 is MA-C2's only), the ledger records the
  *     workspace kind, and the run holds a hosted slot.
+ *   • A worker that dies mid-run is taken over, and the takeover RECONNECTS
+ *     to the hosted session and continues there, as a run in a tenant's own
+ *     workspace does (#5854, owner decision 2026-11-25); the session is still
+ *     deleted at settle.
  *   • With the constant false, the same tenant's engine choice is refused and
  *     its run is refused by name before anything is sent.
  *
@@ -234,6 +238,40 @@ describeFn('a hosted Managed Agents run, through the module seam (real DB, faux 
         const calls = await modelCallSteps(started.runId);
         expect(calls.length).toBeGreaterThan(0);
         for (const c of calls) expect(c).toMatchObject({ workspace: 'HOSTED', spanDerived: true });
+    });
+
+    it('a worker that dies mid-run is taken over: the takeover reconnects to the hosted session, sends the kept result, and still deletes the session (#5854)', async () => {
+        const started = await startAgentProfileTestRun(reviewer(), AGENT, 1);
+        const { startedAt } = await prisma.workflowRun.findUniqueOrThrow({ where: { id: started.runId }, select: { startedAt: true } });
+        const opts = { leaseTiming: { ttlMs: 2_000, renewMs: 150 }, segment: startedAt.getTime() };
+        const dropped: Array<Record<string, unknown>> = [];
+        faux.beforeEventsPost = async (_sid, events) => {
+            if (!events.some((e) => e.type === 'user.custom_tool_result')) return undefined;
+            faux.beforeEventsPost = null;
+            dropped.push(...events);
+            // The worker dies as it sends the result: the session never gets it.
+            await prisma.$executeRaw`UPDATE "WorkflowRun" SET "leaseHolder" = 'a-worker-that-died', "leaseExpiresAt" = now() - interval '1 second' WHERE "id" = ${started.runId}`;
+            return 'DROP';
+        };
+        expect(await executeQueuedWorkflowRun(TENANT, started.runId, opts)).toEqual({ skipped: 'LEASE_LOST' });
+        faux.beforeEventsPost = null;
+        const [created] = await sessionSteps(started.runId);
+        const sessionId = created.sessionId as string;
+        expect(faux.holdsSession(sessionId)).toBe(true);
+
+        expect(await executeQueuedWorkflowRun(TENANT, started.runId, opts)).toMatchObject({ status: 'COMPLETED' });
+        // ONE session, reconnected to, then deleted: decision 4 is MA-C2's only.
+        expect((await sessionSteps(started.runId)).map((s) => [s.lifecycle, s.sessionId])).toEqual([
+            ['SESSION_CREATED', sessionId],
+            ['SESSION_DELETED', sessionId],
+        ]);
+        expect(faux.holdsSession(sessionId)).toBe(false);
+        const callId = String(dropped[0].custom_tool_use_id);
+        expect(faux.toolResults.filter((r) => r.id === callId)).toEqual([
+            { id: callId, isError: false, text: String((dropped[0].content as Array<{ text: string }>)[0].text) },
+        ]);
+        const calls = await modelCallSteps(started.runId);
+        expect(calls.find((c) => c.reconnectedToSession === sessionId)).toMatchObject({ workspace: 'HOSTED' });
     });
 
     it('every request carried Inflect\'s key and workspace', () => {

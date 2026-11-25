@@ -3349,14 +3349,14 @@ lease keeps or reads one (`keepsCheckpoint`), so an inline run and every unit
 test of an engine touch nothing; every write is fenced on the lease. The store is
 the table's ONLY writer (`tests/guards/workflow-run-checkpoint-single-write-seam.test.ts`).
 
-**Flue and Managed Agents cannot continue a conversation Inflect keeps, so a
-retried segment that already made a call PAUSES for a person.** Flue resumes a
-conversation only from its own durable store, which Inflect does not configure
-(`db` is absent on purpose in `runtime-start.ts`), and a Managed Agents run never
-re-attaches to its session at Anthropic. `segmentRecoveryOf(driver)`
-(`agent-driver.ts`, a `Record<AgentDriver, …>`, so a new engine must be
-classified) says which: `LEDGER` (static), `CHECKPOINT` (Tool Runner),
-`PAUSE_ON_RETRY` (Flue, Managed Agents). For the last, the first attempt of a
+**Flue cannot continue a conversation Inflect keeps, so a retried segment that
+already made a call PAUSES for a person.** Flue resumes a conversation only from
+its own durable store, which Inflect does not configure (`db` is absent on
+purpose in `runtime-start.ts`). `segmentRecoveryOf(driver)` (`agent-driver.ts`,
+a `Record<AgentDriver, …>`, so a new engine must be classified) says which:
+`LEDGER` (static), `CHECKPOINT` (Tool Runner), `SESSION` (Managed Agents, which
+RECONNECTS to its session at Anthropic: owner decision 2026-11-25, see the
+Managed Agents paragraphs below), `PAUSE_ON_RETRY` (Flue). For the last, the first attempt of a
 queued segment ANCHORS it on the checkpoint row (the payload's `segment`, compared
 for equality only, and where its ledger began); a later attempt of the same
 segment that finds a TOOL_CALL or MODEL_CALL step in its own part of the ledger
@@ -3365,8 +3365,7 @@ PAUSED in one transaction (`pauseRetriedSegment`, audited
 `WORKFLOW_RUN_RETRY_PAUSED`) before any engine runs. A person's resume is a new
 segment and starts the engine again: that is the person's decision. A retry that
 made no call restarts, and a job naming no segment (an older build's) is never
-paused. Making Managed Agents continue would mean re-attaching to a session,
-which changes a stated invariant: an open owner question, not something to build.
+paused. A `SESSION` engine is anchored the same way and never paused.
 
 **"Is this a reasoning engine" is `isReasoningEngine(driver)`**
 (`src/lib/agentic/agent-driver.ts`), never a comparison with `'flue'`. It is
@@ -3897,7 +3896,9 @@ careless edit from being undone:
   and the ledger says so (`SYNTHESIS` steps labelled `managed-agents-session`:
   `SESSION_CREATED`, written first, then `SESSION_DELETED`,
   `SESSION_DELETE_FAILED` or, when the connection keeps sessions (decision 4),
-  `SESSION_KEPT`). 5c finds them by id there.
+  `SESSION_KEPT`). 5c finds them by id there. The one exception: an execution
+  whose lease ANOTHER worker took leaves the session to that worker, which
+  reconnects to it (owner decision 2026-11-25, below).
 - **Every segment first settles a session of its run that no ledger step names**
   (#5854): one a dead worker created after `sessions.create` answered and before
   `SESSION_CREATED` was written. It is the lost-create recovery
@@ -3905,7 +3906,7 @@ careless edit from being undone:
   pinned agent), called at the segment's start too, never a second mechanism; it
   takes only sessions whose metadata names this tenant AND this run and that the
   run's ledger does not hold, and it never blocks the run.
-- **Drift refuses before a session exists**: the agent at the pinned version
+- **Drift refuses before a session exists, or is continued**: the agent at the pinned version
   must hash to what Inflect wrote (`AgentProfileProvision`) and hold nothing but
   custom tools, and the ENVIRONMENT, read again, must hash to the configuration
   Inflect wrote (`environmentHash`, `ENVIRONMENT_DRIFTED`, #5854). A NULL
@@ -4052,11 +4053,71 @@ undone:
   ago than `ABANDONED_SESSION_MIN_AGE_MS` (the wall clock plus ten minutes, so
   no live segment can still settle it), as the run's own settle would have:
   recorded `SESSION_KEPT` on a connection that keeps sessions, else deleted and
-  recorded `SESSION_DELETED` (`agentic.managed_agents.abandoned_session`). A run
-  never re-attaches to a session, so a SIGKILL, an OOM or a SIGTERM drain
-  leaves one behind on every retry or resume. It also reads back every session
+  recorded `SESSION_DELETED` (`agentic.managed_agents.abandoned_session`). It
+  NEVER takes a session whose run is still RUNNING, whatever its age and
+  whatever its lease (`readRunningRunIds`): a retry or a takeover reconnects to
+  it (below). That status check, not the age, is what keeps the pass and a
+  reconnecting segment off one session: a reconnect happens only under a lease,
+  a lease only on a RUNNING run, and a run that left RUNNING never re-enters the
+  same segment. A run that stays RUNNING with nobody driving it is reaped, and
+  the next pass settles its session. It also reads back every session
   recorded DELETED in the last seven days, deletes one that still exists, and
   meters it (`agentic.managed_agents.lost_delete`).
+
+**A retried or taken-over segment RECONNECTS to its session** (#5854, owner
+decision 2026-11-25; `managed-agents/reconnect.ts`, the engine in `execute.ts`).
+This replaced the rule that a run never re-attaches to a session. It does not
+pause for a person and never makes a second session for the segment. Rules
+that are each one careless edit from being undone:
+
+- **The worker says where the segment began; the ledger says which session.**
+  `segmentRecoveryOf('managed-agents')` is `SESSION`: the worker anchors the
+  segment as it does Flue's, never pauses it, and sets
+  `RequestContext.runSegmentFromSeq` (a first attempt's own `fromSeq`, under
+  which the ledger holds nothing of its own; a retry's or a takeover's, the
+  first attempt's). The engine reads that part of the ledger
+  (`readSegmentLedger`) BEFORE the segment's start settles anything, and the
+  NEWEST session there decides: none, create one; never settled, reconnect;
+  deleted, kept or failed to delete, refuse by name
+  (`managed_agents_reconnect_session_settled`). A session the start found
+  unrecorded is never continued. A job naming no segment reconnects to
+  nothing.
+- **Everything a fresh session is checked for, a reconnected one is too.** The
+  agent and environment drift checks run again (their refusals then say the run
+  was not continued, and delete the session); the session is read first (404:
+  `managed_agents_reconnect_session_gone`, recorded `SESSION_DELETED` with
+  `foundGone`; terminated: `_session_terminated`, deleted); an interrupt in its
+  history means an earlier attempt stopped it (`_session_stopped`); a guard
+  verdict any step of the session recorded is latched again before anything is
+  sent, so a flagged kept result never reaches the model.
+- **The history is read paged and bounded**, `SESSION_HISTORY_READ_CAP` (5,000)
+  in pages of 100 through the SDK's cursor, and one more event is refused
+  (`managed_agents_session_history_truncated`), never continued on part of it.
+  A dropped stream mid-run reads it the same way.
+- **No call is made twice, and none is guessed about.** The run's ONE
+  `WorkflowRunCheckpoint` row is kept as the Tool Runner keeps it, by the same
+  store and the same queue hooks: every turn's MODEL_CALL step points it at the
+  session and the span in its own transaction (a sealed pointer, format
+  `inflect-managed-agents-session/1`, in place of a transcript), the call about
+  to run is named in flight before the funnel, and its result is kept once it
+  settles (`keptResultOf`, which is also how the engine builds the answer it
+  sends, so a kept result is byte for byte the dead attempt's). On reconnect,
+  events up to the last span the ledger recorded are bookkeeping only; later
+  ones are handled as the stream would have, except that NO CALL IS RUN; then
+  every custom-tool call with no result event is answered: kept as kept, the
+  one in flight `TOOL_CALL_OUTCOME_UNKNOWN`, any other `TOOL_CALL_NOT_RUN` (a
+  FAILED step charged one STEPS each). Do not add a second store, and do not
+  let the replay run a call because its turn was never recorded: that is the
+  one kind of call the rule answers NOT RUN.
+- **A worker whose lease ANOTHER worker took leaves the session alone**
+  (`runLeaseTakenOver`, `state.handedOver`): no answer, no interrupt, no delete,
+  asked again in `settleSession` right before the delete. A lease cleared to
+  nobody (the SIGTERM drain, the reaper) stops the run as an Abort does and
+  settles the session as before.
+- **The first MODEL_CALL of a reconnected segment** carries
+  `reconnectedToSession` and `reconnectedAfterEventId` (the last history event
+  the reconnect read). No new session lifecycle value is written: the
+  reconciliation's abandoned rule counts a session's lifecycles.
 
 **Hosting in Inflect's own Anthropic organisation is built and switched off by
 ONE source constant** (Step 6b, #4172, shape MA-C1;

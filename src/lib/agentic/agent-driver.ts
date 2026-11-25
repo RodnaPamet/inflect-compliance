@@ -276,23 +276,30 @@ export function isReasoningEngine(driver: AgentDriver): boolean {
  *     step is one declared call, so a step already made is never made again.
  *   • `CHECKPOINT` — the engine CONTINUES THE CONVERSATION from the checkpoint
  *     it kept (`WorkflowRunCheckpoint`): the Tool Runner.
- *   • `PAUSE_ON_RETRY` — the engine cannot continue a conversation Inflect
- *     keeps, so a retried segment that already made a call PAUSES for a person
- *     rather than start again from its opening message: Flue (its runtime
- *     resumes only from its own durable store, which Inflect does not
- *     configure) and Managed Agents (its conversation lives in a session at
- *     Anthropic, and a run never re-attaches to one).
+ *   • `SESSION` — the engine's conversation lives in a session at Anthropic,
+ *     and a retried or taken-over segment RECONNECTS to the session it created
+ *     and continues there (owner decision 2026-11-25, #5854): Managed Agents.
+ *     The worker anchors the segment as for `PAUSE_ON_RETRY` and tells the
+ *     engine where it began (`RequestContext.runSegmentFromSeq`); the engine
+ *     reads its own part of the ledger, re-runs its drift checks, reads the
+ *     session's history and answers every open custom-tool call the Tool
+ *     Runner's way (kept, `TOOL_CALL_OUTCOME_UNKNOWN`, `TOOL_CALL_NOT_RUN`).
+ *     Nothing pauses, and no call is made twice.
+ *   • `PAUSE_ON_RETRY` — the engine cannot continue a conversation, so a
+ *     retried segment that already made a call PAUSES for a person rather than
+ *     start again from its opening message: Flue (its runtime resumes only
+ *     from its own durable store, which Inflect does not configure).
  *
  * A `Record<AgentDriver, …>`, so a new engine fails `tsc` until somebody
  * decides how it recovers.
  */
-export type SegmentRecovery = 'LEDGER' | 'CHECKPOINT' | 'PAUSE_ON_RETRY';
+export type SegmentRecovery = 'LEDGER' | 'CHECKPOINT' | 'SESSION' | 'PAUSE_ON_RETRY';
 
 const SEGMENT_RECOVERY: Readonly<Record<AgentDriver, SegmentRecovery>> = {
     static: 'LEDGER',
     flue: 'PAUSE_ON_RETRY',
     'tool-runner': 'CHECKPOINT',
-    'managed-agents': 'PAUSE_ON_RETRY',
+    'managed-agents': 'SESSION',
 };
 
 export function segmentRecoveryOf(driver: AgentDriver): SegmentRecovery {

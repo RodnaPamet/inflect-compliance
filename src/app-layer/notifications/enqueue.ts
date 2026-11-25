@@ -12,6 +12,7 @@ import type { EmailNotificationType } from '@prisma/client';
 import { isNotificationsEnabled } from './settings';
 import { logger } from '@/lib/observability/logger';
 import { hashForLookup } from '@/lib/security/encryption';
+import { readWorkspaceLocale, workspaceTranslator, type WorkspaceTranslator } from '@/lib/i18n/workspace-text';
 import {
     buildTaskAssignedEmail,
     buildTaskAssignedDigestEmail,
@@ -25,6 +26,7 @@ import {
     buildAccessReviewReminderEmail,
     buildAccessReviewOverdueEscalationEmail,
     buildExceptionExpiringEmail,
+    TASK_ASSIGNED_EMAIL_NAMESPACE,
     type TaskAssignedPayload,
     type TaskAssignedDigestPayload,
     type EvidenceExpiringPayload,
@@ -149,8 +151,15 @@ export async function enqueueEmail(
         return null;
     }
 
-    // Build email content from template
-    const { subject, bodyText, bodyHtml } = buildEmailContent(type, payload);
+    // Build email content from template. Both TASK_ASSIGNED emails, the
+    // single task and the bulk-Assign digest, are written in the workspace's
+    // default language (owner decisions 2026-11-25), read here once per email:
+    // the row is sent as rendered, so this is the one place the language can
+    // be chosen. Every other email is still English.
+    const t = type === 'TASK_ASSIGNED'
+        ? await workspaceTranslator(await readWorkspaceLocale(db, tenantId), TASK_ASSIGNED_EMAIL_NAMESPACE)
+        : null;
+    const { subject, bodyText, bodyHtml } = buildEmailContent(type, payload, t);
 
     // Compute dedupe key
     const dedupeKey = buildDedupeKey(tenantId, type, toEmail, entityId);
@@ -191,37 +200,32 @@ export async function enqueueEmail(
     return record ? { id: record.id, dedupeKey } : null;
 }
 
+type EmailPayload = EnqueueEmailInput['payload'];
+
 /**
- * Build email content based on notification type.
+ * A bulk Assign's digest rides the TASK_ASSIGNED type (#4278): adding an
+ * `EmailNotificationType` value is a migration, and a container whose Prisma
+ * client predates the value fails reading the row. The payload's shape says
+ * which body to build.
+ */
+function isSingleTaskAssigned(type: EmailNotificationType, payload: EmailPayload): payload is TaskAssignedPayload {
+    return type === 'TASK_ASSIGNED' && !('tasks' in payload);
+}
+
+/**
+ * Build email content based on notification type. `t` is the workspace-language
+ * translator for both TASK_ASSIGNED emails, and `null` for every other email.
  */
 function buildEmailContent(
     type: EmailNotificationType,
-    payload:
-        | TaskAssignedPayload
-        | TaskAssignedDigestPayload
-        | EvidenceExpiringPayload
-        | PolicyApprovalRequestedPayload
-        | PolicyDecisionPayload
-        | VendorAssessmentInvitationPayload
-        | VendorAssessmentReminderPayload
-        | VendorAssessmentSubmittedPayload
-        | VendorAssessmentReviewedPayload
-        | AccessReviewReminderPayload
-        | AccessReviewOverdueEscalationPayload
-        | ExceptionExpiringPayload
-        | IdentityLeaverDisabledPayload
-        | IdentityLeaverUnconfirmedPayload
-        | IdentityLeaverNeedsActionPayload,
+    payload: EmailPayload,
+    t: WorkspaceTranslator | null,
 ): { subject: string; bodyText: string; bodyHtml: string } {
     switch (type) {
         case 'TASK_ASSIGNED':
-            // A bulk Assign's digest rides the same type (#4278): adding an
-            // `EmailNotificationType` value is a migration, and a container
-            // whose Prisma client predates the value fails reading the row.
-            // The payload's shape says which body to build.
-            return 'tasks' in payload
-                ? buildTaskAssignedDigestEmail(payload as TaskAssignedDigestPayload)
-                : buildTaskAssignedEmail(payload as TaskAssignedPayload);
+            if (!t) throw new Error('TASK_ASSIGNED email built without its workspace translator');
+            if (isSingleTaskAssigned(type, payload)) return buildTaskAssignedEmail(payload, t);
+            return buildTaskAssignedDigestEmail(payload as TaskAssignedDigestPayload, t);
         case 'EVIDENCE_EXPIRING':
             return buildEvidenceExpiringEmail(payload as EvidenceExpiringPayload);
         case 'POLICY_APPROVAL_REQUESTED':

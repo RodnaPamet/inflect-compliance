@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { randomUUID } from 'crypto';
-import { env } from '@/env';
 import { requireAnyPermission } from '@/lib/security/permission-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { badRequest, forbidden } from '@/lib/errors/types';
 import { resolvePublicOrigin } from '@/lib/http/request-origin';
 import { CALENDAR_BASELINE_PERMISSIONS } from '@/app-layer/usecases/compliance-calendar';
 import { buildCalendarAuthorizeUrl } from '@/app-layer/integrations/providers/calendar/token';
+import {
+    CALENDAR_CALLBACK_PATH,
+    prepareCalendarOAuthFlow,
+} from '@/app-layer/integrations/providers/calendar/oauth-flow';
 import { isCalendarProviderId } from '@/app-layer/usecases/user-calendar-connection';
 import { getConsentStates, requiresAdminConsent } from '@/app-layer/usecases/tenant-calendar-consent';
 
@@ -29,6 +31,14 @@ import { getConsentStates, requiresAdminConsent } from '@/app-layer/usecases/ten
  *
  * Google is unaffected: its model is per-user consent, so there is nothing to
  * precheck.
+ *
+ * ═══ PKCE, AND WHERE THE VERIFIER LIVES ═══
+ *
+ * Every flow carries an S256 PKCE challenge. The verifier is sealed, with the
+ * tenant, provider and the starting member's id, into an HttpOnly cookie signed
+ * by the server and sent only to the callback path (`oauth-flow.ts`, the SSO
+ * flow cookie's pattern). The provider sees a random `state` and the challenge;
+ * the verifier is never in a URL and never in this response's body.
  */
 export const POST = withApiErrorHandling(
     requireAnyPermission<{ tenantSlug: string }>(
@@ -54,26 +64,24 @@ export const POST = withApiErrorHandling(
                 entraTenantId = state.externalTenantId ?? undefined;
             }
 
-            const oauthState = randomUUID();
+            // The callback is outside the /t/[tenantSlug] tree and recovers the
+            // tenant, provider, member and verifier from this sealed flow.
+            const flow = prepareCalendarOAuthFlow({
+                tenantSlug: params.tenantSlug,
+                provider,
+                userId: ctx.userId,
+            });
             const origin = resolvePublicOrigin(req);
             const authorizeUrl = buildCalendarAuthorizeUrl({
                 provider,
-                redirectUri: `${origin}/api/integrations/calendar/callback`,
-                state: oauthState,
+                redirectUri: `${origin}${CALENDAR_CALLBACK_PATH}`,
+                state: flow.state,
+                codeChallenge: flow.codeChallenge,
                 entraTenantId,
             });
 
             const res = NextResponse.json({ authorizeUrl });
-            // `<state>.<tenantSlug>.<provider>` — the callback is outside the
-            // /t/[tenantSlug] tree and must recover both. State is a UUID and
-            // the provider ids contain no dots, so splitting is unambiguous.
-            res.cookies.set('cal_oauth_state', `${oauthState}.${params.tenantSlug}.${provider}`, {
-                httpOnly: true,
-                sameSite: 'lax',
-                secure: env.NODE_ENV === 'production',
-                path: '/',
-                maxAge: 600,
-            });
+            flow.bind(res);
             return res;
         },
     ),

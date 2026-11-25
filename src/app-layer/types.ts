@@ -158,6 +158,18 @@ export interface RequestContext {
      * did before the lease existed.
      */
     runLeaseToken?: string;
+    /**
+     * WHERE THE QUEUED SEGMENT THIS EXECUTION BELONGS TO BEGAN in the run's
+     * ledger (#5854, owner decision 2026-11-25), set by
+     * `executeQueuedWorkflowRun` from the segment anchor for an engine whose
+     * recovery is `SESSION` (Managed Agents), and absent on every other
+     * context. A first attempt reads its own `fromSeq` here, so it finds
+     * nothing of its own in the ledger; a retry or a lease takeover reads the
+     * first attempt's, and the engine reconnects to the session that segment
+     * recorded there. It grants nothing: it only says which steps are this
+     * segment's.
+     */
+    runSegmentFromSeq?: number;
 }
 
 /**
