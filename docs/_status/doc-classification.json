@@ -479,6 +479,9 @@
         "docs/rsc-guidelines.md": {
             "class": "authoritative"
         },
+        "docs/runbooks/dsar-erasure.md": {
+            "class": "authoritative"
+        },
         "docs/runbooks/enabling-the-flue-engine.md": {
             "class": "authoritative"
         },

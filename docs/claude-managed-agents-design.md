@@ -128,11 +128,14 @@ puts at Anthropic:
   DELETED that still exists. Nothing has been created in a
   customer's workspace in production yet: the engine runs from Step 5d, and
   `AGENT_MANAGED_AGENTS` is off there (#5797).
-  - **Known limit (#5802).** A DSAR erasure finds the person's tenants from
-    their own audit rows, so a tenant where they held a membership and never
-    acted (added by SCIM, SSO or org provisioning) is not reached, and a KEPT
-    session there stays. The fix belongs with the erasure's operator entry
-    point, which does not exist yet.
+  - **Which tenants a DSAR erasure reaches (#5802).** The erasure reads them
+    from membership history in the audit trail, not only from the person's own
+    rows (`readErasureWorkspaces`, owner decision 2026-11-25), so a member added
+    by SCIM or org provisioning who never acted is reached. Its operator entry
+    point is `scripts/dsar-erase-user.ts`. A tenant joined only through a writer
+    that records no row naming the person (SSO just-in-time provisioning,
+    credentials signup, an org admin creating a tenant) and where the person
+    never acted is still not reached; the command's plan names those writers.
 - **A customer can connect its own Anthropic workspace (Step 5a, #4164),
   behind the opt-in `AGENT_MANAGED_AGENTS` switch.** The `anthropic-workspace`
   provider (`src/app-layer/integrations/providers/anthropic-workspace/`) stores
