@@ -149,6 +149,22 @@ describe('an employee whose role actually changed', () => {
         expect(r.roleChanges).toBe(1);
     });
 
+    // #5950 (owner decision 2026-11-25): the row names the employee by record
+    // id only. It said "HRIS role change for <full name>" in both `details`
+    // and `detailsJson.summary`, which an erasure cannot remove.
+    it('names the employee by record id only: no name or work e-mail in details or detailsJson', async () => {
+        mockDb.employee.findMany.mockImplementation(findManyBy([priorRow('a', 'Sales', 'Engineer')]));
+
+        await run([rosterRow('a', { department: 'Eng', jobTitle: 'Engineer' })]);
+
+        const payload = (logEvent as jest.Mock).mock.calls[0][2];
+        expect(payload.entityType).toBe('Employee');
+        expect(payload.entityId).toBe('id-a');
+        const stored = JSON.stringify({ details: payload.details, detailsJson: payload.detailsJson, metadata: payload.metadata });
+        expect(stored).not.toContain('Person a');
+        expect(stored).not.toContain('a@acme.test');
+    });
+
     it('names both fields when both moved, and neither when only one did', async () => {
         mockDb.employee.findMany.mockImplementation(
             findManyBy([priorRow('a', 'Sales', 'Rep'), priorRow('b', 'Eng', 'Engineer')]),

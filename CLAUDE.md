@@ -599,6 +599,17 @@ matches rows on it, and rows written before #5950 keep their unsalted
 (original + 2 retries) with linear backoff (1 s, 2 s). Kill-switch
 via `AUDIT_STREAM_RETRY_ENABLED=0`.
 
+**An audit row names a person by id only** (#5950, owner decision
+2026-11-25): no e-mail address and no name, in `details` or `detailsJson`.
+The person is `detailsJson.targetUserId`, or the row's `entityId` when that
+is their record; a person with no account yet (an invitee, a vendor
+respondent) is named by the record holding the address. The trail is
+immutable, so an erasure leaves only the id. A reader resolves the id while
+the person exists (`auditPersonRef` in `src/lib/audit/audit-person.ts`, read
+by the Audit log page; the org page resolves an invite's id). The lint rule
+`local/no-person-identity-in-audit-payload` holds every writer, with no
+exemption list. Rows written before #5950 keep what they hold.
+
 **C.5 — Server-side rich-text sanitisation.** Use
 `sanitizeRichTextHtml` / `sanitizePlainText` /
 `sanitizePolicyContent` from `@/lib/security/sanitize` BEFORE
@@ -2169,6 +2180,18 @@ easy to undo:
   run only); a view-key reader gets both as null with `excerptsShown: false`,
   which the sheet calls withheld, never empty. "Every probe resisted" is
   `probeRunState`, one expression with `outcomeCount > 0`.
+- **A month of runs is `PROBE_RUNS` evidence** (step 8c, owner decisions
+  2026-11-25), on ASI01, ASI02, ISO A.8.29 and SOC 2 CC4.1, for a tenant that
+  has ever registered a prober key. It is the harness kind's twin: the same
+  emitter, the same one-way status correction (`harnessStatusCorrection`), the
+  same closed-month re-emission (`reconcileClosedProbePeriods`). APPROVED only
+  when every run in the month concluded, none was stopped, and every prober
+  whose key was live in the month sent one (`probeArtefactCompleteness`); a
+  month with no run is NO PROBE RUN RECEIVED, never clean. What the agents DID
+  never decides the status: an ACTED outcome is a finding, not a gap. The facts
+  (`ProbeRunFact`) carry no endpoint, excerpt, tool or agent name BY SHAPE, and
+  the load `select`s none of them; do not add one, because `Evidence.content`
+  is the widest surface the product has.
 
 **The stale-estate alert** (`usecases/agent-harness-estate-staleness.ts`, a
 daily job since #3741) judges each estate with `computeEstateHealth` and nothing

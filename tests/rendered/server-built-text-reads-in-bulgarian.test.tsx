@@ -137,6 +137,7 @@ describe('the audit log, in Bulgarian', () => {
         entity,
         details: null,
         userName: 'Ivo',
+        person: null,
     });
 
     it('labels the long tail of codes and entity types, and shows an unknown code as words', () => {
@@ -156,6 +157,7 @@ describe('the audit log, in Bulgarian', () => {
                     action: 'Действие',
                     entity: 'Обект',
                     details: 'Подробности',
+                    person: 'Лице',
                     noEntries: '—',
                     older: '›',
                     newest: '‹',

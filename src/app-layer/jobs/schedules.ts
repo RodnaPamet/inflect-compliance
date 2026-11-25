@@ -266,7 +266,7 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         // which finished first — a difference nobody could explain from the
         // artefact. Declaration order in this array is NOT execution order; only
         // the cron pattern is.
-        description: 'Emit the month\'s agent-action-receipt, AI-decision-record and agent-harness-scan evidence onto the agentic controls that discharge those obligations (a harness month that is incomplete or empty is emitted as NEEDS_REVIEW, never as complete), and withdraw artefacts whose control has been removed. Idempotent on (tenant, control, kind, period): a daily tick inside one month rewrites the same rows rather than adding new ones.',
+        description: 'Emit the month\'s agent-action-receipt, AI-decision-record, agent-harness-scan and agent-probe-run evidence onto the agentic controls that discharge those obligations (a harness or probe month that is incomplete or empty is emitted as NEEDS_REVIEW, never as complete), and withdraw artefacts whose control has been removed. Idempotent on (tenant, control, kind, period): a daily tick inside one month rewrites the same rows rather than adding new ones.',
         defaultPayload: {},
     },
     {

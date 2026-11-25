@@ -1115,7 +1115,11 @@ export async function closeAccessReview(
                     category: 'access',
                     entityName: 'TenantMembership',
                     operation: 'execute',
-                    summary: `Closeout executed ${d.decision} on subject ${d.subjectUser.email} → ${outcome}`,
+                    // The subject by id only (#5950, owner decision 2026-11-25):
+                    // `detailsJson` streams to the tenant's SIEM and outlives an
+                    // erasure, so it names nobody by address or name. A reader
+                    // resolves `targetUserId` while the person exists.
+                    summary: `Closeout executed ${d.decision} → ${outcome}`,
                     targetUserId: d.subjectUserId,
                     after: {
                         accessReviewId,

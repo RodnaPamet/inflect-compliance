@@ -84,6 +84,11 @@ const SCIM_ROLE_MAP: Record<string, ScimAssignableRole> = Object.fromEntries(
 /**
  * Emit a structured SCIM audit event to the immutable audit log.
  * Uses actorType='SCIM' since SCIM operations have no user session.
+ *
+ * `entityId` is the person's user id, and it is the only thing that names
+ * them: `details` carries no e-mail address, SCIM `userName` or name (#5950,
+ * owner decision 2026-11-25), because the row is streamed to the tenant's
+ * SIEM and outlives an erasure.
  */
 async function emitScimAudit(
     tenantId: string,
@@ -377,7 +382,7 @@ export async function scimCreateUser(
                 });
 
                 await emitScimAudit(ctx.tenantId, 'SCIM_USER_REACTIVATED', existingUser.id, {
-                    email, previousStatus: existingMembership.status, role: existingMembership.role,
+                    previousStatus: existingMembership.status, role: existingMembership.role,
                     tokenLabel: ctx.tokenLabel,
                 });
 
@@ -405,7 +410,7 @@ export async function scimCreateUser(
         });
 
         await emitScimAudit(ctx.tenantId, 'SCIM_USER_CREATED', existingUser.id, {
-            email, role, existingUser: true, tokenLabel: ctx.tokenLabel,
+            role, existingUser: true, tokenLabel: ctx.tokenLabel,
         });
 
         return {
@@ -433,7 +438,7 @@ export async function scimCreateUser(
     });
 
     await emitScimAudit(ctx.tenantId, 'SCIM_USER_CREATED', result.user.id, {
-        email, role, displayName, existingUser: false, tokenLabel: ctx.tokenLabel,
+        role, existingUser: false, tokenLabel: ctx.tokenLabel,
     });
 
     logger.info('SCIM created new user', { component: 'scim', userId: result.user.id, role });
@@ -496,12 +501,12 @@ export async function scimPatchUser(
                 changes.push(`active=${statusUpdate}`);
             } else if (path === 'displayname' || path === 'name.formatted') {
                 userUpdates.name = String(op.value);
-                changes.push(`displayName=${op.value}`);
+                changes.push('displayName');
             } else if (path === 'name.givenname') {
                 const currentParts = (membership.user.name || '').split(' ');
                 currentParts[0] = String(op.value);
                 userUpdates.name = currentParts.join(' ');
-                changes.push(`givenName=${op.value}`);
+                changes.push('givenName');
             } else if (path === 'name.familyname') {
                 const currentParts = (membership.user.name || '').split(' ');
                 if (currentParts.length > 1) {
@@ -510,7 +515,7 @@ export async function scimPatchUser(
                     currentParts.push(String(op.value));
                 }
                 userUpdates.name = currentParts.join(' ');
-                changes.push(`familyName=${op.value}`);
+                changes.push('familyName');
             } else if (path === 'roles') {
                 // Role mapping from SCIM — safe allow-list
                 const roles = op.value as Array<{ value: string }>;
@@ -538,12 +543,12 @@ export async function scimPatchUser(
                     }
                     if ('displayName' in val) {
                         userUpdates.name = String(val.displayName);
-                        changes.push(`displayName=${val.displayName}`);
+                        changes.push('displayName');
                     }
                     if ('name' in val && typeof val.name === 'object') {
                         const n = val.name as Record<string, string>;
                         userUpdates.name = [n.givenName, n.familyName].filter(Boolean).join(' ') || n.formatted;
-                        changes.push(`name=${userUpdates.name}`);
+                        changes.push('name');
                     }
                 }
             }
@@ -608,14 +613,15 @@ export async function scimPatchUser(
         : 'SCIM_USER_UPDATED';
 
     await emitScimAudit(ctx.tenantId, auditAction, userId, {
-        email: membership.user.email, changes,
+        changes,
         previousStatus: membership.status,
         newStatus: statusUpdate || membership.status,
         tokenLabel: ctx.tokenLabel,
     });
 
-    // Attribute NAMES only (#5318): `changes` carries the values, a person's
-    // display, given and family name among them, and stays in the audit row.
+    // Attribute NAMES only (#5318). The audit row holds names only too for the
+    // person's display, given and family name (#5950): those entries carry no
+    // value, and the row names the person by `entityId` (their user id).
     logger.info('SCIM patched user', {
         component: 'scim', userId, changedAttributes: changes.map((c) => c.split('=')[0]),
     });
@@ -769,7 +775,7 @@ export async function scimPutUser(
 
     const auditAction = newStatus === 'DEACTIVATED' ? 'SCIM_USER_DEACTIVATED' : 'SCIM_USER_UPDATED';
     await emitScimAudit(ctx.tenantId, auditAction, userId, {
-        displayName, active: input.active, previousStatus: membership.status,
+        active: input.active, previousStatus: membership.status,
         tokenLabel: ctx.tokenLabel,
     });
 
@@ -796,7 +802,6 @@ export async function scimDeleteUser(ctx: ScimContext, userId: string): Promise<
     await noticeAiAdminDeprovision(ctx.tenantId, membership, deactivatedAt);
 
     await emitScimAudit(ctx.tenantId, 'SCIM_USER_DEACTIVATED', userId, {
-        email: membership.user.email,
         previousStatus: membership.status,
         method: 'DELETE',
         tokenLabel: ctx.tokenLabel,

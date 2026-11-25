@@ -545,8 +545,12 @@ export async function inviteAuditor(ctx: RequestContext, email: string, name?: s
             });
         await logEvent(tdb, ctx, {
             action: reactivated ? 'AUDITOR_REACTIVATED' : 'AUDITOR_INVITED',
-            entityType: 'AuditorAccount', entityId: auditor.id, details: JSON.stringify({ email, reactivated }),
-            detailsJson: { category: 'access', operation: 'permission_changed', targetUserId: auditor.id, detail: reactivated ? `Auditor added back to the list: ${email}` : `Auditor added to the list: ${email}` },
+            // The auditor by account id only (#5950, owner decision
+            // 2026-11-25): no e-mail address or name in the row. `entityId` and
+            // `targetUserId` are the AuditorAccount, which a reader resolves
+            // while it exists.
+            entityType: 'AuditorAccount', entityId: auditor.id, details: JSON.stringify({ reactivated }),
+            detailsJson: { category: 'access', operation: 'permission_changed', targetUserId: auditor.id, detail: reactivated ? 'Auditor added back to the list' : 'Auditor added to the list' },
         });
         return { ...auditor, reactivated, alreadyListed: false };
     });
@@ -562,12 +566,12 @@ export async function inviteAuditor(ctx: RequestContext, email: string, name?: s
 export async function revokeAuditorAccount(ctx: RequestContext, auditorId: string) {
     assertCanManageAuditors(ctx);
     return runInTenantContext(ctx, async (tdb) => {
-        const auditor = await tdb.auditorAccount.findFirst({ where: { id: auditorId, tenantId: ctx.tenantId }, select: { id: true, email: true, status: true } });
+        const auditor = await tdb.auditorAccount.findFirst({ where: { id: auditorId, tenantId: ctx.tenantId }, select: { id: true, status: true } });
         if (!auditor) throw notFound('Auditor not found', { reason: 'AUDITOR_NOT_FOUND' satisfies AuditorRefusal });
         if (auditor.status === 'REVOKED') throw badRequest('Auditor is already revoked', { reason: 'AUDITOR_ALREADY_REVOKED' satisfies AuditorRefusal });
         await tdb.auditorAccount.update({ where: { id: auditorId }, data: { status: 'REVOKED' } });
         await tdb.auditorPackAccess.deleteMany({ where: { auditorId, tenantId: ctx.tenantId } });
-        await logEvent(tdb, ctx, { action: 'AUDITOR_ACCOUNT_REVOKED', entityType: 'AuditorAccount', entityId: auditorId, details: 'Auditor account revoked', detailsJson: { category: 'access', operation: 'permission_changed', targetUserId: auditorId, detail: `Auditor account revoked: ${auditor.email}` } });
+        await logEvent(tdb, ctx, { action: 'AUDITOR_ACCOUNT_REVOKED', entityType: 'AuditorAccount', entityId: auditorId, details: 'Auditor account revoked', detailsJson: { category: 'access', operation: 'permission_changed', targetUserId: auditorId, detail: 'Auditor account revoked' } });
         return { revoked: true };
     });
 }
@@ -604,7 +608,7 @@ export async function grantAuditorAccess(ctx: RequestContext, auditorId: string,
             throw err;
         }
 
-        await logEvent(tdb, ctx, { action: 'AUDITOR_GRANTED', entityType: 'AuditorPackAccess', entityId: `${auditorId}_${packId}`, details: JSON.stringify({ email: auditor.email }), detailsJson: { category: 'access', operation: 'permission_changed', targetUserId: auditorId, detail: `Auditor granted access to pack ${packId}` } });
+        await logEvent(tdb, ctx, { action: 'AUDITOR_GRANTED', entityType: 'AuditorPackAccess', entityId: `${auditorId}_${packId}`, details: `Auditor granted access to pack ${packId}`, detailsJson: { category: 'access', operation: 'permission_changed', targetUserId: auditorId, detail: `Auditor granted access to pack ${packId}` } });
         return { granted: true };
     });
 }

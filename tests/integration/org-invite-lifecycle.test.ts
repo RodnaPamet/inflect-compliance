@@ -22,6 +22,8 @@ import {
 import type { OrgContext } from '@/app-layer/types';
 import { hashForLookup } from '@/lib/security/encryption';
 import { deleteOrgAuditRowsForOrganizations } from '../helpers/audit-cleanup';
+import { listOrgAudit } from '@/app-layer/usecases/org-audit';
+import { __resetAuditStreamForTests } from '@/app-layer/events/audit-stream';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -101,6 +103,7 @@ describeFn('Epic D — org invite lifecycle (integration)', () => {
             /* tolerate */
         }
         await prisma.$disconnect();
+        __resetAuditStreamForTests();
     });
 
     // ── createOrgInviteToken ──────────────────────────────────────
@@ -126,6 +129,14 @@ describeFn('Epic D — org invite lifecycle (integration)', () => {
         });
         expect(audit).not.toBeNull();
         expect(audit?.actorUserId).toBe(inviterId);
+        // #5950 (owner decision 2026-11-25): the row names the INVITE, never
+        // the invitee's address; the org audit read resolves the invite.
+        expect((audit?.detailsJson as { inviteId?: string }).inviteId).toBe(result.invite.id);
+        expect(JSON.stringify(audit?.detailsJson)).not.toContain(inviteeEmail);
+
+        const page = await listOrgAudit(ctx, { action: 'ORG_INVITE_CREATED' });
+        const row = page.rows.find((r) => (r.detailsJson as { inviteId?: string }).inviteId === result.invite.id);
+        expect(row?.invitee).toEqual({ email: inviteeEmail });
     });
 
     // ── previewOrgInviteByToken anti-enumeration ──────────────────
@@ -228,5 +239,7 @@ describeFn('Epic D — org invite lifecycle (integration)', () => {
             },
         });
         expect(audit).not.toBeNull();
+        // #5950: by the invite id, never the address.
+        expect(JSON.stringify(audit?.detailsJson)).not.toContain(revokeEmail);
     });
 });

@@ -24,6 +24,12 @@ export interface AuditLogRow {
     entity: string;
     details: string | null;
     userName: string | null;
+    /**
+     * Who the row is about: the name or address the read resolved from the id
+     * the row carries, the bare id once that person no longer exists, or null
+     * when the row names nobody (#5950).
+     */
+    person: string | null;
 }
 
 interface AuditLogClientProps {
@@ -38,6 +44,7 @@ interface AuditLogClientProps {
         action: string;
         entity: string;
         details: string;
+        person: string;
         noEntries: string;
         older: string;
         newest: string;
@@ -116,6 +123,12 @@ export function AuditLogClient({ auditLog, olderHref, newestHref, translations: 
             header: t.entity,
             accessorFn: (e) => entityLabel(e.entity),
             cell: ({ getValue }) => <span>{getValue()}</span>,
+        },
+        {
+            id: 'person',
+            header: t.person,
+            accessorFn: (e) => e.person || '—',
+            cell: ({ getValue }) => <span className="max-w-xs truncate">{getValue()}</span>,
         },
         {
             accessorKey: 'details',

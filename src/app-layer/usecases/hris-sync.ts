@@ -693,7 +693,9 @@ export async function runHrisSync(input: {
                 // account to disable. An audit row failing to write must not be
                 // able to stop offboarding.
                 for (const m of moves) { // guardrail-allow: n+1 — bounded by SYNC_UPSERT_CHUNK_SIZE
-                    const summary = `HRIS role change for ${m.prior.fullName}`;
+                    // The employee by record id (`entityId`) only (#5950,
+                    // owner decision 2026-11-25): no name in the row.
+                    const summary = 'HRIS role change';
                     try {
                         await logEvent(db, ctx, {
                             action: 'UPDATE',
