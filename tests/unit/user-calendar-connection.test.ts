@@ -1,23 +1,29 @@
 /**
- * The calendar-connection usecase: what it encrypts, and what it refuses.
+ * The calendar-connection usecase: what it hands the encryption layer, what it
+ * audits, and what it refuses.
  *
- * The integration suite proves the DATABASE isolates these rows. This proves
- * the layer above it — that the token is never written in the clear, that a
- * consent without a refresh token is refused at the moment the user is present
- * to fix it, and that revoking destroys the credential while keeping the row.
+ * Encryption itself is the Epic B extension's (the column is in
+ * `ENCRYPTED_FIELDS`, under the tenant's DEK). This suite proves the usecase's
+ * half of that contract against the REAL manifest: it writes one JSON blob to
+ * exactly the manifest column, never seals it a second time with the global key,
+ * and refuses to parse a value the extension could not decrypt. The integration
+ * suite `tests/integration/user-calendar-token-tenant-key.test.ts` proves the
+ * ciphertext on disk is `v2:` and that a `v1:` row still reads.
  *
  * The revoke-keeps-the-row property is the one that reads as a bug and is not.
  * The row is the ONLY local record that events were ever pushed under this
  * connection; deleting it strands whatever is already in the user's personal
  * calendar with nothing left to name it.
  */
-const encryptField = jest.fn((v: string) => `enc(${v})`);
-const decryptField = jest.fn((v: string) => v.replace(/^enc\(([\s\S]*)\)$/, '$1'));
+const encryptField = jest.fn((v: string) => `v1:enc(${v})`);
 
 jest.mock('@/lib/security/encryption', () => ({
+    ...jest.requireActual('@/lib/security/encryption'),
     encryptField: (v: string) => encryptField(v),
-    decryptField: (v: string) => decryptField(v),
 }));
+
+const logEvent = jest.fn(async () => undefined);
+jest.mock('@/app-layer/events/audit', () => ({ logEvent: (...a: unknown[]) => logEvent(...(a as [])) }));
 
 const db = {
     userCalendarConnection: {
@@ -37,10 +43,12 @@ import {
     updateCalendarToken,
     revokeCalendarConnection,
     listCalendarConnections,
+    recordCalendarConnectFailure,
     isCalendarProviderId,
     CALENDAR_PROVIDERS,
 } from '@/app-layer/usecases/user-calendar-connection';
 import { makeRequestContext } from '../helpers/make-context';
+import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
 
 const ctx = makeRequestContext('EDITOR', { tenantId: 't1', userId: 'u1' });
 const TOKEN = { accessToken: 'at', refreshToken: 'rt', expiresAt: 1_800_000_000 };
@@ -62,39 +70,95 @@ beforeEach(() => {
     db.userCalendarConnection.updateMany.mockResolvedValue({ count: 1 });
 });
 
-describe('the token is never stored in the clear', () => {
-    it('encrypts the whole payload as ONE blob', async () => {
+describe('the token is sealed by the manifest, under the tenant key', () => {
+    it('the column is in the Epic B manifest — the thing that puts it in both rotation sweeps', () => {
+        // Both `jobs/key-rotation.ts` and `jobs/tenant-dek-rotation.ts` iterate
+        // ENCRYPTED_FIELDS. Off the manifest, the column is in neither sweep.
+        expect(ENCRYPTED_FIELDS.UserCalendarConnection).toEqual(['tokenEncrypted']);
+    });
+
+    it('writes the whole payload as ONE JSON blob to that column, and seals nothing itself', async () => {
         // One blob, not three columns: a partial write cannot leave a refresh
-        // token stranded without the expiry that says when to use it — the
-        // state that looks connected and silently never refreshes.
+        // token stranded without the expiry that says when to use it. And no
+        // explicit `encryptField`: that is the GLOBAL key (`v1:`), which the
+        // extension would then skip as already encrypted — the token would
+        // never reach the tenant key.
         await saveCalendarConnection(ctx, {
             provider: 'google-calendar',
             token: TOKEN,
             scopesGranted: ['calendar.events'],
         });
-        expect(encryptField).toHaveBeenCalledWith(JSON.stringify(TOKEN));
         const call = db.userCalendarConnection.upsert.mock.calls[0][0];
-        expect(call.create.tokenEncrypted).toBe(`enc(${JSON.stringify(TOKEN)})`);
-        // The plaintext must appear nowhere in what is written.
-        expect(JSON.stringify(call)).not.toContain('"rt"');
+        expect(JSON.parse(call.create.tokenEncrypted)).toEqual(TOKEN);
+        expect(JSON.parse(call.update.tokenEncrypted)).toEqual(TOKEN);
+        expect(encryptField).not.toHaveBeenCalled();
     });
 
-    it('round-trips through decryptField on read', async () => {
+    it('a refreshed token is written the same way — the write that moves an old v1 row onto the tenant key', async () => {
+        await updateCalendarToken(ctx, 'google-calendar', TOKEN);
+        expect(JSON.parse(db.userCalendarConnection.updateMany.mock.calls[0][0].data.tokenEncrypted)).toEqual(TOKEN);
+        expect(encryptField).not.toHaveBeenCalled();
+    });
+
+    it('reads back the payload the extension decrypted', async () => {
         db.userCalendarConnection.findUnique.mockResolvedValue({
             id: 'conn-1',
-            tokenEncrypted: `enc(${JSON.stringify(TOKEN)})`,
+            tokenEncrypted: JSON.stringify(TOKEN),
             revokedAt: null,
         });
         const got = await readCalendarToken(ctx, 'google-calendar');
         expect(got?.token).toEqual(TOKEN);
-        expect(decryptField).toHaveBeenCalled();
+    });
+
+    it.each(['v1:', 'v2:'])('REFUSES a %s value the extension could not decrypt, without quoting it', async (prefix) => {
+        // A read outside a tenant context (a bypass source) gets the ciphertext
+        // back. Parsing it would throw an error quoting it; using it would be
+        // worse.
+        db.userCalendarConnection.findUnique.mockResolvedValue({
+            id: 'conn-1',
+            tokenEncrypted: `${prefix}c2VjcmV0LWNpcGhlcnRleHQ=`,
+            revokedAt: null,
+        });
+        const err = await readCalendarToken(ctx, 'google-calendar').catch((e: Error) => e);
+        expect(err).toBeInstanceOf(Error);
+        expect((err as Error).message).toMatch(/could not be decrypted/);
+        expect((err as Error).message).not.toContain('c2VjcmV0');
     });
 
     it('the summary the settings surface gets carries no token field at all', async () => {
         db.userCalendarConnection.findMany.mockResolvedValue([row()]);
         const [summary] = await listCalendarConnections(ctx);
         expect(summary).not.toHaveProperty('tokenEncrypted');
-        expect(JSON.stringify(summary)).not.toContain('enc(');
+    });
+});
+
+describe('connects are audited, without the credential', () => {
+    it('a saved connection writes CALENDAR_CONNECTED naming the provider, never the token', async () => {
+        await saveCalendarConnection(ctx, { provider: 'outlook-calendar', token: TOKEN, scopesGranted: ['a', 'b'] });
+        expect(logEvent).toHaveBeenCalledTimes(1);
+        const payload = (logEvent.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+        expect(payload.action).toBe('CALENDAR_CONNECTED');
+        expect(payload.metadata).toEqual({ provider: 'outlook-calendar', scopeCount: 2 });
+        expect(JSON.stringify(payload)).not.toContain('"rt"');
+        expect(JSON.stringify(payload)).not.toContain('"at"');
+    });
+
+    it('a failed connect writes CALENDAR_CONNECT_FAILED with the outcome, and drops a provider code that is not OAuth-shaped', async () => {
+        await recordCalendarConnectFailure(ctx, {
+            provider: 'google-calendar',
+            outcome: 'provider_error',
+            providerErrorCode: 'Bad thing for jane@example.com',
+        });
+        const payload = (logEvent.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+        expect(payload.action).toBe('CALENDAR_CONNECT_FAILED');
+        expect(payload.metadata).toEqual({ provider: 'google-calendar', outcome: 'provider_error', providerErrorCode: undefined });
+        expect(JSON.stringify(payload)).not.toContain('jane@example.com');
+    });
+
+    it('keeps an OAuth error code', async () => {
+        await recordCalendarConnectFailure(ctx, { provider: 'google-calendar', outcome: 'connect_declined', providerErrorCode: 'access_denied' });
+        const payload = (logEvent.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+        expect(payload.metadata).toMatchObject({ providerErrorCode: 'access_denied' });
     });
 });
 
@@ -111,7 +175,7 @@ describe('consent without a refresh token is refused', () => {
             }),
         ).rejects.toThrow(/refresh token/i);
         expect(db.userCalendarConnection.upsert).not.toHaveBeenCalled();
-        expect(encryptField).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalled();
     });
 
     it('an unknown provider is refused before any write', async () => {

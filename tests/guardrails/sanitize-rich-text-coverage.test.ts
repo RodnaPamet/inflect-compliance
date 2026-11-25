@@ -266,6 +266,10 @@ const NON_RICH_TEXT_MODELS: Readonly<Record<string, string>> = {
         'webhookSecretEncrypted is an HMAC signing key. It is opaque bytes ' +
         'used only as a crypto key — never rendered, never user rich text. ' +
         'Sanitising it would corrupt the signature.',
+    UserCalendarConnection:
+        'tokenEncrypted is the OAuth payload a provider issued (access token, ' +
+        'refresh token, expiry) as machine-built JSON. Never typed by a person, ' +
+        'never rendered; sanitising it would corrupt the credential (#5937).',
     WorkflowRun:
         'contextJson/summary are engine-internal accumulated state — a JSON ' +
         'snapshot of read-tool outputs (tenant data already sanitised at its own ' +

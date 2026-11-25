@@ -495,7 +495,11 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
       mechanism: /processIncomingWebhook|auth_failed/,
       note: 'Provider signature verified in webhook-processor against the connection\'s stored webhook secret before any processing; the route delegates and maps auth_failed to 401.' },
     { handler: 'api/integrations/calendar/callback/route.ts#GET', klass: 'SIGNED_WEBHOOK',
-      note: 'OAuth redirect. The cal_oauth_state cookie nonce is the CSRF defence; the cookie is deleted on use.' },
+      // The flow cookie is HMAC-signed by the server and carries the state, the
+      // member who started it and the PKCE verifier (#5937). The callback then
+      // resolves the session's tenant context and refuses anybody else.
+      mechanism: /readCalendarOAuthFlow/,
+      note: 'OAuth redirect. The sealed, signed calendar flow cookie (state + starter + PKCE verifier) is the CSRF defence; spent on every outcome.' },
     { handler: 'api/integrations/calendar/admin-callback/route.ts#GET', klass: 'SIGNED_WEBHOOK',
       note: 'Admin-consent OAuth redirect. cal_admin_state nonce, single-use — it grants tenant-wide access, so a lingering cookie would be replayable.' },
 
