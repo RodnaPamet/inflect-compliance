@@ -281,6 +281,16 @@ const NON_RICH_TEXT_MODELS: Readonly<Record<string, string>> = {
         '`mintA2aSigningSeed` and never supplied by a user. Key material, not ' +
         'text: it is never rendered, returned or logged, and sanitising it would ' +
         'only risk corrupting the key.',
+    ProbeRunTarget:
+        'endpoint is the exact URL a signed scope named and the contract verified ' +
+        '(https, canonical spelling, no query, no credentials). It is an identifier, ' +
+        'not text a person wrote: stored as signed so its keyed digest stays the ' +
+        'finding reference, and shown only as its origin.',
+    ProbeRunOutcome:
+        'excerpt is the EXACT text a probed agent returned, inside the signed report ' +
+        '(step 8a). Sanitising it would change the bytes the report signed; the ' +
+        'contract already refuses a secret shape in it, it never reaches a finding, ' +
+        'an audit row or evidence, and its one reader renders it as React text.',
     PeerAgentMessage:
         'body is the EXACT signed bytes of an A2A task or result (#3679), kept so ' +
         'the receipt\'s digest re-verifies. Sanitising it would change bytes and ' +

@@ -835,7 +835,7 @@ flags — is re-checked at runtime by `permissionsExceeding`.
 agent key in `AGENT_ADMIN_KEYS` (`src/lib/permissions.ts` — register, register
 view, tool exposure, policy card, kill switch, external tools, harness ingest,
 third-party application scan ingest (`integrations_ingest`), agent-surface rules
-scan ingest (`agent_rules_ingest`), agent ownership,
+scan ingest (`agent_rules_ingest`), probe-run ingest (`agent_probes_ingest`), agent ownership,
 skill review, skill authoring) on top of READER's set, and
 NONE of the tenant-wide admin keys (no `view`, `manage`, members, SSO, SCIM,
 lifecycle, owner management or DSAR). It sits on READER's rung of the coarse
@@ -997,22 +997,23 @@ new tenant-membership creation path).
   role's base. Same NOT VALID shape; `deleteCustomRole` moves a legacy row's
   base to READER in the soft-delete write, or the deletion would fail it.
 - **Only an ADMIN membership carries a custom role built on ADMIN, or one
-  granting one of twelve admin keys** (owner decisions, 2026-10-30). The edge
+  granting one of thirteen admin keys** (owner decisions, 2026-10-30). The edge
   admits `/api/t/:slug/admin/**` by the membership's BUILT-IN role, and an
-  ADMIN base sets the coarse tier (`effectiveRole`) everywhere else. The twelve are
+  ADMIN base sets the coarse tier (`effectiveRole`) everywhere else. The thirteen are
   `ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS` in `src/lib/roles.ts`, in two parts.
   `ADMIN_API_ONLY_KEYS` (`sso` and the tool-exposure, policy-card, ownership and
   two skill keys) are consumed only behind the admin API, so on an EDITOR,
   READER or AUDITOR membership they granted nothing but buttons the edge
   refused. `SIDE_DOOR_ADMIN_KEYS` (`scim`, `compliance_dsar_manage`,
   `agent_harness_ingest`, `agent_external_tools`, `integrations_ingest`,
-  the third-party application scan's twin of the harness key, and
-  `agent_rules_ingest`, the agent-surface rules scan's) are NOT dead elsewhere: an
+  the third-party application scan's twin of the harness key,
+  `agent_rules_ingest`, the agent-surface rules scan's, and
+  `agent_probes_ingest`, a prober's) are NOT dead elsewhere: an
   agent-bound API key acting for the membership reaches their admin routes past
   the edge, and a run the membership starts or a key at `/api/mcp` reaches
   `get_harness_register` and every external tool call. They are refused BY
   DECISION, because that path is a side door around the edge's role gate — so
-  for these six the rule DOES take something away. The other nine admin keys
+  for these seven the rule DOES take something away. The other nine admin keys
   are left alone. ONE predicate, `customRoleCarriageRefusal(after, before)`,
   refuses only what a change ADDS (a save that narrows, a clear, a move among
   EDITOR/READER/AUDITOR all pass) with a 409 and
@@ -1030,6 +1031,7 @@ new tenant-membership creation path).
   `false`, base unchanged (`integrations_ingest`, added later, by
   `20261114120100_integrations_ingest_off_for_non_admin_custom_roles`, and
   `agent_rules_ingest` by `20261122120100_agent_rules_ingest_off_for_non_admin_custom_roles`,
+  and `agent_probes_ingest` by `20261125120100_agent_probes_ingest_off_for_non_admin_custom_roles`,
   the same scope: on an ADMIN base a new key would otherwise read ADMIN's `true`); a role with any ADMIN carrier, a role nobody carries
   and a legacy OWNER- or AI_ADMIN-based row (the NOT VALID #3734 CHECK refuses
   its update) were left alone. It is orthogonal to the Admin-base rule (#4536,
@@ -1040,7 +1042,7 @@ new tenant-membership creation path).
   `PERMISSION_NEEDS_ADMIN_BASE`) is asked first: it reads only the request.
   `tests/guardrails/admin-membership-only-keys-are-dead-elsewhere.test.ts`
   fails when one of the six gains a consumer outside the admin API, and when
-  one of the six side-door keys stops having one.
+  one of the seven side-door keys stops having one.
 - **An admin page offers a write only where the server takes it** (#4467,
   #4466, generalised from #4471's agent register). Three gates, each asked as
   the server asks it: the edge (#4587's `membershipOpensAdminConsole` over
@@ -2109,6 +2111,44 @@ single-write-seam guard holds them); its results are the Agent surface tab on
   table and identifiers alone: the report carries no text of a definition, a
   skill or a script. A new contract code needs a title in `CODE_TITLE`, or the
   usecase does not compile.
+
+**The probe-run ingest** (`usecases/probe-runs.ts`, step 8a of scanent's
+active flavour) is the ingest of a PROBER's signed report, `scanent-probes/1`:
+what a run of fixed attacker probes (`scanent-probe`) made agents in an
+authorised engagement do. It is the only writer of `ProbeRun`, `ProbeRunTarget`
+and `ProbeRunOutcome`; `usecases/agent-prober-keys.ts` and
+`usecases/probe-approver-keys.ts` are the only writers of the two key registers
+(the single-write-seam guard holds all five). Owner decisions of 2026-11-25, each
+easy to undo:
+
+- **Two registers, never the scanner keys.** A prober key (`AgentProberKey`,
+  `admin.agent_registry`) is bound to a registered agent, the prober, and the
+  report names no agent: the prober IS the key's agent. Retiring it revokes the
+  key, and the shared `agent_retired_refuses_authority()` trigger refuses a key
+  for a retired agent. An approver key (`ProbeApproverKey`) signs the
+  engagement SCOPE; it is registered by an OWNER in person
+  (`admin.tenant_lifecycle`, no key, agent or job), and a report whose
+  `scopeSignerFingerprint` is not a LIVE approver key at ingest is refused
+  (`APPROVER_NOT_REGISTERED`), whenever its run began. A key live in one
+  register is refused in the other, by the usecases and by a trigger under a
+  per-tenant advisory lock: the party that runs probes never authorises them.
+- **Its own key, `admin.agent_probes_ingest`** (scope `admin:agent_probes_ingest`),
+  held and classified exactly as `agent_rules_ingest`, side-door list included.
+  It is NOT one of "Connect a scanner"'s scopes: a prober is a separate tool.
+- **The excerpt and the endpoint are encrypted, and go nowhere else.** An
+  outcome's `excerpt` (what the agent said, at most 280 characters) and a
+  target's `endpoint` are in the Epic B manifest, never in a finding, an audit
+  row, the run list or evidence. A finding names the probe, its class, the
+  target's ORIGIN and the tool; the reference is
+  `probe:<probeId>@<endpointDigest>[#<tool>]@<proberAgentId>`, the digest
+  `keyedChangeDigest('probe-target', endpoint)` under the lookup-hash key, which
+  a KEK rotation does not move.
+- **A finding closes only on the same prober's RESISTED.** ACTED or DISCLOSED
+  opens or reopens one (HIGH for ACTED and a credential's shape, MEDIUM for
+  planted context; titles keyed on the contract's raising reasons, so a new one
+  does not compile without a title). INCONCLUSIVE (no reply, a reply cut short,
+  no planted context given) and an absent outcome close nothing: an agent that
+  did not answer has not been shown to resist.
 
 **The stale-estate alert** (`usecases/agent-harness-estate-staleness.ts`, a
 daily job since #3741) judges each estate with `computeEstateHealth` and nothing

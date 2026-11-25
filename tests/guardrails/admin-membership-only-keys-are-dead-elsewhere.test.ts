@@ -14,13 +14,13 @@
  *     taking something away without anybody deciding it should — so rules 1 to
  *     4 below fail first, and the key either moves to the second part by a
  *     decision or the consumer moves.
- *   - `SIDE_DOOR_ADMIN_KEYS`, the six refused BY DECISION (owner decision,
+ *   - `SIDE_DOOR_ADMIN_KEYS`, the seven refused BY DECISION (owner decision,
  *     2026-10-30): `scim`, `compliance_dsar_manage`, `agent_harness_ingest`,
  *     `agent_external_tools` and, beside the harness key for its reason,
  *     `integrations_ingest` (an agent-bound API key with
  *     `admin:integrations_ingest` posts a third-party application scan past the
- *     edge) and `agent_rules_ingest` (the same, for an agent-surface rules
- *     scan). They are NOT dead elsewhere, and rules 1 to 4 do
+ *     edge), `agent_rules_ingest` (the same, for an agent-surface rules
+ *     scan) and `agent_probes_ingest` (the same, for a probe run). They are NOT dead elsewhere, and rules 1 to 4 do
  *     not ask about them. Rule 5 holds the opposite claim — that each is still
  *     reached outside the admin API's role gate — so the docblock saying the
  *     rule takes them away stays true, and a key that has gone dead is noticed
@@ -256,12 +256,12 @@ describe('4. no bearer token carries a listed agent key, and nothing reads admin
 });
 
 /**
- * The six refused by decision are refused BECAUSE they are live outside the
+ * The seven refused by decision are refused BECAUSE they are live outside the
  * admin API's role gate. If one stops being reached that way, the docblock in
  * `src/lib/roles.ts` that says the rule takes it away is wrong, and the key
  * belongs in the first part, where rules 1 to 4 would hold it.
  */
-describe('5. the six refused by decision are live elsewhere, and the list is exactly six plus six', () => {
+describe('5. the seven refused by decision are live elsewhere, and the list is exactly six plus seven', () => {
     it('the list is the two parts, disjoint, and nothing else', () => {
         expect([...ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS].sort()).toEqual([...ADMIN_API_ONLY_KEYS, ...SIDE_DOOR_ADMIN_KEYS].sort());
         expect(new Set<string>([...ADMIN_API_ONLY_KEYS, ...SIDE_DOOR_ADMIN_KEYS]).size).toBe(
@@ -274,6 +274,7 @@ describe('5. the six refused by decision are live elsewhere, and the list is exa
             'agent_external_tools',
             'integrations_ingest',
             'agent_rules_ingest',
+            'agent_probes_ingest',
         ]);
     });
 

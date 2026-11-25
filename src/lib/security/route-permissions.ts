@@ -679,6 +679,21 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'ingests nothing: the report must be signed by a scanner key the ' +
             'tenant registered, which takes admin.agent_registry.',
     },
+    // ── Probe runs (`scanent-probes/1`) ──────────────────────────────
+    //
+    // A prober's report (active flavour, step 8a), its own key by owner
+    // decision. Above the catch-all so a POST resolves here; the GET is the
+    // inventory read.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/probe-runs$`),
+        methods: ['POST'],
+        permission: 'admin.agent_probes_ingest',
+        note:
+            'Submit a signed scanent-probes/1 report: what a run of attacker ' +
+            'probes made agents do. The key alone ingests nothing: the report ' +
+            'must be signed by a prober key the tenant registered (admin.agent_registry) ' +
+            'and its scope by an approver key the owner registered.',
+    },
     // ── Third-party application scans (`scanent-integrations/1`) ─────
     //
     // The scanner's second report, its own key by owner decision: a key
@@ -888,6 +903,15 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note:
             'List agent-surface rules scans. Reading the inventory, as the ' +
             'harness list is; submitting one is the agent-rules ingest key, above.',
+    },
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/probe-runs$`),
+        methods: ['GET'],
+        permission: ['admin.agent_registry_view', 'admin.agent_registry'],
+        mode: 'any',
+        note:
+            'List probe runs. Reading the inventory, as the harness list is: ' +
+            'no excerpt and no endpoint; submitting one is the probe ingest key, above.',
     },
     {
         path: new RegExp(`^${T}\\/admin\\/agents\\/discovered$`),
@@ -1223,6 +1247,19 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'weaker gate here than the handler enforces. Subtree rule, so the ' +
             'per-connection path is gated identically to any future index rather ' +
             'than by a second rule that could drift.',
+    },
+
+    // ── Probe approver keys (active flavour, step 8a) ───────────────
+    {
+        path: new RegExp(`^${T}\\/admin\\/probe-approver-keys(\\/[^/]+)?$`),
+        methods: ['GET', 'POST', 'DELETE'],
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'The keys allowed to authorise a probe engagement: they sign the ' +
+            'engagement scope. OWNER-only by owner decision (2026-11-25): who may ' +
+            'authorise probing the tenant\'s agents is the owner\'s decision. A ' +
+            'SIBLING of admin/agents/, so the register\'s catch-all and the AI ' +
+            'admin\'s agent paths never reach it.',
     },
 
     // ── Integration passport, per MCP connection (#3672) ────────────
