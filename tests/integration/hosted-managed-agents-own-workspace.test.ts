@@ -63,6 +63,7 @@ import { SESSION_STEP_LABEL, type SessionLifecycle } from '@/lib/agentic/managed
 import { INFLECT_HOSTED_CONNECTION_ID } from '@/lib/agentic/managed-agents/workspace';
 import { upsertIntegrationConnection } from '@/app-layer/usecases/integrations';
 import { retryOpenManagedAgentsCleanups } from '@/app-layer/usecases/managed-agents-cleanup';
+import { readUncoveredHostedRecords } from '@/app-layer/usecases/hosted-managed-agents-own-workspace';
 import type { RequestContext } from '@/app-layer/types';
 import { prisma as appPrisma } from '@/lib/prisma';
 
@@ -242,6 +243,12 @@ describeFn('#4173 — connecting an own Anthropic workspace cleans up the tenant
         expect(held(a)).toEqual(UNTOUCHED);
         expect(held(b)).toEqual(UNTOUCHED);
         expect((await records(a.tenantId))[0]).toMatchObject({ status: 'OPEN', outcome: 'HOSTED_NOT_ACTIVE' });
+        // What a later save reads: the open record, joined rather than doubled.
+        expect(await readUncoveredHostedRecords(adminCtx(a.tenantId))).toEqual({
+            optedIn: false,
+            openCleanup: true,
+            recordsSinceLastCleanup: true,
+        });
     });
 
     it('with the constant true: only the connecting tenant\'s recorded ids go, every request with Inflect\'s key; a later save sends nothing', async () => {
@@ -270,6 +277,11 @@ describeFn('#4173 — connecting an own Anthropic workspace cleans up the tenant
         expect(await records(b.tenantId)).toEqual([]);
 
         // Saving the connection again (a rename): everything is covered, nothing is sent or opened.
+        expect(await readUncoveredHostedRecords(adminCtx(a.tenantId))).toEqual({
+            optedIn: false,
+            openCleanup: false,
+            recordsSinceLastCleanup: false,
+        });
         const before = faux.requests.length;
         const [connection] = await prisma.integrationConnection.findMany({ where: { tenantId: a.tenantId }, select: { id: true } });
         await upsertIntegrationConnection(adminCtx(a.tenantId), { id: connection.id, provider: 'anthropic-workspace', name: 'Renamed' });
