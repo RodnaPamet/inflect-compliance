@@ -995,7 +995,7 @@ runs in the `production` GitHub environment, whose reviewer approves every run.
 | --- | --- |
 | `Scanner VM` (`scanner-vm.yml`) | Configures, checks and starts the harness scanner (`deploy/harness-scanner/README.md`). |
 | `VM capacity` (`vm-capacity.yml`) | `mode: snapshot` prints memory, CPU and disk per container now; `mode: history` prints what the capacity recorder wrote over the last `hours` (`deploy/capacity/`). |
-| `VM check` (`vm-check.yml`) | Runs one check from a fixed read-only list (`deploy/vm-check/remote.sh`): `containers`, `library-sync`, `log-errors`, `access-review-dates`, `bcrypt`, `automation-rules`, `posture-provider-names`, `tei-embed-timing`, `migrate-role`, `calendar-observations` (counts of the calendar push's vendor answers, #5957; see `docs/runbooks/calendar-vendor-verification.md`). |
+| `VM check` (`vm-check.yml`) | Runs one check from a fixed read-only list (`deploy/vm-check/remote.sh`): `containers`, `library-sync`, `log-errors`, `access-review-dates`, `bcrypt`, `automation-rules`, `posture-provider-names`, `tei-embed-timing`, `migrate-role`, `calendar-observations` (counts of the calendar push's vendor answers, #5957; see `docs/runbooks/calendar-vendor-verification.md`), `managed-agents-workspace-header` (the Managed Agents engine's workspace-header tally lines summed per endpoint, #5962; see `docs/claude-managed-agents-design.md`). |
 
 `VM check` is how a Claude Code session looks at production without holding a
 credential: the session dispatches it, the reviewer approves, and the session

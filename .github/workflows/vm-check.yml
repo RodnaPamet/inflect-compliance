@@ -45,6 +45,7 @@ on:
                     - tei-embed-timing
                     - migrate-role
                     - calendar-observations
+                    - managed-agents-workspace-header
 
 # One at a time: two runs staging the script on the VM at once would race.
 concurrency:

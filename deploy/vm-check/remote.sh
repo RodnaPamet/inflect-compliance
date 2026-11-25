@@ -37,6 +37,12 @@
 #                        provider, operation, status, code and date shape: what
 #                        Graph, Entra and Google answered the calendar push
 #                        (#5957, docs/runbooks/calendar-vendor-verification.md)
+#   managed-agents-workspace-header
+#                        the Managed Agents engine's workspace-header tally
+#                        lines in the app's and the worker's logs over the last
+#                        48 hours, summed per workspace kind and endpoint: how
+#                        many responses named the configured Anthropic
+#                        workspace, named none, or named another (#5962)
 #
 # THE WORKFLOW'S LOGS ARE PUBLIC, because the repository is. So this prints
 # names, states, versions and counts, and never a log line, a row, an
@@ -494,6 +500,74 @@ function str(key,    re) {
 END { for (k in n) printf "%s\t%d\n", k, n[k] }
 '
 
+# ─────────────────────────────────────────────────────────────────────────────
+# managed-agents-workspace-header — #5962.
+#
+# The Managed Agents engine's client checks the `anthropic-workspace-id` header
+# of every response (src/lib/agentic/managed-agents/workspace-header.ts) and,
+# when a run segment, a provisioning or a clean-up pass is done with the client,
+# writes ONE `managed-agents: workspace-header tally` line: per endpoint, how
+# many responses matched, were missing the header, or named another workspace,
+# and whose workspace it was (OWN or HOSTED). Production has no metrics backend,
+# so these lines are the evidence the owner decides
+# REFUSE_MISSING_WORKSPACE_HEADER on.
+#
+# PUBLIC LOG DISCIPLINE. A line reaches this program only through the grep for
+# its message, and the program prints SUMS: for each of the engine's thirteen
+# endpoint names (a fixed list, held equal to MANAGED_AGENTS_ENDPOINT_NAMES in
+# src/lib/agentic/tool-runner/client.ts by tests/guards/vm-check-workflow.test.ts)
+# it reads the three counts that follow that name, digits only, at most nine,
+# and adds them. The kind is read as one of two words, anything else counted
+# as (other). No other part of a line (pino's level, time, pid and hostname, a
+# request or tenant id the logger adds) is ever read, and no line, timestamp
+# or id is printed. No `>` appears in the program, because the "writes no file"
+# guard reads every line for one, and no `{n,m}` interval either, which mawk
+# may not read.
+MANAGED_AGENTS_TALLY_SUMMER='
+BEGIN {
+    count = split("agents.create agents.retrieve agents.update environments.create environments.retrieve sessions.create sessions.list sessions.retrieve sessions.delete sessions.events.list sessions.events.send sessions.events.stream agents.archive", names, " ")
+    kinds[1] = "OWN"; kinds[2] = "HOSTED"; kinds[3] = "(other)"
+    total = 0
+}
+NF == 0 { next }
+{
+    k = "(other)"
+    if (match($0, /"kind":"[A-Z]+"/)) {
+        k = substr($0, RSTART + 8, RLENGTH - 9)
+        if (k != "OWN" && k != "HOSTED") k = "(other)"
+    }
+    lines[k]++
+    total++
+    for (i = 1; i <= count; i++) {
+        key = "\"" names[i] "\":{\"match\":"
+        at = index($0, key)
+        if (!at) continue
+        rest = substr($0, at + length(key) - 8)
+        if (!match(rest, /^"match":[0-9]+,"missing":[0-9]+,"mismatch":[0-9]+}/)) continue
+        split(substr(rest, RSTART, RLENGTH), parts, /[:,}]/)
+        if (!(length(parts[2]) <= 9 && length(parts[4]) <= 9 && length(parts[6]) <= 9)) continue
+        m[k, i] += parts[2]
+        mi[k, i] += parts[4]
+        mm[k, i] += parts[6]
+    }
+}
+END {
+    if (total == 0) {
+        print "No tally lines in the window. That is not evidence about any endpoint: no Managed Agents run, provisioning or clean-up finished inside it, or a container restarted after one did."
+        exit
+    }
+    printf "Tally lines read: %d (one per client: a run segment, a provisioning or a clean-up pass)\n", total
+    for (j = 1; j <= 3; j++) {
+        k = kinds[j]
+        if (!(k in lines)) continue
+        printf "\n### %s workspace: %d tally lines\n\n", k, lines[k]
+        print "| Endpoint | Match | Missing | Mismatch |"
+        print "| --- | --- | --- | --- |"
+        for (i = 1; i <= count; i++) printf "| %s | %d | %d | %d |\n", names[i], m[k, i], mi[k, i], mm[k, i]
+    }
+}
+'
+
 case "$CHECK" in
 containers)
     echo "## Containers"
@@ -687,6 +761,22 @@ calendar-observations)
         echo
         echo "No observation in the window. That is not an answer from a vendor: the step was not run inside the window, or a container restarted after it."
     fi
+    ;;
+
+managed-agents-workspace-header)
+    # #5962: which Managed Agents endpoints answered with the workspace header.
+    # Runs and clean-ups run in the worker and a provisioning in the app, so both
+    # logs are read. Nothing of a line but the counts is printed.
+    echo "## Managed Agents workspace header, last 48 hours (#5962)"
+    echo
+    echo "Sums of the engine's \`managed-agents: workspace-header tally\` lines: per endpoint, the responses that named the configured Anthropic workspace (match), named none (missing) or named another (mismatch). A container's log starts when the container does, so the window is shorter after a new image."
+    echo
+    all=""
+    for svc in app worker; do
+        tally="$(docker logs --since 48h "$(need "$svc")" 2>&1 | grep -F '"msg":"managed-agents: workspace-header tally"' || true)"
+        [ -z "$tally" ] || all="$all$tally"$'\n'
+    done
+    printf '%s' "$all" | awk "$MANAGED_AGENTS_TALLY_SUMMER"
     ;;
 
 *)
