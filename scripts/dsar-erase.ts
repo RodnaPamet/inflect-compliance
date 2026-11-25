@@ -17,16 +17,28 @@
  *      started (IN_PROGRESS is required), subject already erased, or a
  *      rejection criterion (`evaluateDsarRejection`: LAST_OWNER from the
  *      subject's memberships; outstanding balance and legal hold are printed
- *      as the operator's check, because the product holds neither).
- *   3. Reads, writing nothing: `planErasure` and `readErasureWorkspaces`.
- *      Prints the plan, ids and counts only.
- *   4. Only with `--confirm`: `eraseUser` with the request, which decides
- *      again inside its own transaction, completes the request, clears the
- *      subject's register columns, erases, and hands the workspaces to the
- *      Managed Agents clean-up.
+ *      as the operator's check, because the product holds neither). With
+ *      `--check` or `--confirm` it also refuses a request no preflight stamped
+ *      (`NOT_PREFLIGHTED`) or stamped more than
+ *      `ERASURE_PREFLIGHT_VALID_HOURS` ago (`PREFLIGHT_EXPIRED`).
+ *   3. Reads `planErasure` and `readErasureWorkspaces`. Prints the plan, ids
+ *      and counts only.
+ *   4. Then, by mode:
+ *      - the PREFLIGHT (neither flag) stamps the request it showed
+ *        (`stampErasurePreflight`), only when the plan would be admitted. The
+ *        stamp is the only write a preflight makes (owner decision
+ *        2026-11-25, third round): it binds the later erase to this request.
+ *      - `--check` writes nothing: the erase's own decision and plan, which
+ *        the `dsar-erase` action runs before its write, in the same run. It
+ *        must not stamp, or the write would vouch for itself.
+ *      - `--confirm` runs `eraseUser` with the request, which decides again
+ *        inside its own transaction (the stamp included), completes the
+ *        request, clears the subject's register columns, erases, and hands
+ *        the workspaces to the Managed Agents clean-up.
  *
- * The plan exits 1 whenever `--confirm` would be refused, so a preflight that
- * passed means the write may run.
+ * The plan exits 1 whenever `--confirm` would be refused on it, so a preflight
+ * that passed (and stamped) means the write may run, for that request, within
+ * the window.
  *
  * ## Output
  *
@@ -34,9 +46,9 @@
  * command reads neither. The production action's log is public.
  *
  * ## Usage
- *   npm run dsar:erase -- --request <requestId>              # the plan; writes nothing
- *   npm run dsar:erase -- --request <requestId> --confirm    # erase
- *   node dist/dsar-erase.mjs --due [--confirm]               # the one due request (VM apply)
+ *   npm run dsar:erase -- --request <requestId>              # the plan; writes nothing but the stamp
+ *   npm run dsar:erase -- --request <requestId> --confirm    # erase (needs a stamp under 24 h old)
+ *   node dist/dsar-erase.mjs --due [--check | --confirm]     # the one due request (VM apply)
  *
  * The entry point is `scripts/dsar-erase-main.ts`; this module only exports,
  * so a test drives it and esbuild can bundle the entry as ESM.
@@ -44,8 +56,8 @@
 import { isTenantSystemUserId } from '@/lib/tenant-system-user';
 import type { ErasurePlan, ErasureReceipt, ErasureAfterCommit, ErasureCleanupOutcome } from '@/app-layer/jobs/dsar-erasure';
 import type { ErasureWorkspaces } from '@/app-layer/jobs/dsar-erasure-workspaces';
-import { OPERATOR_CHECKS } from '@/app-layer/jobs/dsar-erasure-request';
-import type { ErasureRequestRefusal, ErasureRequestRow } from '@/app-layer/jobs/dsar-erasure-request';
+import { ERASURE_PREFLIGHT_VALID_HOURS, OPERATOR_CHECKS } from '@/app-layer/jobs/dsar-erasure-request';
+import type { ErasureRequestRefusal, ErasureRequestRow, ErasureStage } from '@/app-layer/jobs/dsar-erasure-request';
 import { assertNoUnknownArgs, readValueFlag } from './lib/value-flag';
 
 const TAG = '[dsar-erase]';
@@ -60,8 +72,10 @@ export interface DsarEraseDeps {
     readRequest(requestId: string): Promise<ErasureRequestRow | null>;
     /** The due erasure requests, at most two (none, one, or more than one). */
     readDue(now: Date): Promise<ErasureRequestRow[]>;
-    /** The request's refusal, or null: the register's rules, then the rejection criteria. */
-    decide(request: ErasureRequestRow, now: Date): Promise<ErasureRequestRefusal | null>;
+    /** The request's refusal, or null: the register's rules (the stamp at ERASE), then the rejection criteria. */
+    decide(request: ErasureRequestRow, now: Date, stage: ErasureStage): Promise<ErasureRequestRefusal | null>;
+    /** The preflight's stamp on the request it showed; false when the row moved and was not stamped. */
+    stamp(request: { id: string; userId: string }, now: Date): Promise<boolean>;
     /** Reads only: what would block the delete, and the workspaces. */
     plan(userId: string): Promise<{ erasure: ErasurePlan; workspaces: ErasureWorkspaces }>;
     /** `eraseUser` with the request, and the after-commit step the command observes. */
@@ -71,16 +85,18 @@ export interface DsarEraseDeps {
     log(line: string): void;
 }
 
-const USAGE = `${TAG} usage: dsar:erase -- (--request <requestId> | --due) [--confirm]`;
+const USAGE = `${TAG} usage: dsar:erase -- (--request <requestId> | --due) [--check | --confirm]`;
 
 type Target = { kind: 'request'; requestId: string } | { kind: 'due' };
+/** PREFLIGHT stamps; CHECK and CONFIRM decide at the ERASE stage, and only CONFIRM writes the erasure. */
+type Mode = 'PREFLIGHT' | 'CHECK' | 'CONFIRM';
 
 /** Parse argv, never echoing a value it refuses: an operator may have typed an address. */
-function parse(args: readonly string[]): { target: Target; confirm: boolean } | { refusal: string } {
+function parse(args: readonly string[]): { target: Target; mode: Mode } | { refusal: string } {
     try {
-        assertNoUnknownArgs(args, ['confirm', 'due'], ['request']);
+        assertNoUnknownArgs(args, ['confirm', 'check', 'due'], ['request']);
     } catch {
-        return { refusal: `${TAG} refused: an argument it does not know (not echoed). This command takes --request <id> or --due, and --confirm.` };
+        return { refusal: `${TAG} refused: an argument it does not know (not echoed). This command takes --request <id> or --due, and --check or --confirm.` };
     }
     let requestId: string | undefined;
     try {
@@ -92,14 +108,17 @@ function parse(args: readonly string[]): { target: Target; confirm: boolean } | 
     if (due && requestId !== undefined) return { refusal: `${TAG} refused: --request and --due name the request two ways; give one.` };
     if (!due && requestId === undefined) return { refusal: `${TAG} refused: --request <id> or --due is required.` };
     const confirm = args.includes('--confirm');
-    if (due) return { target: { kind: 'due' }, confirm };
+    const check = args.includes('--check');
+    if (confirm && check) return { refusal: `${TAG} refused: --check and --confirm together; --check writes nothing, --confirm erases. Give one.` };
+    const mode: Mode = confirm ? 'CONFIRM' : check ? 'CHECK' : 'PREFLIGHT';
+    if (due) return { target: { kind: 'due' }, mode };
     if (requestId!.includes('@')) {
         return { refusal: `${TAG} refused: --request takes a request id, never an e-mail address (the value is not echoed).` };
     }
     if (!/^[A-Za-z0-9_-]{1,191}$/.test(requestId!)) {
         return { refusal: `${TAG} refused: --request is not a request id (the value is not echoed).` };
     }
-    return { target: { kind: 'request', requestId: requestId! }, confirm };
+    return { target: { kind: 'request', requestId: requestId! }, mode };
 }
 
 const iso = (d: Date | null) => (d ? new Date(d).toISOString() : '-');
@@ -135,7 +154,8 @@ export async function runDsarErase(args: readonly string[], deps: DsarEraseDeps)
         deps.log(USAGE);
         return EXIT_USAGE;
     }
-    const { target, confirm } = parsed;
+    const { target, mode } = parsed;
+    const stage: ErasureStage = mode === 'PREFLIGHT' ? 'PREFLIGHT' : 'ERASE';
     const now = deps.now();
 
     // ── THE REQUEST ───────────────────────────────────────────────────
@@ -158,9 +178,9 @@ export async function runDsarErase(args: readonly string[], deps: DsarEraseDeps)
         }
     }
     log(deps, `request ${request.id} type=${request.type} status=${request.status} verified=${iso(request.verifiedAt)}`
-        + ` subject=${request.userId ?? '-'}`);
+        + ` preflight=${iso(request.erasurePreflightAt)} subject=${request.userId ?? '-'}`);
 
-    const refusal = await deps.decide(request, now);
+    const refusal = await deps.decide(request, now, stage);
     if (refusal) {
         log(deps, `refused: ${refusal.reason}${refusal.rejection ? ` (${refusal.rejection})` : ''}. Nothing written.`);
         return EXIT_REFUSED;
@@ -186,8 +206,21 @@ export async function runDsarErase(args: readonly string[], deps: DsarEraseDeps)
         log(deps, `refused: ${refusals.join('; ')}. Nothing written.`);
         return EXIT_REFUSED;
     }
-    if (!confirm) {
-        log(deps, 'plan only: nothing written. Re-run with --confirm to erase.');
+    if (mode === 'CHECK') {
+        log(deps, `check: the erasure of request ${request.id} would be admitted on its preflight of `
+            + `${iso(request.erasurePreflightAt)}. Nothing written.`);
+        return EXIT_OK;
+    }
+    if (mode === 'PREFLIGHT') {
+        // The one write a preflight makes: the stamp that binds the erase to
+        // the request printed above (owner decision 2026-11-25, third round).
+        if (!(await deps.stamp({ id: request.id, userId }, now))) {
+            log(deps, `refused: STAMP_NOT_WRITTEN — request ${request.id} changed while it was being previewed. Nothing written.`);
+            return EXIT_REFUSED;
+        }
+        const until = new Date(now.getTime() + ERASURE_PREFLIGHT_VALID_HOURS * 3_600_000);
+        log(deps, `plan only: nothing written but the preflight stamp. request ${request.id} preflight=${iso(now)};`
+            + ` an erasure with --confirm (the dsar-erase action) is admitted for this request until ${iso(until)}.`);
         return EXIT_OK;
     }
 
@@ -250,7 +283,16 @@ export async function productionDeps(): Promise<DsarEraseDeps> {
         now: () => new Date(),
         readRequest: (requestId) => runInGlobalContext((db) => requests.readErasureRequest(db as unknown as Raw, requestId)),
         readDue: (now) => runInGlobalContext((db) => requests.readDueErasureRequests(db as unknown as Raw, now)),
-        decide: (request, now) => runInGlobalContext((db) => requests.decideErasureRequest(db as unknown as Raw, request, now)),
+        decide: (request, now, stage) =>
+            runInGlobalContext((db) => requests.decideErasureRequest(db as unknown as Raw, request, now, stage)),
+        stamp: (request, now) =>
+            runInGlobalContext((db) =>
+                requests.stampErasurePreflight(db as unknown as Parameters<typeof requests.stampErasurePreflight>[0], {
+                    requestId: request.id,
+                    userId: request.userId,
+                    now,
+                }),
+            ),
         plan: (userId) =>
             runInGlobalContext(async (db) => {
                 const raw = db as unknown as Raw;

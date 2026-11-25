@@ -236,7 +236,8 @@ function isReferenceRefusal(error: unknown): boolean {
  * THE REQUEST, WHEN ONE IS NAMED (#5940). With `options.request`, it re-reads
  * that DSAR register row inside its own transaction and refuses
  * (`ErasureRequestRefusedError`, nothing written) unless the row is this
- * subject's ERASURE request, IN_PROGRESS, past its cooling-off, and clear of
+ * subject's ERASURE request, IN_PROGRESS, past its cooling-off, stamped by a
+ * preflight within `ERASURE_PREFLIGHT_VALID_HOURS`, and clear of
  * `evaluateDsarRejection` (`dsar-erasure-request.ts`). Then, before the
  * delete, it completes that request and clears `fulfilmentNotes` and
  * `exportUrl` on every request of the subject; the FK's SET NULL unlinks
@@ -565,7 +566,10 @@ async function eraseUserWithin(
                     `dsar-erasure: request ${JSON.stringify(request.id)} is not this subject's. Nothing was written.`,
                 );
             }
-            const refusal = await decideErasureRequest(tx, row, request.now);
+            // The ERASE stage: a request no preflight stamped within
+            // ERASURE_PREFLIGHT_VALID_HOURS is refused here too, so no caller
+            // of `eraseUser` erases a request nobody previewed.
+            const refusal = await decideErasureRequest(tx, row, request.now, 'ERASE');
             if (refusal) throw new ErasureRequestRefusedError(request.id, refusal);
         }
 

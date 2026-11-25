@@ -20,6 +20,10 @@
  * And the register: the erasure request survives the erasure, COMPLETED, with
  * no column left that names the person (#5940).
  *
+ * And the binding (third round): the erase runs only on a request a preflight
+ * stamped within 24 hours, so when the request the owner read is cancelled and
+ * another becomes due, the approved erase refuses the other one.
+ *
  * The command runs with its production wiring (`productionDeps`); only the
  * printer is replaced, so the test reads every line it would have printed.
  */
@@ -42,6 +46,7 @@ import { purgeSoftDeletedTenants } from '@/app-layer/usecases/tenant-purge';
 import { scimCreateUser } from '@/app-layer/usecases/scim-users';
 import { removeTenantMember } from '@/app-layer/usecases/tenant-admin';
 import { readDueErasureRequests } from '@/app-layer/jobs/dsar-erasure-request';
+import { eraseUser } from '@/app-layer/jobs/dsar-erasure';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
 import { prisma as appPrisma } from '@/lib/prisma';
 import { EXIT_OK, EXIT_REFUSED, productionDeps, runDsarErase } from '../../scripts/dsar-erase';
@@ -143,12 +148,25 @@ async function seedRequest(
     return id;
 }
 
+/**
+ * The command with its production wiring; only the printer is replaced, and
+ * `--due` reads the REAL due query narrowed to this file's own requests, since
+ * other suites share the database and may leave a due request of their own.
+ */
 async function run(args: string[]): Promise<{ code: number; out: string }> {
     const lines: string[] = [];
-    const deps = { ...(await productionDeps()), log: (line: string) => lines.push(line) };
+    const deps = {
+        ...(await productionDeps()),
+        readDue: async (now: Date) =>
+            (await readDueErasureRequests(appPrisma as never, now, 10_000)).filter((r) => requests.includes(r.id)).slice(0, 2),
+        log: (line: string) => lines.push(line),
+    };
     const code = await runDsarErase(args, deps);
     return { code, out: lines.join('\n') };
 }
+
+const stampOf = async (id: string) =>
+    (await prisma.dataSubjectRequest.findUniqueOrThrow({ where: { id }, select: { erasurePreflightAt: true } })).erasurePreflightAt;
 
 beforeEach(() => {
     faux = new ManagedAgentsFaux();
@@ -229,10 +247,15 @@ describeFn('scripts/dsar-erase — the erasure\'s operator entry point (#5802, #
         await prisma.dataSubjectRequest.update({ where: { id: exportRequest }, data: { completedAt: new Date(Date.now() - 48 * HOUR) } });
 
         // While any membership exists the erasure is refused, as `eraseUser`
-        // refuses it: a membership is a RESTRICT reference.
-        const blocked = await run(['--request', erasureRequest, '--confirm']);
+        // refuses it: a membership is a RESTRICT reference. A preflight that
+        // fails stamps nothing, and --confirm without a stamp is refused first.
+        const blocked = await run(['--request', erasureRequest]);
         expect(blocked.code).toBe(EXIT_REFUSED);
         expect(blocked.out).toContain('TenantMembership.userId rows=2 RESTRICT_REFERENCE');
+        expect(await stampOf(erasureRequest)).toBeNull();
+        const unpreviewed = await run(['--request', erasureRequest, '--confirm']);
+        expect(unpreviewed.code).toBe(EXIT_REFUSED);
+        expect(unpreviewed.out).toContain('refused: NOT_PREFLIGHTED.');
         expect(await prisma.user.count({ where: { id: subject.id } })).toBe(1);
 
         // The operator removes the memberships: B's directly (as before), C's
@@ -241,7 +264,9 @@ describeFn('scripts/dsar-erase — the erasure\'s operator entry point (#5802, #
         await removeTenantMember(ctxOf(c.tenantId), { membershipId: inC.id });
         expect(await prisma.tenantMembership.count({ where: { userId: subject.id } })).toBe(0);
 
-        // The plan names C, by its removal row; nothing is written.
+        // The plan names C, by its removal row; nothing is written but the
+        // stamp on the request it showed.
+        const beforePlan = Date.now();
         const plan = await run(['--request', erasureRequest]);
         expect(plan.code).toBe(EXIT_OK);
         expect(plan.out).toContain(`request ${erasureRequest} type=ERASURE status=IN_PROGRESS`);
@@ -250,7 +275,10 @@ describeFn('scripts/dsar-erase — the erasure\'s operator entry point (#5802, #
         expect(plan.out).toContain(`${b.tenantId} evidence=MEMBERSHIP_RECORD rows=1`);
         expect(plan.out).toContain(`${c.tenantId} evidence=TARGET_RECORD rows=1`);
         expect(plan.out).toContain('legal hold: the product holds no hold for a person');
-        expect(plan.out).toContain('plan only: nothing written');
+        expect(plan.out).toContain('plan only: nothing written but the preflight stamp');
+        const stamped = await stampOf(erasureRequest);
+        expect(stamped!.getTime()).toBeGreaterThanOrEqual(beforePlan - 1000);
+        expect(await stampOf(exportRequest)).toBeNull();
         // The register row is no longer a blocker: it survives, unlinked.
         expect(plan.out).toContain('references refusing the delete: 0');
         expect(await prisma.user.count({ where: { id: subject.id } })).toBe(1);
@@ -282,9 +310,12 @@ describeFn('scripts/dsar-erase — the erasure\'s operator entry point (#5802, #
             expect(text).not.toContain(subject.name);
         }
         expect(after.find((r) => r.id === erasureRequest)!.completedAt!.getTime()).toBeGreaterThan(Date.now() - HOUR);
+        // The stamp survives with the row: it records which preview the
+        // erasure was approved on.
+        expect(after.find((r) => r.id === erasureRequest)!.erasurePreflightAt).toEqual(stamped);
 
         // Ids and counts only: never the person's address or name.
-        const printed = [blocked.out, plan.out, done.out].join('\n');
+        const printed = [blocked.out, unpreviewed.out, plan.out, done.out].join('\n');
         expect(printed).not.toContain(subject.email);
         expect(printed).not.toContain(subject.name);
     });
@@ -322,5 +353,92 @@ describeFn('scripts/dsar-erase — the erasure\'s operator entry point (#5802, #
         expect(ids).not.toContain(received);
         expect(ids).not.toContain(completed);
         expect(ids).not.toContain(exportRequest);
+        // Leave nothing due for the tests that run `--due`.
+        await prisma.dataSubjectRequest.updateMany({ where: { id: { in: [received, cooling, notStarted] } }, data: { status: 'CANCELED' } });
+    });
+    it('the production actions\' order: the preflight stamps the one due request, the check writes nothing, the erase erases it', async () => {
+        const subject = await seedSubject('due');
+        const request = await seedRequest(subject.id, {});
+
+        const preflight = await run(['--due']);
+        expect(preflight.code).toBe(EXIT_OK);
+        expect(preflight.out).toContain(`request ${request} type=ERASURE status=IN_PROGRESS`);
+        expect(preflight.out).toContain(`preflight=-`);
+        const stamped = await stampOf(request);
+        expect(stamped).toBeInstanceOf(Date);
+
+        const check = await run(['--due', '--check']);
+        expect(check.code).toBe(EXIT_OK);
+        expect(check.out).toContain(`check: the erasure of request ${request} would be admitted`);
+        // The check vouches for nothing: the stamp is the preflight's.
+        expect(await stampOf(request)).toEqual(stamped);
+
+        const erase = await run(['--due', '--confirm']);
+        expect(erase.code).toBe(EXIT_OK);
+        expect(erase.out).toContain(`register: request completed=${request}`);
+        expect(await prisma.user.count({ where: { id: subject.id } })).toBe(0);
+        expect(await prisma.dataSubjectRequest.findUniqueOrThrow({ where: { id: request } })).toMatchObject({
+            status: 'COMPLETED',
+            userId: null,
+            erasurePreflightAt: stamped,
+        });
+    });
+
+    it('the request the owner read is cancelled and another becomes due: the approved erase refuses it NOT_PREFLIGHTED', async () => {
+        const read = await seedSubject('read');
+        const other = await seedSubject('other');
+        const readRequest = await seedRequest(read.id, {});
+        // Not due yet when the preflight runs: received, never verified.
+        const otherRequest = await seedRequest(other.id, { status: 'RECEIVED', verifiedHoursAgo: null });
+
+        const preflight = await run(['--due']);
+        expect(preflight.code).toBe(EXIT_OK);
+        expect(preflight.out).toContain(`request ${readRequest}`);
+        expect(await stampOf(readRequest)).toBeInstanceOf(Date);
+
+        // Between the two runs: the person withdraws, and the other request
+        // is verified, cooled off and started.
+        await prisma.dataSubjectRequest.update({ where: { id: readRequest }, data: { status: 'CANCELED' } });
+        await prisma.dataSubjectRequest.update({
+            where: { id: otherRequest },
+            data: { status: 'IN_PROGRESS', verifiedAt: new Date(Date.now() - 25 * HOUR) },
+        });
+
+        // The `dsar-erase` action: its check, then its write. Each picks the
+        // one due request afresh — the other one — and refuses it.
+        for (const args of [['--due', '--check'], ['--due', '--confirm']]) {
+            const r = await run(args);
+            expect({ args, code: r.code }).toEqual({ args, code: EXIT_REFUSED });
+            expect(r.out).toContain(`request ${otherRequest}`);
+            expect(r.out).toContain('refused: NOT_PREFLIGHTED.');
+        }
+        // And inside eraseUser's transaction, for a caller that skips the command.
+        const err = await eraseUser(other.id, { request: { id: otherRequest, now: new Date() } }).catch((e: unknown) => e);
+        expect((err as { refusal?: { reason: string } }).refusal?.reason).toBe('NOT_PREFLIGHTED');
+
+        expect(await prisma.user.count({ where: { id: { in: [read.id, other.id] } } })).toBe(2);
+        expect(await prisma.dataSubjectRequest.findUniqueOrThrow({ where: { id: otherRequest } })).toMatchObject({
+            status: 'IN_PROGRESS',
+            userId: other.id,
+            erasurePreflightAt: null,
+        });
+        // Leave nothing due for the next test.
+        await prisma.dataSubjectRequest.update({ where: { id: otherRequest }, data: { status: 'CANCELED' } });
+    });
+
+    it('a stamp older than 24 hours is refused PREFLIGHT_EXPIRED, by the command and inside the transaction', async () => {
+        const subject = await seedSubject('expired');
+        const request = await seedRequest(subject.id, {});
+        expect((await run(['--request', request])).code).toBe(EXIT_OK);
+        await prisma.dataSubjectRequest.update({ where: { id: request }, data: { erasurePreflightAt: new Date(Date.now() - 25 * HOUR) } });
+
+        const r = await run(['--request', request, '--confirm']);
+        expect(r.code).toBe(EXIT_REFUSED);
+        expect(r.out).toContain('refused: PREFLIGHT_EXPIRED.');
+        const err = await eraseUser(subject.id, { request: { id: request, now: new Date() } }).catch((e: unknown) => e);
+        expect((err as { refusal?: { reason: string } }).refusal?.reason).toBe('PREFLIGHT_EXPIRED');
+        expect(await prisma.user.count({ where: { id: subject.id } })).toBe(1);
+        expect(await prisma.dataSubjectRequest.findUniqueOrThrow({ where: { id: request } })).toMatchObject({ status: 'IN_PROGRESS' });
+        await prisma.dataSubjectRequest.update({ where: { id: request }, data: { status: 'CANCELED' } });
     });
 });

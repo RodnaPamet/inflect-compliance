@@ -167,7 +167,8 @@ describe('every write is preceded by its preflight, in the same run', () => {
     it('a preflight action never writes', () => {
         const d = dispatch();
         // apply.sh's preflights run its `preflight` helper; a remote preflight
-        // runs remote.sh, whose branch is held below.
+        // runs remote.sh, whose branch is held below. (`dsar-erase-preflight`
+        // writes nothing but its stamp on the request it showed, #5940.)
         const bodies = choices.filter((a) => isPreflight(a) && !REMOTE_ACTIONS.includes(a)).map((a) => d.get(a) ?? '');
         expect(bodies.length).toBeGreaterThan(0);
         expect(bodies.filter((b) => !/^preflight(\s|$)/.test(b))).toEqual([]);
@@ -294,11 +295,19 @@ describe('the DSAR erasure runs the one due request, with fixed arguments, prefl
         expect(choices).toEqual(expect.arrayContaining(['dsar-erase-preflight', 'dsar-erase']));
     });
 
-    it('the preflight plans and never confirms; the write plans, then confirms', () => {
+    it('the preflight plans and stamps, never confirms; the write checks without stamping, then confirms', () => {
+        // The preflight's one write is the stamp on the request it showed
+        // (third round): the plain `--due` run, and only there.
         expect(branch('dsar-erase-preflight')).toEqual(['dsar_erase_present', 'dsar_erase --due']);
-        expect(branch('dsar-erase')).toEqual(['dsar_erase_present', 'dsar_erase --due', 'dsar_erase --due --confirm']);
-        // `--confirm` is written nowhere else in remote.sh.
+        // The write's same-run preflight is `--check`, which writes nothing and
+        // requires the stamp: were it the stamping plan, the write would stamp
+        // whatever request is due now and then erase it — the request the
+        // owner never read.
+        expect(branch('dsar-erase')).toEqual(['dsar_erase_present', 'dsar_erase --due --check', 'dsar_erase --due --confirm']);
+        // `--confirm` is written nowhere else in remote.sh, and the stamping
+        // form (`--due` alone) only in the preflight.
         expect(code(REMOTE_SH).filter((l) => l.includes('--confirm'))).toEqual(['    dsar_erase --due --confirm']);
+        expect(code(REMOTE_SH).filter((l) => l.trim() === 'dsar_erase --due')).toHaveLength(1);
     });
 
     it('runs the bundled command in the app container, passing its fixed words through and nothing else', () => {
@@ -307,7 +316,7 @@ describe('the DSAR erasure runs the one due request, with fixed arguments, prefl
         // Every caller passes literals: no variable reaches the command line.
         const callers = code(REMOTE_SH).map((l) => l.trim()).filter((l) => /^dsar_erase\s/.test(l));
         expect(callers.length).toBe(3);
-        expect(callers.filter((l) => !/^dsar_erase( --due| --confirm)+$/.test(l))).toEqual([]);
+        expect(callers.filter((l) => !/^dsar_erase --due( --check| --confirm)?$/.test(l))).toEqual([]);
     });
 
     it('the build ships the command the actions run', () => {

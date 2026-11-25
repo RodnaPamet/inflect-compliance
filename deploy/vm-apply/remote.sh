@@ -34,12 +34,15 @@
 #   dsar-erase-preflight         #5940: in the app container, the DSAR
 #                                erasure's plan for the ONE due erasure
 #                                request (`node dist/dsar-erase.mjs --due`).
-#                                Writes nothing; refuses unless exactly one
+#                                Writes nothing but the preflight stamp on
+#                                that request; refuses unless exactly one
 #                                request is due and the erasure would be
 #                                admitted
-#   dsar-erase                   #5940: the same plan, then — only if it passed
-#                                — the erasure of that request's subject
-#                                (`--due --confirm`)
+#   dsar-erase                   #5940: the erase's own check (`--due
+#                                --check`, writes nothing), then — only if it
+#                                passed — the erasure of that request's
+#                                subject (`--due --confirm`); both refuse a
+#                                request no preflight stamped within 24 hours
 #
 # Each checks its preconditions before it changes anything, and stops if one
 # fails.
@@ -128,8 +131,8 @@ dsar_lines() {
 }
 
 # The erasure command, in the running app container, with fixed arguments: the
-# only words passed are `--due` and, for the write, `--confirm`. Its exit code
-# is the command's (pipefail).
+# only words passed are `--due` and, for the write action, `--check` and
+# `--confirm`. Its exit code is the command's (pipefail).
 dsar_erase() {
     compose -f docker-compose.prod.yml exec -T app node dist/dsar-erase.mjs "$@" 2>&1 | dsar_lines
 }
@@ -356,22 +359,27 @@ refresh-env-prod-example)
     ;;
 
 dsar-erase-preflight)
-    # The plan only. Names the one due request by id and prints the counts the
+    # The plan. Names the one due request by id and prints the counts the
     # owner reads before approving `dsar-erase`; exits non-zero when the
     # erasure would be refused (none due, more than one, a named refusal, a
-    # blocker).
+    # blocker). Its one write is the stamp on the request it showed, made only
+    # when the plan passed: `dsar-erase` erases only a request stamped in the
+    # last 24 hours (owner decision 2026-11-25, third round).
     dsar_erase_present
     dsar_erase --due
     ;;
 
 dsar-erase)
-    # The plan, then the erasure only if the plan passed (set -e): the same
+    # The check, then the erasure only if it passed (set -e): the same
     # preflight-then-write order as every other write here. Both select the
-    # due request afresh, and the erasure decides again inside its own
-    # transaction, so a request that changed in between is refused, not
-    # erased.
+    # due request afresh and refuse one the preflight action did not stamp
+    # within 24 hours, so if the request the owner read was cancelled and
+    # another became due, nothing is erased. The check is `--check`, never the
+    # stamping plan: a write that stamped its own request would vouch for
+    # itself. The erasure decides again, stamp included, inside its own
+    # transaction.
     dsar_erase_present
-    dsar_erase --due
+    dsar_erase --due --check
     dsar_erase --due --confirm
     ;;
 

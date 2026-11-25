@@ -6,7 +6,12 @@
  */
 import type { ErasurePlan, ErasureReceipt, ErasureReference } from '@/app-layer/jobs/dsar-erasure';
 import { erasureWorkspacesFrom } from '@/app-layer/jobs/dsar-erasure-workspaces';
-import { decideErasureRequest, type ErasureRequestRow } from '@/app-layer/jobs/dsar-erasure-request';
+import {
+    ERASURE_PREFLIGHT_VALID_HOURS,
+    decideErasureRequest,
+    erasureRequestRefusal,
+    type ErasureRequestRow,
+} from '@/app-layer/jobs/dsar-erasure-request';
 import {
     EXIT_OK,
     EXIT_REFUSED,
@@ -30,6 +35,8 @@ function request(overrides: Partial<ErasureRequestRow> = {}): ErasureRequestRow 
         status: 'IN_PROGRESS',
         verifiedAt: new Date(NOW.getTime() - 25 * HOUR),
         completedAt: null,
+        // A preflight stamped it an hour ago, so --confirm is admitted.
+        erasurePreflightAt: new Date(NOW.getTime() - HOUR),
         ...overrides,
     };
 }
@@ -56,6 +63,8 @@ function deps(
         soleOwnerTenants?: number;
         blockers?: ErasureReference[];
         unlistedAction?: boolean;
+        /** The stamp's conditional claim finds the row moved. */
+        stampMisses?: boolean;
     } = {},
 ) {
     const lines: string[] = [];
@@ -76,7 +85,10 @@ function deps(
         now: () => NOW,
         readRequest: jest.fn(async (id: string) => ('row' in options ? options.row ?? null : request({ id }))),
         readDue: jest.fn(async () => options.due ?? [request()]),
-        decide: jest.fn((row: ErasureRequestRow, now: Date) => decideErasureRequest(membershipDb, row, now)),
+        decide: jest.fn((row: ErasureRequestRow, now: Date, stage: 'PREFLIGHT' | 'ERASE') =>
+            decideErasureRequest(membershipDb, row, now, stage),
+        ),
+        stamp: jest.fn(async (_request: { id: string; userId: string }, _now: Date) => !options.stampMisses),
         plan: jest.fn(async () => ({ erasure: erasurePlan(options.blockers), workspaces })),
         erase: jest.fn<ReturnType<DsarEraseDeps['erase']>, Parameters<DsarEraseDeps['erase']>>(async (_userId, _request, afterCommit) => {
             await afterCommit(workspaces.tenantIds);
@@ -90,13 +102,16 @@ function deps(
     return { d, out: () => lines.join('\n'), lines };
 }
 
-describe('dsar-erase — the plan writes nothing; --confirm erases the request\'s subject', () => {
+describe('dsar-erase — the plan writes nothing but its stamp; --confirm erases the request\'s subject', () => {
     it('reads the subject from the request and prints the plan — workspaces, evidence, what it cannot see, the operator checks', async () => {
         const { d, out } = deps();
         expect(await runDsarErase(['--request', REQUEST], d)).toBe(EXIT_OK);
         expect(d.plan).toHaveBeenCalledWith(SUBJECT);
         expect(d.erase).not.toHaveBeenCalled();
         expect(d.cleanUp).not.toHaveBeenCalled();
+        // The one write a preflight makes: the stamp, on the request it showed.
+        expect(d.stamp).toHaveBeenCalledTimes(1);
+        expect(d.stamp).toHaveBeenCalledWith({ id: REQUEST, userId: SUBJECT }, NOW);
         expect(out()).toContain(`request ${REQUEST} type=ERASURE status=IN_PROGRESS`);
         expect(out()).toContain(`subject=${SUBJECT}`);
         expect(out()).toContain('workspaces where the subject held a membership: 2');
@@ -105,7 +120,8 @@ describe('dsar-erase — the plan writes nothing; --confirm erases the request\'
         expect(out()).toContain('tenant-purge.ts');
         expect(out()).toContain('outstanding balance: the product holds no balance for a person');
         expect(out()).toContain('legal hold: the product holds no hold for a person');
-        expect(out()).toContain('plan only: nothing written');
+        expect(out()).toContain('plan only: nothing written but the preflight stamp');
+        expect(out()).toContain(`until ${new Date(NOW.getTime() + 24 * HOUR).toISOString()}`);
     });
 
     it('with --confirm it erases with the request, then hands the clean-up exactly the planned workspaces', async () => {
@@ -114,6 +130,8 @@ describe('dsar-erase — the plan writes nothing; --confirm erases the request\'
         expect(d.erase).toHaveBeenCalledTimes(1);
         expect(d.erase.mock.calls[0][0]).toBe(SUBJECT);
         expect(d.erase.mock.calls[0][1]).toEqual({ id: REQUEST, now: NOW });
+        // The erase vouches for nothing: it never stamps.
+        expect(d.stamp).not.toHaveBeenCalled();
         expect(d.cleanUp).toHaveBeenCalledWith(['t-acted', 't-removed']);
         expect(out()).toContain(`register: request completed=${REQUEST} requests cleared=1`);
         expect(out()).toContain('t-removed conn-t-removed DONE');
@@ -212,6 +230,99 @@ describe('dsar-erase — the plan refuses what the erasure would', () => {
     });
 });
 
+describe('dsar-erase — the erase is bound to a preflight within 24 hours (#5940, third round)', () => {
+    it('a preflight stamps a request no preflight has stamped yet, and only the one it showed', async () => {
+        const { d } = deps({ due: [request({ id: 'ckdue00000000000000000001', erasurePreflightAt: null })] });
+        expect(await runDsarErase(['--due'], d)).toBe(EXIT_OK);
+        expect(d.decide.mock.calls[0][2]).toBe('PREFLIGHT');
+        expect(d.stamp.mock.calls).toEqual([[{ id: 'ckdue00000000000000000001', userId: SUBJECT }, NOW]]);
+    });
+
+    it.each<[string, Date | null, string]>([
+        ['no preflight ever stamped', null, 'NOT_PREFLIGHTED'],
+        ['a stamp 25 hours old', new Date(NOW.getTime() - 25 * HOUR), 'PREFLIGHT_EXPIRED'],
+        ['a stamp later than now (a clock moved back)', new Date(NOW.getTime() + HOUR), 'PREFLIGHT_EXPIRED'],
+    ])('--confirm and --check refuse %s (%s), and neither plan, stamp nor erase', async (_label, stampedAt, reason) => {
+        for (const flag of ['--confirm', '--check']) {
+            const { d, out } = deps({ row: request({ erasurePreflightAt: stampedAt }) });
+            expect(await runDsarErase(['--request', REQUEST, flag], d)).toBe(EXIT_REFUSED);
+            expect(out()).toContain(`refused: ${reason}.`);
+            expect(d.decide.mock.calls[0][2]).toBe('ERASE');
+            expect(d.plan).not.toHaveBeenCalled();
+            expect(d.stamp).not.toHaveBeenCalled();
+            expect(d.erase).not.toHaveBeenCalled();
+        }
+    });
+
+    it('the request the owner read was cancelled and another became due: --due --confirm refuses it NOT_PREFLIGHTED', async () => {
+        const other = request({ id: 'ckother0000000000000000001', erasurePreflightAt: null });
+        const { d, out } = deps({ due: [other] });
+        expect(await runDsarErase(['--due', '--confirm'], d)).toBe(EXIT_REFUSED);
+        expect(out()).toContain('request ckother0000000000000000001');
+        expect(out()).toContain('refused: NOT_PREFLIGHTED.');
+        expect(d.erase).not.toHaveBeenCalled();
+    });
+
+    it('a stamp exactly 24 hours old is admitted', async () => {
+        const { d } = deps({ row: request({ erasurePreflightAt: new Date(NOW.getTime() - ERASURE_PREFLIGHT_VALID_HOURS * HOUR) }) });
+        expect(await runDsarErase(['--request', REQUEST, '--confirm'], d)).toBe(EXIT_OK);
+        expect(d.erase).toHaveBeenCalledTimes(1);
+    });
+
+    it('--check decides as the erase does and writes nothing: no stamp, no erasure', async () => {
+        const { d, out } = deps();
+        expect(await runDsarErase(['--due', '--check'], d)).toBe(EXIT_OK);
+        expect(d.plan).toHaveBeenCalledWith(SUBJECT);
+        expect(d.stamp).not.toHaveBeenCalled();
+        expect(d.erase).not.toHaveBeenCalled();
+        expect(out()).toContain(`would be admitted on its preflight of ${new Date(NOW.getTime() - HOUR).toISOString()}. Nothing written.`);
+    });
+
+    it('a preflight whose plan would be refused does not stamp', async () => {
+        const membership: ErasureReference = {
+            table: 'TenantMembership', column: 'userId', onDelete: 'RESTRICT', rows: 1, effect: 'BLOCKS_DELETE', reason: 'RESTRICT_REFERENCE',
+        };
+        const blocked = deps({ blockers: [membership] });
+        expect(await runDsarErase(['--request', REQUEST], blocked.d)).toBe(EXIT_REFUSED);
+        expect(blocked.d.stamp).not.toHaveBeenCalled();
+        const lastOwner = deps({ soleOwnerTenants: 1 });
+        expect(await runDsarErase(['--request', REQUEST], lastOwner.d)).toBe(EXIT_REFUSED);
+        expect(lastOwner.d.stamp).not.toHaveBeenCalled();
+        const cancelled = deps({ row: request({ status: 'CANCELED' }) });
+        expect(await runDsarErase(['--request', REQUEST], cancelled.d)).toBe(EXIT_REFUSED);
+        expect(cancelled.d.stamp).not.toHaveBeenCalled();
+    });
+
+    it('a preflight whose stamp finds the row moved fails, by name', async () => {
+        const { d, out } = deps({ stampMisses: true });
+        expect(await runDsarErase(['--request', REQUEST], d)).toBe(EXIT_REFUSED);
+        expect(out()).toContain('refused: STAMP_NOT_WRITTEN');
+    });
+});
+
+describe('erasureRequestRefusal — the stamp is asked at the ERASE stage only', () => {
+    it.each<[string, Date | null, string | null, string | null]>([
+        // label, stamp, PREFLIGHT, ERASE
+        ['no stamp', null, null, 'NOT_PREFLIGHTED'],
+        ['a stamp one hour old', new Date(NOW.getTime() - HOUR), null, null],
+        ['a stamp exactly 24 hours old', new Date(NOW.getTime() - 24 * HOUR), null, null],
+        ['a stamp 24 hours and a second old', new Date(NOW.getTime() - 24 * HOUR - 1000), null, 'PREFLIGHT_EXPIRED'],
+        ['a stamp in the future', new Date(NOW.getTime() + 1000), null, 'PREFLIGHT_EXPIRED'],
+    ])('%s', (_label, stampedAt, atPreflight, atErase) => {
+        const row = request({ erasurePreflightAt: stampedAt });
+        expect(erasureRequestRefusal(row, NOW, 'PREFLIGHT')?.reason ?? null).toBe(atPreflight);
+        expect(erasureRequestRefusal(row, NOW, 'ERASE')?.reason ?? null).toBe(atErase);
+    });
+
+    it('a register refusal is named before the stamp: a cancelled request reads as cancelled, not as unpreviewed', () => {
+        expect(erasureRequestRefusal(request({ status: 'CANCELED', erasurePreflightAt: null }), NOW, 'ERASE')?.reason).toBe('REQUEST_CANCELED');
+    });
+
+    it('holds the window in one constant of 24 hours', () => {
+        expect(ERASURE_PREFLIGHT_VALID_HOURS).toBe(24);
+    });
+});
+
 describe('dsar-erase — usage refusals', () => {
     it.each([
         ['an e-mail as --request', ['--request', ADDRESS, '--confirm']],
@@ -233,6 +344,7 @@ describe('dsar-erase — usage refusals', () => {
         expect(await runDsarErase(['--confirm'], d)).toBe(EXIT_USAGE);
         expect(await runDsarErase(['--request'], d)).toBe(EXIT_USAGE);
         expect(await runDsarErase(['--request', REQUEST, '--due'], d)).toBe(EXIT_USAGE);
+        expect(await runDsarErase(['--due', '--check', '--confirm'], d)).toBe(EXIT_USAGE);
         expect(d.readRequest).not.toHaveBeenCalled();
         expect(d.readDue).not.toHaveBeenCalled();
     });

@@ -25,6 +25,13 @@
  *                           `handledById`; the erasure then completes it.
  *   SUBJECT_ALREADY_ERASED  `userId` is NULL: another request erased them.
  *
+ * At the ERASE stage only (`--confirm`, and `eraseUser`'s own re-read):
+ *
+ *   NOT_PREFLIGHTED         no preflight ever stamped this request.
+ *   PREFLIGHT_EXPIRED       its stamp is more than
+ *                           `ERASURE_PREFLIGHT_VALID_HOURS` old (or later than
+ *                           `now`, which only a clock moved back can give).
+ *
  * Then `evaluateDsarRejection` (`rejectionForSubject`): `LAST_OWNER` from the
  * subject's live memberships. Outstanding balance and legal hold are passed as
  * absent, because the product holds neither for a person; they remain the
@@ -37,6 +44,20 @@
  * COMPLETED / REJECTED / CANCELED, whose subject still exists. The action
  * refuses unless exactly one is due. A VERIFIED request is due and then
  * refused `NOT_IN_PROGRESS` by name, so it is never silently skipped.
+ *
+ * ── THE PREFLIGHT STAMP (owner decision 2026-11-25, third round) ──────
+ *
+ * The production actions take no parameter, so `dsar-erase-preflight` and
+ * `dsar-erase` each pick "the one due request" afresh. Between the two runs the
+ * request the owner read can be cancelled and another become due; unbound, the
+ * approved erase would then erase a person nobody previewed. So the preflight
+ * stamps the request it showed (`erasurePreflightAt`, through
+ * `stampErasurePreflight`, the stamp's only writer), and the ERASE stage
+ * refuses a request with no stamp, or one older than
+ * `ERASURE_PREFLIGHT_VALID_HOURS`. The stamp is the only write a preflight
+ * makes, and only when the plan would be admitted. It is never cleared: the
+ * row survives the erasure as evidence, and the stamp says which preview the
+ * erasure was approved on.
  *
  * ── THE SECOND WRITER ──────────────────────────────────────────────────
  *
@@ -63,7 +84,23 @@ export interface ErasureRequestRow {
     status: string;
     verifiedAt: Date | null;
     completedAt: Date | null;
+    /** When a preflight last stamped this request; `null` if none ever did. */
+    erasurePreflightAt: Date | null;
 }
+
+/**
+ * Which decision is being made. A PREFLIGHT shows the request and stamps it;
+ * the ERASE stage (`--check`, `--confirm`, and `eraseUser`'s re-read) also
+ * requires that stamp. Named on every call, never defaulted: a gate that is off
+ * whenever a caller omits an argument is worse than an absent one.
+ */
+export type ErasureStage = 'PREFLIGHT' | 'ERASE';
+
+/**
+ * How long a preflight's stamp admits the erasure (owner decision 2026-11-25,
+ * third round). The one place the 24 hours live.
+ */
+export const ERASURE_PREFLIGHT_VALID_HOURS = 24;
 
 export type ErasureRequestRefusalReason =
     | 'REQUEST_NOT_FOUND'
@@ -75,6 +112,10 @@ export type ErasureRequestRefusalReason =
     | 'COOLING_OFF'
     | 'NOT_IN_PROGRESS'
     | 'SUBJECT_ALREADY_ERASED'
+    /** ERASE stage: no preflight ever stamped the request. */
+    | 'NOT_PREFLIGHTED'
+    /** ERASE stage: the stamp is older than `ERASURE_PREFLIGHT_VALID_HOURS`. */
+    | 'PREFLIGHT_EXPIRED'
     /** `evaluateDsarRejection` refused it; `rejection` names the criterion. */
     | 'REJECTION_CRITERION';
 
@@ -97,8 +138,18 @@ function cooledOff(verifiedAt: Date, now: Date): boolean {
     return now.getTime() - verifiedAt.getTime() >= DSAR_COOLING_OFF_HOURS * HOUR_MS;
 }
 
+/** Whether a stamp made at `stampedAt` still admits the erasure at `now`. */
+function preflightFresh(stampedAt: Date, now: Date): boolean {
+    const age = now.getTime() - new Date(stampedAt).getTime();
+    return age >= 0 && age <= ERASURE_PREFLIGHT_VALID_HOURS * HOUR_MS;
+}
+
 /** The register's own refusals, in order. Pure; `null` when the row may be fulfilled. */
-export function erasureRequestRefusal(request: ErasureRequestRow | null, now: Date): ErasureRequestRefusal | null {
+export function erasureRequestRefusal(
+    request: ErasureRequestRow | null,
+    now: Date,
+    stage: ErasureStage,
+): ErasureRequestRefusal | null {
     if (!request) return { reason: 'REQUEST_NOT_FOUND' };
     if (request.type !== 'ERASURE') return { reason: 'NOT_AN_ERASURE' };
     if (request.status === 'COMPLETED' || request.completedAt !== null) return { reason: 'ALREADY_COMPLETED' };
@@ -108,6 +159,10 @@ export function erasureRequestRefusal(request: ErasureRequestRow | null, now: Da
     if (!cooledOff(request.verifiedAt, now)) return { reason: 'COOLING_OFF' };
     if (request.status !== 'IN_PROGRESS') return { reason: 'NOT_IN_PROGRESS' };
     if (request.userId === null) return { reason: 'SUBJECT_ALREADY_ERASED' };
+    if (stage === 'ERASE') {
+        if (request.erasurePreflightAt === null) return { reason: 'NOT_PREFLIGHTED' };
+        if (!preflightFresh(request.erasurePreflightAt, now)) return { reason: 'PREFLIGHT_EXPIRED' };
+    }
     return null;
 }
 
@@ -126,7 +181,8 @@ export interface ErasureRequestWriteDb {
     };
 }
 
-const REQUEST_SQL = `SELECT "id", "userId", "type"::text AS "type", "status"::text AS "status", "verifiedAt", "completedAt"
+const REQUEST_SQL = `SELECT "id", "userId", "type"::text AS "type", "status"::text AS "status", "verifiedAt", "completedAt",
+       "erasurePreflightAt"
   FROM "DataSubjectRequest"
  WHERE "id" = $1`;
 
@@ -136,7 +192,8 @@ export async function readErasureRequest(db: ErasureRequestDb, requestId: string
     return rows[0] ?? null;
 }
 
-const DUE_SQL = `SELECT "id", "userId", "type"::text AS "type", "status"::text AS "status", "verifiedAt", "completedAt"
+const DUE_SQL = `SELECT "id", "userId", "type"::text AS "type", "status"::text AS "status", "verifiedAt", "completedAt",
+       "erasurePreflightAt"
   FROM "DataSubjectRequest"
  WHERE "type" = 'ERASURE'
    AND "status" IN ('VERIFIED', 'IN_PROGRESS')
@@ -193,8 +250,9 @@ export async function decideErasureRequest(
     db: ErasureRequestDb,
     request: ErasureRequestRow | null,
     now: Date,
+    stage: ErasureStage,
 ): Promise<ErasureRequestRefusal | null> {
-    const refusal = erasureRequestRefusal(request, now);
+    const refusal = erasureRequestRefusal(request, now, stage);
     if (refusal) return refusal;
     const rejection = await rejectionForSubject(db, request!.userId!);
     return rejection ? { reason: 'REJECTION_CRITERION', rejection } : null;
@@ -218,6 +276,27 @@ export class ErasureRequestRefusedError extends ConflictError {
 }
 
 /**
+ * The preflight's stamp: the one write a preflight makes, and the only writer
+ * of `erasurePreflightAt` (`tests/guards/dsar-register-writers.test.ts`).
+ *
+ * Called by the command after a PREFLIGHT whose plan would be admitted, for the
+ * request it printed. A conditional claim, like the completion: the row must
+ * still be that subject's open IN_PROGRESS erasure, so a request that moved
+ * while it was being previewed is not stamped, and the preflight fails. A
+ * second preflight re-stamps, which restarts the 24 hours.
+ */
+export async function stampErasurePreflight(
+    db: ErasureRequestWriteDb,
+    args: { requestId: string; userId: string; now: Date },
+): Promise<boolean> {
+    const stamped = await db.dataSubjectRequest.updateMany({
+        where: { id: args.requestId, userId: args.userId, type: 'ERASURE', status: 'IN_PROGRESS', completedAt: null },
+        data: { erasurePreflightAt: args.now },
+    });
+    return stamped.count === 1;
+}
+
+/**
  * Inside the erasure's transaction, before the User row is deleted: clear the
  * columns of every request of the subject that could still identify them, and
  * complete the request being fulfilled.
@@ -226,6 +305,8 @@ export class ErasureRequestRefusedError extends ConflictError {
  * `exportUrl` go to NULL on EVERY request of the subject (owner decision
  * 2026-11-25): the type, status, dates and rejection reason stay as the
  * evidence. `userId` itself is nulled by the FK's SET NULL at the delete.
+ * `erasurePreflightAt` is kept: it records which preview the erasure was
+ * approved on.
  *
  * The completion is a conditional claim — the row must still be this
  * subject's IN_PROGRESS erasure — so a request moved under the erasure fails

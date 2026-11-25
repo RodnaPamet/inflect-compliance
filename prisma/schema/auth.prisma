@@ -2314,6 +2314,14 @@ model DataSubjectRequest {
   requestedAt     DateTime                 @default(now())
   verifiedAt      DateTime?
   completedAt     DateTime?
+  /// When a `dsar-erase` preflight last showed this request as an erasure
+  /// it would admit (#5940, owner decision 2026-11-25, third round).
+  /// `dsar-erase` erases only a request stamped within
+  /// `ERASURE_PREFLIGHT_VALID_HOURS` (`jobs/dsar-erasure-request.ts`), so the
+  /// approved write acts on the request the owner read and on no other.
+  /// Written only by `stampErasurePreflight`, and never cleared: the row
+  /// survives the erasure as evidence, and the stamp is part of it.
+  erasurePreflightAt DateTime?
   /// One of the DSAR_REJECTION_REASONS constants (src/lib/dsar.ts) when
   /// status = REJECTED.
   rejectionReason String?

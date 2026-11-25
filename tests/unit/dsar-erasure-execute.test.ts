@@ -650,6 +650,8 @@ describe('eraseUser — the DSAR register request it fulfils (#5940)', () => {
         status: 'IN_PROGRESS',
         verifiedAt: new Date(NOW.getTime() - 25 * 3_600_000),
         completedAt: null,
+        // A preflight stamped it two hours ago (#5940, third round).
+        erasurePreflightAt: new Date(NOW.getTime() - 2 * 3_600_000),
         ...overrides,
     });
     const argsOf = (call: string) => JSON.parse(call.slice('dataSubjectRequest:updateMany:'.length));
@@ -662,6 +664,7 @@ describe('eraseUser — the DSAR register request it fulfils (#5940)', () => {
         const writes = fake.calls.filter((c) => c.startsWith('dataSubjectRequest:updateMany'));
         expect(writes).toHaveLength(2);
         // Every request of the subject loses the two columns that could name them.
+        // The preflight stamp is not among them: it is evidence and stays.
         expect(argsOf(writes[0])).toEqual({ where: { userId: SUBJECT }, data: { fulfilmentNotes: null, exportUrl: null } });
         // The request is completed by a claim on its exact expected state.
         expect(argsOf(writes[1])).toEqual({
@@ -680,6 +683,10 @@ describe('eraseUser — the DSAR register request it fulfils (#5940)', () => {
         ['cancelled since the plan', row({ status: 'CANCELED' }), 'REQUEST_CANCELED'],
         ['not started', row({ status: 'VERIFIED' }), 'NOT_IN_PROGRESS'],
         ['gone', null, 'REQUEST_NOT_FOUND'],
+        // The stamp is asked inside the transaction too, so no caller of
+        // eraseUser erases a request nobody previewed (third round).
+        ['no preflight ever stamped', row({ erasurePreflightAt: null }), 'NOT_PREFLIGHTED'],
+        ['stamped 25 hours ago', row({ erasurePreflightAt: new Date(NOW.getTime() - 25 * 3_600_000) }), 'PREFLIGHT_EXPIRED'],
     ])('refuses a request %s, and writes nothing', async (_label, requestRow, reason) => {
         const fake = makeFakeDb({ requestRow });
         const err = await eraseUser(SUBJECT, { db: fake.db, request: { id: REQUEST_ID, now: NOW } }).catch((e: unknown) => e);

@@ -13,8 +13,10 @@
 # THE DSAR ERASURE ACTIONS TAKE NO REQUEST ID (#5940, owner decision
 # 2026-11-25). `dsar-erase-preflight` and `dsar-erase` act on the ONE erasure
 # request the register holds as due, and refuse unless exactly one is; the
-# preflight prints its id for the owner to read before approving the write.
-# An id input would be the free text this file exists to refuse.
+# preflight prints its id for the owner to read before approving the write,
+# and stamps that request, and the write erases only a request stamped within
+# 24 hours (third round). An id input would be the free text this file exists
+# to refuse.
 #
 #   vm.sh <action>
 #

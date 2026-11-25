@@ -1,6 +1,7 @@
 -- ═══════════════════════════════════════════════════════════════════
 -- DataSubjectRequest.userId: the register row survives the erasure,
--- unlinked (#5940, owner decision 2026-11-25).
+-- unlinked (#5940, owner decision 2026-11-25); and the erasure's preflight
+-- stamp, `erasurePreflightAt` (third round, below).
 -- ═══════════════════════════════════════════════════════════════════
 --
 -- The FK was ON DELETE RESTRICT and the column NOT NULL
@@ -39,14 +40,33 @@
 -- NULL; no such row exists until an erasure runs on the new image, and the
 -- register only reads rows whose subject is an ACTIVE member.
 --
+-- THE PREFLIGHT STAMP (owner decision 2026-11-25, third round). A nullable
+-- `erasurePreflightAt`: the `dsar-erase-preflight` action stamps the one due
+-- request it showed, and `dsar-erase` erases only a request stamped within
+-- `ERASURE_PREFLIGHT_VALID_HOURS` (24). So when the request the owner read is
+-- cancelled and another becomes due between the two runs, the approved erase
+-- refuses (`NOT_PREFLIGHTED`) rather than erasing the other one. Nullable with
+-- no default: every existing row reads "never previewed", which is true. The
+-- stamp is evidence like the rest of the surviving row and is never cleared.
+--
+-- ROLLING DEPLOY. A new nullable column. A container on the previous image
+-- selects explicit columns or the whole row through a Prisma client that does
+-- not know the column, and Prisma ignores a column it was not generated with;
+-- it never writes the column, and it has no erasure command to bypass it.
+--
 -- ROLLBACK. A forward fix only. While no request has been unlinked:
 --   ALTER TABLE "DataSubjectRequest" DROP CONSTRAINT "DataSubjectRequest_userId_fkey";
 --   ALTER TABLE "DataSubjectRequest" ADD CONSTRAINT "DataSubjectRequest_userId_fkey"
 --       FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 --   ALTER TABLE "DataSubjectRequest" ALTER COLUMN "userId" SET NOT NULL;
--- Once one has, NOT NULL cannot return without deleting evidence.
+-- Once one has, NOT NULL cannot return without deleting evidence. The stamp
+-- column can be dropped (`DROP COLUMN "erasurePreflightAt"`) only together
+-- with the image that reads it, and dropping it deletes the record of which
+-- preflight each erasure was approved on.
 
 ALTER TABLE "DataSubjectRequest" ALTER COLUMN "userId" DROP NOT NULL;
+
+ALTER TABLE "DataSubjectRequest" ADD COLUMN "erasurePreflightAt" TIMESTAMP(3);
 
 ALTER TABLE "DataSubjectRequest" DROP CONSTRAINT "DataSubjectRequest_userId_fkey";
 ALTER TABLE "DataSubjectRequest" ADD CONSTRAINT "DataSubjectRequest_userId_fkey"
