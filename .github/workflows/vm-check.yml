@@ -44,6 +44,7 @@ on:
                     - posture-provider-names
                     - tei-embed-timing
                     - migrate-role
+                    - calendar-observations
 
 # One at a time: two runs staging the script on the VM at once would race.
 concurrency:

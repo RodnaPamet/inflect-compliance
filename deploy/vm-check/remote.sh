@@ -32,6 +32,11 @@
 #                        the app container, whether it is a superuser, and
 #                        whether the vector extension is available and
 #                        installed in the app's database (#5720)
+#   calendar-observations `calendar.vendor_observation` lines in the app's and
+#                        the worker's logs over the last 72 hours, counted per
+#                        provider, operation, status, code and date shape: what
+#                        Graph, Entra and Google answered the calendar push
+#                        (#5957, docs/runbooks/calendar-vendor-verification.md)
 #
 # THE WORKFLOW'S LOGS ARE PUBLIC, because the repository is. So this prints
 # names, states, versions and counts, and never a log line, a row, an
@@ -441,6 +446,54 @@ lines.on("close", function () {
 });
 '
 
+# ─────────────────────────────────────────────────────────────────────────────
+# calendar-observations — #5957.
+#
+# The calendar push writes one `calendar.vendor_observation` line per vendor
+# answer the open items of docs/calendar-push-design.md depend on
+# (src/app-layer/integrations/providers/calendar/vendor-observation.ts). The
+# owner runs the real-account steps in
+# docs/runbooks/calendar-vendor-verification.md; this counts what they left.
+#
+# PUBLIC LOG DISCIPLINE. A line reaches this program only through the grep for
+# its message, and the program prints COUNTS keyed on five values, each read
+# from its own key with a strict pattern and then held to a fixed vocabulary or
+# shape. Anything else is printed as (other) or -, never as itself:
+#   provider   one of three words
+#   operation  one of the product's operations, listed below
+#   status     exactly three digits
+#   code       a machine code: a letter, then letters, digits, _ . -, at most 64
+#   dateShape  one of four words
+# The line's other keys (pino's level, time, pid and hostname, and anything a
+# future change might add) are never read. The two lists are held equal to the
+# TypeScript's by tests/guards/vm-check-workflow.test.ts, and no `>` appears in
+# the program because the "writes no file" guard reads every line for one.
+CALENDAR_OBSERVATION_COUNTER='
+BEGIN {
+    split("graph.insert graph.insert_existing graph.insert_duplicate graph.duplicate_found graph.duplicate_not_found graph.patch google.insert entra.admin_consent_error entra.personal_consent_error entra.exchange_error", ops, " ")
+    for (i in ops) op_ok[ops[i]] = 1
+    split("graph google entra", pv, " ")
+    for (i in pv) provider_ok[pv[i]] = 1
+    split("same_date shifted_back shifted_forward unreadable", ds, " ")
+    for (i in ds) shape_ok[ds[i]] = 1
+}
+function str(key,    re) {
+    re = "\"" key "\":\"[A-Za-z0-9_.-]+\""
+    if (!match($0, re)) return ""
+    return substr($0, RSTART + length(key) + 4, RLENGTH - length(key) - 5)
+}
+{
+    p = str("provider"); if (!(p in provider_ok)) p = "(other)"
+    o = str("operation"); if (!(o in op_ok)) o = "(other)"
+    c = str("code"); if (c !~ /^[A-Za-z]/ || !(length(c) <= 64)) c = "-"
+    d = str("dateShape"); if (!(d in shape_ok)) d = "-"
+    s = "-"
+    if (match($0, /"status":[0-9]+[,}]/) && RLENGTH == 13) s = substr($0, RSTART + 9, 3)
+    n[p " " o " " s " " c " " d]++
+}
+END { for (k in n) printf "%s\t%d\n", k, n[k] }
+'
+
 case "$CHECK" in
 containers)
     echo "## Containers"
@@ -598,6 +651,42 @@ tei-embed-timing)
 
 migrate-role)
     migrate_role
+    ;;
+
+calendar-observations)
+    # #5957: what Graph, Entra and Google answered the calendar push, as counts.
+    # The callbacks run in the app and the nightly push in the worker, so both
+    # logs are read. Nothing of a line but the five counted values is printed.
+    echo "## Calendar vendor observations, last 72 hours (#5957)"
+    echo
+    echo "Counts of \`calendar.vendor_observation\` lines, per provider, operation, HTTP status, machine code and date shape. Read each row against docs/runbooks/calendar-vendor-verification.md."
+    echo
+    # A container's log starts when the container does: Watchtower replaces the
+    # app and worker on every new image, so the 72 hours shrink to the time
+    # since then. Say so, so an empty table is never read as a vendor's answer.
+    for svc in app worker; do
+        echo "- $svc: logs since $(docker inspect -f '{{.State.StartedAt}}' "$(need "$svc")") (container start)"
+    done
+    echo
+    echo "| Container | Provider | Operation | Status | Code | Date shape | Lines |"
+    echo "| --- | --- | --- | --- | --- | --- | --- |"
+    total=0
+    for svc in app worker; do
+        counts="$(docker logs --since 72h "$(need "$svc")" 2>&1 | grep -F '"msg":"calendar.vendor_observation"' \
+            | awk "$CALENDAR_OBSERVATION_COUNTER" | sort || true)"
+        while IFS=$'\t' read -r key n; do
+            [ -n "${n:-}" ] || continue
+            read -r prov op st code shape <<< "$key"
+            echo "| $svc | $prov | $op | $st | $code | $shape | $n |"
+            total=$((total + n))
+        done <<< "$counts"
+    done
+    echo
+    echo "Total: $total"
+    if [ "$total" -eq 0 ]; then
+        echo
+        echo "No observation in the window. That is not an answer from a vendor: the step was not run inside the window, or a container restarted after it."
+    fi
     ;;
 
 *)

@@ -482,6 +482,9 @@
         "docs/rsc-guidelines.md": {
             "class": "authoritative"
         },
+        "docs/runbooks/calendar-vendor-verification.md": {
+            "class": "authoritative"
+        },
         "docs/runbooks/dsar-erasure.md": {
             "class": "authoritative"
         },
@@ -489,6 +492,9 @@
             "class": "authoritative"
         },
         "docs/runbooks/failed-migration-recovery.md": {
+            "class": "authoritative"
+        },
+        "docs/runbooks/google-calendar-oauth-verification.md": {
             "class": "authoritative"
         },
         "docs/runbooks/joule-byoa.md": {

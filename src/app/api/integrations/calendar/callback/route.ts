@@ -4,6 +4,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import type { RequestContext } from '@/app-layer/types';
 import { resolvePublicOrigin } from '@/lib/http/request-origin';
 import {
+    CalendarCodeExchangeError,
     CalendarNoRefreshTokenError,
     exchangeCalendarCode,
 } from '@/app-layer/integrations/providers/calendar/token';
@@ -19,6 +20,7 @@ import {
 } from '@/app-layer/usecases/user-calendar-connection';
 import { getConsentStates, requiresAdminConsent } from '@/app-layer/usecases/tenant-calendar-consent';
 import { readEntraError } from '@/app-layer/integrations/providers/calendar/entra-errors';
+import { observeCalendarVendor } from '@/app-layer/integrations/providers/calendar/vendor-observation';
 import { logger } from '@/lib/observability/logger';
 
 /**
@@ -132,6 +134,11 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
             // record of the grant is a memory, and an administrator who removed
             // it in the Entra portal is seen only here (design point 1).
             const reading = readEntraError(errorCode, url.searchParams.get('error_description'), 'user');
+            observeCalendarVendor({
+                operation: 'entra.personal_consent_error',
+                status: null,
+                code: reading.aadstsCode ?? reading.errorCode,
+            });
             const outcome =
                 reading.kind === 'CONSENT_REQUIRED'
                     ? 'consent_required'
@@ -177,6 +184,19 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
         });
     } catch (err) {
         if (err instanceof CalendarNoRefreshTokenError) return fail('no_refresh_token');
+        if (err instanceof CalendarCodeExchangeError && provider === 'outlook-calendar') {
+            const reading = err.reading;
+            observeCalendarVendor({
+                operation: 'entra.exchange_error',
+                status: err.status,
+                code: reading ? (reading.aadstsCode ?? reading.errorCode) : null,
+            });
+            // An organisation grant removed in the Entra portal can surface
+            // HERE rather than on the redirect: Entra issues a code and refuses
+            // to exchange it with AADSTS65001 (#5957). Same remedy, same
+            // outcome as on the redirect.
+            if (reading?.kind === 'CONSENT_REQUIRED') return fail('consent_required', reading.errorCode);
+        }
         logger.warn('calendar callback: exchange or save failed', {
             component: 'calendar-callback',
             tenantId: ctx.tenantId,

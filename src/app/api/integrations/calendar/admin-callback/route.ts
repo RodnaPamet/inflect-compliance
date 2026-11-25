@@ -14,6 +14,7 @@ import {
     readEntraError,
     type EntraErrorKind,
 } from '@/app-layer/integrations/providers/calendar/entra-errors';
+import { observeCalendarVendor } from '@/app-layer/integrations/providers/calendar/vendor-observation';
 import {
     recordAdminConsent,
     recordAdminConsentFailure,
@@ -151,6 +152,11 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
     const errorParam = url.searchParams.get('error');
     if (errorParam) {
         const reading = readEntraError(errorParam, url.searchParams.get('error_description'), 'admin');
+        observeCalendarVendor({
+            operation: 'entra.admin_consent_error',
+            status: null,
+            code: reading.aadstsCode ?? reading.errorCode,
+        });
         return fail(OUTCOME_FOR_ENTRA_ERROR[reading.kind], {
             providerErrorCode: reading.errorCode,
             aadstsCode: reading.aadstsCode,

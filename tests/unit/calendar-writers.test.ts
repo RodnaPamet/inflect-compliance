@@ -85,11 +85,44 @@ describe('Google Calendar writer', () => {
         expect(call.body).not.toHaveProperty('location');
     });
 
-    it('a retried insert (409) is the event a previous attempt created — no second event', async () => {
-        const t = scripted([json(409, { error: { code: 409, message: 'The requested identifier already exists.' } })]);
+    it('an insert whose id is taken (409) writes our content there, confirmed — no second event', async () => {
+        const t = scripted([
+            json(409, { error: { code: 409, message: 'The requested identifier already exists.' } }),
+            json(200, { id: CLIENT_ID }),
+        ]);
         const writer = createGoogleCalendarWriter({ tokens: tokens(), deps: t.deps });
         await expect(writer.insert({ clientEventId: CLIENT_ID, event: EVENT })).resolves.toEqual({ remoteEventId: CLIENT_ID });
-        expect(t.calls).toHaveLength(1);
+        expect(t.calls.map((c) => c.method)).toEqual(['POST', 'PATCH']);
+        expect(t.calls[1].url).toMatch(new RegExp(`/events/${CLIENT_ID}$`));
+        // Google keeps an event Inflect deleted earlier (a finished deadline
+        // reopened, a disconnect then a reconnect) as CANCELLED under its id.
+        // Without `confirmed` it would stay hidden while recorded as pushed.
+        expect(t.calls[1].body).toMatchObject({ status: 'confirmed', summary: EVENT.title });
+    });
+
+    it('an id taken and then gone is created again under a derived id', async () => {
+        const t = scripted([
+            json(409, { error: { code: 409 } }),
+            json(410, { error: { code: 410 } }),
+            json(200, { id: recreatedClientEventId(CLIENT_ID) }),
+        ]);
+        const writer = createGoogleCalendarWriter({ tokens: tokens(), deps: t.deps });
+        await expect(writer.insert({ clientEventId: CLIENT_ID, event: EVENT })).resolves.toEqual({
+            remoteEventId: recreatedClientEventId(CLIENT_ID),
+        });
+        expect((t.calls[2].body as { id: string }).id).toBe(recreatedClientEventId(CLIENT_ID));
+    });
+
+    it('a chain of taken-then-gone ids gives up after a bounded number of tries, never loops', async () => {
+        const answers: Array<() => Response> = [];
+        for (let i = 0; i < 10; i++) {
+            answers.push(() => json(409, { error: { code: 409 } }), () => json(410, { error: { code: 410 } }));
+        }
+        const t = scripted(answers);
+        const writer = createGoogleCalendarWriter({ tokens: tokens(), deps: t.deps });
+        await expect(writer.insert({ clientEventId: CLIENT_ID, event: EVENT })).rejects.toBeInstanceOf(CalendarWriteError);
+        // The first id plus three derived ones, each a POST and a PATCH.
+        expect(t.calls).toHaveLength(8);
     });
 
     it('a patch un-cancels the event, so one deleted by hand comes back when its deadline changes', async () => {
@@ -206,11 +239,31 @@ describe('Microsoft Graph writer', () => {
         expect(filter).toContain(GRAPH_MARKER_PROPERTY_ID);
     });
 
-    it('a duplicate that cannot be found is a per-event failure, retried next run — never a second POST', async () => {
-        const t = scripted([json(409, { error: { code: 'Conflict' } }), json(200, { value: [] })]);
+    it('a duplicate no live event carries (a deleted one) is created under a derived id, never the same id twice', async () => {
+        const t = scripted([
+            json(409, { error: { code: 'Conflict' } }),
+            json(200, { value: [] }),
+            json(201, { id: 'AAMk-again' }),
+        ]);
+        const writer = createGraphCalendarWriter({ tokens: tokens(), deps: t.deps });
+        await expect(writer.insert({ clientEventId: CLIENT_ID, event: EVENT })).resolves.toEqual({ remoteEventId: 'AAMk-again' });
+        const posts = t.calls.filter((c) => c.method === 'POST').map((c) => c.body as { transactionId: string; singleValueExtendedProperties: Array<{ value: string }> });
+        expect(posts.map((b) => b.transactionId)).toEqual([CLIENT_ID, recreatedClientEventId(CLIENT_ID)]);
+        // The marker names the id the event was created under, so a later
+        // duplicate of IT is found by the same lookup.
+        expect(posts[1].singleValueExtendedProperties[0].value).toBe(recreatedClientEventId(CLIENT_ID));
+    });
+
+    it('a chain of remembered ids gives up after a bounded number of tries, retried next run', async () => {
+        const answers: Array<() => Response> = [];
+        for (let i = 0; i < 10; i++) {
+            answers.push(() => json(409, { error: { code: 'Conflict' } }), () => json(200, { value: [] }));
+        }
+        const t = scripted(answers);
         const writer = createGraphCalendarWriter({ tokens: tokens(), deps: t.deps });
         await expect(writer.insert({ clientEventId: CLIENT_ID, event: EVENT })).rejects.toBeInstanceOf(CalendarWriteError);
-        expect(t.calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+        // The first id plus three derived ones, each a POST and a lookup.
+        expect(t.calls.filter((c) => c.method === 'POST')).toHaveLength(4);
     });
 
     it('a 400 that does not name a duplicate is a plain per-event failure', async () => {
