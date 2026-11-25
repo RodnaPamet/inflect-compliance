@@ -2297,10 +2297,11 @@ model AgenticEvidenceArtefact {
 
   /// `AGENT_ACTION_RECEIPTS` | `AI_DECISION_RECORDS` | `AGENT_HARNESS_SCANS` |
   /// `INTEGRATION_PASSPORTS` | `AGENT_ACTION_RECEIPTS_PER_AGENT` |
-  /// `AI_DECISION_RECORDS_PER_AGENT` (`AGENTIC_ARTEFACT_KINDS`, which the DB
-  /// CHECK mirrors; the third added by migration 20261017235500, #3687, the
-  /// fourth by 20261018001000, #3672, the two per-agent kinds by 20261018140000,
-  /// #3700). TEXT + CHECK rather than a Postgres enum, for the reason the
+  /// `AI_DECISION_RECORDS_PER_AGENT` | `PROBE_RUNS` (`AGENTIC_ARTEFACT_KINDS`,
+  /// which the DB CHECK mirrors; the third added by migration 20261017235500,
+  /// #3687, the fourth by 20261018001000, #3672, the two per-agent kinds by
+  /// 20261018140000, #3700, and `PROBE_RUNS` by 20261125130000, step 8c of the
+  /// active flavour). TEXT + CHECK rather than a Postgres enum, for the reason the
   /// `@@map("WorkItem*")` pins record: an `ALTER TYPE` mid-rolling-deploy makes
   /// still-running old containers fail with SQLSTATE 42704, so widening this
   /// vocabulary is a CHECK swap instead.

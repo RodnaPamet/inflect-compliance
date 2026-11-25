@@ -49,6 +49,7 @@ import {
     emitAgenticEvidence,
     planTargetRequirements,
     reconcileClosedHarnessPeriods,
+    reconcileClosedProbePeriods,
     targetRequirementClauses,
     withdrawStaleAgenticEvidence,
 } from '../usecases/agentic-evidence-emission';
@@ -182,9 +183,16 @@ export async function runAgenticEvidenceEmission(
             // re-assert the harness months the tick has moved past, or the
             // scan sent after a month's last tick never reaches its artefact.
             if (!payload.asOf) {
-                const closed = await reconcileClosedHarnessPeriods(ctx, { now: new Date() });
-                emitted.push(...closed.artefacts);
-                result.demoted += closed.demotedEvidenceIds.length;
+                const now = new Date();
+                // Harness scans and probe runs both judge a month's status on
+                // completeness, so both re-assert the months the tick moved past.
+                for (const closed of [
+                    await reconcileClosedHarnessPeriods(ctx, { now }),
+                    await reconcileClosedProbePeriods(ctx, { now }),
+                ]) {
+                    emitted.push(...closed.artefacts);
+                    result.demoted += closed.demotedEvidenceIds.length;
+                }
             }
             for (const artefact of emitted) {
                 if (artefact.outcome === 'created') result.created += 1;

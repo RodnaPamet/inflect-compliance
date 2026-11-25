@@ -114,6 +114,7 @@ import {
     ARTEFACT_KIND_DECISIONS_PER_AGENT,
     ARTEFACT_KIND_HARNESS_SCANS,
     ARTEFACT_KIND_PASSPORTS,
+    ARTEFACT_KIND_PROBE_RUNS,
     ARTEFACT_KIND_RECEIPTS,
     ARTEFACT_KIND_RECEIPTS_PER_AGENT,
     EVIDENCE_TARGETS,
@@ -122,6 +123,7 @@ import {
     buildAgentReceiptArtefact,
     buildDecisionArtefact,
     buildHarnessScanArtefact,
+    buildProbeRunArtefact,
     buildReceiptArtefact,
     buildWithdrawalNotice,
     harnessArtefactEvidenceStatus,
@@ -130,6 +132,8 @@ import {
     monthlyPeriod,
     perAgentPopulationDigest,
     periodForKind,
+    probeArtefactEvidenceStatus,
+    probeDigestFacts,
     sourcePopulationDigest,
     type AgenticArtefactKind,
     type ArtefactBody,
@@ -141,6 +145,8 @@ import {
     type HarnessPlannedStatus,
     type HarnessScanFact,
     type HarnessTallies,
+    type ProbePeriodFacts,
+    type ProbeRunFact,
     type ReceiptFact,
 } from '@/lib/agentic/evidence-artefact';
 import { parseStoredHarnessSources } from '@/lib/agentic/harness-contract';
@@ -175,6 +181,10 @@ const HARNESS_SCAN_CAP = 200;
 const HARNESS_CLASS_FINDING_CAP = 2 * POPULATION_CAP;
 /** Bound on the scanners holding a trusted key one month's artefact reads. A tenant trusts a handful. */
 const HARNESS_KEY_HOLDER_CAP = 200;
+/** Bound on the probe runs one month's artefact reads; one past it is read to know. */
+const PROBE_RUN_CAP = 200;
+/** Bound on the probers holding a trusted key one month's artefact reads. A tenant trusts a handful. */
+const PROBE_KEY_HOLDER_CAP = 200;
 /** Closed months one tick may re-emit. The previous month is always one of them. */
 const CLOSED_PERIOD_CAP = 12;
 /** Closed-month artefacts, and late scans into them, one tick reads. */
@@ -854,6 +864,101 @@ async function loadHarnessFacts(
     };
 }
 
+/**
+ * One month's probe runs (active flavour, step 8c): every run that STARTED in
+ * the period, newest first, counts only. The select names exactly the columns
+ * `ProbeRunFact` renders — never a target endpoint or an outcome excerpt, which
+ * are not even read.
+ */
+async function loadProbeFacts(db: PrismaTx, ctx: RequestContext, period: ArtefactPeriod): Promise<ProbePeriodFacts> {
+    const rows = await db.probeRun.findMany({
+        where: { tenantId: ctx.tenantId, startedAt: { gte: period.start, lt: period.end } },
+        orderBy: [{ startedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+        take: PROBE_RUN_CAP + 1,
+        select: {
+            id: true,
+            proberAgentId: true,
+            engagementId: true,
+            scopeDigest: true,
+            reportDigest: true,
+            startedAt: true,
+            endedAt: true,
+            stopReason: true,
+            concluded: true,
+            targetCount: true,
+            targetsReached: true,
+            outcomeCount: true,
+            actedCount: true,
+            disclosedCount: true,
+            resistedCount: true,
+            inconclusiveCount: true,
+            findingCount: true,
+        },
+    });
+    const runsTruncated = rows.length > PROBE_RUN_CAP;
+    const runs: ProbeRunFact[] = rows.slice(0, PROBE_RUN_CAP).map((r) => ({
+        id: r.id,
+        proberAgentId: r.proberAgentId,
+        // A contract string, but the widest surface in the product: sanitised and bounded.
+        engagementId: safeLabel(r.engagementId),
+        scopeDigest: r.scopeDigest,
+        reportDigest: r.reportDigest,
+        startedAt: r.startedAt.toISOString(),
+        endedAt: r.endedAt.toISOString(),
+        stopReason: r.stopReason === null ? null : safeLabel(r.stopReason),
+        concluded: r.concluded,
+        targetCount: r.targetCount,
+        targetsReached: r.targetsReached,
+        outcomeCount: r.outcomeCount,
+        actedCount: r.actedCount,
+        disclosedCount: r.disclosedCount,
+        resistedCount: r.resistedCount,
+        inconclusiveCount: r.inconclusiveCount,
+        findingCount: r.findingCount,
+    }));
+
+    // The probers that held a TRUSTED key at some moment of the period and sent
+    // nothing in it — compared by prober, not by key, as the harness compares
+    // scanners: a prober that rotated its key reported through the new one.
+    const holders = await db.agentProberKey.findMany({
+        where: {
+            tenantId: ctx.tenantId,
+            createdAt: { lt: period.end },
+            OR: [{ revokedAt: null }, { revokedAt: { gt: period.start } }],
+        },
+        select: { agentId: true },
+        distinct: ['agentId'],
+        orderBy: { agentId: 'asc' },
+        take: PROBE_KEY_HOLDER_CAP + 1,
+    });
+    const holderIds = holders.slice(0, PROBE_KEY_HOLDER_CAP).map((h) => h.agentId);
+    // Read separately from the capped run list, so a prober whose only runs fell
+    // past that cap is not mistaken for a silent one.
+    const reporting = holderIds.length === 0
+        ? []
+        : await db.probeRun.findMany({
+              where: {
+                  tenantId: ctx.tenantId,
+                  startedAt: { gte: period.start, lt: period.end },
+                  proberAgentId: { in: holderIds },
+              },
+              select: { proberAgentId: true },
+              distinct: ['proberAgentId'],
+              take: holderIds.length,
+          });
+    const reported = new Set(reporting.map((r) => r.proberAgentId));
+
+    return {
+        runs,
+        bounds: { probeBounds: true, runsTruncated },
+        silent: {
+            silentProbers: true,
+            agentIds: holderIds.filter((id) => !reported.has(id)).sort(),
+            truncated: holders.length > PROBE_KEY_HOLDER_CAP,
+        },
+    };
+}
+
 // ── Emission ────────────────────────────────────────────────────────────────
 
 interface ArtefactPlan {
@@ -890,15 +995,22 @@ function asPlannedStatus(value: string | null): HarnessPlannedStatus | null {
  * `STATUS_CHANGE` shape the review flow writes, so "who moved this row's
  * status, and why" has one answer on the trail whichever side moved it.
  */
+/** What the status-change audit row calls a month of each kind whose status the emitter judges. */
+const STATUS_JUDGED_KIND_NOUN: Readonly<Partial<Record<AgenticArtefactKind, string>>> = {
+    [ARTEFACT_KIND_HARNESS_SCANS]: 'agent harness scans',
+    [ARTEFACT_KIND_PROBE_RUNS]: 'agent probe runs',
+};
+
 async function logEmitterStatusChange(
     db: PrismaTx,
     ctx: RequestContext,
-    change: { evidenceId: string; from: string; to: HarnessPlannedStatus; period: ArtefactPeriod },
+    change: { evidenceId: string; from: string; to: HarnessPlannedStatus; period: ArtefactPeriod; kind: AgenticArtefactKind },
 ): Promise<void> {
+    const noun = STATUS_JUDGED_KIND_NOUN[change.kind] ?? 'agentic records';
     const reason =
         change.to === 'NEEDS_REVIEW'
-            ? `The agent harness scans of ${change.period.label} are not complete evidence; an incomplete month does not stand as APPROVED`
-            : `The agent harness scans of ${change.period.label} are now complete evidence`;
+            ? `The ${noun} of ${change.period.label} are not complete evidence; an incomplete month does not stand as APPROVED`
+            : `The ${noun} of ${change.period.label} are now complete evidence`;
     await logEvent(db, ctx, {
         action: 'STATUS_CHANGE',
         entityType: 'Evidence',
@@ -1075,6 +1187,7 @@ async function writePlannedArtefactInTx(
                 from: existing.evidence.status,
                 to: correction,
                 period: plan.period,
+                kind: plan.kind,
             });
         }
         return {
@@ -1275,7 +1388,8 @@ export async function emitAgenticEvidence(
         const anyInstalled =
             installedKinds.has(ARTEFACT_KIND_RECEIPTS) ||
             installedKinds.has(ARTEFACT_KIND_DECISIONS) ||
-            installedKinds.has(ARTEFACT_KIND_HARNESS_SCANS);
+            installedKinds.has(ARTEFACT_KIND_HARNESS_SCANS) ||
+            installedKinds.has(ARTEFACT_KIND_PROBE_RUNS);
         if (!anyInstalled) {
             return { anyInstalled: false, plans: [] as ArtefactPlan[], actorUserId: null };
         }
@@ -1283,6 +1397,7 @@ export async function emitAgenticEvidence(
         const receiptTargets = wants(ARTEFACT_KIND_RECEIPTS) ? byKind.get(ARTEFACT_KIND_RECEIPTS) ?? [] : [];
         const decisionTargets = wants(ARTEFACT_KIND_DECISIONS) ? byKind.get(ARTEFACT_KIND_DECISIONS) ?? [] : [];
         const harnessTargets = wants(ARTEFACT_KIND_HARNESS_SCANS) ? byKind.get(ARTEFACT_KIND_HARNESS_SCANS) ?? [] : [];
+        const probeTargets = wants(ARTEFACT_KIND_PROBE_RUNS) ? byKind.get(ARTEFACT_KIND_PROBE_RUNS) ?? [] : [];
         const agentReceiptTargets = wants(ARTEFACT_KIND_RECEIPTS_PER_AGENT)
             ? byKind.get(ARTEFACT_KIND_RECEIPTS_PER_AGENT) ?? []
             : [];
@@ -1299,6 +1414,11 @@ export async function emitAgenticEvidence(
         const needHarness =
             harnessTargets.length > 0 &&
             (await db.agentHarnessScannerKey.count({ where: { tenantId: ctx.tenantId } })) > 0;
+        // The same opt-in for probe runs: once a prober key has EVER been
+        // registered, a month with no run is reported as one.
+        const needProbes =
+            probeTargets.length > 0 &&
+            (await db.agentProberKey.count({ where: { tenantId: ctx.tenantId } })) > 0;
 
         const receiptPopulation = needReceipts ? await loadReceiptPopulation(db, ctx, period) : EMPTY_POPULATION;
         const decisionPopulation = needDecisions ? await loadDecisionPopulation(db, ctx, period) : EMPTY_POPULATION;
@@ -1356,6 +1476,25 @@ export async function emitAgenticEvidence(
                     title: `${harnessBody.title} — ${controlLabel(control)}`,
                     content: `Control: ${controlLabel(control)} (${control.requirementCode})\n${harnessBody.content}`,
                     evidenceStatus: harnessArtefactEvidenceStatus(harnessBody.completeness),
+                });
+            }
+        }
+
+        if (needProbes) {
+            const probes = await loadProbeFacts(db, ctx, period);
+            const probeDigest = sourcePopulationDigest(ARTEFACT_KIND_PROBE_RUNS, period.start, probeDigestFacts(probes));
+            const probeBody = buildProbeRunArtefact(period, probes, probeDigest);
+            for (const control of probeTargets) {
+                plans.push({
+                    kind: ARTEFACT_KIND_PROBE_RUNS,
+                    agentId: null,
+                    control,
+                    period,
+                    digest: probeDigest,
+                    recordCount: probes.runs.length,
+                    title: `${probeBody.title} — ${controlLabel(control)}`,
+                    content: `Control: ${controlLabel(control)} (${control.requirementCode})\n${probeBody.content}`,
+                    evidenceStatus: probeArtefactEvidenceStatus(probeBody.completeness),
                 });
             }
         }
@@ -1529,6 +1668,65 @@ export async function reconcileClosedHarnessPeriods(
     ctx: RequestContext,
     options: { now?: Date } = {},
 ): Promise<ClosedHarnessReconciliation> {
+    return reconcileClosedPeriods(ctx, ARTEFACT_KIND_HARNESS_SCANS, options);
+}
+
+/**
+ * The same closed-month re-assertion for probe runs (active flavour, step 8c):
+ * a run reported late into a month, or a hand approval of an incomplete month,
+ * is caught exactly as for harness scans.
+ */
+export async function reconcileClosedProbePeriods(
+    ctx: RequestContext,
+    options: { now?: Date } = {},
+): Promise<ClosedHarnessReconciliation> {
+    return reconcileClosedPeriods(ctx, ARTEFACT_KIND_PROBE_RUNS, options);
+}
+
+/** The kinds whose status is a completeness claim, and so whose closed months are re-asserted. */
+type StatusJudgedKind = typeof ARTEFACT_KIND_HARNESS_SCANS | typeof ARTEFACT_KIND_PROBE_RUNS;
+
+/**
+ * The source records that arrived late into the months from `since` up to
+ * `before`: when each describes (`at`) and when it was ingested.
+ */
+async function lateSourceRecords(
+    db: PrismaTx,
+    ctx: RequestContext,
+    kind: StatusJudgedKind,
+    window: { since: Date; before: Date; ingestedAfter: Date },
+): Promise<{ at: Date; createdAt: Date }[]> {
+    if (kind === ARTEFACT_KIND_PROBE_RUNS) {
+        const runs = await db.probeRun.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                startedAt: { gte: window.since, lt: window.before },
+                createdAt: { gt: window.ingestedAfter },
+            },
+            select: { startedAt: true, createdAt: true },
+            orderBy: { createdAt: 'desc' },
+            take: LATE_SCAN_CAP,
+        });
+        return runs.map((r) => ({ at: r.startedAt, createdAt: r.createdAt }));
+    }
+    const scans = await db.agentHarnessScan.findMany({
+        where: {
+            tenantId: ctx.tenantId,
+            asOf: { gte: window.since, lt: window.before },
+            createdAt: { gt: window.ingestedAfter },
+        },
+        select: { asOf: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+        take: LATE_SCAN_CAP,
+    });
+    return scans.map((s) => ({ at: s.asOf, createdAt: s.createdAt }));
+}
+
+async function reconcileClosedPeriods(
+    ctx: RequestContext,
+    kind: StatusJudgedKind,
+    options: { now?: Date } = {},
+): Promise<ClosedHarnessReconciliation> {
     assertCanWrite(ctx);
     const now = options.now ?? new Date();
     const current = monthlyPeriod(now);
@@ -1538,7 +1736,7 @@ export async function reconcileClosedHarnessPeriods(
         const closed = await db.agenticEvidenceArtefact.findMany({
             where: {
                 tenantId: ctx.tenantId,
-                kind: ARTEFACT_KIND_HARNESS_SCANS,
+                kind,
                 status: 'CURRENT',
                 periodStart: { lt: previous.start },
             },
@@ -1557,21 +1755,16 @@ export async function reconcileClosedHarnessPeriods(
         }
         const earliestStart = Math.min(...emittedAt.keys());
         const earliestEmit = Math.min(...emittedAt.values());
-        const late = await db.agentHarnessScan.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                asOf: { gte: new Date(earliestStart), lt: previous.start },
-                createdAt: { gt: new Date(earliestEmit) },
-            },
-            select: { asOf: true, createdAt: true },
-            orderBy: { createdAt: 'desc' },
-            take: LATE_SCAN_CAP,
+        const late = await lateSourceRecords(db, ctx, kind, {
+            since: new Date(earliestStart),
+            before: previous.start,
+            ingestedAfter: new Date(earliestEmit),
         });
         const months = new Set<number>();
-        for (const scan of late) {
-            const key = monthlyPeriod(scan.asOf).start.getTime();
+        for (const record of late) {
+            const key = monthlyPeriod(record.at).start.getTime();
             const at = emittedAt.get(key);
-            if (at !== undefined && scan.createdAt.getTime() > at) months.add(key);
+            if (at !== undefined && record.createdAt.getTime() > at) months.add(key);
         }
         return [...months];
     });
@@ -1580,8 +1773,9 @@ export async function reconcileClosedHarnessPeriods(
     if (starts.length > CLOSED_PERIOD_CAP) {
         // Loud, and not lost: the months left out keep their late scans, so the
         // next tick finds them again.
-        log('warn', 'Agentic evidence: more closed harness months to re-emit than one tick takes', {
+        log('warn', 'Agentic evidence: more closed months to re-emit than one tick takes', {
             tenantId: ctx.tenantId,
+            kind,
             months: starts.length,
             cap: CLOSED_PERIOD_CAP,
         });
@@ -1590,7 +1784,7 @@ export async function reconcileClosedHarnessPeriods(
     const periodLabels: string[] = [];
     const artefacts: EmittedArtefact[] = [];
     for (const start of starts.slice(0, CLOSED_PERIOD_CAP)) {
-        const report = await emitAgenticEvidence(ctx, { asOf: new Date(start), kinds: [ARTEFACT_KIND_HARNESS_SCANS] });
+        const report = await emitAgenticEvidence(ctx, { asOf: new Date(start), kinds: [kind] });
         periodLabels.push(report.periodLabel);
         artefacts.push(...report.artefacts);
     }
@@ -1601,7 +1795,7 @@ export async function reconcileClosedHarnessPeriods(
         const unsafe = await db.agenticEvidenceArtefact.findMany({
             where: {
                 tenantId: ctx.tenantId,
-                kind: ARTEFACT_KIND_HARNESS_SCANS,
+                kind,
                 status: 'CURRENT',
                 plannedEvidenceStatus: 'NEEDS_REVIEW',
                 evidence: { status: 'APPROVED' },
@@ -1624,6 +1818,7 @@ export async function reconcileClosedHarnessPeriods(
                 from: 'APPROVED',
                 to: 'NEEDS_REVIEW',
                 period: monthlyPeriod(row.periodStart),
+                kind,
             });
             ids.push(row.evidenceId);
         }

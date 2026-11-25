@@ -118,6 +118,12 @@ export const ARTEFACT_KIND_PASSPORTS = 'INTEGRATION_PASSPORTS';
 export const ARTEFACT_KIND_RECEIPTS_PER_AGENT = 'AGENT_ACTION_RECEIPTS_PER_AGENT';
 /** One agent's attributed decision records for the month (#3700) — the per-agent cut of `AI_DECISION_RECORDS`. */
 export const ARTEFACT_KIND_DECISIONS_PER_AGENT = 'AI_DECISION_RECORDS_PER_AGENT';
+/**
+ * One month of verified probe runs (`scanent-probes/1`, active flavour step 8c):
+ * what fixed attacker probes made the estate's agents do. Tenant-wide, and only
+ * for a tenant that has ever registered a prober key.
+ */
+export const ARTEFACT_KIND_PROBE_RUNS = 'PROBE_RUNS';
 
 export type PerAgentArtefactKind =
     | typeof ARTEFACT_KIND_RECEIPTS_PER_AGENT
@@ -128,12 +134,14 @@ export type AgenticArtefactKind =
     | typeof ARTEFACT_KIND_DECISIONS
     | typeof ARTEFACT_KIND_HARNESS_SCANS
     | typeof ARTEFACT_KIND_PASSPORTS
+    | typeof ARTEFACT_KIND_PROBE_RUNS
     | PerAgentArtefactKind;
 
 /**
  * Every kind, in emission order. Mirrors the DB CHECK on `kind`
  * (`AgenticEvidenceArtefact_kind_known`), which migration 20261018001000 widened
- * to the fourth and 20261018140000 (#3700) to the two per-agent kinds: a kind
+ * to the fourth, 20261018140000 (#3700) to the two per-agent kinds and
+ * 20261125130000 (active flavour step 8c) to `PROBE_RUNS`: a kind
  * added here and not there is refused at insert, and the integration suite pins
  * that every kind listed here is one the CHECK accepts; a kind removed here
  * while rows of it exist is one the withdrawal sweep stops judging.
@@ -145,6 +153,7 @@ export const AGENTIC_ARTEFACT_KINDS: readonly AgenticArtefactKind[] = [
     ARTEFACT_KIND_PASSPORTS,
     ARTEFACT_KIND_RECEIPTS_PER_AGENT,
     ARTEFACT_KIND_DECISIONS_PER_AGENT,
+    ARTEFACT_KIND_PROBE_RUNS,
 ];
 
 /**
@@ -422,6 +431,55 @@ export const EVIDENCE_TARGETS: readonly EvidenceTarget[] = [
             'audience, agent grants and write authority of every external agent connection, ' +
             'and raises a finding with a named owner for each change.',
     },
+    // ── Probe runs (active flavour, step 8c) ───────────────────────────────
+    //
+    // Four obligations across three families (owner decision, 2026-11-25). A
+    // probe run is the only evidence in the product that an agent was TRIED: an
+    // injected instruction sent, a disclosure asked for, and the agent's verdict
+    // recorded by a signed prober under a scope an owner approved.
+    {
+        kind: ARTEFACT_KIND_PROBE_RUNS,
+        familyUrn: ASI_LIBRARY_URN,
+        legacyKeys: ['OWASP-ASI', 'OWASP-ASI-TOP10'],
+        requirementCode: 'ASI01',
+        reason:
+            'Agent Goal Hijack. Each canary probe sends an agent an instruction that ' +
+            'is not its own and records whether the agent followed it; the period ' +
+            'artefact states which runs tried which agents and how many acted, ' +
+            'resisted or could not be judged.',
+    },
+    {
+        kind: ARTEFACT_KIND_PROBE_RUNS,
+        familyUrn: ASI_LIBRARY_URN,
+        legacyKeys: ['OWASP-ASI', 'OWASP-ASI-TOP10'],
+        requirementCode: 'ASI02',
+        reason:
+            'Tool Misuse and Exploitation. A probe of an MCP agent goes through its ' +
+            'tools, so an ACTED verdict there is an agent that turned an injected ' +
+            'instruction into a tool call; the artefact counts those verdicts per run.',
+    },
+    {
+        kind: ARTEFACT_KIND_PROBE_RUNS,
+        familyUrn: ISO27001_FAMILY_URN,
+        legacyKeys: ['ISO27001'],
+        requirementCode: 'A.8.29',
+        reason:
+            'Security testing in development and acceptance. A probe run is a security ' +
+            'test of the agents in an engagement an owner approved, run by a registered ' +
+            'prober and signed; the artefact records each run, whether it concluded and ' +
+            'what it found.',
+    },
+    {
+        kind: ARTEFACT_KIND_PROBE_RUNS,
+        familyUrn: SOC2_FAMILY_URN,
+        legacyKeys: ['SOC2'],
+        requirementCode: 'CC4.1',
+        reason:
+            'Monitoring activities: ongoing and separate evaluations. A probe run is a ' +
+            'separate evaluation of whether the agents resist attack; the monthly ' +
+            'artefact shows every evaluation run, and is APPROVED only when every run ' +
+            'concluded, none was stopped and every prober reported.',
+    },
 ];
 
 /** The obligations one kind attaches to. */
@@ -530,7 +588,16 @@ export const PER_AGENT_DIGEST_BASIS =
 export function sourcePopulationDigest(
     kind: AgenticArtefactKind,
     periodStart: Date,
-    facts: readonly (ReceiptFact | DecisionFact | HarnessScanFact | HarnessBoundsFact | HarnessSilentScannersFact)[],
+    facts: readonly (
+        | ReceiptFact
+        | DecisionFact
+        | HarnessScanFact
+        | HarnessBoundsFact
+        | HarnessSilentScannersFact
+        | ProbeRunFact
+        | ProbeBoundsFact
+        | ProbeSilentProbersFact
+    )[],
 ): string {
     // THE RENDERED FACTS, not the population.
     //
@@ -1187,6 +1254,208 @@ export function buildHarnessScanArtefact(
         completeness === 'COMPLETE' ? '' : completeness === 'NO_SCAN' ? ' — NO SCAN RECEIVED' : ' — INCOMPLETE';
     return {
         title: `Agent harness scans — ${period.label}${suffix}`,
+        content: lines.join('\n'),
+        completeness,
+    };
+}
+
+// ── Probe runs (active flavour, step 8c) ────────────────────────────────────
+
+/**
+ * The COMPLETE set of fields a probe-runs artefact may render about one run.
+ *
+ * Absent by shape, each by decision: the target's ENDPOINT and its origin, the
+ * EXCERPT of what an agent said, the tool called, the probe ids, the finding
+ * references and every agent's register name. The endpoint and the excerpt are
+ * encrypted at rest and shown only to people who manage the agent register
+ * (owner decision, 2026-11-25); `Evidence.content` is rendered into PDF exports
+ * and reachable through an audit-pack share link, so it is the widest surface a
+ * run's data could reach, and nothing here may be wider than the Probes tab's
+ * run list. `engagementId` is a contract string and arrives sanitised and bounded.
+ */
+export interface ProbeRunFact {
+    readonly id: string;
+    /** The prober: the registered agent its signing key belongs to. */
+    readonly proberAgentId: string;
+    readonly engagementId: string;
+    /** `sha256:` digest of the engagement scope the run ran under. */
+    readonly scopeDigest: string;
+    readonly reportDigest: string;
+    /** ISO instants. */
+    readonly startedAt: string;
+    readonly endedAt: string;
+    /** Why the run ended early, or null when every planned probe was sent. */
+    readonly stopReason: string | null;
+    /** Derived at ingest: some outcome is not INCONCLUSIVE. */
+    readonly concluded: boolean;
+    readonly targetCount: number;
+    readonly targetsReached: number;
+    readonly outcomeCount: number;
+    readonly actedCount: number;
+    readonly disclosedCount: number;
+    readonly resistedCount: number;
+    readonly inconclusiveCount: number;
+    readonly findingCount: number;
+}
+
+/** The bound the emitter applied. Digested with the runs, so a bound tripping rewrites the body. */
+export interface ProbeBoundsFact {
+    readonly probeBounds: true;
+    /** More runs started in the period than the emitter reads. */
+    readonly runsTruncated: boolean;
+}
+
+/**
+ * The probers that held a TRUSTED key at some moment of the period and sent no
+ * run in it. A prober that goes silent is the gap no run can describe, so each
+ * id here makes the month INCOMPLETE. Digested with the runs.
+ */
+export interface ProbeSilentProbersFact {
+    readonly silentProbers: true;
+    /** Register ids of the silent probers, sorted. */
+    readonly agentIds: readonly string[];
+    /** More key holders than the emitter reads, so a silent prober may go unnamed. */
+    readonly truncated: boolean;
+}
+
+export interface ProbePeriodFacts {
+    readonly runs: readonly ProbeRunFact[];
+    readonly bounds: ProbeBoundsFact;
+    readonly silent: ProbeSilentProbersFact;
+}
+
+/** Every fact a probe-runs artefact's digest covers, in one place. */
+export function probeDigestFacts(
+    facts: ProbePeriodFacts,
+): readonly (ProbeRunFact | ProbeBoundsFact | ProbeSilentProbersFact)[] {
+    return [...facts.runs, facts.bounds, facts.silent];
+}
+
+/** How many runs the per-run list names before summarising. */
+const PROBE_RUN_LINE_CAP = 50;
+
+export type ProbeArtefactCompleteness = 'COMPLETE' | 'INCOMPLETE' | 'NO_RUN';
+
+/** Newest first by `startedAt`, then by id, so the body does not depend on row order. */
+function byStartedDesc(a: ProbeRunFact, b: ProbeRunFact): number {
+    if (a.startedAt !== b.startedAt) return a.startedAt < b.startedAt ? 1 : -1;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
+ * Every reason the period's runs fall short of complete evidence, in a fixed
+ * order (owner decision, 2026-11-25: APPROVED only when every run concluded,
+ * none was stopped and every prober that held a live key reported). Empty means
+ * COMPLETE — the completeness is DERIVED from this list, so an INCOMPLETE
+ * artefact can never be emitted without saying why.
+ */
+export function probeIncompleteReasons(facts: ProbePeriodFacts): string[] {
+    const reasons: string[] = [];
+    if (facts.bounds.runsTruncated) {
+        reasons.push('more runs started in the period than the emitter reads, so the newest were read and the rest were not');
+    }
+    if (facts.silent.truncated) {
+        reasons.push('more probers held a trusted key in the period than the emitter reads, so a prober that sent nothing may not be named here');
+    }
+    for (const id of facts.silent.agentIds) {
+        reasons.push(`prober ${id} held a trusted key in the period but sent no run in it`);
+    }
+    for (const r of [...facts.runs].sort(byStartedDesc)) {
+        if (r.stopReason !== null) {
+            reasons.push(`run ${r.id} by prober ${r.proberAgentId} was stopped early (${r.stopReason}), so a probe it did not send concludes nothing`);
+        } else if (!r.concluded) {
+            reasons.push(`run ${r.id} by prober ${r.proberAgentId} concluded nothing: every outcome was inconclusive`);
+        }
+    }
+    return reasons;
+}
+
+/**
+ * The artefact's completeness. `NO_RUN` for a period with no run at all: a
+ * month in which nothing tried the agents is not a month in which they resisted.
+ * COMPLETE needs at least one run AND no reason, in one expression.
+ */
+export function probeArtefactCompleteness(facts: ProbePeriodFacts): ProbeArtefactCompleteness {
+    if (facts.runs.length === 0 && !facts.bounds.runsTruncated) return 'NO_RUN';
+    return facts.runs.length > 0 && probeIncompleteReasons(facts).length === 0 ? 'COMPLETE' : 'INCOMPLETE';
+}
+
+/**
+ * The Evidence status a probe-runs artefact's completeness calls for: only a
+ * COMPLETE month is `APPROVED`. What the agents DID never enters it — a month
+ * in which an agent acted on an injected instruction, read in full, is
+ * COMPLETE evidence of exactly that, and the finding is where it is acted on.
+ * The plan only: `harnessStatusCorrection` decides what is written over a row.
+ */
+export function probeArtefactEvidenceStatus(c: ProbeArtefactCompleteness): 'APPROVED' | 'NEEDS_REVIEW' {
+    return c === 'COMPLETE' ? 'APPROVED' : 'NEEDS_REVIEW';
+}
+
+/** What a probe-runs artefact deliberately omits, where the assessor reads it. */
+const PROBE_REDACTION_CONTRACT =
+    'REDACTION CONTRACT — this artefact reports identifiers, counts and completeness ' +
+    'only. It deliberately carries no agent endpoint or address, no excerpt of what ' +
+    'any agent said, no tool name, no probe identifier and no agent name: the text is ' +
+    'rendered into PDF exports and reachable through an audit-pack share link, so it ' +
+    'is the widest surface a run\'s data could reach. Each run is re-verifiable from ' +
+    'its stored report digest and signature, and its targets and outcomes are listed, ' +
+    'to holders of the agent-register right, on the Probes tab of the agent reports page.';
+
+function probeRunLine(r: ProbeRunFact): string {
+    const state = r.stopReason !== null ? `STOPPED (${r.stopReason})` : r.concluded ? 'concluded' : 'NOT CONCLUDED';
+    return (
+        `  ${r.startedAt} .. ${r.endedAt} · run ${r.id} · prober ${r.proberAgentId} · engagement ${r.engagementId} · ${state}` +
+        ` · agents reached ${r.targetsReached} of ${r.targetCount} · outcomes ${r.outcomeCount}` +
+        ` (acted ${r.actedCount}, disclosed ${r.disclosedCount}, resisted ${r.resistedCount}, inconclusive ${r.inconclusiveCount})` +
+        ` · findings raised ${r.findingCount} · scope digest ${r.scopeDigest} · report digest ${r.reportDigest}`
+    );
+}
+
+/** The artefact for one period of verified probe runs. */
+export function buildProbeRunArtefact(
+    period: ArtefactPeriod,
+    facts: ProbePeriodFacts,
+    digest: string,
+): ArtefactBody & { readonly completeness: ProbeArtefactCompleteness } {
+    const completeness = probeArtefactCompleteness(facts);
+    const reasons = probeIncompleteReasons(facts);
+    const runs = [...facts.runs].sort(byStartedDesc);
+    const sum = (f: (r: ProbeRunFact) => number) => runs.reduce((n, r) => n + f(r), 0);
+
+    const completenessLine =
+        completeness === 'COMPLETE'
+            ? 'Artefact completeness: COMPLETE — every run in the period concluded, none was stopped, and every prober that held a trusted key sent a run'
+            : completeness === 'NO_RUN'
+            ? `Artefact completeness: NO PROBE RUN RECEIVED — how the agents answer an attacker is UNEVIDENCED for ${period.label}; a period in which nothing tried the agents is not a period in which they resisted`
+            : `Artefact completeness: INCOMPLETE — ${reasons.join('; ')}`;
+
+    const lines = [
+        `Period: ${period.label} (${period.start.toISOString()} .. ${period.end.toISOString()}, end exclusive)`,
+        completenessLine,
+        `Probe runs started in the period: ${runs.length} · outcomes: ${sum((r) => r.outcomeCount)}` +
+            ` (acted ${sum((r) => r.actedCount)}, disclosed ${sum((r) => r.disclosedCount)},` +
+            ` resisted ${sum((r) => r.resistedCount)}, inconclusive ${sum((r) => r.inconclusiveCount)})` +
+            ` · findings raised: ${sum((r) => r.findingCount)}`,
+    ];
+    if (facts.silent.agentIds.length > 0) {
+        lines.push(`Probers that held a trusted key in the period and sent no run: ${facts.silent.agentIds.join(', ')}`);
+    }
+    if (runs.length > 0) {
+        lines.push('', 'Every run in the period:');
+        for (const r of runs.slice(0, PROBE_RUN_LINE_CAP)) lines.push(probeRunLine(r));
+        if (runs.length > PROBE_RUN_LINE_CAP) {
+            lines.push(`  (+${runs.length - PROBE_RUN_LINE_CAP} further runs, counted above)`);
+        }
+    }
+    if (facts.bounds.runsTruncated) {
+        lines.push('', 'BOUNDED: the emitter stopped reading at its bound for runs; the counts above describe what was read, not the whole period.');
+    }
+    lines.push('', `Population digest (SHA-256 over the rendered run facts): ${digest}`, '', PROBE_REDACTION_CONTRACT);
+
+    const suffix =
+        completeness === 'COMPLETE' ? '' : completeness === 'NO_RUN' ? ' — NO PROBE RUN RECEIVED' : ' — INCOMPLETE';
+    return {
+        title: `Agent probe runs — ${period.label}${suffix}`,
         content: lines.join('\n'),
         completeness,
     };
