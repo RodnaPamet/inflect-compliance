@@ -316,7 +316,13 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // docs/notices/2026-11-23-anthropic-hosted-managed-agents.md, after the
         // TypeSafe notice ('2026-10' < '2026-11'). Recomputed with this guard's
         // own `keyOrder` over the merged file.
-        keyOrderSha: 'e212fccbf33756a9873437dcfd62eaa56a15f0f06c77cc355b917b1ddc87b8b1',
+        //
+        // Moved 2026-11-25 by one sorted ADDITION, the DSAR erasure runbook
+        // docs/runbooks/dsar-erasure.md (#5802), after `docs/rsc-guidelines.md`
+        // ('rs' < 'ru') and before `docs/runbooks/enabling-the-flue-engine.md`
+        // ('ds' < 'en'), +3/-0 against main; the previous digest matched main's
+        // file before the insert.
+        keyOrderSha: '0532e8068482f6d059d828d70650d0897d5c0887982bb3b15682a1db41241346',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in
