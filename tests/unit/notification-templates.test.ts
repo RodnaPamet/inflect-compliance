@@ -6,7 +6,10 @@ import {
     buildEvidenceExpiringEmail,
     buildPolicyApprovalRequestedEmail,
     buildPolicyDecisionEmail,
+    TASK_ASSIGNED_EMAIL_NAMESPACE,
+    type TaskAssignedPayload,
 } from '@/app-layer/notifications/templates';
+import { workspaceTranslator, type WorkspaceTranslator } from '@/lib/i18n/workspace-text';
 
 describe('Notification Templates', () => {
     describe('buildTaskAssignedEmail', () => {
@@ -18,45 +21,52 @@ describe('Notification Templates', () => {
             assignerName: 'Bob Manager',
             tenantSlug: 'acme-corp',
         };
+        // An English workspace — the language every workspace had before the
+        // email followed the workspace's default language.
+        let enT: WorkspaceTranslator;
+        beforeAll(async () => {
+            enT = await workspaceTranslator('en', TASK_ASSIGNED_EMAIL_NAMESPACE);
+        });
+        const build = (p: TaskAssignedPayload) => buildTaskAssignedEmail(p, enT);
 
         it('returns subject with task key and title', () => {
-            const result = buildTaskAssignedEmail(payload);
+            const result = build(payload);
             expect(result.subject).toBe('Task assigned to you: [TSK-42] Fix ISMS gap in access control');
         });
 
         it('returns bodyText mentioning assignee name', () => {
-            const result = buildTaskAssignedEmail(payload);
+            const result = build(payload);
             expect(result.bodyText).toContain('Hi Alice Smith');
         });
 
         it('returns bodyText mentioning task type', () => {
-            const result = buildTaskAssignedEmail(payload);
+            const result = build(payload);
             expect(result.bodyText).toContain('audit_finding');
         });
 
         it('returns bodyText mentioning assigner', () => {
-            const result = buildTaskAssignedEmail(payload);
+            const result = build(payload);
             expect(result.bodyText).toContain('by Bob Manager');
         });
 
         it('returns bodyHtml with styled content', () => {
-            const result = buildTaskAssignedEmail(payload);
+            const result = build(payload);
             expect(result.bodyHtml).toContain('Task assigned to you');
             expect(result.bodyHtml).toContain('font-family');
         });
 
         it('handles missing taskKey gracefully', () => {
-            const result = buildTaskAssignedEmail({ ...payload, taskKey: null });
+            const result = build({ ...payload, taskKey: null });
             expect(result.subject).toBe('Task assigned to you: Fix ISMS gap in access control');
         });
 
         it('handles missing assignerName gracefully', () => {
-            const result = buildTaskAssignedEmail({ ...payload, assignerName: undefined });
+            const result = build({ ...payload, assignerName: undefined });
             expect(result.bodyText).not.toContain('by');
         });
 
         it('returns link to tenant tasks page', () => {
-            const result = buildTaskAssignedEmail(payload);
+            const result = build(payload);
             expect(result.bodyText).toContain('/t/acme-corp/tasks');
         });
     });
