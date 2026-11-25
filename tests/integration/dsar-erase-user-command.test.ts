@@ -204,9 +204,8 @@ describeFn('scripts/dsar-erase-user — the erasure\'s operator entry point (#58
         expect(done.out).toContain('workspaces handed to the Managed Agents clean-up: 2');
 
         // Ids and counts only: never the person's address or name.
-        for (const out of [blocked.out, plan.out, done.out]) {
-            expect(out).not.toContain(email);
-            expect(out).not.toContain(name);
-        }
+        const printed = [blocked.out, plan.out, done.out].join('\n');
+        expect(printed).not.toContain(email);
+        expect(printed).not.toContain(name);
     });
 });
