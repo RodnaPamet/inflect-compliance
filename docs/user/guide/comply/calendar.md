@@ -142,6 +142,7 @@ If the provider stops accepting Inflect's updates, for example because access wa
 | **{{ui:calendarConnect.refusal.ADMIN_CONSENT_NOT_GRANTED}}** | Your organisation has not authorised Outlook for Inflect | Ask your administrator to authorise it |
 | **{{ui:calendarConnect.refusal.ADMIN_CONSENT_WITHDRAWN}}** | Your organisation's authorisation of Outlook was withdrawn. A connected Outlook calendar is not updated meanwhile | Ask your administrator to authorise it again |
 | A provider that says it is not set up in this installation of Inflect | This installation of Inflect cannot connect that provider | Nothing you can do in the workspace; tell whoever runs your Inflect installation |
+| **{{ui:calendarConnect.outcome.consent_required}}** | Microsoft answered that your organisation has not authorised Outlook for Inflect | Ask your administrator to authorise it |
 | **{{ui:calendarConnect.outcome.connect_declined}}** | You declined on the provider's page | Connect again and agree, if you want the calendar |
 | **{{ui:calendarConnect.outcome.flow_invalid}}** | The sign-in expired, or was finished in a different browser or by a different person | Start again from the calendar page, in the same browser |
 | **{{ui:calendarConnect.outcome.provider_error}}**, **{{ui:calendarConnect.outcome.no_refresh_token}}** or **{{ui:calendarConnect.outcome.connect_failed}}** | The connection was not made | Try again; if it keeps happening, tell your administrator |

@@ -375,7 +375,9 @@ Google grant already revoked.
 words it (one `calendarConnect.outcome.*` message per
 `CALENDAR_CONNECT_OUTCOMES` value, `en` and `bg`), keeps it in state, and
 removes the parameter with one `router.replace` that keeps every other
-parameter. A value outside the set is removed and says nothing. The maps in
+parameter. A value outside the set is removed and says nothing. The control
+also words `consent_required` (Microsoft answered that the organisation's grant
+is missing), which step 3 adds to the callback's set. The maps in
 `connect-copy.ts` are `Record`s over the server's types, so a value the server
 adds fails `tsc` until it is worded.
 

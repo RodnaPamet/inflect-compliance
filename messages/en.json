@@ -14788,7 +14788,8 @@
       "consent_withdrawn": "Your administrator withdrew Outlook access for your organisation while you were signing in, so nothing was connected. Ask them to authorise it again.",
       "no_refresh_token": "The provider did not give Inflect lasting access, so nothing was connected. Connect again and allow every permission it asks for.",
       "flow_invalid": "The sign-in expired or was started in another browser or by another person, so nothing was connected. Start again from this page.",
-      "connect_failed": "The connection could not be completed. Try again."
+      "connect_failed": "The connection could not be completed. Try again.",
+      "consent_required": "Your organisation has not authorised Outlook for Inflect yet, so nothing was connected. Ask your administrator to authorise it on Admin → Integrations."
     }
   },
   "coverage": {

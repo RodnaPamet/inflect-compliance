@@ -232,7 +232,11 @@ describe('the Connect control words every value the server can send', () => {
         );
 
     it('the same sets as the server', () => {
-        expect(Object.keys(OUTCOME_COPY).sort()).toEqual([...CALENDAR_CONNECT_OUTCOMES].sort());
+        // Every outcome the server can send is worded; the only extra is the
+        // one step 3 (#5952) adds to the server's set.
+        for (const o of CALENDAR_CONNECT_OUTCOMES) expect(Object.keys(OUTCOME_COPY)).toContain(o);
+        const extra = Object.keys(OUTCOME_COPY).filter((o) => !(CALENDAR_CONNECT_OUTCOMES as readonly string[]).includes(o));
+        expect(extra.every((o) => o === 'consent_required')).toBe(true);
         expect(Object.keys(REFUSAL_KEY).sort()).toEqual([...CALENDAR_CONNECT_REFUSALS].sort());
         expect(Object.keys(STATE_LABEL_KEY).sort()).toEqual([...CALENDAR_CONNECTION_STATES].sort());
         expect(Object.keys(PROVIDER_NAME_KEY).sort()).toEqual([...CALENDAR_PROVIDERS].sort());

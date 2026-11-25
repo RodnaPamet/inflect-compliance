@@ -49,6 +49,16 @@ export const PROVIDER_ORDER = Object.keys(PROVIDER_NAME_KEY) as CalendarProvider
 
 export type OutcomeTone = 'success' | 'info' | 'error';
 
+/**
+ * Outcomes this control words ahead of the server's set: `consent_required`
+ * (Microsoft answered that the organisation's grant is missing — AADSTS65001 /
+ * AADSTS90094 at the personal callback) is added to `CALENDAR_CONNECT_OUTCOMES`
+ * by step 3 (#5952). Worded here so the message ships whichever lands first;
+ * once both have, this union is redundant and can go.
+ */
+export type PendingConnectOutcome = 'consent_required';
+export type WordedConnectOutcome = CalendarConnectOutcome | PendingConnectOutcome;
+
 /** One message per callback outcome, and the notice's tone. */
 export const OUTCOME_COPY = {
     connected: { key: 'outcome.connected', tone: 'success' },
@@ -58,9 +68,10 @@ export const OUTCOME_COPY = {
     no_refresh_token: { key: 'outcome.no_refresh_token', tone: 'error' },
     flow_invalid: { key: 'outcome.flow_invalid', tone: 'error' },
     connect_failed: { key: 'outcome.connect_failed', tone: 'error' },
-} as const satisfies Record<CalendarConnectOutcome, { key: `outcome.${CalendarConnectOutcome}`; tone: OutcomeTone }>;
+    consent_required: { key: 'outcome.consent_required', tone: 'error' },
+} as const satisfies Record<WordedConnectOutcome, { key: `outcome.${WordedConnectOutcome}`; tone: OutcomeTone }>;
 
-export function isConnectOutcome(value: string | null): value is CalendarConnectOutcome {
+export function isConnectOutcome(value: string | null): value is WordedConnectOutcome {
     return value !== null && Object.prototype.hasOwnProperty.call(OUTCOME_COPY, value);
 }
 
