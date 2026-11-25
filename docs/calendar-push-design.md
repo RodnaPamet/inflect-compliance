@@ -2,10 +2,11 @@
 
 > **Status: living design** — the connection (connect, callback, token
 > storage, admin consent routes) and the writer (step 2: the nightly push of
-> a person's own deadlines, and disconnect) are built; the admin consent page
-> and the Connect control are not. Epic #5937 tracks the steps, one pull
-> request each. The `Current state` section is true today; the `Roadmap`
-> section holds step 2's open items and the plan for steps 3–4.
+> a person's own deadlines, and disconnect) are built, and so is the Connect
+> control on `/calendar` (step 4); the admin consent page is not. Epic #5937
+> tracks the steps, one pull request each. The `Current state` section is true
+> today; the `Roadmap` section holds step 2's open items and the plan for
+> step 3.
 
 What this feature is for: a person connects their own Google or Microsoft
 calendar, and the compliance deadlines they are responsible for appear in it,
@@ -145,7 +146,7 @@ on the envelope prefix. Each moves to `v2:` on its next write: a reconnect, or
 the writer's first token refresh — access tokens live an hour, so the first push
 run refreshes every live connection. No backfill was written:
 until a row moves it stays covered by the master-KEK sweep, and the population
-is small (no control in the product starts a connection).
+is small (no control in the product started a connection before step 4).
 
 Reading a token needs the workspace's DEK to resolve: a request context
 (`runInTenantContext`), or a job context with a NON-bypass source
@@ -321,6 +322,63 @@ connection ends at once and the events stay recorded. A reconnect clears the
 disconnecting state. Every disconnect is audited `CALENDAR_DISCONNECTED`
 (provider, outcome, counts — never a token, an event id or a title).
 
+### The Connect control (step 4)
+
+The calendar page's header carries **Sync to my calendar**
+(`_components/connect/CalendarConnectAction.tsx`), an `OverflowAction` inside
+the header's `PageActions`: a button from `md` up, an item of the "⋯" menu on a
+phone. It opens a panel (`CalendarConnectPanel.tsx`, loaded with `next/dynamic`
+on first open, so nothing behind the button is in the page's First Load JS)
+that says what is copied — the person's own open deadlines, private, shown as
+free, in the workspace's language, removed on disconnect — and each provider's
+consent model, then lists the two providers.
+
+**What the server answers, and the page only words.** The panel reads
+`GET /calendar/connections` when it opens. Besides `connections`, the read
+returns:
+
+- `providers`: per provider, `connectable` and a `refusal` from
+  `CALENDAR_CONNECT_REFUSALS` (`usecases/calendar-connectability.ts`):
+  `NOT_CONFIGURED` (this deployment has no OAuth client for the provider —
+  blank, or still an `.env` template's `your-…` / `REPLACE_ME…` placeholder;
+  asked first), `ADMIN_CONSENT_NOT_GRANTED` and `ADMIN_CONSENT_WITHDRAWN`
+  (Microsoft, no organisation consent recorded in force).
+  `POST /calendar/connect` refuses with the SAME rule
+  (`assertCalendarConnectable`): `NOT_CONFIGURED` is a 409, a consent refusal a
+  403, each with the code in `details.reason`, so the page never offers a
+  button the route refuses.
+- `state` on each connection: `CONNECTED`, `DISCONNECTING`, `DISCONNECTED` (the
+  person disconnected it) or `STOPPED` (the provider refused the token). Only
+  the stored revocation reason tells the last two apart, so the server decides
+  (`calendarConnectionStateOf`) and the page never matches the reason's text.
+
+**Per provider.**
+
+| State | Shows | Action |
+| --- | --- | --- |
+| Not connected / `DISCONNECTED` | the provider's consent model; for a disconnect that left events behind, how many | Connect — or, when not connectable, the refusal and no button |
+| `CONNECTED` | connected since, last updated (or "at the next nightly update"); for Outlook whose organisation consent is gone, that it is not updated meanwhile | Disconnect |
+| `DISCONNECTING` | how many pushed events are still being removed | none |
+| `STOPPED` | that the provider stopped accepting updates, and what is left behind | Reconnect — or the refusal |
+
+Connect POSTs and hands the browser to `authorizeUrl`. A refusal the POST
+answers is shown in place of the button and the read is refreshed (the consent
+may have been withdrawn since the panel read it). Disconnect is `DELETE` behind
+a `ConfirmDialog` (`tone="danger"`, `Remove calendar connection`) that says it
+deletes the events Inflect added; a 204 says they are gone, a 202 says how many
+remain and the row shows `DISCONNECTING`. It is a confirm, not the undo toast:
+`docs/destructive-actions.md` excludes actions with effects outside Inflect,
+and an Undo could not restore events deleted from the person's calendar or a
+Google grant already revoked.
+
+**The result message.** `CalendarConnectOutcome` reads `?calendar=<outcome>`,
+words it (one `calendarConnect.outcome.*` message per
+`CALENDAR_CONNECT_OUTCOMES` value, `en` and `bg`), keeps it in state, and
+removes the parameter with one `router.replace` that keeps every other
+parameter. A value outside the set is removed and says nothing. The maps in
+`connect-copy.ts` are `Record`s over the server's types, so a value the server
+adds fails `tsc` until it is worded.
+
 ## Roadmap (future direction)
 
 ### Step 2 — open items
@@ -359,20 +417,3 @@ admin callback gets the user callback's hardening: a sealed, signed flow
 cookie scoped to its path, `resolvePublicOrigin`, a redirect on every failure
 to `/t/<slug>/admin/integrations?calendar=<outcome>`, and Entra's
 missing-consent answer mapped to its own outcome (point 1).
-
-### Step 4 — the Connect control on `/calendar`
-
-- **Offered only where the server would accept it.** A server read (an
-  extension of `GET /calendar/connections`) returns, per provider, whether a
-  connect is possible and why not: the provider's client is not configured in
-  this deployment, or Microsoft has no admin consent recorded. The page never
-  computes this itself.
-- **Connect / disconnect.** Connect POSTs and follows `authorizeUrl`;
-  disconnect is `DELETE` behind a confirm (`Remove calendar connection` —
-  disconnect deletes the pushed events).
-- **Connected state.** Provider, connected since, last pushed, and a
-  revoked connection's "reconnect".
-- **The result message.** One message per `CALENDAR_CONNECT_OUTCOMES` value,
-  in `en` and `bg`, read from `?calendar=` and then removed from the URL.
-- **Phone.** The control sits in the page header's actions
-  (`PageActions` + `OverflowAction`) and renders at 360 px.

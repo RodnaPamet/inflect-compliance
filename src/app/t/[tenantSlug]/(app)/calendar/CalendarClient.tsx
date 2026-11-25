@@ -59,6 +59,9 @@ import {
 } from '@/app-layer/schemas/calendar.schemas';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
+import { PageActions } from '@/components/layout/PageActions';
+import { CalendarConnectAction } from '@/app/t/[tenantSlug]/(app)/calendar/_components/connect/CalendarConnectAction';
+import { CalendarConnectOutcome } from '@/app/t/[tenantSlug]/(app)/calendar/_components/connect/CalendarConnectOutcome';
 
 const DAY_MS = 86_400_000;
 
@@ -543,7 +546,7 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                         {t('description')}
                     </p>
                 </div>
-                <div className="flex items-center gap-tight flex-wrap">
+                <PageActions>
                     {viewDecided ? (
                         <ToggleGroup
                             selected={view}
@@ -555,8 +558,13 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                     ) : (
                         <div className="h-8" aria-hidden="true" />
                     )}
-                </div>
+                    {/* #5937 step 4 — connect the person's own calendar. */}
+                    <CalendarConnectAction />
+                </PageActions>
             </header>
+
+            {/* The result of a connect, said once and taken out of the URL. */}
+            <CalendarConnectOutcome />
 
             {/* The colour legend that sat here was removed. It was kept when
                 the interactive filter moved into the side panel, on the

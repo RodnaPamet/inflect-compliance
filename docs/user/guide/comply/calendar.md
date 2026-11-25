@@ -19,6 +19,7 @@ The sidebar entry can carry a number. It counts only your own open tasks that ha
 | Open the page and see the deadlines | Every role: Owner, Admin, Editor, Reader, Auditor and AI admin. Each sees only the kinds of deadline their role can read |
 | Create a task on a day | Owner, Admin, Editor |
 | Complete or reschedule a task from the day's list | Owner, Admin, Editor |
+| Copy your own deadlines to your Google or Outlook calendar | Every role that can see the calendar. Each person connects only their own calendar |
 
 The calendar collects deadlines from many registers, and each kind follows the rule of the register it comes from. Two kinds are left out for most roles:
 
@@ -33,7 +34,7 @@ Use the calendar to plan the weeks ahead and to catch what is late. Every entry 
 
 ## What you see
 
-**The header.** The description, and three buttons that switch the view: **{{ui:calendar.viewMonth}}**, **{{ui:calendar.viewHeatmap}}** and **{{ui:calendar.viewTimeline}}**. The page opens on **{{ui:calendar.viewMonth}}**.
+**The header.** The description, three buttons that switch the view: **{{ui:calendar.viewMonth}}**, **{{ui:calendar.viewHeatmap}}** and **{{ui:calendar.viewTimeline}}**, and **{{ui:calendarConnect.open}}**. The page opens on **{{ui:calendar.viewMonth}}**. On a phone, **{{ui:calendarConnect.open}}** is in the **⋯** menu.
 
 **The range bar.** In **{{ui:calendar.viewMonth}}**, it names the month, with arrows to the previous and next month. The other two views cover a fixed window, and the bar says which:
 
@@ -96,6 +97,29 @@ When nothing is due in the range you are looking at, a bar names the date of the
 
 The date is the next deadline that passes the filter. The jump keeps the filter and **{{ui:calendar.myDeadlines}}** as they are, and always switches to **{{ui:calendar.viewMonth}}**, where the chosen day is shown.
 
+### Copy your deadlines to your own calendar
+
+Click **{{ui:calendarConnect.open}}**. The **{{ui:calendarConnect.panelTitle}}** window says what is copied and shows Google Calendar and Outlook, each with its state.
+
+What Inflect copies, and how:
+
+- Only your own open deadlines: the ones you own or are assigned. Nobody else's are copied.
+- A deadline that is finished, or that you no longer own, is removed from your calendar.
+- Each event is private and shown as free, so it does not block your time. It has no attendees.
+- Events are written in your workspace's language, whatever language you use Inflect in.
+- Inflect updates your calendar once a night, so a new connection shows your deadlines after the next nightly update.
+
+To connect, click the provider's connect button and sign in on the provider's page. How you agree differs:
+
+- **Google Calendar.** Google asks you to agree for yourself.
+- **Outlook.** An administrator of your organisation's Microsoft account authorises Inflect once, for everybody. After that you only sign in. Until they have, the window says so and offers no connect button: ask your administrator.
+
+When you come back, a message above the calendar says whether the connection was made, and if not, why. Close it with its **×**.
+
+For a connected calendar the window shows when you connected it and when it was last updated. To stop, click **{{ui:calendarConnect.disconnect}}** and confirm with **{{ui:calendarConnect.confirmLabel}}**. Inflect removes the events it added, then stops updating the calendar. Events you created yourself are not touched. If some events cannot be removed at once, the provider shows **{{ui:calendarConnect.state.disconnecting}}** with how many are left, and Inflect keeps trying every night for up to seven days.
+
+If the provider stops accepting Inflect's updates, for example because access was withdrawn in your Google or Microsoft account, the provider shows **{{ui:calendarConnect.state.stopped}}** and a button to connect it again.
+
 ## What happens next
 
 - An entry moves on the calendar when its record changes: a review completed, a due date moved, a task closed.
@@ -115,6 +139,12 @@ The date is the next deadline that passes the filter. The jump keeps the filter 
 | **{{ui:calendar.ganttEmpty}}** | Nothing is due in the timeline's window, or nothing that passes your filter | Clear the filter, or use **{{ui:calendar.viewMonth}}** to look further ahead |
 | The reason the task could not be changed, such as that it needs its reviewer's sign-off | The task was not changed | Follow the reason given; for a task with a reviewer, open the task and use its review steps |
 | **{{ui:calendar.taskForbidden}}** or **{{ui:calendar.taskActionError}}** | The task was not changed, and no reason was given | Open the task and make the change there |
+| **{{ui:calendarConnect.refusal.ADMIN_CONSENT_NOT_GRANTED}}** | Your organisation has not authorised Outlook for Inflect | Ask your administrator to authorise it |
+| **{{ui:calendarConnect.refusal.ADMIN_CONSENT_WITHDRAWN}}** | Your organisation's authorisation of Outlook was withdrawn. A connected Outlook calendar is not updated meanwhile | Ask your administrator to authorise it again |
+| A provider that says it is not set up in this installation of Inflect | This installation of Inflect cannot connect that provider | Nothing you can do in the workspace; tell whoever runs your Inflect installation |
+| **{{ui:calendarConnect.outcome.connect_declined}}** | You declined on the provider's page | Connect again and agree, if you want the calendar |
+| **{{ui:calendarConnect.outcome.flow_invalid}}** | The sign-in expired, or was finished in a different browser or by a different person | Start again from the calendar page, in the same browser |
+| **{{ui:calendarConnect.outcome.provider_error}}**, **{{ui:calendarConnect.outcome.no_refresh_token}}** or **{{ui:calendarConnect.outcome.connect_failed}}** | The connection was not made | Try again; if it keeps happening, tell your administrator |
 
 ## Related
 
