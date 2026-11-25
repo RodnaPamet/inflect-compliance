@@ -42,9 +42,10 @@ run across the whole product before anything was fixed.
 
 ### Progress since the audit (2026-11-24)
 
-Phases 0–4, every P0 page and the automated half of Phase 5 have shipped.
-Epic #5805 (Phases 0–2) and its 30 issues are closed; epic #5868 (Phases 3–5)
-has one issue left open, #5899, which waits on a person with real devices.
+Phases 0–5 and every P0 page have shipped. Epic #5805 (Phases 0–2) and its 30
+issues are closed, and so is epic #5868 (Phases 3–5). The real-device pass was
+not run: on 2026-11-25 the owner decided to rely on the automated phone checks
+alone (see Phase 5 below).
 
 | Work | Pull requests |
 |---|---|
@@ -318,7 +319,7 @@ already does the latter well). Proposed:
 - **Larger-screen notice:** the process canvas (already), the Sankey chart and
   the correlations matrix, each with a readable summary list in its place.
 
-### Phase 5 — "flawless", defined and held (shipped, apart from the real-device pass)
+### Phase 5 — "flawless", defined and held (shipped; the real-device pass skipped by owner decision)
 
 The product is mobile-flawless when, at 360 and 390 px, in both themes and
 both languages:
@@ -339,6 +340,7 @@ both languages:
 Every criterion but the last is held by CI today: the ratchets are at zero, the
 journeys pass in the `mobile` project, and the whole-product harness runs
 nightly against `main` (`.github/workflows/mobile-audit.yml`), failing and
-opening an issue when a count rises. The real-device pass is the one criterion
-a person must do: the checklist is in `docs/mobile-audit.md`, and the result is
-recorded on #5899.
+opening an issue when a count rises. The last one was not run: on 2026-11-25
+the owner decided to close Phase 5 on the automated checks alone (#5899). The
+real-device checklist stays in `docs/mobile-audit.md` for whoever wants to run
+it, for example after a change to the app shell.
