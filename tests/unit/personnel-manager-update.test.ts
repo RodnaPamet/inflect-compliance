@@ -40,6 +40,7 @@ jest.mock('@/app-layer/integrations/bootstrap', () => ({}));
 jest.mock('@/app-layer/integrations/registry', () => ({ registry: { getProvider: jest.fn() } }));
 
 import {
+    createEmployee,
     setEmployeeManager,
     SetEmployeeManagerSchema,
 } from '@/app-layer/usecases/personnel';
@@ -137,6 +138,30 @@ describe('setEmployeeManager — the write', () => {
         expect(audit.detailsJson.changedFields).toStrictEqual(['managerEmployeeId']);
         expect(audit.detailsJson.before).toEqual({ managerEmployeeId: null });
         expect(audit.detailsJson.after).toEqual({ managerEmployeeId: MANAGER });
+        // #5950: the employee by record id only, no name or work e-mail.
+        expect(audit.entityId).toBe(WORKER);
+        const stored = JSON.stringify({ details: audit.details, detailsJson: audit.detailsJson });
+        expect(stored).not.toContain('Bob Worker');
+        expect(stored).not.toContain('bob@x.com');
+    });
+
+    it('createEmployee names the new employee by record id only (#5950)', async () => {
+        mockDb.employee.create.mockResolvedValue({
+            id: WORKER,
+            fullName: 'Bob Worker',
+            workEmail: 'bob@x.com',
+            status: 'ACTIVE',
+        });
+
+        await createEmployee(admin, { fullName: 'Bob Worker', workEmail: 'bob@x.com', status: 'ACTIVE' } as never);
+
+        const audit = (logEvent as jest.Mock).mock.calls[0][2];
+        expect(audit.action).toBe('CREATE');
+        expect(audit.entityType).toBe('Employee');
+        expect(audit.entityId).toBe(WORKER);
+        const stored = JSON.stringify({ details: audit.details, detailsJson: audit.detailsJson });
+        expect(stored).not.toContain('Bob Worker');
+        expect(stored).not.toContain('bob@x.com');
     });
 
     it('clears the manager on null, without looking a manager up', async () => {

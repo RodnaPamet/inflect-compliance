@@ -169,17 +169,22 @@ export async function createInviteToken(
             action: 'MEMBER_INVITED',
             entityType: 'TenantInvite',
             entityId: inv.id,
-            details: `Invited ${normalizedEmail} as ${input.role}`,
+            // No address (#5950, owner decision 2026-11-25). The invitee has
+            // no account yet, so there is no user id to name: the row names the
+            // INVITE (`entityId`), and a reader resolves it to the address
+            // while the invite exists. An audit row outlives an erasure and
+            // `detailsJson` streams to the tenant's SIEM.
+            details: `Invited as ${input.role}`,
             detailsJson: {
                 category: 'entity_lifecycle',
                 entityName: 'TenantInvite',
                 operation: 'created',
                 after: {
-                    email: normalizedEmail,
+                    inviteId: inv.id,
                     role: input.role,
                     expiresAt: expiresAt.toISOString(),
                 },
-                summary: `Invited ${normalizedEmail} as ${input.role}`,
+                summary: `Invited as ${input.role}`,
             },
         });
 
@@ -225,12 +230,14 @@ export async function revokeInvite(
             action: 'MEMBER_INVITE_REVOKED',
             entityType: 'TenantInvite',
             entityId: revoked.id,
-            details: `Revoked invite for ${invite.email}`,
+            // The invite by id, never its address (#5950).
+            details: 'Revoked invite',
             detailsJson: {
                 category: 'entity_lifecycle',
                 entityName: 'TenantInvite',
                 operation: 'deleted',
-                summary: `Revoked invite for ${invite.email}`,
+                summary: 'Revoked invite',
+                after: { inviteId: revoked.id, role: revoked.role },
             },
         });
     });

@@ -418,12 +418,17 @@ async function logRoleChange(
         action: 'MEMBER_ROLE_CHANGED',
         entityType: 'TenantMembership',
         entityId,
-        details: `Role changed: ${membership.role} → ${role} for ${membership.user.email}`,
+        // The member by id only (#5950, owner decision 2026-11-25): an audit
+        // row outlives an erasure and `detailsJson` streams to the tenant's
+        // SIEM, so it names nobody by address or name. A reader resolves
+        // `targetUserId` while the person exists.
+        details: `Role changed: ${membership.role} → ${role}`,
         detailsJson: {
             category: 'status_change',
             entityName: 'TenantMembership',
             fromStatus: membership.role,
             toStatus: role,
+            targetUserId: membership.userId,
         },
     });
 }
@@ -521,7 +526,8 @@ export async function deactivateTenantMember(
             action: 'MEMBER_DEACTIVATED',
             entityType: 'TenantMembership',
             entityId: deactivated.id,
-            details: `Deactivated member: ${membership.user.email}`,
+            // By id only (#5950): `targetUserId` below names the person.
+            details: 'Deactivated member',
             detailsJson: {
                 category: 'status_change',
                 entityName: 'TenantMembership',
@@ -607,7 +613,8 @@ export async function removeTenantMember(
             action: 'MEMBER_REMOVED',
             entityType: 'TenantMembership',
             entityId: membership.id,
-            details: `Removed member: ${membership.user.email}`,
+            // By id only (#5950): `targetUserId` below names the person.
+            details: 'Removed member',
             // `logEvent` validates detailsJson.category against the 6-value
             // AuditDetailsJsonSchema enum — a hard delete is `entity_lifecycle`
             // + operation:'delete' (NOT the 'membership' category, which is

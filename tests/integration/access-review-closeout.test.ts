@@ -40,6 +40,7 @@ import {
     regenerateAccessReviewEvidence,
 } from '@/app-layer/usecases/access-review';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { __resetAuditStreamForTests } from '@/app-layer/events/audit-stream';
 import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
 const globalPrisma = new PrismaClient({
@@ -200,6 +201,7 @@ describeFn('Epic G-4 — closeAccessReview executes decisions + emits evidence',
     afterAll(async () => {
         await teardownFixtures();
         await globalPrisma.$disconnect();
+        __resetAuditStreamForTests();
     });
 
     afterEach(async () => {
@@ -376,6 +378,20 @@ describeFn('Epic G-4 — closeAccessReview executes decisions + emits evidence',
         expect(actions.filter((a) => a === 'ACCESS_REVIEW_DECISION_EXECUTED')).toHaveLength(2);
         expect(actions).toContain('ACCESS_REVIEW_CLOSED');
         expect(actions).toContain('ACCESS_REVIEW_EVIDENCE_GENERATED');
+
+        // #5950 (owner decision 2026-11-25): each execution row names its
+        // subject by user id only. `detailsJson.summary` carried the subject's
+        // e-mail address, which the SIEM stream received and no erasure could
+        // remove.
+        const executed = audit.filter((a) => a.action === 'ACCESS_REVIEW_DECISION_EXECUTED');
+        const subjects = executed.map((a) => (a.detailsJson as { targetUserId?: string }).targetUserId).sort();
+        expect(subjects).toEqual([editor.userId, reader.userId].sort());
+        for (const row of executed) {
+            const stored = JSON.stringify({ details: row.details, detailsJson: row.detailsJson });
+            expect(stored).not.toContain(`${SUITE_TAG}-editor@example.test`);
+            expect(stored).not.toContain(`${SUITE_TAG}-reader@example.test`);
+            expect(stored).not.toContain('@example.test');
+        }
     });
 
     // ── 7. PDF artifact generated + linked ─────────────────────────

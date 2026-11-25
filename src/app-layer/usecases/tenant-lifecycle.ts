@@ -151,8 +151,9 @@ export async function createTenantWithOwner(
             category: 'tenant',
             slug: tenantSlug!,
             name: tenantName!,
+            // The owner by id only (#5950, owner decision 2026-11-25): no
+            // e-mail address in an audit row.
             ownerUserId: user.id,
-            ownerEmail: email,
         },
     });
 

@@ -751,7 +751,7 @@ export async function logCustomRoleChange(
     ctx: RequestContext,
     change: {
         /** The membership as read, with the role it holds once the request applies. */
-        membership: { role: Role; customRoleId: string | null; user: { email: string } };
+        membership: { userId: string; role: Role; customRoleId: string | null };
         updated: { id: string; customRole: { name: string } | null };
         customRoleId: string | null;
     },
@@ -761,14 +761,18 @@ export async function logCustomRoleChange(
         action: 'MEMBER_CUSTOM_ROLE_CHANGED',
         entityType: 'TenantMembership',
         entityId: updated.id,
+        // The member by id only (#5950, owner decision 2026-11-25): no e-mail
+        // address or name in `details` or `detailsJson`. A reader resolves
+        // `targetUserId` while the person exists.
         details: customRoleId
-            ? `Assigned custom role "${updated.customRole?.name}" to ${membership.user.email}`
-            : `Removed custom role from ${membership.user.email} (fallback to ${membership.role})`,
+            ? `Assigned custom role "${updated.customRole?.name}"`
+            : `Removed custom role (fallback to ${membership.role})`,
         detailsJson: {
             category: 'status_change',
             entityName: 'TenantMembership',
             fromStatus: membership.customRoleId ?? 'none',
             toStatus: customRoleId ?? 'none',
+            targetUserId: membership.userId,
         },
     });
 }

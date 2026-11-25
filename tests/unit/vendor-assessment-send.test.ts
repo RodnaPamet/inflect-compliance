@@ -281,6 +281,18 @@ describe('sendAssessment — happy path', () => {
         expect(data.startedAt).toBeInstanceOf(Date);
     });
 
+    // #5950 (owner decision 2026-11-25): the respondent is named by the
+    // assessment (`entityId`), never by address, in details or detailsJson.
+    test('the audit row names the respondent by the assessment id only, never the address', async () => {
+        setupSuccess();
+        await sendAssessment(makeCtx(), 'v-1', 't-v3', VALID_INPUT);
+
+        const { logEvent } = require('@/app-layer/events/audit') as { logEvent: jest.Mock };
+        const audit = logEvent.mock.calls.find((c) => c[2].action === 'VENDOR_ASSESSMENT_SENT')?.[2];
+        expect(audit.entityId).toBe('a-new');
+        expect(JSON.stringify({ details: audit.details, detailsJson: audit.detailsJson })).not.toContain('security@example.com');
+    });
+
     test('stores SHA-256 hash of token, never the raw value', async () => {
         setupSuccess();
         const result = await sendAssessment(

@@ -142,8 +142,11 @@ export async function createEmployee(ctx: RequestContext, data: z.infer<typeof C
             action: 'CREATE',
             entityType: 'Employee',
             entityId: employee.id,
-            details: `Created employee: ${employee.fullName}`,
-            detailsJson: { category: 'entity_lifecycle', entityName: 'Employee', operation: 'created', after: { workEmail: employee.workEmail, status: employee.status }, summary: `Created employee: ${employee.fullName}` },
+            // The employee by record id (`entityId`) only (#5950, owner
+            // decision 2026-11-25): no name or work e-mail in the row. A reader
+            // resolves the id while the record exists.
+            details: 'Created employee',
+            detailsJson: { category: 'entity_lifecycle', entityName: 'Employee', operation: 'created', after: { status: employee.status }, summary: 'Created employee' },
         });
         return employee;
     });
@@ -279,7 +282,8 @@ export async function setEmployeeManager(
             action: 'UPDATE',
             entityType: 'Employee',
             entityId: updated.id,
-            details: `Set manager for employee: ${updated.fullName}`,
+            // By record id only (#5950): `entityId` names the employee.
+            details: 'Set manager for employee',
             detailsJson: {
                 category: 'entity_lifecycle',
                 entityName: 'Employee',
@@ -290,7 +294,7 @@ export async function setEmployeeManager(
                 // this row is where the replaced one is still written down.
                 before: { managerEmployeeId: employee.managerEmployeeId },
                 after: { managerEmployeeId: updated.managerEmployeeId },
-                summary: `Set manager for employee: ${updated.fullName}`,
+                summary: 'Set manager for employee',
             },
         });
 
