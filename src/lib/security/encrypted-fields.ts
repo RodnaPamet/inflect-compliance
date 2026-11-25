@@ -143,7 +143,8 @@
  * Its credentials do not live in a manifest-managed column: they go through an
  * explicit `secretEncrypted` field, written by `usecases/integrations.ts` as
  * `encryptField(JSON.stringify(input.secrets))` and decrypted at the read.
- * That is a separate, working mechanism.
+ * That is a separate, working mechanism, and the master-key rotation reaches
+ * it through `KEK_SEALED_COLUMNS` below (#5942) rather than through this map.
  *
  * Do not "fix" the omission by adding `configJson` here. `configJson` is the
  * PUBLIC half of a connection — hostnames, thresholds, feature toggles — and
@@ -155,6 +156,29 @@
  * That invariant is enforced by
  * `tests/guards/integration-credential-placement.test.ts`.
  */
+/**
+ * Columns sealed EXPLICITLY under the master key (`encryptField`, a `v1:`
+ * envelope) and read back with `decryptField`, outside this manifest, so the
+ * encryption extension never touches them (#5942).
+ *
+ * The master-key rotation (`jobs/key-rotation.ts`) walks `ENCRYPTED_FIELDS`,
+ * the PII columns and THIS map. A column sealed with `encryptField` that is in
+ * none of the three is never re-encrypted, and the rotation runbook's last
+ * step (retiring `DATA_ENCRYPTION_KEY_PREVIOUS` once every tenant reports zero
+ * `v1:` rows) then makes it unreadable: the report was true of the lists and
+ * false of the database, the defect #5070 found for the PII columns.
+ *
+ * A column here is under the MASTER key only. The per-tenant DEK rotation does
+ * not reach it, and does not need to: a leaked tenant DEK does not expose it.
+ * `tests/guards/kek-sealed-columns-are-rotated.test.ts` fails when a write
+ * seals a column with `encryptField` that no list names.
+ */
+export const KEK_SEALED_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+    // Every integration's credentials: OAuth client secrets, API keys, bearer
+    // tokens, refresh tokens. Read at every sync, call and test of a connection.
+    IntegrationConnection: ['secretEncrypted'],
+};
+
 export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // ─── Tenant security settings ──────────────────────
     //  Epic C.4 — audit-stream HMAC secret. URL stays plaintext so DBAs
