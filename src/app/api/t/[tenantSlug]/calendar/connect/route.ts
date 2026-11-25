@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAnyPermission } from '@/lib/security/permission-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { badRequest, forbidden } from '@/lib/errors/types';
+import { badRequest } from '@/lib/errors/types';
 import { resolvePublicOrigin } from '@/lib/http/request-origin';
 import { CALENDAR_BASELINE_PERMISSIONS } from '@/app-layer/usecases/compliance-calendar';
 import { buildCalendarAuthorizeUrl } from '@/app-layer/integrations/providers/calendar/token';
@@ -10,7 +10,7 @@ import {
     prepareCalendarOAuthFlow,
 } from '@/app-layer/integrations/providers/calendar/oauth-flow';
 import { isCalendarProviderId } from '@/app-layer/usecases/user-calendar-connection';
-import { getConsentStates, requiresAdminConsent } from '@/app-layer/usecases/tenant-calendar-consent';
+import { assertCalendarConnectable } from '@/app-layer/usecases/calendar-connectability';
 
 /**
  * A user starts connecting their OWN calendar.
@@ -49,20 +49,15 @@ export const POST = withApiErrorHandling(
                 throw badRequest('A known calendar provider is required');
             }
 
-            let entraTenantId: string | undefined;
-            if (requiresAdminConsent(provider)) {
-                const state = (await getConsentStates(ctx)).find((c) => c.provider === provider);
-                if (!state?.granted) {
-                    // A refusal the user can act on: it names who has to act.
-                    throw forbidden(
-                        'Your administrator has not yet authorised calendar access for this organisation.',
-                    );
-                }
-                // Use the directory we were ACTUALLY consented in. Guessing
-                // again would send the user to an authority where the grant
-                // does not exist.
-                entraTenantId = state.externalTenantId ?? undefined;
-            }
+            // The same rule `GET /calendar/connections` reports to the Connect
+            // control (`calendar-connectability.ts`), so the page offers a
+            // provider exactly where this route accepts it: a deployment with
+            // no OAuth client for the provider is a 409, and Microsoft without
+            // the workspace's organisation consent a 403 — refused here rather
+            // than discovered at Entra, as AADSTS65001, after a failed round
+            // trip. For Microsoft it returns the directory the consent was
+            // granted in, the authority the person must be sent to.
+            const { entraTenantId } = await assertCalendarConnectable(ctx, provider);
 
             // The callback is outside the /t/[tenantSlug] tree and recovers the
             // tenant, provider, member and verifier from this sealed flow.

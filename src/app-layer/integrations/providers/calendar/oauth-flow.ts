@@ -201,5 +201,7 @@ export function readCalendarOAuthFlow(
 export function clearCalendarOAuthFlow(res: NextResponse): void {
     res.cookies.set(CALENDAR_FLOW_COOKIE, '', cookieOptions(0));
     // A flow started before this module existed: its cookie was scoped to `/`.
-    res.cookies.delete(LEGACY_CALENDAR_STATE_COOKIE);
+    // A bare `cookies.delete(name)` names no path, so the browser would scope
+    // the expiry to this callback's directory and keep the one at `/`.
+    res.cookies.set(LEGACY_CALENDAR_STATE_COOKIE, '', { path: '/', maxAge: 0 });
 }

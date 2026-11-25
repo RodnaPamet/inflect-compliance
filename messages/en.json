@@ -14909,6 +14909,62 @@
     "eventCount": "{count, plural, one {# event} other {# events}}",
     "heatmapLegendLabel": "Activity"
   },
+  "calendarConnect": {
+    "open": "Sync to my calendar",
+    "panelTitle": "Your calendar",
+    "intro": "Inflect can copy your own open deadlines — the ones you own or are assigned — into your Google or Outlook calendar, and keeps them up to date every night.",
+    "pointOwn": "Only your own deadlines are copied, and finished ones are removed.",
+    "pointPrivate": "Each event is private and shown as free, so it does not block your time.",
+    "pointLanguage": "Events are written in your workspace's language.",
+    "pointDisconnect": "Disconnecting removes the events Inflect added.",
+    "consentGoogle": "Google asks you to agree for yourself when you connect.",
+    "consentOutlook": "For Outlook, an administrator authorises Inflect once for your organisation; after that you only sign in.",
+    "provider": {
+      "google-calendar": "Google Calendar",
+      "outlook-calendar": "Outlook"
+    },
+    "state": {
+      "notConnected": "Not connected",
+      "connected": "Connected",
+      "disconnecting": "Disconnecting",
+      "stopped": "Stopped"
+    },
+    "connectedSince": "Connected on {date}",
+    "lastPushed": "Last updated on {date}",
+    "notPushedYet": "Not updated yet: your deadlines are added at the next nightly update.",
+    "disconnectingDetail": "Removing the events Inflect added: {count, plural, one {# is} other {# are}} still in your calendar. Inflect tries again every night, for up to seven days.",
+    "stoppedDetail": "{provider} stopped accepting Inflect's updates. Reconnect to resume.",
+    "leftBehind": "{count, plural, one {# event Inflect added is still in your calendar. Reconnect to keep it up to date, or delete it there.} other {# events Inflect added are still in your calendar. Reconnect to keep them up to date, or delete them there.}}",
+    "consentGoneWhileConnected": "Your administrator withdrew Outlook access for your organisation, so Outlook is not updated until they authorise it again.",
+    "refusal": {
+      "NOT_CONFIGURED": "{provider} is not set up in this installation of Inflect, so it cannot be connected.",
+      "ADMIN_CONSENT_NOT_GRANTED": "Your organisation has not authorised Outlook yet. Ask your administrator to authorise it on Admin → Integrations; then you can connect.",
+      "ADMIN_CONSENT_WITHDRAWN": "Your administrator withdrew Outlook access for your organisation. Ask them to authorise it again on Admin → Integrations; then you can connect."
+    },
+    "connect": "Connect {provider}",
+    "reconnect": "Reconnect {provider}",
+    "disconnect": "Disconnect",
+    "disconnectAria": "Disconnect {provider}",
+    "loadError": "Could not read your calendar connections.",
+    "retry": "Try again",
+    "connectError": "Could not start connecting {provider}. Try again.",
+    "confirmTitle": "Disconnect {provider}?",
+    "confirmDescription": "Inflect removes the deadlines it added to {provider}, then stops updating it. Events you created yourself are not touched.",
+    "confirmLabel": "Remove calendar connection",
+    "disconnected": "{provider} is disconnected. The events Inflect added were removed.",
+    "disconnectingToast": "{provider} is disconnecting: {remaining, plural, one {# event is} other {# events are}} still being removed, and Inflect tries again tonight.",
+    "disconnectError": "Could not disconnect {provider}. Try again.",
+    "outcome": {
+      "connected": "Your calendar is connected. Your deadlines are added at the next nightly update.",
+      "connect_declined": "You declined access, so nothing was connected.",
+      "provider_error": "The calendar provider answered with an error, so nothing was connected. Try again; if it keeps happening, tell your administrator.",
+      "consent_withdrawn": "Your administrator withdrew Outlook access for your organisation while you were signing in, so nothing was connected. Ask them to authorise it again.",
+      "no_refresh_token": "The provider did not give Inflect lasting access, so nothing was connected. Connect again and allow every permission it asks for.",
+      "flow_invalid": "The sign-in expired or was started in another browser or by another person, so nothing was connected. Start again from this page.",
+      "connect_failed": "The connection could not be completed. Try again.",
+      "consent_required": "Your organisation has not authorised Outlook for Inflect yet, so nothing was connected. Ask your administrator to authorise it on Admin → Integrations."
+    }
+  },
   "coverage": {
     "crumbDashboard": "Dashboard",
     "crumbCoverage": "Coverage",

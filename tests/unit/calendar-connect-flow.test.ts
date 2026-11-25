@@ -66,6 +66,7 @@ import { GET as CALLBACK } from '@/app/api/integrations/calendar/callback/route'
 import {
     CALENDAR_CALLBACK_PATH,
     CALENDAR_FLOW_COOKIE,
+    LEGACY_CALENDAR_STATE_COOKIE,
 } from '@/app-layer/integrations/providers/calendar/oauth-flow';
 import {
     CalendarNoRefreshTokenError,
@@ -167,6 +168,12 @@ describe('callback: the verifier comes from the flow and is checked on return', 
         const spent = res.cookies.get(CALENDAR_FLOW_COOKIE);
         expect(spent?.value).toBe('');
         expect(spent?.maxAge).toBe(0);
+        // The pre-hardening cookie lived at `/`; an expiry with no path would
+        // be scoped to the callback's directory and leave it in place.
+        const legacy = res.cookies.get(LEGACY_CALENDAR_STATE_COOKIE);
+        expect(legacy?.value).toBe('');
+        expect(legacy?.path).toBe('/');
+        expect(legacy?.maxAge).toBe(0);
     });
 });
 

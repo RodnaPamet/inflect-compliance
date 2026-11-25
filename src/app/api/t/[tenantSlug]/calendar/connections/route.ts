@@ -8,6 +8,10 @@ import {
     isCalendarProviderId,
 } from '@/app-layer/usecases/user-calendar-connection';
 import { disconnectCalendar } from '@/app-layer/usecases/calendar-push-person';
+import {
+    calendarConnectionStateOf,
+    readCalendarConnectability,
+} from '@/app-layer/usecases/calendar-connectability';
 
 /**
  * C7 — a user's own calendar connections: read them, and disconnect.
@@ -42,17 +46,14 @@ import { disconnectCalendar } from '@/app-layer/usecases/calendar-push-person';
  * match a file discovered from those roots. Neither edit is made, matching the
  * existing `calendar/route.ts`.
  *
- * ═══ WHY THESE TWO VERBS AND NOT connect/callback ═══
+ * ═══ CONNECT LIVES ELSEWHERE ═══
  *
- * Starting consent needs a provider authorize URL, and the Microsoft half of
- * that is blocked on an unresolved product decision: in any Entra tenant using
- * Microsoft's RECOMMENDED consent policy, per-user self-service consent to
- * `Calendars.ReadWrite` is refused, because the policy allows user consent only
- * for verified publishers AND only for permissions an admin has classified
- * low-impact — and there is no default low-impact set. Those users would hit
- * "Approval required", which reads to us as low adoption rather than a blocked
- * gate. Building the authorize URL before deciding whether there is also an
- * admin-consent path would mean rewriting the consent flow after it is tested.
+ * Starting a connection is `POST /calendar/connect` (it returns the provider's
+ * authorize URL) and finishing it is the callback outside the tenant tree.
+ * This route reads and disconnects; its GET also reports whether each provider
+ * CAN be connected (`readCalendarConnectability`), the same rule the connect
+ * route refuses with — the consent model is the owner's decision of 2026-11-25
+ * (docs/calendar-push-design.md).
  */
 export const GET = withApiErrorHandling(
     requireAnyPermission<{ tenantSlug: string }>(
@@ -61,8 +62,21 @@ export const GET = withApiErrorHandling(
             // Keyed off ctx.userId — never a userId parameter. One user must
             // not be able to read another's connection state, and the surest
             // way to guarantee that is to give the route no way to name one.
-            const connections = await listCalendarConnections(ctx);
-            return Response.json({ connections });
+            //
+            // `providers` (#5937 step 4) says, per provider, whether a connect
+            // would be accepted and why not — the same rule the connect route
+            // refuses with, so the Connect control never computes it itself
+            // and never offers a button that would fail.
+            const [connections, providers] = await Promise.all([
+                listCalendarConnections(ctx),
+                readCalendarConnectability(ctx),
+            ]);
+            // `state` is the connection as the control words it; only the
+            // server can tell a person's disconnect from a refused token.
+            return Response.json({
+                connections: connections.map((c) => ({ ...c, state: calendarConnectionStateOf(c) })),
+                providers,
+            });
         },
     ),
 );
