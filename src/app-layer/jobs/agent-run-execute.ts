@@ -37,8 +37,8 @@ export interface AgentRunExecuteResult {
 export async function runAgentRunExecute(
     payload: AgentRunExecutePayload,
 ): Promise<AgentRunExecuteResult> {
-    const { tenantId, runId, clockBase, segment } = payload;
-    const outcome = await executeQueuedWorkflowRun(tenantId, runId, { clockBase, segment });
+    const { tenantId, runId, clockBase, segment, pausedAt } = payload;
+    const outcome = await executeQueuedWorkflowRun(tenantId, runId, { clockBase, segment, pausedAt });
 
     if ('skipped' in outcome) {
         // INFO, not warn. Every one of these is a correct refusal — an

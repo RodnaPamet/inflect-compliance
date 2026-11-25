@@ -1038,9 +1038,11 @@ executorRegistry.register('agent-run-execute', async (payload) => {
     // fields would silently measure every resumed segment from the run's start.
     // `NamesEveryField` makes leaving it out a compile error.
     // `segment` likewise (#5854 item 3): without it a retry of a Flue or
-    // Managed Agents segment cannot tell itself from a first attempt.
-    const { tenantId, runId, clockBase, segment } = payload;
-    const forwarded: NamesEveryField<JobPayload<'agent-run-execute'>> = { tenantId, runId, clockBase, segment };
+    // Managed Agents segment cannot tell itself from a first attempt, and
+    // `pausedAt` (#5854, 2026-11-25): without it a person's
+    // resume of a paused Managed Agents run starts a new session.
+    const { tenantId, runId, clockBase, segment, pausedAt } = payload;
+    const forwarded: NamesEveryField<JobPayload<'agent-run-execute'>> = { tenantId, runId, clockBase, segment, pausedAt };
     const r = await runAgentRunExecute(forwarded);
     return makeResult(
         'agent-run-execute',
