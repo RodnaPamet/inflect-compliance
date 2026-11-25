@@ -92,6 +92,23 @@ function msEnv(override?: Partial<MsEnv>): MsEnv {
     };
 }
 
+/**
+ * Whether this deployment has a Microsoft app registration to send an
+ * administrator to. The env schema requires both values in production, but a
+ * deployment copied from an example file carries its placeholder
+ * (`REPLACE_ME_…`, `your-…`), and `/adminconsent` with a placeholder client id
+ * fails at Microsoft with an error that names nothing the administrator can
+ * fix. The consent card says "not configured" instead of offering that.
+ */
+export function microsoftCalendarClientConfigured(override?: Partial<MsEnv>): boolean {
+    const e = msEnv(override);
+    const real = (v: string | undefined) => {
+        const t = (v ?? '').trim();
+        return t.length > 0 && !/^REPLACE_ME/i.test(t) && !/^your-/i.test(t);
+    };
+    return real(e.clientId) && real(e.clientSecret);
+}
+
 function msAuthorityBase(tenantId: string): string {
     return `https://login.microsoftonline.com/${encodeURIComponent(tenantId)}`;
 }

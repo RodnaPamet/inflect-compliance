@@ -19,6 +19,7 @@ The SSO, SCIM and Entra pages link here too. The strip under their titles, **{{u
 | Open the page and see its connections, the catalogue and connection health | Owner, Admin |
 | Connect, edit, test, sync and disable a connection | Owner, Admin |
 | Connect SharePoint, choose its sites, test it and disconnect it | Owner, Admin |
+| Authorise Outlook for your organisation, and revoke that authorisation | Owner, Admin |
 | Turn on the internal checks | Owner, Admin |
 | Open **{{ui:admin.leaverPasses.linkLabel}}**, **{{ui:admin.joinerPasses.linkLabel}}** and **{{ui:admin.writeLadder.linkLabel}}** from this page | Owner |
 
@@ -33,6 +34,8 @@ A connection lets Inflect collect from another system without anyone copying dat
 ## What you see
 
 **{{ui:admin.sharepoint.title}}.** A card for SharePoint, which connects through Microsoft sign-in rather than a form. With no connection it offers **{{ui:admin.sharepoint.connect}}**. Once connected, it shows the connection's name, a **{{ui:admin.sharepoint.statusConnected}}** or **{{ui:admin.sharepoint.statusError}}** badge from its last test, how many sites Inflect may read, and **{{ui:admin.sharepoint.test}}**, **{{ui:admin.sharepoint.sites}}** and **{{ui:admin.sharepoint.disconnect}}**. A connection that was disabled reads **{{ui:admin.sharepoint.statusDisabled}}** and offers only **{{ui:admin.sharepoint.disconnect}}**. **{{ui:admin.sharepoint.syncHealth}}** opens the SharePoint sync history.
+
+**{{ui:admin.calendarConsent.title}}.** A card for the one-time Microsoft authorisation that lets people in the workspace send their own deadlines to Outlook. It shows **{{ui:admin.calendarConsent.statusGranted}}**, **{{ui:admin.calendarConsent.statusNotGranted}}** or **{{ui:admin.calendarConsent.statusRevoked}}**; once Outlook has been authorised, it also shows when, by whom, and the ID of the Microsoft directory it was authorised in, and, after a revocation, when that happened. Below that it offers **{{ui:admin.calendarConsent.authorise}}**, or **{{ui:admin.calendarConsent.authoriseAgain}}** while authorised, and **{{ui:admin.calendarConsent.revoke}}**. If this Inflect deployment has no Microsoft app set up, the card says so and offers no authorisation.
 
 **The agent engine note.** {{ui:admin.integrations.agentEnginesMoved}} **{{ui:admin.integrations.agentEnginesLink}}** opens it.
 
@@ -111,6 +114,20 @@ Click **{{ui:admin.integrations.enableInternal}}**. Inflect adds the Personnel, 
 
 An **{{ui:admin.integrations.providerLabels.mcp-server}}** connection that signs in through Microsoft Entra needs consent once. Fill in its Entra tenant ID, client ID and client secret first, then click **{{ui:admin.integrations.authorizeEntra}}** on its row. Microsoft asks you to sign in and consent, then returns you here, and a notice at the top of the page says whether the authorization completed, was declined or did not complete. A successful authorization also adds an entry to the workspace's audit log. If any of those three values is missing, the page says what to set instead of sending you to Microsoft.
 
+### Authorise Outlook for your organisation
+
+People connect their own Outlook calendar on the {{ui:nav.calendar}} page, but only after someone who administers your organisation in Microsoft has authorised Inflect once, for everybody. Click **{{ui:admin.calendarConsent.authorise}}** on the {{ui:admin.calendarConsent.title}} card. Microsoft asks you to sign in with a Microsoft administrator account and to accept the permissions, then returns you here, and the card says how it went. The result is shown once; reloading the page clears it.
+
+Read the note beside the button before you click: {{ui:admin.calendarConsent.scopeNote}}
+
+Authorising does not connect anybody's calendar. Each person still signs in to Microsoft for their own calendar, and nothing is written to a calendar without them.
+
+If people later report that Outlook asks for an administrator's approval, the authorisation was probably removed in Microsoft's admin centre, which Inflect does not see. Click **{{ui:admin.calendarConsent.authoriseAgain}}**.
+
+### Revoke the Outlook authorisation
+
+Click **{{ui:admin.calendarConsent.revoke}}** and confirm. Outlook pushes stop at once for everyone in the workspace, and nobody can connect Outlook until it is authorised again. There is no undo: authorising again needs another sign-in by a Microsoft administrator. Microsoft keeps its own record of the grant; remove it in Microsoft's admin centre too if you want it gone there.
+
 ### Connect and manage SharePoint
 
 Click **{{ui:admin.sharepoint.connect}}** on the {{ui:admin.sharepoint.title}} card. Microsoft asks you to sign in and consent, then returns you here, and the card shows one of three messages: **{{ui:admin.sharepoint.connected}}**, **{{ui:admin.sharepoint.declined}}** or **{{ui:admin.sharepoint.connectionFailed}}**
@@ -123,7 +140,7 @@ The SharePoint connection is managed on its card only, and is not listed in {{ui
 
 ## What happens next
 
-- Creating, editing and disabling a connection, authorizing an external tool server, connecting or disconnecting SharePoint and changing its sites add an entry to the workspace's audit log, naming who did it. Open it from **{{ui:admin.auditLog}}** on the {{ui:admin.title}} page.
+- Creating, editing and disabling a connection, authorizing an external tool server, connecting or disconnecting SharePoint and changing its sites, and authorising or revoking Outlook (including an authorisation that did not complete) add an entry to the workspace's audit log, naming who did it. Open it from **{{ui:admin.auditLog}}** on the {{ui:admin.title}} page.
 - Enabled directory connections sync every night at 03:00 UTC, and the HR connection at 04:00 UTC. A person who disappears from the HR system is marked as terminated on the {{ui:admin.nav.personnel}} page.
 - Check results appear on the controls each check is wired to. **{{ui:admin.integrations.viewOutcomes}}** opens the connection's own page: its check runs, its accountable owner and, for a legacy application, its column mapping and account reads.
 - When a scheduled sync has no active Owner or Admin to run as, the connection shows **{{ui:admin.integrations.health.blocked}}** with the reason until one is available.
@@ -144,6 +161,11 @@ The SharePoint connection is managed on its card only, and is not listed in {{ui
 | A red sync summary that names a reason | The directory or HR system refused the read, for example because a credential expired | Fix the settings or secrets with **{{ui:admin.integrations.editConnection}}**, then sync again |
 | **{{ui:admin.integrations.health.blockedNoActiveAdmin}}** | No active Owner or Admin is left to run syncs | Invite or reactivate one |
 | **{{ui:admin.integrations.health.blockedNoAdminWithUpload}}** | No Owner or Admin may upload evidence | Give one of them that permission |
+| **{{ui:admin.calendarConsent.outcome.consent_declined}}** | The authorisation was cancelled at Microsoft | Click **{{ui:admin.calendarConsent.authorise}}** again |
+| **{{ui:admin.calendarConsent.outcome.not_directory_admin}}** | The Microsoft account you signed in with cannot authorise apps for your organisation | Ask a Microsoft administrator to authorise, or sign in as one |
+| **{{ui:admin.calendarConsent.outcome.app_not_in_directory}}** | Inflect's Microsoft app is not open to your organisation's directory | Ask whoever runs your Inflect deployment |
+| **{{ui:admin.calendarConsent.outcome.flow_invalid}}** | The authorisation took longer than ten minutes, or was finished in a different browser or by a different person | Start it again from this page |
+| **{{ui:admin.calendarConsent.notConfigured}}** | This Inflect deployment has no Microsoft app set up | Ask whoever runs your Inflect deployment |
 | **{{ui:admin.sharepoint.consentError}}** or **{{ui:admin.sharepoint.disconnectFailed}}**, or the reason a disconnect was refused | The SharePoint action did not go through | Follow the reason if one is given, then try again |
 | **{{ui:admin.integrations.saveFailed}}**, **{{ui:admin.integrations.networkError}}**, **{{ui:admin.integrations.authorizeFailed}}** or **{{ui:admin.integrations.internalEnableFailed}}** | The action did not go through | Reload the page and try again |
 

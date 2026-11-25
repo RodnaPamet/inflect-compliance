@@ -434,6 +434,12 @@ export const CALENDAR_CONNECT_OUTCOMES = [
     'provider_error',
     /** Microsoft: the tenant-wide admin consent was withdrawn mid-flow. */
     'consent_withdrawn',
+    /**
+     * Microsoft: Entra answered that the organisation has not consented (the
+     * admin consent Inflect recorded was removed in the Entra portal, or never
+     * reached this directory). The remedy is the administrator's.
+     */
+    'consent_required',
     /** The exchange succeeded but issued no refresh token. */
     'no_refresh_token',
     /** The flow cookie was absent, forged, expired, or for another state/person. */

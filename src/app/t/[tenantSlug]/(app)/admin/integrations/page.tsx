@@ -38,6 +38,7 @@ import { buttonVariants } from '@/components/ui/button-variants';
 import { cn } from '@inflect/ui/lib/cn';
 import { useTranslations } from 'next-intl';
 import { SharePointCard } from './SharePointCard';
+import { CalendarConsentCard } from './CalendarConsentCard';
 import { AnthropicWorkspaceCard, ANTHROPIC_WORKSPACE_PROVIDER } from './AnthropicWorkspaceCard';
 import { ConnectionHealthPanel } from './ConnectionHealthPanel';
 
@@ -730,6 +731,11 @@ export default function AdminIntegrationsPage() {
                 {/* SP-1 — SharePoint connection (delegated consent, separate
                     from the generic config-field connections below). */}
                 <SharePointCard />
+
+                {/* #5937 step 3 — the Microsoft organisation-wide
+                    authorisation people need before they connect Outlook.
+                    The admin-consent callback lands here (`?calendar=`). */}
+                <CalendarConsentCard />
 
                 {offersAnthropicWorkspace && (
                     <AnthropicWorkspaceCard

@@ -25,6 +25,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { badRequest } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { logger } from '@/lib/observability/logger';
+import type { CalendarAdminConsentOutcome } from '@/lib/calendar-admin-consent-outcomes';
 
 /** Only Microsoft uses tenant-level consent. */
 export const ADMIN_CONSENT_PROVIDERS = ['outlook-calendar'] as const;
@@ -167,6 +168,102 @@ export async function getConsentStates(ctx: RequestContext): Promise<ConsentStat
             return row
                 ? toState(row)
                 : { provider, granted: false, grantedAt: null, revokedAt: null, externalTenantId: null };
+        });
+    });
+}
+
+/** The callback's closed outcome set; a client-safe module, so the card reads the same list. */
+export {
+    CALENDAR_ADMIN_CONSENT_OUTCOMES,
+    type CalendarAdminConsentOutcome,
+} from '@/lib/calendar-admin-consent-outcomes';
+
+/**
+ * Record an admin consent that did not complete, for a callback that resolved
+ * a workspace context. Audited as an ACCESS event (the grant's own category)
+ * with the OUTCOME and Entra's bare codes only — never `error_description`,
+ * which is Microsoft's prose and can carry a directory name or a UPN.
+ */
+export async function recordAdminConsentFailure(
+    ctx: RequestContext,
+    input: {
+        provider: AdminConsentProvider;
+        outcome: Exclude<CalendarAdminConsentOutcome, 'consent_granted'>;
+        providerErrorCode?: string | null;
+        aadstsCode?: string | null;
+    },
+): Promise<void> {
+    const providerErrorCode =
+        input.providerErrorCode && /^[a-z_]{1,64}$/.test(input.providerErrorCode) ? input.providerErrorCode : undefined;
+    const aadstsCode = input.aadstsCode && /^AADSTS\d{4,7}$/.test(input.aadstsCode) ? input.aadstsCode : undefined;
+    logger.warn('tenant calendar consent did not complete', {
+        component: 'tenant-calendar-consent',
+        tenantId: ctx.tenantId,
+        provider: input.provider,
+        outcome: input.outcome,
+        providerErrorCode,
+        aadstsCode,
+    });
+    await runInTenantContext(ctx, async (db) => {
+        await logEvent(db, ctx, {
+            action: 'CALENDAR_ADMIN_CONSENT_FAILED',
+            entityType: 'Tenant',
+            entityId: ctx.tenantId,
+            details: `Tenant-wide calendar consent did not complete (${input.provider}: ${input.outcome})`,
+            detailsJson: {
+                category: 'access',
+                operation: 'grant_failed',
+                summary: `Tenant-wide calendar consent did not complete (${input.provider}: ${input.outcome})`,
+                reason: input.outcome,
+            },
+            metadata: { provider: input.provider, outcome: input.outcome, providerErrorCode, aadstsCode },
+        });
+    });
+}
+
+/** What the consent card on Admin → Integrations shows for one provider. */
+export interface AdminConsentOverview extends ConsentState {
+    /** Who granted it, as the members page names them; null when never granted. */
+    grantedBy: { name: string | null; email: string | null } | null;
+}
+
+/**
+ * The consent card's read: the state of every admin-consent provider, with
+ * who granted it. `getConsentStates` stays the connect and callback paths'
+ * read, which have no reason to load a person.
+ */
+export async function getAdminConsentOverview(ctx: RequestContext): Promise<AdminConsentOverview[]> {
+    return runInTenantContext(ctx, async (db) => {
+        const rows = await db.tenantCalendarConsent.findMany({
+            where: { tenantId: ctx.tenantId },
+            take: ADMIN_CONSENT_PROVIDERS.length,
+            select: {
+                provider: true,
+                grantedAt: true,
+                revokedAt: true,
+                externalTenantId: true,
+                grantedBy: { select: { name: true, email: true } },
+            },
+        });
+        const byProvider = new Map(rows.map((r) => [r.provider, r]));
+        return ADMIN_CONSENT_PROVIDERS.map((provider) => {
+            const row = byProvider.get(provider);
+            if (!row) {
+                return {
+                    provider,
+                    granted: false,
+                    grantedAt: null,
+                    revokedAt: null,
+                    externalTenantId: null,
+                    grantedBy: null,
+                };
+            }
+            return {
+                ...toState(row),
+                grantedBy: row.grantedBy
+                    ? { name: row.grantedBy.name ?? null, email: row.grantedBy.email ?? null }
+                    : null,
+            };
         });
     });
 }
