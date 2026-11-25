@@ -48,6 +48,7 @@ jest.mock('@/app-layer/context', () => ({
 
 const appendAuditEntryOrQueue = jest.fn(async () => undefined);
 jest.mock('@/lib/audit', () => ({
+    ...jest.requireActual('@/lib/audit'),
     appendAuditEntryOrQueue: (...a: unknown[]) => appendAuditEntryOrQueue(...(a as [])),
 }));
 
