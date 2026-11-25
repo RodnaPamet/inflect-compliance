@@ -258,7 +258,11 @@ for SRE visibility (`event: "login_failure"`, `reason: "unknown_email"`,
 ### Privacy invariants (enforced by tests)
 
 - Raw email never written to audit `detailsJson` or structured logs —
-  only `hashEmailForLog(email)`, a deterministic 16-char SHA-256 prefix
+  only `hashEmailForLog(email)`, the deployment's keyed lookup hash
+  (`hashForLookup`, HMAC-SHA256 under `LOOKUP_HASH_KEY`, 64 hex characters,
+  equal to `User.emailHash`). Rows and log lines written before #5950 part 2
+  carry a 16-char unsalted SHA-256 prefix instead and keep it; nothing matches
+  rows on either value
 - Raw verification tokens never logged
 - Passwords never logged, anywhere, ever
 - `userId` suppressed from the `unknown_email` log line specifically,

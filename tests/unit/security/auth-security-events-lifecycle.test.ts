@@ -319,9 +319,9 @@ describe('recordLoginFailure — userId is withheld for unknown_email', () => {
 // here fired on the same mutation and detected nothing the sibling
 // missed, so it was removed rather than kept as decoration.
 describe('hashEmailForLog', () => {
-    it('is a 16-hex-char truncated SHA-256, not the address itself', () => {
+    it('is the 64-hex-char keyed lookup hash (#5950), not the address itself', () => {
         const h = hashEmailForLog(EMAIL);
-        expect(h).toMatch(/^[0-9a-f]{16}$/);
+        expect(h).toMatch(/^[0-9a-f]{64}$/);
         expect(h).not.toContain('alice');
     });
 

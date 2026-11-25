@@ -420,6 +420,27 @@ regulation may force) · **Mechanism** · **Owner** · **Cleanup wiring** ·
   campaigns, whole, since 2026-10-18. Skipping is not sufficient where a
   cascade reaches the row from a purged parent, so no model is classed here
   whose `ON DELETE CASCADE` runs from a purged one; see "Tenant purge" below.
+- **The audit extension's diff names a person column without its value (#5950
+  part 2, owner decision 2026-11-25).** Every `update` / `upsert` in a tenant
+  context writes a row whose `diffJson.before` / `after` and
+  `detailsJson.after` hold the changed columns' values. For a person column —
+  `PERSON_COLUMNS` in `src/lib/security/person-columns.ts`: an employee's or a
+  directory account's name and work address, a pre-hire's name, a trust-center
+  requester, a vendor contact, a legacy application account, an invitee, a
+  user's or auditor's address and name in any stored form — the row lists the
+  field in `changedFields` and `withheldFields` and records no value, old or
+  new. The workspace's sender settings (`defaultFromName`, `defaultFromEmail`,
+  `complianceMailbox`) are configuration and keep their values. Rows written
+  before this change keep the values they hold: every identity and HRIS sync
+  upsert before it put a person's name and address, before and after, into
+  those columns, and they are not rewritten.
+- **The auth rows' `identifierHash` is keyed (#5950 part 2).** The
+  `AUTH_*` rows' `detailsJson.auth.identifierHash` is the deployment's keyed
+  lookup hash of the address (`hashForLookup`, equal to that user's
+  `User.emailHash`), not the unsalted, truncated SHA-256 it was, which anybody
+  could compute from a guessed address. Rows written before keep the old
+  16-character value; the two do not compare equal for one address, and
+  nothing matches rows on either.
 - **Owner:** Legal / Compliance (period) — Engineering only executes a signed-off
   procedure.
 - **Customer override:** none, and likely should remain none (tamper-evidence is

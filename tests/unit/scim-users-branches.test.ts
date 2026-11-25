@@ -600,7 +600,7 @@ describe('SCIM operational logs — no raw email, no name values', () => {
         const logged = loggedPayloads([info, warn]);
         expect(logged).not.toContain('pat.secret');
         expect(info).toHaveBeenCalledWith('SCIM create user', expect.objectContaining({
-            identifierHash: expect.stringMatching(/^[0-9a-f]{16}$/),
+            identifierHash: expect.stringMatching(/^[0-9a-f]{64}$/),
         }));
         info.mockRestore();
         warn.mockRestore();

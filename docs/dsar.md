@@ -248,6 +248,23 @@ table would satisfy it row by row. Not over-anonymizing is an APPLICATION
 obligation — it lives in the `where` clause of the single `updateMany` inside
 `eraseUser`.
 
+**Values the audit extension records, and the auth hash (#5950 part 2, owner
+decision 2026-11-25).** The Prisma audit extension writes the changed columns'
+values into `diffJson` and `detailsJson.after` on every update and upsert in a
+tenant context. Since #5950 part 2 it records a person column (`PERSON_COLUMNS`
+in `src/lib/security/person-columns.ts`: a name, an address or a login of an
+employee, a directory account, a pre-hire, a trust-center requester, a vendor
+contact, a legacy application account, an invitee or a user) by field name only,
+so an erasure leaves no value of it in a new row. **Rows written before keep
+what they hold**: an identity or HRIS sync before #5950 part 2 recorded the
+person's name and work address, before and after, and the erasure cannot
+rewrite them, for the reason above. The auth rows' `identifierHash` is now the
+keyed lookup hash of the address; it is pseudonymous data, and it no longer
+resolves to the subject once their `User` row, which holds the same value as
+`emailHash`, is gone, except to someone holding the deployment key and the
+address. Rows written before carry an unsalted SHA-256 prefix, which anybody
+holding the address can recompute; they keep it.
+
 ### The erasure is recorded IN the chain, and the verifier consults it
 
 "Hash chain intact" names two properties, and pseudonymization splits them.
