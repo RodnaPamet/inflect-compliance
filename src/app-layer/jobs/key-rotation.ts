@@ -10,7 +10,8 @@
  *      it under the new KEK so the row stays readable once
  *      `DATA_ENCRYPTION_KEY_PREVIOUS` is retired.
  *
- *   2. **Re-encrypt v1 ciphertexts.** Any field in `ENCRYPTED_FIELDS`
+ *   2. **Re-encrypt v1 ciphertexts.** Any field in `ENCRYPTED_FIELDS`,
+ *      the tenant-scoped PII columns or `KEK_SEALED_COLUMNS` (#5942)
  *      that still holds a `v1:` envelope was written under the
  *      global KEK (either pre-B.2, or via a bypass source). Those
  *      values need to round-trip through the dual-KEK decrypt +
@@ -70,7 +71,7 @@ import {
     isWrappedDek,
 } from '@/lib/security/tenant-keys';
 import { clearTenantDekCache } from '@/lib/security/tenant-key-manager';
-import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
+import { ENCRYPTED_FIELDS, KEK_SEALED_COLUMNS } from '@/lib/security/encrypted-fields';
 import {
     PII_ENCRYPTED_COLUMNS,
     PII_GLOBAL_MODELS,
@@ -438,8 +439,15 @@ export async function runKeyRotation(
             //
             // The ciphertext column only: a lookup hash is an index keyed on
             // LOOKUP_HASH_KEY (#5071) and must not move during a rotation.
+            //
+            // ── AND THE COLUMNS SEALED OUTSIDE THE MANIFEST (#5942) ──
+            //
+            // `KEK_SEALED_COLUMNS` — every integration's credentials — were
+            // written with `encryptField` and swept by nothing, the same
+            // defect one table over. Every one carries `tenantId`.
             const rotatable: Array<[string, readonly string[]]> = [
                 ...Object.entries(ENCRYPTED_FIELDS),
+                ...Object.entries(KEK_SEALED_COLUMNS),
                 ...PII_TENANT_SCOPED_MODELS.map(
                     (m) => [m, PII_ENCRYPTED_COLUMNS[m] ?? []] as [string, readonly string[]],
                 ),
