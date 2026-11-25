@@ -217,6 +217,18 @@ the user's rows — rather than deleting them. Rationale:
 
 So the action is retained; the identifying `userId` is removed.
 
+**What an erasure leaves in the trail (#5950, owner decision 2026-11-25).** A
+row written since #5950 names a person by id only — the user id, never an
+e-mail address or a name, in `details` or `detailsJson` — so after an erasure
+only the id remains, and it resolves to nobody. **Rows written before #5950
+keep what they hold**: some name the person by address or name in their text
+(the member removal, deactivation and role-change rows, an access review's
+execution rows, the invite, auditor, SCIM and employee rows). The erasure
+cannot rewrite them: the entry hash covers `details` and `detailsJson`, and the
+trigger below permits `userId` → NULL and nothing else. They are not
+backfilled. The full list of writers is in
+`docs/implementation-notes/2026-11-25-fix-5950-audit-ids-only.md`.
+
 **Two gates, one of them narrowed.** Migration
 `20260917130000_audit_log_immutable_permit_pseudonymization` narrowed
 `audit_log_immutable_guard()` to permit exactly one UPDATE shape —
