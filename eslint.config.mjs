@@ -384,6 +384,24 @@ const config = [
         rules: { 'local/anthropic-client-single-seam': 'off' },
     },
     {
+        // ── An audit row names a person by user id only (#5950) ──
+        //
+        // Owner decision 2026-11-25: new audit rows carry the person's user id
+        // and no e-mail address or name, in `details` and `detailsJson` alike.
+        // The trail is immutable and hash-chained, so an erasure cannot remove
+        // what a row says, and `detailsJson` streams to the tenant's SIEM. A
+        // reader resolves the id while the person exists.
+        //
+        // `payloadArgs` names a wrapper whose positional argument BECOMES the
+        // row's `detailsJson`; a wrapper that takes `{ detailsJson }` is
+        // covered without being listed. There is no exemption list.
+        // See eslint-rules/rules/no-person-identity-in-audit-payload.js.
+        files: ['src/**/*.ts', 'src/**/*.tsx'],
+        rules: {
+            'local/no-person-identity-in-audit-payload': ['error', { payloadArgs: { emitScimAudit: 3 } }],
+        },
+    },
+    {
         // ── One way into the vector store (Layer 4, D-L4-1 pgvector first) ──
         //
         // `src/app-layer/repositories/VectorRepository.ts` takes the tenant
