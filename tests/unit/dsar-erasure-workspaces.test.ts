@@ -3,12 +3,13 @@
  * membership writer's audit shape, and the bounded, paged read.
  *
  * Every shape below is the one its writer emits today (the writer is named on
- * each case); the DB-backed `tests/integration/dsar-erase-user-command.test.ts`
- * drives the real SCIM writer end to end.
+ * each case); the DB-backed `tests/integration/dsar-erase-command.test.ts`
+ * drives the real SCIM writer and the real member removal end to end.
  */
 import {
     ErasureWorkspaceDiscoveryTruncatedError,
     MEMBERSHIP_WRITERS_WITHOUT_A_SUBJECT_ROW,
+    TARGET_RECORD_ACTIONS,
     erasureWorkspacesFrom,
     readErasureWorkspaces,
     type AuditEvidenceRow,
@@ -94,8 +95,43 @@ describe('erasureWorkspacesFrom — each membership writer\'s audit shape', () =
     });
 });
 
+describe('erasureWorkspacesFrom — a removal names the person (#5940)', () => {
+    it.each(Object.keys(TARGET_RECORD_ACTIONS))('%s with detailsJson.targetUserId = the subject puts its tenant in the plan', (action) => {
+        const out = decide([audit({ tenantId: 't-removed', userId: ADMIN, entityId: 'membership-id', action, targetUserId: S })]);
+        expect(out.tenantIds).toEqual(['t-removed']);
+        expect(out.workspaces).toEqual([{ tenantId: 't-removed', kinds: ['TARGET_RECORD'], rows: 1 }]);
+        expect(out.undecided).toEqual([]);
+    });
+
+    it('lists the removal and deactivation writers by their actions', () => {
+        expect(Object.keys(TARGET_RECORD_ACTIONS).sort()).toEqual([
+            'ACCESS_REVIEW_DECISION_EXECUTED',
+            'MEMBER_DEACTIVATED',
+            'MEMBER_REMOVED',
+            'ORG_ADMIN_DEPROVISIONED',
+            'SCIM_USER_DEACTIVATED',
+        ]);
+    });
+
+    it('a row that is both a membership record and a removal counts its rows once', () => {
+        const out = decide([audit({ tenantId: 't-scim', entityId: S, action: 'SCIM_USER_DEACTIVATED', targetUserId: S, rows: 2 })]);
+        expect(out.workspaces).toEqual([{ tenantId: 't-scim', kinds: ['MEMBERSHIP_RECORD', 'TARGET_RECORD'], rows: 2 }]);
+    });
+
+    it('the key under an unlisted action is ignored, not undecided: it is the actor convention on rows about no membership', () => {
+        const out = decide([audit({ tenantId: 't-dsar', userId: ADMIN, entity: 'DataSubjectRequest', entityId: 'req-1', action: 'DSAR_VERIFIED', targetUserId: S })]);
+        expect(out.tenantIds).toEqual([]);
+        expect(out.undecided).toEqual([]);
+    });
+
+    it('a removal naming another person is not the subject\'s', () => {
+        const out = decide([audit({ tenantId: 't-x', userId: ADMIN, entityId: 'membership-id', action: 'MEMBER_REMOVED', targetUserId: OTHER })]);
+        expect(out.tenantIds).toEqual([]);
+    });
+});
+
 describe('erasureWorkspacesFrom — what it does not count', () => {
-    it('ignores rows that do not name the subject: another person\'s SCIM row, a removal by membership id', () => {
+    it('ignores rows that do not name the subject: another person\'s SCIM row, a removal written before #5940 (membership id only)', () => {
         const out = decide([
             audit({ tenantId: 't-x', entityId: OTHER, action: 'SCIM_USER_CREATED' }),
             audit({ tenantId: 't-y', userId: ADMIN, entityId: 'membership-id', action: 'MEMBER_REMOVED' }),
@@ -164,7 +200,7 @@ describe('readErasureWorkspaces — bounded and paged', () => {
                     const trail = sql.includes('FROM "OrgAuditLog"') ? 'OrgAuditLog' : 'AuditLog';
                     pages.push({ trail, values });
                     if (trail === 'OrgAuditLog') return [] as T;
-                    const [limit, offset] = values.slice(-2) as [number, number];
+                    const [limit, offset] = values.slice(1, 3) as [number, number];
                     return rows.slice(offset, offset + limit) as T;
                 },
             },
@@ -175,10 +211,11 @@ describe('readErasureWorkspaces — bounded and paged', () => {
         const { db, pages } = fakeDb(5);
         const out = await readErasureWorkspaces(db, S, { pageSize: 2, maxPages: 10 });
         expect(out.tenantIds).toHaveLength(5);
+        const actions = Object.keys(TARGET_RECORD_ACTIONS);
         expect(pages.filter((p) => p.trail === 'AuditLog').map((p) => p.values)).toEqual([
-            [S, 2, 0],
-            [S, 2, 2],
-            [S, 2, 4],
+            [S, 2, 0, actions],
+            [S, 2, 2, actions],
+            [S, 2, 4, actions],
         ]);
         expect(pages.every((p) => p.values[0] === S)).toBe(true);
     });

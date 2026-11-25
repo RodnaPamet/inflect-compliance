@@ -103,6 +103,11 @@ async function emitScimAudit(
                 category: 'scim_provisioning',
                 schemaVersion: 1,
                 ...details,
+                // A deprovision names the person by id under the key every
+                // removal shares (#5940), as `MEMBER_REMOVED` does. `entityId`
+                // is already the user id here; the shared key is what a DSAR
+                // erasure's TARGET_RECORD read looks for.
+                ...(action === 'SCIM_USER_DEACTIVATED' ? { targetUserId: entityId } : {}),
             },
         });
     } catch (err) {
