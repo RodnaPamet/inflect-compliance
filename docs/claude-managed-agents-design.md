@@ -249,6 +249,25 @@ puts at Anthropic:
     carry only the members the engine writes, an agent's `system` must be
     Inflect's preamble byte for byte, and a session's events may only be
     `user.message`, `user.custom_tool_result` and `user.interrupt`.
+  - **Every response must come from the configured workspace (#5854 finding
+    4, decision 10).** The client's middleware compares each response's
+    `anthropic-workspace-id` with the workspace the client was built for,
+    through the comparison the 5a Test makes (`answeredWorkspace`), for the
+    customer's workspace and Inflect's hosted one, the event stream's initial
+    response included (`managed-agents/workspace-header.ts`). One naming
+    another workspace fails the call: its body is cancelled, a typed error
+    carrying no status is thrown, the SDK does not retry it, and the client
+    latches it. A run that hears one stops driving its session (no queued call
+    runs, no stream is reopened, no `is_error` answers or interrupt) and fails
+    `managed_agents_workspace_mismatch`; its session is still settled, and a
+    delete counts only on an answer from the right workspace, otherwise it is
+    recorded `SESSION_DELETE_FAILED` (`workspace_mismatch`) for the
+    reconciliation. A mismatched session create is looked for as a lost create
+    is. The clean-up's outcome is `WORKSPACE_MISMATCH`, never done, and it
+    halts the pass. A response naming no workspace passes, is counted on
+    `agentic.managed_agents.workspace_header` by endpoint, and is logged once
+    per client without ids; refusing it too is one source constant
+    (`REFUSE_MISSING_WORKSPACE_HEADER`), flipped on 5H part 2's evidence.
   - **Events from someone else holding the workspace's key are not detected**
     (decision 8). Every real tool call still goes through Inflect's checks.
   - **The run timeline** says, beside each span-derived decision row, that the
@@ -723,6 +742,18 @@ marked PROPOSED, NOT IN EFFECT. The customer notice,
    reconciliation settles it after that, and a resume after 23 hours fails by
    name. See
    `docs/implementation-notes/2026-11-25-fix-5854-ma-resume-reconnect.md`.
+10. **A response that names another workspace (#5854, finding 4).** The
+    engine sent the `anthropic-workspace-id` header on every request and read
+    the response's on none, so it relied on Anthropic refusing a mismatched
+    request. **Decided (owner, 2026-11-25):** a Managed Agents response whose
+    `anthropic-workspace-id` names a workspace other than the configured one
+    FAILS THE CALL. A response without the header PASSES, and is counted and
+    logged without ids. Refusing a missing header too waits for evidence from a
+    real-workspace run (5H part 2) that every endpoint a run uses sends it; it
+    is one source constant, not configuration. The evidence so far (#5797): the
+    agents list answers with the header, for a workspace key and for an
+    organisation key that sends the header. See
+    `docs/implementation-notes/2026-11-25-fix-5854-workspace-header.md`.
 
 ## Roadmap (future direction)
 

@@ -68,7 +68,7 @@ import { env } from '@/env';
 import { safeFetch } from '@/app-layer/automation/webhook-safety';
 import { ANTHROPIC_API_HOSTS, resolveVendorOrigin } from '../../allowed-host';
 import { ANTHROPIC_WORKSPACE_ID_SHAPE } from '../../config-schema';
-import { anthropicWorkspaceHeaders, ANTHROPIC_WORKSPACE_HEADER } from '@/lib/ai/anthropic-workspace';
+import { anthropicWorkspaceHeaders, answeredWorkspace } from '@/lib/ai/anthropic-workspace';
 import { recordAnthropicWorkspaceValidation } from '@/lib/observability/integration-metrics';
 import type {
     ConnectionConfigSchema,
@@ -257,9 +257,11 @@ export async function probeAnthropicWorkspace(
 
     if (res.ok) {
         if (!isAgentPage(body)) return 'UNEXPECTED_RESPONSE';
-        const answeredFor = res.headers.get(ANTHROPIC_WORKSPACE_HEADER)?.trim();
-        if (!answeredFor) return 'WORKSPACE_UNCONFIRMED';
-        return answeredFor === workspaceId ? 'VALID' : 'WRONG_WORKSPACE';
+        // The one comparison, which the engine's client also asks of every
+        // response (#5854 finding 4).
+        const answered = answeredWorkspace(res.headers, workspaceId);
+        if (answered === 'MISSING') return 'WORKSPACE_UNCONFIRMED';
+        return answered === 'MATCH' ? 'VALID' : 'WRONG_WORKSPACE';
     }
 
     if (res.status === 401) return 'KEY_INVALID';

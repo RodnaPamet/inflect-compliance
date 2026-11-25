@@ -3958,6 +3958,27 @@ careless edit from being undone:
   events POST may carry only `user.message`, `user.custom_tool_result` and
   `user.interrupt`. A member the engine starts sending is listed there in the
   same diff; never turn a list back into "refuse what we know is bad".
+- **Every RESPONSE must name the client's workspace** (#5854 finding 4, owner
+  decision 2026-11-25). The middleware compares each response's
+  `anthropic-workspace-id` with the workspace the client was built for, through
+  `answeredWorkspace` (`lib/ai/anthropic-workspace.ts`, the comparison the 5a
+  Test makes; never write a second one), for the tenant's workspace and
+  `inflect-hosted` alike, the event stream's initial response included
+  (`managed-agents/workspace-header.ts`). ANOTHER workspace fails the call: the
+  body is cancelled, `ManagedAgentsWorkspaceMismatchError` carries no status, the
+  SDK does not retry it, and the client latches it (`workspaceMismatchSeen`). A
+  run that hears one stops driving the session (no queued call, no reopened
+  stream, no `is_error` answer, no interrupt) and fails
+  `managed_agents_workspace_mismatch`; its settle still sends the reads and the
+  delete, but only an answer from the right workspace counts, so a mismatched
+  delete is `SESSION_DELETE_FAILED` (`workspace_mismatch`), never DELETED. The
+  clean-up's outcome is `WORKSPACE_MISMATCH`: never done (a 404 included) and
+  halting. NO header passes, counted on `agentic.managed_agents.workspace_header`
+  by endpoint and logged once per client without ids; refusing it is
+  `REFUSE_MISSING_WORKSPACE_HEADER`, a source constant flipped only on 5H part
+  2's evidence that every endpoint a run uses sends the header. The faux
+  transports echo the request's workspace; `answerWorkspace` (Jest) and
+  `/__faux/workspace-answer` (E2E) make them send none or another.
 - **Every call goes through `runGuardedTool`** with the prefix
   `managed-agents`, through the Tool Runner's runnables. A turn's custom calls
   are QUEUED and run after its `span.model_request_end`, so the token cap and

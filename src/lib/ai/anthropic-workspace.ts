@@ -48,3 +48,32 @@ export function anthropicWorkspaceHeaders(
     const id = workspaceId?.trim();
     return id ? { [ANTHROPIC_WORKSPACE_HEADER]: id } : {};
 }
+
+/**
+ * WHICH WORKSPACE A RESPONSE SAYS IT CAME FROM, against the one configured
+ * (#5854 finding 4). Anthropic names the workspace the work ran in, in the
+ * RESPONSE's own `anthropic-workspace-id` header.
+ *
+ *   MATCH     it names the configured workspace;
+ *   MISSING   it names none (absent, or blank);
+ *   MISMATCH  it names another.
+ *
+ * THE ONE COMPARISON: the `anthropic-workspace` connection's Test asks it of
+ * its one call, and the Managed Agents engine's client asks it of every
+ * response (`managed-agents/workspace-header.ts`). What each does with the
+ * answer is its own: the Test refuses MISSING (`WORKSPACE_UNCONFIRMED`); the
+ * engine passes it, counted, until a real workspace has shown that every
+ * endpoint a run uses sends the header (owner decision 2026-11-25).
+ *
+ * Both sides are trimmed, as `anthropicWorkspaceHeaders` trims what is sent.
+ */
+export type AnsweredWorkspace = 'MATCH' | 'MISSING' | 'MISMATCH';
+
+export function answeredWorkspace(
+    responseHeaders: { get(name: string): string | null },
+    configuredWorkspaceId: string,
+): AnsweredWorkspace {
+    const answeredFor = responseHeaders.get(ANTHROPIC_WORKSPACE_HEADER)?.trim();
+    if (!answeredFor) return 'MISSING';
+    return answeredFor === configuredWorkspaceId.trim() ? 'MATCH' : 'MISMATCH';
+}

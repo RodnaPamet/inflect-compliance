@@ -36,6 +36,7 @@ import { RESIDENCY_SELECT, residencyTermsFrom } from '@/lib/agentic/flue/model-s
 import { agentToolsFor, managedAgentsModelFor, type ProvisionShapeRefusal } from '@/lib/agentic/managed-agents/definition';
 import { provisionManagedAgent } from '@/lib/agentic/managed-agents/provision';
 import { resolveManagedAgentsWorkspace, type WorkspaceResolutionRefusal } from '@/lib/agentic/managed-agents/workspace';
+import { isManagedAgentsWorkspaceMismatch } from '@/lib/agentic/managed-agents/workspace-header';
 import { managedAgentsClientFor, type ManagedAgentsClientRefusal } from '@/lib/agentic/tool-runner/client';
 import { runInTenantContext } from '@/lib/db-context';
 import { READ_TOOLS } from '@/lib/mcp/tools/registry';
@@ -53,6 +54,8 @@ export type ProvisionApprovedOutcome =
               | WorkspaceResolutionRefusal
               | ProvisionShapeRefusal
               | ManagedAgentsClientRefusal
+              /** An answer named another workspace (#5854 finding 4): nothing is recorded from it. */
+              | 'WORKSPACE_MISMATCH'
               | 'PROVIDER_ERROR';
       };
 
@@ -149,6 +152,6 @@ export async function provisionApprovedProfileVersion(
             versionId: version.versionId,
             error: err instanceof Error ? err.name : 'a non-Error value was thrown',
         });
-        return { provisioned: false, reason: 'PROVIDER_ERROR' };
+        return { provisioned: false, reason: isManagedAgentsWorkspaceMismatch(err) ? 'WORKSPACE_MISMATCH' : 'PROVIDER_ERROR' };
     }
 }

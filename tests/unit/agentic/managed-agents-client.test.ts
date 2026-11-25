@@ -29,7 +29,18 @@ jest.mock('@anthropic-ai/sdk', () => {
 import * as fs from 'fs';
 import * as path from 'path';
 
+import type Anthropic from '@anthropic-ai/sdk';
+
+import { answeredWorkspace } from '@/lib/ai/anthropic-workspace';
+import {
+    ManagedAgentsWorkspaceMismatchError,
+    REFUSE_MISSING_WORKSPACE_HEADER,
+    failsTheCall,
+    isManagedAgentsWorkspaceMismatch,
+    workspaceMismatchSeen,
+} from '@/lib/agentic/managed-agents/workspace-header';
 import { managedAgentsClientFor } from '@/lib/agentic/tool-runner/client';
+import { logger } from '@/lib/observability/logger';
 import { repoRelativeFiles } from '../../helpers/repo-files';
 import { codeOf, functionBodyOf } from '../../helpers/source-blocks';
 
@@ -124,6 +135,106 @@ describe('managedAgentsClientFor', () => {
         if (!a.ok || !b.ok) throw new Error('refused');
         expect(a.client).not.toBe(b.client);
         expect(sdk.default).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('every response names the workspace the client was built for (#5854 finding 4)', () => {
+    // The SDK binds `fetch` when the client is built: each test sets it first.
+    beforeEach(() => {
+        global.fetch = (async () => {
+            throw new Error('no network in this suite');
+        }) as typeof fetch;
+    });
+
+    const json = (status: number, workspace: string | null, body: unknown = { id: 'sesn_1', type: 'session', status: 'idle' }) =>
+        new Response(JSON.stringify(body), {
+            status,
+            headers: { 'content-type': 'application/json', ...(workspace ? { 'anthropic-workspace-id': workspace } : {}) },
+        });
+
+    function built(): Anthropic {
+        const choice = managedAgentsClientFor({ apiKey: 'k', workspaceId: 'wrkspc_abc' });
+        if (!choice.ok) throw new Error(choice.reason);
+        return choice.client;
+    }
+
+    it('the comparison is the connection Test\'s: trimmed, blank is missing', () => {
+        const h = (v: string | null) => new Headers(v === null ? {} : { 'anthropic-workspace-id': v });
+        expect(answeredWorkspace(h('wrkspc_abc'), 'wrkspc_abc')).toBe('MATCH');
+        expect(answeredWorkspace(h(' wrkspc_abc\n'), ' wrkspc_abc ')).toBe('MATCH');
+        expect(answeredWorkspace(h('wrkspc_other'), 'wrkspc_abc')).toBe('MISMATCH');
+        expect(answeredWorkspace(h(null), 'wrkspc_abc')).toBe('MISSING');
+        expect(answeredWorkspace(h('   '), 'wrkspc_abc')).toBe('MISSING');
+    });
+
+    it('the switch: a mismatch always fails the call; a missing header only once it is flipped, and it is not yet', () => {
+        expect(failsTheCall('MATCH', true)).toBe(false);
+        expect(failsTheCall('MISMATCH', false)).toBe(true);
+        expect(failsTheCall('MISSING', false)).toBe(false);
+        expect(failsTheCall('MISSING', true)).toBe(true);
+        // The owner's decision of 2026-11-25: refusing a missing header waits
+        // for the real-workspace evidence.
+        expect(REFUSE_MISSING_WORKSPACE_HEADER).toBe(false);
+    });
+
+    it('a response from another workspace fails the call with no status to read, a 404 included, and latches the client', async () => {
+        global.fetch = (async () => json(404, 'wrkspc_other', { type: 'error', error: { type: 'not_found_error', message: 'x' } })) as typeof fetch;
+        const client = built();
+        const thrown = await client.beta.sessions.retrieve('sesn_1').catch((e: unknown) => e);
+        expect(isManagedAgentsWorkspaceMismatch(thrown)).toBe(true);
+        expect((thrown as { status?: unknown }).status).toBeUndefined();
+        expect(workspaceMismatchSeen(client)).toBe('MISMATCH');
+        // Latched per client: another client has heard nothing.
+        expect(workspaceMismatchSeen(built())).toBeNull();
+    });
+
+    it('the event stream\'s initial response is checked before its body is read, and its body is cancelled', async () => {
+        const cancelled = jest.fn();
+        global.fetch = (async () =>
+            new Response(
+                new ReadableStream<Uint8Array>({
+                    start: (c) => c.enqueue(new TextEncoder().encode('event: agent.message\ndata: {"id":"e1","type":"agent.message","content":[]}\n\n')),
+                    cancel: cancelled,
+                }),
+                { status: 200, headers: { 'content-type': 'text/event-stream', 'anthropic-workspace-id': 'wrkspc_other' } },
+            )) as typeof fetch;
+        const client = built();
+        const thrown = await client.beta.sessions.events.stream('sesn_1').catch((e: unknown) => e);
+        expect(isManagedAgentsWorkspaceMismatch(thrown)).toBe(true);
+        expect((thrown as ManagedAgentsWorkspaceMismatchError).endpoint).toBe('sessions.events.stream');
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(cancelled).toHaveBeenCalled();
+    });
+
+    it('the call is not retried into the same answer: one request, though the SDK retries a 5xx', async () => {
+        const fetched = jest.fn(async () => json(503, 'wrkspc_other', { type: 'error', error: { type: 'api_error', message: 'x' } }));
+        global.fetch = fetched as unknown as typeof fetch;
+        const client = built();
+        await expect(client.beta.sessions.retrieve('sesn_1')).rejects.toBeInstanceOf(ManagedAgentsWorkspaceMismatchError);
+        expect(fetched).toHaveBeenCalledTimes(1);
+    });
+
+    it('a response naming no workspace passes, and is logged once per client with no workspace id', async () => {
+        const info = jest.spyOn(logger, 'info');
+        try {
+            global.fetch = (async () => json(200, null)) as typeof fetch;
+            const client = built();
+            await client.beta.sessions.retrieve('sesn_1');
+            await client.beta.sessions.retrieve('sesn_1');
+            expect(workspaceMismatchSeen(client)).toBeNull();
+            const logged = info.mock.calls.filter(([message]) => /named no workspace/.test(String(message)));
+            expect(logged).toHaveLength(1);
+            expect(JSON.stringify(logged[0])).not.toMatch(/wrkspc_/);
+        } finally {
+            info.mockRestore();
+        }
+    });
+
+    it('positive control: a response from the configured workspace passes untouched', async () => {
+        global.fetch = (async () => json(200, 'wrkspc_abc')) as typeof fetch;
+        const client = built();
+        await expect(client.beta.sessions.retrieve('sesn_1')).resolves.toMatchObject({ id: 'sesn_1' });
+        expect(workspaceMismatchSeen(client)).toBeNull();
     });
 });
 

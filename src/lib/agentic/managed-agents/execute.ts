@@ -85,6 +85,22 @@
  * is read in full and every event not seen is handled, so a custom call the
  * drop hid is answered, and one already answered is not answered again.
  *
+ * ── ANOTHER WORKSPACE'S ANSWER (#5854 finding 4) ───────────────────────────
+ *
+ * The client fails any call whose response names a workspace other than the
+ * connection's, and latches it (`workspaceMismatchSeen`). From that moment the
+ * run is stopped: no queued call runs, the stream is not reopened (a
+ * mismatched stream is not a drop), and the stop below does not drive the
+ * session (no `is_error` answers, no interrupt, no drain), because every
+ * answer the session gives from here may be somebody else's. The session is
+ * still SETTLED: the settle's reads and its delete are sent, and each answer
+ * is checked on its own, so a delete counts only on an answer from the right
+ * workspace; on another it is recorded `SESSION_DELETE_FAILED`
+ * (`workspace_mismatch`) for the reconciliation, which retries it with a
+ * fresh client. The run fails `managed_agents_workspace_mismatch`, after an
+ * Abort and a kill and before everything else, the settle's own answers
+ * included.
+ *
  * ── THE STOP ────────────────────────────────────────────────────────────────
  *
  * A kill, an Abort, a cap, a guard verdict, the breaker or the wall clock:
@@ -213,6 +229,7 @@ import {
     type SegmentSession,
 } from './store';
 import type { ManagedAgentsWorkspaceKind } from './workspace';
+import { workspaceMismatchSeen, type RefusedAnswer } from './workspace-header';
 
 const RANK: Record<StepGuardObservation['verdict'], number> = { CLEAN: 0, FLAGGED: 1, QUARANTINED: 2 };
 
@@ -392,6 +409,27 @@ export const SESSION_HISTORY_TRUNCATED_MESSAGE =
     `${MANAGED_AGENTS_PREFIX}_session_history_truncated: the session's event history is longer than `
     + `${SESSION_HISTORY_READ_CAP} events, so it could not be read in full, and the run stopped rather than continue on `
     + 'part of it.';
+
+export const WORKSPACE_MISMATCH_PREFIX = `${MANAGED_AGENTS_PREFIX}_workspace_mismatch`;
+
+/**
+ * THE RUN HEARD FROM ANOTHER WORKSPACE (#5854 finding 4, owner decision
+ * 2026-11-25). The engine's client fails any call whose response names a
+ * workspace other than the connection's (`workspace-header.ts`), and latches
+ * it; the run stops driving its session at once and settles with this. Names
+ * no workspace: the configured id is the customer's, and the one the response
+ * named is somebody else's.
+ */
+export function workspaceMismatchMessage(answered: RefusedAnswer): string {
+    const what =
+        answered === 'MISMATCH'
+            ? 'a response from Anthropic named a different workspace than the one this connection is for'
+            : 'a response from Anthropic named no workspace, so it could not be shown to come from the one this connection is for';
+    return (
+        `${WORKSPACE_MISMATCH_PREFIX}: ${what}. The run stopped there and did not act on that answer. `
+        + 'Check that the connection\'s API key belongs to the workspace named on its card, and run its Test.'
+    );
+}
 
 export const KILL_UNREADABLE_MESSAGE =
     `${MANAGED_AGENTS_PREFIX}_kill_switch_unreadable: the kill switch could not be read, so the run stopped rather `
@@ -617,8 +655,15 @@ export async function executeManagedAgentsRun(
         if (state.worst !== 'CLEAN') return { kind: 'GUARD' };
         return null;
     };
+    /** A response named another workspace (#5854 finding 4): the client's latch, whichever call heard it. */
+    const mismatched = (): RefusedAnswer | null => workspaceMismatchSeen(client);
     const isStopped = (): boolean =>
-        stopped() !== null || state.beyondCustomTools || state.sessionEdited || state.stoppedEarlier || state.historyTruncated;
+        stopped() !== null
+        || state.beyondCustomTools
+        || state.sessionEdited
+        || state.stoppedEarlier
+        || state.historyTruncated
+        || mismatched() !== null;
 
     const checkKill = async (): Promise<boolean> => {
         if (state.killVerdict || state.killUnreadable || state.operatorAborted || state.handedOver) return true;
@@ -895,6 +940,10 @@ export async function executeManagedAgentsRun(
     // recorded, then settled. Never throws, and never blocks the run: what it
     // cannot reach is left to the purge and a connection removal, as before.
     await settleUnrecordedSessions(ctx, runId, client, pinned.anthropicAgentId, route, binding, 'AT_SEGMENT_START');
+    // Its listing is best effort, but an answer from another workspace is not
+    // one to carry on after (#5854 finding 4).
+    const mismatchAtStart = mismatched();
+    if (mismatchAtStart) return refuseAfterSession(workspaceMismatchMessage(mismatchAtStart));
 
     // ── DRIFT: the agent at the pinned version, before the session is used ──
     // Asked again by a reconnecting segment (#5854): a Console edit made while
@@ -909,6 +958,8 @@ export async function executeManagedAgentsRun(
             providerStatus: providerCodeOf(err).status,
             providerErrorType: providerCodeOf(err).type,
         });
+        const answered = mismatched();
+        if (answered) return refuseAfterSession(workspaceMismatchMessage(answered));
         return refuseAfterSession(asReconnecting(AGENT_UNREADABLE_MESSAGE, reconnecting));
     }
     const found = { drift: agentDrift(agent, pinned) };
@@ -932,6 +983,8 @@ export async function executeManagedAgentsRun(
             providerStatus: providerCodeOf(err).status,
             providerErrorType: providerCodeOf(err).type,
         });
+        const answered = mismatched();
+        if (answered) return refuseAfterSession(workspaceMismatchMessage(answered));
         return refuseAfterSession(asReconnecting(ENVIRONMENT_UNREADABLE_MESSAGE, reconnecting));
     }
     const environmentHash = pinned.environmentHash ?? writtenEnvironmentHash(route.connectionId);
@@ -980,6 +1033,12 @@ export async function executeManagedAgentsRun(
             logger.warn('managed-agents: the session to reconnect to could not be read', {
                 component: 'agentic', runId: run.runId, providerStatus: code.status, providerErrorType: code.type,
             });
+            // Another workspace's answer says nothing about this session, a
+            // 404 included (#5854 finding 4): settled, as any refusal of a
+            // reconnecting segment is, and the settle believes only answers
+            // from the right workspace.
+            const answered = mismatched();
+            if (answered) return refuseAfterSession(workspaceMismatchMessage(answered), 1);
             if (code.status === 404) {
                 await recordSessionStep(ctx, runId, binding.nextSeq(), 'SESSION_DELETED', {
                     sessionId, connectionId: route.connectionId, foundGone: true,
@@ -1058,10 +1117,16 @@ export async function executeManagedAgentsRun(
             // sessions listed by the pinned agent only, taken only when their
             // metadata names this tenant AND this run. Each is recorded, then
             // settled like any other (deleted, or recorded kept). Never throws.
-            if (code.status === null) {
+            //
+            // AN ANSWER FROM ANOTHER WORKSPACE (#5854 finding 4) is no answer
+            // either: the create may have made a session in this one. Looked
+            // for the same way, through answers from the right workspace only,
+            // and the run fails by name. No session is driven, so no tool runs.
+            const answered = mismatched();
+            if (code.status === null || answered) {
                 await settleUnrecordedSessions(ctx, runId, client, pinned.anthropicAgentId, route, binding, 'AFTER_LOST_CREATE');
             }
-            const status = await failRun(ctx, runId, sessionNotCreatedMessage(code));
+            const status = await failRun(ctx, runId, answered ? workspaceMismatchMessage(answered) : sessionNotCreatedMessage(code));
             return { status, stepFailures: 1 };
         }
         createdSessionFacts = {
@@ -1494,7 +1559,10 @@ export async function executeManagedAgentsRun(
 
         // ── THE STOP: answer pending is_error, interrupt, drain to idle ──────
         // Not for a run handed to a successor (#5854): the session is its now.
-        if ((isStopped() || streamLost) && end === null && !state.handedOver) {
+        // Not after an answer from another workspace (#5854 finding 4): the
+        // session is not driven on answers that may be somebody else's; the
+        // settle below still deletes it, believing only the right workspace.
+        if ((isStopped() || streamLost) && end === null && !state.handedOver && mismatched() === null) {
             state.draining = true;
             for (let round = 0; round < MAX_STOP_ROUNDS && end === null; round += 1) {
                 const unanswered = [...pending.keys()].filter((id) => !answered.has(id));
@@ -1559,6 +1627,13 @@ export async function executeManagedAgentsRun(
     }
     if (state.killUnreadable) {
         const status = await failRun(ctx, runId, KILL_UNREADABLE_MESSAGE);
+        return { status, stepFailures: stepFailures + 1 };
+    }
+    // Any answer from another workspace, the settle's own included (#5854
+    // finding 4): what was read after it may be somebody else's.
+    const mismatch = mismatched();
+    if (mismatch) {
+        const status = await failRun(ctx, runId, workspaceMismatchMessage(mismatch));
         return { status, stepFailures: stepFailures + 1 };
     }
     if (state.breakerOpen || state.breakerUnreadable) {
@@ -1723,7 +1798,10 @@ async function settleUnrecordedSessions(
  * THE SETTLE: delete the session, or record it kept (decision 4). Never
  * throws: it runs in `finally`, and a failure here must not hide the run's own
  * outcome. A deletion that fails is recorded with the provider's status, so
- * Step 5c's reconciliation finds it by id.
+ * Step 5c's reconciliation finds it by id. A delete answered from another
+ * workspace (#5854 finding 4) is a failed delete, recorded with the type
+ * `workspace_mismatch`, never `SESSION_DELETED`: the client threw instead of
+ * handing over that answer, whatever its status said.
  */
 async function settleSession(
     ctx: RequestContext,

@@ -2185,6 +2185,7 @@ let _managedAgentsCleanup: Counter | undefined;
 let _managedAgentsLostDelete: Counter | undefined;
 let _managedAgentsFailedDeleteRetry: Counter | undefined;
 let _managedAgentsAbandonedSession: Counter | undefined;
+let _managedAgentsWorkspaceHeader: Counter | undefined;
 
 /**
  * One remote clean-up record settled or retried: the purge's one attempt, or a
@@ -2268,4 +2269,34 @@ export function recordManagedAgentsAbandonedSession(attrs: { outcome: string }):
         });
     }
     _managedAgentsAbandonedSession.add(1, { outcome: attrs.outcome });
+}
+
+/**
+ * The workspace a Managed Agents response named, against the one its client
+ * was built for (#5854 finding 4): one count per response, every response of
+ * the engine's client (`managed-agents/workspace-header.ts`).
+ *
+ * `endpoint` is the route's name (`sessions.create`, `sessions.events.stream`,
+ * …, a closed set of thirteen), `answered` is `match`, `missing` or
+ * `mismatch`, and `response` is `success` (2xx) or `error`. Never a workspace
+ * id.
+ *
+ * Diagnostic. A `mismatch` already failed its call and its run by name; a
+ * `missing` passed. The `missing` series by endpoint is the evidence the
+ * owner's decision waits on before a missing header is refused too: zero
+ * `missing` beside non-zero `match` on every endpoint a real-workspace run
+ * uses (5H part 2).
+ */
+export function recordManagedAgentsWorkspaceHeader(attrs: {
+    endpoint: string;
+    answered: 'match' | 'missing' | 'mismatch';
+    response: 'success' | 'error';
+}): void {
+    if (!_managedAgentsWorkspaceHeader) {
+        _managedAgentsWorkspaceHeader = getMeter().createCounter('agentic.managed_agents.workspace_header', {
+            description: 'Managed Agents responses, by endpoint and whether they named the configured Anthropic workspace',
+            unit: '1',
+        });
+    }
+    _managedAgentsWorkspaceHeader.add(1, { endpoint: attrs.endpoint, answered: attrs.answered, response: attrs.response });
 }

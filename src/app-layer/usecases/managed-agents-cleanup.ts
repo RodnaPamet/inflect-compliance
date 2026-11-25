@@ -1019,7 +1019,7 @@ export async function retryOpenManagedAgentsCleanups(
 type ManagedAgentsClient = Extract<ReturnType<typeof managedAgentsClientFor>, { ok: true }>['client'];
 
 /** Outcomes after which every later call of the pass would answer the same. */
-const HALTING_OUTCOMES: ReadonlySet<CleanupItemOutcome> = new Set(['AUTH_REFUSED', 'PROVIDER_UNREACHABLE', 'DEADLINE']);
+const HALTING_OUTCOMES: ReadonlySet<CleanupItemOutcome> = new Set(['AUTH_REFUSED', 'WORKSPACE_MISMATCH', 'PROVIDER_UNREACHABLE', 'DEADLINE']);
 
 export interface ReconcileTally {
     /** Lost deletes: sessions recorded DELETED that were read back. */

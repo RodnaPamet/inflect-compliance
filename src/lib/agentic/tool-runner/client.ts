@@ -82,6 +82,12 @@ import {
     nextTestModeFlag,
 } from '@/app-layer/integrations/providers/anthropic-workspace/e2e-faux';
 import { MANAGED_AGENTS_PREAMBLE } from '@/lib/agentic/managed-agents/preamble';
+import {
+    bindWorkspaceHeaderLatch,
+    checkResponseWorkspace,
+    newWorkspaceHeaderLatch,
+    type WorkspaceHeaderLatch,
+} from '@/lib/agentic/managed-agents/workspace-header';
 import { forbidden } from '@/lib/errors/types';
 import { logger } from '@/lib/observability';
 import type { ProfileModelTier } from '@/lib/agentic/agent-profile';
@@ -323,6 +329,10 @@ export function toolRunnerModelFor(tier: ProfileModelTier): string {
 //     admits the agent, environment and session calls the engine makes and
 //     nothing else, and Step 5c's clean-up calls: a session list by recorded
 //     agent and an agent archive.
+//   • every RESPONSE must name the workspace the client was built for
+//     (`checkResponseWorkspace`, #5854 finding 4): one naming another fails
+//     the call; one naming none passes, counted, until the owner's switch
+//     (`REFUSE_MISSING_WORKSPACE_HEADER`) is flipped.
 //
 // Everything `clientForRun` pins is pinned here the same way: the origin, the
 // log level and logger, metadata-only tracing with no propagation, no webhook
@@ -375,28 +385,38 @@ export type ManagedAgentsRequestRefusal =
 /** Archiving an agent: the one POST the engine sends without a body (Step 5c). */
 const ARCHIVE_AGENT = /^\/v1\/agents\/[A-Za-z0-9_-]+\/archive$/;
 
-/** The routes the engine calls, by method. Anything else is refused. */
-const MANAGED_AGENTS_ROUTES: ReadonlyArray<{ readonly method: string; readonly path: RegExp }> = [
-    { method: 'POST', path: /^\/v1\/agents$/ },
-    { method: 'GET', path: /^\/v1\/agents\/[A-Za-z0-9_-]+$/ },
-    { method: 'POST', path: /^\/v1\/agents\/[A-Za-z0-9_-]+$/ },
-    { method: 'POST', path: /^\/v1\/environments$/ },
+/**
+ * The routes the engine calls, by method, each with the name its responses are
+ * counted under (`agentic.managed_agents.workspace_header`, #5854). Anything
+ * else is refused.
+ */
+const MANAGED_AGENTS_ROUTES: ReadonlyArray<{ readonly name: string; readonly method: string; readonly path: RegExp }> = [
+    { name: 'agents.create', method: 'POST', path: /^\/v1\/agents$/ },
+    { name: 'agents.retrieve', method: 'GET', path: /^\/v1\/agents\/[A-Za-z0-9_-]+$/ },
+    { name: 'agents.update', method: 'POST', path: /^\/v1\/agents\/[A-Za-z0-9_-]+$/ },
+    { name: 'environments.create', method: 'POST', path: /^\/v1\/environments$/ },
     // A run re-reads its environment before each session (#5854).
-    { method: 'GET', path: /^\/v1\/environments\/[A-Za-z0-9_-]+$/ },
-    { method: 'POST', path: /^\/v1\/sessions$/ },
+    { name: 'environments.retrieve', method: 'GET', path: /^\/v1\/environments\/[A-Za-z0-9_-]+$/ },
+    { name: 'sessions.create', method: 'POST', path: /^\/v1\/sessions$/ },
     // Step 5c's crash window: a session list, which the clean-up sends only
     // with an `agent_id` Inflect recorded (`listCrashWindow` in
     // `managed-agents/cleanup.ts`). A list with no `agent_id` is refused below.
-    { method: 'GET', path: /^\/v1\/sessions$/ },
-    { method: 'GET', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+$/ },
-    { method: 'DELETE', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+$/ },
-    { method: 'GET', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+\/events$/ },
-    { method: 'POST', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+\/events$/ },
-    { method: 'GET', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+\/events\/stream$/ },
+    { name: 'sessions.list', method: 'GET', path: /^\/v1\/sessions$/ },
+    { name: 'sessions.retrieve', method: 'GET', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+$/ },
+    { name: 'sessions.delete', method: 'DELETE', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+$/ },
+    { name: 'sessions.events.list', method: 'GET', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+\/events$/ },
+    { name: 'sessions.events.send', method: 'POST', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+\/events$/ },
+    { name: 'sessions.events.stream', method: 'GET', path: /^\/v1\/sessions\/[A-Za-z0-9_-]+\/events\/stream$/ },
     // Step 5c: archive a recorded agent. It carries no body, so it is answered
     // before the body checks below (`ARCHIVE_AGENT`).
-    { method: 'POST', path: ARCHIVE_AGENT },
+    { name: 'agents.archive', method: 'POST', path: ARCHIVE_AGENT },
 ];
+
+/** The name of the engine route a request takes, or null for one the engine never calls. */
+export function managedAgentsEndpointOf(method: string, pathname: string): string | null {
+    const m = method.toUpperCase();
+    return MANAGED_AGENTS_ROUTES.find((r) => r.method === m && r.path.test(pathname))?.name ?? null;
+}
 
 /**
  * THE MEMBERS EACH BODY MAY CARRY (Step 5H, #5854): exactly what the engine
@@ -449,9 +469,7 @@ export function managedAgentsRequestRefusal(
     const url = new URL(request.url);
     const method = (request.method ?? 'GET').toUpperCase();
     if (url.origin !== origin) return 'NOT_THE_PINNED_ORIGIN';
-    if (!MANAGED_AGENTS_ROUTES.some((r) => r.method === method && r.path.test(url.pathname))) {
-        return 'NOT_A_MANAGED_AGENTS_CALL';
-    }
+    if (managedAgentsEndpointOf(method, url.pathname) === null) return 'NOT_A_MANAGED_AGENTS_CALL';
     // A session list must name a recorded agent: the clean-up never lists a
     // customer's whole workspace (Step 5c).
     if (method === 'GET' && url.pathname === '/v1/sessions') {
@@ -533,21 +551,45 @@ export function managedAgentsRequestRefusal(
     return null;
 }
 
-function managedAgentsOnlyFor(run: { readonly runId?: string; readonly origin: string }): Middleware {
+function managedAgentsOnlyFor(run: {
+    readonly runId?: string;
+    readonly origin: string;
+    /** The workspace the client was built for: every response must name it (#5854). */
+    readonly workspaceId: string;
+    readonly latch: WorkspaceHeaderLatch;
+}): Middleware {
     return async (request, next) => {
         const url = new URL(request.url);
-        const verdict = { refusal: managedAgentsRequestRefusal(request, run.origin) };
+        // Log fields are read off this object, so each value's name is its own.
+        const verdict = {
+            method: (request.method ?? 'GET').toUpperCase(),
+            refusal: managedAgentsRequestRefusal(request, run.origin),
+        };
         logger.info('managed-agents: request', {
             component: 'agentic',
             runId: run.runId,
-            method: (request.method ?? 'GET').toUpperCase(),
+            method: verdict.method,
             path: url.pathname,
             refused: verdict.refusal,
         });
         if (verdict.refusal) {
             throw forbidden('A Managed Agents run\'s client sends the engine\'s own calls only.', { reason: verdict.refusal });
         }
-        return next(request);
+        const response = await next(request);
+        // THE RESPONSE NAMES ITS WORKSPACE (#5854 finding 4, owner decision
+        // 2026-11-25), checked here, the one place every Managed Agents
+        // response passes, before the SDK reads a byte of it: the event
+        // stream's headers too. Another workspace fails the call; none passes,
+        // counted (`workspace-header.ts`).
+        checkResponseWorkspace(response, {
+            configuredWorkspaceId: run.workspaceId,
+            // Never null here: the refusal above admits only the engine's routes.
+            endpoint: managedAgentsEndpointOf(verdict.method, url.pathname) ?? 'unknown',
+            method: verdict.method,
+            runId: run.runId,
+            latch: run.latch,
+        });
+        return response;
     };
 }
 
@@ -583,6 +625,7 @@ export function managedAgentsClientFor(input: {
     if (!apiKey) return { ok: false, reason: 'WORKSPACE_KEY_MISSING' };
     if (env.ANTHROPIC_CUSTOM_HEADERS?.trim()) return { ok: false, reason: 'SDK_AMBIENT_HEADERS_SET' };
     const origin = managedAgentsOrigin();
+    const latch = newWorkspaceHeaderLatch();
     const client = new Anthropic({
         apiKey,
         baseURL: origin,
@@ -591,7 +634,8 @@ export function managedAgentsClientFor(input: {
         logLevel: 'warn',
         logger: sdkLogger,
         openTelemetry: { propagation: false, traces: { enabled: true, contentMode: 'metadata_only' } },
-        middleware: [managedAgentsOnlyFor({ runId: input.runId, origin })],
+        middleware: [managedAgentsOnlyFor({ runId: input.runId, origin, workspaceId: input.workspaceId, latch })],
     });
+    bindWorkspaceHeaderLatch(client, latch);
     return { ok: true, client };
 }

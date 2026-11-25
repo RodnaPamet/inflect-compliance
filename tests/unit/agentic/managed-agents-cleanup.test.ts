@@ -4,7 +4,9 @@
  * and the real client (`managedAgentsClientFor`, with its middleware).
  *
  *   OUTCOMES   a 404 is done (already gone); a 401/403 is AUTH_REFUSED and
- *              never done; no status is PROVIDER_UNREACHABLE.
+ *              never done; no status is PROVIDER_UNREACHABLE; an answer from
+ *              another workspace is WORKSPACE_MISMATCH and never done, a 404
+ *              or a performed delete included (#5854 finding 4).
  *   PENDING    which recorded lifecycles leave a session Inflect's to delete,
  *              and that a DSAR erasure takes KEPT sessions only.
  *   THE PASS   recorded ids only: the crash window is listed by a recorded
@@ -20,6 +22,7 @@ import {
     runCleanupPass,
 } from '@/lib/agentic/managed-agents/cleanup';
 import { sessionMetadataFor } from '@/lib/agentic/managed-agents/definition';
+import { ManagedAgentsWorkspaceMismatchError } from '@/lib/agentic/managed-agents/workspace-header';
 import { managedAgentsClientFor } from '@/lib/agentic/tool-runner/client';
 import {
     ABANDONED_SESSION_MIN_AGE_MS,
@@ -208,5 +211,55 @@ describe('runCleanupPass', () => {
         expect(result.remaining).toEqual({ [running]: 'SESSION_STILL_RUNNING' });
         expect(result.deletedSessionIds).toEqual(['sesn_never_existed']);
         expect(faux.holdsSession(running)).toBe(true);
+    });
+});
+
+describe('an answer from another workspace is never done (#5854 finding 4)', () => {
+    let faux: ManagedAgentsFaux;
+    beforeEach(() => {
+        faux = new ManagedAgentsFaux();
+        faux.install();
+    });
+    afterEach(() => faux.uninstall());
+
+    it('the workspace check failing a call is WORKSPACE_MISMATCH, never done, whatever the answer said', () => {
+        const err = new ManagedAgentsWorkspaceMismatchError('MISMATCH', 'sessions.delete');
+        expect(outcomeOfError(err)).toBe('WORKSPACE_MISMATCH');
+        expect(isDoneOutcome(outcomeOfError(err))).toBe(false);
+    });
+
+    it.each([
+        ['a delete the faux performed, answered from another workspace', { answer: 'OTHER', method: 'DELETE' } as const, false],
+        ['a 404 for a session that is not there, answered from another workspace', { answer: 'OTHER', method: 'GET' } as const, true],
+    ])('%s is not counted deleted, and stops the pass', async (_label, rule, missing) => {
+        const agent = faux.seedAgent('inflect');
+        const s1 = missing ? 'sesn_not_here' : faux.seedSession({ agentId: agent });
+        const s2 = faux.seedSession({ agentId: agent });
+        faux.answerWorkspace = rule;
+
+        const result = await runCleanupPass(
+            client(),
+            { tenantId: 't1', sessionIds: [s1, s2], agentIds: [], listAgentIds: [] },
+            { runsHeld: async () => new Set() },
+        );
+
+        expect(result.deletedSessionIds).toEqual([]);
+        expect(result.remaining).toEqual({ [s1]: 'WORKSPACE_MISMATCH', [s2]: 'WORKSPACE_MISMATCH' });
+        expect(result.reason).toBe('WORKSPACE_MISMATCH');
+        // Halted: the second session was never asked about.
+        expect(faux.requests.filter((r) => r.path.endsWith(s2))).toEqual([]);
+    });
+
+    it('positive control: the same pass with every answer from the right workspace deletes both', async () => {
+        const agent = faux.seedAgent('inflect');
+        const s1 = faux.seedSession({ agentId: agent });
+        const s2 = faux.seedSession({ agentId: agent });
+        const result = await runCleanupPass(
+            client(),
+            { tenantId: 't1', sessionIds: [s1, s2], agentIds: [], listAgentIds: [] },
+            { runsHeld: async () => new Set() },
+        );
+        expect(result.deletedSessionIds.sort()).toEqual([s1, s2].sort());
+        expect(result.reason).toBeNull();
     });
 });
