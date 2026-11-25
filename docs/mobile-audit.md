@@ -183,6 +183,10 @@ any count rose or more routes went uncaptured.
 
 ## Real-device pass
 
+> The owner decided on 2026-11-25 to close the mobile plan on the automated
+> checks alone (#5899), so this pass is optional. It is kept for whoever wants
+> to run it.
+
 The harness and the E2E project run Chromium with a phone's viewport, touch
 and user agent. They cannot see what only a real browser on a real phone does:
 Safari's own zoom and toolbars, the home indicator, the on-screen keyboard
