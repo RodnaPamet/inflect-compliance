@@ -122,6 +122,8 @@
  * session, so it is left untouched. Then the run settles in
  * the Tool Runner's order: an operator's Abort, a kill, the breaker, a cap, a
  * guard verdict, a reach beyond custom tools, a failure, the session's own end.
+ * Last, however the segment ended, its client's workspace-header tally is
+ * written: one log line, counts by endpoint and no id (#5962).
  */
 import type Anthropic from '@anthropic-ai/sdk';
 import type { BetaToolRunContext } from '@anthropic-ai/sdk/lib/tools/BetaRunnableTool';
@@ -229,7 +231,7 @@ import {
     type SegmentSession,
 } from './store';
 import type { ManagedAgentsWorkspaceKind } from './workspace';
-import { workspaceMismatchSeen, type RefusedAnswer } from './workspace-header';
+import { logWorkspaceHeaderTally, workspaceMismatchSeen, type RefusedAnswer } from './workspace-header';
 
 const RANK: Record<StepGuardObservation['verdict'], number> = { CLEAN: 0, FLAGGED: 1, QUARANTINED: 2 };
 
@@ -510,6 +512,24 @@ export interface ManagedAgentsRoute {
 }
 
 export async function executeManagedAgentsRun(
+    ctx: RequestContext,
+    runId: string,
+    def: WorkflowDefinition,
+    fromSeq: number,
+    runStartMs: number,
+    client: Anthropic,
+    route: ManagedAgentsRoute,
+): Promise<RunDriverOutcome> {
+    try {
+        return await driveManagedAgentsRun(ctx, runId, def, fromSeq, runStartMs, client, route);
+    } finally {
+        // The segment's client is finished with, however the segment ended
+        // (settled, refused early, or thrown): one tally line for it (#5962).
+        logWorkspaceHeaderTally(client);
+    }
+}
+
+async function driveManagedAgentsRun(
     ctx: RequestContext,
     runId: string,
     def: WorkflowDefinition,

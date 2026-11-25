@@ -43,6 +43,7 @@ import {
 import { eraseUser } from '@/app-layer/jobs/dsar-erasure';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
 import * as metrics from '@/lib/observability/integration-metrics';
+import { logger } from '@/lib/observability/logger';
 import { prisma as appPrisma } from '@/lib/prisma';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
@@ -357,6 +358,25 @@ describeFn('Step 5c — the remote clean-up (real DB, faux workspace)', () => {
         // A DONE record is not attempted again.
         await retryOpenManagedAgentsCleanups();
         expect((await records(a.tenantId))[0].attempts).toBe(2);
+    });
+
+    it('a clean-up pass writes one workspace-header tally line for its client, counts by endpoint and no id (#5962)', async () => {
+        const a = await seedWorld('tally-a');
+        const info = jest.spyOn(logger, 'info');
+        try {
+            await removeIntegrationConnection(ctxOf(a.tenantId), a.connectionId);
+            expect((await records(a.tenantId))[0]).toMatchObject({ trigger: 'CONNECTION_REMOVED', status: 'DONE' });
+            const lines = info.mock.calls.filter(([message]) => message === 'managed-agents: workspace-header tally');
+            expect(lines).toHaveLength(1);
+            const fields = lines[0][1] as { kind: string; endpoints: Record<string, { match: number; missing: number; mismatch: number }> };
+            expect(fields.kind).toBe('OWN');
+            expect(fields.endpoints['agents.archive']).toEqual({ match: 1, missing: 0, mismatch: 0 });
+            expect(fields.endpoints['sessions.delete'].match).toBeGreaterThan(0);
+            expect(JSON.stringify(lines)).not.toContain(a.tenantId);
+            expect(JSON.stringify(lines)).not.toContain(a.connectionId);
+        } finally {
+            info.mockRestore();
+        }
     });
 
     it('a 401 is never done: the record stays OPEN and is retried, a running session is its own named outcome, and after the limit the record ends ABANDONED', async () => {

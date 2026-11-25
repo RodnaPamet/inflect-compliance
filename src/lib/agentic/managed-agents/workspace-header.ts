@@ -27,10 +27,20 @@
  *             workspace (5H part 2) that every endpoint a run uses sends the
  *             header. When it is in, flip `REFUSE_MISSING_WORKSPACE_HEADER`:
  *             one line, a source constant, never configuration.
+ *
+ * THE EVIDENCE FOR THAT FLIP (#5962). Production has no metrics backend, so
+ * the counter above goes nowhere there. Each answer is therefore also counted
+ * on the client's latch, by endpoint, and `logWorkspaceHeaderTally` writes
+ * those counts as ONE line per client when its user is finished with it (the
+ * run's segment, a provisioning, a clean-up pass): endpoint names, the three
+ * counts and whose workspace (`OWN` or `HOSTED`), nothing else. The `VM check`
+ * action `managed-agents-workspace-header` sums those lines into a table.
  */
 import { answeredWorkspace, type AnsweredWorkspace } from '@/lib/ai/anthropic-workspace';
 import { recordManagedAgentsWorkspaceHeader } from '@/lib/observability/integration-metrics';
 import { logger } from '@/lib/observability/logger';
+
+import type { ManagedAgentsWorkspaceKind } from './workspace';
 
 /**
  * THE SWITCH. False: a response naming no workspace passes, counted. True: it
@@ -79,14 +89,44 @@ export function isManagedAgentsWorkspaceMismatch(err: unknown): err is ManagedAg
     return err instanceof ManagedAgentsWorkspaceMismatchError;
 }
 
-/** What one client has seen: the latch the engine reads, and the once-per-client log. */
+/**
+ * Whose workspace a client answers for, as the tally names it: the customer's
+ * own (`TENANT` in `ManagedAgentsWorkspaceKind`) or Inflect's hosted one.
+ */
+export type WorkspaceHeaderKind = 'OWN' | 'HOSTED';
+
+/** The tally's name for a resolved workspace's kind. */
+export function workspaceHeaderKindOf(kind: ManagedAgentsWorkspaceKind): WorkspaceHeaderKind {
+    return kind === 'HOSTED' ? 'HOSTED' : 'OWN';
+}
+
+/** One endpoint's answers, as the tally line carries them. */
+export interface WorkspaceHeaderCounts {
+    match: number;
+    missing: number;
+    mismatch: number;
+}
+
+/** What one client has seen: the latch the engine reads, the once-per-client log, and the tally. */
 export interface WorkspaceHeaderLatch {
     mismatch: { readonly answered: RefusedAnswer; readonly endpoint: string } | null;
     missingLogged: boolean;
+    readonly kind: WorkspaceHeaderKind;
+    /** Answers counted since the last tally line, by endpoint (#5962). */
+    readonly tally: Map<string, WorkspaceHeaderCounts>;
 }
 
-export function newWorkspaceHeaderLatch(): WorkspaceHeaderLatch {
-    return { mismatch: null, missingLogged: false };
+export function newWorkspaceHeaderLatch(kind: WorkspaceHeaderKind): WorkspaceHeaderLatch {
+    return { mismatch: null, missingLogged: false, kind, tally: new Map() };
+}
+
+/** Count one answer on the latch. The one place a tally is added to. */
+function countAnswer(latch: WorkspaceHeaderLatch, endpoint: string, answered: AnsweredWorkspace): void {
+    const counts = latch.tally.get(endpoint) ?? { match: 0, missing: 0, mismatch: 0 };
+    if (answered === 'MATCH') counts.match += 1;
+    else if (answered === 'MISSING') counts.missing += 1;
+    else counts.mismatch += 1;
+    latch.tally.set(endpoint, counts);
 }
 
 /** Each client's latch, held weakly so it goes when the client does. */
@@ -125,6 +165,7 @@ export function checkResponseWorkspace(
     const answered = answeredWorkspace(response.headers, call.configuredWorkspaceId);
     const responseClass = response.ok ? 'success' : 'error';
     recordManagedAgentsWorkspaceHeader({ endpoint: call.endpoint, answered: answered.toLowerCase() as Lowercase<AnsweredWorkspace>, response: responseClass });
+    countAnswer(call.latch, call.endpoint, answered);
     // Log fields are read off this object, so each value's name is its own.
     const facts = { endpoint: call.endpoint, method: call.method, status: response.status, answered } as const;
     if (answered !== 'MATCH' && failsTheCall(answered)) {
@@ -150,4 +191,34 @@ export function checkResponseWorkspace(
             status: facts.status,
         });
     }
+}
+
+/** The message of the tally line, which the `VM check` action greps for. */
+export const WORKSPACE_HEADER_TALLY_MESSAGE = 'managed-agents: workspace-header tally';
+
+/**
+ * WRITE THIS CLIENT'S TALLY (#5962): one line carrying, per endpoint, how many
+ * responses matched the configured workspace, named none, or named another,
+ * since the last line, and whose workspace it is. No workspace id, run id,
+ * tenant id or key is passed: the `VM check` that sums these lines is public.
+ * Called when the client's user is finished with it. Writes nothing for a
+ * client that received no response, and starts the count again after it
+ * writes, so a second call never counts a response twice.
+ */
+export function logWorkspaceHeaderTally(client: object): void {
+    const latch = LATCHES.get(client);
+    if (!latch || latch.tally.size === 0) return;
+    const endpoints: Record<string, WorkspaceHeaderCounts> = {};
+    for (const name of [...latch.tally.keys()].sort()) {
+        const counts = latch.tally.get(name)!;
+        endpoints[name] = { match: counts.match, missing: counts.missing, mismatch: counts.mismatch };
+    }
+    latch.tally.clear();
+    // Log fields are read off this object, so each value's name is its own.
+    const tally = { kind: latch.kind, endpoints } as const;
+    logger.info(WORKSPACE_HEADER_TALLY_MESSAGE, {
+        component: 'agentic',
+        kind: tally.kind,
+        endpoints: tally.endpoints,
+    });
 }

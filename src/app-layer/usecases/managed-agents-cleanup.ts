@@ -83,6 +83,7 @@ import {
 import { PAUSED_SESSION_HOLD_MS, sessionStepRecord, type SessionLifecycle } from '@/lib/agentic/managed-agents/session-ledger';
 import { ANTHROPIC_WORKSPACE_PROVIDER } from '@/lib/agentic/managed-agents/store';
 import { INFLECT_HOSTED_CONNECTION_ID, inflectHostedWorkspace } from '@/lib/agentic/managed-agents/workspace';
+import { logWorkspaceHeaderTally } from '@/lib/agentic/managed-agents/workspace-header';
 import { ENGINE_CAPS } from '@/lib/agentic/workflow-types';
 import { managedAgentsClientFor } from '@/lib/agentic/tool-runner/client';
 import { runInGlobalContext, runInTenantJobContext } from '@/lib/db-context';
@@ -182,6 +183,20 @@ function hostedCleanupConnection(): CleanupConnection {
         return { connectionId: INFLECT_HOSTED_CONNECTION_ID, workspaceId: '', apiKey: null, keepSessions: false, unavailable: hosted.reason };
     }
     return { connectionId: INFLECT_HOSTED_CONNECTION_ID, workspaceId: hosted.workspaceId, apiKey: hosted.apiKey, keepSessions: false };
+}
+
+/**
+ * A clean-up client for a connection whose key was read, through the engine's
+ * one constructor. Its workspace kind is the connection's: Inflect's when it
+ * carries the hosted id, the tenant's own otherwise. Each caller writes the
+ * client's workspace-header tally when its pass is done with it (#5962).
+ */
+function cleanupClientFor(connectionId: string, apiKey: string, workspaceId: string) {
+    return managedAgentsClientFor({
+        apiKey,
+        workspaceId,
+        workspaceKind: connectionId === INFLECT_HOSTED_CONNECTION_ID ? 'HOSTED' : 'TENANT',
+    });
 }
 
 /**
@@ -554,7 +569,7 @@ async function passWithKey(
     if (!connection.apiKey || !connection.workspaceId) {
         return { kind: 'refused', reason: connection.unavailable ?? 'CONNECTION_UNREADABLE' };
     }
-    const choice = managedAgentsClientFor({ apiKey: connection.apiKey, workspaceId: connection.workspaceId });
+    const choice = cleanupClientFor(connection.connectionId, connection.apiKey, connection.workspaceId);
     if (!choice.ok) {
         return { kind: 'refused', reason: choice.reason === 'SDK_AMBIENT_HEADERS_SET' ? 'SDK_AMBIENT_HEADERS_SET' : 'CONNECTION_UNREADABLE' };
     }
@@ -566,6 +581,8 @@ async function passWithKey(
         return { kind: 'pass', result };
     } catch {
         return { kind: 'refused', reason: 'CLEANUP_FAILED' };
+    } finally {
+        logWorkspaceHeaderTally(choice.client);
     }
 }
 
@@ -1115,28 +1132,32 @@ async function settleAbandonedSessionsFor(
     let unavailable: CleanupReason = 'CONNECTION_UNREADABLE';
     if (!connection) unavailable = 'CONNECTION_GONE';
     else if (!connection.keepSessions && connection.apiKey && connection.workspaceId) {
-        const choice = managedAgentsClientFor({ apiKey: connection.apiKey, workspaceId: connection.workspaceId });
+        const choice = cleanupClientFor(connection.connectionId, connection.apiKey, connection.workspaceId);
         if (choice.ok) client = choice.client;
         else if (choice.reason === 'SDK_AMBIENT_HEADERS_SET') unavailable = 'SDK_AMBIENT_HEADERS_SET';
     }
-    let halted: CleanupItemOutcome | null = null;
-    for (const s of sessions) {
-        tally.abandoned += 1;
-        if (connection?.keepSessions) {
-            if (await settled(s, 'SESSION_KEPT', 'KEPT')) tally.abandonedKept += 1;
-            continue;
+    try {
+        let halted: CleanupItemOutcome | null = null;
+        for (const s of sessions) {
+            tally.abandoned += 1;
+            if (connection?.keepSessions) {
+                if (await settled(s, 'SESSION_KEPT', 'KEPT')) tally.abandonedKept += 1;
+                continue;
+            }
+            if (!client) {
+                leave(s, unavailable);
+                continue;
+            }
+            const outcome: CleanupItemOutcome = halted ?? (signal.aborted ? 'DEADLINE' : await deleteSession(client, s.sessionId, signal));
+            if (HALTING_OUTCOMES.has(outcome)) halted = outcome;
+            if (!isDoneOutcome(outcome)) {
+                leave(s, outcome);
+                continue;
+            }
+            if (await settled(s, 'SESSION_DELETED', outcome)) tally.abandonedDeleted += 1;
         }
-        if (!client) {
-            leave(s, unavailable);
-            continue;
-        }
-        const outcome: CleanupItemOutcome = halted ?? (signal.aborted ? 'DEADLINE' : await deleteSession(client, s.sessionId, signal));
-        if (HALTING_OUTCOMES.has(outcome)) halted = outcome;
-        if (!isDoneOutcome(outcome)) {
-            leave(s, outcome);
-            continue;
-        }
-        if (await settled(s, 'SESSION_DELETED', outcome)) tally.abandonedDeleted += 1;
+    } finally {
+        if (client) logWorkspaceHeaderTally(client);
     }
 }
 
@@ -1168,40 +1189,44 @@ async function retryFailedDeletesFor(
     let unavailable: CleanupReason = 'CONNECTION_UNREADABLE';
     if (!connection) unavailable = 'CONNECTION_GONE';
     else if (connection.apiKey && connection.workspaceId) {
-        const choice = managedAgentsClientFor({ apiKey: connection.apiKey, workspaceId: connection.workspaceId });
+        const choice = cleanupClientFor(connection.connectionId, connection.apiKey, connection.workspaceId);
         if (choice.ok) client = choice.client;
         else if (choice.reason === 'SDK_AMBIENT_HEADERS_SET') unavailable = 'SDK_AMBIENT_HEADERS_SET';
     }
-    let halted: CleanupItemOutcome | null = null;
-    for (const s of sessions) {
-        tally.retried += 1;
-        if (!client) {
-            leave(s, unavailable);
-            continue;
-        }
-        const outcome: CleanupItemOutcome = halted ?? (signal.aborted ? 'DEADLINE' : await deleteSession(client, s.sessionId, signal));
-        if (HALTING_OUTCOMES.has(outcome)) halted = outcome;
-        if (!isDoneOutcome(outcome)) {
-            leave(s, outcome);
-            continue;
-        }
-        try {
-            await recordSessionDeleted(tenantId, s);
-        } catch (err) {
-            // The session is gone; the next pass reads it back as a 404 and writes the step.
-            tally.retriedLeft += 1;
-            recordManagedAgentsFailedDeleteRetry({ outcome: 'LEDGER_WRITE_FAILED' });
-            logger.error('managed-agents: a session whose delete had failed was deleted, but its step could not be written', {
-                component: 'managed-agents-cleanup', tenantId, runId: s.runId,
-                error: err instanceof Error ? err.message : 'a non-Error value was thrown',
+    try {
+        let halted: CleanupItemOutcome | null = null;
+        for (const s of sessions) {
+            tally.retried += 1;
+            if (!client) {
+                leave(s, unavailable);
+                continue;
+            }
+            const outcome: CleanupItemOutcome = halted ?? (signal.aborted ? 'DEADLINE' : await deleteSession(client, s.sessionId, signal));
+            if (HALTING_OUTCOMES.has(outcome)) halted = outcome;
+            if (!isDoneOutcome(outcome)) {
+                leave(s, outcome);
+                continue;
+            }
+            try {
+                await recordSessionDeleted(tenantId, s);
+            } catch (err) {
+                // The session is gone; the next pass reads it back as a 404 and writes the step.
+                tally.retriedLeft += 1;
+                recordManagedAgentsFailedDeleteRetry({ outcome: 'LEDGER_WRITE_FAILED' });
+                logger.error('managed-agents: a session whose delete had failed was deleted, but its step could not be written', {
+                    component: 'managed-agents-cleanup', tenantId, runId: s.runId,
+                    error: err instanceof Error ? err.message : 'a non-Error value was thrown',
+                });
+                continue;
+            }
+            tally.retriedDeleted += 1;
+            recordManagedAgentsFailedDeleteRetry({ outcome });
+            logger.info('managed-agents: a session whose delete had failed was deleted', {
+                component: 'managed-agents-cleanup', tenantId, runId: s.runId, outcome,
             });
-            continue;
         }
-        tally.retriedDeleted += 1;
-        recordManagedAgentsFailedDeleteRetry({ outcome });
-        logger.info('managed-agents: a session whose delete had failed was deleted', {
-            component: 'managed-agents-cleanup', tenantId, runId: s.runId, outcome,
-        });
+    } finally {
+        if (client) logWorkspaceHeaderTally(client);
     }
 }
 
@@ -1324,37 +1349,41 @@ export async function reconcileLostSessionDeletes(
             for (const connection of connections) {
                 const mine = deletedOnes.filter((s) => s.connectionId === connection.connectionId);
                 if (mine.length === 0 || !connection.apiKey) continue;
-                const choice = managedAgentsClientFor({ apiKey: connection.apiKey, workspaceId: connection.workspaceId });
+                const choice = cleanupClientFor(connection.connectionId, connection.apiKey, connection.workspaceId);
                 if (!choice.ok) continue;
-                for (const s of mine) {
-                    tally.checked += 1;
-                    let exists = false;
-                    try {
-                        await choice.client.beta.sessions.retrieve(s.sessionId, {}, { signal: timer.signal });
-                        exists = true;
-                    } catch (err) {
-                        const status = (err as { status?: unknown } | null)?.status;
-                        if (status !== 404) {
-                            recordManagedAgentsLostDelete({ outcome: 'unverified' });
-                            continue;
+                try {
+                    for (const s of mine) {
+                        tally.checked += 1;
+                        let exists = false;
+                        try {
+                            await choice.client.beta.sessions.retrieve(s.sessionId, {}, { signal: timer.signal });
+                            exists = true;
+                        } catch (err) {
+                            const status = (err as { status?: unknown } | null)?.status;
+                            if (status !== 404) {
+                                recordManagedAgentsLostDelete({ outcome: 'unverified' });
+                                continue;
+                            }
+                        }
+                        if (!exists) continue;
+                        tally.lost += 1;
+                        try {
+                            await choice.client.beta.sessions.delete(s.sessionId, {}, { signal: timer.signal });
+                            tally.deleted += 1;
+                            recordManagedAgentsLostDelete({ outcome: 'deleted' });
+                            logger.warn('managed-agents: a session recorded deleted still existed, and was deleted', {
+                                component: 'managed-agents-cleanup', tenantId, runId: s.runId,
+                            });
+                        } catch {
+                            tally.failed += 1;
+                            recordManagedAgentsLostDelete({ outcome: 'delete_failed' });
+                            logger.error('managed-agents: a session recorded deleted still exists and could not be deleted', {
+                                component: 'managed-agents-cleanup', tenantId, runId: s.runId,
+                            });
                         }
                     }
-                    if (!exists) continue;
-                    tally.lost += 1;
-                    try {
-                        await choice.client.beta.sessions.delete(s.sessionId, {}, { signal: timer.signal });
-                        tally.deleted += 1;
-                        recordManagedAgentsLostDelete({ outcome: 'deleted' });
-                        logger.warn('managed-agents: a session recorded deleted still existed, and was deleted', {
-                            component: 'managed-agents-cleanup', tenantId, runId: s.runId,
-                        });
-                    } catch {
-                        tally.failed += 1;
-                        recordManagedAgentsLostDelete({ outcome: 'delete_failed' });
-                        logger.error('managed-agents: a session recorded deleted still exists and could not be deleted', {
-                            component: 'managed-agents-cleanup', tenantId, runId: s.runId,
-                        });
-                    }
+                } finally {
+                    logWorkspaceHeaderTally(choice.client);
                 }
             }
         } catch (err) {
@@ -1415,9 +1444,14 @@ export async function settleAbortedRunSessions(
             }
             let outcome: CleanupReason = connection ? (connection.unavailable ?? 'CONNECTION_UNREADABLE') : 'CONNECTION_GONE';
             if (connection?.apiKey && connection.workspaceId) {
-                const choice = managedAgentsClientFor({ apiKey: connection.apiKey, workspaceId: connection.workspaceId });
-                if (choice.ok) outcome = timer.signal.aborted ? 'DEADLINE' : await deleteSession(choice.client, session.sessionId, timer.signal);
-                else if (choice.reason === 'SDK_AMBIENT_HEADERS_SET') outcome = 'SDK_AMBIENT_HEADERS_SET';
+                const choice = cleanupClientFor(connection.connectionId, connection.apiKey, connection.workspaceId);
+                if (choice.ok) {
+                    try {
+                        outcome = timer.signal.aborted ? 'DEADLINE' : await deleteSession(choice.client, session.sessionId, timer.signal);
+                    } finally {
+                        logWorkspaceHeaderTally(choice.client);
+                    }
+                } else if (choice.reason === 'SDK_AMBIENT_HEADERS_SET') outcome = 'SDK_AMBIENT_HEADERS_SET';
             }
             if (outcome === 'DONE' || outcome === 'ALREADY_GONE') {
                 await recordSessionLifecycle(tenantId, session, 'SESSION_DELETED', { settledBy: 'OPERATOR_ABORT' });

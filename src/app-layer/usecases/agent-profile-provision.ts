@@ -36,7 +36,7 @@ import { RESIDENCY_SELECT, residencyTermsFrom } from '@/lib/agentic/flue/model-s
 import { agentToolsFor, managedAgentsModelFor, type ProvisionShapeRefusal } from '@/lib/agentic/managed-agents/definition';
 import { provisionManagedAgent } from '@/lib/agentic/managed-agents/provision';
 import { resolveManagedAgentsWorkspace, type WorkspaceResolutionRefusal } from '@/lib/agentic/managed-agents/workspace';
-import { isManagedAgentsWorkspaceMismatch } from '@/lib/agentic/managed-agents/workspace-header';
+import { isManagedAgentsWorkspaceMismatch, logWorkspaceHeaderTally } from '@/lib/agentic/managed-agents/workspace-header';
 import { managedAgentsClientFor, type ManagedAgentsClientRefusal } from '@/lib/agentic/tool-runner/client';
 import { runInTenantContext } from '@/lib/db-context';
 import { READ_TOOLS } from '@/lib/mcp/tools/registry';
@@ -72,6 +72,8 @@ export async function provisionApprovedProfileVersion(
     versionId: string,
 ): Promise<ProvisionApprovedOutcome> {
     const version = { versionId } as const;
+    // The provisioning's own client, so its workspace-header tally is written once it is done (#5962).
+    let workspaceClient: object | null = null;
     try {
         const decision = await resolveDriverForTenant(ctx.tenantId);
         if (decision.driver !== 'managed-agents') return { provisioned: false, reason: 'ENGINE_NOT_IN_FORCE' };
@@ -102,8 +104,13 @@ export async function provisionApprovedProfileVersion(
         // provisions nothing, so nothing reaches Inflect's organisation.
         const read = await resolveManagedAgentsWorkspace(ctx);
         if (!read.ok) return { provisioned: false, reason: read.reason };
-        const choice = managedAgentsClientFor({ apiKey: read.workspace.apiKey, workspaceId: read.workspace.workspaceId });
+        const choice = managedAgentsClientFor({
+            apiKey: read.workspace.apiKey,
+            workspaceId: read.workspace.workspaceId,
+            workspaceKind: read.workspace.kind,
+        });
         if (!choice.ok) return { provisioned: false, reason: choice.reason };
+        workspaceClient = choice.client;
 
         const { record, created, replaced } = await provisionManagedAgent(ctx, choice.client, {
             profileId: version.profileId,
@@ -153,5 +160,7 @@ export async function provisionApprovedProfileVersion(
             error: err instanceof Error ? err.name : 'a non-Error value was thrown',
         });
         return { provisioned: false, reason: isManagedAgentsWorkspaceMismatch(err) ? 'WORKSPACE_MISMATCH' : 'PROVIDER_ERROR' };
+    } finally {
+        if (workspaceClient) logWorkspaceHeaderTally(workspaceClient);
     }
 }
