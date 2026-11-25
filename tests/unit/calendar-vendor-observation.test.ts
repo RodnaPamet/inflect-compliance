@@ -40,7 +40,7 @@ import {
 } from '@/app-layer/integrations/providers/calendar/vendor-observation';
 import { createGoogleCalendarWriter } from '@/app-layer/integrations/providers/calendar/google-writer';
 import { createGraphCalendarWriter } from '@/app-layer/integrations/providers/calendar/graph-writer';
-import { recreatedClientEventId, CalendarWriteError } from '@/app-layer/integrations/providers/calendar/calendar-http';
+import { recreatedClientEventId } from '@/app-layer/integrations/providers/calendar/calendar-http';
 import {
     CalendarCodeExchangeError,
     exchangeCalendarCode,
