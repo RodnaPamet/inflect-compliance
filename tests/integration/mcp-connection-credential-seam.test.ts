@@ -44,7 +44,7 @@ jest.mock('@/app-layer/automation/webhook-safety', () => ({
 import { prismaTestClient } from '../helpers/db';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { createStubHandler } from '../../packages/sap-mcp-stub/src/handler';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 import { upsertIntegrationConnection } from '@/app-layer/usecases/integrations';
 import { authorizationFor } from '@/app-layer/integrations/mcp/token';
@@ -138,7 +138,7 @@ describe('a credential travels from the connection row to the wire', () => {
         expect(row.secretEncrypted).toBeTruthy();
         expect(row.secretEncrypted).not.toContain(SECRET);
         expect(row.secretEncrypted).not.toContain('stub-token');
-        expect(JSON.parse(decryptField(row.secretEncrypted!))).toEqual({ authorization: SECRET });
+        expect(JSON.parse(await openTenantSecret(row.tenantId, row.secretEncrypted!))).toEqual({ authorization: SECRET });
     });
 
     it('resolves the stored secret into the Authorization header the client sends', async () => {
@@ -153,7 +153,7 @@ describe('a credential travels from the connection row to the wire', () => {
         });
 
         // The two lines the runtime runs, not a hand-rolled decrypt.
-        const secrets = JSON.parse(decryptField(row.secretEncrypted!)) as Record<string, unknown>;
+        const secrets = JSON.parse(await openTenantSecret(row.tenantId, row.secretEncrypted!)) as Record<string, unknown>;
         const config = (row.configJson ?? {}) as Record<string, unknown>;
 
         const authorization = await authorizationFor(row.id, config, secrets);
@@ -178,7 +178,7 @@ describe('a credential travels from the connection row to the wire', () => {
         const row = await prisma.integrationConnection.findUniqueOrThrow({
             where: { id: conn.id },
         });
-        const secrets = JSON.parse(decryptField(row.secretEncrypted!)) as Record<string, unknown>;
+        const secrets = JSON.parse(await openTenantSecret(row.tenantId, row.secretEncrypted!)) as Record<string, unknown>;
         const authorization = await authorizationFor(row.id, (row.configJson ?? {}) as Record<string, unknown>, secrets);
 
         const out = await callTool({ url: URL_, authorization }, 'sales_orders_by_creator', {
@@ -206,7 +206,7 @@ describe('a credential travels from the connection row to the wire', () => {
             where: { id: conn.id },
         });
         const secrets = row.secretEncrypted
-            ? (JSON.parse(decryptField(row.secretEncrypted)) as Record<string, unknown>)
+            ? (JSON.parse(await openTenantSecret(row.tenantId, row.secretEncrypted)) as Record<string, unknown>)
             : {};
 
         const authorization = await authorizationFor(row.id, (row.configJson ?? {}) as Record<string, unknown>, secrets);

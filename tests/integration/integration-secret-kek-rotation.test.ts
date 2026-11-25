@@ -1,8 +1,10 @@
 /**
  * An integration's credentials survive a master-key rotation (#5942).
  *
- * `IntegrationConnection.secretEncrypted` is sealed with `encryptField` (the
- * master key, `v1:`) outside the encryption manifest. Before #5942 the
+ * `IntegrationConnection.secretEncrypted` was sealed with `encryptField` (the
+ * master key, `v1:`) outside the encryption manifest, and rows written then
+ * remain until a rotation re-seals them under the workspace's own key
+ * (#5969). Before #5942 the
  * rotation walked only the manifest and the PII columns, so it never moved
  * these rows, its "zero v1 rows left" report said nothing about them, and the
  * runbook's last step (retiring `DATA_ENCRYPTION_KEY_PREVIOUS`) made every
@@ -17,6 +19,7 @@ import { DB_AVAILABLE } from './db-helper';
 import { prismaTestClient } from '../helpers/db';
 import { createTenantWithDek, _resetTenantDekCache } from '@/lib/security/tenant-key-manager';
 import { decryptField, encryptField, hashForLookup, _resetKeyCache } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { runKeyRotation } from '@/app-layer/jobs/key-rotation';
 
 const d = DB_AVAILABLE ? describe : describe.skip;
@@ -54,8 +57,8 @@ d('IntegrationConnection.secretEncrypted — master-key rotation', () => {
         tenantIds.push(tenant.id);
         const email = `${slug}@example.test`;
         const user = await prisma.user.create({ data: { email, emailHash: hashForLookup(email), name: label } });
-        // What every writer of the column wrote before #5969, and what
-        // `sealTenantSecret` still writes while its brake is off.
+        // What every writer of the column wrote before #5969: the master key.
+        // The rotation re-seals it under the workspace's own key.
         const connection = await prisma.integrationConnection.create({
             data: {
                 tenantId: tenant.id,
@@ -107,9 +110,13 @@ d('IntegrationConnection.secretEncrypted — master-key rotation', () => {
         const after = await storedSecret(rotated.connection.id);
         expect(after).not.toBe(before);
 
+        // Moved onto the workspace's own key (#5969), whose wrap the same
+        // rotation moved onto B.
+        expect(after.startsWith('v2:')).toBe(true);
+
         // The runbook's last step: retire the previous key.
         useKeys(KEY_B);
-        expect(JSON.parse(decryptField(after))).toEqual(SECRET);
+        expect(JSON.parse(await openTenantSecret(rotated.tenant.id, after))).toEqual(SECRET);
 
         // The control: a workspace the rotation did not visit can no longer
         // read its secret, so the swap above is real.

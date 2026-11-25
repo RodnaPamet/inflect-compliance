@@ -2,17 +2,17 @@
  * The brake for sealing `TENANT_SEALED_COLUMNS` under the workspace's own key
  * (#5969, #5942 phase 2).
  *
- * `false`: `sealTenantSecret` still writes a `v1:` envelope under the master
- * key, exactly as the column was written before. `openTenantSecret` reads both
+ * `true` (since deploy 2 of #5969): `sealTenantSecret` writes a `v2:` envelope
+ * under the workspace's DEK, and a master-key rotation of a workspace moves
+ * its remaining `v1:` values onto that key. `openTenantSecret` reads both
  * forms whatever this says.
  *
- * It ships `false` first, ahead of the commit that sets it `true`, because code
- * from before the readers learned `v2:` cannot read a `v2:` secret: rolling a
- * `true` build back to such code would make every credential written since
- * unreadable. Setting it back to `false` is the rollback once the readers are
- * deployed, and it strands nothing, because the readers keep reading `v2:`.
+ * Setting it back to `false` is the rollback: new writes go back under the
+ * master key, and nothing already written is stranded, because the readers
+ * shipped in deploy 1 keep reading `v2:`. Do not roll back past deploy 1
+ * (`v3.434.0`) while any `v2:` secret exists: older code cannot read one.
  *
  * A leaf module that imports nothing, so a test can replace the value with a
  * `jest.mock` getter.
  */
-export const TENANT_SEALED_UNDER_TENANT_KEY = false;
+export const TENANT_SEALED_UNDER_TENANT_KEY = true;

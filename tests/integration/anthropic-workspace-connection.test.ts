@@ -25,7 +25,7 @@ import { randomUUID } from 'node:crypto';
 
 import { prismaTestClient } from '../helpers/db';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
-import { decryptField } from '@/lib/security/encryption';
+import { openTenantSecret } from '@/lib/security/tenant-sealed';
 import { generateAndWrapDek } from '@/lib/security/tenant-keys';
 import {
     listIntegrationConnections,
@@ -105,12 +105,13 @@ describe('the key is stored encrypted', () => {
             SELECT "secretEncrypted", "configJson" FROM "IntegrationConnection" WHERE id = ${connectionId}`;
         expect(rows).toHaveLength(1);
         const raw = rows[0].secretEncrypted ?? '';
-        expect(raw).toMatch(/^v[12]:/);
+        // Under the workspace's own key (#5969), not the master key.
+        expect(raw).toMatch(/^v2:/);
         expect(raw).not.toContain(KEY);
         expect(JSON.stringify(rows[0].configJson)).not.toContain(KEY);
         expect(rows[0].configJson).toEqual({ workspaceId: WS, keepSessions: false });
         // …and it is the key, once decrypted through the connection-secret path.
-        expect(JSON.parse(decryptField(raw))).toEqual({ apiKey: KEY });
+        expect(JSON.parse(await openTenantSecret(TENANT_A, raw))).toEqual({ apiKey: KEY });
     });
 });
 
