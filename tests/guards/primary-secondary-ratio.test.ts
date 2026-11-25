@@ -491,6 +491,12 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 1.55;
 // Cancel: a row-action-sized commit, not the page's primary action (the R7-PR1
 // rule). The card's Declare, Review, Narrow and Declare again are secondary
 // and Withdraw is destructive. Net change: zero.
+// 2026-11-25 — probe key registers (active flavour, step 8b): 173 stays.
+// The prober-key and approver-key cards on the Probes tab register through the
+// harness tab's scanner-key dialog, made one dialog for all three registers
+// (`agents/reports/keys/RegisterSigningKeyModal.tsx`), so its one primary — the
+// submit `modal-action-order` requires — is the same one. The cards' Register
+// and Revoke buttons are secondary. Net change: zero.
 const MAX_PRIMARY_COUNT = 173;
 
 const SCANNED_FILES = walk(path.join(ROOT, SCAN_DIR));

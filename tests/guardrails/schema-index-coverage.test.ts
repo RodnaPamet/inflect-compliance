@@ -828,6 +828,11 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'the third-party application ingest reads the applications a report names by (tenantId, applicationId IN …) — exactly the @@unique([tenantId, applicationId]); no order; bounded take by the report\'s application count (≤5000).',
     ThirdPartyAppScanItem:
         'the Integrations tab reads the latest scans\' items by (tenantId, scanId IN …) ordered by scanId, appId — the leading columns of @@unique([tenantId, scanId, appId]); bounded take ≤15001 (three scans of at most 5000 applications, one past the cap).',
+    // A probe run's targets and outcomes (active flavour, step 8b) — read one run at a time, or by finding reference.
+    ProbeRunTarget:
+        'the Probes tab\'s run detail reads one run\'s targets by (tenantId, runId) ordered by origin, id — the leading columns of @@unique([tenantId, runId, endpointDigest]); a run holds the handful of agents its scope named; bounded take ≤500.',
+    ProbeRunOutcome:
+        'the Probes tab\'s run detail reads one run\'s outcomes by (tenantId, runId) — @@index([tenantId, runId]), at most the catalogue times the targets, bounded take ≤1001; the inventory reads the latest raising outcome per open finding by (tenantId, sourceRef IN …, verdict) — @@index([tenantId, sourceRef]), bounded take by the references asked about.',
     // The auditor agent's narrative of a workpaper (#3749) — at most one per workpaper.
     AuditWorkpaperNarrative:
         'the period read\'s narrated flag and the capture read narratives by (tenantId, workpaperId IN …) — exactly the @@unique([tenantId, workpaperId]); no order; bounded take by the ids asked about (≤50 shown workpapers, ≤6 narratives an answer carries), one row per workpaper.',

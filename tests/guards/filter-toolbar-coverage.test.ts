@@ -160,6 +160,12 @@ const EXEMPTIONS: Record<string, string> = {
         "Third-party application sub-table inside the multi-section /agents/reports dashboard (Integrations tab) — one card per scanner's latest scan, coverage above it, rows worst first; a facet that hid a row would hide an application holding a high grant from the report.",
     "src/app/t/[tenantSlug]/(app)/agents/reports/agent-surface/AgentSurfaceTab.tsx":
         "Agent-surface rules sub-table inside the multi-section /agents/reports dashboard (Agent surface tab) — one card per scanner's latest scan, the servers it read above, open findings most severe first; a facet that hid a row would hide a finding from the report.",
+    "src/app/t/[tenantSlug]/(app)/agents/reports/probes/ProbesTab.tsx":
+        "Probe-run sub-tables inside the multi-section /agents/reports dashboard (Probes tab) — one card per prober, its ten most recent runs and its open findings most severe first; a facet that hid a run would hide an agent that acted from the report.",
+    "src/app/t/[tenantSlug]/(app)/agents/reports/probes/ProberKeysCard.tsx":
+        "Prober-key register sub-table inside the multi-section /agents/reports dashboard — the handful of keys a tenant trusts to sign probe reports, with inline register and revoke; a small fixed list, not a faceted-filter list surface.",
+    "src/app/t/[tenantSlug]/(app)/agents/reports/probes/ApproverKeysCard.tsx":
+        "Approver-key register sub-table inside the multi-section /agents/reports dashboard — the handful of keys an owner trusts to approve engagements, with inline register and revoke; a small fixed list, not a faceted-filter list surface.",
     "src/app/t/[tenantSlug]/(app)/agents/reports/harness/ScannerKeysCard.tsx":
         "Scanner-key register sub-table inside the multi-section /agents/reports dashboard — the handful of keys a tenant trusts, with inline register and revoke; a small fixed list, not a faceted-filter list surface.",
     // Pages composed of multiple cards + sub-tables, where the page

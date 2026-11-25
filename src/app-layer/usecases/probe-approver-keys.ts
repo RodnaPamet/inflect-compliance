@@ -25,6 +25,10 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
 import { harnessKeyFingerprint } from '@/lib/agentic/harness-contract';
 import { isProbeKeyOverlapDbRefusal } from './agent-prober-keys';
+import type { ApproverKeysView } from '@/lib/agentic/probe-run-read-model';
+
+/** How many approver keys the card lists. */
+const APPROVER_KEY_CARD_CAP = 200;
 
 export const AddProbeApproverKeySchema = z
     .object({
@@ -138,5 +142,28 @@ export async function revokeProbeApproverKey(ctx: RequestContext, input: { keyId
             detailsJson: { category: 'access', entityName: 'ProbeApproverKey', operation: 'revoked' },
         });
         return { id: input.keyId, revoked: true };
+    });
+}
+
+/** The approver-key card's read (step 8b), OWNER-only as every verb here is. */
+export async function getProbeApproverKeysView(ctx: RequestContext): Promise<ApproverKeysView> {
+    assertMayManageApprovers(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const rows = await db.probeApproverKey.findMany({
+            where: { tenantId: ctx.tenantId },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take: APPROVER_KEY_CARD_CAP + 1,
+            select: { id: true, label: true, keyFingerprint: true, createdAt: true, revokedAt: true },
+        });
+        return {
+            rows: rows.slice(0, APPROVER_KEY_CARD_CAP).map((k) => ({
+                id: k.id,
+                label: k.label,
+                keyFingerprint: k.keyFingerprint,
+                createdAt: k.createdAt.toISOString(),
+                revokedAt: k.revokedAt ? k.revokedAt.toISOString() : null,
+            })),
+            truncated: rows.length > APPROVER_KEY_CARD_CAP,
+        };
     });
 }
