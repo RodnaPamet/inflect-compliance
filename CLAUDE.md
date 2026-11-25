@@ -582,7 +582,19 @@ the same row (`auditStreamSecretEncrypted`), encrypted at rest via
 the Epic B field-encryption manifest. Fail-safe — the audit row is
 already committed, so a broken SIEM never undoes the write.
 Privacy-aware payload — free-text `details` is dropped, only
-structured `detailsJson` ships; actor is opaque `userId` +
+structured `detailsJson` ships. The Prisma audit extension's diff
+(`detailsJson.after`, `diffJson.before` / `after`) names a person
+column — `PERSON_COLUMNS` in `src/lib/security/person-columns.ts`: a
+person's name, address or login, plaintext, ciphertext or lookup hash —
+in `changedFields` and `withheldFields`, never its value (#5950 part 2,
+owner decision 2026-11-25). Every `String` / `Json` column named like an
+e-mail or a name is classified there, as a person column or as not one
+with a reason, or `tests/guardrails/audit-person-columns-classified.test.ts`
+fails; the workspace sender settings are configuration and keep their
+values. The auth rows' `detailsJson.auth.identifierHash` is the keyed
+`hashForLookup` of the address, equal to `User.emailHash`; nothing
+matches rows on it, and rows written before #5950 keep their unsalted
+16-character SHA-256 prefix. Actor is opaque `userId` +
 `actorType`, never email. Each batch delivery gets up to 3 attempts
 (original + 2 retries) with linear backoff (1 s, 2 s). Kill-switch
 via `AUDIT_STREAM_RETRY_ENABLED=0`.
