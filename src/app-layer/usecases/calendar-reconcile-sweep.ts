@@ -42,20 +42,30 @@
  *
  * @module usecases/calendar-reconcile-sweep
  */
-import type { RequestContext } from '../types';
+import type { Locale } from '@/lib/locale-constants';
 import { generatePushableEvents } from './calendar-push-generate';
 import {
     reconcileCalendarEvents,
     deleteAllForDisconnect,
     type ExistingMapping,
+    type PushableEvent,
     type ReconcileAction,
 } from './calendar-event-reconcile';
 import type { CalendarProviderId } from './user-calendar-connection';
 
-/** What the sweep needs a provider client to do. */
+/**
+ * What the sweep needs a provider client to do. The two implementations are
+ * `integrations/providers/calendar/{google,graph}-writer.ts`.
+ */
 export interface CalendarWriter {
-    insert(input: { clientEventId: string; event: unknown }): Promise<{ remoteEventId: string }>;
-    patch(input: { remoteEventId: string; event: unknown }): Promise<void>;
+    insert(input: { clientEventId: string; event: PushableEvent }): Promise<{ remoteEventId: string }>;
+    /**
+     * Update in place. May answer with a NEW id: an event the person deleted
+     * by hand is gone at the provider (404/410), and the writer creates it
+     * again — the sweep then records the id it was given, or the next patch
+     * would go to the deleted one. `void` means the id is unchanged.
+     */
+    patch(input: { remoteEventId: string; event: PushableEvent }): Promise<void | { remoteEventId: string }>;
     remove(input: { remoteEventId: string }): Promise<void>;
 }
 
@@ -77,6 +87,12 @@ export interface MappingStore {
 }
 
 export interface SweepResult {
+    /**
+     * Actions left for the next run because this run reached its per-person
+     * cap. A first push of a long backlog spreads over several nights instead
+     * of meeting the provider's quota in one.
+     */
+    deferred: number;
     inserted: number;
     patched: number;
     deleted: number;
@@ -106,18 +122,32 @@ export async function sweepUserCalendar(
         tenantId: string;
         userId: string;
         provider: CalendarProviderId;
+        /** The workspace's default language, for the product's own wording. */
+        locale?: Locale;
+        /** The deployment's public origin, for the link back to the item. */
+        publicOrigin?: string | null;
     },
     deps: {
         store: MappingStore;
         writer: CalendarWriter;
         generate?: typeof generatePushableEvents;
         now?: () => Date;
+        /** Provider calls this run may make for this person. Unbounded when absent. */
+        maxActions?: number;
     },
 ): Promise<SweepResult> {
     const generate = deps.generate ?? generatePushableEvents;
     const existing = await deps.store.list();
 
-    const outcome = await generate({ tenantId: input.tenantId, userId: input.userId }, { now: deps.now });
+    const outcome = await generate(
+        {
+            tenantId: input.tenantId,
+            userId: input.userId,
+            locale: input.locale,
+            publicOrigin: input.publicOrigin,
+        },
+        { now: deps.now },
+    );
 
     // BOTH of these mean "remove everything", and they are reached by different
     // routes: a removed member, and an active member who may no longer see any
@@ -129,9 +159,12 @@ export async function sweepUserCalendar(
     }
 
     const actions = reconcileCalendarEvents({
-        identity: input,
+        identity: { tenantId: input.tenantId, userId: input.userId, provider: input.provider },
         desired: outcome.events,
         existing,
+        holdDeletes: outcome.held
+            ? { sourceKeys: new Set(outcome.held.sourceKeys), all: outcome.held.all }
+            : undefined,
     });
     const result = await applyActions(actions, deps);
     return {
@@ -141,10 +174,44 @@ export async function sweepUserCalendar(
     };
 }
 
+/**
+ * Remove every event this connection pushed, and nothing else. The disconnect
+ * path, and the nightly retry of a disconnect whose removals did not all
+ * succeed.
+ *
+ * Runs no generation: a disconnect must remove events even when the person
+ * may no longer see anything, or the aggregation is failing. `remaining` is
+ * what is still recorded afterwards — rows whose removal failed (kept in
+ * PENDING_DELETE) and rows the cap left for the next run.
+ */
+export async function removeAllPushedEvents(deps: {
+    store: MappingStore;
+    writer: CalendarWriter;
+    maxActions?: number;
+}): Promise<{ deleted: number; deleteFailures: number; deferred: number; remaining: number }> {
+    const existing = await deps.store.list();
+    const result = await applyActions(deleteAllForDisconnect(existing), deps);
+    return {
+        deleted: result.deleted,
+        deleteFailures: result.deleteFailures,
+        deferred: result.deferred,
+        remaining: existing.filter((m) => m.remoteEventId).length - result.deleted,
+    };
+}
+
 async function applyActions(
-    actions: readonly ReconcileAction[],
-    deps: { store: MappingStore; writer: CalendarWriter },
+    all: readonly ReconcileAction[],
+    deps: { store: MappingStore; writer: CalendarWriter; maxActions?: number },
 ): Promise<Omit<SweepResult, 'removedEverything' | 'changed'>> {
+    // REMOVALS FIRST. They are the revoke direction — an event the person may
+    // no longer see — and must never wait behind a backlog of new deadlines
+    // when the per-person cap bites. Within each kind the reconciler's order
+    // stands: desired events arrive date-ascending, so the nearest go first.
+    const ordered = [...all.filter((a) => a.kind === 'delete'), ...all.filter((a) => a.kind !== 'delete')];
+    const cap = deps.maxActions ?? ordered.length;
+    const actions = ordered.slice(0, Math.max(0, cap));
+    const deferred = ordered.length - actions.length;
+
     let inserted = 0;
     let patched = 0;
     let deleted = 0;
@@ -170,11 +237,13 @@ async function applyActions(
                 });
                 inserted += 1;
             } else if (action.kind === 'patch') {
-                await deps.writer.patch({ remoteEventId: action.remoteEventId, event: action.event });
+                const answered = await deps.writer.patch({ remoteEventId: action.remoteEventId, event: action.event });
                 await deps.store.upsertPushed({
                     sourceKey: action.event.sourceKey,
                     sourceEntityId: action.event.sourceEntityId,
-                    remoteEventId: action.remoteEventId,
+                    // A re-created event has a new id; record it IMMEDIATELY,
+                    // as for an insert.
+                    remoteEventId: answered?.remoteEventId ?? action.remoteEventId,
                     clientEventId: '',
                     contentHash: action.contentHash,
                 });
@@ -211,7 +280,7 @@ async function applyActions(
         }
     }
 
-    return { inserted, patched, deleted, deleteFailures, pushFailures };
+    return { deferred, inserted, patched, deleted, deleteFailures, pushFailures };
 }
 
 /**

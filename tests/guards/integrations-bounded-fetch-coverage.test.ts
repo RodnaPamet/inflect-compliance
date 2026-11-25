@@ -75,6 +75,10 @@ const BOUNDED_DIRECT_ALLOWED: Record<string, string> = {
     'src/app-layer/integrations/bounded-fetch.ts': 'Defines it.',
     'src/app-layer/integrations/http-resilience.ts':
         'Wraps it — the resilient fetch is a bounded fetch plus throttle handling.',
+    'src/app-layer/integrations/providers/calendar/calendar-http.ts':
+        'Hands it to createResilientFetch as the inner transport, after re-reading ' +
+        "Google's quota 403 as a 429 — the same layering, so every calendar write " +
+        'is bounded AND throttle-aware.',
 };
 
 describe('every integration provider defaults to a bounded fetch', () => {

@@ -26,8 +26,8 @@ const NOW = new Date('2026-08-18T00:00:00.000Z');
 
 /** Two deadlines from two different sources, with their gating keys. */
 const SOURCES = [
-    { name: 'incidents', permission: 'incidents.view', entityType: 'INCIDENT_NOTIFICATION', entityId: 'inc-1', title: 'NIS2 notification due' },
-    { name: 'tasks', permission: 'tasks.view', entityType: 'TASK', entityId: 'task-1', title: 'Evidence review' },
+    { name: 'incidents', permission: 'incidents.view', type: 'incident-notification-due', entityType: 'INCIDENT_NOTIFICATION', entityId: 'inc-1', title: 'NIS2 notification due' },
+    { name: 'tasks', permission: 'tasks.view', type: 'task-due', entityType: 'TASK', entityId: 'task-1', title: 'Evidence review' },
 ] as const;
 
 /**
@@ -48,15 +48,17 @@ const fakeAggregate = jest.fn<
             continue;
         }
         events.push({
-            id: `${s.entityType}:${s.entityId}:DUE`,
+            id: `${s.entityType}:${s.entityId}:${s.type}`,
+            type: s.type,
             entityType: s.entityType,
             entityId: s.entityId,
             title: s.title,
             date: '2026-09-01T00:00:00.000Z',
             detail: 'assigned to you',
+            href: `/t/acme/${s.name}/${s.entityId}`,
         });
     }
-    return { events, omittedSources, erroredSources: [] } as never;
+    return { events, omittedSources, failedSources: [], truncation: { sources: [], totalCapped: false } } as never;
 });
 
 function ctxFor(over: Partial<RequestContext> = {}): RequestContext {
@@ -109,9 +111,9 @@ describe('the same generation under two permission sets', () => {
         // aggregation returning an event for a source the caller cannot see:
         // it comes straight through.
         const leaky = jest.fn(async () => ({
-            events: [{ id: 'X:1:DUE', entityType: 'X', entityId: '1', title: 't', date: '2026-09-01' }],
+            events: [{ id: 'X:1:x', type: 'task-due', entityType: 'X', entityId: '1', title: 't', date: '2026-09-01' }],
             omittedSources: ['incidents'],
-            erroredSources: [],
+            failedSources: [],
         })) as never;
         const out = await generatePushableEvents(
             { tenantId: 't1', userId: 'u1' },
@@ -161,7 +163,7 @@ describe('"nothing visible" is distinguished from "nothing due"', () => {
     it('an EMPTY WINDOW with sources visible is a normal generation', async () => {
         // The other half. Nothing due must not read as nothing visible, or a
         // quiet week wipes the user's calendar.
-        const empty = jest.fn(async () => ({ events: [], omittedSources: [], erroredSources: [] })) as never;
+        const empty = jest.fn(async () => ({ events: [], omittedSources: [], failedSources: [] })) as never;
         const out = await generatePushableEvents(
             { tenantId: 't1', userId: 'u1' },
             { resolveContext: async () => ctxFor(), aggregate: empty, now: () => NOW },
@@ -169,17 +171,46 @@ describe('"nothing visible" is distinguished from "nothing due"', () => {
         expect(out.kind).toBe('generated');
     });
 
-    it('an ERRORED source is NOT treated as a lost permission', async () => {
+    it('a FAILED source is NOT treated as a lost permission', async () => {
         // A database being briefly slow must not delete a user's whole
-        // calendar. An errored source was attempted, so it was visible.
+        // calendar. A failed source was attempted, so it was visible. The
+        // aggregation names it `failedSources` — this test once fed a field the
+        // real response never carries, and the guard it proved was dead.
         const errored = jest.fn(async () => ({
-            events: [], omittedSources: ['tasks'], erroredSources: ['incidents'],
+            events: [], omittedSources: ['task'], failedSources: ['incident-notification'],
+            truncation: { sources: [], totalCapped: false },
         })) as never;
         const out = await generatePushableEvents(
             { tenantId: 't1', userId: 'u1' },
             { resolveContext: async () => ctxFor(), aggregate: errored, now: () => NOW },
         );
         expect(out.kind).toBe('generated');
+        if (out.kind !== 'generated') throw new Error('unreachable');
+        // And its deadlines are HELD: absent because unread, not because gone.
+        expect(out.held).toEqual({ sourceKeys: ['incident-notification-due'], all: false });
+    });
+
+    it('a CAPPED source holds its deletes; a total cap holds every delete', async () => {
+        const capped = jest.fn(async () => ({
+            events: [], omittedSources: [], failedSources: [],
+            truncation: { sources: ['vendor'], totalCapped: true },
+        })) as never;
+        const out = await generatePushableEvents(
+            { tenantId: 't1', userId: 'u1' },
+            { resolveContext: async () => ctxFor(), aggregate: capped, now: () => NOW },
+        );
+        if (out.kind !== 'generated') throw new Error('unreachable');
+        // Both of the vendor source's deadline types, read from the real table.
+        expect(out.held).toEqual({ sourceKeys: ['vendor-review', 'vendor-renewal'], all: true });
+    });
+
+    it('a healthy generation holds nothing', async () => {
+        const out = await generatePushableEvents(
+            { tenantId: 't1', userId: 'u1' },
+            { resolveContext: async () => ctxFor(), aggregate: fakeAggregate, now: () => NOW },
+        );
+        if (out.kind !== 'generated') throw new Error('unreachable');
+        expect(out.held).toBeUndefined();
     });
 });
 
@@ -216,20 +247,64 @@ describe('the context handed to the aggregation', () => {
         const days = (input.to.getTime() - input.from.getTime()) / 86_400_000;
         expect(days).toBe(PUSH_WINDOW_DAYS);
     });
-});
 
-describe('the mapping onto pushable events', () => {
-    it('keys on entityType/entityId, not the composite event id', async () => {
-        // The composite id embeds the event TYPE, so a due-date event becoming
-        // an overdue event would change identity — orphaning the calendar entry
-        // and creating a second one instead of patching the first.
-        const out = await generatePushableEvents(
+    it('the window starts at the start of TODAY, so a deadline due today is not removed on its own day', async () => {
+        // The job runs at 03:00 UTC and day deadlines are stored at UTC
+        // midnight. A window from `now` drops today's deadline and the sweep
+        // deletes it from the calendar on the very day it falls due.
+        await generatePushableEvents(
+            { tenantId: 't1', userId: 'u1' },
+            { resolveContext: async () => ctxFor(), aggregate: fakeAggregate, now: () => new Date('2026-08-18T03:00:00.000Z') },
+        );
+        const input = fakeAggregate.mock.calls[0][1] as unknown as { from: Date; now: Date };
+        expect(input.from).toEqual(new Date('2026-08-18T00:00:00.000Z'));
+        // Status is still judged against the real instant.
+        expect(input.now).toEqual(new Date('2026-08-18T03:00:00.000Z'));
+    });
+
+    it("asks the aggregation for THIS person's own deadlines only (owner decision 2026-11-25)", async () => {
+        await generatePushableEvents(
             { tenantId: 't1', userId: 'u1' },
             { resolveContext: async () => ctxFor(), aggregate: fakeAggregate, now: () => NOW },
         );
+        expect(fakeAggregate.mock.calls[0][1]).toMatchObject({ ownedBy: 'u1' });
+    });
+
+    it("asks for the workspace's language, and the default when none is given", async () => {
+        await generatePushableEvents(
+            { tenantId: 't1', userId: 'u1', locale: 'bg' },
+            { resolveContext: async () => ctxFor(), aggregate: fakeAggregate, now: () => NOW },
+        );
+        await generatePushableEvents(
+            { tenantId: 't1', userId: 'u1' },
+            { resolveContext: async () => ctxFor(), aggregate: fakeAggregate, now: () => NOW },
+        );
+        expect(fakeAggregate.mock.calls[0][1]).toMatchObject({ locale: 'bg' });
+        expect(fakeAggregate.mock.calls[1][1]).toMatchObject({ locale: 'en' });
+    });
+});
+
+describe('the mapping onto pushable events', () => {
+    it('keys on the event TYPE and the entity id, so two deadlines on one row stay two events', async () => {
+        // A risk carries a review date AND a target date; a vendor a review AND
+        // a contract renewal. Keyed on the entity they shared one mapping row
+        // and one calendar event, and overwrote each other every night.
+        const twoOnOneRow = jest.fn(async () => ({
+            events: [
+                { id: 'RISK:r1:risk-review', type: 'risk-review', entityType: 'RISK', entityId: 'r1', title: 'a', date: '2026-09-01T00:00:00.000Z' },
+                { id: 'RISK:r1:risk-target', type: 'risk-target', entityType: 'RISK', entityId: 'r1', title: 'b', date: '2026-09-02T00:00:00.000Z' },
+            ],
+            omittedSources: [], failedSources: [], truncation: { sources: [], totalCapped: false },
+        })) as never;
+        const out = await generatePushableEvents(
+            { tenantId: 't1', userId: 'u1' },
+            { resolveContext: async () => ctxFor(), aggregate: twoOnOneRow, now: () => NOW },
+        );
         if (out.kind !== 'generated') throw new Error('unreachable');
-        expect(out.events[0]).toMatchObject({ sourceKey: 'INCIDENT_NOTIFICATION', sourceEntityId: 'inc-1' });
-        expect(JSON.stringify(out.events)).not.toContain(':DUE');
+        expect(out.events.map((e) => [e.sourceKey, e.sourceEntityId])).toEqual([
+            ['risk-review', 'r1'],
+            ['risk-target', 'r1'],
+        ]);
     });
 
     it('carries title, start and detail through', async () => {
@@ -243,5 +318,33 @@ describe('the mapping onto pushable events', () => {
             startsAt: '2026-09-01T00:00:00.000Z',
             description: 'assigned to you',
         });
+    });
+
+    it("adds an ABSOLUTE link to the item in the workspace's language, from the public origin", async () => {
+        const en = await generatePushableEvents(
+            { tenantId: 't1', userId: 'u1', locale: 'en', publicOrigin: 'https://app.example.test/' },
+            { resolveContext: async () => ctxFor(), aggregate: fakeAggregate, now: () => NOW },
+        );
+        const bg = await generatePushableEvents(
+            { tenantId: 't1', userId: 'u1', locale: 'bg', publicOrigin: 'https://app.example.test' },
+            { resolveContext: async () => ctxFor(), aggregate: fakeAggregate, now: () => NOW },
+        );
+        if (en.kind !== 'generated' || bg.kind !== 'generated') throw new Error('unreachable');
+        expect(en.events[0].description).toBe(
+            'assigned to you\n\nOpen in Inflect: https://app.example.test/t/acme/incidents/inc-1',
+        );
+        expect(bg.events[0].description).toBe(
+            'assigned to you\n\nОтворете в Inflect: https://app.example.test/t/acme/incidents/inc-1',
+        );
+    });
+
+    it('with no public origin there is no link line, rather than a relative link nobody can follow', async () => {
+        const out = await generatePushableEvents(
+            { tenantId: 't1', userId: 'u1', publicOrigin: null },
+            { resolveContext: async () => ctxFor(), aggregate: fakeAggregate, now: () => NOW },
+        );
+        if (out.kind !== 'generated') throw new Error('unreachable');
+        expect(out.events[0].description).toBe('assigned to you');
+        expect(JSON.stringify(out.events)).not.toContain('/t/acme');
     });
 });

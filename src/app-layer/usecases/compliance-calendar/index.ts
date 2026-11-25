@@ -70,6 +70,8 @@ import { urgencyFromDaysUntil, DAY_MS } from '@/lib/urgency';
 import { hasPermission, type PermissionKey } from '@/lib/security/permission-key';
 import { env } from '@/env';
 import type { TaskStatus } from '@prisma/client';
+import type { Locale } from '@/lib/locale-constants';
+import { workspaceTranslator } from '@/lib/i18n/workspace-text';
 import type { RequestContext } from '../../types';
 import {
     type CalendarEvent,
@@ -127,6 +129,28 @@ export interface GetCalendarEventsInput {
      * per-source "nearest survive" contract.
      */
     totalCap?: number;
+    /**
+     * Keep only the deadlines this user owns or is assigned — the page's "My
+     * deadlines" semantics (`ownerUserId === ownedBy`), applied on the server.
+     * Used by the calendar push (#5937 step 2, owner decision 2026-11-25),
+     * which must not copy other people's deadlines into a personal calendar.
+     * Applied AFTER the per-source permission gate (it only ever narrows) and
+     * BEFORE the total cap, so the cap is spent on the user's own events. A
+     * source that carries no owner (`SOURCES_WITHOUT_OWNER`) contributes
+     * nothing. The page does not pass it: its "My deadlines" toggle filters on
+     * the client.
+     */
+    ownedBy?: string;
+    /**
+     * Compose each `title` in this language, from the workspace-text catalogue
+     * (`workspaceText.calendarPush`): `"<type label>: <entity name>"`, the same
+     * composition the page makes on the client. Used by the calendar push,
+     * which writes text into a calendar outside Inflect and so cannot leave the
+     * wording to a browser. The entity name is the workspace's own text and is
+     * never translated. Absent: the English server title, unchanged — the page
+     * does not pass it.
+     */
+    locale?: Locale;
 }
 
 /**
@@ -174,6 +198,16 @@ const CALENDAR_SOURCES: readonly CalendarSourceDef[] = [
 export const CALENDAR_BASELINE_PERMISSIONS: readonly PermissionKey[] = Array.from(
     new Set(CALENDAR_SOURCES.map((s) => s.permission)),
 ) as PermissionKey[];
+
+/**
+ * The event types one source can emit — read from the same table the
+ * aggregation runs, so a source's types cannot drift from what it loads. The
+ * calendar push keys its records on the event type, and uses this to know
+ * which records a FAILED or CAPPED source may have left unread.
+ */
+export function calendarSourceTypes(name: CalendarSourceName): readonly CalendarEventType[] {
+    return CALENDAR_SOURCES.find((s) => s.name === name)?.types ?? [];
+}
 
 /** Bounded-concurrency map — preserves input order, at most `concurrency` in flight. */
 async function mapWithConcurrency<T, R>(
@@ -296,6 +330,11 @@ export async function getComplianceCalendarEvents(
     // contributes only its requested types.
     if (typeFilter) all = all.filter((e) => typeFilter.has(e.type));
     if (catFilter) all = all.filter((e) => catFilter.has(e.category));
+    if (input.ownedBy) {
+        const owner = input.ownedBy;
+        all = all.filter((e) => e.ownerUserId === owner);
+    }
+    if (input.locale) all = await retitled(all, input.locale);
 
     // Stable order: ascending by date — heatmap + month rendering consume
     // events chronologically.
@@ -342,6 +381,20 @@ export async function getComplianceCalendarEvents(
     };
 }
 
+
+/**
+ * Each event's title in `locale`: the type's label and the entity's own name,
+ * composed as the page composes it (`composeEventTitle`). An event with no
+ * structured name keeps its server title rather than rendering blank.
+ */
+async function retitled(events: CalendarEvent[], locale: Locale): Promise<CalendarEvent[]> {
+    const t = await workspaceTranslator(locale, 'workspaceText.calendarPush');
+    return events.map((e) =>
+        e.entityName && e.entityName.length > 0
+            ? { ...e, title: t('title', { type: t(`eventType.${e.type}`), name: e.entityName }) }
+            : e,
+    );
+}
 
 // ─── Lightweight badge query ─────────────────────────────────────────
 

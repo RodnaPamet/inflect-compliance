@@ -2172,6 +2172,12 @@ model UserCalendarConnection {
   /// Why it was revoked, for the settings surface. Never a raw provider body.
   revokedReason  String?
   lastPushedAt   DateTime?
+  /// Set when the person disconnected and some pushed events could not be
+  /// removed at once. The token is KEPT, the nightly run retries only the
+  /// deletes, and the connection is revoked when they are done or after
+  /// `DISCONNECT_RETRY_DAYS`, whichever comes first (#5937 step 2). NULL on a
+  /// live connection; cleared by a reconnect.
+  disconnectRequestedAt DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   tenant         Tenant    @relation(fields: [tenantId], references: [id])

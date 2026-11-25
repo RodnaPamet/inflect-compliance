@@ -5,9 +5,9 @@ import { badRequest } from '@/lib/errors/types';
 import { CALENDAR_BASELINE_PERMISSIONS } from '@/app-layer/usecases/compliance-calendar';
 import {
     listCalendarConnections,
-    revokeCalendarConnection,
     isCalendarProviderId,
 } from '@/app-layer/usecases/user-calendar-connection';
+import { disconnectCalendar } from '@/app-layer/usecases/calendar-push-person';
 
 /**
  * C7 — a user's own calendar connections: read them, and disconnect.
@@ -75,12 +75,17 @@ export const DELETE = withApiErrorHandling(
             if (!isCalendarProviderId(provider)) {
                 throw badRequest('A known calendar provider is required');
             }
-            // ORDERING NOTE for when C5's event mapping lands: the pushed
-            // remote events must be deleted BEFORE this call. Revoking first
-            // destroys the token, and the events are then stranded in the
-            // user's personal calendar with no credential left to remove them.
-            await revokeCalendarConnection(ctx, provider, 'disconnected by user');
-            return new Response(null, { status: 204 });
+            // The pushed events are removed FIRST and the token dropped AFTER
+            // (#5937 step 2). Revoking first would strand the events in the
+            // person's calendar with no credential left to remove them.
+            //
+            // 204: every pushed event is gone and the token with them.
+            // 202: some are still there; the connection keeps its token while
+            //      the nightly run removes them, for at most
+            //      DISCONNECT_RETRY_DAYS, then drops it anyway.
+            const result = await disconnectCalendar(ctx, provider);
+            if (result.status === 'disconnected') return new Response(null, { status: 204 });
+            return Response.json(result, { status: 202 });
         },
     ),
 );

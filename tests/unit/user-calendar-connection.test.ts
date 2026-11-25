@@ -32,6 +32,9 @@ const db = {
         findMany: jest.fn(),
         updateMany: jest.fn(),
     },
+    userCalendarEventMapping: {
+        groupBy: jest.fn(async () => [] as Array<{ provider: string; _count: { _all: number } }>),
+    },
 };
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: (_ctx: unknown, fn: (d: unknown) => unknown) => fn(db),
@@ -129,6 +132,23 @@ describe('the token is sealed by the manifest, under the tenant key', () => {
         db.userCalendarConnection.findMany.mockResolvedValue([row()]);
         const [summary] = await listCalendarConnections(ctx);
         expect(summary).not.toHaveProperty('tokenEncrypted');
+    });
+
+    it('the summary says how many pushed events are still recorded, per provider', async () => {
+        // After a disconnect, these are the events the person may have to
+        // delete by hand — the Connect control words it from this number.
+        db.userCalendarConnection.findMany.mockResolvedValue([
+            row({ revokedAt: new Date('2026-11-25'), disconnectRequestedAt: null }),
+            row({ id: 'conn-2', provider: 'outlook-calendar' }),
+        ]);
+        db.userCalendarEventMapping.groupBy.mockResolvedValueOnce([{ provider: 'google-calendar', _count: { _all: 3 } }]);
+        const summaries = await listCalendarConnections(ctx);
+        expect(summaries.map((s) => [s.provider, s.undeletedEventCount])).toEqual([
+            ['google-calendar', 3],
+            ['outlook-calendar', 0],
+        ]);
+        const where = (db.userCalendarEventMapping.groupBy.mock.calls[0] as unknown as [{ where: unknown }])[0].where;
+        expect(where).toEqual({ tenantId: 't1', userId: 'u1', NOT: { remoteEventId: '' } });
     });
 });
 
