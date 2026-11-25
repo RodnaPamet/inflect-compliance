@@ -8,6 +8,10 @@ import { getHarnessMatrix, getHarnessScannerKeysView } from '@/app-layer/usecase
 import { getHarnessEstateHealth } from '@/app-layer/usecases/agent-harness-estates';
 import { getThirdPartyAppInventory } from '@/app-layer/usecases/third-party-app-scans';
 import { getAgentRuleInventory } from '@/app-layer/usecases/agent-rule-scans';
+import { getProbeRunDetail, getProbeRunInventory } from '@/app-layer/usecases/probe-runs';
+import { getProberKeysView } from '@/app-layer/usecases/agent-prober-keys';
+import { getProbeApproverKeysView } from '@/app-layer/usecases/probe-approver-keys';
+import { NotFoundError } from '@/lib/errors/types';
 import { listAgentBehaviourAnomalies } from '@/app-layer/usecases/agent-behaviour-fingerprint-read';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
@@ -90,7 +94,7 @@ export default async function AgentReportsPage({
     searchParams,
 }: {
     params: Promise<{ tenantSlug: string }>;
-    searchParams?: Promise<{ tab?: string | string[] }>;
+    searchParams?: Promise<{ tab?: string | string[]; run?: string | string[] }>;
 }) {
     const resolved = await params;
     const ctx = await getTenantCtx(resolved);
@@ -122,7 +126,8 @@ export default async function AgentReportsPage({
     const canExport = Boolean(ctx.appPermissions?.evidence?.edit) && canInvestigate;
 
     // AFTER the gate, and only for the tab asked for.
-    const requested = ((await searchParams) ?? {}).tab;
+    const query = (await searchParams) ?? {};
+    const requested = query.tab;
     const requestedTab = Array.isArray(requested) ? requested[0] : requested;
     // The behaviour view (Morpheus 1.3) is read under the breaker's key, the
     // fingerprint route's, so a reader holding this page through the view key
@@ -215,6 +220,41 @@ export default async function AgentReportsPage({
                 tab="agent-surface"
                 tenantSlug={resolved.tenantSlug}
                 agentSurface={JSON.parse(JSON.stringify(agentSurface))}
+                canReviewProposals={canReviewProposals}
+                canCompose={canCompose}
+                canInvestigate={canInvestigate}
+                canSetOrphanPass={Boolean(ctx.appPermissions?.admin?.tenant_lifecycle)}
+                canExport={canExport}
+            />
+        );
+    }
+
+    // The probe runs (active flavour, step 8b): the same inventory gate. Each
+    // key card is read only for the key its register takes (`null` renders no
+    // card), and the run named by `?run=` is read on the server, so its
+    // excerpts reach the browser only for a holder of the register key.
+    if (requestedTab === 'probes') {
+        const runParam = Array.isArray(query.run) ? query.run[0] : query.run;
+        const [probes, proberKeys, approverKeys, detail] = await Promise.all([
+            getProbeRunInventory(ctx),
+            canInvestigate ? getProberKeysView(ctx) : Promise.resolve(null),
+            ctx.appPermissions?.admin?.tenant_lifecycle ? getProbeApproverKeysView(ctx) : Promise.resolve(null),
+            runParam
+                ? getProbeRunDetail(ctx, runParam).catch((err: unknown) => {
+                      // A run this tenant does not hold opens nothing.
+                      if (err instanceof NotFoundError) return null;
+                      throw err;
+                  })
+                : Promise.resolve(null),
+        ]);
+        return (
+            <ReportsClient
+                tab="probes"
+                tenantSlug={resolved.tenantSlug}
+                probes={JSON.parse(JSON.stringify(probes))}
+                proberKeys={JSON.parse(JSON.stringify(proberKeys))}
+                approverKeys={JSON.parse(JSON.stringify(approverKeys))}
+                detail={JSON.parse(JSON.stringify(detail))}
                 canReviewProposals={canReviewProposals}
                 canCompose={canCompose}
                 canInvestigate={canInvestigate}

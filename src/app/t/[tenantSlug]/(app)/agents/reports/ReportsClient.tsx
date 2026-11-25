@@ -17,6 +17,7 @@ import type { HarnessMatrixView, HarnessScannerKeysView } from '@/lib/agentic/ha
 import type { HarnessEstateHealthView } from '@/lib/agentic/harness-estate-health';
 import type { ThirdPartyAppInventoryView } from '@/lib/agentic/third-party-app-read-model';
 import type { AgentRuleInventoryView } from '@/lib/agentic/agent-rule-read-model';
+import type { ApproverKeysView, ProberKeysView, ProbeRunDetailView, ProbeRunInventoryView } from '@/lib/agentic/probe-run-read-model';
 import type { BehaviourReportView } from './behaviour/BehaviourTab';
 
 import { AgentsViewsMenu } from '../AgentsViewsMenu';
@@ -41,6 +42,11 @@ const IntegrationsTab = dynamic(() => import('./integrations/IntegrationsTab').t
 
 /** Loaded on demand for the same reason: the agent surface view is not the default tab either. */
 const AgentSurfaceTab = dynamic(() => import('./agent-surface/AgentSurfaceTab').then((m) => m.AgentSurfaceTab), {
+    loading: () => <SkeletonCard lines={4} />,
+});
+
+/** Loaded on demand for the same reason: the probes view is not the default tab either. */
+const ProbesTab = dynamic(() => import('./probes/ProbesTab').then((m) => m.ProbesTab), {
     loading: () => <SkeletonCard lines={4} />,
 });
 
@@ -195,15 +201,36 @@ export type IntegrationsTabProps = ReportsCommonProps & { tab: 'integrations'; i
 /** The agent-surface rules findings, read server-side by `getAgentRuleInventory`. */
 export type AgentSurfaceTabProps = ReportsCommonProps & { tab: 'agent-surface'; agentSurface: AgentRuleInventoryView };
 
+/**
+ * The probe runs (active flavour, step 8b), read server-side by
+ * `getProbeRunInventory`; the two key cards are `null` for a reader who may not
+ * manage that register, and `detail` is the run named by `?run=`.
+ */
+export type ProbesTabProps = ReportsCommonProps & {
+    tab: 'probes';
+    probes: ProbeRunInventoryView;
+    proberKeys: ProberKeysView | null;
+    approverKeys: ApproverKeysView | null;
+    detail: ProbeRunDetailView | null;
+};
+
 /** The behaviour-fingerprint anomalies (Morpheus 1.3), read by `listAgentBehaviourAnomalies` under the register key. */
 export type BehaviourTabProps = ReportsCommonProps & { tab: 'behaviour'; behaviour: BehaviourReportView };
 
-export function ReportsClient(props: PackTabProps | HarnessTabProps | IntegrationsTabProps | AgentSurfaceTabProps | BehaviourTabProps) {
+export function ReportsClient(
+    props: PackTabProps | HarnessTabProps | IntegrationsTabProps | AgentSurfaceTabProps | ProbesTabProps | BehaviourTabProps,
+) {
     const { tenantSlug, canReviewProposals, canCompose, canInvestigate, canExport, canSetOrphanPass = false } = props;
     const t = useTranslations('agents');
     const tenantHref = useTenantHref();
     const tab =
-        props.tab === 'harness' || props.tab === 'integrations' || props.tab === 'agent-surface' || props.tab === 'behaviour' ? props.tab : 'pack';
+        props.tab === 'harness' ||
+        props.tab === 'integrations' ||
+        props.tab === 'agent-surface' ||
+        props.tab === 'probes' ||
+        props.tab === 'behaviour'
+            ? props.tab
+            : 'pack';
 
     return (
         <DashboardLayout
@@ -270,6 +297,12 @@ export function ReportsClient(props: PackTabProps | HarnessTabProps | Integratio
                             href: tenantHref('/agents/reports?tab=agent-surface'),
                             id: 'reports-tab-agent-surface',
                         },
+                        {
+                            value: 'probes',
+                            label: t('reports.tabProbes'),
+                            href: tenantHref('/agents/reports?tab=probes'),
+                            id: 'reports-tab-probes',
+                        },
                         // The register key's view (the fingerprint route's
                         // key): not offered to a view-key reader, whom the
                         // page would answer with the pack.
@@ -292,6 +325,13 @@ export function ReportsClient(props: PackTabProps | HarnessTabProps | Integratio
                 <IntegrationsTab view={props.integrations} />
             ) : props.tab === 'agent-surface' ? (
                 <AgentSurfaceTab view={props.agentSurface} />
+            ) : props.tab === 'probes' ? (
+                <ProbesTab
+                    view={props.probes}
+                    proberKeys={props.proberKeys}
+                    approverKeys={props.approverKeys}
+                    detail={props.detail}
+                />
             ) : props.tab === 'harness' ? (
                 <HarnessTab
                     view={props.harness}

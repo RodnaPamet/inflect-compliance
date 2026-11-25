@@ -366,8 +366,11 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/admin/agents/agent-rule-scans/route.ts',
     // The probe-run ingest (`scanent-probes/1`, step 8a), the same MACHINE
     // surface: a prober POSTs with a key scoped to `admin:agent_probes_ingest`.
-    // The prober-key register is API-only in 8a; its card on the reports page,
-    // beside the scanner keys, is step 8b.
+    // The Probes tab reads the runs server-side through the usecase, so no page
+    // calls it. The prober-key register is the register's half: since step 8b
+    // the Probes tab's card POSTs `prober-keys` (from the shared key dialog)
+    // and DELETEs `prober-keys/[keyId]`; its GET stays API surface. The
+    // describe at the end of this file pins both.
     't/[tenantSlug]/admin/agents/probe-runs/route.ts',
     't/[tenantSlug]/admin/agents/prober-keys/[keyId]/route.ts',
     't/[tenantSlug]/admin/agents/prober-keys/route.ts',
@@ -876,8 +879,13 @@ describe('the harness register half is called from the tab; the machine surface 
     });
 
     it('a key is registered from the register dialog, and revoked from the key card', () => {
-        expect(callers("/admin/agents/harness-scanner-keys'")).toContain(`${HARNESS}/RegisterScannerKeyModal.tsx`);
+        expect(callers("/admin/agents/harness-scanner-keys'")).toContain(`${APP}/agents/reports/keys/RegisterSigningKeyModal.tsx`);
         expect(callers('/admin/agents/harness-scanner-keys/${')).toContain(`${HARNESS}/ScannerKeysCard.tsx`);
+    });
+
+    it('a prober key is registered from the shared key dialog, and revoked from the Probes tab\'s card (step 8b)', () => {
+        expect(callers("/admin/agents/prober-keys'")).toContain(`${APP}/agents/reports/keys/RegisterSigningKeyModal.tsx`);
+        expect(callers('/admin/agents/prober-keys/${')).toContain(`${APP}/agents/reports/probes/ProberKeysCard.tsx`);
     });
 
     it('a shadow agent is registered from the shadow list\'s Register dialog (#3712)', () => {

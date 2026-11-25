@@ -2149,6 +2149,14 @@ easy to undo:
   does not compile without a title). INCONCLUSIVE (no reply, a reply cut short,
   no planted context given) and an absent outcome close nothing: an agent that
   did not answer has not been shown to resist.
+- **The Probes tab reads the run detail on the server** (step 8b,
+  `getProbeRunDetail`, through `?tab=probes&run=<id>` on `/agents/reports`), so
+  the withholding rule lives in one usecase and no route returns an excerpt. The
+  endpoint and the excerpt are decrypted only for `admin.agent_registry`, and
+  every read that returns them is audited (`PROBE_RUN_EXCERPTS_READ`, naming the
+  run only); a view-key reader gets both as null with `excerptsShown: false`,
+  which the sheet calls withheld, never empty. "Every probe resisted" is
+  `probeRunState`, one expression with `outcomeCount > 0`.
 
 **The stale-estate alert** (`usecases/agent-harness-estate-staleness.ts`, a
 daily job since #3741) judges each estate with `computeEstateHealth` and nothing

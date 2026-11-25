@@ -58,7 +58,7 @@ import {
 import type { RequestContext } from '../types';
 import type { PrismaTx } from '@/lib/db-context';
 import { runInTenantContext } from '@/lib/db-context';
-import { badRequest, conflict, forbidden } from '@/lib/errors/types';
+import { badRequest, conflict, forbidden, notFound } from '@/lib/errors/types';
 import { mayReadAgentInventory } from '@/lib/permissions';
 import { logEvent } from '../events/audit';
 import { logger } from '@/lib/observability';
@@ -68,6 +68,13 @@ import { recordProbeRunOutcome } from '@/lib/observability/integration-metrics';
 import { FindingRepository } from '../repositories/FindingRepository';
 import { harnessKeyFingerprint, harnessSignedMessage } from '@/lib/agentic/harness-contract';
 import { firstSecretShapedMember } from '@/lib/agentic/harness-findings';
+import type {
+    ProbeFindingView,
+    ProbeRunDetailView,
+    ProbeRunInventoryView,
+    ProbeRunSection,
+    ProbeRunView,
+} from '@/lib/agentic/probe-run-read-model';
 
 /** `Finding.sourceKind` of every finding this ingest writes. */
 export const PROBE_FINDING_SOURCE_KIND = 'AGENT_PROBE';
@@ -554,4 +561,323 @@ export async function listProbeRuns(ctx: RequestContext, opts: { take?: number }
             },
         }),
     );
+}
+
+// ── The Probes tab (step 8b) ────────────────────────────────────────────────
+
+/** How many runs the tab reads, newest first; one more is read to know it was cut. */
+export const PROBE_RUN_WINDOW = 200;
+/** How many probers the tab gives a section. */
+const MAX_PROBE_SECTIONS = 20;
+/** How many runs one prober's section lists. */
+const RUNS_PER_PROBER = 10;
+/** How many open probe findings one section lists. */
+const FINDINGS_PER_PROBER = 100;
+/** How many open probe findings the tab reads across every prober. */
+const OPEN_PROBE_FINDING_CAP = 5_000;
+/** How many outcomes one run's detail returns. A run is the catalogue times its targets. */
+const DETAIL_OUTCOME_CAP = 1_000;
+/** How many targets one run's detail returns. */
+const DETAIL_TARGET_CAP = 500;
+
+const PROBE_SEVERITY_ORDER: Readonly<Record<string, number>> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+
+const RUN_VIEW_SELECT = {
+    id: true,
+    proberAgentId: true,
+    engagementId: true,
+    startedAt: true,
+    endedAt: true,
+    stopReason: true,
+    concluded: true,
+    targetCount: true,
+    targetsReached: true,
+    outcomeCount: true,
+    actedCount: true,
+    disclosedCount: true,
+    resistedCount: true,
+    inconclusiveCount: true,
+    findingCount: true,
+} as const;
+
+type RunRow = {
+    id: string;
+    proberAgentId: string;
+    engagementId: string;
+    startedAt: Date;
+    endedAt: Date;
+    stopReason: string | null;
+    concluded: boolean;
+    targetCount: number;
+    targetsReached: number;
+    outcomeCount: number;
+    actedCount: number;
+    disclosedCount: number;
+    resistedCount: number;
+    inconclusiveCount: number;
+    findingCount: number;
+};
+
+function runView(r: RunRow): ProbeRunView {
+    return {
+        runId: r.id,
+        engagementId: r.engagementId,
+        startedAt: r.startedAt.toISOString(),
+        endedAt: r.endedAt.toISOString(),
+        stopReason: r.stopReason,
+        concluded: r.concluded,
+        targetCount: r.targetCount,
+        targetsReached: r.targetsReached,
+        outcomeCount: r.outcomeCount,
+        actedCount: r.actedCount,
+        disclosedCount: r.disclosedCount,
+        resistedCount: r.resistedCount,
+        inconclusiveCount: r.inconclusiveCount,
+        findingCount: r.findingCount,
+    };
+}
+
+/** The prober a finding reference names: the part after its last `@`. */
+function proberOfRef(sourceRef: string): string | null {
+    const at = sourceRef.lastIndexOf('@');
+    return at < 0 ? null : sourceRef.slice(at + 1);
+}
+
+/**
+ * The Probes tab: each prober's recent runs, counts only, and its open
+ * findings named by probe, class, origin and tool. Read under the inventory
+ * rule, and never an endpoint or an excerpt: those are the detail read's, for
+ * a register-key holder.
+ *
+ * Never silent about what it did not read: a prober holding a live key with no
+ * run in the window is named, and a window, a section list or a finding list
+ * that was cut says so (zero is never complete).
+ */
+export async function getProbeRunInventory(ctx: RequestContext): Promise<ProbeRunInventoryView> {
+    assertMayRead(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const listed: RunRow[] = await db.probeRun.findMany({
+            where: { tenantId: ctx.tenantId },
+            orderBy: RUN_ORDER,
+            take: PROBE_RUN_WINDOW + 1,
+            select: RUN_VIEW_SELECT,
+        });
+        const runsTruncated = listed.length > PROBE_RUN_WINDOW;
+        const runs = listed.slice(0, PROBE_RUN_WINDOW);
+
+        const byProber = new Map<string, RunRow[]>();
+        for (const r of runs) {
+            const list = byProber.get(r.proberAgentId) ?? [];
+            list.push(r);
+            byProber.set(r.proberAgentId, list);
+        }
+        const shownProbers = [...byProber.keys()].slice(0, MAX_PROBE_SECTIONS);
+        const probersNotShown = byProber.size - shownProbers.length;
+
+        const keyHolders = await db.agentProberKey.findMany({
+            where: { tenantId: ctx.tenantId, revokedAt: null },
+            select: { agentId: true },
+            distinct: ['agentId'],
+            orderBy: { agentId: 'asc' },
+            take: MAX_KEYS,
+        });
+        const withoutRunIds = keyHolders.map((k) => k.agentId).filter((id) => !byProber.has(id));
+
+        const agentIds = [...new Set([...shownProbers, ...withoutRunIds])];
+        const agents = agentIds.length === 0
+            ? []
+            : await db.registeredAgent.findMany({
+                where: { tenantId: ctx.tenantId, id: { in: agentIds } },
+                select: { id: true, name: true, deletedAt: true },
+                take: agentIds.length,
+            });
+        const nameOf = new Map(agents.map((a) => [a.id, a.deletedAt === null ? a.name : null]));
+
+        const open = shownProbers.length === 0
+            ? []
+            : await db.finding.findMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    sourceKind: PROBE_FINDING_SOURCE_KIND,
+                    status: { not: 'CLOSED' },
+                    deletedAt: null,
+                },
+                select: { id: true, sourceRef: true, severity: true },
+                orderBy: { createdAt: 'asc' },
+                take: OPEN_PROBE_FINDING_CAP + 1,
+            });
+        const openTruncated = open.length > OPEN_PROBE_FINDING_CAP;
+        const openByProber = new Map<string, (typeof open)[number][]>();
+        for (const f of open.slice(0, OPEN_PROBE_FINDING_CAP)) {
+            const prober = f.sourceRef ? proberOfRef(f.sourceRef) : null;
+            if (!prober) continue;
+            const list = openByProber.get(prober) ?? [];
+            list.push(f);
+            openByProber.set(prober, list);
+        }
+        const shownOpen = shownProbers.map((p) => {
+            const list = [...(openByProber.get(p) ?? [])];
+            list.sort((a, b) => (PROBE_SEVERITY_ORDER[a.severity] ?? 9) - (PROBE_SEVERITY_ORDER[b.severity] ?? 9));
+            return list;
+        });
+        const refs = [...new Set(shownOpen.flatMap((list) => list.slice(0, FINDINGS_PER_PROBER).map((f) => f.sourceRef as string)))];
+        // The latest raising outcome of each reference names its probe, target and tool.
+        const raised = refs.length === 0
+            ? []
+            : await db.probeRunOutcome.findMany({
+                where: { tenantId: ctx.tenantId, sourceRef: { in: refs }, verdict: { in: ['ACTED', 'DISCLOSED'] } },
+                distinct: ['sourceRef'],
+                orderBy: [{ sourceRef: 'asc' }, { createdAt: 'desc' }],
+                select: {
+                    sourceRef: true,
+                    probeId: true,
+                    probeClass: true,
+                    tool: true,
+                    verdictReason: true,
+                    target: { select: { origin: true, kind: true } },
+                },
+                take: refs.length,
+            });
+        const raisedOf = new Map(raised.map((o) => [o.sourceRef, o]));
+
+        const sections: ProbeRunSection[] = shownProbers.map((prober, k) => {
+            const proberRuns = byProber.get(prober) ?? [];
+            const findings: ProbeFindingView[] = [];
+            for (const f of shownOpen[k].slice(0, FINDINGS_PER_PROBER)) {
+                const o = raisedOf.get(f.sourceRef as string);
+                if (!o) continue;
+                findings.push({
+                    findingId: f.id,
+                    severity: f.severity,
+                    probeId: o.probeId,
+                    probeClass: o.probeClass,
+                    origin: o.target.origin,
+                    kind: o.target.kind,
+                    tool: o.tool,
+                    verdictReason: o.verdictReason,
+                });
+            }
+            return {
+                proberAgentId: prober,
+                proberName: nameOf.get(prober) ?? null,
+                runs: proberRuns.slice(0, RUNS_PER_PROBER).map(runView),
+                runsTruncated: proberRuns.length > RUNS_PER_PROBER,
+                findings,
+                findingsTruncated: openTruncated || shownOpen[k].length > FINDINGS_PER_PROBER,
+            };
+        });
+
+        return {
+            sections,
+            probersWithoutRun: withoutRunIds.map((id) => ({ agentId: id, name: nameOf.get(id) ?? null })),
+            probersNotShown,
+            runsTruncated,
+        };
+    });
+}
+
+/**
+ * One run: its targets and outcomes. Under the inventory rule; the full
+ * endpoint and the excerpt of what the agent said are decrypted and returned
+ * only to a holder of `admin.agent_registry` (owner decision, 2026-11-25), and
+ * every read that returns them is audited, naming the run and nothing it read.
+ * To anybody else both are null and `excerptsShown` is false: WITHHELD, which
+ * the tab says, never empty.
+ */
+export async function getProbeRunDetail(ctx: RequestContext, runId: string): Promise<ProbeRunDetailView> {
+    assertMayRead(ctx);
+    const excerptsShown = Boolean(ctx.appPermissions.admin.agent_registry);
+    return runInTenantContext(ctx, async (db) => {
+        const run = await db.probeRun.findFirst({
+            where: { id: runId, tenantId: ctx.tenantId },
+            select: { ...RUN_VIEW_SELECT, catalogueProbes: true },
+        });
+        if (!run) throw notFound('Probe run not found');
+        const prober = await db.registeredAgent.findFirst({
+            where: { id: run.proberAgentId, tenantId: ctx.tenantId },
+            select: { name: true, deletedAt: true },
+        });
+        const targets = await db.probeRunTarget.findMany({
+            where: { tenantId: ctx.tenantId, runId: run.id },
+            orderBy: [{ origin: 'asc' }, { id: 'asc' }],
+            take: DETAIL_TARGET_CAP,
+            select: {
+                id: true,
+                origin: true,
+                kind: true,
+                reached: true,
+                targetReason: true,
+                ...(excerptsShown ? { endpoint: true } : {}),
+            },
+        });
+        const outcomes = await db.probeRunOutcome.findMany({
+            where: { tenantId: ctx.tenantId, runId: run.id },
+            orderBy: [{ targetId: 'asc' }, { probeId: 'asc' }, { id: 'asc' }],
+            take: DETAIL_OUTCOME_CAP + 1,
+            select: {
+                id: true,
+                targetId: true,
+                probeId: true,
+                probeClass: true,
+                verdict: true,
+                verdictReason: true,
+                tool: true,
+                sourceRef: true,
+                ...(excerptsShown ? { excerpt: true } : {}),
+            },
+        });
+        const outcomesTruncated = outcomes.length > DETAIL_OUTCOME_CAP;
+        const shownOutcomes = outcomes.slice(0, DETAIL_OUTCOME_CAP);
+        const refs = [...new Set(shownOutcomes.map((o) => o.sourceRef))];
+        const findings = refs.length === 0
+            ? []
+            : await db.finding.findMany({
+                where: { tenantId: ctx.tenantId, sourceKind: PROBE_FINDING_SOURCE_KIND, sourceRef: { in: refs }, deletedAt: null },
+                select: { id: true, sourceRef: true },
+                orderBy: { createdAt: 'asc' },
+                take: refs.length,
+            });
+        const findingOf = new Map<string, string>();
+        for (const f of findings) if (f.sourceRef && !findingOf.has(f.sourceRef)) findingOf.set(f.sourceRef, f.id);
+
+        if (excerptsShown && shownOutcomes.some((o) => 'excerpt' in o && o.excerpt)) {
+            await logEvent(db, ctx, {
+                action: 'PROBE_RUN_EXCERPTS_READ',
+                entityType: 'ProbeRun',
+                entityId: run.id,
+                details: `Read the agents' replies recorded by probe run ${run.id}`,
+                detailsJson: { category: 'access', entityName: 'ProbeRun', operation: 'read' },
+            });
+        }
+
+        return {
+            run: {
+                ...runView(run),
+                proberAgentId: run.proberAgentId,
+                proberName: prober && prober.deletedAt === null ? prober.name : null,
+                catalogueProbes: run.catalogueProbes,
+            },
+            targets: targets.map((t) => ({
+                targetId: t.id,
+                origin: t.origin,
+                kind: t.kind,
+                reached: t.reached,
+                reason: t.targetReason,
+                endpoint: excerptsShown && 'endpoint' in t ? (t.endpoint as string) : null,
+            })),
+            outcomes: shownOutcomes.map((o) => ({
+                outcomeId: o.id,
+                targetId: o.targetId,
+                probeId: o.probeId,
+                probeClass: o.probeClass,
+                verdict: o.verdict,
+                verdictReason: o.verdictReason,
+                tool: o.tool,
+                excerpt: excerptsShown && 'excerpt' in o ? ((o.excerpt as string | null) ?? null) : null,
+                findingId: findingOf.get(o.sourceRef) ?? null,
+            })),
+            outcomesTruncated,
+            excerptsShown,
+        };
+    });
 }
