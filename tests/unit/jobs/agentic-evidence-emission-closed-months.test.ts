@@ -14,12 +14,14 @@
  */
 const emitAgenticEvidence = jest.fn();
 const reconcileClosedHarnessPeriods = jest.fn();
+const reconcileClosedProbePeriods = jest.fn();
 const withdrawStaleAgenticEvidence = jest.fn();
 
 jest.mock('@/app-layer/usecases/agentic-evidence-emission', () => ({
     __esModule: true,
     emitAgenticEvidence: (...a: unknown[]) => emitAgenticEvidence(...a),
     reconcileClosedHarnessPeriods: (...a: unknown[]) => reconcileClosedHarnessPeriods(...a),
+    reconcileClosedProbePeriods: (...a: unknown[]) => reconcileClosedProbePeriods(...a),
     withdrawStaleAgenticEvidence: (...a: unknown[]) => withdrawStaleAgenticEvidence(...a),
 }));
 
@@ -47,6 +49,11 @@ beforeEach(() => {
         artefacts: [artefact('updated'), artefact('updated')],
         demotedEvidenceIds: ['ev-1'],
     });
+    reconcileClosedProbePeriods.mockResolvedValue({
+        periodLabels: ['2026-09'],
+        artefacts: [artefact('created')],
+        demotedEvidenceIds: ['ev-2'],
+    });
     withdrawStaleAgenticEvidence.mockResolvedValue([]);
 });
 
@@ -64,13 +71,18 @@ describe('the scheduled tick re-asserts closed harness months', () => {
 
         // `perAgentRefused`: a per-agent artefact refused for an agent retired
         // between the plan and the write (#3700) — counted, not dropped.
-        expect(result).toMatchObject({ unchanged: 1, updated: 2, demoted: 1, perAgentRefused: 1, skipped: 0 });
+        // The probe-run months are re-asserted the same way (step 8c), and counted.
+        expect(reconcileClosedProbePeriods).toHaveBeenCalledTimes(1);
+        const [, probeOptions] = reconcileClosedProbePeriods.mock.calls[0] as [unknown, { now: Date }];
+        expect(probeOptions.now).toBe(options.now);
+        expect(result).toMatchObject({ unchanged: 1, updated: 2, created: 1, demoted: 2, perAgentRefused: 1, skipped: 0 });
     });
 
     it('does not reconcile on a backfill of one named month', async () => {
         await runAgenticEvidenceEmission({ tenantId: 'tenant-1', asOf: '2026-07-15T00:00:00.000Z' }, 'run-2');
         expect(emitAgenticEvidence).toHaveBeenCalledWith(expect.anything(), { asOf: new Date('2026-07-15T00:00:00.000Z') });
         expect(reconcileClosedHarnessPeriods).not.toHaveBeenCalled();
+        expect(reconcileClosedProbePeriods).not.toHaveBeenCalled();
     });
 
     it('counts a tenant whose reconciliation fails as skipped, and does not stop the sweep', async () => {
