@@ -4,7 +4,7 @@
  * STAGE 3 — `eraseUser` EXECUTES. It is still NOT registered in
  * register-schedules / executor-registry and nothing in `src/` calls it, so
  * no scheduler and no route can reach it. Its one entry point is the
- * operator command `scripts/dsar-erase-user.ts` (#5802, owner decision
+ * operator command `scripts/dsar-erase.ts` (#5802, owner decision
  * 2026-11-25): operator-only, with no HTTP route.
  *
  * THE TWO GATES ON `AuditLog`, AND WHICH ONE THIS DEPENDS ON. There are two,
@@ -41,6 +41,13 @@ import {
 import type { ErasureRecordRow } from '@/lib/audit/erasure-record';
 import { ConflictError } from '@/lib/errors/types';
 import { readErasureWorkspaces } from './dsar-erasure-workspaces';
+import {
+    ErasureRequestRefusedError,
+    decideErasureRequest,
+    fulfilErasureRequestWithin,
+    readErasureRequest,
+} from './dsar-erasure-request';
+import type { ErasureRequestWriteDb } from './dsar-erasure-request';
 
 /** Hours that must elapse after VERIFIED before erasure may fire. */
 export const COOLING_OFF_HOURS = DSAR_COOLING_OFF_HOURS;
@@ -90,6 +97,12 @@ export interface ErasureDb {
             data: { userId: null };
         }): Promise<{ count: number }>;
     };
+    /**
+     * The DSAR register (#5940): the subject's requests lose the columns that
+     * could name them, and the request being fulfilled is completed. Written
+     * only by `fulfilErasureRequestWithin`.
+     */
+    dataSubjectRequest: ErasureRequestWriteDb['dataSubjectRequest'];
 }
 
 /**
@@ -137,6 +150,16 @@ export interface ErasureReceipt {
      * already-broken chain must not be laundered by an erasure.
      */
     auditRowsTolerated: number;
+    /**
+     * The DSAR register request this erasure completed (IN_PROGRESS →
+     * COMPLETED, #5940), or null when it was run without one.
+     */
+    requestCompleted: string | null;
+    /**
+     * The subject's register requests whose `fulfilmentNotes` and `exportUrl`
+     * were cleared. Their `userId` goes to NULL at the delete (FK SET NULL).
+     */
+    registerRequestsCleared: number;
 }
 
 /**
@@ -210,12 +233,18 @@ function isReferenceRefusal(error: unknown): boolean {
  *
  * ── WHAT THIS FUNCTION DOES NOT DO, ON PURPOSE ─────────────────────
  *
- * IT DOES NOT CHECK THE COOLING-OFF WINDOW. `coolingOffElapsed()` above is
- * the 24h gate and it belongs to whoever drives the DSAR workflow, not here:
- * this function receives a subject id and no `verifiedAt`, so a check it
- * could make would be one it skips whenever the caller omits the timestamp —
- * a gate that is off by default is worse than an absent one. A caller that
- * cannot show the window elapsed must not call this.
+ * THE REQUEST, WHEN ONE IS NAMED (#5940). With `options.request`, it re-reads
+ * that DSAR register row inside its own transaction and refuses
+ * (`ErasureRequestRefusedError`, nothing written) unless the row is this
+ * subject's ERASURE request, IN_PROGRESS, past its cooling-off, and clear of
+ * `evaluateDsarRejection` (`dsar-erasure-request.ts`). Then, before the
+ * delete, it completes that request and clears `fulfilmentNotes` and
+ * `exportUrl` on every request of the subject; the FK's SET NULL unlinks
+ * them at the delete. The operator command always names one. Without one —
+ * the tests, the probe — the cooling-off is the caller's: this function then
+ * has no `verifiedAt` to check, and a gate that is off whenever the caller
+ * omits the timestamp is worse than an absent one. The register columns are
+ * cleared either way.
  *
  * IT CHECKS THE SESSION'S ROLE ONLY THROUGH `planErasure` (#5595), which it
  * runs first and which refuses a view RLS has narrowed. That refusal is about
@@ -252,20 +281,26 @@ function isReferenceRefusal(error: unknown): boolean {
  */
 export async function eraseUser(
     userId: string,
-    options: { db?: ErasureDb; afterCommit?: ErasureAfterCommit } = {},
+    options: {
+        db?: ErasureDb;
+        afterCommit?: ErasureAfterCommit;
+        /** The DSAR register request this erasure fulfils (#5940). */
+        request?: { id: string; now?: Date };
+    } = {},
 ): Promise<ErasureReceipt> {
     if (!userId) {
         throw new Error('dsar-erasure: refusing to erase without a subject id.');
     }
+    const request = options.request ? { id: options.request.id, now: options.request.now ?? new Date() } : null;
     let erased: { receipt: ErasureReceipt; tenantIds: string[] };
     if (options.db) {
-        erased = await eraseUserWithin(options.db, userId);
+        erased = await eraseUserWithin(options.db, userId, request);
     } else {
         // Imported lazily so that merely importing this module does not build the
         // Prisma client: `coolingOffElapsed` and `planErasure` are both usable
         // without one, and their tests should not pay for a client they never use.
         const { runInGlobalContext } = await import('@/lib/db-context');
-        erased = await runInGlobalContext((db) => eraseUserWithin(db as unknown as ErasureDb, userId));
+        erased = await runInGlobalContext((db) => eraseUserWithin(db as unknown as ErasureDb, userId, request));
     }
 
     // ── AFTER THE TRANSACTION HAS COMMITTED (Step 5c, #4166) ───────────
@@ -303,7 +338,7 @@ export interface ErasureCleanupOutcome {
 
 /**
  * The default after-commit step, returning what it opened so the operator
- * command (`scripts/dsar-erase-user.ts`) can report it. Never throws.
+ * command (`scripts/dsar-erase.ts`) can report it. Never throws.
  */
 export async function deleteKeptManagedAgentsSessionsAfterErasure(
     tenantIds: readonly string[],
@@ -462,7 +497,11 @@ async function recordErasure(
 }
 
 /** The cascade itself, in one transaction. See {@link eraseUser}. */
-async function eraseUserWithin(db: ErasureDb, userId: string): Promise<{ receipt: ErasureReceipt; tenantIds: string[] }> {
+async function eraseUserWithin(
+    db: ErasureDb,
+    userId: string,
+    request: { id: string; now: Date } | null,
+): Promise<{ receipt: ErasureReceipt; tenantIds: string[] }> {
     return db.$transaction(async (tx) => {
         // ── POSITIVE CONTROL, same reasoning as planErasure's ──────
         //
@@ -512,6 +551,33 @@ async function eraseUserWithin(db: ErasureDb, userId: string): Promise<{ receipt
         // narrower rule. A `TenantMembership` row is a RESTRICT blocker, so
         // none survives to this point to be read instead.
         const workspaces = await readErasureWorkspaces(tx, userId);
+
+        // ── THE REQUEST, RE-READ HERE (#5940) ──────────────────────
+        //
+        // The command decided on its own read; this is the one that counts,
+        // in the transaction that completes the request. A request cancelled,
+        // rejected or re-pointed since the plan is refused with nothing
+        // written.
+        if (request) {
+            const row = await readErasureRequest(tx, request.id);
+            if (row && row.userId !== null && row.userId !== userId) {
+                throw new Error(
+                    `dsar-erasure: request ${JSON.stringify(request.id)} is not this subject's. Nothing was written.`,
+                );
+            }
+            const refusal = await decideErasureRequest(tx, row, request.now);
+            if (refusal) throw new ErasureRequestRefusedError(request.id, refusal);
+        }
+
+        // ── THE REGISTER: CLEARED, AND THE REQUEST COMPLETED (#5940) ──
+        //
+        // Before the delete, while the rows still carry `userId`. The FK's
+        // SET NULL then unlinks every request of the subject at the delete.
+        const register = await fulfilErasureRequestWithin(tx, {
+            userId,
+            requestId: request?.id ?? null,
+            now: request?.now ?? new Date(),
+        });
 
         // ── PSEUDONYMIZE ───────────────────────────────────────────
         //
@@ -607,6 +673,8 @@ async function eraseUserWithin(db: ErasureDb, userId: string): Promise<{ receipt
                 userDeleted: true,
                 erasureRecordIds,
                 auditRowsTolerated,
+                requestCompleted: register.requestCompleted ? request!.id : null,
+                registerRequestsCleared: register.requestsCleared,
             },
             // THE TENANTS WHERE THE SUBJECT HELD A MEMBERSHIP, for the
             // after-commit clean-up above: `readErasureWorkspaces`, read
@@ -634,7 +702,7 @@ async function eraseUserWithin(db: ErasureDb, userId: string): Promise<{ receipt
 // before anything irreversible is attempted, which references would refuse the
 // hard delete — and since #5595 `eraseUser` asks it first, inside its own
 // transaction, and refuses when it lists any blocker. Outside this module only
-// the operator command `scripts/dsar-erase-user.ts` calls them (#5802).
+// the operator command `scripts/dsar-erase.ts` calls them (#5802).
 //
 // WHY IT READS THE CATALOG RATHER THAN THE PRISMA SCHEMA. The question this
 // answers — "which FKs would refuse the Stage 2 hard-delete" — must be

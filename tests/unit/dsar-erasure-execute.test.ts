@@ -51,7 +51,7 @@ interface FakeDb {
     /** Every statement issued, in order, as `table:method`. */
     calls: string[];
     /** What SURVIVED the transaction. A rollback leaves this untouched. */
-    committed: { auditRowsNulled: number; userDeleted: boolean };
+    committed: { auditRowsNulled: number; userDeleted: boolean; requestCompleted: boolean };
     db: Parameters<typeof eraseUser>[1] extends { db?: infer D } ? D : never;
 }
 
@@ -86,6 +86,12 @@ function makeFakeDb(
          * membership records other writers emitted naming the subject.
          */
         membershipRecords?: Array<{ tenantId: string; action: string }>;
+        /**
+         * The DSAR register row the erasure's own re-read (#5940) returns, and
+         * how many workspaces the subject is the sole OWNER of.
+         */
+        requestRow?: Record<string, unknown> | null;
+        soleOwnerTenants?: number;
     } = {},
 ): FakeDb {
     const {
@@ -95,12 +101,14 @@ function makeFakeDb(
         rowsCommittedMidTransaction = 0,
         fks = [],
         membershipRecords = [],
+        requestRow = null,
+        soleOwnerTenants = 0,
     } = options;
     const updatedRows = auditRows + rowsCommittedMidTransaction;
 
     const calls: string[] = [];
-    const committed = { auditRowsNulled: 0, userDeleted: false };
-    let staged = { auditRowsNulled: 0, userDeleted: false };
+    const committed = { auditRowsNulled: 0, userDeleted: false, requestCompleted: false };
+    let staged = { auditRowsNulled: 0, userDeleted: false, requestCompleted: false };
 
     const delegates = {
         user: {
@@ -150,6 +158,21 @@ function makeFakeDb(
                 return { count: updatedRows };
             },
         },
+        // The DSAR register (#5940): the subject's requests are cleared, and
+        // the request being fulfilled is completed by a conditional claim.
+        dataSubjectRequest: {
+            async updateMany(args: { where: Record<string, unknown>; data: Record<string, unknown> }) {
+                calls.push(`dataSubjectRequest:updateMany:${JSON.stringify(args)}`);
+                if (args.data.status === 'COMPLETED') {
+                    const r = requestRow;
+                    const claims = !!r && r.id === args.where.id && r.userId === args.where.userId
+                        && r.type === args.where.type && r.status === args.where.status;
+                    staged.requestCompleted = claims;
+                    return { count: claims ? 1 : 0 };
+                }
+                return { count: requestRow ? 1 : 0 };
+            },
+        },
     };
 
     const db = {
@@ -184,6 +207,8 @@ function makeFakeDb(
                 ];
             }
             if (sql.includes('FROM "OrgAuditLog"') && sql.includes('ANY($2::text[])')) return [];
+            if (sql.includes('FROM "DataSubjectRequest"')) return requestRow && requestRow.id === values[0] ? [requestRow] : [];
+            if (sql.includes('FROM "TenantMembership" m')) return [{ n: soleOwnerTenants }];
             const counted = /count\(\*\)::bigint AS n FROM "([^"]+)" WHERE "([^"]+)"/.exec(sql);
             if (counted) {
                 const fk = fks.find((f) => f.table_name === counted[1] && f.column_name === counted[2]);
@@ -197,10 +222,11 @@ function makeFakeDb(
         },
         async $transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
             calls.push('$transaction');
-            staged = { auditRowsNulled: 0, userDeleted: false };
+            staged = { auditRowsNulled: 0, userDeleted: false, requestCompleted: false };
             const result = await fn(db);
             committed.auditRowsNulled = staged.auditRowsNulled;
             committed.userDeleted = staged.userDeleted;
+            committed.requestCompleted = staged.requestCompleted;
             return result;
         },
     };
@@ -268,6 +294,10 @@ describe('eraseUser — the cascade', () => {
             'user:findUnique',
             ...PLAN_READS,
             ...DISCOVERY_READS,
+            // #5940 — the register, before the delete while its rows still
+            // carry `userId`: the subject's requests cleared (no request
+            // named here, so nothing is completed).
+            'dataSubjectRequest:updateMany',
             'auditLog:findMany',
             'auditLog:updateMany',
             ...RAW_APPEND,
@@ -344,9 +374,13 @@ describe('eraseUser — the cascade', () => {
             // generated, so the shape is asserted rather than the values.
             erasureRecordIds: expect.arrayContaining([expect.any(String)]),
             auditRowsTolerated: 0,
+            // #5940 — no request named, so none completed; the register
+            // fake holds no request of the subject to clear.
+            requestCompleted: null,
+            registerRequestsCleared: 0,
         });
         expect(receipt.erasureRecordIds).toHaveLength(2);
-        expect(fake.committed).toEqual({ auditRowsNulled: 7, userDeleted: true });
+        expect(fake.committed).toEqual({ auditRowsNulled: 7, userDeleted: true, requestCompleted: false });
     });
 
     it('runs the whole cascade inside ONE transaction', async () => {
@@ -375,7 +409,7 @@ describe('eraseUser — the refusals', () => {
             /not visible to this connection/i,
         );
         expect(fake.calls).toEqual(['$transaction', 'user:findUnique']);
-        expect(fake.committed).toEqual({ auditRowsNulled: 0, userDeleted: false });
+        expect(fake.committed).toEqual({ auditRowsNulled: 0, userDeleted: false, requestCompleted: false });
     });
 
     it('rolls the pseudonymization BACK when a RESTRICT reference refuses the delete', async () => {
@@ -395,7 +429,7 @@ describe('eraseUser — the refusals', () => {
         // It ATTEMPTED the pseudonymization…
         expect(fake.calls.some((c) => c.startsWith('auditLog:updateMany'))).toBe(true);
         // …and nothing survived.
-        expect(fake.committed).toEqual({ auditRowsNulled: 0, userDeleted: false });
+        expect(fake.committed).toEqual({ auditRowsNulled: 0, userDeleted: false, requestCompleted: false });
     });
 
     it('sends the operator to planErasure rather than surfacing P2003', async () => {
@@ -447,7 +481,7 @@ describe('eraseUser — refuses UP FRONT when the plan has blockers (#5595)', ()
             }),
         ]);
         expect(NO_WRITES(fake.calls)).toEqual([]);
-        expect(fake.committed).toEqual({ auditRowsNulled: 0, userDeleted: false });
+        expect(fake.committed).toEqual({ auditRowsNulled: 0, userDeleted: false, requestCompleted: false });
     });
 
     it('refuses on a STALE SET NULL edge too — the database it is planning against may predate the migration', async () => {
@@ -485,7 +519,7 @@ describe('eraseUser — refuses UP FRONT when the plan has blockers (#5595)', ()
         });
         const receipt = await eraseUser(SUBJECT, { db: fake.db });
         expect(receipt.userDeleted).toBe(true);
-        expect(fake.committed).toEqual({ auditRowsNulled: 3, userDeleted: true });
+        expect(fake.committed).toEqual({ auditRowsNulled: 3, userDeleted: true, requestCompleted: false });
     });
 });
 
@@ -603,5 +637,68 @@ describe('eraseUser — the provider clean-up runs AFTER the commit, never insid
         const hook = jest.fn(async () => undefined);
         await expect(eraseUser(SUBJECT, { db: fake.db, afterCommit: hook })).rejects.toThrow(/refused by a reference/i);
         expect(hook).not.toHaveBeenCalled();
+    });
+});
+
+describe('eraseUser — the DSAR register request it fulfils (#5940)', () => {
+    const NOW = new Date('2026-11-25T12:00:00.000Z');
+    const REQUEST_ID = 'ckrequest0000000000000001';
+    const row = (overrides: Record<string, unknown> = {}) => ({
+        id: REQUEST_ID,
+        userId: SUBJECT,
+        type: 'ERASURE',
+        status: 'IN_PROGRESS',
+        verifiedAt: new Date(NOW.getTime() - 25 * 3_600_000),
+        completedAt: null,
+        ...overrides,
+    });
+    const argsOf = (call: string) => JSON.parse(call.slice('dataSubjectRequest:updateMany:'.length));
+
+    it('re-reads the request in its own transaction, clears the register and completes the request BEFORE the delete', async () => {
+        const fake = makeFakeDb({ requestRow: row() });
+        const receipt = await eraseUser(SUBJECT, { db: fake.db, request: { id: REQUEST_ID, now: NOW } });
+        expect(receipt.requestCompleted).toBe(REQUEST_ID);
+        expect(fake.committed.requestCompleted).toBe(true);
+        const writes = fake.calls.filter((c) => c.startsWith('dataSubjectRequest:updateMany'));
+        expect(writes).toHaveLength(2);
+        // Every request of the subject loses the two columns that could name them.
+        expect(argsOf(writes[0])).toEqual({ where: { userId: SUBJECT }, data: { fulfilmentNotes: null, exportUrl: null } });
+        // The request is completed by a claim on its exact expected state.
+        expect(argsOf(writes[1])).toEqual({
+            where: { id: REQUEST_ID, userId: SUBJECT, type: 'ERASURE', status: 'IN_PROGRESS' },
+            data: { status: 'COMPLETED', completedAt: NOW.toISOString() },
+        });
+        const order = fake.calls.map((c) => c.split(':').slice(0, 2).join(':'));
+        expect(order.lastIndexOf('dataSubjectRequest:updateMany')).toBeLessThan(order.indexOf('user:delete'));
+        // The request was read inside the transaction, after it opened.
+        const read = fake.calls.findIndex((c) => c.includes('DataSubjectRequest') && c.startsWith('$raw:$queryRawUnsafe'));
+        expect(read).toBeGreaterThan(fake.calls.indexOf('$transaction'));
+    });
+
+    it.each<[string, Record<string, unknown> | null, string]>([
+        ['still cooling off', row({ verifiedAt: new Date(NOW.getTime() - 3_600_000) }), 'COOLING_OFF'],
+        ['cancelled since the plan', row({ status: 'CANCELED' }), 'REQUEST_CANCELED'],
+        ['not started', row({ status: 'VERIFIED' }), 'NOT_IN_PROGRESS'],
+        ['gone', null, 'REQUEST_NOT_FOUND'],
+    ])('refuses a request %s, and writes nothing', async (_label, requestRow, reason) => {
+        const fake = makeFakeDb({ requestRow });
+        const err = await eraseUser(SUBJECT, { db: fake.db, request: { id: REQUEST_ID, now: NOW } }).catch((e: unknown) => e);
+        expect((err as { name?: string }).name).toBe('ErasureRequestRefusedError');
+        expect((err as { refusal?: { reason: string } }).refusal?.reason).toBe(reason);
+        expect(fake.calls.filter((c) => /^[a-zA-Z]+:(updateMany|delete)/.test(c))).toEqual([]);
+        expect(fake.committed).toEqual({ auditRowsNulled: 0, userDeleted: false, requestCompleted: false });
+    });
+
+    it('refuses a sole OWNER (LAST_OWNER), and writes nothing', async () => {
+        const fake = makeFakeDb({ requestRow: row(), soleOwnerTenants: 1 });
+        const err = await eraseUser(SUBJECT, { db: fake.db, request: { id: REQUEST_ID, now: NOW } }).catch((e: unknown) => e);
+        expect((err as { refusal?: { rejection?: string } }).refusal?.rejection).toBe('last_owner');
+        expect(fake.committed.userDeleted).toBe(false);
+    });
+
+    it('refuses a request that names another subject', async () => {
+        const fake = makeFakeDb({ requestRow: row({ userId: 'someone-else' }) });
+        await expect(eraseUser(SUBJECT, { db: fake.db, request: { id: REQUEST_ID, now: NOW } })).rejects.toThrow(/not this subject's/);
+        expect(fake.committed.userDeleted).toBe(false);
     });
 });

@@ -3,14 +3,24 @@
  *
  * This records and tracks GDPR Art. 15 (export) and Art. 17 (erasure)
  * requests. It does **not** fulfil them. `jobs/dsar-export.ts` throws
- * unconditionally and is unregistered (docs/dsar.md Stage 2).
- * `jobs/dsar-erasure.ts::eraseUser` was implemented by Stage 3 (#2287) and
- * DOES execute — but it is unregistered and nothing calls it, this module
- * included. Moving a request to COMPLETED here asserts that a human did the
- * work out-of-band — nothing in this module exports or erases anything, and
- * `exportUrl` is never written. Wiring erasure to this register is the
- * operator-entry-point decision #2287 deliberately left open; it needs an
- * answer to who may run it and with what audit record, not just a call.
+ * unconditionally and is unregistered (docs/dsar.md Stage 2). Moving an
+ * EXPORT request to COMPLETED here asserts that a human did the work
+ * out-of-band — nothing in this module exports or erases anything, and
+ * `exportUrl` is never written.
+ *
+ * ─── THE REGISTER HAS TWO WRITERS (#5940) ──────────────────────────────
+ *
+ * This module, for an admin inside a tenant; and
+ * `jobs/dsar-erasure-request.ts::fulfilErasureRequestWithin`, for the system,
+ * inside `eraseUser`'s transaction. An ERASURE request is fulfilled by the
+ * operator command (`scripts/dsar-erase.ts`), which takes the request id: an
+ * admin starts it here (VERIFIED → IN_PROGRESS) while the subject is still a
+ * member, stays its `handledById`, and the erasure completes it, clears its
+ * `fulfilmentNotes` and `exportUrl`, and the FK's SET NULL unlinks it. From
+ * then on no tenant can see the row: `scopedToTenantMembers()` and the RLS
+ * policy both read the subject's membership, and there is no subject. It is
+ * evidence in the database only (owner decision 2026-11-25).
+ * `tests/guards/dsar-register-writers.test.ts` holds the table to these two.
  *
  * ─── THE TENANT-SCOPING HAZARD (read before editing) ───────────────────
  *
@@ -81,7 +91,8 @@ export interface DsarRegisterRow {
     id: string;
     type: DataSubjectRequestType;
     status: DataSubjectRequestStatus;
-    subject: { id: string; email: string | null; name: string | null };
+    /** Null once the subject is erased (#5940). This module never lists such a row. */
+    subject: { id: string; email: string | null; name: string | null } | null;
     requestedAt: Date;
     verifiedAt: Date | null;
     completedAt: Date | null;
@@ -110,7 +121,7 @@ function toRow(r: RawRow): DsarRegisterRow {
         id: r.id,
         type: r.type,
         status: r.status,
-        subject: { id: r.user.id, email: r.user.email, name: r.user.name },
+        subject: r.user ? { id: r.user.id, email: r.user.email, name: r.user.name } : null,
         requestedAt: r.requestedAt,
         verifiedAt: r.verifiedAt,
         completedAt: r.completedAt,

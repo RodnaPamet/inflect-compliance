@@ -2295,8 +2295,14 @@ model TenantScimToken {
 /// + dsar-erasure.ts and docs/dsar.md for the multi-PR sequence).
 model DataSubjectRequest {
   id              String                   @id @default(cuid())
-  userId          String
-  user            User                     @relation(fields: [userId], references: [id])
+  /// The subject. NULL once they are erased (#5940): the FK is
+  /// `ON DELETE SET NULL ("userId")`, so the request survives as evidence
+  /// that it was handled and stops pointing at the person. `eraseUser`
+  /// nulls `fulfilmentNotes` and `exportUrl` in the same transaction. A
+  /// NULL row matches no tenant's RLS policy: it is evidence in the
+  /// database only.
+  userId          String?
+  user            User?                    @relation(fields: [userId], references: [id], onDelete: SetNull)
   type            DataSubjectRequestType
   status          DataSubjectRequestStatus @default(RECEIVED)
   requestedAt     DateTime                 @default(now())
