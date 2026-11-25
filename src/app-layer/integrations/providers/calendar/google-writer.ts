@@ -49,11 +49,12 @@ import {
     CalendarWriteError,
     createCalendarSend,
     isGoneStatus,
-    readEventId,
+    readEventBody,
     recreatedClientEventId,
     type CalendarAccessTokens,
     type CalendarHttpDeps,
 } from './calendar-http';
+import { allDayDateShape, observeCalendarVendor } from './vendor-observation';
 
 const EVENTS_URL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
 
@@ -74,15 +75,31 @@ export function createGoogleCalendarWriter(opts: {
     });
 
     async function insert(clientEventId: string, event: PushableEvent): Promise<{ remoteEventId: string }> {
-        const res = await send('POST', EVENTS_URL, {
-            ...googleEventBody(event),
-            id: clientEventId,
-            extendedProperties: { private: { [GOOGLE_MARKER_PROPERTY]: clientEventId } },
+        let res: Response;
+        try {
+            res = await send('POST', EVENTS_URL, {
+                ...googleEventBody(event),
+                id: clientEventId,
+                extendedProperties: { private: { [GOOGLE_MARKER_PROPERTY]: clientEventId } },
+            });
+        } catch (err) {
+            if (err instanceof IntegrationTerminalError) observeCalendarVendor({ operation: 'google.insert', status: err.status });
+            throw err;
+        }
+        if (!res.ok) {
+            observeCalendarVendor({ operation: 'google.insert', status: res.status, code: await googleErrorReason(res) });
+            // A previous attempt created it under this id and never recorded it.
+            if (res.status === 409) return { remoteEventId: clientEventId };
+            throw new CalendarWriteError('insert', res.status);
+        }
+        const { id, body } = await readEventBody(res);
+        observeCalendarVendor({
+            operation: 'google.insert',
+            status: res.status,
+            dateShape: allDayDateShape(allDaySpan(event.startsAt).date, body.start),
         });
-        // A previous attempt created it under this id and never recorded it.
-        if (res.status === 409) return { remoteEventId: clientEventId };
-        if (!res.ok) throw new CalendarWriteError('insert', res.status);
-        return { remoteEventId: await readEventId(res, 'insert') };
+        if (id === null) throw new CalendarWriteError('insert (no event id in the answer)', res.status);
+        return { remoteEventId: id };
     }
 
     return {
@@ -148,6 +165,18 @@ export function googleQuotaAsThrottle(inner: typeof fetch): typeof fetch {
         if (!reason) return res;
         return new Response(null, { status: 429, headers: res.headers });
     };
+}
+
+/** Google's machine reason (`error.errors[0].reason`, else `error.status`), never its message. */
+async function googleErrorReason(res: Response): Promise<string | null> {
+    try {
+        const body = (await res.clone().json()) as { error?: { errors?: Array<{ reason?: unknown }>; status?: unknown } };
+        const reason = body.error?.errors?.[0]?.reason;
+        if (typeof reason === 'string') return reason;
+        return typeof body.error?.status === 'string' ? body.error.status : null;
+    } catch {
+        return null;
+    }
 }
 
 async function quotaReason(res: Response): Promise<string | null> {

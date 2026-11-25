@@ -161,13 +161,23 @@ export function recreatedClientEventId(previousRemoteEventId: string): string {
     return createHash('sha256').update(`recreate:${previousRemoteEventId}`).digest('hex').slice(0, 40);
 }
 
+/**
+ * Read a provider's JSON answer once: its `id` (null when it has none) and the
+ * body, for a writer that also reads another field of it (the echoed start of
+ * an all-day event, Graph's `createdDateTime`). An unreadable body is `{}`.
+ */
+export async function readEventBody(res: Response): Promise<{ id: string | null; body: Record<string, unknown> }> {
+    const parsed = (await res.json().catch(() => null)) as unknown;
+    const body = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+    const id = typeof body.id === 'string' && body.id.length > 0 ? body.id : null;
+    return { id, body };
+}
+
 /** Read `{ id }` out of a provider's JSON answer, or refuse. */
 export async function readEventId(res: Response, operation: string): Promise<string> {
-    const body = (await res.json().catch(() => null)) as { id?: unknown } | null;
-    if (!body || typeof body.id !== 'string' || body.id.length === 0) {
-        throw new CalendarWriteError(`${operation} (no event id in the answer)`, res.status);
-    }
-    return body.id;
+    const { id } = await readEventBody(res);
+    if (id === null) throw new CalendarWriteError(`${operation} (no event id in the answer)`, res.status);
+    return id;
 }
 
 /** A resilient-layer 404 arrives THROWN; a 410 arrives as a response. Both mean gone. */

@@ -61,6 +61,17 @@ jest.mock('@/app-layer/integrations/providers/calendar/token', () => ({
     exchangeCalendarCode: (...a: unknown[]) => exchangeCalendarCode(...(a as [])),
 }));
 
+/** The `calendar.vendor_observation` lines the callback writes (#5957). */
+const observed: Array<Record<string, unknown>> = [];
+jest.mock('@/lib/observability', () => ({
+    ...jest.requireActual('@/lib/observability'),
+    createChildLogger: () => ({
+        info: (fields: Record<string, unknown>) => {
+            observed.push(fields);
+        },
+    }),
+}));
+
 import { POST as CONNECT } from '@/app/api/t/[tenantSlug]/calendar/connect/route';
 import { GET as CALLBACK } from '@/app/api/integrations/calendar/callback/route';
 import {
@@ -69,6 +80,7 @@ import {
     LEGACY_CALENDAR_STATE_COOKIE,
 } from '@/app-layer/integrations/providers/calendar/oauth-flow';
 import {
+    CalendarCodeExchangeError,
     CalendarNoRefreshTokenError,
     pkceChallengeFor,
 } from '@/app-layer/integrations/providers/calendar/token';
@@ -113,6 +125,7 @@ async function callback(query: Record<string, string>, cookieValue?: string) {
 beforeEach(() => {
     jest.clearAllMocks();
     ctxUserId = 'u1';
+    observed.length = 0;
 });
 
 describe('connect: PKCE on both providers, the verifier only in the sealed cookie', () => {
@@ -344,6 +357,61 @@ describe('callback: every failure redirects to its outcome, never a JSON error',
         recordCalendarConnectFailure.mockRejectedValueOnce(new Error('audit down'));
         const { location } = await callback({ state: f.state, error: 'access_denied' }, f.cookie);
         expectOutcome(location, 'connect_declined');
+    });
+
+    it('Outlook: a removed organisation grant that surfaces at the CODE EXCHANGE (AADSTS65001) → consent_required, not connect_failed', async () => {
+        // #5957: Entra may issue a code and refuse to exchange it. The
+        // exchange's refusal is now read, codes only.
+        const f = await bound('outlook-calendar');
+        exchangeCalendarCode.mockRejectedValueOnce(
+            new CalendarCodeExchangeError(400, { kind: 'CONSENT_REQUIRED', errorCode: 'invalid_grant', aadstsCode: 'AADSTS65001' }),
+        );
+        const { location } = await callback({ state: f.state, code: 'the-secret-code' }, f.cookie);
+        expectOutcome(location, 'consent_required');
+        expect(saveCalendarConnection).not.toHaveBeenCalled();
+        expect(recordCalendarConnectFailure).toHaveBeenCalledWith(expect.anything(), {
+            provider: 'outlook-calendar',
+            outcome: 'consent_required',
+            providerErrorCode: 'invalid_grant',
+        });
+        expect(observed).toEqual([{ provider: 'entra', operation: 'entra.exchange_error', status: 400, code: 'AADSTS65001' }]);
+    });
+
+    it.each([
+        [{ kind: 'OTHER', errorCode: 'invalid_grant', aadstsCode: 'AADSTS70008' }, 'AADSTS70008'],
+        [{ kind: 'APP_NOT_IN_DIRECTORY', errorCode: 'invalid_client', aadstsCode: null }, 'invalid_client'],
+        [null, null],
+    ] as const)('Outlook: any other exchange refusal (%j) stays connect_failed, and is observed', async (reading, code) => {
+        const f = await bound('outlook-calendar');
+        exchangeCalendarCode.mockRejectedValueOnce(new CalendarCodeExchangeError(401, reading));
+        const { location } = await callback({ state: f.state, code: 'c' }, f.cookie);
+        expectOutcome(location, 'connect_failed');
+        expect(observed).toEqual([{ provider: 'entra', operation: 'entra.exchange_error', status: 401, code }]);
+    });
+
+    it('Google: an exchange refusal is not read as Entra\'s, and writes no Entra observation', async () => {
+        const f = await bound('google-calendar');
+        exchangeCalendarCode.mockRejectedValueOnce(
+            new CalendarCodeExchangeError(400, { kind: 'CONSENT_REQUIRED', errorCode: 'invalid_grant', aadstsCode: 'AADSTS65001' }),
+        );
+        const { location } = await callback({ state: f.state, code: 'c' }, f.cookie);
+        expectOutcome(location, 'connect_failed');
+        expect(observed).toEqual([]);
+    });
+
+    it.each([
+        [{ error: 'consent_required' }, 'consent_required'],
+        [{ error: 'access_denied', error_description: 'AADSTS65004: User declined to consent. jane@x.test' }, 'AADSTS65004'],
+        [{ error: '<script>', error_description: 'jane@x.test' }, null],
+    ])('Outlook: the redirect error %j is observed as entra.personal_consent_error, code %s', async (q, code) => {
+        const f = await bound('outlook-calendar');
+        await callback({ state: f.state, ...q }, f.cookie);
+        expect(observed).toEqual([{ provider: 'entra', operation: 'entra.personal_consent_error', status: null, code }]);
+    });
+
+    it('an unbound flow writes no observation: a forged callback cannot add to the counts', async () => {
+        await callback({ error: 'access_denied', error_description: 'AADSTS65004: x' });
+        expect(observed).toEqual([]);
     });
 
 });

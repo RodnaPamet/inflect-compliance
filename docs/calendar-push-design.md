@@ -63,9 +63,13 @@ argues for a different model):
    other directories, and the user flow is sent to the authority recorded at
    consent (`TenantCalendarConsent.externalTenantId`). A single-tenant
    registration would make the consent page fail for every customer but one.
+   How the production registration is set is checked by section 0 of
+   [`runbooks/calendar-vendor-verification.md`](runbooks/calendar-vendor-verification.md).
 3. **`/adminconsent` grants everything the registration declares.** The
    calendar shares its app registration with Microsoft sign-in, so the grant
-   covers sign-in's permissions too (harmless: they are user-consentable), and
+   covers sign-in's permissions too (among them `GroupMember.Read.All`, which
+   sign-in requests for Entra's group overage and which needs an
+   administrator's consent anyway), and
    Microsoft documents that re-running it MAY revoke other tenant-wide grants
    for the same app. The consent card says so beside the button.
 4. **The admin-consent callback had the defects the user callback had before
@@ -78,7 +82,9 @@ Google classes as sensitive (not restricted, so no third-party security
 assessment): a verified domain and privacy policy, a scope justification and a
 demonstration video. Until verified, people see the "unverified app" screen
 and the app is capped at 100 external users. A customer's Google Workspace
-admin may also have to mark the app trusted in their API controls.
+admin may also have to mark the app trusted in their API controls. The drafts
+for the request are in
+[`runbooks/google-calendar-oauth-verification.md`](runbooks/google-calendar-oauth-verification.md).
 
 ## Current state (true today)
 
@@ -118,13 +124,16 @@ built `redirect_uri` from. The flow cookie is spent whatever happens.
 | `connect_declined` | The provider answered `error=access_denied` (for Microsoft, unless its AADSTS number says the organisation has not consented) |
 | `provider_error` | Any other provider error, or neither a code nor an error |
 | `consent_withdrawn` | Microsoft: the admin consent was withdrawn between connect and callback |
-| `consent_required` | Microsoft: Entra answered that the organisation has not consented — `error=consent_required`, or an `error_description` starting `AADSTS65001` or `AADSTS90094` |
+| `consent_required` | Microsoft: Entra answered that the organisation has not consented — on the redirect, `error=consent_required` or an `error_description` starting `AADSTS65001` or `AADSTS90094`; or at the code exchange, a refusal carrying either number (#5957) |
 | `no_refresh_token` | The exchange issued no refresh token |
 | `connect_failed` | No tenant context (signed out, not a member), or the exchange or the save failed |
 
 The set is `CALENDAR_CONNECT_OUTCOMES` in `usecases/user-calendar-connection.ts`.
 Nothing the provider sent is reflected: not its error code, not its
-`error_description`.
+`error_description`. A refused exchange's body is read for its codes only
+(`CalendarCodeExchangeError` in `token.ts`): the OAuth `error`, and the
+`AADSTS` number at the start of `error_description` or, failing that, the
+first of Entra's numeric `error_codes`.
 
 Failures after the tenant context resolves are audited as
 `CALENDAR_CONNECT_FAILED` (outcome, provider, and the provider's error code
@@ -462,7 +471,38 @@ is missing), which step 3 adds to the callback's set. The maps in
 `connect-copy.ts` are `Record`s over the server's types, so a value the server
 adds fails `tsc` until it is worded.
 
+### Vendor observations (#5957)
+
+Every vendor answer an open item below depends on writes one log line,
+`calendar.vendor_observation` (`integrations/providers/calendar/vendor-observation.ts`),
+through a child logger with no bindings, so it carries no request id, tenant or
+user. Its fields are exactly `provider`, `operation` (a closed list:
+`graph.insert`, `graph.insert_existing`, `graph.insert_duplicate`,
+`graph.duplicate_found`, `graph.duplicate_not_found`, `graph.patch`,
+`google.insert`, `entra.admin_consent_error`, `entra.personal_consent_error`,
+`entra.exchange_error`), `status` (the HTTP status, or null for a redirect),
+`code` (a machine code or `AADSTS` number, dropped unless code-shaped) and, on
+an insert, `dateShape` (`same_date`, `shifted_back`, `shifted_forward`,
+`unreadable`: where the start date the provider echoed lands against the one
+sent). A Graph create answered 2xx is `graph.insert_existing` when the event's
+`createdDateTime` is more than five minutes before the answer's `Date` header:
+Graph handed back an earlier event for a repeated `transactionId`. A delete
+writes nothing.
+
+The `VM check` workflow's `calendar-observations` check counts these lines in
+the app's and the worker's logs over 72 hours, per provider, operation,
+status, code and date shape, and prints nothing else of a line. The scenarios
+that produce them, and which row answers which item, are in
+[`runbooks/calendar-vendor-verification.md`](runbooks/calendar-vendor-verification.md).
+
 ## Roadmap (future direction)
+
+Each open item below is observed by a scenario of
+[`runbooks/calendar-vendor-verification.md`](runbooks/calendar-vendor-verification.md)
+and read from the `calendar-observations` VM check; Google's app verification
+has its drafts in
+[`runbooks/google-calendar-oauth-verification.md`](runbooks/google-calendar-oauth-verification.md).
+Issue #5957 tracks them.
 
 ### Step 2 — open items
 
@@ -474,14 +514,19 @@ Step 2 shipped (see "Push" and "Disconnect" above). What it could not settle:
   to a real mailbox and handles every plausible shape (an id → taken; `409` or
   a duplicate-coded `400` → looked up by our marker; anything else → a per-event
   failure retried next run). Which shape Graph returns is to be recorded
-  against a real mailbox, and the writer narrowed to it.
+  against a real mailbox (scenario c: a reconnect repeats every
+  `transactionId`; the crash form cannot be produced on purpose), and the
+  writer narrowed to it.
 - **Graph all-day events in UTC are unverified.** Events are created with
   `isAllDay` and midnight-to-midnight `UTC`. Whether Outlook shows them on the
   same date for a mailbox in another time zone has not been observed. Reading
   the mailbox's own zone needs `MailboxSettings.Read`, which is not requested.
+  Scenario e; the `dateShape` of `graph.insert` says whether Graph moved the
+  start, and the date Outlook shows is the answer.
 - **A Graph patch of an event the person deleted by hand is unverified.** With
   immutable ids the event may still resolve from Deleted Items, where a patch
-  would not put it back in the calendar.
+  would not put it back in the calendar. Scenario d: `graph.patch` `404` is
+  the design holding, `200` the bad case.
 - **No more frequent revoke-only sweep (owner decision 2026-11-25).** Removing
   events a person may no longer see could run more often than the daily push;
   the owner chose to keep one daily run, removals first under the per-person
@@ -500,10 +545,14 @@ settle:
   the directory). Which codes Entra actually sends — for an admin who cancels,
   a non-administrator at `/adminconsent`, a single-tenant registration, and a
   person whose organisation's grant was removed — is to be recorded against a
-  real directory, and the table narrowed to it.
+  real directory, and the table narrowed to it. Scenarios a and b2
+  (`entra.admin_consent_error`, `entra.personal_consent_error`). The
+  single-tenant case is read from the registration's setting, not run.
 - **A removed grant may surface at the code exchange, not the redirect.** With
   user consent allowed, Entra may show the person a consent prompt instead of
   an error; with it disallowed, it shows "Need admin approval" and may not
   redirect at all, or redirect as a decline. If Entra instead issues a code and
   refuses the exchange with `AADSTS65001`, the callback reports
-  `connect_failed`: the exchange's error body is not read.
+  `consent_required` since #5957 (it reported `connect_failed` while the
+  exchange's error body was not read). Which of these Entra does is scenario
+  b2 (`entra.exchange_error`).

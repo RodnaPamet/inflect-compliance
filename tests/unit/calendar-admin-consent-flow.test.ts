@@ -72,6 +72,17 @@ jest.mock('@/app-layer/usecases/tenant-calendar-consent', () => ({
     revokeAdminConsent: (...a: unknown[]) => revokeAdminConsent(...(a as [])),
 }));
 
+/** The `calendar.vendor_observation` lines the callback writes (#5957). */
+const observed: Array<Record<string, unknown>> = [];
+jest.mock('@/lib/observability', () => ({
+    ...jest.requireActual('@/lib/observability'),
+    createChildLogger: () => ({
+        info: (fields: Record<string, unknown>) => {
+            observed.push(fields);
+        },
+    }),
+}));
+
 let clientConfigured = true;
 jest.mock('@/app-layer/integrations/providers/calendar/token', () => ({
     ...jest.requireActual('@/app-layer/integrations/providers/calendar/token'),
@@ -145,6 +156,7 @@ const expectLanding = (location: URL | null, slug: string | null, outcome: strin
 beforeEach(() => {
     jest.clearAllMocks();
     logged.length = 0;
+    observed.length = 0;
     ctxUserId = 'admin-1';
     ctxMayManage = true;
     clientConfigured = true;
@@ -333,6 +345,20 @@ describe('callback: Entra\'s answers map to their own outcomes, from codes only'
         expect(recorded).not.toContain('jane');
         expect(recorded).not.toContain('Contoso');
         expect(recorded).not.toContain('Trace');
+        // One observation, its code the AADSTS number when Entra sent one, else
+        // the OAuth code (#5957) — and nothing of the description.
+        expect(observed).toEqual([{ provider: 'entra', operation: 'entra.admin_consent_error', status: null, code: aadsts ?? error }]);
+    });
+
+    it('a grant writes no error observation', async () => {
+        const f = await bound();
+        await callback({ state: f.state, admin_consent: 'True', tenant: DIRECTORY }, f.cookie);
+        expect(observed).toEqual([]);
+    });
+
+    it('an unbound flow writes no observation: a forged callback cannot add to the counts', async () => {
+        await callback({ error: 'access_denied', error_description: 'AADSTS65004: x' });
+        expect(observed).toEqual([]);
     });
 
     it('an error code that is not OAuth-shaped is not recorded verbatim', async () => {

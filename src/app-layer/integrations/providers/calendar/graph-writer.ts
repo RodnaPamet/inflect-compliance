@@ -31,7 +31,11 @@
  *                               failure, retried by the next run.
  *
  * Which of these Graph actually answers is an OPEN item of #5937, to be
- * recorded against a real mailbox; see the design note.
+ * recorded against a real mailbox; see the design note. Every answer is
+ * written as a `calendar.vendor_observation` line (`vendor-observation.ts`),
+ * and a 2xx whose event Graph created EARLIER than the request is told apart
+ * from a new one (`graph.insert_existing`), so the owner's run of
+ * `docs/runbooks/calendar-vendor-verification.md` settles it from counts.
  *
  * ═══ THE OTHER ANSWERS ═══
  *
@@ -60,11 +64,12 @@ import {
     CalendarWriteError,
     createCalendarSend,
     isGoneStatus,
-    readEventId,
+    readEventBody,
     recreatedClientEventId,
     type CalendarAccessTokens,
     type CalendarHttpDeps,
 } from './calendar-http';
+import { allDayDateShape, createdBeforeAnswer, observeCalendarVendor } from './vendor-observation';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 const EVENTS_URL = `${GRAPH}/me/events`;
@@ -87,17 +92,39 @@ export function createGraphCalendarWriter(opts: {
     });
 
     async function insert(clientEventId: string, event: PushableEvent): Promise<{ remoteEventId: string }> {
-        const res = await send('POST', EVENTS_URL, {
-            ...graphEventBody(event),
-            transactionId: clientEventId,
-            singleValueExtendedProperties: [{ id: GRAPH_MARKER_PROPERTY_ID, value: clientEventId }],
-        });
-        if (res.ok) return { remoteEventId: await readEventId(res, 'insert') };
-        if (res.status === 409 || (res.status === 400 && (await namesDuplicate(res)))) {
+        let res: Response;
+        try {
+            res = await send('POST', EVENTS_URL, {
+                ...graphEventBody(event),
+                transactionId: clientEventId,
+                singleValueExtendedProperties: [{ id: GRAPH_MARKER_PROPERTY_ID, value: clientEventId }],
+            });
+        } catch (err) {
+            if (err instanceof IntegrationTerminalError) observeCalendarVendor({ operation: 'graph.insert', status: err.status });
+            throw err;
+        }
+        if (res.ok) {
+            const { id, body } = await readEventBody(res);
+            observeCalendarVendor({
+                // A 2xx answer to a REPEATED transactionId is indistinguishable
+                // from a new event by its status; its age tells them apart.
+                operation: createdBeforeAnswer(body.createdDateTime, res.headers.get('date'))
+                    ? 'graph.insert_existing'
+                    : 'graph.insert',
+                status: res.status,
+                dateShape: allDayDateShape(allDaySpan(event.startsAt).date, body.start),
+            });
+            if (id === null) throw new CalendarWriteError('insert (no event id in the answer)', res.status);
+            return { remoteEventId: id };
+        }
+        const code = await graphErrorCode(res);
+        if (res.status === 409 || (res.status === 400 && namesDuplicate(code))) {
+            observeCalendarVendor({ operation: 'graph.insert_duplicate', status: res.status, code });
             const found = await findByClientEventId(clientEventId);
             if (found) return { remoteEventId: found };
             throw new CalendarWriteError('insert (duplicate not found)', res.status);
         }
+        observeCalendarVendor({ operation: 'graph.insert', status: res.status, code });
         throw new CalendarWriteError('insert', res.status);
     }
 
@@ -110,10 +137,15 @@ export function createGraphCalendarWriter(opts: {
             ` and ep/value eq ${literal(clientEventId)})`;
         const url = `${EVENTS_URL}?$filter=${encodeURIComponent(filter)}&$select=id&$top=1`;
         const res = await send('GET', url);
-        if (!res.ok) return null;
+        if (!res.ok) {
+            observeCalendarVendor({ operation: 'graph.duplicate_not_found', status: res.status, code: await graphErrorCode(res) });
+            return null;
+        }
         const body = (await res.json().catch(() => null)) as { value?: Array<{ id?: unknown }> } | null;
         const id = body?.value?.[0]?.id;
-        return typeof id === 'string' && id.length > 0 ? id : null;
+        const found = typeof id === 'string' && id.length > 0 ? id : null;
+        observeCalendarVendor({ operation: found ? 'graph.duplicate_found' : 'graph.duplicate_not_found', status: res.status });
+        return found;
     }
 
     return {
@@ -124,11 +156,17 @@ export function createGraphCalendarWriter(opts: {
             try {
                 res = await send('PATCH', eventUrl(remoteEventId), graphEventBody(event));
             } catch (err) {
+                // A 404 arrives THROWN by the resilient layer, with no body.
+                if (err instanceof IntegrationTerminalError) observeCalendarVendor({ operation: 'graph.patch', status: err.status });
                 if (err instanceof IntegrationTerminalError && isGoneStatus(err.status)) {
                     return insert(recreatedClientEventId(remoteEventId), event);
                 }
                 throw err;
             }
+            // Every answer, a 2xx included: for an event the person deleted by
+            // hand, a 2xx is the open item's bad case (the id still resolves in
+            // Deleted Items, and the patch does not put it back).
+            observeCalendarVendor({ operation: 'graph.patch', status: res.status, code: res.ok ? null : await graphErrorCode(res) });
             if (isGoneStatus(res.status)) return insert(recreatedClientEventId(remoteEventId), event);
             if (!res.ok) throw new CalendarWriteError('update', res.status);
             return { remoteEventId };
@@ -166,13 +204,18 @@ export function graphEventBody(event: PushableEvent): Record<string, unknown> {
     };
 }
 
-/** Does a 400 say "duplicate"? Read from Graph's error CODE only, never its message. */
-async function namesDuplicate(res: Response): Promise<boolean> {
+/** Graph's error CODE (`error.code`), never its message; null when absent. */
+async function graphErrorCode(res: Response): Promise<string | null> {
     try {
         const body = (await res.clone().json()) as { error?: { code?: unknown } };
         const code = body.error?.code;
-        return typeof code === 'string' && /duplicate|transactionid/i.test(code);
+        return typeof code === 'string' ? code : null;
     } catch {
-        return false;
+        return null;
     }
+}
+
+/** Does a 400's code say "duplicate"? Read from Graph's error CODE only. */
+function namesDuplicate(code: string | null): boolean {
+    return code !== null && /duplicate|transactionid/i.test(code);
 }

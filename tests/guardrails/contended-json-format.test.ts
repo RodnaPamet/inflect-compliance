@@ -327,7 +327,15 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // ('rs' < 'ru') and before `docs/runbooks/enabling-the-flue-engine.md`
         // ('ds' < 'en'), +3/-0 against main; recomputed with this guard's own
         // `keyOrder` over the file merged with #5937's addition.
-        keyOrderSha: 'd1837753fca4cf48d7dc9c37166c645bd374bf8fd034f58d0e36c80af9fa78af',
+        //
+        // Moved 2026-11-25 by two sorted ADDITIONS, the calendar vendor
+        // runbooks (#5957): docs/runbooks/calendar-vendor-verification.md,
+        // after `docs/rsc-guidelines.md` and before `docs/runbooks/dsar-erasure.md`
+        // ('ca' < 'ds'), and docs/runbooks/google-calendar-oauth-verification.md,
+        // after `failed-migration-recovery.md` and before `joule-byoa.md`
+        // ('f' < 'g' < 'j'). Two textual inserts, +6/-0 against main; the
+        // previous digest matched main's file before the inserts.
+        keyOrderSha: '43ca7a1c08df5630f736b09cd2fd7480b64eea70c43fd596d8a1e14e5fffaf1b',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in

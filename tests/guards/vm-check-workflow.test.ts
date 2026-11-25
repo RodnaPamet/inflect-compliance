@@ -25,6 +25,10 @@ import * as os from 'os';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { codeOf } from '../helpers/source-blocks';
+import {
+    ALL_DAY_DATE_SHAPES,
+    CALENDAR_VENDOR_OPERATIONS,
+} from '@/app-layer/integrations/providers/calendar/vendor-observation';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -600,5 +604,112 @@ esac
         expect(r.status).toBe(0);
         expect(r.stdout.split('\n')).toContain('| Supplied by | neither (DIRECT_DATABASE_URL and DATABASE_URL are both unset) |');
         expect(r.calls).not.toContain(' psql ');
+    });
+});
+
+/**
+ * calendar-observations (#5957): counts of the calendar push's
+ * `calendar.vendor_observation` lines, so the owner's real-account steps are
+ * read from a table and nobody reads a raw log. The log is public, so the
+ * counter prints five values per row, each held to a vocabulary or a shape,
+ * and nothing else of any line.
+ */
+describe('calendar-observations', () => {
+    const SENTINEL = 'SENTINELVALUE';
+    const line = (fields: Record<string, unknown>) =>
+        JSON.stringify({ level: 30, time: 1764064800000, pid: 7, hostname: `host-${SENTINEL}`, ...fields, msg: 'calendar.vendor_observation' });
+    const APP_LINES = [
+        line({ provider: 'entra', operation: 'entra.admin_consent_error', status: null, code: 'AADSTS65004' }),
+        line({ provider: 'entra', operation: 'entra.admin_consent_error', status: null, code: 'AADSTS65004' }),
+        line({ provider: 'entra', operation: 'entra.exchange_error', status: 400, code: 'AADSTS65001' }),
+        // Hostile or malformed values: each must print as - or (other).
+        line({ provider: 'entra', operation: 'entra.personal_consent_error', status: null, code: `jane@contoso.example ${SENTINEL}`, tenantId: SENTINEL }),
+        line({ provider: SENTINEL.toLowerCase(), operation: `graph.${SENTINEL.toLowerCase()}`, status: 4000, code: `9${SENTINEL}`, dateShape: '2026-09-01' }),
+        line({ provider: 'graph', operation: 'graph.insert', status: 201, code: `A${'x'.repeat(64)}`, dateShape: 'same_date' }),
+        // Not an observation at all: never read.
+        JSON.stringify({ level: 50, msg: `calendar push failed for ${SENTINEL}` }),
+    ];
+    const WORKER_LINES = [
+        line({ provider: 'graph', operation: 'graph.insert', status: 201, code: null, dateShape: 'same_date' }),
+        line({ provider: 'graph', operation: 'graph.insert', status: 201, code: null, dateShape: 'shifted_back' }),
+        line({ provider: 'graph', operation: 'graph.insert_duplicate', status: 409, code: 'ErrorItemAlreadyExists' }),
+        line({ provider: 'graph', operation: 'graph.patch', status: 404, code: null }),
+    ];
+    const FAKE_DOCKER = `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$FAKE_ROOT/calls"
+case "$1" in
+ps) echo "id-\${3##*=}" ;;
+inspect) echo 2026-11-25T10:00:00.123456Z ;;
+logs) f="$FAKE_ROOT/\${*: -1}.log"; [ -f "$f" ] && cat "$f" ;;
+*) echo "fake docker: $1" >&2; exit 2 ;;
+esac
+`;
+
+    function run(logs: { app: string[]; worker: string[] }) {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vm-check-cal-'));
+        const bin = path.join(root, 'bin');
+        fs.mkdirSync(bin);
+        fs.writeFileSync(path.join(bin, 'docker'), FAKE_DOCKER, { mode: 0o755 });
+        fs.writeFileSync(path.join(root, 'id-app.log'), logs.app.join('\n') + '\n');
+        fs.writeFileSync(path.join(root, 'id-worker.log'), logs.worker.join('\n') + '\n');
+        const p = spawnSync('bash', [path.join(REPO_ROOT, 'deploy/vm-check/remote.sh'), 'calendar-observations'], {
+            env: { NODE_ENV: 'test', PATH: `${bin}:/usr/bin:/bin`, FAKE_ROOT: root },
+            encoding: 'utf8',
+        });
+        const calls = fs.existsSync(path.join(root, 'calls')) ? fs.readFileSync(path.join(root, 'calls'), 'utf8') : '';
+        fs.rmSync(root, { recursive: true, force: true });
+        return { status: p.status, stdout: p.stdout, stderr: p.stderr, calls };
+    }
+
+    const ok = run({ app: APP_LINES, worker: WORKER_LINES });
+    const rows = ok.stdout.split('\n').filter((l) => /^\| (app|worker) \|/.test(l));
+
+    it('counts each combination of provider, operation, status, code and date shape, per container', () => {
+        expect(ok.status).toBe(0);
+        expect(rows.sort()).toEqual(
+            [
+                '| app | entra | entra.admin_consent_error | - | AADSTS65004 | - | 2 |',
+                '| app | entra | entra.exchange_error | 400 | AADSTS65001 | - | 1 |',
+                '| app | entra | entra.personal_consent_error | - | - | - | 1 |',
+                '| app | (other) | (other) | - | - | - | 1 |',
+                '| app | graph | graph.insert | 201 | - | same_date | 1 |',
+                '| worker | graph | graph.insert | 201 | - | same_date | 1 |',
+                '| worker | graph | graph.insert | 201 | - | shifted_back | 1 |',
+                '| worker | graph | graph.insert_duplicate | 409 | ErrorItemAlreadyExists | - | 1 |',
+                '| worker | graph | graph.patch | 404 | - | - | 1 |',
+            ].sort(),
+        );
+        expect(ok.stdout.split('\n')).toContain('Total: 10');
+    });
+
+    it('prints nothing of a line but the five counted values', () => {
+        expect(ok.stdout).not.toContain(SENTINEL);
+        expect(ok.stdout.toLowerCase()).not.toContain(SENTINEL.toLowerCase());
+        expect(ok.stdout).not.toMatch(/jane|contoso|hostname|tenantId|2026-09-01|"/);
+        // Every cell of every row is from a vocabulary or a shape.
+        const cells = rows.flatMap((r) => r.split('|').slice(1, -1).map((c) => c.trim()));
+        expect(cells.filter((c) => !/^(app|worker|graph|google|entra|\(other\)|-|[a-z]+\.[a-z_]+|\d{1,3}|[A-Za-z][A-Za-z0-9_.-]{0,63}|same_date|shifted_back|shifted_forward|unreadable)$/.test(c))).toEqual([]);
+    });
+
+    it('reads 72 hours of both the app’s and the worker’s logs, and says where each log starts', () => {
+        expect(ok.calls.split('\n').filter((l) => l.startsWith('logs '))).toEqual(['logs --since 72h id-app', 'logs --since 72h id-worker']);
+        expect(ok.stdout).toContain('- app: logs since 2026-11-25T10:00:00.123456Z (container start)');
+        expect(ok.stdout).toContain('- worker: logs since 2026-11-25T10:00:00.123456Z (container start)');
+    });
+
+    it('an empty window says it is not a vendor’s answer', () => {
+        const r = run({ app: [], worker: [] });
+        expect(r.status).toBe(0);
+        expect(r.stdout.split('\n')).toContain('Total: 0');
+        expect(r.stdout).toContain('That is not an answer from a vendor');
+    });
+
+    it('its vocabularies are the TypeScript’s own', () => {
+        const program = read('deploy/vm-check/remote.sh').split("CALENDAR_OBSERVATION_COUNTER='")[1].split("\n'\n")[0];
+        const lists = [...program.matchAll(/split\("([^"]+)", [a-z]+, " "\)/g)].map((m) => m[1].split(' '));
+        expect(lists).toHaveLength(3);
+        expect([...lists[0]].sort()).toEqual([...CALENDAR_VENDOR_OPERATIONS].sort());
+        expect([...lists[1]].sort()).toEqual([...new Set(CALENDAR_VENDOR_OPERATIONS.map((o) => o.split('.')[0]))].sort());
+        expect([...lists[2]].sort()).toEqual([...ALL_DAY_DATE_SHAPES].sort());
     });
 });

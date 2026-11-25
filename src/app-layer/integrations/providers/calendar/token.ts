@@ -43,6 +43,8 @@
 import { createHash, randomBytes } from 'crypto';
 import { env } from '@/env';
 import { fetchOAuthToken } from '../../oauth-token-fetch';
+import { IntegrationTerminalError, resilientFetch } from '../../http-resilience';
+import { readEntraError, type EntraErrorReading } from './entra-errors';
 
 /**
  * Minimum scopes. Explicit constants rather than inline strings so the grant is
@@ -159,6 +161,59 @@ export class CalendarNoRefreshTokenError extends Error {
     constructor() {
         super('Calendar consent did not return a refresh token — reconnect and grant offline access');
         this.name = 'CalendarNoRefreshTokenError';
+    }
+}
+
+/**
+ * The provider refused the authorization-code exchange.
+ *
+ * Carries what the token endpoint's answer SAYS, read the way every Entra
+ * answer is read (`readEntraError`): the OAuth `error` code and the AADSTS
+ * number at the start of `error_description` — or, when the description has
+ * none, the first of Entra's numeric `error_codes` — and nothing else of the
+ * body. Before #5957 the body was not read at all, so an organisation grant
+ * removed in the Entra portal that surfaced HERE (`AADSTS65001` on the
+ * exchange) reported `connect_failed` instead of `consent_required`.
+ *
+ * `status` is the HTTP status (null when the request never got an answer);
+ * `reading` is null when the answer had no readable error body. The message
+ * names the status only: a body can echo the code back.
+ */
+export class CalendarCodeExchangeError extends Error {
+    readonly status: number | null;
+    readonly reading: EntraErrorReading | null;
+
+    constructor(status: number | null, reading: EntraErrorReading | null) {
+        super(`Calendar code exchange refused (HTTP ${status ?? 'none'})`);
+        this.name = 'CalendarCodeExchangeError';
+        this.status = status;
+        this.reading = reading;
+    }
+}
+
+/** An Entra numeric error code as Entra lists it in `error_codes`. */
+const ENTRA_ERROR_NUMBER = /^\d{4,7}$/;
+
+/** Read a token endpoint's error body: codes only, never prose. Never throws. */
+async function readTokenRefusal(res: Response): Promise<EntraErrorReading | null> {
+    try {
+        const contentType = res.headers?.get?.('content-type') ?? '';
+        if (!contentType.toLowerCase().includes('json')) return null;
+        const body = (await res.json()) as { error?: unknown; error_description?: unknown; error_codes?: unknown };
+        const reading = readEntraError(
+            typeof body.error === 'string' ? body.error : null,
+            typeof body.error_description === 'string' ? body.error_description : null,
+            'user',
+        );
+        if (reading.aadstsCode === null && Array.isArray(body.error_codes)) {
+            const first = String(body.error_codes[0] ?? '');
+            if (ENTRA_ERROR_NUMBER.test(first)) {
+                return readEntraError(reading.errorCode, `AADSTS${first}`, 'user');
+            }
+        }
+        return reading;
+    } catch {
+        return null;
     }
 }
 
@@ -332,18 +387,37 @@ export async function exchangeCalendarCode(
         throw new Error('Calendar code exchange requires the PKCE code verifier');
     }
     const nowMs = deps.now ? deps.now() : Date.now();
-    const data = await postToken(
-        tokenEndpoint(opts.provider, opts.env, opts.entraTenantId),
-        {
-            ...clientCredentials(opts.provider, opts.env),
-            grant_type: 'authorization_code',
-            code: opts.code,
-            redirect_uri: opts.redirectUri,
-            code_verifier: opts.codeVerifier,
-        },
-        deps.fetchImpl,
-        'code exchange',
-    );
+    // The token endpoint's refusal is read on the way past, before
+    // `fetchOAuthToken` turns a `400 invalid_grant` into a bare
+    // `IntegrationAuthError`: the AADSTS number in it decides the callback's
+    // outcome. `clone()`, so the body is still there for the reader after us.
+    const inner = deps.fetchImpl ?? resilientFetch;
+    let refusal: { status: number; reading: EntraErrorReading | null } | null = null;
+    const reading: typeof fetch = async (input, init) => {
+        const res = await inner(input, init);
+        if (!res.ok) refusal = { status: res.status, reading: await readTokenRefusal(res.clone()) };
+        return res;
+    };
+    let data: TokenResponse;
+    try {
+        data = await postToken(
+            tokenEndpoint(opts.provider, opts.env, opts.entraTenantId),
+            {
+                ...clientCredentials(opts.provider, opts.env),
+                grant_type: 'authorization_code',
+                code: opts.code,
+                redirect_uri: opts.redirectUri,
+                code_verifier: opts.codeVerifier,
+            },
+            reading,
+            'code exchange',
+        );
+    } catch (err) {
+        const seen = refusal as { status: number; reading: EntraErrorReading | null } | null;
+        if (seen) throw new CalendarCodeExchangeError(seen.status, seen.reading);
+        // A 401/403 is thrown by the resilient layer before a body can be read.
+        throw new CalendarCodeExchangeError(err instanceof IntegrationTerminalError ? err.status : null, null);
+    }
     if (!data.refresh_token) {
         // Without one the connection works until the first expiry and then
         // dies silently overnight. Fail at consent, while the user is present
