@@ -1091,6 +1091,8 @@ owner's to make.
 | `retire-capacity-recorder` | `deploy/vm-apply/remote.sh`: stops and disables the capacity recorder's timer and removes its units, script and rows (installed by `host-config-apply`) |
 | `refresh-env-prod-example` | `deploy/vm-apply/remote.sh`: replaces `/opt/inflect/.env.prod.example`, the VM's copy of the public template, with the repository's, keeping the previous copy root-only; it writes no other file, and prints hashes, never content |
 | `retire-tei-embed` | `deploy/vm-apply/remote.sh`: `docker compose rm --stop --force tei-embed`, or, when the live compose file no longer defines it, `docker rm --force` of the container carrying the `inflect` project's and the `tei-embed` service's compose labels; the `inflect_tei-embed-data` volume kept, never `down` or `--remove-orphans`; a no-op when no such container exists, and fails if one is left |
+| `dsar-erase-preflight` | `deploy/vm-apply/remote.sh`: checks the running app image carries `dist/dsar-erase.mjs`, then `docker compose exec -T app node dist/dsar-erase.mjs --due`: the DSAR erasure's plan for the ONE erasure request the register holds as due, writing nothing, and failing unless exactly one is due and the erasure would be admitted (#5940) |
+| `dsar-erase` | the same, then — only if it passed — `--due --confirm`: the erasure of that request's subject, which completes the request. The runbook is `docs/runbooks/dsar-erasure.md` |
 
 Every action that writes runs its preflight first in the same run and writes
 only if it passed. The input is a choice, never a command, a path, a host or a
@@ -1101,6 +1103,15 @@ error lines from caddy and the ops agent (whose only input is a repository
 file), and counts the rest as withheld; the remote script prints names,
 states, counts and limits. `tests/guards/vm-apply-workflow.test.ts` holds these
 properties, and runs the filters on a stream carrying secret-shaped lines.
+
+**The two DSAR actions take no request id** (owner decision 2026-11-25): an id
+input would be the free text the workflow refuses, so they act on the one due
+request and refuse otherwise, and the preflight names it for the reviewer to
+read before approving `dsar-erase`. Their output is the erasure command's own
+lines, which carry ids, statuses, timestamps and counts and start with
+`[dsar-erase] `; `dsar_lines` in `remote.sh` lets through exactly those and
+counts the rest as withheld, and the command prints a failure from outside the
+repository's code as its class and code only.
 
 A compose error line is not simply withheld: both filters (`shape_compose` in
 `apply.sh`, `shape` in `remote.sh`, with identical `error_class` and

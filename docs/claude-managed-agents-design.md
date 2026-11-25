@@ -133,10 +133,12 @@ puts at Anthropic:
     from membership history in the audit trail, not only from the person's own
     rows (`readErasureWorkspaces`, owner decision 2026-11-25), so a member added
     by SCIM or org provisioning who never acted is reached. Its operator entry
-    point is `scripts/dsar-erase-user.ts`. A tenant joined only through a writer
-    that records no row naming the person (SSO just-in-time provisioning,
-    credentials signup, an org admin creating a tenant) and where the person
-    never acted is still not reached; the command's plan names those writers.
+    point is `scripts/dsar-erase.ts`. Since #5940 every removal names the
+    person, and an erasure needs every membership removed first, so a tenant
+    joined through a writer that records no row at the join (SSO just-in-time
+    provisioning, credentials signup, an org admin creating a tenant) is reached
+    from its removal. A removal written before #5940 names nobody; the
+    command's plan says so.
 - **A customer can connect its own Anthropic workspace (Step 5a, #4164),
   behind the opt-in `AGENT_MANAGED_AGENTS` switch.** The `anthropic-workspace`
   provider (`src/app-layer/integrations/providers/anthropic-workspace/`) stores
