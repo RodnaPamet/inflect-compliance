@@ -4231,6 +4231,35 @@ one-line diff in `PLAN_FEATURES`. A hosted run's usage is recorded per tenant
 through `WorkflowRun.hostedManagedAgents` with the run's `costTokens` and its
 span-derived `MODEL_CALL` steps.
 
+**A hosted session's time is recorded per tenant, and unknown is never zero**
+(#4173, owner decision 4 of 2026-11-25; `managed-agents/session-usage.ts`).
+The figure is the session's `usage.active_seconds`, which the SDK names as what
+its runtime is priced on (not `stats.active_seconds`, which sums threads). The
+settle's own status poll reads it, and `meterHostedSession` records it BEFORE
+the delete and never throws. `WorkflowRun.hostedSessionsUnmetered` counts a
+hosted session up at its `SESSION_CREATED` step and down when its usage is
+read; `hostedSessionSeconds` sums what was read and stays NULL until something
+is. So a failed read, a session still running and one a dead worker left all
+read as unknown. Only a `HOSTED` route meters, both writes ask
+`"hostedManagedAgents" = true`, and a CHECK refuses either column on any other
+run: a tenant's own workspace bills the tenant. Do not write 0 for "not read",
+and do not meter from `stats`.
+
+**Connecting a workspace's own Anthropic workspace cleans up what Inflect
+hosted for it, and withdraws the opt-in** (#4173, owner decision 3 of
+2026-11-25; `usecases/hosted-managed-agents-own-workspace.ts`). After an
+enabled `anthropic-workspace` save commits, and only while hosted records exist
+that no DONE hosted clean-up covers (the opt-in, an OPEN hosted record, or a
+hosted provision or run newer than the last DONE record's `coversUntil`), it
+opens Step 5c's `CONNECTION_REMOVED` record under `inflect-hosted`: recorded ids
+only, retried by data-lifecycle, `HOSTED_NOT_ACTIVE` and no request while the
+constant is false. The opt-in goes off through `withdrawHostedOptInOnOwnWorkspace`
+in the opt-in's one-writer file, which can only turn it off and is audited with
+`cause: OWN_WORKSPACE_CONNECTED`, so that removing the own connection later never
+moves runs to Inflect's workspace without an owner opting in again. Never fail
+the save on it, and do not widen the trigger to every save: a re-archive is not
+known to be done.
+
 ## Testing Conventions
 
 - **Unit tests**: Mock dependencies with `jest.mock()` declared **before** imports. Use the `makeRequestContext(role, overrides)` helper from `tests/helpers/make-context.ts` to construct test contexts.

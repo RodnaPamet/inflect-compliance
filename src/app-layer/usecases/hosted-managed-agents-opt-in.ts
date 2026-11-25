@@ -29,6 +29,13 @@
  * every agent archived, by recorded id, and what cannot be finished at once is
  * retried by data-lifecycle. The clean-up runs after the opt-out commits and
  * never throws into it.
+ *
+ * CONNECTING THE WORKSPACE'S OWN ANTHROPIC WORKSPACE WITHDRAWS THE OPT-IN
+ * (#4173, `withdrawHostedOptInOnOwnWorkspace`). It is the column's one other
+ * write, it lives here so this file stays the column's only writer, and it can
+ * only turn the opt-in OFF: a narrowing, made by whoever saved the connection
+ * (an admin act), audited with the connection that caused it. Opting back in
+ * is still an owner's act, in person, through `setHostedManagedAgentsOptIn`.
  */
 import { logEvent } from '@/app-layer/events/audit';
 import type { RequestContext } from '@/app-layer/types';
@@ -176,4 +183,49 @@ export async function setHostedManagedAgentsOptIn(ctx: RequestContext, optIn: bo
     // clean-up, under Inflect's workspace's fixed id). Never throws.
     const cleanup = optIn ? null : await openConnectionRemovalCleanup(ctx, INFLECT_HOSTED_CONNECTION_ID);
     return { setting: await readSetting(ctx), cleanup };
+}
+
+/**
+ * THE OPT-IN IS WITHDRAWN WHEN THE WORKSPACE CONNECTS ITS OWN ANTHROPIC
+ * WORKSPACE (#4173). The tenant's own workspace wins the resolution anyway;
+ * withdrawing the opt-in is what keeps that true AFTERWARDS: a later removal
+ * of the own connection (a key rotated by remove and re-add, or leaving
+ * Anthropic) must not silently move the next run's instructions and tool
+ * output into Inflect's US organisation without Zero Data Retention. Coming
+ * back to hosting is an owner's decision, taken again, in person.
+ *
+ * Only ever turns the opt-in off, and only when it is on; audited as the same
+ * action as an owner's change, naming the cause and the connection. Returns
+ * whether it changed anything. The caller (the connection save, after it has
+ * committed) never lets this fail the save.
+ */
+export async function withdrawHostedOptInOnOwnWorkspace(ctx: RequestContext, connectionId: string): Promise<boolean> {
+    const withdrawn = await runInTenantContext(ctx, async (db) => {
+        const changed = await db.tenantSecuritySettings.updateMany({
+            where: { tenantId: ctx.tenantId, hostedManagedAgentsOptIn: true },
+            data: { hostedManagedAgentsOptIn: false },
+        });
+        if (changed.count === 0) return false;
+        await logEvent(db, ctx, {
+            action: 'HOSTED_MANAGED_AGENTS_OPT_IN_CHANGED',
+            entityType: 'Tenant',
+            entityId: ctx.tenantId,
+            details: 'Opted out of agents hosted in Inflect\'s Anthropic organisation: the workspace connected its own Anthropic workspace',
+            detailsJson: {
+                category: 'access',
+                operation: 'revoke',
+                summary: 'Hosted Managed Agents: opted out (own Anthropic workspace connected)',
+            },
+            metadata: { from: true, to: false, cause: 'OWN_WORKSPACE_CONNECTED', connectionId },
+        });
+        return true;
+    });
+    if (withdrawn) {
+        logger.info('hosted managed agents opt-in withdrawn: the workspace connected its own Anthropic workspace', {
+            component: 'agentic',
+            tenantId: ctx.tenantId,
+            connectionId,
+        });
+    }
+    return withdrawn;
 }

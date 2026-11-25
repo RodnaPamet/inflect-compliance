@@ -282,6 +282,29 @@ puts at Anthropic:
     span-derived `MODEL_CALL`) are recorded per tenant. Hosted runs need the
     plan entitlement `hostedManagedAgents`, which no plan includes until the
     owner opens one.
+  - **Session time, per tenant (#4173, owner decision 4 of 2026-11-25).** At
+    settle a hosted run reads its session's `usage.active_seconds` (the
+    duration Anthropic prices a session's runtime on) before the delete and
+    records it on the run, `WorkflowRun.hostedSessionSeconds`, beside the
+    tokens; `hostedSessionsUnmetered` counts the hosted sessions whose usage
+    was not read (a failed read, a session still running, one a dead worker
+    left), so an unknown is never recorded as zero. A read that fails never
+    blocks the settle or the delete. A run in the tenant's own workspace
+    records nothing (a CHECK holds it): that time is billed to the tenant.
+    Each read is also counted on `agent.hosted.session.usage` and observed on
+    `agent.hosted.session.seconds`, with no tenant label.
+  - **A tenant's own workspace, connected later (#4173, owner decision 3 of
+    2026-11-25).** When a workspace with hosted records saves an enabled
+    `anthropic-workspace` connection of its own, its hosted opt-in is
+    withdrawn (audited, cause `OWN_WORKSPACE_CONNECTED`) and Step 5c's
+    clean-up of its records in Inflect's workspace is opened, by recorded id,
+    after the save commits; what it leaves is retried by data-lifecycle. Only
+    records no finished hosted clean-up covers trigger it, so a later save of
+    the same connection sends nothing. Opting back in is an owner's decision,
+    taken again.
+  - **Decided, needing no code (owner, 2026-11-25).** No plan is entitled to
+    hosting yet, and the caps stay at one hosted run per tenant and two per
+    deployment.
 
 ## What Managed Agents is, as documented on 2026-10-24
 
