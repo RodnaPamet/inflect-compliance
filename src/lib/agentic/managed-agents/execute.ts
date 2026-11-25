@@ -75,6 +75,12 @@
  *   session.status_idle    `requires_action` runs the queue; any other reason
  *                          ends the stream.
  *
+ * A RETRIED, TAKEN-OVER OR RESUMED SEGMENT (#5854, the owner's two decisions
+ * of 2026-11-25) does not create a session when its part of the ledger names
+ * one nobody settled: it reconnects to it, reads its history and answers its
+ * open calls (`reconnect.ts`). A worker that loses its run to a successor or
+ * to the SIGTERM drain's pause leaves the session exactly as it is.
+ *
  * A DROPPED STREAM is reopened, and before it is read the session's event list
  * is read in full and every event not seen is handled, so a custom call the
  * drop hid is answered, and one already answered is not answered again.
@@ -94,7 +100,10 @@
  * DELETED (`DELETE /v1/sessions/{id}`, after its status has left `running`) and
  * the deletion recorded (`SESSION_DELETED`, or `SESSION_DELETE_FAILED` with the
  * provider's status), unless the connection keeps sessions (decision 4), when
- * it is recorded `SESSION_KEPT` so Step 5c finds it. Then the run settles in
+ * it is recorded `SESSION_KEPT` so Step 5c finds it. The one exception is a
+ * run handed on (#5854): a successor took it over, or the SIGTERM drain
+ * PAUSED it for a person's resume, and the continuation reconnects to the
+ * session, so it is left untouched. Then the run settles in
  * the Tool Runner's order: an operator's Abort, a kill, the breaker, a cap, a
  * guard verdict, a reach beyond custom tools, a failure, the session's own end.
  */
@@ -143,7 +152,7 @@ import {
     type KillVerdict,
 } from '@/lib/agentic/kill-switch';
 import { createRunBudget, resolveRunCaps, type RunCapHalt } from '@/lib/agentic/run-caps';
-import { runLeaseTakenOver } from '@/lib/agentic/run-lease';
+import { lostRunDestination } from '@/lib/agentic/run-lease';
 import { activateSkillTool, skillCatalogueText, type RunSkills } from '@/lib/agentic/tool-runner/skills';
 import {
     SerialQueue,
@@ -189,7 +198,13 @@ import {
     type OpenedSessionCheckpoint,
     type ReconnectAnswer,
 } from './reconnect';
-import { sessionStepRecord, type SessionLifecycle } from './session-ledger';
+import {
+    PAUSED_SESSION_HOLD_HOURS,
+    PAUSED_SESSION_RESUME_WINDOW_MS,
+    sessionStepRecord,
+    type SessionLifecycle,
+} from './session-ledger';
+import { meterHostedSession, openHostedSessionMeter, sessionUsageFrom, type HostedSessionUsageRead } from './session-usage';
 import {
     readRecordedSessionIds,
     readSegmentLedger,
@@ -200,6 +215,9 @@ import {
 import type { ManagedAgentsWorkspaceKind } from './workspace';
 
 const RANK: Record<StepGuardObservation['verdict'], number> = { CLEAN: 0, FLAGGED: 1, QUARANTINED: 2 };
+
+/** The resume window, in whole hours, for the sentence that names it. */
+const PAUSED_SESSION_RESUME_WINDOW_HOURS = Math.floor(PAUSED_SESSION_RESUME_WINDOW_MS / 3_600_000);
 
 // The session step's label and shape live in `session-ledger.ts`, which the
 // data-lifecycle reconciliation also writes through (#5843).
@@ -314,6 +332,8 @@ export type ReconnectRefusal =
     | 'SESSION_TERMINATED'
     | 'SESSION_UNREADABLE'
     | 'SESSION_SETTLED_EARLIER'
+    | 'SESSION_SETTLED_WHILE_PAUSED'
+    | 'RESUMED_TOO_LATE'
     | 'SESSION_STOPPED_EARLIER'
     | 'WORKSPACE_CHANGED'
     | 'LEDGER_TRUNCATED'
@@ -334,6 +354,19 @@ export function reconnectRefusalMessage(reason: ReconnectRefusal): string {
             return (
                 `${p}_session_settled: an earlier attempt of this segment had already deleted or kept its session and then `
                 + `stopped before the run was settled, so there is no session to continue in. ${tail}`
+            );
+        case 'SESSION_SETTLED_WHILE_PAUSED':
+            return (
+                `${p}_session_settled_while_paused: this run was paused, and the session it was waiting in was settled `
+                + 'before it was resumed: a paused run\'s session is deleted, or kept where the workspace keeps sessions, '
+                + `once the run has waited ${PAUSED_SESSION_HOLD_HOURS} hours for a resume, or when the workspace `
+                + `connection is removed. There is no session to continue in. ${tail}`
+            );
+        case 'RESUMED_TOO_LATE':
+            return (
+                `${p}_resumed_too_late: this run was resumed more than ${PAUSED_SESSION_RESUME_WINDOW_HOURS} hours after it `
+                + 'was paused, past the time a paused run\'s session waits for a resume, so the session was settled rather '
+                + `than continued. ${tail}`
             );
         case 'SESSION_STOPPED_EARLIER':
             return (
@@ -530,13 +563,16 @@ export async function executeManagedAgentsRun(
         /** The stop is draining the session: no latch may cut the drain's own read. */
         draining: boolean;
         /**
-         * ANOTHER WORKER TOOK THE RUN OVER (#5854, owner decision 2026-11-25):
-         * this execution's lease lapsed and a successor claimed the run. The
-         * successor reconnects to the session and continues in it, so this
-         * execution leaves it exactly as it is: no answer, no interrupt, no
-         * delete. Its own writes are already fenced.
+         * THE RUN WAS HANDED ON (#5854, the owner's two decisions of
+         * 2026-11-25): this execution lost its lease either to a successor
+         * that took the run over, or to the SIGTERM drain, which PAUSED it for
+         * a person to resume. Either continuation reconnects to the session
+         * and goes on in it, so this execution leaves it exactly as it is: no
+         * answer, no interrupt, no delete. Its own writes are already fenced.
          */
         handedOver: boolean;
+        /** To whom, for the log line: a successor, or a person's resume. */
+        handedOverTo: 'SUCCESSOR' | 'CONTINUES' | null;
         /** The session's history holds an interrupt an earlier attempt sent (a reconnect refuses it). */
         stoppedEarlier: boolean;
         /** The session's history is longer than one bounded read (refused by name). */
@@ -555,6 +591,7 @@ export async function executeManagedAgentsRun(
         sessionEdited: false,
         draining: false,
         handedOver: false,
+        handedOverTo: null,
         stoppedEarlier: false,
         historyTruncated: false,
     };
@@ -603,12 +640,19 @@ export async function executeManagedAgentsRun(
             if (!(await isRunAborted(ctx, runId))) return false;
             // …and so does a lost lease. A lease ANOTHER worker now holds is a
             // takeover (#5854, 2026-11-25): the successor continues in this
-            // run's session, so this execution must leave it untouched. A read
-            // that fails is read as a takeover too: leaving a session alone is
-            // recoverable (the reconciliation settles it once the run has
-            // ended), and deleting a session a successor drives is not.
-            if (await runLeaseTakenOver(ctx, runId).catch(() => true)) {
+            // run's session, so this execution must leave it untouched. So is
+            // a lease the SIGTERM drain cleared while it PAUSED the run (the
+            // owner's second decision of 2026-11-25): a person's resume
+            // reconnects to this session, so the drain leaves it exactly as it
+            // is, open calls and all. A read that fails is read as a handover
+            // too: leaving a session alone is recoverable (the reconciliation
+            // settles it once the run has ended, or has waited too long), and
+            // deleting a session a continuation drives is not. Only a run
+            // nothing will continue (ABORTED, FAILED) is stopped here.
+            const destination = await lostRunDestination(ctx, runId).catch((): 'SUCCESSOR' => 'SUCCESSOR');
+            if (destination === 'SUCCESSOR' || destination === 'CONTINUES') {
                 state.handedOver = true;
+                state.handedOverTo = destination;
                 abortRead();
                 return true;
             }
@@ -770,9 +814,12 @@ export async function executeManagedAgentsRun(
 
     // ── A RETRIED OR TAKEN-OVER SEGMENT RECONNECTS (#5854, 2026-11-25) ──────
     // Owner decision: a segment the worker retries, or another worker takes
-    // over, RECONNECTS to the session it created and continues there. The
-    // worker says where the segment began (`runSegmentFromSeq`); its own part
-    // of the ledger names the session. The NEWEST session the segment created
+    // over, RECONNECTS to the session it created and continues there. So does
+    // a person's resume of a PAUSED run (the owner's second decision that
+    // day): the worker hands it the PAUSED segment's start, and it continues
+    // in the session the SIGTERM drain left open. The worker says where the
+    // segment began (`runSegmentFromSeq`); its own part of the ledger names
+    // the session. The NEWEST session the segment created
     // (one a segment's start found unrecorded is never continued: the opening
     // never reached it) decides: none, and this attempt creates one as every
     // first attempt does; one nobody settled, and it is reconnected to; one an
@@ -792,7 +839,16 @@ export async function executeManagedAgentsRun(
         const own = segment.sessions.filter((x) => !x.foundUnrecorded);
         const newest = own.length > 0 ? own[own.length - 1] : null;
         if (newest && newest.latest !== 'SESSION_CREATED') {
-            const status = await failRun(ctx, runId, reconnectRefusalMessage('SESSION_SETTLED_EARLIER'));
+            // A person's resume of a PAUSED run (the owner's second decision of
+            // 2026-11-25) is refused the same way, with its own sentence: the
+            // paused session was settled while the run waited (the
+            // reconciliation's bound, `PAUSED_SESSION_HOLD_MS`), never by an
+            // attempt of this segment.
+            const status = await failRun(
+                ctx,
+                runId,
+                reconnectRefusalMessage(ctx.runSegmentContinuesPause ? 'SESSION_SETTLED_WHILE_PAUSED' : 'SESSION_SETTLED_EARLIER'),
+            );
             return { status, stepFailures: 0 };
         }
         if (newest && newest.connectionId !== route.connectionId) {
@@ -816,6 +872,18 @@ export async function executeManagedAgentsRun(
         const status = await failRun(ctx, runId, refusal);
         return { status, stepFailures };
     };
+
+    // ── A RESUME TOO LATE FOR ITS PAUSED SESSION (#5854, 2026-11-25) ───────
+    // The owner's second decision: a person's resume of a PAUSED run
+    // reconnects to the session the drain left open, while that session is
+    // still held for it. A resume claimed past the window
+    // (`PAUSED_SESSION_RESUME_WINDOW_MS` from the pause) does not continue it,
+    // even if the reconciliation has not yet settled it: the two decide from
+    // the same instant, an hour apart, so neither continues a session the
+    // other is deleting. The session is settled here and the run refused.
+    if (reconnectTo && ctx.runSegmentContinuesPause === 'TOO_LATE') {
+        return refuseAfterSession(reconnectRefusalMessage('RESUMED_TOO_LATE'));
+    }
 
     // ── A DEAD SEGMENT'S UNRECORDED SESSION (Step 5H, #5854) ────────────────
     // A worker that died after `sessions.create` answered and before
@@ -1580,6 +1648,10 @@ async function recordSessionStep(
     facts: Record<string, unknown>,
 ): Promise<void> {
     await recordStep(ctx, runId, seq, 'SYNTHESIS', sessionStepRecord(lifecycle, facts));
+    // A HOSTED session's time is Inflect's to pay (#4173): it is counted
+    // unknown from here until its usage is read at settle. A session in the
+    // tenant's own workspace records nothing.
+    if (lifecycle === 'SESSION_CREATED' && facts.workspaceKind === 'HOSTED') await openHostedSessionMeter(ctx, runId);
 }
 
 /**
@@ -1662,17 +1734,22 @@ async function settleSession(
     binding: ToolRunBinding,
     mayBeRunning: boolean,
 ): Promise<void> {
-    // A SUCCESSOR HOLDS THE RUN (#5854, owner decision 2026-11-25): it has
-    // reconnected, or will, to this session and continues in it. This
-    // execution neither records it kept nor interrupts or deletes it. A read
-    // that fails is read as a takeover: a session left alone is settled by the
-    // reconciliation once the run has ended; one deleted under a successor is
-    // a run lost. A context with no lease asks nothing.
+    // THE RUN WAS HANDED ON (#5854, the owner's two decisions of 2026-11-25):
+    // a successor took it over, or the SIGTERM drain paused it for a person's
+    // resume. Either continuation reconnects to this session. This execution
+    // neither records it kept nor interrupts or deletes it. A read that fails
+    // is read as a handover: a session left alone is settled by the
+    // reconciliation once the run has ended or has waited past the bound; one
+    // deleted under a continuation is a run lost. A context with no lease
+    // asks nothing.
     const handedOver = async (): Promise<boolean> => {
-        if (!(await runLeaseTakenOver(ctx, runId).catch(() => true))) return false;
-        logger.warn('managed-agents: another worker holds the run; its session is left to it', {
+        // Log fields are read off this object, so each value's name is its own.
+        const handover = { continuation: await lostRunDestination(ctx, runId).catch((): 'SUCCESSOR' => 'SUCCESSOR') };
+        if (handover.continuation !== 'SUCCESSOR' && handover.continuation !== 'CONTINUES') return false;
+        logger.warn('managed-agents: the run was handed on; its session is left to the continuation', {
             component: 'agentic',
             runId: binding.runId,
+            continuation: handover.continuation,
         });
         return true;
     };
@@ -1684,12 +1761,17 @@ async function settleSession(
         }
         // Anthropic refuses a delete while the session runs, and its status
         // lags the stream's idle event: poll until it has left `running`. A
-        // session a thrown error left running is interrupted first.
+        // session a thrown error left running is interrupted first. The last
+        // read is also the session's usage (#4173): unknown until one answers.
+        let usage: HostedSessionUsageRead = { ok: false, reason: 'READ_FAILED' };
         for (let i = 0; i < SETTLE_POLL_ATTEMPTS; i += 1) {
             let status: string;
             try {
-                status = (await client.beta.sessions.retrieve(sessionId)).status;
+                const read = await client.beta.sessions.retrieve(sessionId);
+                status = read.status;
+                usage = sessionUsageFrom(read);
             } catch {
+                usage = { ok: false, reason: 'READ_FAILED' };
                 break;
             }
             if (status !== 'running' && status !== 'rescheduling') break;
@@ -1704,6 +1786,10 @@ async function settleSession(
         }
         // Asked again right before the one write that cannot be undone.
         if (await handedOver()) return;
+        // A HOSTED session's time, recorded BEFORE the delete, which then runs
+        // whatever this recorded: it never throws, and an unknown is recorded
+        // as unknown, never as zero (#4173). The customer's own is not ours.
+        if (route.workspaceKind === 'HOSTED') await meterHostedSession(ctx, runId, usage);
         try {
             await client.beta.sessions.delete(sessionId);
             await recordSessionStep(ctx, runId, binding.nextSeq(), 'SESSION_DELETED', { sessionId, connectionId: route.connectionId });

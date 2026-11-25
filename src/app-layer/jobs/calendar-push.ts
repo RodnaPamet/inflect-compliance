@@ -49,7 +49,16 @@
  * @module jobs/calendar-push
  */
 import prisma from '@/lib/prisma';
+import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
+import { readWorkspaceLocale } from '@/lib/i18n/workspace-text';
+import { runUserPushGuarded, type PushOutcome } from '../usecases/calendar-consent-health';
+import { pushOneConnection, type CalendarPushDeps } from '../usecases/calendar-push-person';
+import {
+    calendarJobRun,
+    isCalendarProviderId,
+    type CalendarConnectionIdentity,
+} from '../usecases/user-calendar-connection';
 import { enqueue } from './queue';
 import { fanOut, dispatchJobId, DAILY_BUCKET_MS } from './fan-out';
 import type { CalendarPushDispatchPayload, CalendarPushTenantPayload } from './types';
@@ -106,44 +115,99 @@ export async function runCalendarPushDispatch(_payload: CalendarPushDispatchPayl
 }
 
 /**
- * One tenant's push. Visits its connected users IN PROCESS.
+ * One tenant's push. Visits its connected users IN PROCESS, one at a time.
  *
  * The per-user loop lives here rather than in the queue because
  * `runUserPushGuarded` already provides the isolation a per-user job would buy,
  * and because one BullMQ job per employee across every tenant is a queue-depth
  * problem with no compensating benefit.
  *
- * NOTE this is currently a bounded enumeration and nothing more. The actual
- * push needs a provider WRITER — the Google / Graph `CalendarWriter` — which
- * does not exist yet. It is NOT blocked on the consent model: that was decided
- * in #1999 (Microsoft: a tenant admin consents once for the organisation, then
- * each person signs in for their own delegated token; Google: each person
- * consents) and confirmed by the owner on 2026-11-25. The writer is step 2 of
- * epic #5937, designed in docs/calendar-push-design.md, including how this
- * loop calls `sweepUserCalendar` and reads each token under a non-bypass job
- * context so the tenant DEK resolves.
+ * For each live connection (docs/calendar-push-design.md, "Wiring"):
  *
- * Wiring the loop to a writer that does not exist would mean either a stub
- * that silently no-ops in production or a fake that makes the job look tested
- * when it is not. So the job is registered, scheduled and enumerating, and the
- * writer is the one remaining seam.
+ *   1. the token is read under `runInTenantJobContext` with the job's OWN
+ *      source (`calendar-push`), so the workspace's DEK resolves — under a
+ *      bypass label the read would be refused rather than parse ciphertext;
+ *   2. the provider's writer is built over it;
+ *   3. `sweepUserCalendar` reconciles the person's own deadlines against the
+ *      `UserCalendarEventMapping` rows, at most
+ *      `PUSH_ACTIONS_PER_PERSON_PER_RUN` provider calls, removals first;
+ *   4. `lastPushedAt` is stamped.
+ *
+ * A connection the person asked to disconnect, whose removals did not all
+ * succeed, gets only the removals retried (`pushOneConnection`).
+ *
+ * People are visited SEQUENTIALLY, and so are each person's writes: Graph
+ * allows four concurrent requests per mailbox, Google a per-user-per-minute
+ * quota, and a nightly job has no reason to race either. A refused token stops
+ * that person's connection (revoked, once); a throttle stops that person's run
+ * for tonight and the next run resumes from the mapping table; anything else
+ * is counted `failed`. None of them stops the next person.
  */
-export async function runCalendarPushTenant(payload: CalendarPushTenantPayload) {
+export async function runCalendarPushTenant(
+    payload: CalendarPushTenantPayload,
+    deps: CalendarPushDeps & { push?: typeof pushOneConnection } = {},
+) {
     if (!payload.tenantId) throw new Error('calendar-push-tenant requires tenantId');
+    const tenantId = payload.tenantId;
 
     const connections = await prisma.userCalendarConnection.findMany({
         // Exactly the shape the recorded index justification describes.
-        where: { tenantId: payload.tenantId, revokedAt: null },
+        where: { tenantId, revokedAt: null },
         select: { id: true, userId: true, provider: true },
         orderBy: { id: 'asc' },
         take: 10_000,
     });
 
-    logger.info('calendar-push-tenant enumerated', {
+    const outcomes: Record<PushOutcome, number> = {
+        pushed: 0,
+        'nothing-to-do': 0,
+        revoked: 0,
+        throttled: 0,
+        failed: 0,
+    };
+    if (connections.length === 0) {
+        return { tenantId, connections: 0, pushed: 0, outcomes };
+    }
+
+    const run = calendarJobRun(tenantId);
+    // Read once per tenant: every person in a workspace reads the workspace's
+    // language (owner decision 2026-11-25), and a job sees no browser cookie.
+    const locale = await run((db) => readWorkspaceLocale(db, tenantId));
+    // The link back to the item is read OUTSIDE Inflect, so it is absolute,
+    // from the deployment's configured origin — never a request header. With
+    // none configured the event carries no link rather than a broken one.
+    const publicOrigin = env.APP_URL?.trim() || null;
+    const push = deps.push ?? pushOneConnection;
+
+    for (const c of connections) {
+        if (!isCalendarProviderId(c.provider)) continue;
+        const identity: CalendarConnectionIdentity = { tenantId, userId: c.userId, provider: c.provider };
+        let outcome: PushOutcome;
+        try {
+            outcome = await runUserPushGuarded({ tenantId, userId: c.userId }, c.provider, async () => {
+                const r = await push(run, identity, { locale, publicOrigin }, deps);
+                return { changed: (r.kind === 'pushed' || r.kind === 'disconnect') && r.changed };
+            });
+        } catch (err) {
+            // `runUserPushGuarded` returns rather than throws, except when
+            // recording a revocation itself fails. That is still ONE person.
+            logger.error('calendar push: recording an outcome failed', {
+                component: 'calendar-push',
+                tenantId,
+                provider: c.provider,
+                err: err instanceof Error ? err : new Error(String(err)),
+            });
+            outcome = 'failed';
+        }
+        outcomes[outcome] += 1;
+    }
+
+    logger.info('calendar-push-tenant complete', {
         component: 'calendar-push',
-        tenantId: payload.tenantId,
+        tenantId,
         connections: connections.length,
+        ...outcomes,
     });
 
-    return { tenantId: payload.tenantId, connections: connections.length, pushed: 0 };
+    return { tenantId, connections: connections.length, pushed: outcomes.pushed, outcomes };
 }

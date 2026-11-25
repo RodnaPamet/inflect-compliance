@@ -127,6 +127,7 @@ import {
     segmentMadeCalls,
     settleCheckpointInTx,
 } from '@/lib/agentic/drivers/checkpoint-store';
+import { PAUSED_SESSION_RESUME_WINDOW_MS } from '@/lib/agentic/managed-agents/session-ledger';
 import {
     readWaitingDeferral,
     readWaitingDeferralsForRuns,
@@ -1037,6 +1038,16 @@ export async function resumeWorkflowRun(
             clockBase: Date.now(),
             // The segment, as the job id names it (#5854 item 3).
             segment: segmentAt.getTime(),
+            // A PAUSED run's resume continues the paused segment (#5854, the
+            // owner's second decision of 2026-11-25): on Managed Agents it
+            // reconnects to the session the SIGTERM drain left open. The pause's
+            // instant is the row's `updatedAt` before the claim above (the
+            // drain's write moved it, and nothing writes a PAUSED run), so the
+            // worker can tell whether this resume came in time for the
+            // session. A run resumed from AWAITING_APPROVAL (a checkpoint, a
+            // guard hold) does not continue: its session was settled when it
+            // parked.
+            ...(run.status === 'PAUSED' ? { pausedAt: run.updatedAt.getTime() } : {}),
         }, {
             // ONE JOB PER SEGMENT (#5854), named by the claim above.
             jobId: agentRunExecuteJobId(runId, segmentAt),
@@ -1149,6 +1160,21 @@ export async function abortWorkflowRun(ctx: RequestContext, runId: string): Prom
         entity: 'WorkflowRun', entityId: runId, action: 'WORKFLOW_RUN_ABORTED',
         requestId: ctx.requestId, detailsJson: { category: 'access' },
     }).catch(() => undefined);
+    // ── A RUN NO WORKER DRIVES HAS ITS SESSION SETTLED HERE (#5854) ─────────
+    //
+    // A RUNNING Managed Agents run's engine reads this Abort and deletes its
+    // own session. A PAUSED one has no engine: the SIGTERM drain left its
+    // session open for a person's resume (the owner's second decision of
+    // 2026-11-25), and an Abort means nobody will resume it. So its session
+    // is deleted by its recorded id, through the clean-up's own call, AFTER
+    // the transaction above has committed (a provider call is never held
+    // inside a transaction), and bounded: what it cannot finish is recorded
+    // for the reconciliation's retry. Every other engine's run reads one
+    // ledger query and sends nothing. Never throws.
+    if (run.status !== 'RUNNING') {
+        const { settleAbortedRunSessions } = await import('@/app-layer/usecases/managed-agents-cleanup');
+        await settleAbortedRunSessions(ctx.tenantId, runId);
+    }
 }
 
 export async function getWorkflowRun(ctx: RequestContext, runId: string) {
@@ -1978,6 +2004,14 @@ export async function executeQueuedWorkflowRun(
          * cannot be told from a first attempt, and nothing pauses.
          */
         segment?: number;
+        /**
+         * When the run was PAUSED, set by a person's resume of a paused run
+         * (#5854, the owner's second decision of 2026-11-25). On a `SESSION`
+         * engine the segment continues the paused one (see `anchorSegment`),
+         * in time or too late by `PAUSED_SESSION_RESUME_WINDOW_MS` from this to
+         * `segment`.
+         */
+        pausedAt?: number;
         /** The lease's TTL and renewal interval. Tests shorten them; the job never passes them. */
         leaseTiming?: RunLeaseTiming;
     } = {},
@@ -2148,10 +2182,33 @@ export async function executeQueuedWorkflowRun(
             Number.isSafeInteger(opts.segment) &&
             opts.segment >= 0
         ) {
-            const anchor = await anchorSegment(ctx, runId, String(opts.segment), fromSeq);
+            // A PERSON'S RESUME OF A PAUSED RUN continues the paused segment
+            // on a `SESSION` engine (#5854, the owner's second decision of
+            // 2026-11-25): it takes over that segment's start, so the engine
+            // finds the session the SIGTERM drain left open and reconnects to
+            // it, as a retry does, instead of starting a new session.
+            const continuePaused =
+                recovery === 'SESSION' &&
+                typeof opts.pausedAt === 'number' &&
+                Number.isSafeInteger(opts.pausedAt) &&
+                opts.pausedAt >= 0 &&
+                opts.pausedAt <= opts.segment;
+            const anchor = await anchorSegment(ctx, runId, String(opts.segment), fromSeq, { continuePaused });
             if (anchor === 'LEASE_LOST') return { skipped: 'LEASE_LOST' };
             if (recovery === 'SESSION') {
-                execCtx = { ...ctx, runSegmentFromSeq: anchor.retry ? anchor.segmentFromSeq : fromSeq };
+                const segmentFromSeq = anchor.retry ? anchor.segmentFromSeq : (anchor.continuesFromSeq ?? fromSeq);
+                // IN TIME OR TOO LATE, from the payload alone (the pause and
+                // the claim), so every attempt of the segment decides alike.
+                const pausedFor = opts.segment - (opts.pausedAt ?? opts.segment);
+                execCtx = {
+                    ...ctx,
+                    runSegmentFromSeq: segmentFromSeq,
+                    // A retry of the resumed segment continues the pause too:
+                    // it carries the resume's payload.
+                    ...(continuePaused && (anchor.retry || anchor.continuesFromSeq !== null)
+                        ? { runSegmentContinuesPause: pausedFor < PAUSED_SESSION_RESUME_WINDOW_MS ? ('IN_TIME' as const) : ('TOO_LATE' as const) }
+                        : {}),
+                };
             } else if (anchor.retry && (await segmentMadeCalls(ctx, runId, anchor.segmentFromSeq))) {
                 const paused = await pauseRetriedSegment(ctx, runId, {
                     checkpointSeq: fromSeq,

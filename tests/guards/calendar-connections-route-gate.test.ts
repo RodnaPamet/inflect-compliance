@@ -22,18 +22,11 @@ import * as path from 'node:path';
 // EVERY read here is wrapped because every path this file reads is a
 // TypeScript-alike — re-derived per file, not assumed from the directory — so
 // there is no second language needing its own reader. String literals are KEPT.
-import { codeOf, commentsOf } from '../helpers/source-blocks';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const ROUTE = 'src/app/api/t/[tenantSlug]/calendar/connections/route.ts';
 const src = codeOf(fs.readFileSync(path.join(ROOT, ROUTE), 'utf8'));
-// The INVERSE-masked twin (#2246). The assertion that uses it has the PROSE as
-// its subject — it checks that a rationale is WRITTEN DOWN — so `codeOf` could
-// never satisfy it. `commentsOf` is the other half of the same idea: comments
-// kept, code blanked. Measured: the needle counts 1 raw, 1 through
-// `commentsOf`, 0 through `codeOf`, and the reach drops from the whole route
-// file to its comment text.
-const srcDoc = commentsOf(fs.readFileSync(path.join(ROOT, ROUTE), 'utf8'));
 const codeOnly = codeOf(src);
 
 describe('both verbs are gated', () => {
@@ -84,7 +77,7 @@ describe('the route cannot act on another user', () => {
         // The usecases key off ctx.userId internally; the route never names a
         // user at all.
         expect(codeOnly).toMatch(/listCalendarConnections\(ctx\)/);
-        expect(codeOnly).toMatch(/revokeCalendarConnection\(ctx,/);
+        expect(codeOnly).toMatch(/disconnectCalendar\(ctx, provider\)/);
     });
 
     it('validates the provider rather than forwarding whatever arrived', () => {
@@ -117,11 +110,15 @@ describe('the guardrail interaction is respected', () => {
     });
 });
 
-describe('the disconnect ordering is written down where it will be read', () => {
-    it('the file records that remote events must be deleted BEFORE revoking', () => {
+describe('the disconnect goes through the usecase that orders it', () => {
+    it('the route revokes nothing itself — disconnectCalendar removes the events first', () => {
         // Revoking first destroys the token, and the pushed events are then
-        // stranded in the user's personal calendar with no credential left to
-        // remove them. C5 lands the event mapping; this is the note it needs.
-        expect(srcDoc).toMatch(/deleted BEFORE this call|BEFORE this call/);
+        // stranded in the person's calendar with no credential left to remove
+        // them. The ORDER is proven behaviourally in
+        // tests/unit/calendar-push-person.test.ts ("events FIRST, token AFTER");
+        // this only holds the route to that usecase. It used to check that a
+        // comment in the route said so, which a reworded comment could break and
+        // a reversed implementation could not.
+        expect(codeOnly).not.toMatch(/revokeCalendarConnection\(/);
     });
 });

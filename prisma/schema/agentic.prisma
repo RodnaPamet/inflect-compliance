@@ -649,6 +649,22 @@ model WorkflowRun {
   /// itself. With the costs on the run row, it is also how a tenant's hosted
   /// usage is read: Inflect pays for those runs.
   hostedManagedAgents Boolean           @default(false)
+  /// HOSTED SESSION TIME (#4173, owner decision 4 of 2026-11-25): the sum of
+  /// `usage.active_seconds` over this run's sessions in Inflect's own
+  /// workspace whose usage was read at settle. Anthropic prices a session's
+  /// runtime on that figure (the SDK's `BetaManagedAgentsSessionUsage`), and
+  /// Inflect pays it, so it is recorded per tenant beside `costTokens`. NULL
+  /// while no hosted session's usage has been read: never a zero standing for
+  /// "not known". Written ONLY by `managed-agents/session-usage.ts`, and only
+  /// on a hosted run (a CHECK: a run in the tenant's own workspace records
+  /// nothing here, because that cost is the customer's).
+  hostedSessionSeconds Float?
+  /// Hosted sessions this run created whose usage has NOT been read: counted
+  /// up when the session's `SESSION_CREATED` step is written, down when its
+  /// usage is read at settle. Above zero, `hostedSessionSeconds` is a lower
+  /// bound and the rest is UNKNOWN: a read that failed, a session still
+  /// running at settle, or one a dead worker left for the reconciliation.
+  hostedSessionsUnmetered Int           @default(0)
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)

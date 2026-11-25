@@ -18678,6 +18678,7 @@
       "CALENDAR_ADMIN_CONSENT_REVOKED": "Оттегляне на администраторско съгласие за календара",
       "CALENDAR_CONNECT_FAILED": "Неуспешно свързване на личен календар",
       "CALENDAR_CONNECTED": "Свързване на личен календар",
+      "CALENDAR_DISCONNECTED": "Изключване на личен календар",
       "CONTROL_APPLICABILITY_CHANGED": "Промяна на приложимостта на контрола",
       "CONTROL_CONTRIBUTOR_ADDED": "Добавяне на сътрудник към контрола",
       "CONTROL_CONTRIBUTOR_REMOVED": "Премахване на сътрудник от контрола",
@@ -19368,6 +19369,34 @@
         "INCIDENT": "инцидент",
         "IMPROVEMENT": "подобрение",
         "TASK": "задача"
+      }
+    },
+    "calendarPush": {
+      "title": "{type}: {name}",
+      "openInInflect": "Отворете в Inflect: {link}",
+      "eventType": {
+        "evidence-review": "Преглед на доказателство",
+        "policy-review": "Преглед на политика",
+        "vendor-review": "Преглед на доставчик",
+        "vendor-renewal": "Подновяване на договор",
+        "vendor-document-expiry": "Изтичане на документ",
+        "vendor-assessment-review": "Повторна оценка на доставчик",
+        "audit-cycle": "Одитен цикъл",
+        "access-review-due": "Преглед на достъпа",
+        "control-review": "Преглед на контрола",
+        "control-test-due": "Предстоящ тест",
+        "control-exception-expiry": "Изтичане на изключение",
+        "training-due": "Предстоящо обучение",
+        "incident-notification-due": "Уведомление за инцидент",
+        "task-due": "Предстояща задача",
+        "risk-review": "Преглед на риск",
+        "risk-target": "Целева дата за намаляване на риск",
+        "treatment-milestone-due": "Етап",
+        "treatment-plan-target": "Целева дата на план",
+        "finding-due": "Предстояща констатация",
+        "agent-harness-acceptance-expiry": "Изтичане на приемане на harness недостиг",
+        "vulnerability-remediation-due": "Срок за отстраняване на уязвимост",
+        "audit-scheduled": "Планиран одит"
       }
     }
   },

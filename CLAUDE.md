@@ -3937,8 +3937,10 @@ careless edit from being undone:
   `SESSION_CREATED`, written first, then `SESSION_DELETED`,
   `SESSION_DELETE_FAILED` or, when the connection keeps sessions (decision 4),
   `SESSION_KEPT`). 5c finds them by id there. The one exception: an execution
-  whose lease ANOTHER worker took leaves the session to that worker, which
-  reconnects to it (owner decision 2026-11-25, below).
+  whose run was HANDED ON leaves the session to the continuation, which
+  reconnects to it: ANOTHER worker took the lease, or the SIGTERM drain PAUSED
+  the run for a person's resume (the owner's two decisions of 2026-11-25,
+  below).
 - **Every segment first settles a session of its run that no ledger step names**
   (#5854): one a dead worker created after `sessions.create` answered and before
   `SESSION_CREATED` was written. It is the lost-create recovery
@@ -4123,12 +4125,19 @@ undone:
   recorded `SESSION_KEPT` on a connection that keeps sessions, else deleted and
   recorded `SESSION_DELETED` (`agentic.managed_agents.abandoned_session`). It
   NEVER takes a session whose run is still RUNNING, whatever its age and
-  whatever its lease (`readRunningRunIds`): a retry or a takeover reconnects to
-  it (below). That status check, not the age, is what keeps the pass and a
-  reconnecting segment off one session: a reconnect happens only under a lease,
-  a lease only on a RUNNING run, and a run that left RUNNING never re-enters the
-  same segment. A run that stays RUNNING with nobody driving it is reaped, and
-  the next pass settles its session. It also reads back every session
+  whatever its lease, nor one whose run has been PAUSED for less than
+  `PAUSED_SESSION_HOLD_MS` (24 hours, from the row's `updatedAt`, which the
+  drain's write moved) (`readHeldRunIds`): a retry, a takeover or a person's
+  resume reconnects to it (below). That status check, not the age, is what
+  keeps the pass and a reconnecting segment off one session: a reconnect
+  happens only under a lease, a lease only on a RUNNING run, and a PAUSED run
+  becomes RUNNING only through a resume's claim. A run PAUSED past the hold has
+  its session settled, and so does a run that ended within the lookback but
+  started before it: both are read by the run's own state, with every session
+  step whatever its age (`readLongLivedRunSessions`), because a session a
+  resume carried across segments can be older than the lookback. A run that
+  stays RUNNING with nobody driving it is reaped, and the next pass settles its
+  session. It also reads back every session
   recorded DELETED in the last seven days, deletes one that still exists, and
   meters it (`agentic.managed_agents.lost_delete`).
 
@@ -4177,11 +4186,44 @@ that are each one careless edit from being undone:
   FAILED step charged one STEPS each). Do not add a second store, and do not
   let the replay run a call because its turn was never recorded: that is the
   one kind of call the rule answers NOT RUN.
-- **A worker whose lease ANOTHER worker took leaves the session alone**
-  (`runLeaseTakenOver`, `state.handedOver`): no answer, no interrupt, no delete,
-  asked again in `settleSession` right before the delete. A lease cleared to
-  nobody (the SIGTERM drain, the reaper) stops the run as an Abort does and
-  settles the session as before.
+- **A worker that lost its run to a continuation leaves the session alone**
+  (`lostRunDestination` in `run-lease.ts`, `state.handedOver`): no answer, no
+  interrupt, no delete, asked again in `settleSession` right before the delete.
+  A continuation is a SUCCESSOR (another worker holds the lease) or CONTINUES
+  (nobody holds it and the run is not ABORTED or FAILED: the SIGTERM drain
+  PAUSED it, and a resume may already have claimed it back). Only a lease
+  cleared to nobody on an ABORTED or FAILED run (an operator, the reaper) stops
+  the run as an Abort does and settles the session. A read that fails is read
+  as a handover: a session left alone is recoverable, one deleted under a
+  continuation is not.
+- **A person's resume of a PAUSED run reconnects too** (the owner's second
+  decision of 2026-11-25), as the Tool Runner continues a paused run from its
+  kept checkpoint. `resumeWorkflowRun` puts the pause's instant (the row's
+  `updatedAt` before its claim) in the job as `pausedAt`; the worker, on a
+  `SESSION` engine, anchors the new segment at the PAUSED segment's start
+  (`anchorSegment`'s `continuePaused`: the pause keeps the anchor), so the
+  engine finds the session the drain left open, ONE session, the newest that
+  segment's ledger names, with every check above. A run resumed from
+  AWAITING_APPROVAL never continues: its session was settled when it parked.
+  A resume claimed more than `PAUSED_SESSION_RESUME_WINDOW_MS` (an hour inside
+  the hold) after the pause settles the session itself and fails
+  `managed_agents_reconnect_resumed_too_late`; one that finds the session
+  already settled fails `_session_settled_while_paused`. The resume and the
+  reconciliation decide from the same instant an hour apart, so neither
+  continues a session the other is deleting. Do not measure the hold from the
+  session's creation: a resume carries a session across segments.
+- **An operator's Abort of a run no worker drives settles its session**
+  (`settleAbortedRunSessions` in `usecases/managed-agents-cleanup.ts`): after
+  the Abort's transaction commits, by recorded id, through the clean-up's own
+  `deleteSession`, under a 15 s deadline; recorded KEPT where the connection
+  keeps sessions, and `SESSION_DELETE_FAILED` (so the failed-delete retry takes
+  it) when it cannot finish. A RUNNING run's engine settles its own.
+- **A kill engaged while a run is PAUSED does not delete its session.** No
+  engine executes a PAUSED run, and the kill is read where a run executes: a
+  resume reads it first and settles the run, leaving the session to the next
+  reconciliation pass (the run has then ended), and the hold or an Abort bound
+  it otherwise. A RETIRED agent's PAUSED run is never held: it can never be
+  resumed, so the next pass settles its session.
 - **The first MODEL_CALL of a reconnected segment** carries
   `reconnectedToSession` and `reconnectedAfterEventId` (the last history event
   the reconnect read). No new session lifecycle value is written: the
@@ -4258,6 +4300,35 @@ ENTERPRISE and self-hosted included: which plans do is an owner decision, a
 one-line diff in `PLAN_FEATURES`. A hosted run's usage is recorded per tenant
 through `WorkflowRun.hostedManagedAgents` with the run's `costTokens` and its
 span-derived `MODEL_CALL` steps.
+
+**A hosted session's time is recorded per tenant, and unknown is never zero**
+(#4173, owner decision 4 of 2026-11-25; `managed-agents/session-usage.ts`).
+The figure is the session's `usage.active_seconds`, which the SDK names as what
+its runtime is priced on (not `stats.active_seconds`, which sums threads). The
+settle's own status poll reads it, and `meterHostedSession` records it BEFORE
+the delete and never throws. `WorkflowRun.hostedSessionsUnmetered` counts a
+hosted session up at its `SESSION_CREATED` step and down when its usage is
+read; `hostedSessionSeconds` sums what was read and stays NULL until something
+is. So a failed read, a session still running and one a dead worker left all
+read as unknown. Only a `HOSTED` route meters, both writes ask
+`"hostedManagedAgents" = true`, and a CHECK refuses either column on any other
+run: a tenant's own workspace bills the tenant. Do not write 0 for "not read",
+and do not meter from `stats`.
+
+**Connecting a workspace's own Anthropic workspace cleans up what Inflect
+hosted for it, and withdraws the opt-in** (#4173, owner decision 3 of
+2026-11-25; `usecases/hosted-managed-agents-own-workspace.ts`). After an
+enabled `anthropic-workspace` save commits, and only while hosted records exist
+that no DONE hosted clean-up covers (the opt-in, an OPEN hosted record, or a
+hosted provision or run newer than the last DONE record's `coversUntil`), it
+opens Step 5c's `CONNECTION_REMOVED` record under `inflect-hosted`: recorded ids
+only, retried by data-lifecycle, `HOSTED_NOT_ACTIVE` and no request while the
+constant is false. The opt-in goes off through `withdrawHostedOptInOnOwnWorkspace`
+in the opt-in's one-writer file, which can only turn it off and is audited with
+`cause: OWN_WORKSPACE_CONNECTED`, so that removing the own connection later never
+moves runs to Inflect's workspace without an owner opting in again. Never fail
+the save on it, and do not widen the trigger to every save: a re-archive is not
+known to be done.
 
 ## Testing Conventions
 

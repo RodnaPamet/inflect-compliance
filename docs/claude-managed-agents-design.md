@@ -125,7 +125,10 @@ puts at Anthropic:
   session a dead worker abandoned, recorded only `SESSION_CREATED` and older
   than any run segment can last, by deleting it, or recording it kept when the
   connection keeps sessions (Step 5H, #4169), and never one whose run is still
-  RUNNING, which a retry or a takeover reconnects to (decision 9); and it
+  RUNNING, which a retry or a takeover reconnects to (decision 9), nor one
+  whose run has been PAUSED for less than 24 hours, which a person's resume
+  reconnects to; a paused run's session past that is settled however old it
+  is; and it
   deletes a session recorded DELETED that still exists. Nothing has been created in a
   customer's workspace in production yet: the engine runs from Step 5d, and
   `AGENT_MANAGED_AGENTS` is off there (#5797).
@@ -224,6 +227,24 @@ puts at Anthropic:
     `MODEL_CALL` of a reconnected segment records the session and the event it
     picked up after. A worker whose lease another worker took leaves the
     session alone: no answer, no interrupt, no delete.
+  - **A person's resume of a PAUSED run reconnects to its session (decision 9,
+    second part, #5854).** The SIGTERM drain no longer interrupts or deletes
+    the session of a run it pauses: the worker reads its lease cleared on a run
+    that is not ABORTED or FAILED and leaves the session exactly as it is. A
+    person's resume then continues the paused segment: the worker anchors the
+    new segment at the paused segment's start, and the engine reconnects to the
+    session that segment left open, with every check a retry makes. The
+    reconciliation leaves that session alone while the run has been PAUSED for
+    less than 24 hours (from the pause) and settles it after, deleting it, or
+    recording it kept where the connection keeps sessions, however old the
+    session is. A resume claimed more than 23 hours after the pause settles the
+    session itself and fails `managed_agents_reconnect_resumed_too_late`; one
+    that finds it already settled fails `_session_settled_while_paused`. An
+    operator's Abort of a PAUSED run deletes its session by its recorded id
+    after the Abort commits, and a retirement of its agent has the next
+    reconciliation pass settle it. A kill engaged while the run is paused does
+    not reach the session; a resume reads the kill first and the next
+    reconciliation pass settles the session.
   - **The client checks bodies against an allowlist (#5854).** Each POST may
     carry only the members the engine writes, an agent's `system` must be
     Inflect's preamble byte for byte, and a session's events may only be
@@ -284,6 +305,29 @@ puts at Anthropic:
     span-derived `MODEL_CALL`) are recorded per tenant. Hosted runs need the
     plan entitlement `hostedManagedAgents`, which no plan includes until the
     owner opens one.
+  - **Session time, per tenant (#4173, owner decision 4 of 2026-11-25).** At
+    settle a hosted run reads its session's `usage.active_seconds` (the
+    duration Anthropic prices a session's runtime on) before the delete and
+    records it on the run, `WorkflowRun.hostedSessionSeconds`, beside the
+    tokens; `hostedSessionsUnmetered` counts the hosted sessions whose usage
+    was not read (a failed read, a session still running, one a dead worker
+    left), so an unknown is never recorded as zero. A read that fails never
+    blocks the settle or the delete. A run in the tenant's own workspace
+    records nothing (a CHECK holds it): that time is billed to the tenant.
+    Each read is also counted on `agent.hosted.session.usage` and observed on
+    `agent.hosted.session.seconds`, with no tenant label.
+  - **A tenant's own workspace, connected later (#4173, owner decision 3 of
+    2026-11-25).** When a workspace with hosted records saves an enabled
+    `anthropic-workspace` connection of its own, its hosted opt-in is
+    withdrawn (audited, cause `OWN_WORKSPACE_CONNECTED`) and Step 5c's
+    clean-up of its records in Inflect's workspace is opened, by recorded id,
+    after the save commits; what it leaves is retried by data-lifecycle. Only
+    records no finished hosted clean-up covers trigger it, so a later save of
+    the same connection sends nothing. Opting back in is an owner's decision,
+    taken again.
+  - **Decided, needing no code (owner, 2026-11-25).** No plan is entitled to
+    hosting yet, and the caps stay at one hosted run per tenant and two per
+    deployment.
 
 ## What Managed Agents is, as documented on 2026-10-24
 
@@ -668,6 +712,17 @@ marked PROPOSED, NOT IN EFFECT. The customer notice,
    reconciliation leaves such a session alone while its run is live. Flue keeps
    the pause, because its runtime cannot resume. See
    `docs/implementation-notes/2026-11-25-fix-5854-ma-reattach.md`.
+   **Decided (owner, 2026-11-25, second):** a run that was PAUSED (for example
+   by a SIGTERM drain) and is resumed by a person ALSO reconnects to the
+   session its paused segment created, instead of starting a new session, with
+   the same checks: drift; refuse a gone, terminated or stopped session;
+   re-apply recorded guard verdicts; answer open calls as kept /
+   `TOOL_CALL_OUTCOME_UNKNOWN` / `TOOL_CALL_NOT_RUN`. This matches how the Tool
+   Runner continues a paused run. How long the session waits for the resume
+   (24 hours from the pause) was left to the implementation: the
+   reconciliation settles it after that, and a resume after 23 hours fails by
+   name. See
+   `docs/implementation-notes/2026-11-25-fix-5854-ma-resume-reconnect.md`.
 
 ## Roadmap (future direction)
 
