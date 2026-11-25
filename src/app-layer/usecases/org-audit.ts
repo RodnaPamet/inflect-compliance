@@ -51,6 +51,12 @@ export interface OrgAuditRow {
         name: string | null;
     } | null;
     detailsJson: unknown;
+    /**
+     * The invitee an `ORG_INVITE_*` row is about, resolved at READ time from
+     * `detailsJson.inviteId` (#5950): the row names the invite, never its
+     * address. `null` when the row names no invite or the invite is gone.
+     */
+    invitee: { email: string } | null;
     requestId: string | null;
     entryHash: string;
     previousHash: string | null;
@@ -125,6 +131,23 @@ export async function listOrgAudit(
     const hasNextPage = rows.length > limit;
     const trimmed = hasNextPage ? rows.slice(0, limit) : rows;
     const last = trimmed[trimmed.length - 1];
+    // The invitee of each invite row, by the id the row carries (#5950, owner
+    // decision 2026-11-25): one bounded read for the page, inside this org.
+    const inviteIdOf = (detailsJson: unknown): string | null => {
+        if (detailsJson === null || typeof detailsJson !== 'object' || Array.isArray(detailsJson)) return null;
+        const id = (detailsJson as Record<string, unknown>).inviteId;
+        return typeof id === 'string' && id !== '' ? id : null;
+    };
+    const inviteIds = [...new Set(trimmed.map((r) => inviteIdOf(r.detailsJson)).filter((id): id is string => id !== null))];
+    const invites = inviteIds.length === 0
+        ? []
+        : await prisma.orgInvite.findMany({
+              where: { organizationId: ctx.organizationId, id: { in: inviteIds } },
+              select: { id: true, email: true },
+              take: inviteIds.length,
+          });
+    const inviteEmail = new Map(invites.map((i) => [i.id, i.email] as const));
+
     const nextCursor = hasNextPage && last
         ? encodeCursor({
               createdAt: last.occurredAt.toISOString(),
@@ -141,6 +164,11 @@ export async function listOrgAudit(
             actor: r.actor ?? null,
             target: r.target ?? null,
             detailsJson: r.detailsJson,
+            invitee: (() => {
+                const id = inviteIdOf(r.detailsJson);
+                const email = id === null ? undefined : inviteEmail.get(id);
+                return email === undefined ? null : { email };
+            })(),
             requestId: r.requestId,
             entryHash: r.entryHash,
             previousHash: r.previousHash,

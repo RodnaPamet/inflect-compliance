@@ -51,6 +51,7 @@ const TRANSLATIONS = {
     action: A.action,
     entity: A.entity,
     details: A.details,
+    person: A.auditPerson,
     noEntries: A.noEntries,
     older: A.auditLogOlder,
     newest: A.auditLogNewest,
@@ -64,6 +65,7 @@ const ROW: AuditLogRow = {
     entity: 'Risk',
     details: 'Created risk "Ransomware"',
     userName: 'Ivo',
+    person: null,
 };
 
 function renderTable(props: Partial<React.ComponentProps<typeof AuditLogClient>> = {}) {
@@ -130,6 +132,21 @@ describe('columns', () => {
     test('the details text is shown as given', () => {
         renderTable();
         expect(within(screen.getByTestId('audit-log-table')).getAllByText(ROW.details!).length).toBeGreaterThan(0);
+    });
+
+    // #5950: a row names the person it is about by id only, and the server
+    // read resolves the id; the table shows what it resolved to under its own
+    // column, and a dash for a row about nobody.
+    test('the Person column shows who the row is about, as the read resolved it', () => {
+        renderTable({
+            auditLog: [
+                { ...ROW, id: 'p1', action: 'MEMBER_REMOVED', entity: 'TenantMembership', details: 'Removed member', person: 'Alice Example' },
+                { ...ROW, id: 'p2', person: null },
+            ],
+        });
+        const table = screen.getByTestId('audit-log-table');
+        expect(within(table).getAllByText(A.auditPerson).length).toBeGreaterThan(0);
+        expect(within(table).getAllByText('Alice Example').length).toBeGreaterThan(0);
     });
 
     test('offers no row selection: the table has no bulk actions', () => {

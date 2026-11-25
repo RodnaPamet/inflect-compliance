@@ -5311,6 +5311,7 @@
     "action": "Action",
     "entity": "Entity",
     "details": "Details",
+    "auditPerson": "Person",
     "noEntries": "No audit log entries",
     "templateDescription": "Available policy templates to quick-start your compliance documentation.",
     "clickToUse": "Click to use as template",

@@ -400,15 +400,21 @@ describe('audit log — paged, so an entry older than one page can be reached', 
         const at = new Date('2026-10-29T12:00:00.000Z');
         reads.listAuditLogPage.mockResolvedValueOnce({
             rows: [
-                { id: 'a', createdAt: at, action: 'RISK_CREATED', entity: 'Risk', details: 'Created risk\n\nContext: {"requestId":"r-1"}', detailsJson: null, user: { name: 'Ivo' } },
-                { id: 'b', createdAt: at, action: 'INTEGRATION_CONNECTION_UPDATED', entity: 'IntegrationConnection', details: 'Context: {"requestId":"r-2"}', detailsJson: { summary: 'Updated integration: Jira' }, user: null },
+                { id: 'a', createdAt: at, action: 'RISK_CREATED', entity: 'Risk', details: 'Created risk\n\nContext: {"requestId":"r-1"}', detailsJson: null, user: { name: 'Ivo' }, person: null },
+                { id: 'b', createdAt: at, action: 'INTEGRATION_CONNECTION_UPDATED', entity: 'IntegrationConnection', details: 'Context: {"requestId":"r-2"}', detailsJson: { summary: 'Updated integration: Jira' }, user: null, person: null },
+                // #5950: the person a row names by id, as the read resolved it,
+                // and the bare id once that person no longer exists.
+                { id: 'c', createdAt: at, action: 'MEMBER_REMOVED', entity: 'TenantMembership', details: 'Removed member', detailsJson: { targetUserId: 'u-1' }, user: { name: 'Ivo' }, person: { id: 'u-1', label: 'Alice Example' } },
+                { id: 'd', createdAt: at, action: 'MEMBER_REMOVED', entity: 'TenantMembership', details: 'Removed member', detailsJson: { targetUserId: 'u-gone' }, user: { name: 'Ivo' }, person: { id: 'u-gone', label: null } },
             ],
             nextCursor: null,
         });
         const el = find(await render('/admin/audit-log', 'AUDITOR'), AuditLogClient);
         expect(el!.props.auditLog).toEqual([
-            { id: 'a', createdAt: at.toISOString(), action: 'RISK_CREATED', entity: 'Risk', details: 'Created risk', userName: 'Ivo' },
-            { id: 'b', createdAt: at.toISOString(), action: 'INTEGRATION_CONNECTION_UPDATED', entity: 'IntegrationConnection', details: 'Updated integration: Jira', userName: null },
+            { id: 'a', createdAt: at.toISOString(), action: 'RISK_CREATED', entity: 'Risk', details: 'Created risk', userName: 'Ivo', person: null },
+            { id: 'b', createdAt: at.toISOString(), action: 'INTEGRATION_CONNECTION_UPDATED', entity: 'IntegrationConnection', details: 'Updated integration: Jira', userName: null, person: null },
+            { id: 'c', createdAt: at.toISOString(), action: 'MEMBER_REMOVED', entity: 'TenantMembership', details: 'Removed member', userName: 'Ivo', person: 'Alice Example' },
+            { id: 'd', createdAt: at.toISOString(), action: 'MEMBER_REMOVED', entity: 'TenantMembership', details: 'Removed member', userName: 'Ivo', person: 'u-gone' },
         ]);
     });
 
