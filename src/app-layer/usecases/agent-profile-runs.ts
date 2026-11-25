@@ -97,6 +97,7 @@ import {
 import { compileFlow, flowToolsAgree, parseStoredAgentFlow, type CompiledFlow } from '@/lib/agentic/agent-flow';
 import { runMessage } from '@/lib/agentic/flue/run-message';
 import { readRecordedRunDriver, readStoredDriverMode } from '@/lib/agentic/agent-driver-stored-mode';
+import { assertManagedAgentsOn } from '@/lib/agentic/managed-agents-switch';
 import { agentProfilesOn, assertMayManageProfiles, profileContentHash } from './agent-profiles';
 
 export type ProfileRunRefusal =
@@ -411,7 +412,15 @@ export async function resolveRunDefinition(
     // profile asks for (Step 5d). Read as TEXT, through the reader the gate
     // uses, so a value this build does not know asks for the Tool Runner.
     const storedMode = await runInTenantContext(ctx, (db) => readStoredDriverMode(db, ctx.tenantId));
-    const def = compileProfileDefinition(workflowKey, row, { testRun, engine: profileEngineRequestFor(storedMode) });
+    const engine = profileEngineRequestFor(storedMode);
+    // THE MANAGED AGENTS SWITCH (#5964): a workspace that chose the engine and
+    // whose switch is off starts no run on it, refused by name before the run
+    // row exists (`MANAGED_AGENTS_OFF`), rather than moved to the built-in
+    // engine and refused there under a name that says nothing about why. The
+    // choice, the connection and the provisioned agent are kept, so turning
+    // the switch back on starts runs again.
+    if (engine === 'managed-agents') await assertManagedAgentsOn({ tenantId: ctx.tenantId });
+    const def = compileProfileDefinition(workflowKey, row, { testRun, engine });
     if (!def) {
         throw refuse('PROFILE_VERSION_NOT_APPROVED', 'This version carries a setting this build does not recognise.');
     }

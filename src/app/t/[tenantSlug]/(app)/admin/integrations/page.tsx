@@ -253,7 +253,8 @@ export default function AdminIntegrationsPage() {
     );
     /**
      * The Anthropic workspace card exists only when the server lists its
-     * provider, which it does only with `AGENT_MANAGED_AGENTS` on (Step 5a).
+     * provider, which it does only while the Managed Agents switch is on for
+     * this workspace (#5964, `listAvailableProvidersFor`).
      */
     const offersAnthropicWorkspace = providers.some((p) => p.id === ANTHROPIC_WORKSPACE_PROVIDER);
 

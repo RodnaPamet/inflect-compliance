@@ -30,6 +30,11 @@
  * connection. It is offered only when its switch is on, and can be chosen only
  * when that workspace is connected, which is what the writer requires too.
  *
+ * Since #5964 that switch is the WORKSPACE's (the "Managed Agents engine"
+ * section above this one), unless the operator's `AGENT_MANAGED_AGENTS`
+ * overrides it, and `managedAgents.basis` says which: a reason or a term about
+ * it names the owner, not the operator, when the workspace decided.
+ *
  * @module admin/ai-features/agent-engine-display
  */
 import {
@@ -38,7 +43,7 @@ import {
     type StaticDriverReason,
     type StoredDriverMode,
 } from '@/lib/agentic/agent-driver';
-import { switchActor, type AgentSwitchBasis } from '@/lib/agentic/agent-switches';
+import { switchActor, type AgentSwitchBasis, type WorkspaceAgentSwitchBasis } from '@/lib/agentic/agent-switches';
 
 /** The response of `GET /api/t/{slug}/admin/agent-driver`. */
 export interface AgentDriverSettingPayload {
@@ -59,10 +64,13 @@ export interface AgentDriverSettingPayload {
      * one Anthropic workspace is connected and enabled (Step 5d). Absent from
      * a server that predates it, which reads as the engine being off.
      * `HOSTED` (Step 6b): none is connected, and the run would use Inflect's
-     * own workspace, every hosted term holding.
+     * own workspace, every hosted term holding. `envEnabled` is "on for this
+     * workspace" since #5964, and `basis` says whether the operator or the
+     * workspace's owner decided; absent from a server that predates it.
      */
     managedAgents?: {
         envEnabled: boolean;
+        basis?: WorkspaceAgentSwitchBasis;
         implemented: boolean;
         workspace: 'CONNECTED' | 'NONE' | 'AMBIGUOUS' | 'HOSTED';
     };
@@ -80,7 +88,7 @@ export function engineOf(setting: Pick<AgentDriverSettingPayload, 'mode'>): Reas
     return 'FLUE';
 }
 
-/** Is the Managed Agents engine's operator switch on? An older server's answer reads as off. */
+/** Is the Managed Agents engine's switch on for this workspace? An older server's answer reads as off. */
 function managedAgentsEnvEnabled(setting: AgentDriverSettingPayload): boolean {
     return setting.managedAgents?.envEnabled === true;
 }
@@ -201,7 +209,14 @@ export function headlineFor(setting: AgentDriverSettingPayload, wiring?: FlueWir
         return 'reason.UNKNOWN';
     }
     if (!isStaticDriverReason(reason)) return 'reason.UNKNOWN';
-    if (engineOf(setting) === 'MANAGED_AGENTS') return MANAGED_AGENTS_REASON_MESSAGE[reason];
+    if (engineOf(setting) === 'MANAGED_AGENTS') {
+        // The workspace holds the switch (#5964): name its owner, not the
+        // operator, who cannot help a workspace whose owner left it off.
+        if (reason === 'ENV_DISABLED' && setting.managedAgents?.basis === 'WORKSPACE_OFF') {
+            return 'reasonManagedAgents.WORKSPACE_OFF';
+        }
+        return MANAGED_AGENTS_REASON_MESSAGE[reason];
+    }
     if (engineOf(setting) !== 'TOOL_RUNNER') return REASON_MESSAGE[reason];
     // The organization holds the switch (#4557): name it, not the operator,
     // who cannot help a workspace whose organization left the engine off.
@@ -266,7 +281,11 @@ export function engineControlFor(setting: AgentDriverSettingPayload, canChange: 
 export function gateTermsFor(setting: AgentDriverSettingPayload): EngineTerm[] {
     if (engineOf(setting) === 'MANAGED_AGENTS') {
         return [
-            { key: 'ENV', satisfied: managedAgentsEnvEnabled(setting), actor: 'operator' },
+            {
+                key: 'ENV',
+                satisfied: managedAgentsEnvEnabled(setting),
+                actor: setting.managedAgents?.basis ? switchActor(setting.managedAgents.basis) : 'operator',
+            },
             { key: 'TENANT', satisfied: true, actor: 'tenant' },
             { key: 'BUILD', satisfied: setting.managedAgents?.implemented === true, actor: 'operator' },
             { key: 'WORKSPACE', satisfied: managedAgentsWorkspaceConnected(setting), actor: 'tenant' },
@@ -295,10 +314,11 @@ export const OFFERED_ENGINES: readonly AgentDriverMode[] = AGENT_DRIVER_MODES;
 
 /**
  * The engines the section lists (Step 5d). Every writable mode, except the
- * Managed Agents engine on a deployment whose switch is off: there is no
- * Anthropic workspace card to connect one on, so the option would be a choice
- * nobody could ever make. A workspace that already holds it still sees it,
- * so the control names the stored choice.
+ * Managed Agents engine while its switch is off for this workspace (#5964:
+ * the owner's toggle, or the operator's override): there is no Anthropic
+ * workspace card to connect one on, so the option would be a choice nobody
+ * could ever make. A workspace that already holds it still sees it, so the
+ * control names the stored choice.
  */
 export function listedEngines(setting: AgentDriverSettingPayload): readonly AgentDriverMode[] {
     return OFFERED_ENGINES.filter(

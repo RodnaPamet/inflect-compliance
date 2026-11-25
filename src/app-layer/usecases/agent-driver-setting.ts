@@ -42,9 +42,8 @@ import {
     type StoredDriverMode,
 } from '@/lib/agentic/agent-driver';
 import { narrowToWhatAWorkflowAsksFor } from '@/lib/agentic/agent-driver-policy';
-import type { AgentSwitchBasis } from '@/lib/agentic/agent-switches';
-import { toolRunnerDecisionFor } from '@/lib/agentic/agent-switches-policy';
-import { managedAgentsEnabled } from '@/lib/agentic/managed-agents-switch';
+import type { AgentSwitchBasis, WorkspaceAgentSwitchBasis } from '@/lib/agentic/agent-switches';
+import { managedAgentsDecisionFor, toolRunnerDecisionFor } from '@/lib/agentic/agent-switches-policy';
 import {
     readManagedAgentsWorkspaceState,
     type HostedWorkspaceRefusal,
@@ -111,11 +110,16 @@ export interface AgentDriverSetting {
      */
     toolRunner: { envEnabled: boolean; implemented: boolean; basis: AgentSwitchBasis };
     /**
-     * The same two terms for the Managed Agents engine (Step 5d, #4167), whose
-     * operator switch is `AGENT_MANAGED_AGENTS`, and the one thing only it
-     * needs before it may be chosen: exactly one enabled Anthropic workspace
-     * connection (`workspace`). The page offers the engine only when the switch
-     * is on and the workspace is `CONNECTED`; the writer refuses it without one.
+     * The same two terms for the Managed Agents engine (Step 5d, #4167), and
+     * the one thing only it needs before it may be chosen: exactly one enabled
+     * Anthropic workspace connection (`workspace`). The page offers the engine
+     * only when the switch is on and the workspace is `CONNECTED`; the writer
+     * refuses it without one.
+     *
+     * Since #5964 the switch is the WORKSPACE's: with `AGENT_MANAGED_AGENTS`
+     * unset, an owner turns it on above this section. `envEnabled` is
+     * therefore "on for this workspace", whoever decided, and `basis` says who
+     * did (`managedAgentsDecisionFor`).
      *
      * Since Step 6b the workspace may instead be INFLECT's own (`HOSTED`): no
      * connection of the tenant's, and every hosted term holds (the source
@@ -128,6 +132,7 @@ export interface AgentDriverSetting {
      */
     managedAgents: {
         envEnabled: boolean;
+        basis: WorkspaceAgentSwitchBasis;
         implemented: boolean;
         workspace: ManagedAgentsWorkspaceState;
         hostedRefusal: HostedWorkspaceRefusal | null;
@@ -153,7 +158,8 @@ export async function getAgentDriverSetting(ctx: RequestContext): Promise<AgentD
     const envEnabled = flueEnvEnabled(env.AGENT_DRIVER_FLUE);
     const toolRunnerSwitch = await toolRunnerDecisionFor({ tenantId: ctx.tenantId });
     const toolRunnerEnvEnabled = toolRunnerSwitch.on;
-    const managedAgentsEnvEnabled = managedAgentsEnabled();
+    const managedAgentsSwitch = await managedAgentsDecisionFor({ tenantId: ctx.tenantId });
+    const managedAgentsEnvEnabled = managedAgentsSwitch.on;
     const workspace = await readManagedAgentsWorkspaceState(ctx);
     // FOUR terms, not three. `resolveAgentDriver` ANDs env, tenant and the
     // build flag; `narrowToWhatAWorkflowAsksFor` applies the fourth — no
@@ -181,6 +187,7 @@ export async function getAgentDriverSetting(ctx: RequestContext): Promise<AgentD
         },
         managedAgents: {
             envEnabled: managedAgentsEnvEnabled,
+            basis: managedAgentsSwitch.basis,
             implemented: DRIVER_IMPLEMENTED['managed-agents'],
             workspace: workspace.state,
             hostedRefusal: workspace.hostedRefusal,
@@ -271,6 +278,7 @@ export async function setAgentDriverSetting(
                 toolRunnerBasis: before.toolRunner.basis,
                 toolRunnerImplemented: before.toolRunner.implemented,
                 managedAgentsEnvEnabled: before.managedAgents.envEnabled,
+                managedAgentsBasis: before.managedAgents.basis,
                 managedAgentsImplemented: before.managedAgents.implemented,
                 managedAgentsWorkspace: before.managedAgents.workspace,
             },

@@ -168,7 +168,9 @@ export async function getFlueWiringState(ctx: RequestContext): Promise<FlueWirin
     const terms: FlueWiringTerm[] =
         engine === 'MANAGED_AGENTS'
             ? [
-                  { key: 'ENV', satisfied: driver.managedAgents.envEnabled, actor: 'operator' },
+                  // The workspace's own switch since #5964, unless the
+                  // operator's override decides: name whoever holds it.
+                  { key: 'ENV', satisfied: driver.managedAgents.envEnabled, actor: switchActor(driver.managedAgents.basis) },
                   { key: 'TENANT', satisfied: true, actor: 'tenant' },
                   { key: 'BUILD', satisfied: driver.managedAgents.implemented, actor: 'operator' },
                   { key: 'PROFILES', satisfied: profilesRequested, actor: profiles ? switchActor(profiles.basis) : 'operator' },

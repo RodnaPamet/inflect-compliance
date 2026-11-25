@@ -73,9 +73,13 @@ jest.mock('@/lib/db-context', () => ({
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn(async () => undefined) }));
 jest.mock('@/env', () => ({ env: {} }));
 // The workspace's organization row (#4557): none, so the env-only answer stands.
+// The workspace's own Managed Agents toggle (#5964): no settings row, so off.
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
-    default: { tenant: { findUnique: jest.fn(async () => ({ organization: null })) } },
+    default: {
+        tenant: { findUnique: jest.fn(async () => ({ organization: null })) },
+        tenantSecuritySettings: { findFirst: jest.fn(async () => null) },
+    },
 }));
 jest.mock('@/lib/observability', () => ({
     logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },

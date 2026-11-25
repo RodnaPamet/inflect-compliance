@@ -2001,6 +2001,18 @@ model TenantSecuritySettings {
   /// plan entitlement must all hold, and a workspace with its own connected
   /// Anthropic workspace always runs there instead.
   hostedManagedAgentsOptIn     Boolean @default(false)
+  /// THE MANAGED AGENTS SWITCH, THE WORKSPACE'S HALF (#5964, owner decisions
+  /// 2026-11-25): has an OWNER turned the Managed Agents engine on for this
+  /// workspace? Default FALSE. Read only while the operator's override
+  /// `AGENT_MANAGED_AGENTS` is UNSET: `1`/`true` turns the engine on for every
+  /// workspace and any other set value off for every workspace, whatever this
+  /// says (`managedAgentsDecisionFor`, `src/lib/agentic/agent-switches-policy.ts`).
+  /// Written only by `usecases/managed-agents-switch.ts`, behind a literal
+  /// `requirePermission('admin.tenant_lifecycle')`, by a person, and audited.
+  /// OFF refuses new Managed Agents runs by name and hides the Anthropic
+  /// workspace card; the connection, the engine choice and everything at
+  /// Anthropic are kept, so turning it back on resumes.
+  managedAgentsEnabled         Boolean @default(false)
 
   createdAt                    DateTime          @default(now())
   updatedAt                    DateTime          @updatedAt

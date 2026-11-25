@@ -1090,6 +1090,31 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'a job: it moves the workspace\'s data to a sub-processor.',
     },
 
+    // ── The Managed Agents switch, the workspace's half (#5964) ────
+    // Method-scoped, as agent-driver is: every admin READS whether the engine
+    // is on and who decided; only an OWNER changes it. First match wins, so
+    // the GET rule sits above the rule that covers every other method.
+    {
+        path: new RegExp(`^${T}\\/admin\\/managed-agents$`),
+        methods: ['GET'],
+        permission: 'admin.view',
+        note:
+            'Read whether the Managed Agents engine is on for this workspace, '
+            + 'who decided it (the operator\'s AGENT_MANAGED_AGENTS override or '
+            + 'the workspace owner\'s toggle) and the stored toggle. Every admin '
+            + 'can see it, as they see the engine gate it is a term of.',
+    },
+    {
+        path: new RegExp(`^${T}\\/admin\\/managed-agents$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Turn the Managed Agents engine on or off for this workspace (owner '
+            + 'decisions 2026-11-25). OWNER-only on the key that changes the '
+            + 'engine itself, and the usecase also refuses an API key, an agent '
+            + 'and a job: it decides whether runs may use the customer\'s own '
+            + 'Anthropic workspace at all.',
+    },
+
     // ── JML identity-write authority (per direction) ────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/identity-write-policy(\\/.*)?$`),

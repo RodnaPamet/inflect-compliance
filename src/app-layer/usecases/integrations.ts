@@ -30,6 +30,8 @@ import type { CheckResult, EvidencePayload, ConnectionValidationResult } from '.
 import { integrationEvidenceText } from '../integrations/evidence-text';
 import { encryptField, decryptField } from '@/lib/security/encryption';
 import { ANTHROPIC_WORKSPACE_PROVIDER } from '@/lib/agentic/managed-agents/store';
+import { managedAgentsOnFor } from '@/lib/agentic/agent-switches-policy';
+import { assertManagedAgentsOn } from '@/lib/agentic/managed-agents-switch';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest, forbidden, conflict } from '@/lib/errors/types';
 import {
@@ -374,6 +376,12 @@ export async function upsertIntegrationConnection(
     // Validate provider is registered
     const providerImpl = registry.getProvider(input.provider);
     if (!providerImpl) throw badRequest(`Unknown provider: ${input.provider}`);
+    // The Anthropic workspace is offered only while the Managed Agents switch
+    // is on for this workspace (#5964): the provider is always registered, so
+    // the registry no longer answers that. Refused by name, before anything is
+    // validated or written. An update cannot reach the connection under another
+    // provider's name: the stored row's provider is checked below.
+    if (input.provider === ANTHROPIC_WORKSPACE_PROVIDER) await assertManagedAgentsOn({ tenantId: ctx.tenantId });
 
     // Encrypt secrets if provided — VALIDATED FIRST.
     //
@@ -693,6 +701,11 @@ export async function testConnectionCredentials(
 ): Promise<ConnectionValidationResult> {
     const providerImpl = registry.getProvider(input.provider);
     if (!providerImpl) throw badRequest(`Unknown provider: ${input.provider}`);
+    // As the save (#5964): no Test of the Anthropic workspace while the Managed
+    // Agents switch is off, before any stored secret is read. A stored
+    // connection of that provider cannot be tested under another name: the
+    // row's provider is checked below.
+    if (input.provider === ANTHROPIC_WORKSPACE_PROVIDER) await assertManagedAgentsOn({ tenantId: ctx.tenantId });
 
     let storedConfig: Record<string, unknown> = {};
     let storedSecrets: Record<string, unknown> = {};
@@ -1751,7 +1764,23 @@ const PROVIDER_CATEGORY: Record<string, string> = {
 };
 
 export function listAvailableProviders() {
-    return registry.listProviders().map(p => ({
+    return registry.listProviders().map(describeProvider);
+}
+
+/**
+ * The providers THIS workspace may connect (#5964): every registered one,
+ * except the Anthropic workspace while the Managed Agents switch is off for
+ * it. The integrations page offers the card only for a provider listed here,
+ * so off hides the card. The connection itself is kept, and the page does not
+ * list a card-owned provider's connections anywhere else.
+ */
+export async function listAvailableProvidersFor(ctx: RequestContext) {
+    const managedAgentsOn = await managedAgentsOnFor({ tenantId: ctx.tenantId });
+    return listAvailableProviders().filter((p) => p.id !== ANTHROPIC_WORKSPACE_PROVIDER || managedAgentsOn);
+}
+
+function describeProvider(p: ReturnType<typeof registry.listProviders>[number]) {
+    return ({
         id: p.id,
         displayName: p.displayName,
         description: p.description,
@@ -1762,7 +1791,7 @@ export function listAvailableProviders() {
         liveValidation: p.liveValidation ?? false,
         // P3 — hub category (identity / cloud / scm / hris / document / internal).
         category: PROVIDER_CATEGORY[p.id] ?? 'other',
-    }));
+    });
 }
 
 /**

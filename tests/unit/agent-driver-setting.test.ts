@@ -63,9 +63,14 @@ jest.mock('@/env', () => ({ env: new Proxy({}, { get: (_t, k: string) => envBag[
 // The workspace's organization row (#4557). `null` — no organization — unless a
 // test sets one, so every env-only case reads exactly as it did before.
 const orgRow: { value: { agentProfilesEnabled: boolean; agentToolRunnerEnabled: boolean } | null } = { value: null };
+// The workspace's own Managed Agents toggle (#5964): off unless a test sets it.
+const workspaceToggle = { value: false };
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
-    default: { tenant: { findUnique: jest.fn(async () => ({ organization: orgRow.value })) } },
+    default: {
+        tenant: { findUnique: jest.fn(async () => ({ organization: orgRow.value })) },
+        tenantSecuritySettings: { findFirst: jest.fn(async () => ({ managedAgentsEnabled: workspaceToggle.value })) },
+    },
 }));
 
 jest.mock('@/lib/observability', () => ({
@@ -108,6 +113,7 @@ const ctx = makeRequestContext('OWNER');
 
 beforeEach(() => {
     orgRow.value = null;
+    workspaceToggle.value = false;
     jest.clearAllMocks();
     row = { agentDriver: 'STATIC' };
     for (const k of Object.keys(envBag)) delete envBag[k];
@@ -442,6 +448,7 @@ describe('the Managed Agents engine (Step 5d)', () => {
         const view = await getAgentDriverSetting(ctx);
         expect(view.managedAgents).toEqual({
             envEnabled: true,
+            basis: 'DEPLOYMENT_ON',
             implemented: DRIVER_IMPLEMENTED['managed-agents'],
             workspace: 'CONNECTED',
             // Step 6b: its own workspace wins, so no hosted term is named.
@@ -469,6 +476,48 @@ describe('the Managed Agents engine (Step 5d)', () => {
                 ? { driver: 'managed-agents', reason: null }
                 : { driver: 'static', reason: 'DRIVER_NOT_IMPLEMENTED' },
         );
+    });
+
+    describe('with AGENT_MANAGED_AGENTS unset, the workspace decides (#5964)', () => {
+        it('on when its owner turned it on, saying so, and the engine is in force', async () => {
+            workspaceToggle.value = true;
+            workspaceConnections = [{ id: 'c1' }];
+            envBag.AGENT_PROFILES_TENANTS = ctx.tenantSlug ?? '';
+            row = { agentDriver: 'MANAGED_AGENTS' };
+            const view = await getAgentDriverSetting(ctx);
+            expect(view.managedAgents).toMatchObject({ envEnabled: true, basis: 'WORKSPACE_ON' });
+            expect(view.effective).toEqual({ driver: 'managed-agents', reason: null });
+        });
+
+        it('off while its owner has not, naming the workspace as who holds it', async () => {
+            workspaceConnections = [{ id: 'c1' }];
+            envBag.AGENT_PROFILES_TENANTS = ctx.tenantSlug ?? '';
+            row = { agentDriver: 'MANAGED_AGENTS' };
+            const view = await getAgentDriverSetting(ctx);
+            expect(view.managedAgents).toMatchObject({ envEnabled: false, basis: 'WORKSPACE_OFF' });
+            expect(view.effective).toEqual({ driver: 'static', reason: 'ENV_DISABLED' });
+        });
+
+        it('the operator\'s 0 vetoes a workspace that turned it on', async () => {
+            workspaceToggle.value = true;
+            envBag.AGENT_MANAGED_AGENTS = '0';
+            row = { agentDriver: 'MANAGED_AGENTS' };
+            const view = await getAgentDriverSetting(ctx);
+            expect(view.managedAgents).toMatchObject({ envEnabled: false, basis: 'DEPLOYMENT_OFF' });
+        });
+
+        it('records the basis beside the switch when the engine choice changes', async () => {
+            workspaceToggle.value = true;
+            workspaceConnections = [{ id: 'c1' }];
+            await setAgentDriverSetting(ctx, 'MANAGED_AGENTS');
+            expect(logEvent).toHaveBeenCalledWith(
+                expect.anything(),
+                expect.anything(),
+                expect.objectContaining({
+                    metadata: expect.objectContaining({ managedAgentsEnvEnabled: true, managedAgentsBasis: 'WORKSPACE_ON' }),
+                }),
+            );
+        });
     });
 
     it('reads static, naming why, when the profile surface is off for the workspace', async () => {

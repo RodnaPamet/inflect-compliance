@@ -15,7 +15,8 @@
  *     each invalid, each with its own plain sentence, none quoting Anthropic;
  *   - a host other than api.anthropic.com is refused before any request;
  *   - every Test emits the outcome metric;
- *   - with AGENT_MANAGED_AGENTS unset the provider is not registered;
+ *   - the provider is registered whatever AGENT_MANAGED_AGENTS says, the
+ *     switch being a workspace's to decide since #5964;
  *   - the end-to-end seam answers only to both test flags, and the host rule
  *     still runs first under it.
  */
@@ -224,7 +225,7 @@ describe('AnthropicWorkspaceProvider — the host is fixed and the configuration
     });
 });
 
-describe('AGENT_MANAGED_AGENTS decides whether the provider exists', () => {
+describe('the provider is registered whatever AGENT_MANAGED_AGENTS says (#5964)', () => {
     const registeredWith = (value: string | undefined): boolean => {
         const saved = process.env.AGENT_MANAGED_AGENTS;
         if (value === undefined) delete process.env.AGENT_MANAGED_AGENTS;
@@ -243,18 +244,12 @@ describe('AGENT_MANAGED_AGENTS decides whether the provider exists', () => {
         }
     };
 
-    it('unset: not registered', () => {
-        expect(registeredWith(undefined)).toBe(false);
-    });
-
-    it('a value that is not 1 or true: not registered', () => {
-        expect(registeredWith('yes')).toBe(false);
-        expect(registeredWith('0')).toBe(false);
-    });
-
-    it('1 or true: registered', () => {
-        expect(registeredWith('1')).toBe(true);
-        expect(registeredWith('true')).toBe(true);
+    // The registry is per process, and the switch is now a WORKSPACE's
+    // (owner decisions 2026-11-25): listing, saving and testing are gated per
+    // tenant by `managedAgentsDecisionFor`, so the provider must exist in every
+    // process for a workspace that turns it on to reach it with no restart.
+    it.each([[undefined], ['1'], ['true'], ['0'], ['yes']])('%p: registered', (value) => {
+        expect(registeredWith(value)).toBe(true);
     });
 });
 

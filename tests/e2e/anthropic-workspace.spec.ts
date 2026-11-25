@@ -5,8 +5,8 @@
  *
  * MUTATING, so it runs in its own isolated tenant.
  *
- * The provider is registered because `AGENT_MANAGED_AGENTS=1` is in
- * `.env.e2e.example`. It dials the loopback faux Playwright starts
+ * The card is listed because `AGENT_MANAGED_AGENTS=1` in `.env.e2e.example`
+ * turns the Managed Agents switch on for every workspace (#5964). It dials the loopback faux Playwright starts
  * (`scripts/e2e-anthropic-workspace-faux.mjs`) instead of api.anthropic.com
  * because the webServer command sets both NEXT_TEST_MODE and AUTH_TEST_MODE —
  * the deployment-level seam in `e2e-faux.ts`, which no tenant setting reaches.

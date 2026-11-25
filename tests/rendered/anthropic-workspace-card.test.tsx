@@ -2,9 +2,9 @@
  * The "Anthropic workspace" card on Admin → Integrations (Step 5a of
  * docs/claude-managed-agents-design.md), driven through the REAL page.
  *
- *   - Flag off: the server lists no `anthropic-workspace` provider
- *     (AGENT_MANAGED_AGENTS unset leaves it unregistered), and the page renders
- *     no card. Flag on: the server lists it, and the card renders.
+ *   - Switch off for the workspace: the server lists no `anthropic-workspace`
+ *     provider for it (`listAvailableProvidersFor`, #5964), and the page
+ *     renders no card. Switch on: the server lists it, and the card renders.
  *   - The copy says what Inflect will create (agents, one environment,
  *     sessions), that sessions are deleted when each run ends unless kept, and
  *     that a kept session is still deleted on purge, removal and erasure.
@@ -97,7 +97,7 @@ const OKTA = {
     liveValidation: true,
     category: 'identity',
 };
-/** As the server lists the provider when AGENT_MANAGED_AGENTS is on. */
+/** As the server lists the provider while the Managed Agents switch is on for the workspace. */
 const ANTHROPIC = {
     id: 'anthropic-workspace',
     displayName: 'Anthropic workspace',

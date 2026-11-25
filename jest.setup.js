@@ -99,12 +99,11 @@ process.env.UPLOAD_DIR = 'uploads';
 // expectations hold.
 process.env.STORAGE_PROVIDER = process.env.STORAGE_PROVIDER || 'local';
 process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:3000';
-// The Managed Agents switch ON, so every guard that enumerates the provider
-// registry (config-field classification, fail-closed coverage, provider text,
-// runtime wiring) sees the `anthropic-workspace` provider an operator CAN
-// register. The production default — unset, not registered — is proven by
-// tests/unit/anthropic-workspace-provider.test.ts, which clears it in an
-// isolated module registry.
+// The Managed Agents switch ON for every workspace, so a suite that saves,
+// tests or runs on the `anthropic-workspace` provider need not first turn the
+// engine on for its tenant. The provider itself is registered whatever this
+// says (#5964); the production default — unset, each workspace's owner decides
+// — is exercised by tests/integration/managed-agents-workspace-switch.test.ts.
 process.env.AGENT_MANAGED_AGENTS = '1';
 
 // Note: tests/unit/env.test.ts clears this and runs in a separate process

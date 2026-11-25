@@ -649,17 +649,17 @@ export const env = createEnv({
         // this says, and a named tenant stays open past `AGENT_PROFILES=0`.
         // Read through `agentProfilesDecisionFor`.
         AGENT_PROFILES_TENANTS: z.string().optional(),
-        // MANAGED AGENTS IN THE CUSTOMER'S OWN ANTHROPIC WORKSPACE (Step 5a of
-        // docs/claude-managed-agents-design.md) — opt-in. With it unset the
-        // `anthropic-workspace` integration provider is not registered, so no
-        // connection to a customer's workspace can be saved or tested and the
-        // integrations page shows no card for one. It is also the Managed
-        // Agents ENGINE's operator switch (Step 5d): off, no workspace can
-        // choose the engine on Admin → AI features, and a stored choice runs
-        // static. Kept off in production until #5797 is settled. '1'/'true'
-        // on, anything else off, for the reason AGENT_DRIVER_FLUE above
-        // carries. Read through `managedAgentsEnabled`
-        // (src/lib/agentic/managed-agents-switch.ts).
+        // MANAGED AGENTS IN THE CUSTOMER'S OWN ANTHROPIC WORKSPACE — the
+        // operator's OVERRIDE of a switch each workspace decides (#5964, owner
+        // decisions 2026-11-25). Three states, as AGENT_PROFILES and
+        // AGENT_DRIVER_TOOL_RUNNER: unset leaves it to each workspace's owner
+        // (Admin → AI features; production), '1'/'true' turns the engine on
+        // for every workspace, any other value turns it off for every
+        // workspace. Off, the workspace's Anthropic workspace card is hidden,
+        // a save or Test of it is refused, and no Managed Agents run starts or
+        // continues. Read only through `managedAgentsDecisionFor`
+        // (src/lib/agentic/agent-switches-policy.ts); a guard refuses any
+        // other read.
         AGENT_MANAGED_AGENTS: z.string().optional(),
         // INFLECT'S OWN ANTHROPIC WORKSPACE FOR HOSTED MANAGED AGENTS (Step 6b
         // of docs/claude-managed-agents-design.md, shape MA-C1). One pair per

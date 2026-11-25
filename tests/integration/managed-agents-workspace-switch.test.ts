@@ -1,0 +1,426 @@
+/**
+ * THE MANAGED AGENTS SWITCH IS THE WORKSPACE'S (#5964, owner decisions
+ * 2026-11-25), over a real database and a faux Anthropic workspace
+ * (`tests/helpers/managed-agents-faux.ts`).
+ *
+ * `AGENT_MANAGED_AGENTS` is UNSET here, which is production today: each
+ * workspace's owner decides on Admin → AI features.
+ *
+ *   • The decision: the three states of the variable against the workspace's
+ *     column, read from the database, the operator's veto included.
+ *   • The writer: an ADMIN, an API key, an agent and a job are refused and
+ *     nothing is written; an owner in person writes, audited.
+ *   • On: the provider is listed, a connection saves, the engine is offered
+ *     and chosen, and a run proceeds.
+ *   • Off: the provider is not listed, a save and a Test are refused by name,
+ *     a new run is refused by name, a queued one fails by name, a paused one
+ *     does not resume, and the connection and the engine choice are kept.
+ *   • Another workspace, whose owner turned it on, is unaffected.
+ *   • The clean-up still reaches the switched-off workspace's connection.
+ */
+const envOverride: Record<string, string | undefined> = {
+    AGENT_PROFILES: '1',
+    AGENT_MANAGED_AGENTS: undefined,
+};
+jest.mock('@/env', () => {
+    const actual = jest.requireActual('@/env') as { env: Record<string, unknown> };
+    return {
+        env: new Proxy(actual.env, {
+            get: (target, key) => (typeof key === 'string' && key in envOverride ? envOverride[key] : Reflect.get(target, key)),
+        }),
+    };
+});
+jest.mock('@/app-layer/jobs/queue', () => ({
+    ...jest.requireActual('@/app-layer/jobs/queue'),
+    enqueue: jest.fn(async () => undefined),
+}));
+
+import { PrismaClient, type Role } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { randomUUID } from 'crypto';
+
+import { DB_URL, DB_AVAILABLE } from './db-helper';
+import { ManagedAgentsFaux } from '../helpers/managed-agents-faux';
+import { makeRequestContext } from '../helpers/make-context';
+import { deleteAuditRowsForTenants, deleteAuditRowsForUsers } from '../helpers/audit-cleanup';
+import { __resetAuditStreamForTests } from '@/app-layer/events/audit-stream';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
+import { hashForLookup } from '@/lib/security/encryption';
+import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
+import { DRIVER_IMPLEMENTED } from '@/lib/agentic/agent-driver';
+import { profileRunKey } from '@/lib/agentic/agent-profile';
+import { managedAgentsDecisionFor } from '@/lib/agentic/agent-switches-policy';
+import { resolveDriverForTenant } from '@/lib/agentic/agent-driver-policy';
+import { buildSystemContext } from '@/app-layer/context-system';
+import { getAgentDriverSetting, setAgentDriverSetting } from '@/app-layer/usecases/agent-driver-setting';
+import { getManagedAgentsSwitch, setManagedAgentsSwitch } from '@/app-layer/usecases/managed-agents-switch';
+import {
+    listAvailableProvidersFor,
+    removeIntegrationConnection,
+    testConnectionCredentials,
+    upsertIntegrationConnection,
+} from '@/app-layer/usecases/integrations';
+import {
+    approveAgentProfileVersion,
+    createAgentProfile,
+    startAgentProfileTestRun,
+    submitAgentProfileVersion,
+} from '@/app-layer/usecases/agent-profiles';
+import { executeQueuedWorkflowRun, resumeWorkflowRun, startWorkflowRun } from '@/app-layer/usecases/workflow-runs';
+import type { AgentProfileVersionInput } from '@/app-layer/schemas/agent-profile.schemas';
+import type { RequestContext } from '@/app-layer/types';
+import { prisma as appPrisma } from '@/lib/prisma';
+
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
+const describeFn = DB_AVAILABLE && DRIVER_IMPLEMENTED['managed-agents'] ? describe : describe.skip;
+jest.setTimeout(180_000);
+
+const SUITE = `maws-${randomUUID().slice(0, 8)}`;
+const TENANT = `t-${SUITE}`;
+const OTHER = `t-${SUITE}-b`;
+const USERS = { owner: `u-owner-${SUITE}`, admin: `u-admin-${SUITE}`, otherOwner: `u-owner-b-${SUITE}` };
+const AGENT = `ag-${SUITE}`;
+const WORKSPACE_ID = 'wrkspc_workspaceSwitch';
+const KEY = 'sk-ant-faux-workspace-key-for-switch'; // pragma: allowlist secret -- a placeholder for the faux
+
+const ctxFor = (tenantId: string, role: Role, userId: string, over: Partial<RequestContext> = {}): RequestContext =>
+    makeRequestContext(role, { tenantId, tenantSlug: tenantId, userId, ...over });
+const owner = (over: Partial<RequestContext> = {}) => ctxFor(TENANT, 'OWNER', USERS.owner, over);
+const admin = () => ctxFor(TENANT, 'ADMIN', USERS.admin);
+const otherOwner = () => ctxFor(OTHER, 'OWNER', USERS.otherOwner);
+
+const version = (): AgentProfileVersionInput => ({
+    instructions: 'Summarise the open risks for the weekly review. Call list_risks once, then answer in one sentence.',
+    toolNames: ['list_risks'],
+    skillRefs: [],
+    modelTier: 'balanced',
+    effort: 'medium',
+    maxTurns: 10,
+    outputKind: 'ANSWER_ONLY',
+    allowedTriggers: ['TEST_RUN'],
+});
+
+let faux: ManagedAgentsFaux;
+let connectionId = '';
+let profileId = '';
+
+async function switchRows(tenantId: string) {
+    return prisma.auditLog.findMany({ where: { tenantId, action: 'MANAGED_AGENTS_SWITCH_CHANGED' }, orderBy: { createdAt: 'asc' } });
+}
+
+async function storedToggle(tenantId: string): Promise<boolean | null> {
+    const row = await prisma.tenantSecuritySettings.findUnique({ where: { tenantId }, select: { managedAgentsEnabled: true } });
+    return row?.managedAgentsEnabled ?? null;
+}
+
+const listsWorkspaceProvider = async (ctx: RequestContext) =>
+    (await listAvailableProvidersFor(ctx)).some((p) => p.id === 'anthropic-workspace');
+
+async function cleanup(): Promise<void> {
+    for (const tenantId of [TENANT, OTHER]) {
+        await prisma.workflowStep.deleteMany({ where: { tenantId } });
+        await prisma.agentProposal.deleteMany({ where: { tenantId } });
+        await prisma.workflowRun.deleteMany({ where: { tenantId } });
+        await prisma.$transaction(async (tx) => {
+            await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
+            for (const table of ['AiDecisionLog', 'AgentProfileVersion', 'AgentProfile', 'TenantMembership', 'ManagedAgentsCleanup']) {
+                await tx.$executeRawUnsafe(`DELETE FROM "${table}" WHERE "tenantId" = $1`, tenantId);
+            }
+        });
+        await prisma.agentProfileProvision.deleteMany({ where: { tenantId } });
+        await prisma.integrationConnection.deleteMany({ where: { tenantId } });
+        await prisma.registeredAgentTool.deleteMany({ where: { tenantId } });
+        await prisma.registeredAgent.deleteMany({ where: { tenantId } });
+        await prisma.aiSystem.deleteMany({ where: { tenantId } });
+        await prisma.tenantSecuritySettings.deleteMany({ where: { tenantId } });
+    }
+    await deleteAuditRowsForTenants(prisma, [TENANT, OTHER]).catch(() => undefined);
+    await deleteAuditRowsForUsers(prisma, Object.values(USERS)).catch(() => undefined);
+    await prisma.user.deleteMany({ where: { id: { in: Object.values(USERS) } } });
+    await prisma.tenant.deleteMany({ where: { id: { in: [TENANT, OTHER] } } });
+}
+
+describeFn('the Managed Agents switch is the workspace\'s (real DB, faux workspace)', () => {
+    beforeAll(async () => {
+        await prisma.$connect();
+        faux = new ManagedAgentsFaux();
+        faux.install();
+        await createTenantWithDek({ id: TENANT, name: TENANT, slug: TENANT });
+        await createTenantWithDek({ id: OTHER, name: OTHER, slug: OTHER });
+        for (const [tenantId, id, role] of [
+            [TENANT, USERS.owner, 'OWNER'],
+            [TENANT, USERS.admin, 'ADMIN'],
+            [OTHER, USERS.otherOwner, 'OWNER'],
+        ] as const) {
+            const email = `${id}@example.test`;
+            await prisma.user.create({ data: { id, email, emailHash: hashForLookup(email) } });
+            await prisma.tenantMembership.create({ data: { tenantId, userId: id, role, status: 'ACTIVE' } });
+        }
+        const sys = await prisma.aiSystem.create({ data: { tenantId: TENANT, name: `sys-${AGENT}` } });
+        await prisma.registeredAgent.create({
+            data: {
+                id: AGENT,
+                tenantId: TENANT,
+                aiSystemId: sys.id,
+                name: `agent ${AGENT}`,
+                autonomyLevel: 1,
+                dataAccessScope: 'READ_TENANT_DATA',
+                reversibility: 'REVERSIBLE',
+                provenance: 'FIRST_PARTY',
+                ownerUserId: USERS.owner,
+                status: 'ACTIVE',
+                riskTier: 'LOW',
+                riskTierScoredAt: new Date(),
+            },
+        });
+        await prisma.registeredAgentTool.create({
+            data: { tenantId: TENANT, agentId: AGENT, toolName: 'list_risks', grantedByUserId: USERS.owner },
+        });
+        faux.turns = Array.from({ length: 10 }, () => [
+            { toolCalls: [{ name: 'list_risks', args: {} }] },
+            { text: 'There are no open risks to report this week.' },
+        ]).flat();
+    });
+
+    afterAll(async () => {
+        await cleanup();
+        faux.uninstall();
+        await appPrisma.$disconnect();
+        await prisma.$disconnect();
+        __resetAuditStreamForTests();
+    });
+
+    describe('the decision: the variable\'s three states against the workspace\'s column', () => {
+        afterEach(() => {
+            envOverride.AGENT_MANAGED_AGENTS = undefined;
+        });
+
+        it.each([
+            [undefined, false, { on: false, basis: 'WORKSPACE_OFF' }],
+            [undefined, true, { on: true, basis: 'WORKSPACE_ON' }],
+            ['1', false, { on: true, basis: 'DEPLOYMENT_ON' }],
+            ['true', true, { on: true, basis: 'DEPLOYMENT_ON' }],
+            // The veto: any other set value is off, over a workspace that turned it on.
+            ['0', true, { on: false, basis: 'DEPLOYMENT_OFF' }],
+            ['yes', false, { on: false, basis: 'DEPLOYMENT_OFF' }],
+        ] as const)('variable %p, workspace column %p', async (variable, column, expected) => {
+            await prisma.tenantSecuritySettings.upsert({
+                where: { tenantId: OTHER },
+                create: { tenantId: OTHER, managedAgentsEnabled: column },
+                update: { managedAgentsEnabled: column },
+            });
+            envOverride.AGENT_MANAGED_AGENTS = variable;
+            expect(await managedAgentsDecisionFor({ tenantId: OTHER })).toEqual(expected);
+            // By slug too: the same row.
+            expect(await managedAgentsDecisionFor({ tenantSlug: OTHER })).toEqual(expected);
+        });
+
+        it('a workspace with no settings row has not turned it on', async () => {
+            expect(await managedAgentsDecisionFor({ tenantId: TENANT })).toEqual({ on: false, basis: 'WORKSPACE_OFF' });
+        });
+    });
+
+    describe('the writer: an owner, in person, audited', () => {
+        it.each([
+            ['an ADMIN', () => admin(), 'MANAGED_AGENTS_SWITCH_IS_OWNER_TIER'],
+            ['an API key, even an owner\'s', () => owner({ apiKeyId: 'key-1', actorType: 'API_KEY' }), 'MANAGED_AGENTS_SWITCH_NOT_A_PERSON'],
+            ['an agent, even an owner\'s', () => owner({ agentId: AGENT }), 'MANAGED_AGENTS_SWITCH_NOT_A_PERSON'],
+            ['a job holding the owner key', () => owner({ actorType: 'JOB' }), 'MANAGED_AGENTS_SWITCH_NOT_A_PERSON'],
+            ['a system job context', () => buildSystemContext({ tenantId: TENANT, job: 'some-job' }), 'MANAGED_AGENTS_SWITCH_IS_OWNER_TIER'],
+        ] as const)('refuses %s, writing nothing', async (_label, ctxOf, reason) => {
+            await expect(setManagedAgentsSwitch(ctxOf(), true)).rejects.toMatchObject({ status: 403, details: { reason } });
+            expect(await storedToggle(TENANT)).toBeNull();
+            expect(await switchRows(TENANT)).toEqual([]);
+        });
+
+        it('an admin reads it, and an owner turns it on: audited with the override and both answers', async () => {
+            expect(await getManagedAgentsSwitch(admin())).toEqual({
+                enabled: false,
+                deployment: 'UNSET',
+                effective: { on: false, basis: 'WORKSPACE_OFF' },
+            });
+            const after = await setManagedAgentsSwitch(owner(), true);
+            expect(after).toEqual({ enabled: true, deployment: 'UNSET', effective: { on: true, basis: 'WORKSPACE_ON' } });
+            // Saying it again changes nothing and writes no second row.
+            await setManagedAgentsSwitch(owner(), true);
+
+            const rows = await switchRows(TENANT);
+            expect(rows).toHaveLength(1);
+            expect(rows[0]).toMatchObject({ userId: USERS.owner, actorType: 'USER' });
+            expect(rows[0].detailsJson).toMatchObject({ category: 'access', operation: 'grant' });
+            expect(rows[0].metadataJson).toMatchObject({
+                from: false,
+                to: true,
+                deployment: 'UNSET',
+                effectiveBefore: false,
+                effectiveBasisBefore: 'WORKSPACE_OFF',
+                effectiveAfter: true,
+                effectiveBasisAfter: 'WORKSPACE_ON',
+            });
+        });
+
+        it('takes a write while the operator decides, and says the effective answer did not move', async () => {
+            envOverride.AGENT_MANAGED_AGENTS = '0';
+            try {
+                const after = await setManagedAgentsSwitch(otherOwner(), true);
+                expect(after).toEqual({ enabled: true, deployment: 'OFF', effective: { on: false, basis: 'DEPLOYMENT_OFF' } });
+            } finally {
+                envOverride.AGENT_MANAGED_AGENTS = undefined;
+            }
+            expect(await managedAgentsDecisionFor({ tenantId: OTHER })).toEqual({ on: true, basis: 'WORKSPACE_ON' });
+        });
+    });
+
+    describe('on: the provider is listed, the engine is offered, and a run proceeds', () => {
+        it('lists the provider and saves a connection', async () => {
+            expect(await listsWorkspaceProvider(owner())).toBe(true);
+            const saved = await upsertIntegrationConnection(admin(), {
+                provider: 'anthropic-workspace',
+                name: 'Anthropic workspace',
+                configJson: { workspaceId: WORKSPACE_ID },
+                secrets: { apiKey: KEY },
+            });
+            connectionId = saved.id;
+        });
+
+        it('offers the engine, and the owner chooses it', async () => {
+            const view = await getAgentDriverSetting(admin());
+            expect(view.managedAgents).toMatchObject({ envEnabled: true, basis: 'WORKSPACE_ON', workspace: 'CONNECTED' });
+            await setAgentDriverSetting(owner(), 'MANAGED_AGENTS');
+            expect((await getAgentDriverSetting(admin())).effective).toEqual({ driver: 'managed-agents', reason: null });
+        });
+
+        it('the run gate\'s short-circuit does not read the unset variable as off, with every other engine off', async () => {
+            // Flue unset and the Tool Runner vetoed: before #5964 this was the
+            // "every engine off" short-circuit, and it would answer
+            // ENV_DISABLED before reading the workspace's toggle.
+            envOverride.AGENT_DRIVER_FLUE = undefined;
+            envOverride.AGENT_DRIVER_TOOL_RUNNER = '0';
+            try {
+                expect(await resolveDriverForTenant(TENANT)).toEqual({ driver: 'managed-agents', reason: null });
+                // The other workspace has not chosen it: static, its own reason.
+                expect((await resolveDriverForTenant(OTHER)).driver).toBe('static');
+            } finally {
+                delete envOverride.AGENT_DRIVER_FLUE;
+                delete envOverride.AGENT_DRIVER_TOOL_RUNNER;
+            }
+        });
+
+        it('approves a version (which provisions its agent) and a Test run completes on the engine', async () => {
+            const v1 = await createAgentProfile(owner(), AGENT, version());
+            profileId = v1.profileId;
+            await submitAgentProfileVersion(owner(), AGENT, 1);
+            await approveAgentProfileVersion(admin(), AGENT, 1, { instructionsHash: v1.instructionsHash });
+            expect(await prisma.agentProfileProvision.count({ where: { tenantId: TENANT, connectionId } })).toBe(1);
+
+            const started = await startAgentProfileTestRun(admin(), AGENT, 1);
+            expect(await executeQueuedWorkflowRun(TENANT, started.runId)).toMatchObject({ status: 'COMPLETED' });
+            expect(await prisma.workflowRun.findUniqueOrThrow({ where: { id: started.runId }, select: { driver: true } })).toEqual({
+                driver: 'MANAGED_AGENTS',
+            });
+        });
+    });
+
+    describe('off: runs stop and the set-up is kept', () => {
+        let queuedRunId = '';
+        let pausedRunId = '';
+
+        beforeAll(async () => {
+            // Two runs admitted while on: one left queued, one parked for a person.
+            queuedRunId = (await startAgentProfileTestRun(admin(), AGENT, 1)).runId;
+            pausedRunId = (await startAgentProfileTestRun(admin(), AGENT, 1)).runId;
+            await prisma.workflowRun.update({ where: { id: pausedRunId }, data: { status: 'PAUSED' } });
+            await setManagedAgentsSwitch(owner(), false);
+        });
+
+        it('hides the provider from this workspace\'s list', async () => {
+            expect(await listsWorkspaceProvider(owner())).toBe(false);
+        });
+
+        it('refuses a save and a Test by name', async () => {
+            await expect(
+                upsertIntegrationConnection(admin(), {
+                    id: connectionId,
+                    provider: 'anthropic-workspace',
+                    name: 'Anthropic workspace',
+                    configJson: { workspaceId: WORKSPACE_ID },
+                }),
+            ).rejects.toMatchObject({ status: 409, details: { reason: 'MANAGED_AGENTS_OFF', basis: 'WORKSPACE_OFF' } });
+            await expect(
+                testConnectionCredentials(admin(), { connectionId, provider: 'anthropic-workspace' }),
+            ).rejects.toMatchObject({ status: 409, details: { reason: 'MANAGED_AGENTS_OFF' } });
+        });
+
+        it('refuses a new run by name, before a run row exists', async () => {
+            const runsBefore = await prisma.workflowRun.count({ where: { tenantId: TENANT } });
+            await expect(
+                startWorkflowRun({ ...admin(), agentId: AGENT }, profileRunKey(profileId, 1, { testRun: true }), {}, {
+                    readOnlyAuthority: true,
+                    profileTrigger: 'TEST_RUN',
+                }),
+            ).rejects.toMatchObject({ status: 409, details: { reason: 'MANAGED_AGENTS_OFF' } });
+            expect(await prisma.workflowRun.count({ where: { tenantId: TENANT } })).toBe(runsBefore);
+        });
+
+        it('fails a queued run by name rather than continuing it', async () => {
+            const sessionsBefore = faux.sessionCreates.length;
+            expect(await executeQueuedWorkflowRun(TENANT, queuedRunId)).toEqual({ skipped: 'MANAGED_AGENTS_OFF' });
+            const row = await prisma.workflowRun.findUniqueOrThrow({ where: { id: queuedRunId }, select: { status: true, errorMessage: true } });
+            expect(row.status).toBe('FAILED');
+            expect(row.errorMessage).toMatch(/^managed_agents_off: /);
+            expect(faux.sessionCreates.length).toBe(sessionsBefore);
+        });
+
+        it('does not resume a paused run, and leaves it paused', async () => {
+            await expect(resumeWorkflowRun(owner(), pausedRunId)).rejects.toMatchObject({
+                status: 409,
+                details: { reason: 'MANAGED_AGENTS_OFF' },
+            });
+            expect(await prisma.workflowRun.findUniqueOrThrow({ where: { id: pausedRunId }, select: { status: true } })).toEqual({
+                status: 'PAUSED',
+            });
+        });
+
+        it('keeps the connection, its key and the engine choice, and the engine reads static naming the workspace', async () => {
+            expect(
+                await prisma.integrationConnection.findUniqueOrThrow({
+                    where: { id: connectionId },
+                    select: { isEnabled: true, provider: true, secretEncrypted: true },
+                }),
+            ).toMatchObject({ isEnabled: true, provider: 'anthropic-workspace', secretEncrypted: expect.any(String) });
+            const view = await getAgentDriverSetting(admin());
+            expect(view.mode).toBe('MANAGED_AGENTS');
+            expect(view.managedAgents).toMatchObject({ envEnabled: false, basis: 'WORKSPACE_OFF', workspace: 'CONNECTED' });
+            expect(view.effective).toEqual({ driver: 'static', reason: 'ENV_DISABLED' });
+            // Nothing at Anthropic was touched by turning it off.
+            expect(faux.archives).toEqual([]);
+        });
+
+        it('another workspace whose owner turned it on is unaffected', async () => {
+            await prisma.tenantSecuritySettings.update({ where: { tenantId: OTHER }, data: { managedAgentsEnabled: true } });
+            expect(await listsWorkspaceProvider(otherOwner())).toBe(true);
+            expect(await managedAgentsDecisionFor({ tenantId: OTHER })).toEqual({ on: true, basis: 'WORKSPACE_ON' });
+        });
+
+        it('the clean-up still reaches the switched-off workspace\'s connection', async () => {
+            const { anthropicAgentId } = await prisma.agentProfileProvision.findFirstOrThrow({
+                where: { tenantId: TENANT, connectionId },
+                select: { anthropicAgentId: true },
+            });
+            await removeIntegrationConnection(admin(), connectionId);
+            expect(faux.archives).toContain(anthropicAgentId);
+            const cleanups = await prisma.managedAgentsCleanup.findMany({ where: { tenantId: TENANT, connectionId }, select: { status: true } });
+            expect(cleanups.map((c) => c.status)).toEqual(['DONE']);
+        });
+
+        it('turning it back on lists the provider again', async () => {
+            await setManagedAgentsSwitch(owner(), true);
+            expect(await listsWorkspaceProvider(owner())).toBe(true);
+            expect((await switchRows(TENANT)).map((r) => (r.detailsJson as { operation?: string }).operation)).toEqual([
+                'grant',
+                'revoke',
+                'grant',
+            ]);
+        });
+    });
+});

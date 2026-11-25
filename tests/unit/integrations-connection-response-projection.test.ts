@@ -42,7 +42,7 @@ jest.mock('@/app-layer/usecases/integrations', () => ({
     listIntegrationConnections: (ctx: unknown) => listIntegrationConnectionsMock(ctx),
     upsertIntegrationConnection: jest.fn(),
     removeIntegrationConnection: jest.fn(),
-    listAvailableProviders: () => [],
+    listAvailableProvidersFor: async () => [],
     updateConnectionTestStatus: jest.fn(),
     testConnectionCredentials: jest.fn(),
 }));

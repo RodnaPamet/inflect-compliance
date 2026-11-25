@@ -9166,17 +9166,19 @@
       "toolRunnerStartNote": "A Tool Runner run starts in two ways: a Test run from an agent's Behaviour tab, which is always read-only, or an automation rule's Invoke agent action on a profile version that allows automation starts. Either way it runs as that agent, under the agent's own grants and controls.",
       "organizationTerm": "Set by your organization",
       "deploymentOffOrganization": "Your organization can turn on the Tool Runner engine for its workspaces in the organization's settings.",
+      "deploymentOffWorkspaceManagedAgents": "An owner can turn on the Managed Agents engine for this workspace in the section above.",
       "runsOnManagedAgents": "In this workspace, agent profiles run on the Managed Agents engine, in your connected Anthropic workspace.",
       "runsOnManagedAgentsNotReady": "This workspace has chosen the Managed Agents engine, but no Managed Agents run can start yet. The checklist below shows what is missing.",
       "reasonManagedAgents": {
         "ENV_DISABLED": "Runs use the built-in engine because the Managed Agents engine is not turned on for this deployment. Only the deployment's operator can turn it on.",
         "DRIVER_NOT_IMPLEMENTED": "Runs use the built-in engine because this version of Inflect does not include the Managed Agents engine, even though both the deployment and this workspace ask for it.",
-        "NO_WORKFLOW_REQUESTS_IT": "Runs use the built-in engine because agent profiles are not turned on for this workspace, and they are what ask for the Managed Agents engine."
+        "NO_WORKFLOW_REQUESTS_IT": "Runs use the built-in engine because agent profiles are not turned on for this workspace, and they are what ask for the Managed Agents engine.",
+        "WORKSPACE_OFF": "Runs use the built-in engine because the Managed Agents engine is turned off for this workspace. An owner can turn it on in the Managed Agents engine section above."
       },
       "deploymentOffStoredManagedAgents": "This workspace has chosen the Managed Agents engine, so its profile runs move to it as soon as the switch is turned on.",
       "wiringHeadingManagedAgents": "What a Managed Agents run needs before it can start",
       "managedAgentsTerm": {
-        "ENV": "The deployment allows the Managed Agents engine",
+        "ENV": "The Managed Agents engine is turned on for this workspace",
         "TENANT": "This workspace has chosen it",
         "BUILD": "This build ships the Managed Agents engine",
         "PROFILES": "Agent profiles are turned on for this workspace",
@@ -9194,6 +9196,22 @@
         "record": "Inflect records what it sent and every tool call, but cannot see the exact prompt of each model call, which stays in your workspace. The run timeline marks those records.",
         "keyHolders": "Anyone who holds your Anthropic workspace's key can add messages to a running conversation, just as they can act anywhere else in your workspace; Inflect does not detect this, but it still checks every tool call the agent makes."
       }
+    },
+    "managedAgentsSwitch": {
+      "heading": "Managed Agents engine",
+      "description": "Lets this workspace's agents run on Anthropic's Managed Agents engine, in the Anthropic workspace you connect on the Integrations page. Turning it off stops new runs on that engine and hides the Anthropic workspace card. Your connection, your engine choice and what is already in your Anthropic workspace are kept, so turning it back on carries on where you left off.",
+      "on": "On",
+      "off": "Off",
+      "turnOn": "Turn on",
+      "turnOff": "Turn off",
+      "operatorOn": "This deployment's operator has turned the Managed Agents engine on for every workspace, so the choice here is not used while that holds.",
+      "operatorOff": "This deployment's operator has turned the Managed Agents engine off for every workspace, so it stays off whatever is chosen here.",
+      "storedOn": "The choice saved for this workspace is on. It applies once the operator leaves the decision to each workspace.",
+      "storedOff": "The choice saved for this workspace is off. It applies once the operator leaves the decision to each workspace.",
+      "ownerOnly": "Only a workspace owner can turn the Managed Agents engine on or off.",
+      "saveFailedHeading": "The change was not saved",
+      "saveFailedBody": "The setting could not be saved. Try again.",
+      "loadFailed": "The Managed Agents setting could not be loaded."
     },
     "modules": {
       "forbidden": "Only a workspace owner can turn product modules on or off. An administrator cannot grant this.",
@@ -18983,6 +19001,7 @@
       "FRAMEWORK_PACK_REMOVED": "Framework pack removed",
       "FRAMEWORK_REORDERED": "Framework reordered",
       "HOSTED_MANAGED_AGENTS_OPT_IN_CHANGED": "Hosted agents opt-in changed",
+      "MANAGED_AGENTS_SWITCH_CHANGED": "Managed Agents engine switch changed",
       "HOST_CONSUMER_CREATED": "Host consumer created",
       "HOST_CONSUMER_KILL_ENGAGED": "Host consumer kill engaged",
       "HOST_CONSUMER_KILL_LIFTED": "Host consumer kill lifted",
