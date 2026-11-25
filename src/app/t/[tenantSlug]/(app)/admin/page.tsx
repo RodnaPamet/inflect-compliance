@@ -9,7 +9,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Eyebrow } from '@/components/ui/typography';
 import { gateAdminPage } from './_lib/admin-page-gate';
 import { getWorkspaceLanguage } from '@/app-layer/usecases/workspace-language';
-import { WorkspaceLanguageCard } from './WorkspaceLanguageCard';
+import { WorkspaceLanguageToggle } from './WorkspaceLanguageToggle';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,7 +38,6 @@ export default async function AdminPage({
     const { tenantSlug } = gate;
 
     const t = await getTranslations('admin');
-    const tw = await getTranslations('workspaceLanguage');
     // The workspace default language: read and offered only to a holder of
     // `admin.manage`, the key its PUT takes, so nobody is shown a control the
     // server would refuse.
@@ -168,13 +167,23 @@ export default async function AdminPage({
                 ]}
                 title={t('title')}
                 actions={
+                    // One box: the theme switch, and under it, for a holder
+                    // of `admin.manage`, the workspace language (#5965). The
+                    // id keeps `<PageActions>` from unwrapping it into two
+                    // side-by-side items; below `sm` the header stacks it
+                    // under the title, left-aligned.
                     <div
-                        className="flex items-center gap-compact rounded-lg border border-border-subtle bg-bg-default px-3 py-1.5"
-                        id="admin-theme-section"
+                        className="flex flex-col gap-tight rounded-lg border border-border-subtle bg-bg-default px-3 py-1.5"
+                        id="admin-header-settings"
                     >
-                        <Palette className="w-4 h-4 text-content-muted" />
-                        <span className="text-sm text-content-muted">{t('nav.theme')}</span>
-                        <ThemeToggle id="admin-theme-toggle" />
+                        <div className="flex items-center gap-compact" id="admin-theme-section">
+                            <Palette className="w-4 h-4 text-content-muted" />
+                            <span className="text-sm text-content-muted">{t('nav.theme')}</span>
+                            <ThemeToggle id="admin-theme-toggle" className="ml-auto" />
+                        </div>
+                        {workspaceLanguage && (
+                            <WorkspaceLanguageToggle initialLocale={workspaceLanguage.defaultLocale} />
+                        )}
                     </div>
                 }
             />
@@ -202,15 +211,6 @@ export default async function AdminPage({
                     </div>
                 </section>
             ))}
-
-            {/* A workspace-wide setting, after the navigation: the hub is
-                still a map of the admin area first. */}
-            {workspaceLanguage && (
-                <section className="space-y-default" aria-label={tw('section')}>
-                    <Eyebrow>{tw('section')}</Eyebrow>
-                    <WorkspaceLanguageCard initialLocale={workspaceLanguage.defaultLocale} />
-                </section>
-            )}
         </div>
     );
 }

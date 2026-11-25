@@ -19633,12 +19633,9 @@
     }
   },
   "workspaceLanguage": {
-    "section": "Workspace",
     "title": "Workspace language",
     "description": "The language the product uses for text it writes on this workspace's behalf. Today that is the titles of the tasks a NIS2 gap assessment dispatch creates, and the emails a person receives when tasks are assigned to them, one at a time or several at once. Records already written keep their wording, and anyone can still edit them.",
     "notInterface": "It does not change anyone's interface language. Each person chooses that in their own browser.",
-    "label": "Default language",
-    "save": "Save",
     "saved": "Workspace language saved.",
     "saveFailed": "The workspace language could not be saved."
   },
