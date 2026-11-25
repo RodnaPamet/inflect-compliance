@@ -15,8 +15,8 @@ the product calls it. What it erases and keeps is described in `docs/dsar.md`.
 
 ## Before you run it
 
-The command checks the first four steps itself and refuses with a named
-reason. The last two are yours to check.
+The command checks every step but step 5 itself and refuses with a named reason.
+Step 5 is yours to check.
 
 1. **The request is on the register as an ERASURE request.** A person who asked
    outside the product is recorded on `/admin/dsar-requests` first. Every
@@ -46,24 +46,38 @@ reason. The last two are yours to check.
    cooling-off, not completed, rejected or cancelled, and whose subject still
    exists. They refuse when none is due (`NO_DUE_REQUEST`) or more than one is
    (`MORE_THAN_ONE_DUE`), so fulfil several one at a time.
+7. **A preflight stamped this request in the last 24 hours.** The erase runs
+   only on a request that a preflight showed and stamped
+   (`erasurePreflightAt`; owner decision 2026-11-25, third round). Refusals:
+   - no preflight ever stamped it, `NOT_PREFLIGHTED`;
+   - the stamp is more than 24 hours old (`ERASURE_PREFLIGHT_VALID_HOURS`),
+     `PREFLIGHT_EXPIRED`. Run the preflight again, and read it again.
 
 ## Run it in production
 
 1. Dispatch **VM apply** from `main` with the action `dsar-erase-preflight`.
    The owner approves it in the `production` environment. It runs
-   `node dist/dsar-erase.mjs --due` in the app container and writes nothing.
+   `node dist/dsar-erase.mjs --due` in the app container. It writes nothing but
+   the preflight stamp, and only when the plan would be admitted.
 2. Read the run's log:
    - the request id;
    - the plan;
-   - the exit status. A refusal fails the run.
+   - the stamp line: `preflight=<time>` and the time until which the erase is
+     admitted;
+   - the exit status. A refusal fails the run, and stamps nothing.
 3. Check that the id is the request you mean to fulfil.
-4. Dispatch **VM apply** with `dsar-erase`. The owner approves it. It runs the
-   same preflight again, then — only if that passed — `--due --confirm`.
+4. Within 24 hours, dispatch **VM apply** with `dsar-erase`. The owner approves
+   it. It runs `--due --check` (the erase's own decision and plan, writing
+   nothing), then — only if that passed — `--due --confirm`.
 
-Both actions select the due request afresh, so `dsar-erase` acts on whatever
-request is due when it runs. Check its log's `request` line: it names the
-request it erased. The erasure also decides again inside its own transaction,
-so a request cancelled or changed in between is refused, not erased.
+Both actions select the due request afresh. What binds `dsar-erase` to the
+request you read is the stamp: it erases only a request a preflight stamped in
+the last 24 hours. If the request you read was cancelled and another became due
+in between, `dsar-erase` finds the other one unstamped and refuses it
+(`NOT_PREFLIGHTED`); run the preflight again for it and read that. The erasure
+also decides again, stamp included, inside its own transaction, so a request
+cancelled or changed in between is refused, not erased. The write never stamps:
+`--check` is a read, so the write cannot vouch for itself.
 
 The log is public. It carries only lines the command prints, which start with
 `[dsar-erase]` and hold ids, statuses, timestamps and counts. Anything else the
@@ -85,22 +99,25 @@ The command needs the environment the application runs with:
   key.
 
 ```bash
-# 1. The plan. Reads only; writes nothing.
+# 1. The plan. Writes nothing but the preflight stamp on this request.
 npm run dsar:erase -- --request <requestId>
 
-# 2. Only when the plan is clean and steps 5 and 6 above hold:
+# 2. Within 24 hours, only when the plan is clean and step 5 above holds:
 npm run dsar:erase -- --request <requestId> --confirm
 ```
 
-`--due` in place of `--request <id>` is what the production actions run.
+The local preflight stamps too, and `--confirm` needs the stamp here as well:
+the erasure asks for it inside its own transaction, whoever calls it. `--check`
+decides as `--confirm` does and writes nothing. `--due` in place of
+`--request <id>` is what the production actions run.
 
 Exit codes:
 
-- `0`: done, or a clean plan printed.
+- `0`: done, a clean plan printed and stamped, or a clean `--check`.
 - `1`: refused, and the reason is named.
 - `2`: a usage refusal: a missing or malformed `--request`, an e-mail address,
-  an unknown argument such as the retired `--user`, or both `--request` and
-  `--due`.
+  an unknown argument such as the retired `--user`, both `--request` and
+  `--due`, or both `--check` and `--confirm`.
 
 ## Reading the plan
 
@@ -108,8 +125,9 @@ Every line is ids and counts.
 
 | Line | Meaning |
 | --- | --- |
-| `request <id> type=… status=… verified=… subject=<userId>` | The request, and the subject read from it. |
-| `refused: <REASON>` | One of `REQUEST_NOT_FOUND`, `NOT_AN_ERASURE`, `ALREADY_COMPLETED`, `REQUEST_REJECTED`, `REQUEST_CANCELED`, `NOT_VERIFIED`, `COOLING_OFF`, `NOT_IN_PROGRESS`, `SUBJECT_ALREADY_ERASED`, `REJECTION_CRITERION (last_owner)`, `SYSTEM_USER`, `NO_DUE_REQUEST`, `MORE_THAN_ONE_DUE`. Nothing was written. |
+| `request <id> type=… status=… verified=… preflight=… subject=<userId>` | The request, when a preflight last stamped it (`-` if never), and the subject read from it. |
+| `refused: <REASON>` | One of `REQUEST_NOT_FOUND`, `NOT_AN_ERASURE`, `ALREADY_COMPLETED`, `REQUEST_REJECTED`, `REQUEST_CANCELED`, `NOT_VERIFIED`, `COOLING_OFF`, `NOT_IN_PROGRESS`, `SUBJECT_ALREADY_ERASED`, `NOT_PREFLIGHTED` and `PREFLIGHT_EXPIRED` (with `--check` or `--confirm` only), `REJECTION_CRITERION (last_owner)`, `SYSTEM_USER`, `NO_DUE_REQUEST`, `MORE_THAN_ONE_DUE`, `STAMP_NOT_WRITTEN` (the request changed while the preflight ran). Nothing was written. |
+| `plan only: nothing written but the preflight stamp …` | The preflight passed and stamped the request; it names the time until which `--confirm` is admitted. |
 | `workspaces where the subject held a membership: N` | The workspaces whose kept Managed Agents sessions are deleted after the erasure, each with its evidence (below). |
 | `undecided membership evidence: N` | A row naming the person's membership under an action the command does not classify. The erasure is refused while any is listed. Classify the action in `MEMBERSHIP_RECORD_ACTIONS` (`src/app-layer/jobs/dsar-erasure-workspaces.ts`) first. |
 | `what no row names the subject in` | Always printed. A workspace reached only this way, where the person never acted, is not in the list above (below). |
@@ -172,7 +190,8 @@ These are `eraseUser`'s records:
 - **One `ManagedAgentsCleanup` record** per workspace connection, naming the
   tenant and the connection.
 - **The register request, moved to `COMPLETED`.** It keeps its `completedAt`,
-  dates and handler.
+  dates, handler and preflight stamp (`erasurePreflightAt`), which records the
+  preview the erasure was approved on.
 
 Every request of the person's loses `fulfilmentNotes` and `exportUrl`, and
 `userId` goes to NULL with the deleted `User` row. No tenant `DSAR_COMPLETED`

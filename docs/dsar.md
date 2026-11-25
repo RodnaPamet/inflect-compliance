@@ -38,10 +38,24 @@ rejected (`REQUEST_REJECTED`), cancelled (`REQUEST_CANCELED`), not verified
 (`NOT_VERIFIED`), still cooling off (`COOLING_OFF`), not started
 (`NOT_IN_PROGRESS`), whose subject is already erased (`SUBJECT_ALREADY_ERASED`),
 or that `evaluateDsarRejection` refuses (`REJECTION_CRITERION`, see below). It
-prints the plan and writes nothing without `--confirm`, refuses a tenant's system
-user (`sys_` id), and refuses whatever `planErasure` says would refuse the
-delete — a membership in any status among it. A plan that `--confirm` would
-refuse exits 1, so a passing preflight means the write may run. It prints ids,
+refuses a tenant's system user (`sys_` id), and refuses whatever `planErasure`
+says would refuse the delete — a membership in any status among it. A plan that
+`--confirm` would refuse exits 1, so a passing preflight means the write may run.
+
+**The erase is bound to the preflight that showed it** (owner decision
+2026-11-25, third round). Without `--confirm` or `--check`, the command is the
+PREFLIGHT: it prints the plan and, only when the plan would be admitted, stamps
+the request it showed (`DataSubjectRequest.erasurePreflightAt`, written only by
+`stampErasurePreflight`). That stamp is the only write a preflight makes.
+`--confirm` refuses a request no preflight stamped (`NOT_PREFLIGHTED`) or one
+stamped more than `ERASURE_PREFLIGHT_VALID_HOURS` (24) ago
+(`PREFLIGHT_EXPIRED`), and `eraseUser` asks the same again inside its
+transaction. `--check` decides as `--confirm` does and writes nothing; it is the
+`dsar-erase` action's same-run preflight, because a check that stamped would let
+the write vouch for whatever request had become due. So if the request the owner
+read is cancelled and another becomes due between the two actions, the approved
+erase refuses the other one. The stamp is kept with the surviving row, as
+evidence of which preview the erasure was approved on. It prints ids,
 statuses, timestamps and counts only; it never reads the person's e-mail or
 name. Its audit record is `eraseUser`'s own: no tenant `DSAR_COMPLETED` row is
 written for the request it completes.

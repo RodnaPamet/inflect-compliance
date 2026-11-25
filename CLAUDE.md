@@ -4064,6 +4064,20 @@ Rules that are each one careless edit from being undone:
   `dsar-erase-preflight` / `dsar-erase` (`node dist/dsar-erase.mjs --due` in the
   app container), which take no parameter and refuse unless exactly one request
   is due. It prints ids and counts only. Runbook: `docs/runbooks/dsar-erasure.md`.
+- **The erase is bound to the preflight that showed it** (#5940, owner decision
+  2026-11-25, third round). The preflight (no `--confirm`, no `--check`), and
+  only when its plan would be admitted, stamps the request it showed:
+  `DataSubjectRequest.erasurePreflightAt`, whose one writer is
+  `stampErasurePreflight` (held by the writers guard), and the only write a
+  preflight makes. `--confirm` refuses a request with no stamp
+  (`NOT_PREFLIGHTED`) or one older than `ERASURE_PREFLIGHT_VALID_HOURS` (24,
+  `PREFLIGHT_EXPIRED`), and `eraseUser` asks it again in its transaction for
+  any named request, so the local `--request` path needs its own preflight too.
+  The `dsar-erase` action's same-run preflight is `--check`, which decides as
+  `--confirm` does and writes nothing. Never make it the stamping plan: the
+  write would stamp whatever request is due now and erase it, which is the
+  substitution the stamp exists to stop. The stamp is never cleared; it
+  survives with the row as evidence.
 
 **What Inflect created in a customer's workspace is removed by recorded id on
 purge, connection removal and DSAR erasure** (Step 5c, #4166;

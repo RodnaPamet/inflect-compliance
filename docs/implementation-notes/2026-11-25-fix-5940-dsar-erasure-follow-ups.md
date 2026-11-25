@@ -7,23 +7,30 @@
 Four owner decisions of 2026-11-25 on #5940. The second round settled the
 open points: the VM action takes no parameter, the rejection rules apply the
 owner check only, completion requires IN_PROGRESS, and the surviving row is
-cleared.
+cleared. The third round bound the erase to the preflight that showed it: the
+preflight stamps the request, and the erase refuses one with no stamp under 24
+hours old.
 
 ```
-production:  VM apply  dsar-erase-preflight | dsar-erase      (owner approves in `production`)
-               vm.sh → remote.sh → compose exec -T app node dist/dsar-erase.mjs --due [--confirm]
+production:  VM apply  dsar-erase-preflight            →  --due              (plan; stamps the request it showed)
+                       dsar-erase  (within 24 h)       →  --due --check      (writes nothing)
+                                                          --due --confirm    (refuses an unstamped / stale request)
+               vm.sh → remote.sh → compose exec -T app node dist/dsar-erase.mjs …
                                                      └─ | dsar_lines   (only `[dsar-erase] ` lines reach the log)
-local:       npm run dsar:erase -- --request <id> [--confirm]
+local:       npm run dsar:erase -- --request <id> [--check | --confirm]
 
 scripts/dsar-erase.ts
   ├─ the request: --request <id>, or --due → readDueErasureRequests (exactly one, else refused)
-  ├─ decideErasureRequest: the register's refusals, then evaluateDsarRejection
+  ├─ decideErasureRequest(stage): the register's refusals, at ERASE the stamp
+  │     (NOT_PREFLIGHTED / PREFLIGHT_EXPIRED), then evaluateDsarRejection
   │     (LAST_OWNER from memberships; balance + hold printed as the operator's check)
   ├─ the plan: planErasure + readErasureWorkspaces (OWN_ACTION | MEMBERSHIP_RECORD | TARGET_RECORD | ORG_TENANT_FANOUT)
   │     a plan --confirm would refuse exits 1, so a passing preflight admits the write
+  ├─ preflight (no flag): stampErasurePreflight — the one write, only on an admitted plan
+  ├─ --check: nothing written
   └─ --confirm: eraseUser(userId, { request })
         tx: subject visible → planErasure → readErasureWorkspaces
-            → re-read + decide the request (refuse: nothing written)
+            → re-read + decide the request at ERASE, stamp included (refuse: nothing written)
             → fulfilErasureRequestWithin: clear fulfilmentNotes/exportUrl on every request of the
               subject; IN_PROGRESS → COMPLETED by a conditional claim
             → pseudonymize → ERASURE_EXECUTED records → delete User (FK SET NULL unlinks the requests)
@@ -45,14 +52,14 @@ join.
 | `src/app-layer/usecases/tenant-admin.ts` | `targetUserId` on `MEMBER_REMOVED` / `MEMBER_DEACTIVATED` |
 | `src/app-layer/usecases/scim-users.ts` | `targetUserId` on `SCIM_USER_DEACTIVATED` |
 | `src/app-layer/jobs/dsar-erasure-workspaces.ts` | `TARGET_RECORD` kind, `TARGET_RECORD_ACTIONS`, the third arm of the read; the remaining gaps |
-| `src/app-layer/jobs/dsar-erasure-request.ts` | New: the request decision, the due read, `LAST_OWNER`, and the register's second writer `fulfilErasureRequestWithin` |
+| `src/app-layer/jobs/dsar-erasure-request.ts` | New: the request decision (by stage), the due read, `LAST_OWNER`, `ERASURE_PREFLIGHT_VALID_HOURS`, the stamp's writer `stampErasurePreflight`, and the register's second writer `fulfilErasureRequestWithin` |
 | `src/app-layer/jobs/dsar-erasure.ts` | `eraseUser({ request })`: re-decide in the transaction, clear and complete before the delete |
 | `src/app-layer/usecases/dsar-register.ts`, `DsarRegisterClient.tsx` | A null subject; the two-writer note |
-| `prisma/schema/auth.prisma`, `prisma/migrations/20261125140000_dsar_request_user_set_null/` | `userId` nullable, `ON DELETE SET NULL ("userId")` |
+| `prisma/schema/auth.prisma`, `prisma/migrations/20261125140000_dsar_request_user_set_null/` | `userId` nullable, `ON DELETE SET NULL ("userId")`; the nullable stamp column `erasurePreflightAt` |
 | `scripts/dsar-erase.ts` (was `dsar-erase-user.ts`), `scripts/dsar-erase-main.ts` | The command, by request; the process entry the bundle is built from |
 | `scripts/build-worker.mjs`, `package.json` | `dist/dsar-erase.mjs`; `npm run dsar:erase` |
-| `deploy/vm-apply/{vm.sh,remote.sh}`, `.github/workflows/vm-apply.yml` | `dsar-erase-preflight`, `dsar-erase`; `dsar_lines` |
-| `tests/guards/dsar-register-writers.test.ts` | The register's writers, by file |
+| `deploy/vm-apply/{vm.sh,remote.sh}`, `.github/workflows/vm-apply.yml` | `dsar-erase-preflight` (`--due`, stamps), `dsar-erase` (`--due --check`, then `--due --confirm`); `dsar_lines` |
+| `tests/guards/dsar-register-writers.test.ts` | The register's writers, by file; the stamp's one writer, and the erasure never clearing it |
 | `tests/helpers/dsar-erasure-probe.ts` | `dataSubjectRequest` disposition: PSEUDONYMIZE |
 | `docs/runbooks/dsar-erasure.md`, `docs/dsar.md`, `docs/deployment.md`, `docs/data-retention.md`, `CLAUDE.md` | The result |
 
@@ -117,3 +124,34 @@ join.
   `dsr-legacy-decrypt.ts`, the container-start repair that rewrites values
   stored encrypted as the same values in plaintext. It is named in the guard as
   a format repair, not a writer of requests.
+- **The erase is bound to the preflight that showed it** (third round). The VM
+  actions take no parameter, so each picks the due request afresh; between the
+  two runs the request the owner read can be cancelled and another become due.
+  The preflight stamps `erasurePreflightAt` on the request it printed, as a
+  conditional claim on that subject's open IN_PROGRESS erasure, and only when
+  the plan would be admitted; the erase refuses `NOT_PREFLIGHTED` or
+  `PREFLIGHT_EXPIRED` (older than 24 hours, or later than `now`, which only a
+  clock moved back can give). The refusals come after the register's own, so a
+  cancelled request reads as cancelled. A re-run preflight re-stamps and
+  restarts the 24 hours.
+- **The stage is an argument, never a default.** `decideErasureRequest` takes
+  `'PREFLIGHT' | 'ERASE'` on every call, in the module that already argued
+  that a gate off whenever a caller omits an argument is worse than none.
+- **The `dsar-erase` action's same-run preflight is `--check`, not the plan.**
+  Running the stamping plan before `--confirm` in the same run would stamp
+  whatever request is due at that moment and then erase it: the write would
+  vouch for itself, and the binding would bind nothing. `--check` decides at
+  the ERASE stage and writes nothing. It keeps the repository's rule that every
+  write runs its preflight first in the same run.
+- **The local `--request` preflight stamps too, and `--confirm` needs it.**
+  Recommended over exempting the local path, because the check also lives in
+  `eraseUser`'s transaction, which serves every caller; exempting one entry
+  point would mean telling the transaction who called it, and the local path
+  is the same irreversible act. The cost is one plan run within 24 hours
+  before confirming, which the runbook already asked for.
+- **The stamp is kept.** The row survives erasure as evidence, and the stamp
+  says which preview the erasure was approved on; `fulfilErasureRequestWithin`
+  does not touch it, and the writers guard holds that.
+- **Folded into `20261125140000`**, since that migration is not yet on main: a
+  nullable column with no default, so every existing row reads "never
+  previewed", which is true.
