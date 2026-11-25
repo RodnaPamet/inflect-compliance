@@ -34,7 +34,7 @@ const FRESH = { accessToken: 'at', refreshToken: 'rt', expiresAt: Math.floor(NOW
 type Row = Record<string, unknown>;
 
 /** Just enough of Prisma for the push path, with a log of every write. */
-function memoryDb(connection: Row | null) {
+function memoryDb(connection: Row | null, consent: Row | null = { externalTenantId: 'entra-dir-1', revokedAt: null }) {
     const writes: string[] = [];
     const mappings: Row[] = [];
     const conn = connection ? { ...connection } : null;
@@ -53,7 +53,7 @@ function memoryDb(connection: Row | null) {
                 return { count: 1 };
             },
         },
-        tenantCalendarConsent: { findUnique: async () => ({ externalTenantId: 'entra-dir-1' }) },
+        tenantCalendarConsent: { findUnique: async () => (consent ? { ...consent } : null) },
         tenant: { findUnique: async () => ({ defaultLocale: 'bg' }) },
         userCalendarEventMapping: {
             findMany: async ({ where }: { where: Row }) => mappings.filter((m) => matches(m, where)).map((m) => ({ ...m })),
@@ -190,6 +190,46 @@ describe('the nightly push', () => {
             writerFor: () => fakeWriter([]).writer, generate: generated([]) as never, now: () => NOW,
         });
         expect(currentDb.conn()?.lastPushedAt).toEqual(NOW);
+    });
+
+    describe('Microsoft, with the organisation consent withdrawn in Inflect (owner decision 2026-11-25)', () => {
+        const outlook = { ...identity, provider: 'outlook-calendar' as const };
+
+        it.each([
+            ['withdrawn', { externalTenantId: 'entra-dir-1', revokedAt: NOW }],
+            ['never recorded', null],
+        ])('consent %s: nothing is sent and the connection is kept', async (_label, consent) => {
+            currentDb = memoryDb(connection({ provider: 'outlook-calendar' }), consent);
+            const log: string[] = [];
+            const generate = generated([event(1)]);
+            const out = await pushOneConnection(currentDb.run, outlook, OPTS, {
+                writerFor: () => fakeWriter(log).writer, generate: generate as never, now: () => NOW,
+            });
+            expect(out).toEqual({ kind: 'consent-withdrawn' });
+            expect(log).toEqual([]);
+            expect(generate).not.toHaveBeenCalled();
+            expect(currentDb.writes).toEqual([]);
+            expect(currentDb.conn()?.revokedAt).toBeNull();
+        });
+
+        it('a disconnect is not held: removing the events is the person taking them out', async () => {
+            currentDb = memoryDb(
+                connection({ provider: 'outlook-calendar', disconnectRequestedAt: NOW }),
+                { externalTenantId: 'entra-dir-1', revokedAt: NOW },
+            );
+            const out = await pushOneConnection(currentDb.run, outlook, OPTS, {
+                writerFor: () => fakeWriter([]).writer, generate: generated([]) as never, now: () => NOW,
+            });
+            expect(out).toMatchObject({ kind: 'disconnect', finished: true });
+        });
+
+        it('Google is never held by the Microsoft record', async () => {
+            currentDb = memoryDb(connection(), { externalTenantId: 'x', revokedAt: NOW });
+            const out = await pushOneConnection(currentDb.run, identity, OPTS, {
+                writerFor: () => fakeWriter([]).writer, generate: generated([]) as never, now: () => NOW,
+            });
+            expect(out.kind).toBe('pushed');
+        });
     });
 
     it('a revoked connection is skipped, and nothing is written', async () => {

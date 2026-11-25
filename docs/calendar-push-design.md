@@ -195,6 +195,10 @@ anything else is counted `failed`. The orchestration is
   would delete a deadline from the person's calendar on the day it falls due.
   A deadline whose day has passed leaves the window and is removed on the next
   run.
+- **Only what is still to do (owner decision 2026-11-25).** A deadline whose
+  item is finished (`status: 'done'`) is not pushed, and one already pushed is
+  removed at the next run. A person whose deadlines are all done still sees
+  their sources: their set is empty, never `no-visible-sources`.
 - **Only the person's own deadlines (owner decision 2026-11-25).** A deadline
   is pushed only when the person is its owner or assignee — the calendar
   page's "My deadlines" semantics, `ownerUserId === userId`. The aggregation
@@ -294,10 +298,12 @@ stay in the calendar while there is no token to reach them; the mapping rows
 are kept, so a reconnect resumes and the next run patches or removes them by
 their stored ids.
 
-The push does not consult Inflect's record of the Microsoft admin consent: a
-withdrawal recorded in Inflect stops new connections, and whether Microsoft
-still honours each person's grant is Microsoft's answer at the next refresh —
-the behaviour `revokeAdminConsent` already documents.
+The push stops at once when the workspace's Microsoft organisation consent is
+withdrawn in Inflect, or was never recorded (owner decision 2026-11-25): the
+person's run sends nothing and reports `consent-withdrawn`, and the connection
+and its token are kept, so a re-grant resumes it. It does not wait for
+Microsoft to refuse the next refresh. A disconnect is not held: its removals
+take the person's own events out of their calendar, at their request.
 
 ### Disconnect
 
@@ -341,12 +347,10 @@ Step 2 shipped (see "Push" and "Disconnect" above). What it could not settle:
 - **A Graph patch of an event the person deleted by hand is unverified.** With
   immutable ids the event may still resolve from Deleted Items, where a patch
   would not put it back in the calendar.
-- **A more frequent revoke-only sweep was considered and not built.** Removing
-  events a person may no longer see is cheap to compute, and only its deletes
-  reach a provider, so it could run more often than the daily push. Step 2
-  keeps one daily run: the leak window is one day, the deletes already go first
-  under the per-person cap, and a second schedule adds a job, an outcome metric
-  and its own retry policy. It is one schedule entry when wanted.
+- **No more frequent revoke-only sweep (owner decision 2026-11-25).** Removing
+  events a person may no longer see could run more often than the daily push;
+  the owner chose to keep one daily run, removals first under the per-person
+  cap, so the lag is at most a day.
 
 ### Step 3 — the Microsoft admin consent page
 

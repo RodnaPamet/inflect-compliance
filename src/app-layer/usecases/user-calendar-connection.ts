@@ -302,8 +302,9 @@ export function calendarRequestRun(ctx: RequestContext): CalendarTenantRun {
  * sent the person to. A refresh must go to the SAME authority; sending it to
  * the deployment's own directory would be refused as `invalid_grant` and read
  * as a withdrawn consent. It is read whether or not Inflect's record of the
- * consent has since been withdrawn: whether Microsoft still honours the grant
- * is Microsoft's answer, and a refused refresh revokes the connection.
+ * consent has since been withdrawn, because a disconnect still needs the
+ * authority to remove the events it pushed; `consentWithdrawn` reports the
+ * record, and the nightly push stops on it.
  */
 export async function readCalendarConnectionForPush(
     run: CalendarTenantRun,
@@ -313,6 +314,13 @@ export async function readCalendarConnectionForPush(
     token: CalendarTokenPayload;
     disconnectRequestedAt: Date | null;
     entraTenantId: string | undefined;
+    /**
+     * Microsoft only: the workspace's organisation-wide consent is not in
+     * force in Inflect's own record (withdrawn, or never recorded). The push
+     * stops at once on it (owner decision 2026-11-25) rather than waiting for
+     * Microsoft to refuse the next refresh. Always false for Google.
+     */
+    consentWithdrawn: boolean;
 } | null> {
     return run(async (db) => {
         const row = await db.userCalendarConnection.findUnique({
@@ -327,18 +335,21 @@ export async function readCalendarConnectionForPush(
         });
         if (!row || row.revokedAt) return null;
         let entraTenantId: string | undefined;
+        let consentWithdrawn = false;
         if (identity.provider === 'outlook-calendar') {
             const consent = await db.tenantCalendarConsent.findUnique({
                 where: { tenantId_provider: { tenantId: identity.tenantId, provider: identity.provider } },
-                select: { externalTenantId: true },
+                select: { externalTenantId: true, revokedAt: true },
             });
             entraTenantId = consent?.externalTenantId ?? undefined;
+            consentWithdrawn = !consent || consent.revokedAt !== null;
         }
         return {
             connectionId: row.id,
             token: parseStoredToken(row.tokenEncrypted),
             disconnectRequestedAt: row.disconnectRequestedAt,
             entraTenantId,
+            consentWithdrawn,
         };
     });
 }
