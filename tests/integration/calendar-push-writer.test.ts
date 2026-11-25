@@ -28,6 +28,17 @@ d('calendar push — tenant key, own deadlines, RLS', () => {
     // Throwaway fixture values written to temporary tenants; never real tokens.
     const fresh = () => ({ accessToken: 'fixture-access', refreshToken: 'fixture-refresh', expiresAt: Math.floor(Date.now() / 1000) + 3600 }); // pragma: allowlist secret
 
+    /**
+     * The workspace's Microsoft organisation consent, as the admin-consent
+     * callback records it. The connect flow refuses an Outlook connection
+     * without one, and the push holds a connection whose consent is not in force.
+     */
+    async function grantMicrosoftConsent(tenantId: string, grantedByUserId: string, revokedAt: Date | null = null) {
+        await prisma.tenantCalendarConsent.create({
+            data: { tenantId, provider: 'outlook-calendar', externalTenantId: 'entra-dir-1', grantedByUserId, revokedAt },
+        });
+    }
+
     async function workspace(label: string) {
         const slug = `calpush-${label}-${Date.now()}`;
         const tenant = await createTenantWithDek({ name: slug, slug });
@@ -92,6 +103,7 @@ d('calendar push — tenant key, own deadlines, RLS', () => {
     afterAll(async () => {
         await prisma.userCalendarEventMapping.deleteMany({ where: { tenantId: { in: tenantIds } } });
         await prisma.userCalendarConnection.deleteMany({ where: { tenantId: { in: tenantIds } } });
+        await prisma.tenantCalendarConsent.deleteMany({ where: { tenantId: { in: tenantIds } } });
         await prisma.task.deleteMany({ where: { tenantId: { in: tenantIds } } });
         await prisma.$disconnect();
     });
@@ -137,6 +149,7 @@ d('calendar push — tenant key, own deadlines, RLS', () => {
         const a = await workspace('bg');
         await prisma.tenant.update({ where: { id: a.tenant.id }, data: { defaultLocale: 'bg' } });
         await a.task('Ротация на ключове', a.me.id, 2);
+        await grantMicrosoftConsent(a.tenant.id, a.me.id);
         await saveCalendarConnection(a.ctx, { provider: 'outlook-calendar', token: fresh(), scopesGranted: [] });
 
         const provider = fakeProvider();
@@ -152,6 +165,7 @@ d('calendar push — tenant key, own deadlines, RLS', () => {
         const a = await workspace('rotate');
         await a.task('Mine', a.me.id, 1);
         const expired = { ...fresh(), expiresAt: Math.floor(Date.now() / 1000) - 60 };
+        await grantMicrosoftConsent(a.tenant.id, a.me.id);
         await saveCalendarConnection(a.ctx, { provider: 'outlook-calendar', token: expired, scopesGranted: [] });
 
         const rotated = { accessToken: 'fixture-access-2', refreshToken: 'fixture-refresh-2', expiresAt: Math.floor(Date.now() / 1000) + 3600 }; // pragma: allowlist secret
@@ -169,5 +183,20 @@ d('calendar push — tenant key, own deadlines, RLS', () => {
         await runCalendarPushTenant({ tenantId: a.tenant.id }, { writerFor: writerFor as never, refresh: async () => rotated });
 
         expect(onDiskWhenUsed).toEqual(['fixture-access-2|fixture-refresh-2|v2:']);
+    }, 60_000);
+    it('a withdrawn Microsoft organisation consent stops the push at once, and keeps the connection', async () => {
+        const a = await workspace('withdrawn');
+        await a.task('Mine', a.me.id, 1);
+        await grantMicrosoftConsent(a.tenant.id, a.me.id, new Date());
+        await saveCalendarConnection(a.ctx, { provider: 'outlook-calendar', token: fresh(), scopesGranted: [] });
+
+        const provider = fakeProvider();
+        await runCalendarPushTenant({ tenantId: a.tenant.id }, { writerFor: provider.writerFor as never });
+
+        expect(provider.seen.titles).toEqual([]);
+        expect(provider.seen.tokens).toEqual([]);
+        expect(await prisma.userCalendarEventMapping.count({ where: { tenantId: a.tenant.id } })).toBe(0);
+        const conn = await prisma.userCalendarConnection.findFirst({ where: { tenantId: a.tenant.id } });
+        expect(conn?.revokedAt).toBeNull();
     }, 60_000);
 });

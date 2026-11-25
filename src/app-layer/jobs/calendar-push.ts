@@ -186,7 +186,7 @@ export async function runCalendarPushTenant(
         try {
             outcome = await runUserPushGuarded({ tenantId, userId: c.userId }, c.provider, async () => {
                 const r = await push(run, identity, { locale, publicOrigin }, deps);
-                return { changed: r.kind !== 'skipped' && r.changed };
+                return { changed: (r.kind === 'pushed' || r.kind === 'disconnect') && r.changed };
             });
         } catch (err) {
             // `runUserPushGuarded` returns rather than throws, except when

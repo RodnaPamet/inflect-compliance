@@ -153,6 +153,12 @@ export function calendarAccessTokens(
 /** What a person's nightly run did. */
 export type PersonPushResult =
     | { kind: 'skipped' }
+    /**
+     * Microsoft, with the workspace's organisation-wide consent withdrawn in
+     * Inflect: nothing is sent, and the connection is kept so a re-grant
+     * resumes it.
+     */
+    | { kind: 'consent-withdrawn' }
     | {
           kind: 'pushed';
           changed: boolean;
@@ -181,6 +187,19 @@ export async function pushOneConnection(
     const now = deps.now ?? (() => new Date());
     const conn = await readCalendarConnectionForPush(run, identity);
     if (!conn) return { kind: 'skipped' };
+
+    // A disconnect's removals still run: they take the person's own events OUT
+    // of their calendar, at their request. Everything else stops the moment the
+    // workspace's Microsoft consent is withdrawn in Inflect (owner decision
+    // 2026-11-25), not at Microsoft's next refusal of a refresh.
+    if (conn.consentWithdrawn && !conn.disconnectRequestedAt) {
+        logger.info('calendar push held: organisation consent withdrawn', {
+            component: 'calendar-push',
+            tenantId: identity.tenantId,
+            provider: identity.provider,
+        });
+        return { kind: 'consent-withdrawn' };
+    }
 
     const tokens = calendarAccessTokens(run, identity, conn.token, conn.entraTenantId, deps);
     const writer = buildCalendarWriter(identity.provider, tokens, deps);
@@ -229,7 +248,7 @@ async function continueDisconnect(
     },
 ): Promise<PersonPushResult> {
     const expired = args.now.getTime() - args.requestedAt.getTime() >= DISCONNECT_RETRY_DAYS * DAY_MS;
-    let removal = { deleted: 0, remaining: 0 };
+    let removal: { deleted: number; remaining: number };
     try {
         removal = await removeAllPushedEvents({
             store: args.store,

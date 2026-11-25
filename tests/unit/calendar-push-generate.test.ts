@@ -348,3 +348,37 @@ describe('the mapping onto pushable events', () => {
         expect(JSON.stringify(out.events)).not.toContain('/t/acme');
     });
 });
+
+describe('a finished deadline leaves the calendar (owner decision 2026-11-25)', () => {
+    const withStatuses = (statuses: string[]) =>
+        jest.fn(async () => ({
+            events: statuses.map((status, i) => ({
+                id: `TASK:t${i}:task-due`, type: 'task-due', entityType: 'TASK', entityId: `t${i}`,
+                title: `Task ${i}`, date: '2026-09-01T00:00:00.000Z', href: `/t/acme/tasks/t${i}`, status,
+            })),
+            omittedSources: [],
+            failedSources: [],
+            truncation: { sources: [], totalCapped: false },
+        })) as never;
+
+    it('a done item is not pushed; one still to do is', async () => {
+        const out = await generatePushableEvents(
+            { tenantId: 't1', userId: 'u1' },
+            { resolveContext: async () => ctxFor(), aggregate: withStatuses(['done', 'due_soon', 'overdue']), now: () => NOW },
+        );
+        if (out.kind !== 'generated') throw new Error('unreachable');
+        expect(out.events.map((e) => e.sourceEntityId)).toEqual(['t1', 't2']);
+    });
+
+    it('a person whose deadlines are ALL done still sees their sources: an empty set, never no-visible-sources', async () => {
+        // `no-visible-sources` deletes everything because the person lost
+        // access. Here they did not; the reconcile removes the finished events
+        // because they are no longer generated, which is the same outcome by
+        // the right path.
+        const out = await generatePushableEvents(
+            { tenantId: 't1', userId: 'u1' },
+            { resolveContext: async () => ctxFor(), aggregate: withStatuses(['done', 'done']), now: () => NOW },
+        );
+        expect(out).toMatchObject({ kind: 'generated', events: [] });
+    });
+});

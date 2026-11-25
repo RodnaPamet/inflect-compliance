@@ -9586,6 +9586,44 @@
         "SHARED": "shared",
         "STATUS_CHANGED": "status changed"
       }
+    },
+    "calendarConsent": {
+      "title": "Outlook calendar for your organisation",
+      "intro": "Before anyone in this workspace can send their own deadlines to Outlook, an administrator of your Microsoft organisation authorises Inflect once, for everyone. Each person then signs in to Microsoft for their own calendar; nothing is written to anybody's calendar without them.",
+      "loading": "Loading the authorisation…",
+      "loadFailed": "The authorisation could not be read.",
+      "notConfigured": "This deployment has no Microsoft app registration set up, so it cannot be authorised from here. Ask whoever runs this Inflect deployment to configure one.",
+      "statusGranted": "Authorised",
+      "statusNotGranted": "Not authorised",
+      "statusRevoked": "Revoked",
+      "grantedAt": "Authorised on {date}",
+      "grantedBy": "By {name}",
+      "grantedByUnknown": "By a former member",
+      "directory": "Microsoft directory: {id}",
+      "directoryUnknown": "Microsoft directory: not recorded",
+      "revokedAt": "Revoked on {date}",
+      "neverGranted": "Nobody has authorised Outlook for this workspace yet.",
+      "authorise": "Authorise for your organisation",
+      "authoriseAgain": "Authorise again",
+      "authorising": "Opening Microsoft…",
+      "authoriseFailed": "The authorisation could not be started.",
+      "scopeNote": "Microsoft grants everything Inflect's app registration declares, including the permissions used for signing in with Microsoft, not only the calendar. Running the authorisation again may cancel other organisation-wide grants for the same app in your directory.",
+      "revoke": "Revoke authorisation",
+      "revokeTitle": "Revoke the Outlook authorisation?",
+      "revokeDescription": "Outlook pushes stop at once for everyone in this workspace, and nobody can connect Outlook until it is authorised again, which needs another sign-in by a Microsoft administrator. Microsoft keeps its own record of the grant; remove it in the Entra admin centre if you want it gone there too.",
+      "revokeConfirm": "Revoke authorisation",
+      "revoked": "The Outlook authorisation is revoked.",
+      "revokeFailed": "The authorisation could not be revoked.",
+      "outcome": {
+        "consent_granted": "Outlook is authorised for your organisation. People in this workspace can now connect their own calendars.",
+        "consent_declined": "The authorisation was declined at Microsoft, so nothing changed.",
+        "not_directory_admin": "The Microsoft account that signed in cannot authorise apps for the organisation. Sign in with an account that holds a Microsoft administrator role able to grant consent, or ask someone who does.",
+        "app_not_in_directory": "Inflect's Microsoft app is not available to your directory. Ask whoever runs this Inflect deployment to check that its app registration accepts other organisations.",
+        "provider_error": "Microsoft did not complete the authorisation. Try again; if it keeps failing, ask your Microsoft administrator.",
+        "flow_invalid": "The authorisation could not be matched to this browser, or it took too long. Start it again from this page.",
+        "not_permitted": "Your account no longer has permission to authorise integrations in this workspace, so nothing was recorded.",
+        "consent_failed": "The authorisation could not be recorded. Try again."
+      }
     }
   },
   "riskManager": {
@@ -18730,6 +18768,7 @@
       "BULK_TEMPLATES_INSTALLED": "Bulk templates installed",
       "BUNDLE_CREATED": "Bundle created",
       "BUNDLE_FROZEN": "Bundle frozen",
+      "CALENDAR_ADMIN_CONSENT_FAILED": "Calendar admin consent did not complete",
       "CALENDAR_ADMIN_CONSENT_GRANTED": "Calendar admin consent granted",
       "CALENDAR_ADMIN_CONSENT_REVOKED": "Calendar admin consent revoked",
       "CALENDAR_CONNECT_FAILED": "Personal calendar connection failed",

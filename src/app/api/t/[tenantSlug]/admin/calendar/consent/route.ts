@@ -1,19 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { randomUUID } from 'crypto';
-import { env } from '@/env';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { resolvePublicOrigin } from '@/lib/http/request-origin';
-import { buildMicrosoftAdminConsentUrl } from '@/app-layer/integrations/providers/calendar/token';
 import {
-    getConsentStates,
+    buildMicrosoftAdminConsentUrl,
+    microsoftCalendarClientConfigured,
+} from '@/app-layer/integrations/providers/calendar/token';
+import {
+    CALENDAR_ADMIN_CALLBACK_PATH,
+    prepareCalendarAdminConsentFlow,
+} from '@/app-layer/integrations/providers/calendar/admin-consent-flow';
+import {
+    getAdminConsentOverview,
     revokeAdminConsent,
     requiresAdminConsent,
 } from '@/app-layer/usecases/tenant-calendar-consent';
-import { badRequest } from '@/lib/errors/types';
+import { badRequest, ConflictError } from '@/lib/errors/types';
 
 /**
- * Tenant-wide calendar consent: start it, read it, withdraw it.
+ * Tenant-wide calendar consent: start it, read it, withdraw it. The consent
+ * card on Admin → Integrations is the page that calls these.
  *
  * ═══ WHY THIS IS ADMIN-GATED AND THE USER CONNECT ROUTE IS NOT ═══
  *
@@ -28,53 +34,62 @@ import { badRequest } from '@/lib/errors/types';
  * exercised is an UNLOGGED gate, because the request passes the middleware and
  * is refused deeper where nothing writes AUTHZ_DENIED.
  *
- * ═══ THE STATE COOKIE ═══
+ * ═══ THE FLOW COOKIE ═══
  *
- * `<state>.<tenantSlug>`, HttpOnly + SameSite=Lax, 10 minutes — the SharePoint
- * pattern, for the same reason: the callback sits OUTSIDE the /t/[tenantSlug]
- * tree (Entra redirects to one fixed URI) and has to recover which tenant this
- * was for. SameSite=Lax survives the top-level OAuth redirect; Strict would not.
+ * The callback sits OUTSIDE the /t/[tenantSlug] tree (Entra redirects to one
+ * fixed URI) and has to recover which workspace this was for, and who asked.
+ * Both are sealed into a signed cookie sent only to the callback path
+ * (`admin-consent-flow.ts`); Entra is given a random id as `state`. SameSite=Lax
+ * survives the top-level redirect back; Strict would not.
  *
  * State is not optional here. This initiates a TENANT-WIDE authorisation, so
- * without it any site could start one on an admin's behalf.
+ * without it any site could complete one on an admin's behalf.
  */
 export const POST = withApiErrorHandling(
     requirePermission<{ tenantSlug: string }>(
         'admin.manage',
-        async (req: NextRequest, { params }, _ctx) => {
+        async (req: NextRequest, { params }, ctx) => {
             const provider = req.nextUrl.searchParams.get('provider') ?? 'outlook-calendar';
             if (!requiresAdminConsent(provider)) {
                 // Google is per-user by design. Offering an admin-consent flow
                 // for it would imply a tenant-wide grant that does not exist.
                 throw badRequest(`${provider} does not use tenant-wide admin consent`);
             }
+            if (!microsoftCalendarClientConfigured()) {
+                // An `/adminconsent` URL with no real client id fails at
+                // Microsoft with an error naming nothing the admin can fix.
+                throw new ConflictError('This deployment has no Microsoft app registration configured', {
+                    reason: 'MICROSOFT_CLIENT_NOT_CONFIGURED',
+                });
+            }
 
-            const state = randomUUID();
+            const flow = prepareCalendarAdminConsentFlow({ tenantSlug: params.tenantSlug, userId: ctx.userId });
             const origin = resolvePublicOrigin(req);
             const consentUrl = buildMicrosoftAdminConsentUrl({
-                redirectUri: `${origin}/api/integrations/calendar/admin-callback`,
-                state,
+                redirectUri: `${origin}${CALENDAR_ADMIN_CALLBACK_PATH}`,
+                state: flow.state,
             });
 
             const res = NextResponse.json({ consentUrl });
-            res.cookies.set('cal_admin_state', `${state}.${params.tenantSlug}`, {
-                httpOnly: true,
-                sameSite: 'lax',
-                secure: env.NODE_ENV === 'production',
-                path: '/',
-                maxAge: 600,
-            });
+            flow.bind(res);
             return res;
         },
     ),
 );
 
-/** What the admin settings page shows: granted / withdrawn / never granted. */
+/**
+ * What the consent card shows: granted / withdrawn / never granted, when, by
+ * whom and in which directory, and whether this deployment has a Microsoft app
+ * registration to send an administrator to at all.
+ */
 export const GET = withApiErrorHandling(
     requirePermission<{ tenantSlug: string }>(
         'admin.manage',
         async (_req: NextRequest, _routeArgs, ctx) => {
-            return Response.json({ consents: await getConsentStates(ctx) });
+            return Response.json({
+                consents: await getAdminConsentOverview(ctx),
+                microsoftClientConfigured: microsoftCalendarClientConfigured(),
+            });
         },
     ),
 );

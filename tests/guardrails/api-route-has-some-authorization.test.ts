@@ -501,7 +501,8 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
       mechanism: /readCalendarOAuthFlow/,
       note: 'OAuth redirect. The sealed, signed calendar flow cookie (state + starter + PKCE verifier) is the CSRF defence; spent on every outcome.' },
     { handler: 'api/integrations/calendar/admin-callback/route.ts#GET', klass: 'SIGNED_WEBHOOK',
-      note: 'Admin-consent OAuth redirect. cal_admin_state nonce, single-use — it grants tenant-wide access, so a lingering cookie would be replayable.' },
+      mechanism: /readCalendarAdminConsentFlow/,
+      note: 'Admin-consent OAuth redirect. The sealed, signed admin flow cookie (state + workspace + the admin who started it) is the CSRF defence; spent on every outcome. The session must be that admin and still hold admin.manage (assertPermission).' },
 
     // ── MEMBERSHIP_SCOPED ────────────────────────────────────────────
     { handler: 'api/org/[orgSlug]/route.ts#GET', klass: 'MEMBERSHIP_SCOPED',

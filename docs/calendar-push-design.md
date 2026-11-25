@@ -1,12 +1,11 @@
 # Calendar push — design
 
 > **Status: living design** — the connection (connect, callback, token
-> storage, admin consent routes) and the writer (step 2: the nightly push of
-> a person's own deadlines, and disconnect) are built, and so is the Connect
-> control on `/calendar` (step 4); the admin consent page is not. Epic #5937
-> tracks the steps, one pull request each. The `Current state` section is true
-> today; the `Roadmap` section holds step 2's open items and the plan for
-> step 3.
+> storage, admin consent routes), the writer (step 2: the nightly push of a
+> person's own deadlines, and disconnect), the Microsoft admin consent page
+> (step 3) and the Connect control on `/calendar` (step 4) are built. Epic
+> #5937 tracked the steps, one pull request each. The `Current state` section
+> is true today; the `Roadmap` section holds the open items of steps 2 and 3.
 
 What this feature is for: a person connects their own Google or Microsoft
 calendar, and the compliance deadlines they are responsible for appear in it,
@@ -53,10 +52,12 @@ argues for a different model):
 1. **Inflect's record of the grant is a memory, not a fact.** `TenantCalendarConsent`
    records that the admin-consent callback said `admin_consent=True`. An admin
    who later removes the grant in the Entra portal is not seen; each person's
-   next sign-in then fails at Microsoft. Today the callback reports that as
-   `provider_error`. Step 3 maps Entra's missing-consent answer to its own
-   outcome, verified against a real directory, so the page can say "ask your
-   administrator to authorise again" instead of "something went wrong".
+   next sign-in then fails at Microsoft. Since step 3 the person's callback
+   maps Entra's missing-consent answer to its own outcome, `consent_required`
+   (see "Callback"), so the Connect control can say "ask your administrator to
+   authorise again" instead of "something went wrong". The mapping is from
+   Microsoft's documented codes and is not yet verified against a real
+   directory (Roadmap, "Step 3 — open items").
 2. **The registration must be multi-tenant.** Admin consent in a customer's
    directory needs the app registration (`MICROSOFT_CLIENT_ID`) to accept
    other directories, and the user flow is sent to the authority recorded at
@@ -66,11 +67,11 @@ argues for a different model):
    calendar shares its app registration with Microsoft sign-in, so the grant
    covers sign-in's permissions too (harmless: they are user-consentable), and
    Microsoft documents that re-running it MAY revoke other tenant-wide grants
-   for the same app. Step 3's page says so beside the button.
-4. **The admin-consent callback has the defects the user callback had before
-   step 1** (below): an unsigned `cal_admin_state` cookie scoped to `/`, a
-   redirect built from `url.origin`, and a thrown error that leaves the admin
-   on a JSON body. Step 3 fixes them the same way.
+   for the same app. The consent card says so beside the button.
+4. **The admin-consent callback had the defects the user callback had before
+   step 1**: an unsigned `cal_admin_state` cookie scoped to `/`, a redirect
+   built from `url.origin`, and a thrown error that left the admin on a JSON
+   body. Step 3 fixed them the same way (see "Admin consent (Microsoft)").
 
 **Google** needs its OAuth app verified for the `calendar.events` scope, which
 Google classes as sensitive (not restricted, so no third-party security
@@ -114,9 +115,10 @@ built `redirect_uri` from. The flow cookie is spent whatever happens.
 | --- | --- |
 | `connected` | The token was exchanged and stored |
 | `flow_invalid` | Flow cookie absent, forged, expired, for another `state`, carrying no usable verifier, or started by a different member than the session |
-| `connect_declined` | The provider answered `error=access_denied` |
+| `connect_declined` | The provider answered `error=access_denied` (for Microsoft, unless its AADSTS number says the organisation has not consented) |
 | `provider_error` | Any other provider error, or neither a code nor an error |
 | `consent_withdrawn` | Microsoft: the admin consent was withdrawn between connect and callback |
+| `consent_required` | Microsoft: Entra answered that the organisation has not consented — `error=consent_required`, or an `error_description` starting `AADSTS65001` or `AADSTS90094` |
 | `no_refresh_token` | The exchange issued no refresh token |
 | `connect_failed` | No tenant context (signed out, not a member), or the exchange or the save failed |
 
@@ -159,7 +161,80 @@ Revoking keeps the row and writes the token as `''`.
 
 `POST|GET|DELETE /api/t/:slug/admin/calendar/consent` (`admin.manage`) start,
 read and withdraw the workspace's grant; Entra returns to
-`/api/integrations/calendar/admin-callback`. No page calls them.
+`/api/integrations/calendar/admin-callback`. The consent card on Admin →
+Integrations calls them.
+
+**Start.** `POST` refuses with 409 (`MICROSOFT_CLIENT_NOT_CONFIGURED`) when the
+deployment has no Microsoft app registration (`microsoftCalendarClientConfigured`
+in `token.ts`: an empty value, or an example file's placeholder, `REPLACE_ME…`
+or `your-…`), rather than send the admin to a page that fails at Microsoft.
+Otherwise it returns `{ consentUrl }` and sets the sealed flow cookie
+(`admin-consent-flow.ts`, the personal flow's pattern):
+
+- `inflect_cal_admin_flow`, HttpOnly, SameSite=Lax, Secure in production,
+  scoped to `/api/integrations/calendar/admin-callback` only, ten minutes;
+- its body names a random flow id (sent to Entra as `state`), the workspace
+  slug and the administrator who started it, and is HMAC-signed with a key
+  derived from `AUTH_SECRET` under its own HKDF label — distinct from the
+  personal connect flow's and SSO's, so neither verifies as the other.
+
+No PKCE: `/adminconsent` returns no authorization code. The pre-step-3 cookie
+`cal_admin_state` (at `/`) is cleared by the start and by every callback.
+
+**Callback.** Every path ends in a redirect to
+`/t/<slug>/admin/integrations?calendar=<outcome>` (or `/tenants` when no signed
+flow names a workspace), on `resolvePublicOrigin`, and spends the flow cookie.
+The session must be the administrator who started the flow and must still hold
+`admin.manage`; the callback asks the key again with `assertPermission`, so a
+refusal writes the same `AUTHZ_DENIED` row the route gate would.
+
+| Outcome | When |
+| --- | --- |
+| `consent_granted` | Entra answered `admin_consent=True`, and the grant is recorded with the directory Entra named |
+| `consent_declined` | `error=access_denied` or `permission_denied` (the `/adminconsent` endpoint's documented failure), `AADSTS65004`, `AADSTS65001` or `consent_required` |
+| `not_directory_admin` | `AADSTS90094`: the account that signed in cannot grant organisation-wide consent |
+| `app_not_in_directory` | `AADSTS700016`, `unauthorized_client` or `invalid_client`: the registration is not available to that directory (point 2) |
+| `provider_error` | Any other error, no `admin_consent=True`, or a `tenant` that is not a directory GUID |
+| `flow_invalid` | Flow cookie absent, forged, expired, for another `state`, or started by a different member than the session |
+| `not_permitted` | The session no longer holds `admin.manage` |
+| `consent_failed` | No workspace context (signed out, not a member), or the grant could not be recorded |
+
+The set is `CALENDAR_ADMIN_CONSENT_OUTCOMES` in
+`src/lib/calendar-admin-consent-outcomes.ts`, read by the callback and the card
+alike. Entra's answer is read by `readEntraError` (`entra-errors.ts`) from its
+OAuth `error` code and the `AADSTS<digits>` number at the START of
+`error_description`, and from nothing else in the description; neither the
+description nor anything else Entra sent is reflected, logged or audited. A
+`tenant` is stored only as the GUID Entra sends, because later authorize URLs
+go to it.
+
+A grant is audited `CALENDAR_ADMIN_CONSENT_GRANTED` and a withdrawal
+`CALENDAR_ADMIN_CONSENT_REVOKED`, as before. A failure after the workspace
+context resolves is audited `CALENDAR_ADMIN_CONSENT_FAILED` (category `access`,
+the outcome, Entra's OAuth code and AADSTS number when code-shaped).
+
+**The card.** `CalendarConsentCard` on Admin → Integrations, for holders of
+`admin.manage` (the routes' only gate, so the card asks
+`useOffersAdminApiWrite({ key: 'admin.manage' })` and nothing more):
+
+- the status — authorised, not authorised, or revoked — and, once granted,
+  when, by whom (the member's name, else their email) and in which directory;
+- **Authorise for your organisation** (**Authorise again** while granted: the
+  remedy when a person's sign-in reports `consent_required`), which POSTs and
+  follows `consentUrl`, with point 3 stated beside it in plain words;
+- **Revoke authorisation**, behind a danger-toned confirmation. Not an undo
+  toast: revoking stops everybody's Outlook pushes and nothing in Inflect puts
+  it back (re-authorising is another Microsoft sign-in by a directory
+  administrator), which `docs/destructive-actions.md` lists as the case for a
+  confirmation. The verb is the canonical `Revoke` (an authority is
+  invalidated), not "Withdraw";
+- when the deployment has no Microsoft client, a note saying so in place of
+  the button (a grant recorded earlier can still be revoked);
+- the callback's outcome, one message per outcome in `en` and `bg`, shown to
+  every viewer (a callback can land somebody who has just lost the permission)
+  and then removed from the URL.
+
+A viewer without `admin.manage` sends no read and is offered no control.
 
 ### Push (step 2)
 
@@ -196,6 +271,10 @@ anything else is counted `failed`. The orchestration is
   would delete a deadline from the person's calendar on the day it falls due.
   A deadline whose day has passed leaves the window and is removed on the next
   run.
+- **Only what is still to do (owner decision 2026-11-25).** A deadline whose
+  item is finished (`status: 'done'`) is not pushed, and one already pushed is
+  removed at the next run. A person whose deadlines are all done still sees
+  their sources: their set is empty, never `no-visible-sources`.
 - **Only the person's own deadlines (owner decision 2026-11-25).** A deadline
   is pushed only when the person is its owner or assignee — the calendar
   page's "My deadlines" semantics, `ownerUserId === userId`. The aggregation
@@ -295,10 +374,12 @@ stay in the calendar while there is no token to reach them; the mapping rows
 are kept, so a reconnect resumes and the next run patches or removes them by
 their stored ids.
 
-The push does not consult Inflect's record of the Microsoft admin consent: a
-withdrawal recorded in Inflect stops new connections, and whether Microsoft
-still honours each person's grant is Microsoft's answer at the next refresh —
-the behaviour `revokeAdminConsent` already documents.
+The push stops at once when the workspace's Microsoft organisation consent is
+withdrawn in Inflect, or was never recorded (owner decision 2026-11-25): the
+person's run sends nothing and reports `consent-withdrawn`, and the connection
+and its token are kept, so a re-grant resumes it. It does not wait for
+Microsoft to refuse the next refresh. A disconnect is not held: its removals
+take the person's own events out of their calendar, at their request.
 
 ### Disconnect
 
@@ -401,21 +482,28 @@ Step 2 shipped (see "Push" and "Disconnect" above). What it could not settle:
 - **A Graph patch of an event the person deleted by hand is unverified.** With
   immutable ids the event may still resolve from Deleted Items, where a patch
   would not put it back in the calendar.
-- **A more frequent revoke-only sweep was considered and not built.** Removing
-  events a person may no longer see is cheap to compute, and only its deletes
-  reach a provider, so it could run more often than the daily push. Step 2
-  keeps one daily run: the leak window is one day, the deletes already go first
-  under the per-person cap, and a second schedule adds a job, an outcome metric
-  and its own retry policy. It is one schedule entry when wanted.
+- **No more frequent revoke-only sweep (owner decision 2026-11-25).** Removing
+  events a person may no longer see could run more often than the daily push;
+  the owner chose to keep one daily run, removals first under the per-person
+  cap, so the lag is at most a day.
 
-### Step 3 — the Microsoft admin consent page
+### Step 3 — open items
 
-A card on Admin → Integrations, shown to holders of `admin.manage` (the
-routes' gate): whether the workspace has granted, when, by whom and in which
-directory; "Authorise for your organisation" (POST, then the browser follows
-the returned URL to Entra) and "Withdraw" (DELETE, destructive vocabulary).
-The page states point 3 above beside the button. In the same pull request the
-admin callback gets the user callback's hardening: a sealed, signed flow
-cookie scoped to its path, `resolvePublicOrigin`, a redirect on every failure
-to `/t/<slug>/admin/integrations?calendar=<outcome>`, and Entra's
-missing-consent answer mapped to its own outcome (point 1).
+Step 3 shipped (see "Admin consent (Microsoft)" above). What it could not
+settle:
+
+- **Entra's error answers are mapped from documentation, not observation.**
+  The step had no Entra directory to sign in to, and Microsoft was not
+  contacted. `readEntraError` follows the `/adminconsent` endpoint's documented
+  failure (`permission_denied`), OAuth's codes and the AADSTS reference
+  (`65004` declined, `65001` and `90094` consent missing, `700016` app not in
+  the directory). Which codes Entra actually sends — for an admin who cancels,
+  a non-administrator at `/adminconsent`, a single-tenant registration, and a
+  person whose organisation's grant was removed — is to be recorded against a
+  real directory, and the table narrowed to it.
+- **A removed grant may surface at the code exchange, not the redirect.** With
+  user consent allowed, Entra may show the person a consent prompt instead of
+  an error; with it disallowed, it shows "Need admin approval" and may not
+  redirect at all, or redirect as a decline. If Entra instead issues a code and
+  refuses the exchange with `AADSTS65001`, the callback reports
+  `connect_failed`: the exchange's error body is not read.

@@ -836,6 +836,19 @@ export interface AgentRunExecutePayload {
      * that sent none enqueued: then no attempt is treated as a retry.
      */
     segment?: number;
+    /**
+     * THIS SEGMENT CONTINUES A PAUSED ONE (#5854, the owner's second decision
+     * of 2026-11-25): the epoch milliseconds the run was PAUSED at (its row's
+     * `updatedAt` before the resume's claim), set by a person's resume of a
+     * run the SIGTERM drain paused, and by nothing else. On an engine whose
+     * conversation is a session (Managed Agents) the segment then takes over
+     * the paused segment's start in the ledger and reconnects to the session
+     * that segment left open, unless the resume came too late for it
+     * (`PAUSED_SESSION_RESUME_WINDOW_MS`, measured from this to `segment`, the
+     * claim). Every other engine ignores it. Absent, as on a job from an older
+     * build, the segment starts its own session, as before.
+     */
+    pausedAt?: number;
 }
 
 /**
