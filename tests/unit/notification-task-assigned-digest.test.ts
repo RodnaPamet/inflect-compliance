@@ -10,7 +10,8 @@ jest.mock('@/app-layer/notifications/settings', () => ({
 }));
 
 import { withSkipDuplicates } from '../helpers/outbox-double';
-import { buildTaskAssignedDigestEmail } from '@/app-layer/notifications/templates';
+import { buildTaskAssignedDigestEmail, TASK_ASSIGNED_EMAIL_NAMESPACE } from '@/app-layer/notifications/templates';
+import { workspaceTranslator, type WorkspaceTranslator } from '@/lib/i18n/workspace-text';
 import { enqueueEmail } from '@/app-layer/notifications/enqueue';
 
 const DIGEST = {
@@ -24,8 +25,13 @@ const DIGEST = {
 };
 
 describe('buildTaskAssignedDigestEmail', () => {
+    let enT: WorkspaceTranslator;
+    beforeAll(async () => {
+        enT = await workspaceTranslator('en', TASK_ASSIGNED_EMAIL_NAMESPACE);
+    });
+
     it('lists every task in one email, with its key where it has one', () => {
-        const mail = buildTaskAssignedDigestEmail(DIGEST);
+        const mail = buildTaskAssignedDigestEmail(DIGEST, enT);
 
         expect(mail.subject).toBe('2 tasks assigned to you');
         expect(mail.bodyText).toContain('Hi Dana Lee,');
@@ -36,14 +42,14 @@ describe('buildTaskAssignedDigestEmail', () => {
     });
 
     it('escapes task titles in the HTML body', () => {
-        const mail = buildTaskAssignedDigestEmail(DIGEST);
+        const mail = buildTaskAssignedDigestEmail(DIGEST, enT);
 
         expect(mail.bodyHtml).toContain('Review the &lt;vendor&gt; DPA');
         expect(mail.bodyHtml).not.toContain('<vendor>');
     });
 
     it('drops the by-line when the assigner has no name', () => {
-        const mail = buildTaskAssignedDigestEmail({ ...DIGEST, assignerName: undefined });
+        const mail = buildTaskAssignedDigestEmail({ ...DIGEST, assignerName: undefined }, enT);
 
         expect(mail.bodyText).toContain('You have been assigned 2 tasks:');
     });
@@ -52,7 +58,7 @@ describe('buildTaskAssignedDigestEmail', () => {
 describe('enqueueEmail — TASK_ASSIGNED builds the body the payload asks for', () => {
     function fakeDb() {
         const create = jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'out-1', ...data }));
-        // No Tenant row: the single-task email reads as the default (English) workspace.
+        // No Tenant row: both TASK_ASSIGNED emails read as the default (English) workspace.
         const tenant = { findUnique: jest.fn(async () => null) };
         return { db: { notificationOutbox: withSkipDuplicates(create), tenant } as never, create };
     }

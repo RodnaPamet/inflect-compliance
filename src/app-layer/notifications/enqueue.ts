@@ -151,12 +151,12 @@ export async function enqueueEmail(
         return null;
     }
 
-    // Build email content from template. The single-task TASK_ASSIGNED email
-    // is written in the workspace's default language (owner decision
-    // 2026-11-25), read here once per email: the row is sent as rendered, so
-    // this is the one place the language can be chosen. Every other email,
-    // the bulk digest included, is still English.
-    const t = isSingleTaskAssigned(type, payload)
+    // Build email content from template. Both TASK_ASSIGNED emails, the
+    // single task and the bulk-Assign digest, are written in the workspace's
+    // default language (owner decisions 2026-11-25), read here once per email:
+    // the row is sent as rendered, so this is the one place the language can
+    // be chosen. Every other email is still English.
+    const t = type === 'TASK_ASSIGNED'
         ? await workspaceTranslator(await readWorkspaceLocale(db, tenantId), TASK_ASSIGNED_EMAIL_NAMESPACE)
         : null;
     const { subject, bodyText, bodyHtml } = buildEmailContent(type, payload, t);
@@ -214,8 +214,7 @@ function isSingleTaskAssigned(type: EmailNotificationType, payload: EmailPayload
 
 /**
  * Build email content based on notification type. `t` is the workspace-language
- * translator for the single-task TASK_ASSIGNED email, and `null` for every
- * other email.
+ * translator for both TASK_ASSIGNED emails, and `null` for every other email.
  */
 function buildEmailContent(
     type: EmailNotificationType,
@@ -224,11 +223,9 @@ function buildEmailContent(
 ): { subject: string; bodyText: string; bodyHtml: string } {
     switch (type) {
         case 'TASK_ASSIGNED':
-            if (isSingleTaskAssigned(type, payload)) {
-                if (!t) throw new Error('TASK_ASSIGNED email built without its workspace translator');
-                return buildTaskAssignedEmail(payload, t);
-            }
-            return buildTaskAssignedDigestEmail(payload as TaskAssignedDigestPayload);
+            if (!t) throw new Error('TASK_ASSIGNED email built without its workspace translator');
+            if (isSingleTaskAssigned(type, payload)) return buildTaskAssignedEmail(payload, t);
+            return buildTaskAssignedDigestEmail(payload as TaskAssignedDigestPayload, t);
         case 'EVIDENCE_EXPIRING':
             return buildEvidenceExpiringEmail(payload as EvidenceExpiringPayload);
         case 'POLICY_APPROVAL_REQUESTED':
