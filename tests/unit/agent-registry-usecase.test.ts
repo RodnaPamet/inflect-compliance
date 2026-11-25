@@ -128,6 +128,10 @@ function makeDb(overrides: DbOverrides = {}) {
             findMany: jest.fn(async () => ids('scanner-key', overrides.scannerKeys ?? 0)),
             updateMany: jest.fn(async () => ({ count: overrides.scannerKeys ?? 0 })),
         },
+        agentProberKey: {
+            findMany: jest.fn(async () => []),
+            updateMany: jest.fn(async () => ({ count: 0 })),
+        },
         peerAgentInboundCredential: {
             findMany: jest.fn(async () => ids('peer-credential', overrides.peerInboundCredentials ?? 0)),
             updateMany: jest.fn(async () => ({ count: overrides.peerInboundCredentials ?? 0 })),
@@ -428,6 +432,7 @@ describe('retirement cascades, status first and audit last', () => {
             apiKeysRevoked: 3,
             liveApiKeysRevoked: 2,
             scannerKeysRevoked: 1,
+            proberKeysRevoked: 0,
             peerInboundCredentialsRevoked: 1,
             toolGrantsDropped: 2,
             proposalsExpired: 4,

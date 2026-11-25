@@ -1593,6 +1593,43 @@ export function recordAgentRunSettled(attrs: {
     if (typeof attrs.tokens === 'number') getAgentRunTokens().record(attrs.tokens, labels);
 }
 
+let _hostedSessionSeconds: ReturnType<ReturnType<typeof getMeter>['createHistogram']> | null = null;
+let _hostedSessionUsage: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+
+/**
+ * One HOSTED Managed Agents session's usage read at settle (#4173, owner
+ * decision 4 of 2026-11-25): the session time Inflect pays for, beside the
+ * tokens above. `outcome` is `METERED` (the seconds are recorded on the run and
+ * observed here), or why they are not known: `READ_FAILED`, `STILL_RUNNING`,
+ * `NOT_REPORTED`, `RECORD_FAILED`. An unknown read observes NO seconds: a zero
+ * in the histogram would be an observation of a session that cost nothing.
+ *
+ * No tenant label, as for every metric in this block; the per-tenant figure is
+ * `WorkflowRun.hostedSessionSeconds`. A run in a tenant's own workspace is
+ * never counted here: that time is billed to the customer.
+ */
+export function recordHostedSessionUsage(attrs: {
+    outcome: 'METERED' | 'READ_FAILED' | 'STILL_RUNNING' | 'NOT_REPORTED' | 'RECORD_FAILED';
+    activeSeconds?: number;
+}): void {
+    if (!_hostedSessionUsage) {
+        _hostedSessionUsage = getMeter().createCounter('agent.hosted.session.usage', {
+            description: 'Hosted Managed Agents sessions whose usage was read at settle, by outcome',
+            unit: '1',
+        });
+    }
+    _hostedSessionUsage.add(1, { outcome: attrs.outcome });
+    if (attrs.outcome === 'METERED' && typeof attrs.activeSeconds === 'number') {
+        if (!_hostedSessionSeconds) {
+            _hostedSessionSeconds = getMeter().createHistogram('agent.hosted.session.seconds', {
+                description: 'Active (priced) seconds per hosted Managed Agents session, paid by Inflect',
+                unit: 's',
+            });
+        }
+        _hostedSessionSeconds.record(attrs.activeSeconds);
+    }
+}
+
 /**
  * The content guard stopped or flagged a run.
  *

@@ -147,6 +147,9 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
         "One of two fixed codes ('NO_OWNER_SIGNAL' | 'OWNER_DEPARTED') from the attribution skill's output contract, CHECK-constrained in the migration (#3728) — a closed vocabulary, never free text.",
     'AgentServicePrincipalConfirmation.invalidatedReason':
         "One of two fixed codes ('PRINCIPAL_RELINKED' | 'AGENT_RELINKED'), CHECK-constrained in the migration and written only by our own harness ingest (#3671) — never user text.",
+    'ProbeRun.stopReason': "One of the contract's fixed run stops (STOPPED, NOT_YET_OPEN, CLOSED, TARGET_NOT_NAMED, CLASS_NOT_ALLOWED) or NULL, verified by the probes contract's schema; never prober or agent text.",
+    'ProbeRunTarget.targetReason': "One of the contract's fixed target reasons (REACHED, NO_REPLY, NO_PROBES_FOR_INTERFACE, NOT_RUN), verified by the schema; never text.",
+    'ProbeRunOutcome.verdictReason': "One of the contract's fixed verdict reasons (CANARY_RETURNED, NO_REPLY, …), each tied to one verdict by the schema; never text. What the agent said is the encrypted excerpt.",
     'AgentKillSwitchDrill.boundaryRefusalReason': "One of three fixed literals ('agent_killed' | 'refused_for_another_reason' | 'not_refused') written by the drill, never by a user.",
     'AgentKillSwitchDrill.findingId': 'A cuid pointing at the Finding this drill raised. An identifier, not content.',
     'AgentBehaviourAnomaly.findingId': 'A cuid pointing at the Finding the behaviour fingerprint raised or found open for this agent-day. An identifier, not content.',

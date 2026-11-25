@@ -15,17 +15,44 @@ anything reach it.
 |-------|-------|--------|
 | **1 — Foundation** | `DataSubjectRequest` model + migration, the workflow state machine, rejection criteria, cooling-off + verification constants, the export/erasure job skeletons, this doc, the ratchet. | shipped |
 | 2 — Export pipeline | Produce the bundle (decrypt authored content, write to S3, 7-day signed URL, email). Reversible → sequenced first. | open |
-| 3 — Erasure pipeline | The irreversible cascade, plus the `IMMUTABLE_AUDIT_LOG` trigger narrowing that permits pseudonymization. | **cascade + trigger shipped, unmounted** |
+| 3 — Erasure pipeline | The irreversible cascade, plus the `IMMUTABLE_AUDIT_LOG` trigger narrowing that permits pseudonymization. | **cascade + trigger shipped; reachable only through an operator command** |
 | 4 — Admin UI + rollout | `/admin/dsar-requests` (`admin.compliance_dsar`), monitoring, production rollout. | open |
 
-**Stage 3's `eraseUser` EXECUTES — and nothing calls it.** The distinction is
-the whole safety posture, so it is worth stating both halves plainly. The
+**Stage 3's `eraseUser` EXECUTES — and only an operator reaches it.** The
 function in `src/app-layer/jobs/dsar-erasure.ts` performs the real cascade
-against the client it is given: it is no longer a stub that throws. It is also
+against the client it is given: it is no longer a stub that throws. It is
 absent from `register-schedules` and `executor-registry`, and no route, usecase
 or job in `src/` calls it — so no scheduler fires it and no request reaches it.
-Giving it an operator entry point (who may run it, for which subject, with what
-audit record) is a separate decision that has not been taken.
+Its one entry point is the operator command `scripts/dsar-erase-user.ts`
+(`npm run dsar:erase-user`, #5802, owner decision 2026-11-25), which has no
+HTTP route. The operator procedure is `docs/runbooks/dsar-erasure.md`.
+
+The command takes a user id and nothing else, prints the plan and writes nothing
+without `--confirm`, refuses a tenant's system user (`sys_` id), and refuses
+whatever `planErasure` says would refuse the delete — a membership in any status
+among it. It prints ids and counts only; it never reads the person's e-mail or
+name. Its audit record is `eraseUser`'s own.
+
+### Which workspaces an erasure covers
+
+After the erasure commits, every KEPT Managed Agents session in every workspace
+where the person held a membership is deleted (Step 5c). Those workspaces are
+read from the audit trail by `readErasureWorkspaces`
+(`src/app-layer/jobs/dsar-erasure-workspaces.ts`), inside the erasure's own
+transaction and before the pseudonymization, because by then no membership row
+is left to read: a workspace counts when the person's own row is there, when a
+membership writer's row names them as its entity (SCIM's lifecycle rows, the
+org-admin fan-out, the platform-admin tenant creation), or when the org trail's
+fan-out row lists it. The same function prints the command's plan.
+
+A membership writer that records no row naming the person — credentials
+signup, SSO just-in-time provisioning, an org admin creating a tenant, the
+org-admin fan-out into a new org tenant, the staging seed — leaves nothing to
+read, so a workspace joined only that way, where the person then never acted,
+is not found. The plan lists those writers every time rather than claiming
+completeness. A membership row naming the person under an action the module
+does not list is reported as undecided, and the command refuses `--confirm`
+until it is classified.
 
 `dsar-export.ts` is unchanged: it still throws if called and is still
 unregistered.
@@ -33,7 +60,7 @@ unregistered.
 Its sibling `planErasure`, in the same module, is the **dry run** — it reports
 which references would refuse the Stage 2 hard delete for a given subject, and
 writes nothing (`writes: 0`, asserted by capturing every statement it issues).
-It is likewise unmounted.
+The operator command prints it before anything is written.
 
 **Erasure refuses up front when anything blocks it** (#5595, owner decision
 2026-11-14). `eraseUser` runs `planErasure` inside its own transaction before

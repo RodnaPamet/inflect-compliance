@@ -321,7 +321,13 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // (epic #5937), before `docs/calendar-surface-do-not-touch.md`
         // ('pu' < 'su'), +3/-0 against main; the previous digest matched main's
         // file before the insert.
-        keyOrderSha: 'dae2395d4d5a2a688326c4a41c1f785e6e1db135341c7651c62fc02c9c2e903d',
+        //
+        // Moved 2026-11-25 by one sorted ADDITION, the DSAR erasure runbook
+        // docs/runbooks/dsar-erasure.md (#5802), after `docs/rsc-guidelines.md`
+        // ('rs' < 'ru') and before `docs/runbooks/enabling-the-flue-engine.md`
+        // ('ds' < 'en'), +3/-0 against main; recomputed with this guard's own
+        // `keyOrder` over the file merged with #5937's addition.
+        keyOrderSha: 'd1837753fca4cf48d7dc9c37166c645bd374bf8fd034f58d0e36c80af9fa78af',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in

@@ -114,6 +114,12 @@ describe('Epic 19 Coherence: metric names', () => {
             // Grafana loaded and which was deleted on 2026-10-26.
             'agent.run.steps',
             'agent.run.tokens',
+            // Hosted Managed Agents session time (#4173): what Inflect pays
+            // per hosted session, and the reads that could not say. A cost
+            // trend, read beside agent.run.tokens; the per-tenant figure is
+            // on the run row. Not a page.
+            'agent.hosted.session.usage',
+            'agent.hosted.session.seconds',
             'api.request.errors',
             'repo.method.duration',
             // EI-4 — SCIM bearer-token auth outcome counter. A diagnostic

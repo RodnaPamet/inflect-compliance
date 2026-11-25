@@ -210,6 +210,8 @@ export const ACTIVITY_DOMAIN_ENTITIES = {
         'ThirdPartyAppScan', 'DiscoveredThirdPartyApp', 'ThirdPartyAppScanItem',
         // The agent-surface rules scans: the Agent surface tab, the same rule.
         'AgentRuleScan', 'AgentRuleScanItem',
+        // The probe runs and their two key registers (step 8a): the same rule.
+        'AgentProberKey', 'ProbeApproverKey', 'ProbeRun', 'ProbeRunTarget', 'ProbeRunOutcome',
         'AgentOwnershipTransfer', 'AgentSpendingAuthority', 'OpenShellSandboxLease',
         'PeerAgent', 'PeerAgentMessage', 'PeerAgentReplyDelivery', 'PeerAgentKillSwitch',
         'PeerAgentInboundCredential', 'PeerInvitation', 'TenantA2aSigningKey',

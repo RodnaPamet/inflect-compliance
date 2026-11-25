@@ -37,6 +37,14 @@ const SEAMS = {
     // found in the MCP tool definitions it read. One writer, for the same reason.
     agentRuleScan: { table: 'AgentRuleScan', seam: 'src/app-layer/usecases/agent-rule-scans.ts' },
     agentRuleScanItem: { table: 'AgentRuleScanItem', seam: 'src/app-layer/usecases/agent-rule-scans.ts' },
+    // A prober's report (`scanent-probes/1`, step 8a): one writer of the run
+    // tables, for the scans' reason, and one of each key register — the prober
+    // keys decide whose reports count, the approver keys whose engagements do.
+    probeRun: { table: 'ProbeRun', seam: 'src/app-layer/usecases/probe-runs.ts' },
+    probeRunTarget: { table: 'ProbeRunTarget', seam: 'src/app-layer/usecases/probe-runs.ts' },
+    probeRunOutcome: { table: 'ProbeRunOutcome', seam: 'src/app-layer/usecases/probe-runs.ts' },
+    agentProberKey: { table: 'AgentProberKey', seam: 'src/app-layer/usecases/agent-prober-keys.ts' },
+    probeApproverKey: { table: 'ProbeApproverKey', seam: 'src/app-layer/usecases/probe-approver-keys.ts' },
     agentHarnessAcceptance: { table: 'AgentHarnessAcceptance', seam: 'src/app-layer/usecases/agent-harness-acceptance.ts' },
     // A review run's parsed owner suggestion (#3728). One writer, because it is
     // the only place the run's answer is held to the skill's output contract and
@@ -160,11 +168,14 @@ describe('the harness tables have one write seam each', () => {
             'src/app-layer/usecases/agent-harness-estates.ts',
             'src/app-layer/usecases/agent-harness-scanner-keys.ts',
             'src/app-layer/usecases/agent-harness-scans.ts',
+            'src/app-layer/usecases/agent-prober-keys.ts',
             'src/app-layer/usecases/agent-profiles.ts',
             'src/app-layer/usecases/agent-rule-scans.ts',
             'src/app-layer/usecases/agent-spending-authority.ts',
             'src/app-layer/usecases/peer-agents.ts',
             'src/app-layer/usecases/peer-invitations.ts',
+            'src/app-layer/usecases/probe-approver-keys.ts',
+            'src/app-layer/usecases/probe-runs.ts',
             'src/app-layer/usecases/tenant-skills.ts',
             'src/app-layer/usecases/third-party-app-scans.ts',
         ]);

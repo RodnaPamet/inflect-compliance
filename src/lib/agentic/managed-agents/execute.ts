@@ -204,6 +204,7 @@ import {
     sessionStepRecord,
     type SessionLifecycle,
 } from './session-ledger';
+import { meterHostedSession, openHostedSessionMeter, sessionUsageFrom, type HostedSessionUsageRead } from './session-usage';
 import {
     readRecordedSessionIds,
     readSegmentLedger,
@@ -1647,6 +1648,10 @@ async function recordSessionStep(
     facts: Record<string, unknown>,
 ): Promise<void> {
     await recordStep(ctx, runId, seq, 'SYNTHESIS', sessionStepRecord(lifecycle, facts));
+    // A HOSTED session's time is Inflect's to pay (#4173): it is counted
+    // unknown from here until its usage is read at settle. A session in the
+    // tenant's own workspace records nothing.
+    if (lifecycle === 'SESSION_CREATED' && facts.workspaceKind === 'HOSTED') await openHostedSessionMeter(ctx, runId);
 }
 
 /**
@@ -1756,12 +1761,17 @@ async function settleSession(
         }
         // Anthropic refuses a delete while the session runs, and its status
         // lags the stream's idle event: poll until it has left `running`. A
-        // session a thrown error left running is interrupted first.
+        // session a thrown error left running is interrupted first. The last
+        // read is also the session's usage (#4173): unknown until one answers.
+        let usage: HostedSessionUsageRead = { ok: false, reason: 'READ_FAILED' };
         for (let i = 0; i < SETTLE_POLL_ATTEMPTS; i += 1) {
             let status: string;
             try {
-                status = (await client.beta.sessions.retrieve(sessionId)).status;
+                const read = await client.beta.sessions.retrieve(sessionId);
+                status = read.status;
+                usage = sessionUsageFrom(read);
             } catch {
+                usage = { ok: false, reason: 'READ_FAILED' };
                 break;
             }
             if (status !== 'running' && status !== 'rescheduling') break;
@@ -1776,6 +1786,10 @@ async function settleSession(
         }
         // Asked again right before the one write that cannot be undone.
         if (await handedOver()) return;
+        // A HOSTED session's time, recorded BEFORE the delete, which then runs
+        // whatever this recorded: it never throws, and an unknown is recorded
+        // as unknown, never as zero (#4173). The customer's own is not ours.
+        if (route.workspaceKind === 'HOSTED') await meterHostedSession(ctx, runId, usage);
         try {
             await client.beta.sessions.delete(sessionId);
             await recordSessionStep(ctx, runId, binding.nextSeq(), 'SESSION_DELETED', { sessionId, connectionId: route.connectionId });

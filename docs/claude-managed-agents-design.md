@@ -132,11 +132,14 @@ puts at Anthropic:
   deletes a session recorded DELETED that still exists. Nothing has been created in a
   customer's workspace in production yet: the engine runs from Step 5d, and
   `AGENT_MANAGED_AGENTS` is off there (#5797).
-  - **Known limit (#5802).** A DSAR erasure finds the person's tenants from
-    their own audit rows, so a tenant where they held a membership and never
-    acted (added by SCIM, SSO or org provisioning) is not reached, and a KEPT
-    session there stays. The fix belongs with the erasure's operator entry
-    point, which does not exist yet.
+  - **Which tenants a DSAR erasure reaches (#5802).** The erasure reads them
+    from membership history in the audit trail, not only from the person's own
+    rows (`readErasureWorkspaces`, owner decision 2026-11-25), so a member added
+    by SCIM or org provisioning who never acted is reached. Its operator entry
+    point is `scripts/dsar-erase-user.ts`. A tenant joined only through a writer
+    that records no row naming the person (SSO just-in-time provisioning,
+    credentials signup, an org admin creating a tenant) and where the person
+    never acted is still not reached; the command's plan names those writers.
 - **A customer can connect its own Anthropic workspace (Step 5a, #4164),
   behind the opt-in `AGENT_MANAGED_AGENTS` switch.** The `anthropic-workspace`
   provider (`src/app-layer/integrations/providers/anthropic-workspace/`) stores
@@ -300,6 +303,29 @@ puts at Anthropic:
     span-derived `MODEL_CALL`) are recorded per tenant. Hosted runs need the
     plan entitlement `hostedManagedAgents`, which no plan includes until the
     owner opens one.
+  - **Session time, per tenant (#4173, owner decision 4 of 2026-11-25).** At
+    settle a hosted run reads its session's `usage.active_seconds` (the
+    duration Anthropic prices a session's runtime on) before the delete and
+    records it on the run, `WorkflowRun.hostedSessionSeconds`, beside the
+    tokens; `hostedSessionsUnmetered` counts the hosted sessions whose usage
+    was not read (a failed read, a session still running, one a dead worker
+    left), so an unknown is never recorded as zero. A read that fails never
+    blocks the settle or the delete. A run in the tenant's own workspace
+    records nothing (a CHECK holds it): that time is billed to the tenant.
+    Each read is also counted on `agent.hosted.session.usage` and observed on
+    `agent.hosted.session.seconds`, with no tenant label.
+  - **A tenant's own workspace, connected later (#4173, owner decision 3 of
+    2026-11-25).** When a workspace with hosted records saves an enabled
+    `anthropic-workspace` connection of its own, its hosted opt-in is
+    withdrawn (audited, cause `OWN_WORKSPACE_CONNECTED`) and Step 5c's
+    clean-up of its records in Inflect's workspace is opened, by recorded id,
+    after the save commits; what it leaves is retried by data-lifecycle. Only
+    records no finished hosted clean-up covers trigger it, so a later save of
+    the same connection sends nothing. Opting back in is an owner's decision,
+    taken again.
+  - **Decided, needing no code (owner, 2026-11-25).** No plan is entitled to
+    hosting yet, and the caps stay at one hosted run per tenant and two per
+    deployment.
 
 ## What Managed Agents is, as documented on 2026-10-24
 

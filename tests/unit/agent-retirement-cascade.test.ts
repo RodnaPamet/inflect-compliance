@@ -66,6 +66,10 @@ function makeDb(
             findMany: jest.fn(async () => []),
             updateMany: jest.fn(async () => ({ count: 0 })),
         },
+        agentProberKey: {
+            findMany: jest.fn(async () => []),
+            updateMany: jest.fn(async () => ({ count: 0 })),
+        },
         peerAgentInboundCredential: {
             findMany: jest.fn(async () => []),
             updateMany: jest.fn(async () => ({ count: 0 })),
@@ -222,6 +226,7 @@ describe('writeRetirementAuditRows — one row per effect that changed something
             apiKeysRevoked: 2,
             liveApiKeysRevoked: 1,
             scannerKeysRevoked: 0,
+            proberKeysRevoked: 0,
             peerInboundCredentialsRevoked: 0,
             toolGrantsDropped: 1,
             proposalsExpired: 0,

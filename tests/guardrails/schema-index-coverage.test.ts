@@ -480,6 +480,13 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         justification:
             'agent-rule-scans.listAgentRuleScans and getAgentRuleInventory filter by tenantId and order by asOf desc, then createdAt and id; bounded take ≤200 (the list) and ≤51 (the inventory window)',
     },
+    // ── Probe runs (`scanent-probes/1`, step 8a) ─────────────────────
+    {
+        model: 'ProbeRun',
+        fields: ['tenantId', 'startedAt'],
+        justification:
+            'probe-runs.listProbeRuns filters by tenantId and orders by startedAt desc, then createdAt and id; bounded take ≤200',
+    },
     {
         model: 'AgentHarnessAcceptance',
         fields: ['tenantId', 'discoveredAgentId'],
@@ -766,6 +773,12 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // Harness ingest (#3665) — both read per tenant with a bounded take.
     AgentHarnessScannerKey:
         'listHarnessScannerKeys, the harness tab\'s key card (getHarnessScannerKeysView, ordered by createdAt desc) and the scan ingest filter by tenantId (+ revokedAt IS NULL) only — a tenant trusts a handful of scanner keys, covered by the tenantId-leading @@unique([tenantId, keyFingerprint]) and @@index([tenantId, agentId]); bounded take ≤201.',
+    // Probe runs (step 8a) — the two key registers, each read per tenant with a
+    // bounded take, as the scanner keys are.
+    AgentProberKey:
+        'listAgentProberKeys (ordered by createdAt desc) and the probe-run ingest filter by tenantId (+ revokedAt IS NULL) only — a tenant trusts a handful of prober keys, covered by the tenantId-leading @@unique([tenantId, keyFingerprint]) and @@index([tenantId, agentId]); bounded take ≤201.',
+    ProbeApproverKey:
+        'listProbeApproverKeys (ordered by createdAt desc) filters by tenantId alone, and the ingest reads one row by (tenantId, keyFingerprint) — a tenant registers a handful of approver keys, covered by the tenantId-leading @@unique([tenantId, keyFingerprint]); bounded take ≤200.',
     // Audit workpapers (#3675) — listAuditWorkpapers filters by tenantId plus
     // an optional procedure/period/auditor equality and orders by createdAt desc.
     AuditWorkpaper:

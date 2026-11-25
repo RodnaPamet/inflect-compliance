@@ -65,7 +65,7 @@ export const RETIREMENT_EVIDENCE_BASIS = 'PER_AGENT_OPEN_PERIODS' as const;
  * Every retirement trigger uses it. For a RETIRED agent, an insert of: a
  * PENDING `AgentProposal`, an `AgentPolicyCardVersion` for its card, an
  * `AgentOwnershipTransfer`, an unrevoked `TenantApiKey` (or a re-bind of one),
- * `AgentHarnessScannerKey` or `PeerAgentInboundCredential`, and a
+ * `AgentHarnessScannerKey`, `AgentProberKey` or `PeerAgentInboundCredential`, and a
  * `RegisteredAgentTool` grant; and any status
  * change OUT of RETIRED. Each insert trigger takes `FOR SHARE` on the agent row,
  * which is what closes the race the usecase cannot see — the agent being
@@ -117,6 +117,8 @@ export interface RetirementCascadeEffects {
     };
     /** Harness scanner signing keys bound to the agent, revoked. */
     readonly scannerKeys: RetirementEffectRows;
+    /** Prober signing keys bound to the agent, revoked (step 8a). */
+    readonly proberKeys: RetirementEffectRows;
     /**
      * Inbound A2A credentials naming the agent as their receiving agent,
      * revoked (#3679, owner decision 2026-10-19): the peer's next message fails
@@ -159,6 +161,7 @@ export interface RetirementCascadeSummary {
     readonly apiKeysRevoked: number;
     readonly liveApiKeysRevoked: number;
     readonly scannerKeysRevoked: number;
+    readonly proberKeysRevoked: number;
     readonly peerInboundCredentialsRevoked: number;
     readonly toolGrantsDropped: number;
     readonly proposalsExpired: number;
@@ -176,6 +179,7 @@ export function summariseRetirementCascade(
         apiKeysRevoked: effects.apiKeys.count,
         liveApiKeysRevoked: effects.apiKeys.liveCount,
         scannerKeysRevoked: effects.scannerKeys.count,
+        proberKeysRevoked: effects.proberKeys.count,
         peerInboundCredentialsRevoked: effects.peerInboundCredentials.count,
         toolGrantsDropped: effects.toolGrants.count,
         proposalsExpired: effects.proposals.count,

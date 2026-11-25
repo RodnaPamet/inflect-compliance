@@ -364,6 +364,13 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // surface: a scanner POSTs with a key scoped to `admin:agent_rules_ingest`;
     // the Agent surface tab reads the scans server-side through the usecase.
     't/[tenantSlug]/admin/agents/agent-rule-scans/route.ts',
+    // The probe-run ingest (`scanent-probes/1`, step 8a), the same MACHINE
+    // surface: a prober POSTs with a key scoped to `admin:agent_probes_ingest`.
+    // The prober-key register is API-only in 8a; its card on the reports page,
+    // beside the scanner keys, is step 8b.
+    't/[tenantSlug]/admin/agents/probe-runs/route.ts',
+    't/[tenantSlug]/admin/agents/prober-keys/[keyId]/route.ts',
+    't/[tenantSlug]/admin/agents/prober-keys/route.ts',
     // #4472 — the discovered agents a person can start a discovered-agent
     // review with. GET only, the inventory read; the runs page's start form
     // calls it for its picker, offered only to a caller who can load it.
@@ -887,6 +894,13 @@ describe('the harness register half is called from the tab; the machine surface 
     it('no page calls the agent-surface rules ingest either — the same reason, its own scope', () => {
         const pageCallers = SOURCES.filter(
             (s) => s.rel.startsWith(APP) && s.code.includes('/admin/agents/agent-rule-scans'),
+        ).map((s) => s.rel);
+        expect(pageCallers).toEqual([]);
+    });
+
+    it('no page calls the probe-run ingest either — a prober\'s, behind its own scope', () => {
+        const pageCallers = SOURCES.filter(
+            (s) => s.rel.startsWith(APP) && s.code.includes('/admin/agents/probe-runs'),
         ).map((s) => s.rel);
         expect(pageCallers).toEqual([]);
     });

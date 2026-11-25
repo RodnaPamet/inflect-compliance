@@ -337,7 +337,7 @@ export const ADMIN_API_ONLY_KEYS = [
 ] as const satisfies readonly (keyof PermissionSet['admin'])[];
 
 /**
- * Part two: five keys refused BY DECISION (owner decision, 2026-10-30). Unlike
+ * Part two: seven keys refused BY DECISION (owner decision, 2026-10-30). Unlike
  * the six above they are NOT dead outside the admin API. A custom role on an
  * EDITOR, READER or AUDITOR membership reached each of them by a path that goes
  * around the edge's role gate, and that side door is the reason they are
@@ -365,19 +365,25 @@ export const ADMIN_API_ONLY_KEYS = [
  *     `…/admin/agents/agent-rule-scans` through a key with
  *     `admin:agent_rules_ingest`, `admin:*` or `*`: the scanner's third
  *     report, refused here for the integrations key's reason.
+ *   - `agent_probes_ingest` — posting a probe run at
+ *     `…/admin/agents/probe-runs` through a key with
+ *     `admin:agent_probes_ingest`, `admin:*` or `*`: a prober's report,
+ *     refused here for the same reason.
  *   - `agent_external_tools` — every external tool call made for the
  *     membership: a run it starts at `/agent-runs`, which checks the starter's
  *     permissions, a key at `/api/mcp` with `admin:external_tools`, `admin:*` or
  *     `*`, and an agent's A2A send.
  *
- * So for these six the rule DOES take something away. Going forward, a
+ * So for these seven the rule DOES take something away. Going forward, a
  * membership that is not ADMIN cannot be given a custom role granting one, and
  * migration `20261030170000_admin_membership_only_keys_off_for_non_admin_custom_roles`
  * switched them off in every stored role that only such memberships carried
  * (`integrations_ingest`, which came later, by
  * `20261114120100_integrations_ingest_off_for_non_admin_custom_roles`, and
  * `agent_rules_ingest` by
- * `20261122120100_agent_rules_ingest_off_for_non_admin_custom_roles`).
+ * `20261122120100_agent_rules_ingest_off_for_non_admin_custom_roles`, and
+ * `agent_probes_ingest` by
+ * `20261125120100_agent_probes_ingest_off_for_non_admin_custom_roles`).
  * The paths above then refuse it as they refuse any member without the key:
  * the key's request answers 403, the run's or the tool call's is refused. The
  * nine other admin keys are consumed outside the admin API too, and keep
@@ -390,11 +396,12 @@ export const SIDE_DOOR_ADMIN_KEYS = [
     'agent_external_tools',
     'integrations_ingest',
     'agent_rules_ingest',
+    'agent_probes_ingest',
 ] as const satisfies readonly (keyof PermissionSet['admin'])[];
 
 /**
  * Every `admin.*` key a custom role may grant only on an ADMIN membership: the
- * six only the admin API reads, and the five refused by decision. Writers, the
+ * six only the admin API reads, and the seven refused by decision. Writers, the
  * migration and the pages read this list; only the guardrail reads the parts.
  */
 export const ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS = [

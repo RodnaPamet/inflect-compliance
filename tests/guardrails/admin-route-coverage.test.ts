@@ -270,6 +270,17 @@ const ADMIN_ONLY_ROUTES = [
     // The agent-surface rules ingest (`scanent-agent-rules/1`): the same shape,
     // its POST on `admin.agent_rules_ingest` and its GET the inventory read.
     'admin/agents/agent-rule-scans/route.ts',
+    // The probe-run ingest (`scanent-probes/1`, step 8a): the same shape, its
+    // POST on `admin.agent_probes_ingest` and its GET the inventory read. The
+    // prober keys fall to the subtree rule, as the scanner keys do: deciding
+    // whose probe reports count is the register's authority.
+    'admin/agents/probe-runs/route.ts',
+    'admin/agents/prober-keys/route.ts',
+    'admin/agents/prober-keys/[keyId]/route.ts',
+    // The probe approver keys: OWNER-only (`admin.tenant_lifecycle`), a sibling
+    // of the agent subtree with its own rule.
+    'admin/probe-approver-keys/route.ts',
+    'admin/probe-approver-keys/[keyId]/route.ts',
     'admin/agents/harness-scanner-keys/route.ts',
     'admin/agents/harness-scanner-keys/[keyId]/route.ts',
     'admin/agents/harness-acceptances/route.ts',
