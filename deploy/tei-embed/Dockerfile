@@ -19,7 +19,7 @@
 # The FROM digest is the one the D-L4-3 benchmark ran (TEI_CPU_IMAGE in
 # scripts/retriever-benchmark/candidates.ts); the guard holds the two equal.
 # Moving it is a reviewed change to both, after a TEI release.
-FROM ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4@sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d
+FROM ghcr.io/huggingface/text-embeddings-inference:cpu-1.10.0@sha256:f0a4bb206b9d4877746b5b9f638e138fe683eeb9787c14d541a12c993b562d86
 
 # One layer: update, upgrade, and leave no package lists behind.
 RUN apt-get update \
