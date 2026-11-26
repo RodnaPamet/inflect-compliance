@@ -24,8 +24,10 @@ client is limited to 100 external users. This is item 6 of #5957.
   before anyone relies on the push. Until verification passes, people still
   see the "unverified app" screen and the client stays capped at 100 users,
   but connections stop expiring.
-- **Still open: where the public home page and privacy policy live.** See
-  "Before you submit" below.
+- **The public home page and privacy policy are pages of the app**:
+  `<your app URL>/about` and `<your app URL>/privacy`, public without signing
+  in, in English and Bulgarian. The policy covers the whole product and
+  carries the calendar section and Google's Limited Use statement.
 
 The OAuth client is the deployment's `GOOGLE_CLIENT_ID`. It also serves
 **Sign in with Google**, whose scopes (`openid email profile`, `src/auth.ts`)
@@ -41,8 +43,8 @@ in the console.
 | --- | --- |
 | Publishing status | **In production**, user type **External**. While the app is in Testing, Google issues refresh tokens that expire after seven days, so every connection would stop each week (the panel shows it as stopped) |
 | App name, logo, support email | As people see them on the consent screen. A logo is reviewed too |
-| Application home page | A public page on your own domain, reachable without signing in, that says what Inflect is and links to the privacy policy |
-| Privacy policy link | A public page on the same verified domain, with the calendar section below (or your own version of it) |
+| Application home page | `<your app URL>/about` |
+| Privacy policy link | `<your app URL>/privacy` |
 | Terms of service link | Optional |
 | Authorized domains | Your domain, verified in Google Search Console by an owner of the Google Cloud project |
 | Redirect URIs (on the OAuth client) | `<your app URL>/api/integrations/calendar/callback` (the calendar, `CALENDAR_CALLBACK_PATH`) and `<your app URL>/api/auth/callback/google` (sign-in) |
@@ -51,11 +53,12 @@ in the console.
 | Demo video | An unlisted YouTube video; the shot list below |
 | Contact email | Where Google's reviewers write; answer them from it |
 
-**Before you submit: two pages the product does not have.** Inflect has no
-public home page or privacy policy page of its own (the app's
-pages sit behind sign-in, and `/admin/privacy` is a workspace setting, not a
-policy). Both must be public pages on your verified domain — a marketing site
-is fine. Decide where they live before starting the request.
+**Before you submit: verify the app's domain.** Both pages are served by the
+app itself, so the domain Google is told about is the app's own production
+domain. An owner of the Google Cloud project verifies it in Google Search
+Console and adds it under Authorized domains. Read both pages on the production
+domain, signed out, before starting the request; the policy's text is
+`external.privacyPolicy` in `messages/en.json` and `messages/bg.json`.
 
 After verification, a customer's **Google Workspace administrator** may still
 have to allow the app: Admin console → **Security** → **Access and data
@@ -104,52 +107,16 @@ Facts it rests on, for a reviewer's follow-up questions:
   marks the event as Inflect's.
 - On disconnect the refresh token is revoked at `oauth2.googleapis.com/revoke`.
 
-## DRAFT — privacy policy section: calendar data
+## Privacy policy: calendar data
 
-> **Google Calendar and Outlook Calendar**
->
-> You can connect your own Google Calendar or Outlook calendar to Inflect so
-> that the compliance deadlines you are responsible for appear in it. Connecting
-> is optional and is done by you, from the Schedule page, by signing in to Google
-> or Microsoft.
->
-> *What we access.* For Google, Inflect asks for permission to manage events in
-> your calendar (`calendar.events`). For Microsoft, your organisation's
-> administrator authorises Inflect once, and you sign in. Inflect uses this
-> access only to create, update and delete the events it adds. It does not read
-> your other events, your contacts or your calendar settings.
->
-> *What we write.* One all-day event per open deadline you own or are assigned,
-> over the next 90 days: its title, its date, a short description and a link to
-> the item in Inflect. Each event is private and shown as free.
->
-> *What we store.* The access and refresh tokens Google or Microsoft gives us,
-> encrypted with your workspace's own key; the permissions you granted; when you
-> connected and when your calendar was last updated; and, for each event we
-> added, the event's identifier at Google or Microsoft, a fingerprint of its
-> content (so we know when it changed), and the status of our last attempt. We
-> store no content from your calendar.
->
-> *How long.* When you disconnect, we delete the events we added from your
-> calendar and then destroy the tokens (for Google we also revoke our access).
-> If some events cannot be removed, we keep trying every night for up to seven
-> days, then destroy the tokens. If Google or Microsoft stops accepting our
-> access, we destroy the tokens at once. The record of each added event is
-> deleted when the event is.
->
-> *Sharing.* Calendar data is used only to provide this feature. We do not sell
-> it, use it for advertising, or use it to train AI models, and no person at
-> Inflect reads it except to investigate a problem you report, or where the law
-> requires.
->
-> Inflect's use and transfer to any other app of information received from
-> Google APIs adheres to the
-> [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy),
-> including the Limited Use requirements.
-
-Check the draft against `docs/sub-processors.md` (the `calendar` row) and
+The calendar section is published in the app's privacy policy
+(`<your app URL>/privacy`, section "Google and Microsoft accounts"), with
+Google's Limited Use statement word for word. Its text is
+`external.privacyPolicy.sections.google` in `messages/en.json` and
+`messages/bg.json`; `tests/rendered/public-legal-pages.test.tsx` renders it.
+Keep it consistent with `docs/sub-processors.md` (the `calendar` row) and
 `docs/data-retention.md` (`UserCalendarConnection`, `UserCalendarEventMapping`)
-before publishing it, and keep the three consistent.
+whenever the calendar push changes.
 
 ## DRAFT — demo video shot list
 

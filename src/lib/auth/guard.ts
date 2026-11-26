@@ -59,6 +59,11 @@ const PUBLIC_PATH_EXACT = new Set([
     // its User-Agent links here. Reads no database row and names no tenant.
     // EXACT path: nothing else under `/bots/` is opened by this entry.
     '/bots/vendor-monitor',
+    // The public home page and privacy policy (#5957): Google's OAuth
+    // verification needs both reachable without signing in. Static copy only:
+    // no database row, no tenant. EXACT paths: nothing under them is opened.
+    '/about',
+    '/privacy',
 ]);
 
 const STATIC_EXTENSIONS = /\.(ico|png|jpg|jpeg|gif|svg|webp|css|js|woff|woff2|ttf|eot|map|json)$/;
