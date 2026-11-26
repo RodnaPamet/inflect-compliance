@@ -260,7 +260,7 @@
     "patch-package": "^8.0.1",
     "pino-pretty": "^13.2.0",
     "postcss": "^8.5.33",
-    "semantic-release": "^25.0.9",
+    "semantic-release": "^26.0.1",
     "swagger-ui-dist": "5.35.1",
     "tailwindcss": "^4.3.1",
     "ts-jest": "^29.4.15",
