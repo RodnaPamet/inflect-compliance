@@ -251,10 +251,53 @@ const KNOWN_NEWER_RELEASES: ReadonlyArray<{
     readonly seen: string;
     readonly reason: string;
 }> = [
-    // EMPTY: the pin caught up. The 0.1.6 entry recorded here while the
-    // decision was pending was deleted in the diff that moved the pin, which is
-    // what the register's own shape test requires — an entry the pin has
-    // reached is not a pending upgrade, it is a stale line that reads like one.
+    /*
+        FOUR RELEASES SHIPPED WHILE THE SANDBOXED PATH STAYED INERT (#5983).
+
+        Seen 2026-11-26. The pin is 0.1.6 (2026-10-27) and upstream is 0.1.10
+        (2026-11-24). None is adopted, and the reason is the same for all four
+        and is not inertia: the pin cannot move until the seven facts above are
+        RE-MEASURED, and re-measuring needs a gateway answering over mTLS. The
+        gateway VM is off, the app VM still holds the default Compute service
+        account, and `/opt/inflect/.env.prod` carries 0 of the 12 `SANDBOX_*`
+        keys — measured 2026-11-26. Moving the pin alone was tried and reddens
+        four tests in this file, which is this guard working.
+
+        So the order is: the owner's three deployment actions, then a gateway
+        answering, then re-measure, then one diff that moves the pin, re-vendors
+        the protos and the skills, and rewrites the README's operator
+        instructions. Recording the discovery now is what this register is for.
+
+        One measured fact that is NOT a reason to wait: the client-facing
+        contract is additive across the whole span. `openshell.v1.OpenShell`
+        goes 86 rpcs at 0.1.6 to 97 at 0.1.10 with NOTHING removed, so the
+        vendored protos stay valid for our calls and the re-vendor is not a
+        client rewrite.
+    */
+    {
+        version: '0.1.7',
+        seen: '2026-11-26',
+        reason:
+            'Breaking on OCSF: the gateway emits native OCSF 1.8.0 records only, where deployments on 1.1/1.3 previously got those. Nothing under src/ parses an OCSF record today — ocsf appears in gateway.toml, the deploy README and the admin page as configuration and labels — so the cost is latent rather than current, and lands on whoever first reads a record.',
+    },
+    {
+        version: '0.1.8',
+        seen: '2026-11-26',
+        reason:
+            'The release we most want, and the reason #5983 recommends bumping BEFORE the first real collection: deleted sandboxes no longer leave memory on the gateway, so repeated create/delete cycles no longer grow it until it is OOM-killed (upstream #5428). Our collector does exactly create/exec/delete, nightly, per provider. It also stopped pre-allocating ~3.4 MiB of stream buffers per sandbox (#5408). 0.1.6 is the version with the leak.',
+    },
+    {
+        version: '0.1.9',
+        seen: '2026-11-26',
+        reason:
+            'Long-running sandboxes no longer exit when the supervisor loses its connection a SECOND time, because each loss now gets a full reconnect window. A Powerpipe benchmark over 140+ services runs for minutes, which is the window where a second loss is likely — the same class of failure as #5289, where a bound sized for a unary call cut a stream. Also narrowed wildcard network endpoints so they no longer admit private IP literals alone. MEASURED 2026-11-26 rather than argued: our three policies prove within_boundary under the 0.1.10 prover identically to 0.1.6 (aws 135, azure 2, gcp 38 endpoints), so the newer prover DECIDES them rather than declining. A candidate mixing a wildcard with exact hosts is still `unsupported` in 0.1.10 exactly as in 0.1.6, so #4569 enumerating explicit hosts remains necessary and not merely tidier — a wildcard policy is undecidable here, not just wider. The private-IP rule itself is gateway admission behaviour the prover does not model, so it stays unexercised until a gateway answers.',
+    },
+    {
+        version: '0.1.10',
+        seen: '2026-11-26',
+        reason:
+            'The current release, and the one #5983 proposes adopting. It moved the images to quay.io/ai-openshell and pointed the gateway default supervisor/sandbox images and Helm values there, so gateway.toml image references move in the same diff. It also changed Helm gateway-mediated sandbox routing defaults, which we must read even though we do not deploy via Helm. Note the project changed orgs: NVIDIA/OpenShell now redirects to ai-openshell/openshell, so a re-vendor cites the new path and PROVENANCE.md records the redirect.',
+    },
 ] as const;
 
 const VERIFIED_FACTS = [
