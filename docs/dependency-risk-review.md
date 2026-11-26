@@ -568,6 +568,81 @@ raw-`fetch` providers (decision 3 of that design).
 | **Audit** | `npm audit --omit=dev` reports the same findings before and after the addition: the tracked tiptap/tldraw exemption (28 moderate) and nothing else. No new advisory. |
 | **Decision** | **Adopt `1.3.0`, exact-pinned, in `dependencies`.** `REVIEWED` major: 1. Re-review on any bump, and read the API version it speaks. |
 
+## Review — 2026-11-26 — the production group of 2026-11-25 (#5949)
+
+Three reviewed packages move in one Dependabot group. One of them did not move
+in the group at all: `@flue/runtime` 2.3.1 raised its requirement to
+`@earendil-works/pi-ai ^1.5.0`, and the exact `1.4.0` pin made npm install a
+second copy under `@flue/runtime/node_modules/` — two nominally distinct
+`Provider` types, which is the Typecheck failure on #5949, and the same shape as
+#4010. The pin is raised in the same change so one copy serves both.
+
+### `@earendil-works/pi-ai` — `1.6.0` (exact)
+
+**1. Where is it used?** The same import sites as the 2026-10-23 review:
+`providers.ts` is the only value importer (`createProvider`, and the
+`anthropic-messages.lazy` / `openai-completions.lazy` subpaths), and
+`runtime-bootstrap` / `runtime-start` are type-only. No source edit, and
+`tsc --noEmit` is clean.
+
+**2. Is it classified correctly?** `dependencies`, unchanged.
+
+**3. Version + exposure risk.**
+
+| pi-ai's pinned dep | 1.4.0 | 1.6.0 | note |
+| --- | --- | --- | --- |
+| `openai` | 7.19.0 | 7.59.0 | minor; under `./api/openai-completions.lazy`, which we import |
+| `@anthropic-ai/sdk` | 0.129.0 | 0.129.0 | unchanged; still nested under pi-ai |
+| `@google/genai` | 2.21.0 | 2.32.0 | minor; not reachable from our imports |
+| `@earendil-works/pi-telemetry` | 1.4.0 | 1.6.0 | first-party contracts package, read in the previous review |
+| `@earendil-works/pi-schema` | — | **added** 1.6.0 | new in the image, see below |
+| `typebox` | 1.3.27 | **removed** | replaced by pi-schema |
+
+`@earendil-works/pi-schema` was read rather than assumed: "JSON Schema
+validation without eval", zero dependencies, and its `dist/` makes no
+`fetch` / `XMLHttpRequest` / `http.request` call. The URLs in it are RFC
+references in comments. It replaces `typebox` as the validator of tool-call
+arguments, so it is on the parsing surface (criterion (a)) and not on the
+egress surface.
+
+The subpath surface gains `./lazy-bedrock-provider`, `./lazy-oauth` and
+`./session-resources`, and removes nothing. None is imported, and none is a new
+category: Bedrock and OAuth providers were already reachable by subpath.
+
+The residency property is decided in `providers.ts`, which this bump does not
+touch.
+
+### `@anthropic-ai/sdk` — `1.12.0` (exact)
+
+Re-read on the bump, as the 2026-10-29 decision requires. It still speaks
+`anthropic-version: 2026-10-21`, and its dependencies are the same three
+(`@opentelemetry/api`, `json-schema-to-ts`, `standardwebhooks`). pi-ai's nested
+`0.129.0` copy is unchanged.
+
+### `pdfkit` — `^0.21.0`
+
+The package is unchanged in kind: it generates PDFs from server-side data and
+parses no untrusted input. Its dependencies cross majors: `fontkit` 2 → 3,
+`linebreak` 1 → 2, `png-js` 2 → 3, `@noble/ciphers` and `@noble/hashes` 1 → 2.
+Each of the new majors is ESM-only. Production loads them through Node 24's
+native `require(esm)` (pdfkit is in `serverExternalPackages`, and a plain-Node
+`require('pdfkit')` renders a page). Jest's CommonJS runtime does not, so they
+join `ESM_TRANSFORM_ALLOW_LIST` in `jest.config.js`, and
+`unicode-properties`, which reads its data file through `import.meta.url`, is
+mapped to a CommonJS shim there.
+
+### Summary — 2026-11-26
+
+| Package | Classification | Version | Decision |
+|---------|----------------|---------|----------|
+| `@earendil-works/pi-ai` | `dependencies` ✓ | `1.6.0` exact | Raise with `@flue/runtime` 2.3.1; the alternative is two copies |
+| `@anthropic-ai/sdk` | `dependencies` ✓ | `1.12.0` exact | Adopt; same API version, same dependencies |
+| `pdfkit` | `dependencies` ✓ | `^0.21.0` | Adopt; test-harness changes only |
+
+`npm audit --omit=dev` reports the same findings before and after: the tracked
+tiptap/tldraw exemption (28 moderate) and nothing else. `@earendil-works/pi-schema`
+enters the image and `typebox` leaves it.
+
 ## Re-running this review
 
 When auditing the next batch of dependencies, copy the per-package

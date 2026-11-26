@@ -74,10 +74,25 @@
 // as new transitive deps of v9 but ship DUAL builds (`exports.require` →
 // `dist/index.cjs`), so Jest resolves them to CommonJS and transforming
 // them would be wasted work.
+//
+// The fontkit cluster (2026-11, pdfkit 0.20 → 0.21). pdfkit 0.21 moved to
+// `fontkit@3`, `linebreak@2` and `@noble/{ciphers,hashes}@2`, each
+// `"type": "module"` with no `require` condition, and so are fontkit's own
+// `brotli`, `dfa`, `unicode-properties` and `unicode-trie`. (`restructure`
+// and `fflate` ship CJS entries and need nothing.) `unicode-properties` also
+// reads its data through `import.meta.url`, which no CommonJS transform can
+// express, so its `#binary-trie` import is mapped to a shim in each project
+// (tests/setup/unicode-properties-binary-trie.js). Symptom without this: every
+// suite that reaches a PDF report dies with "Must use import to load ES
+// Module", reported against `src/lib/reports/pdf/*` — the frame that imported
+// pdfkit. TEST-HARNESS break only: plain Node 24 loads pdfkit through native
+// `require(esm)`, and `pdfkit` is in `serverExternalPackages`, so production
+// requires it exactly that way.
 const ESM_TRANSFORM_ALLOW_LIST =
     'jose|preact|preact-render-to-string|marked' +
     '|sanitize-html|htmlparser2|domhandler|domutils|dom-serializer|domelementtype|entities' +
-    '|@tanstack/(?:react-table|table-core)';
+    '|@tanstack/(?:react-table|table-core)' +
+    '|fontkit|brotli|dfa|unicode-properties|unicode-trie|linebreak|@noble/(?:ciphers|hashes)';
 
 // ─── Coverage thresholds ─────────────────────────────────────────────
 //
@@ -184,6 +199,9 @@ const nodeProject = {
         // mock's Proxy answers any key from `process.env`, so one serves
         // both; a new mapper must be added in all THREE projects below.
         '^@/env-client$': '<rootDir>/tests/mocks/env.ts',
+        // unicode-properties (pdfkit → fontkit 3): see the fontkit cluster
+        // note at ESM_TRANSFORM_ALLOW_LIST.
+        '^#binary-trie$': '<rootDir>/tests/setup/unicode-properties-binary-trie.js',
         // `@inflect/ui` resolves through the workspace symlink for tsc, but
         // jest-resolve does NOT honour an `exports` ARRAY fallback: measured at
         // #3046 step 2b, `@inflect/ui/lib/cn` (arm 1, `./src/*.ts`) resolves and
@@ -394,6 +412,9 @@ const jsdomProject = {
         // mock's Proxy answers any key from `process.env`, so one serves
         // both; a new mapper must be added in all THREE projects below.
         '^@/env-client$': '<rootDir>/tests/mocks/env.ts',
+        // unicode-properties (pdfkit → fontkit 3): see the fontkit cluster
+        // note at ESM_TRANSFORM_ALLOW_LIST.
+        '^#binary-trie$': '<rootDir>/tests/setup/unicode-properties-binary-trie.js',
         // `@inflect/ui` resolves through the workspace symlink for tsc, but
         // jest-resolve does NOT honour an `exports` ARRAY fallback: measured at
         // #3046 step 2b, `@inflect/ui/lib/cn` (arm 1, `./src/*.ts`) resolves and
@@ -625,6 +646,9 @@ const flueProject = {
         // mock's Proxy answers any key from `process.env`, so one serves
         // both; a new mapper must be added in all THREE projects below.
         '^@/env-client$': '<rootDir>/tests/mocks/env.ts',
+        // unicode-properties (pdfkit → fontkit 3): see the fontkit cluster
+        // note at ESM_TRANSFORM_ALLOW_LIST.
+        '^#binary-trie$': '<rootDir>/tests/setup/unicode-properties-binary-trie.js',
         // `@inflect/ui` resolves through the workspace symlink for tsc, but
         // jest-resolve does NOT honour an `exports` ARRAY fallback: measured at
         // #3046 step 2b, `@inflect/ui/lib/cn` (arm 1, `./src/*.ts`) resolves and
