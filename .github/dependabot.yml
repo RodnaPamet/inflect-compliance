@@ -96,6 +96,24 @@ updates:
       - dependency-name: "conventional-changelog-conventionalcommits"
         versions: [">=10.4.0"]
 
+      # `semantic-release` is held below 26.0.0 because 26 refuses to run on the
+      # Node this repository uses, not because the bump is noisy.
+      #
+      # 26.0.0 raised its engine to `node >=26.13`, and its launcher exits on
+      # anything older ("node version >=26.13 is required"). The release job
+      # (`.github/workflows/release.yml`) runs Node 24, as `package.json`'s
+      # `engines` (`>=24.0.0 <25.0.0`) and `.nvmrc` require. Merging the bump
+      # would stop version tags and the CHANGELOG on the next push to main;
+      # production deploys would carry on, because `ghcr-publish.yml` runs on
+      # every push, which is exactly why the break would go unnoticed. #5840
+      # proposed 26.0.1 and was closed by owner decision (2026-11-26).
+      #
+      # It lifts itself: delete this entry in the change that moves the repo
+      # (or the release job) to Node 26.13 or later, and let the next
+      # Dependabot run propose 26.x. 25.x patches still come through.
+      - dependency-name: "semantic-release"
+        versions: [">=26.0.0"]
+
       # `tldraw` is held below 4.0.0 because its LICENCE changes there, not
       # because the bump is noisy and not because anything breaks.
       #
