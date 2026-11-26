@@ -1376,12 +1376,15 @@ export function Table<T extends TableRowData>({
               //
               //   `cn` is `twMerge(clsx(...))`. The th composes the shared cell
               //   base (`py-2.5 text-left text-sm leading-6 …`) and then adds
-              //   `text-xs`. Tailwind's `text-*` utilities set line-height as
-              //   well as font-size, so tailwind-merge DROPS the earlier
-              //   `leading-6`. The merged class carries no leading utility at
-              //   all — verified against the rendered `<th>` in the E2E log,
-              //   which matches character for character — so the line box is
-              //   text-xs's 16px:
+              //   `text-xs leading-4`. The `leading-4` is EXPLICIT since
+              //   tailwind-merge 3.7.1: until then `text-xs` alone made it DROP
+              //   the earlier `leading-6`, and from 3.7.1 it keeps it (Tailwind
+              //   v4's `text-*` only falls back to its own line-height when no
+              //   `leading-*` is set), which grew every header to 45px. Naming
+              //   the line-height keeps the header the size it was measured at
+              //   (against the rendered `<th>` in the E2E log, character for
+              //   character) whichever way the merge rule goes, so the line
+              //   box is 16px:
               //
               //     py-2.5 (20px) + 16px + border-b (1px) = 37px
               //
@@ -1518,7 +1521,7 @@ export function Table<T extends TableRowData>({
                             // for the first-row sticky) and above
                             // the pinned-column z-index.
                             "sticky top-0 z-20 group/th",
-                            "text-xs font-semibold text-content-muted uppercase tracking-wider bg-bg-muted select-none",
+                            "text-xs leading-4 font-semibold text-content-muted uppercase tracking-wider bg-bg-muted select-none",
                             getCommonPinningClassNames(
                               header.column,
                               !table.getRowModel().rows.length,
