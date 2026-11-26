@@ -153,7 +153,8 @@ describe('the scripts it runs', () => {
         const psql = execs.filter((l) => l.includes('need postgres'));
         // access-review-dates, automation-rules, migrate-role and
         // posture-provider-names.
-        expect(psql).toHaveLength(4);
+        // +audit-job-writes (#2851): the AuditLog JOB-rows-per-week read.
+        expect(psql).toHaveLength(5);
         expect(psql.filter((l) => !l.includes("PGOPTIONS='-c default_transaction_read_only=on'"))).toEqual([]);
         // bcrypt's probe, and posture-provider-names' digest step — the second
         // reads the query's rows on stdin and runs no query of its own.
@@ -240,7 +241,8 @@ describe('the scripts it runs', () => {
         // and posture-provider-names. #5741 and #5742 each added one and each
         // moved this literal from 2 to 3, so merging them had to move it again —
         // which is exactly the kind of count two green branches get wrong.
-        expect(queries).toHaveLength(4);
+        // +audit-job-writes (#2851).
+        expect(queries).toHaveLength(5);
         expect(queries.filter((q) => !/^\s*SELECT\b/.test(q))).toEqual([]);
         expect(queries.filter((q) => /\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|TRUNCATE|GRANT|COPY|SET)\b/i.test(q))).toEqual([]);
     });
@@ -881,5 +883,110 @@ esac
 
     it('its message is the one the engine writes', () => {
         expect(code('deploy/vm-check/remote.sh').filter((l) => l.includes(`grep -F '"msg":"${WORKSPACE_HEADER_TALLY_MESSAGE}"'`))).toHaveLength(1);
+    });
+});
+
+/**
+ * audit-job-writes (#2851) RUN, against a fake `docker`.
+ *
+ * The check exists because a long-running probe for this same question reported
+ * `FAILED — unknown, NOT zero` and could not say why: it sent stderr to
+ * /dev/null, so an expired login, a slow tunnel, a missing container and a
+ * changed log format all collapsed into one word. Reporting NOT-zero rather than
+ * zero was right; making the reason unrecoverable cost an afternoon.
+ *
+ * So the case that earns this harness is the THIRD one: a failed read must name
+ * its exit status and must not print a count. The second earns it too, for a
+ * different reason — `grep` exits 1 when it matches nothing, and under
+ * `set -euo pipefail` that is the assignment's status, so "zero violations" is
+ * the shape most likely to kill the script instead of reporting.
+ */
+describe('audit-job-writes', () => {
+    const TABLE = '    week    | job_rows | null_user | named_user \n 2026-09-28 |        7 |         7 |          0';
+    const FAKE_DOCKER = `#!/usr/bin/env bash
+case "$1" in
+ps) echo "id-\${3##*=}" ;;
+inspect) echo 2026-11-16T08:57:03.357316352Z ;;
+logs) [ -n "\${FAKE_LOGS_FAIL:-}" ] && { echo "fake: cannot read" >&2; exit 2; }; cat "$FAKE_ROOT/pg.log" ;;
+exec) cat >/dev/null; printf '%s\\n' "${TABLE.replace(/\n/g, '\\n')}" ;;
+*) echo "fake docker: $1" >&2; exit 9 ;;
+esac
+`;
+
+    function run(opts: { fkLines: number; logsFail?: boolean }) {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vm-check-audit-'));
+        const bin = path.join(root, 'bin');
+        fs.mkdirSync(bin);
+        fs.writeFileSync(path.join(bin, 'docker'), FAKE_DOCKER, { mode: 0o755 });
+        const lines = [
+            'LOG:  some unrelated line',
+            ...Array.from({ length: opts.fkLines }, () =>
+                'ERROR:  insert or update on table "AuditLog" violates foreign key constraint "AuditLog_userId_fkey"'),
+        ];
+        fs.writeFileSync(path.join(root, 'pg.log'), `${lines.join('\n')}\n`);
+        const p = spawnSync('bash', [path.join(REPO_ROOT, 'deploy/vm-check/remote.sh'), 'audit-job-writes'], {
+            env: {
+                NODE_ENV: 'test',
+                PATH: `${bin}:/usr/bin:/bin`,
+                FAKE_ROOT: root,
+                ...(opts.logsFail ? { FAKE_LOGS_FAIL: '1' } : {}),
+            },
+            encoding: 'utf8',
+        });
+        fs.rmSync(root, { recursive: true, force: true });
+        return { status: p.status, stdout: p.stdout ?? '', stderr: p.stderr ?? '' };
+    }
+
+    /** The one row of the log table, whatever it says. */
+    const countRow = (out: string) =>
+        out.split('\n').find((l) => l.includes('| last 24h |')) ?? '(no row)';
+
+    it('counts the violations it finds, beside the number of lines read', () => {
+        const r = run({ fkLines: 3 });
+        expect(r.status).toBe(0);
+        // 3 OF 4 — the denominator is what makes the numerator a measurement.
+        expect(countRow(r.stdout)).toContain('| last 24h | 4 | 3 |');
+        // And the horizon, because a deploy resets it and a bare count would
+        // read as "3 ever".
+        expect(countRow(r.stdout)).toContain('2026-11-16T08:57:03');
+    });
+
+    it('reports ZERO OF N without dying, which pipefail makes the hard case', () => {
+        // `grep` exits 1 on no match and `set -euo pipefail` makes that the
+        // assignment's status, so the healthy answer is the one most likely to
+        // kill the script. `|| true` inside each substitution is what stops it.
+        const r = run({ fkLines: 0 });
+        expect(r.status).toBe(0);
+        expect(countRow(r.stdout)).toContain('| last 24h | 1 | 0 |');
+        expect(r.stdout).not.toContain('measures nothing');
+    });
+
+    it('does NOT report an unreadable log as zero violations', () => {
+        /*
+            THE CASE THAT EARNS THIS HARNESS, and the one an earlier draft of the
+            arm got wrong: it inferred readability from `rc`, and because
+            `pipefail` lets grep's no-match status mask docker's failure, a log it
+            could not read printed as `0` violations. Its own test caught it.
+
+            Nothing is inferred now. A failed read yields zero LINES, and zero of
+            zero is reported as measuring nothing — distinguishable from the
+            0-of-N above, which is a real result.
+        */
+        const r = run({ fkLines: 3, logsFail: true });
+        expect(r.status).toBe(0);
+        expect(countRow(r.stdout)).toContain('| last 24h | 0 | 0 |');
+        expect(r.stdout).toContain('measures nothing');
+        expect(r.stdout).toContain('cannot tell those apart and');
+    });
+
+    it('still reports the durable half when the log read failed', () => {
+        // The two measurements answer different questions, so losing one must
+        // not lose the other.
+        const r = run({ fkLines: 0, logsFail: true });
+        expect(r.stdout).toContain('job_rows');
+    });
+
+    it('states the pre-fix baseline, so a count means something', () => {
+        expect(run({ fkLines: 0 }).stdout).toContain('71 a day');
     });
 });

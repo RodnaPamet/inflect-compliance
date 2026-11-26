@@ -32,6 +32,9 @@
 #                        the app container, whether it is a superuser, and
 #                        whether the vector extension is available and
 #                        installed in the app's database (#5720)
+#   audit-job-writes     whether a scheduled job's audit row is landing (#2851):
+#                        rejected inserts from the postgres log, and the JOB rows
+#                        that did land, per week, from the table
 #   calendar-observations `calendar.vendor_observation` lines in the app's and
 #                        the worker's logs over the last 72 hours, counted per
 #                        provider, operation, status, code and date shape: what
@@ -725,6 +728,74 @@ tei-embed-timing)
 
 migrate-role)
     migrate_role
+    ;;
+
+audit-job-writes)
+    # #2851 — jobs were losing their audit events in production, ~71 a day, because
+    # a job's row carried `userId: 'system'` against a nullable FK with no such
+    # `User` row. The fix writes NULL and hashes the normalised value.
+    #
+    # TWO MEASUREMENTS, because they answer different questions and neither
+    # substitutes for the other. The first is the only witness to a rejection; the
+    # second is the only durable record of a success.
+    echo "## Jobs' audit writes (#2851)"
+    echo
+    echo "### 1. Rejected inserts — from the postgres log"
+    echo
+    echo "An FK violation REJECTS the insert, so the row never lands and no table"
+    echo "query can ever see one: the log is the only witness. Its horizon is this"
+    echo "container's lifetime, printed below, because a deploy resets it."
+    echo
+    echo "| postgres started (UTC) | window | postgres log lines | AuditLog_userId_fkey |"
+    echo "| --- | --- | --- | --- |"
+    # THE DENOMINATOR IS PRINTED BESIDE THE COUNT, and that is the whole design.
+    #
+    # Merging stderr is required here (the read-only-log rule), which means a
+    # failed read and a clean log are indistinguishable by exit status: with
+    # `pipefail`, `docker logs` exiting non-zero is masked by `grep` exiting 1 for
+    # no match. An earlier draft of this arm inferred the difference from `rc` and
+    # reported an unreadable log as ZERO VIOLATIONS — the exact mistake this check
+    # exists to stop, caught by its own test.
+    #
+    # So nothing is inferred, and the denominator counts only lines SHAPED LIKE a
+    # postgres log line. Counting every line does not work: stderr is merged into
+    # the same stream, so a failed read yields its own error text as one line and
+    # would read as "1 line, 0 violations" — a measurement. Docker's error text is
+    # not postgres-shaped, so this denominator goes to 0 exactly when there is
+    # nothing to have measured. 0 of 4812 is a result; 0 of 0 is not, and the note
+    # below says which this is rather than guessing why.
+    lines="$(docker logs "$(need postgres)" --since 24h 2>&1 | grep -E '^[0-9]{4}-|^(LOG|ERROR|FATAL|WARNING|STATEMENT|DETAIL|HINT|CONTEXT):' -c || true)"
+    fk="$(docker logs "$(need postgres)" --since 24h 2>&1 | grep -F 'AuditLog_userId_fkey' -c || true)"
+    echo "| $(docker inspect -f '{{.State.StartedAt}}' "$(need postgres)") | last 24h | ${lines:-0} | ${fk:-0} |"
+    if [ "${lines:-0}" = "0" ]; then
+        echo
+        echo "NOTE: no postgres-shaped log line was read, so the violation count"
+        echo "above measures nothing. Either the container logged nothing in the"
+        echo "window or the read failed; this check cannot tell those apart and"
+        echo "does not guess."
+    fi
+    echo
+    echo "Pre-fix baseline, measured 2026-09-24: 71 a day."
+    echo
+    echo "### 2. Rows that landed — from the AuditLog table"
+    echo
+    echo "Durable, and spans every week there has been a JOB row, not one"
+    echo "container's lifetime."
+    echo "A week with no row at all is the outage shape: JOB rows stopped entirely"
+    echo "on 2026-09-12 and resumed across the fix's deploy on 2026-09-24."
+    echo "Rows with a named user are expected — four jobs act for an accountable"
+    echo "member and their rows should carry that person."
+    echo
+    docker exec -i -e PGOPTIONS='-c default_transaction_read_only=on' "$(need postgres)" \
+        sh -c 'psql -X -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -P footer=off' <<'SQL'
+SELECT date_trunc('week', "createdAt")::date AS week,
+  count(*) AS job_rows,
+  count(*) FILTER (WHERE "userId" IS NULL) AS null_user,
+  count(*) FILTER (WHERE "userId" IS NOT NULL) AS named_user
+FROM "AuditLog"
+WHERE "actorType" = 'JOB'
+GROUP BY 1 ORDER BY 1;
+SQL
     ;;
 
 calendar-observations)

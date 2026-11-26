@@ -995,7 +995,7 @@ runs in the `production` GitHub environment, whose reviewer approves every run.
 | --- | --- |
 | `Scanner VM` (`scanner-vm.yml`) | Configures, checks and starts the harness scanner (`deploy/harness-scanner/README.md`). |
 | `VM capacity` (`vm-capacity.yml`) | `mode: snapshot` prints memory, CPU and disk per container now; `mode: history` prints what the capacity recorder wrote over the last `hours` (`deploy/capacity/`). |
-| `VM check` (`vm-check.yml`) | Runs one check from a fixed read-only list (`deploy/vm-check/remote.sh`): `containers`, `library-sync`, `log-errors`, `access-review-dates`, `bcrypt`, `automation-rules`, `posture-provider-names`, `tei-embed-timing`, `migrate-role`, `calendar-observations` (counts of the calendar push's vendor answers, #5957; see `docs/runbooks/calendar-vendor-verification.md`), `managed-agents-workspace-header` (the Managed Agents engine's workspace-header tally lines summed per endpoint, #5962; see `docs/claude-managed-agents-design.md`). |
+| `VM check` (`vm-check.yml`) | Runs one check from a fixed read-only list (`deploy/vm-check/remote.sh`): `containers`, `library-sync`, `log-errors`, `access-review-dates`, `bcrypt`, `automation-rules`, `posture-provider-names`, `tei-embed-timing`, `migrate-role`, `calendar-observations` (counts of the calendar push's vendor answers, #5957; see `docs/runbooks/calendar-vendor-verification.md`), `managed-agents-workspace-header` (the Managed Agents engine's workspace-header tally lines summed per endpoint, #5962; see `docs/claude-managed-agents-design.md`), `audit-job-writes` (whether a scheduled job's audit row is landing, #2851). |
 
 `VM check` is how a Claude Code session looks at production without holding a
 credential: the session dispatches it, the reviewer approves, and the session
@@ -1025,6 +1025,35 @@ starts after 480 s, and a run normally takes a few minutes. The container is
 capped at one core at half CPU weight (`cpus: 1.0`, `cpu_shares: 512`), so while
 the batches run they compete with the app and worker for that core: run it at a
 quiet hour, and not twice in a row.
+
+`audit-job-writes` answers whether a scheduled job's audit row is landing
+(#2851: jobs were losing roughly 71 audit events a day, because a job's row
+carried `userId: 'system'` against a nullable FK with no such `User`). It takes
+**two measurements, because they answer different questions and neither
+substitutes for the other.**
+
+An FK violation REJECTS the insert, so the row never lands and no table query can
+ever see one: the postgres log is the only witness, and its horizon is the
+container's lifetime, which a deploy resets. The table is the opposite half — it
+is the durable record that the rows which were being lost now land, and it spans
+every week there has been a `JOB` row.
+
+The log count is printed **with its denominator**, and that is deliberate.
+Stderr is merged into the read (the read-only-log rule), so a failed read and a
+clean log cannot be told apart by exit status: under `pipefail`, `docker logs`
+failing is masked by `grep` exiting 1 for no match. Counting every line does not
+fix it either, because a failed read emits its own error text as a line and would
+read as "1 line, 0 violations". So the denominator counts only lines SHAPED like a
+postgres log line — docker's error text is not — and goes to zero exactly when
+there was nothing to measure, at which point the check says the count measures
+nothing rather than guessing why. `0 of 90` is a result; `0 of 0` is not.
+
+The table half prints one row per week: `JOB` rows, those with `userId IS NULL`,
+and those with a named user. Rows with a named user are expected — four jobs act
+for an accountable member and their rows should carry that person. A week with no
+row at all is the outage shape (`JOB` rows stopped entirely on 2026-09-12 and
+resumed across the fix's deploy on 2026-09-24). Counts and dates only; no tenant,
+user or entity identifier is printed.
 
 `migrate-role` says which database role `prisma migrate deploy` runs as, and
 whether that role is a superuser, which a migration running `CREATE EXTENSION`
