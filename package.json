@@ -157,7 +157,7 @@
     "@visx/shape": "^4.0.0",
     "@visx/text": "^4.0.0",
     "@visx/tooltip": "^4.0.0",
-    "@xyflow/react": "^12.12.1",
+    "@xyflow/react": "^13.0.2",
     "bcrypt": "^6.0.0",
     "bullmq": "^6.7.8",
     "canvas-confetti": "^1.9.4",
