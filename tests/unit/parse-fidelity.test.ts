@@ -25,7 +25,9 @@ import {
     type FixtureExpectation,
 } from '../../scripts/parse-fidelity/fixtures';
 import {
+    PARSE_FIDELITY_FLOORS,
     PARSE_RECORD_FORMAT,
+    floorVerdicts,
     measurementFaults,
     normalise,
     parseMemUsage,
@@ -264,6 +266,33 @@ describe('summarizeRecord', () => {
         expect(md).toContain('| All 1 documents | 50.0% (1/2) | 66.7% (4/6) | 66.7% (2/3) |');
         expect(md).toContain('| Peak memory while parsing | 2500 MiB |');
         expect(md).toContain('- a: "1 purpose"');
+    });
+});
+
+describe('the D-L4-12 floors', () => {
+    it('are the owner\'s 95 / 90 / 80', () => {
+        expect(PARSE_FIDELITY_FLOORS).toEqual({ headings: 0.95, cells: 0.9, rows: 0.8 });
+    });
+
+    it('judge the recomputed figures, and never pass a figure with nothing expected', () => {
+        const s = summarizeRecord(record([kase('a')]));
+        expect(floorVerdicts(s)).toEqual([
+            { figure: 'headings', floor: 0.95, rate: 0.5, met: false },
+            { figure: 'cells', floor: 0.9, rate: 4 / 6, met: false },
+            { figure: 'rows', floor: 0.8, rate: 2 / 3, met: false },
+        ]);
+        const perfect = kase('p', {
+            counts: scoreDocument(EXPECTED, { headings: ['Title', '1 Purpose'], tables: [{ rows: [['Role', 'Owner'], ['A', 'x'], ['B', 'y']] }] }),
+        });
+        expect(floorVerdicts(summarizeRecord(record([perfect]))).every((v) => v.met)).toBe(true);
+        const noHeadings = { ...s, headings: { found: 0, expected: 0, rate: null } };
+        expect(floorVerdicts(noHeadings)[0].met).toBe(false);
+    });
+
+    it('are shown in the summary, as reported and not enforced', () => {
+        const md = renderSummary(record([kase('a')]));
+        expect(md).toContain('| Row recall | 66.7% | 80% | missed |');
+        expect(md).toContain('fails the job from Phase 3');
     });
 });
 

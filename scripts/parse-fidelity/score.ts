@@ -256,6 +256,31 @@ export function parseMemUsage(s: string): number {
 }
 
 /**
+ * D-L4-12 (owner, 2026-11-27): the floors a parser is held to, each over the
+ * whole set. Reported on every run from Phase 0; a miss fails the job only from
+ * Phase 3, after the dated non-blocking period (ragflow.md 3.4). Docling
+ * v1.38.2 measured 0.977 / 0.913 / 0.615: rows miss, almost entirely on one
+ * table across a page break, which Phase 2.5 stitches.
+ */
+export const PARSE_FIDELITY_FLOORS = { headings: 0.95, cells: 0.9, rows: 0.8 } as const;
+
+export interface FloorVerdict {
+    readonly figure: keyof typeof PARSE_FIDELITY_FLOORS;
+    readonly floor: number;
+    readonly rate: number | null;
+    /** A figure with nothing expected has no rate, and never meets a floor. */
+    readonly met: boolean;
+}
+
+export function floorVerdicts(summary: Summary): FloorVerdict[] {
+    return (Object.keys(PARSE_FIDELITY_FLOORS) as (keyof typeof PARSE_FIDELITY_FLOORS)[]).map((figure) => {
+        const rate = summary[figure].rate;
+        const floor = PARSE_FIDELITY_FLOORS[figure];
+        return { figure, floor, rate, met: rate !== null && rate >= floor };
+    });
+}
+
+/**
  * Refusals that say the MEASUREMENT broke, not the document: the service
  * refused the request, answered in a shape the client does not read, was out
  * of reach or out of the deployment, or the client routed the format nowhere.
@@ -284,6 +309,12 @@ export function measurementFaults(record: ParseFidelityRecord): string[] {
     return faults;
 }
 
+const FLOOR_LABEL: Record<keyof typeof PARSE_FIDELITY_FLOORS, string> = {
+    headings: 'Heading recall',
+    cells: 'Table-cell recall',
+    rows: 'Row recall',
+};
+
 function pct(r: Ratio): string {
     return r.rate === null ? 'n/a' : `${(r.rate * 100).toFixed(1)}% (${r.found}/${r.expected})`;
 }
@@ -308,6 +339,15 @@ export function renderSummary(record: ParseFidelityRecord): string {
         `| Idle CPU | ${f.idle.cpuPct.toFixed(1)}% |`,
         `| Peak CPU while parsing | ${f.peak.cpuPct.toFixed(1)}% (of one core) |`,
         `| Samples | ${f.samples} |`,
+        '',
+        '| D-L4-12 floor | Measured | Floor | Verdict |',
+        '| --- | --- | --- | --- |',
+        ...floorVerdicts(s).map(
+            (v) =>
+                `| ${FLOOR_LABEL[v.figure]} | ${v.rate === null ? 'n/a' : `${(v.rate * 100).toFixed(1)}%`} | ${(v.floor * 100).toFixed(0)}% | ${v.met ? 'met' : 'missed'} |`,
+        ),
+        '',
+        'Reported only: a missed floor fails the job from Phase 3 (ragflow.md 3.4).',
         '',
         '| Slice | Heading recall | Table-cell recall | Row recall |',
         '| --- | --- | --- | --- |',
