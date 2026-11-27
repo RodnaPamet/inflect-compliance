@@ -1,6 +1,6 @@
 {
   "aiuc-1": 2433,
-  "cis-v8": 1075,
+  "cis-v8": 1056,
   "coso-icf": 3391,
   "dora": 1279,
   "eu-ai-act": 776,
@@ -21,8 +21,8 @@
   "owasp-agentic": 433,
   "owasp-aisvs": 1380,
   "owasp-asvs": 1150,
-  "policy-templates": 36,
-  "shared": 68,
+  "policy-templates": 57,
+  "shared": 66,
   "soc2": 1433,
   "vendor-questionnaires": 60
 }

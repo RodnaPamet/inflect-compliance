@@ -37,7 +37,7 @@ const FAMILIES: ReadonlyArray<readonly [RegExp, string]> = [
     [/asvs/, 'owasp-asvs'],
     [/aisvs/, 'owasp-aisvs'],
     [/owasp[-_]asi|owasp-agentic|agent-risk/, 'owasp-agentic'],
-    [/cis/, 'cis-v8'],
+    [/cis(?![a-z])/, 'cis-v8'], // not "ciso": the CISO toolkit is policy templates
     [/coso/, 'coso-icf'],
     [/dora/, 'dora'],
     [/eu[-_]ai[-_]act|ai-governance/, 'eu-ai-act'],
