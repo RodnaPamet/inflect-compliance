@@ -17,13 +17,17 @@ describe('Bulgarian content dictionaries', () => {
         expect(Object.keys(BG_DICTIONARIES).filter((k) => k !== 'generic-tasks').sort()).toEqual(files);
     });
 
-    it('every entry translates a string the catalogues hold, into Cyrillic, keeping its placeholders', () => {
+    // A heading that is only a proper name ("ISO/IEC 27001", "SOC 2") reads the
+    // same in Bulgarian. Its entry is the source, byte for byte, which records
+    // that somebody decided it; anything else without Cyrillic is a leftover.
+    it('every entry translates a string the catalogues hold, into Cyrillic or as the same name, keeping its placeholders', () => {
         const known = new Set([...catalogueStrings().values()].flat());
         const problems: string[] = [];
         for (const [name, dictionary] of Object.entries(BG_DICTIONARIES)) {
             for (const [source, target] of Object.entries(dictionary)) {
                 if (!known.has(source.trim())) problems.push(`${name}: not a catalogue string: ${source.slice(0, 60)}`);
-                if (!/[Ѐ-ӿ]/.test(target)) problems.push(`${name}: no Cyrillic in the translation of: ${source.slice(0, 60)}`);
+                if (!/[Ѐ-ӿ]/.test(target) && target !== source) problems.push(`${name}: no Cyrillic in the translation of: ${source.slice(0, 60)}`);
+                if (target !== target.trim()) problems.push(`${name}: whitespace around the translation of: ${source.slice(0, 60)}`);
                 const marks = (s: string) => (s.match(/\{[A-Za-z_]+\}/g) ?? []).sort().join();
                 if (marks(source) !== marks(target)) problems.push(`${name}: placeholders differ: ${source.slice(0, 60)}`);
             }
