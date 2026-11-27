@@ -72,7 +72,7 @@ describe("ControlTaskRows (aligned inline sub-rows → quick-view)", () => {
     });
 
     const COLUMN_IDS = ["select", "name", "category", "status", "owner", "evidence", "menu"];
-    const renderRows = (onTaskClick = jest.fn()) => {
+    const renderRows = (onTaskClick = jest.fn(), onTaskOpen?: jest.Mock) => {
         const utils = render(
             <table>
                 <tbody>
@@ -83,6 +83,7 @@ describe("ControlTaskRows (aligned inline sub-rows → quick-view)", () => {
                         columnIds={COLUMN_IDS}
                         renderEvidence={(n) => <span>{n} evidence</span>}
                         onTaskClick={onTaskClick}
+                        onTaskOpen={onTaskOpen}
                     />
                 </tbody>
             </table>,
@@ -110,6 +111,21 @@ describe("ControlTaskRows (aligned inline sub-rows → quick-view)", () => {
         const badge = await screen.findByText("Open");
         fireEvent.click(badge);
         expect(onTaskClick).toHaveBeenCalledWith(expect.objectContaining({ id: "t1" }));
+    });
+
+    it("double-clicking the task row fires onTaskOpen (opens the task page)", async () => {
+        const onTaskOpen = jest.fn();
+        renderRows(jest.fn(), onTaskOpen);
+        const badge = await screen.findByText("Open");
+        fireEvent.doubleClick(badge);
+        expect(onTaskOpen).toHaveBeenCalledWith(expect.objectContaining({ id: "t1" }));
+    });
+
+    it("without onTaskOpen a double click opens nothing extra", async () => {
+        const { onTaskClick } = renderRows();
+        const badge = await screen.findByText("Open");
+        fireEvent.doubleClick(badge);
+        expect(onTaskClick).not.toHaveBeenCalled();
     });
 });
 

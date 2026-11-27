@@ -2363,6 +2363,11 @@
     },
     "list": {
       "closeQuickView": "Close the control quick view",
+      "sidePanel": {
+        "toggle": "Side panel",
+        "hide": "Hide the side panel: a click opens the control or task page",
+        "show": "Show the side panel: a click opens a quick view"
+      },
       "collapseAll": "Collapse all",
       "expandAll": "Expand all",
       "browse": "Browse",
