@@ -152,6 +152,8 @@ export const squash = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
 const words = (s: string): string[] => s.toLowerCase().match(/[a-z]+/g) ?? [];
 const hasCommonEnglish = (s: string): boolean => words(s).some((w) => COMMON_ENGLISH.has(w));
+/** Words in ANY script, so a Bulgarian template is counted like an English one. */
+const tokenCount = (s: string): number => (s.match(/\p{L}+/gu) ?? []).length;
 /** At least one Latin word of three letters or more with a lowercase letter: prose, not an acronym. */
 const looksLikeEnglishProse = (s: string): boolean => /\b[A-Za-z]*[a-z][A-Za-z]*\b/.test(s) && /[A-Za-z]{3,}/.test(s);
 
@@ -207,6 +209,97 @@ export function buildLeakCatalog(en: unknown, bg: unknown): LeakCatalog {
         }
     }
     return { exact, patterns, keptInBg };
+}
+
+/**
+ * ── A RECORD THE SERVER WROTE IN THE WORKSPACE'S OWN LANGUAGE (#5972) ───────
+ *
+ * `workspaceText.*` is the namespace for text the SERVER writes into a record
+ * in the workspace's default language (`Tenant.defaultLocale`): the NIS2 gap
+ * task titles, the task-assigned e-mails, the calendar push. Owner decision
+ * 2026-11-24 (#5868): a task is an editable record, so unlike a stock
+ * notification it is never re-worded on read — its language is chosen once,
+ * when the server writes it.
+ *
+ * So an English NIS2 task title on a Bulgarian page, in a workspace whose
+ * default language IS English, is the record's correct text and not an
+ * interface leak. The detector could not tell the two apart, because
+ * `workspaceText.*` lives in `messages/en.json` like every other message: when
+ * #5932 added that title to the catalog, every page showing the task began to
+ * fail, six routes a night from 2026-11-25 (#5972).
+ *
+ * The matcher is therefore built from ONE locale — the workspace's own — and a
+ * string it matches is excluded. That keeps the check's teeth in BOTH
+ * directions: in a Bulgarian-default workspace it holds the Bulgarian
+ * renderings, so an English title there is still reported, which is the case
+ * where the record really was written in the wrong language.
+ *
+ * Two guards stop a matcher from suppressing more than the record:
+ *
+ *   · a template whose literal text is shorter than
+ *     `WORKSPACE_TEXT_MIN_LITERAL`, or is a single word, identifies no
+ *     particular message — `"{type}: {name}"` would match any "X: Y" shown.
+ *   · a placeholder-free value that is ALSO a message under some other key
+ *     stays judged: "Evidence review" is a calendar event type here and may be
+ *     an interface label there, and only the key tells them apart.
+ */
+export const WORKSPACE_TEXT_PREFIX = 'workspaceText.';
+/** Literal text shorter than this identifies no particular message. */
+export const WORKSPACE_TEXT_MIN_LITERAL = 12;
+
+export interface WorkspaceTextMatcher {
+    /** Placeholder-free values, unique to the namespace. */
+    exact: ReadonlySet<string>;
+    /** Templated values: anchored, and the same found inside a longer string. */
+    patterns: ReadonlyArray<{ literal: string; re: RegExp; embedded: RegExp }>;
+}
+
+/** Nothing to exclude — the default, and what a page with no record text gets. */
+export const NO_WORKSPACE_TEXT: WorkspaceTextMatcher = { exact: new Set(), patterns: [] };
+
+/** Build the matcher from ONE locale's messages: the workspace's own. */
+export function buildWorkspaceTextMatcher(messages: unknown): WorkspaceTextMatcher {
+    const all = new Map<string, string>();
+    flatten(messages, '', all);
+    const elsewhere = new Set<string>();
+    for (const [key, value] of all) if (!key.startsWith(WORKSPACE_TEXT_PREFIX)) elsewhere.add(squash(value));
+    const exact = new Set<string>();
+    const patterns: Array<{ literal: string; re: RegExp; embedded: RegExp }> = [];
+    for (const [key, raw] of all) {
+        if (!key.startsWith(WORKSPACE_TEXT_PREFIX)) continue;
+        const value = squash(raw);
+        // ICU plurals/selects are skipped: their literal text is not one string.
+        if (/\{[^{}]*,\s*(?:plural|select|selectordinal)/.test(value)) continue;
+        if (value.includes('{')) {
+            const literals = value.split(PLACEHOLDER).map((x) => x.trim()).filter(Boolean);
+            const literalText = literals.join(' ');
+            if (literalText.length < WORKSPACE_TEXT_MIN_LITERAL || tokenCount(literalText) < 2) continue;
+            const parts = value.split(PLACEHOLDER).map(escapeRe);
+            patterns.push({
+                literal: [...literals].sort((a, b) => b.length - a.length)[0] ?? '',
+                // A placeholder stands for record DATA, which in a Bulgarian
+                // workspace is Cyrillic — so unlike the catalog's `embedded`,
+                // these must not exclude Cyrillic between the parts.
+                re: new RegExp(`^${parts.join('.+?')}$`),
+                embedded: new RegExp(parts.join('.+?')),
+            });
+        } else if (value.length >= WORKSPACE_TEXT_MIN_LITERAL && !elsewhere.has(value)) {
+            exact.add(value);
+        }
+    }
+    return { exact, patterns };
+}
+
+/** Load the matcher for one locale from the repository's message files. */
+export async function loadWorkspaceTextMatcher(repoRoot: string, locale: string): Promise<WorkspaceTextMatcher> {
+    const { readFile } = await import('node:fs/promises');
+    const path = await import('node:path');
+    // The locale's OWN file and nothing else. Falling back to English would
+    // exclude the English renderings in a Bulgarian workspace, which is exactly
+    // the case this check exists to catch.
+    return buildWorkspaceTextMatcher(
+        JSON.parse(await readFile(path.join(repoRoot, 'messages', `${locale}.json`), 'utf8')) as unknown,
+    );
 }
 
 /**
@@ -282,14 +375,30 @@ export function findEnglishLeaks(
     dataNames: ReadonlySet<string> = new Set(),
     /** Values of the shipped English library: content, not UI (see the module docblock). */
     libraryTexts: ReadonlySet<string> = new Set(),
+    /** `workspaceText.*` rendered in the WORKSPACE's own default language (#5972). */
+    workspaceText: WorkspaceTextMatcher = NO_WORKSPACE_TEXT,
 ): Leak[] {
     const chrome = new Set(page.chromeTexts.map(squash));
     const leaks = new Map<string, LeakReason>();
     const isLibrary = (s: string): boolean =>
         libraryTexts.has(s) && (s.includes(' ') || !catalogHas(catalog, s));
+    /** The whole string IS a record the server wrote in the workspace's language. */
+    const isWorkspaceRecord = (v: string): boolean =>
+        workspaceText.exact.has(v) || workspaceText.patterns.some((p) => v.includes(p.literal) && p.re.test(v));
+    /** The sentence with any such record text it carries removed. */
+    const withoutWorkspaceText = (v: string): string => {
+        let out = v;
+        for (const p of workspaceText.patterns) if (out.includes(p.literal)) out = out.replace(p.embedded, ' ');
+        for (const value of workspaceText.exact) if (out.includes(value)) out = out.split(value).join(' ');
+        return squash(out);
+    };
     for (const raw of page.texts) {
         const s = squash(raw);
-        if (s.length < 3 || leaks.has(s) || dataNames.has(s) || isLibrary(s)) continue;
+        // `isWorkspaceRecord` sits HERE, beside the other data tests, rather
+        // than in the CATALOG branch alone: a record is the record's text
+        // whichever reason would otherwise report it, and a short value gated
+        // only at CATALOG would still fall through and be reported as CHROME.
+        if (s.length < 3 || leaks.has(s) || dataNames.has(s) || isLibrary(s) || isWorkspaceRecord(s)) continue;
         const cyr = CYRILLIC.test(s);
         if (!cyr && catalogHas(catalog, s)) {
             leaks.set(s, 'CATALOG');
@@ -300,11 +409,15 @@ export function findEnglishLeaks(
             continue;
         }
         if (cyr) {
-            const runs = s.match(LATIN_RUN) ?? [];
+            // The record's own text goes first, so what is judged is the
+            // Bulgarian sentence AROUND it: one carrying both a record and a
+            // real leak is still reported.
+            const judged = withoutWorkspaceText(s);
+            const runs = judged.match(LATIN_RUN) ?? [];
             // A run that belongs to a multi-word library value the sentence
             // carries whole is the library's word, not the interface's.
             const inLibraryValue = (r: string) =>
-                (libraryRunIndex(libraryTexts).get(r) ?? []).some((value) => s.includes(value));
+                (libraryRunIndex(libraryTexts).get(r) ?? []).some((value) => judged.includes(value));
             const english = (r: string) =>
                 r.length >= 4 &&
                 !dataNames.has(r) &&
@@ -312,10 +425,10 @@ export function findEnglishLeaks(
                 !catalog.keptInBg.has(r) &&
                 catalog.exact.has(r) &&
                 !inLibraryValue(r) &&
-                !nameInAnAside(s, r);
+                !nameInAnAside(judged, r);
             // A whole templated message inside the sentence: a stored English
             // sentence the product wrote, shown after a Bulgarian label.
-            const message = catalog.patterns.some((p) => s.includes(p.literal) && p.embedded.test(s));
+            const message = catalog.patterns.some((p) => judged.includes(p.literal) && p.embedded.test(judged));
             if (runs.some(english) || message) leaks.set(s, 'EMBEDDED');
             continue;
         }

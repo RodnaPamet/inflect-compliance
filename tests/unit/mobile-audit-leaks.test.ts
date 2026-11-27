@@ -6,7 +6,14 @@
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { buildLeakCatalog, findEnglishLeaks, optionLabels, pageDataNames } from '../../scripts/mobile-audit/leaks';
+import {
+    buildLeakCatalog,
+    buildWorkspaceTextMatcher,
+    findEnglishLeaks,
+    NO_WORKSPACE_TEXT,
+    optionLabels,
+    pageDataNames,
+} from '../../scripts/mobile-audit/leaks';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
 import { localizedRunSummary, type WorkflowSummaryTranslator } from '@/lib/agentic/workflow-labels';
 import type { WorkflowContext } from '@/lib/agentic/workflow-types';
@@ -362,5 +369,101 @@ describe('a stock notification stored in English and shown as stored (#5929)', (
         expect(shown).not.toContain(title);
         expect(shown).not.toContain(message);
         expect(onPage(shown)).toEqual([]);
+    });
+});
+
+/**
+ * A RECORD THE SERVER WROTE IN THE WORKSPACE'S OWN LANGUAGE — #5972.
+ *
+ * `workspaceText.*` is written into a record once, in the workspace's default
+ * language, and never re-worded on read (owner decision 2026-11-24, #5868). So
+ * the English NIS2 task title below, on a Bulgarian page, is the record's
+ * correct text in an English-DEFAULT workspace — and a leak in a Bulgarian one.
+ *
+ * The real catalog and the two real strings the nightly audit reported on
+ * 2026-11-25 are used on purpose: this fails if either the message or the
+ * detector moves.
+ */
+describe('a record written in the workspace language', () => {
+    const root = path.resolve(__dirname, '..', '..');
+    const enJson = JSON.parse(readFileSync(path.join(root, 'messages', 'en.json'), 'utf8'));
+    const bgJson = JSON.parse(readFileSync(path.join(root, 'messages', 'bg.json'), 'utf8'));
+    const realCatalog = buildLeakCatalog(enJson, bgJson);
+    const TITLE = 'Answer the NIS2 gap assessment questions for IT (72 questions)';
+    const SENTENCE = `TSK-4 "${TITLE}" вече е ваша отговорност.`;
+    const find = (workspace: Parameters<typeof findEnglishLeaks>[4]) =>
+        findEnglishLeaks({ texts: [TITLE, SENTENCE], chromeTexts: [] }, realCatalog, new Set(), new Set(), workspace);
+
+    it('is not a leak when the workspace default language is the one it is written in', () => {
+        expect(find(buildWorkspaceTextMatcher(enJson))).toEqual([]);
+    });
+
+    it('IS a leak when the workspace default language is the other one', () => {
+        // The case the check exists for: the record really was written in the
+        // wrong language, so the title and the sentence quoting it both count.
+        expect(find(buildWorkspaceTextMatcher(bgJson)).map((l) => l.reason).sort()).toEqual(['CATALOG', 'EMBEDDED']);
+    });
+
+    it('is a leak with no matcher at all, which is the regression this rule fixes', () => {
+        // Six routes a night from 2026-11-25, caused by #5932 adding the title
+        // to the catalog. Removing the matcher reproduces it exactly.
+        expect(find(NO_WORKSPACE_TEXT).map((l) => l.reason).sort()).toEqual(['CATALOG', 'EMBEDDED']);
+    });
+
+    describe('what it refuses to exclude', () => {
+        const synthEn = {
+            workspaceText: { t: { title: 'Answer the questions for {group} today' } },
+            filters: { clear: 'Clear filters' },
+        };
+        const synthBg = {
+            workspaceText: { t: { title: 'Отговорете на въпросите за {group} днес' } },
+            filters: { clear: 'Изчисти филтрите' },
+        };
+        const synthCatalog = buildLeakCatalog(synthEn, synthBg);
+
+        it('still reports a leak in the sentence AROUND the record', () => {
+            // The record's own text is removed and what is LEFT is judged, so a
+            // sentence carrying both a record and a real leak is not excused by
+            // the record.
+            const text = 'Задача „Answer the questions for IT today“ — Clear filters';
+            expect(
+                findEnglishLeaks({ texts: [text], chromeTexts: [] }, synthCatalog, new Set(), new Set(), buildWorkspaceTextMatcher(synthEn)),
+            ).toEqual([{ text, reason: 'EMBEDDED' }]);
+        });
+
+        it('builds no pattern for a template whose literal text identifies nothing', () => {
+            // `"{type}: {name}"` would match any "X: Y" the page shows.
+            expect(buildWorkspaceTextMatcher({ workspaceText: { c: { title: '{type}: {name}' } } }).patterns).toEqual([]);
+        });
+
+        it('leaves a value that is ALSO a message under another key judged', () => {
+            // "Evidence review" is a calendar event type here and may be an
+            // interface label there; only the key tells them apart.
+            const m = buildWorkspaceTextMatcher({
+                workspaceText: { calendarPush: { eventType: { 'evidence-review': 'Evidence review' } } },
+                calendar: { heading: 'Evidence review' },
+            });
+            expect([...m.exact]).toEqual([]);
+        });
+
+        it('excludes a SHORT record value that is also a control label', () => {
+            // The exclusion sits beside the other data tests rather than in the
+            // CATALOG branch alone. Gated only at CATALOG, a short value would
+            // fall through and be reported as CHROME instead — the exclusion
+            // bypassed under a different reason. Asserted both ways, so the
+            // second expectation proves the string really would be reported.
+            const en2 = { workspaceText: { t: { label: 'View your tasks now' } } };
+            const bg2 = { workspaceText: { t: { label: 'Вижте задачите си сега' } } };
+            const c2 = buildLeakCatalog(en2, bg2);
+            const page = { texts: ['View your tasks now'], chromeTexts: ['View your tasks now'] };
+            expect(findEnglishLeaks(page, c2, new Set(), new Set(), buildWorkspaceTextMatcher(en2))).toEqual([]);
+            expect(findEnglishLeaks(page, c2, new Set(), new Set(), NO_WORKSPACE_TEXT)).toHaveLength(1);
+        });
+
+        it('reads nothing outside the workspaceText namespace', () => {
+            const m = buildWorkspaceTextMatcher({ filters: { none: 'No results match these filters' } });
+            expect([...m.exact]).toEqual([]);
+            expect(m.patterns).toEqual([]);
+        });
     });
 });
