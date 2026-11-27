@@ -404,6 +404,12 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
       mechanism: /verifyPlatformApiKey/ },
     { handler: 'api/admin/agent-kill-switch/route.ts#PATCH', klass: 'PROTOCOL_CREDENTIAL',
       mechanism: /verifyPlatformApiKey/ },
+    // The evaluation nightlies' switch read (owner decision 2026-11-27): a
+    // GitHub runner presents the CI bearer token; there is no session and no
+    // tenant, so no role for a permission gate to read. Read-only, three
+    // booleans.
+    { handler: 'api/evals/nightly-switches/route.ts#GET', klass: 'PROTOCOL_CREDENTIAL',
+      mechanism: /verifyEvalsSwitchReadToken/ },
     { handler: 'api/scim/v2/Users/route.ts#GET', klass: 'PROTOCOL_CREDENTIAL', mechanism: /authenticateScimRequest/ },
     { handler: 'api/scim/v2/Users/route.ts#POST', klass: 'PROTOCOL_CREDENTIAL', mechanism: /authenticateScimRequest/ },
     { handler: 'api/scim/v2/Users/[id]/route.ts#GET', klass: 'PROTOCOL_CREDENTIAL', mechanism: /authenticateScimRequest/ },

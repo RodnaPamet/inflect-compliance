@@ -1,0 +1,37 @@
+// ═══════════════════════════════════════════════════════════════════
+// LLM evaluation nightlies — the platform's on/off switch for each.
+// ═══════════════════════════════════════════════════════════════════
+
+/// Platform-level, NOT tenant-scoped: whether each LLM evaluation nightly runs
+/// on its schedule (owner decision 2026-11-27). One row per nightly, keyed by
+/// its name; a CHECK in the migration holds the set to `garak`, `ragas` and
+/// `inspect`. An ABSENT row is OFF, so the table starts empty and nothing runs
+/// until somebody turns a nightly on.
+///
+/// The three nightlies (`garak.yml`, `rag-eval.yml`, `agent-evals.yml`) run on
+/// GitHub's runners, never against production. Each scheduled run asks
+/// production, over `GET /api/evals/nightly-switches` with a CI bearer token,
+/// whether it is on, and fails closed on any answer but `true`. Production
+/// holds no GitHub credential; the workflows read this table and nothing
+/// writes back.
+///
+/// Written ONLY by `src/app-layer/usecases/eval-nightly-switches.ts`, by an
+/// ORG_OWNER of an operator organization (`EVALS_SWITCH_ORG_SLUGS`). Every
+/// change is audited `ORG_EVAL_NIGHTLY_SWITCHED` in that organization's chain;
+/// this row keeps only the latest state and who set it. Both references are
+/// `SET NULL`, so a departed person or a deleted organization leaves the state
+/// standing. `app_user` holds no DELETE: turning a nightly off is an UPDATE.
+model EvalNightlySwitch {
+  /// `garak` | `ragas` | `inspect` (CHECK `EvalNightlySwitch_nightly_known`).
+  nightly                 String   @id
+  enabled                 Boolean  @default(false)
+  changedAt               DateTime @default(now())
+  changedByUserId         String?
+  changedInOrganizationId String?
+
+  changedBy             User?         @relation("EvalNightlySwitchChangedBy", fields: [changedByUserId], references: [id], onDelete: SetNull)
+  changedInOrganization Organization? @relation(fields: [changedInOrganizationId], references: [id], onDelete: SetNull)
+
+  @@index([changedByUserId])
+  @@index([changedInOrganizationId])
+}

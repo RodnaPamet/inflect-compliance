@@ -6,6 +6,12 @@ name: RAG eval (Ragas, nightly)
 # garak.yml and agent-evals.yml (off unless switched on, skip cleanly, a dated
 # deferral a guard parses, budget from the shared cost meter).
 #
+#   - THE SWITCH IS THE PRODUCT'S (owner decision 2026-11-27). A scheduled run
+#     asks production (repository variable EVALS_SWITCH_URL, bearer secret
+#     EVALS_SWITCH_READ_TOKEN) whether "ragas" is switched on, on the org
+#     settings page's Evaluations card, and stays off on any failure or any
+#     answer but true. A dispatch runs once and asks nothing.
+#
 #   - THREE STAGES. (1) CORPUS: scripts/rag-eval/corpus.ts builds, through the
 #     product's own usecases and index job, an answer tenant (the three seeded
 #     policies), an injection tenant (the set's injected chunks alone, owner
@@ -142,19 +148,53 @@ jobs:
 
     steps:
       # ── Off unless switched on ──
-      # Owner decision 2026-11-12 (as for garak and Inspect): a scheduled run
-      # does nothing unless the repository variable RAG_EVAL_ENABLED is 'true';
-      # a manual dispatch always runs. The key decides only whether the answer
-      # and judge stages may run: the corpus and retrieval stages make no model call.
+      # Owner decisions 2026-11-12 and 2026-11-27 (as for garak and Inspect): a
+      # scheduled run does nothing unless the product's switch for "ragas" is on
+      # (Organization settings -> Evaluations, read below); a manual dispatch
+      # always runs. The key decides only whether the answer and judge stages
+      # may run: the corpus and retrieval stages make no model call.
       - name: Check whether the nightly runs
         id: key
         env:
           KEY: ${{ secrets.RAGAS_ANTHROPIC_API_KEY || secrets.ANTHROPIC_API_KEY }}
-          ENABLED: ${{ vars.RAG_EVAL_ENABLED }}
           EVENT: ${{ github.event_name }}
+          # The production switch endpoint (a repository VARIABLE: a URL, not a
+          # secret) and the bearer token it checks (a secret, read only here).
+          SWITCH_URL: ${{ vars.EVALS_SWITCH_URL }}
+          SWITCH_TOKEN: ${{ secrets.EVALS_SWITCH_READ_TOKEN }}
+          NIGHTLY: ragas
         run: |
+          # Owner decision 2026-11-27: the switch lives in the PRODUCT
+          # (Organization settings -> Evaluations), not in a repository
+          # variable. A scheduled run asks production whether the ragas
+          # nightly is on and FAILS CLOSED: an unset URL or token, a failed
+          # request, a status other than 200, or an answer that is not a
+          # boolean for "ragas" leaves it off, with a warning naming the
+          # reason class and never the token or the response body. A manual
+          # dispatch runs once whatever the switch says, and asks nothing.
+          ENABLED=false
+          if [ "$EVENT" = "schedule" ]; then
+            BODY="$(mktemp)"
+            STATUS=000
+            if [ -z "$SWITCH_URL" ] || [ -z "$SWITCH_TOKEN" ]; then
+              echo "::warning::The RAG eval switch was not read: the EVALS_SWITCH_URL variable or the EVALS_SWITCH_READ_TOKEN secret is not set."
+            elif ! STATUS="$(curl --fail --silent --proto '=https' --max-time 15 -H "Authorization: Bearer $SWITCH_TOKEN" -H 'Accept: application/json' -o "$BODY" -w '%{http_code}' "$SWITCH_URL" 2>/dev/null)"; then
+              if [ "${STATUS:-000}" = "000" ]; then
+                echo "::warning::The RAG eval switch was not read: the request to the switch endpoint failed or timed out."
+              else
+                echo "::warning::The RAG eval switch was not read: the switch endpoint answered HTTP $STATUS."
+              fi
+            elif [ "$STATUS" != "200" ]; then
+              echo "::warning::The RAG eval switch was not read: the switch endpoint answered HTTP $STATUS."
+            elif [ "$(jq -r --arg k "$NIGHTLY" '.[$k] | type' "$BODY" 2>/dev/null)" != "boolean" ]; then
+              echo "::warning::The RAG eval switch was not read: the answer holds no boolean for $NIGHTLY."
+            elif jq -e --arg k "$NIGHTLY" '.[$k] == true' "$BODY" >/dev/null; then
+              ENABLED=true
+            fi
+            rm -f "$BODY"
+          fi
           if [ "$EVENT" = "schedule" ] && [ "$ENABLED" != "true" ]; then
-            echo "::notice::The RAG eval nightly is switched off (repository variable RAG_EVAL_ENABLED is not 'true'); dispatch the workflow to run it once."
+            echo "::notice::The RAG eval nightly is off: it is switched off in the product (Organization settings -> Evaluations) or its switch could not be read; dispatch the workflow to run it once."
             echo "present=false" >> "$GITHUB_OUTPUT"
           else
             echo "present=true" >> "$GITHUB_OUTPUT"

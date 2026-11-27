@@ -36,6 +36,7 @@ export const ORG_AUDIT_ACTIONS = [
     'ORG_TENANT_DELETED',
     'ORG_AGENT_SWITCHES_CHANGED',
     'ORG_AGENT_TURN_CAPS_CHANGED',
+    'ORG_EVAL_NIGHTLY_SWITCHED',
 ] as const;
 
 export type OrgAuditActionValue = (typeof ORG_AUDIT_ACTIONS)[number];
@@ -84,6 +85,7 @@ const ACTION_LABEL_KEY: Record<OrgAuditActionValue, string> = {
     ORG_TENANT_DELETED: 'audit.actionWorkspaceDeleted',
     ORG_AGENT_SWITCHES_CHANGED: 'audit.actionAgentSwitchesChanged',
     ORG_AGENT_TURN_CAPS_CHANGED: 'audit.actionAgentTurnCapsChanged',
+    ORG_EVAL_NIGHTLY_SWITCHED: 'audit.actionEvalNightlySwitched',
 };
 
 type OrgTranslate = ReturnType<typeof useTranslations>;
@@ -105,6 +107,7 @@ const ACTION_VARIANT: Record<OrgAuditActionValue, 'success' | 'error' | 'info' |
     ORG_TENANT_DELETED: 'error',
     ORG_AGENT_SWITCHES_CHANGED: 'warning',
     ORG_AGENT_TURN_CAPS_CHANGED: 'warning',
+    ORG_EVAL_NIGHTLY_SWITCHED: 'warning',
 };
 
 function isKnownAction(action: string): action is OrgAuditActionValue {
@@ -160,6 +163,13 @@ const AGENT_SWITCH_LABEL_KEY: Record<string, string> = {
 const TURN_CAP_LABEL_KEY: Record<string, string> = {
     delegationsPerTurn: 'settings.agentSwitches.turnCaps.delegationsPerTurn.label',
     toolCallsPerTurn: 'settings.agentSwitches.turnCaps.toolCallsPerTurn.label',
+};
+
+/** The LLM evaluation nightlies (owner decision 2026-11-27), by the key the audit row stores. */
+const EVAL_NIGHTLY_LABEL_KEY: Record<string, string> = {
+    ragas: 'audit.evalNightly.ragas',
+    garak: 'audit.evalNightly.garak',
+    inspect: 'audit.evalNightly.inspect',
 };
 
 /**
@@ -253,6 +263,7 @@ export function summarize(t: OrgTranslate, row: AuditRow): string {
             return `${word(t, INITIATIVE_STATUS_KEY, d.from)} → ${word(t, INITIATIVE_STATUS_KEY, d.to)}`;
         case 'ORG_AUTHZ_DENIED':
             if (d.reason === 'OWNER_MEMBERSHIP_NEEDS_OWNER') return t('audit.deniedOwnerMembership');
+            if (d.reason === 'EVALS_SWITCH_NOT_OPERATOR_ORG') return t('audit.deniedEvalsSwitchNotOperator');
             return typeof d.path === 'string'
                 ? t('audit.deniedRequestSummary', {
                       role: word(t, ORG_ROLE_LABEL_KEY, d.orgRole),
@@ -278,6 +289,8 @@ export function summarize(t: OrgTranslate, row: AuditRow): string {
                 .map(([key, c]) => `${word(t, TURN_CAP_LABEL_KEY, key)}: ${n(c?.before)} → ${n(c?.after)}`)
                 .join('; ');
         }
+        case 'ORG_EVAL_NIGHTLY_SWITCHED':
+            return `${word(t, EVAL_NIGHTLY_LABEL_KEY, d.nightly)}: ${onOff(t, d.before)} → ${onOff(t, d.after)}`;
         default:
             return '';
     }

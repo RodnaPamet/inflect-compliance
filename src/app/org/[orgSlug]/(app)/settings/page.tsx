@@ -5,9 +5,11 @@ import { getTranslations } from 'next-intl/server';
 import { getOrgCtx } from '@/app-layer/context';
 import { getOrgAgentSwitches } from '@/app-layer/usecases/org-agent-switches';
 import { getOrgAgentTurnCaps } from '@/app-layer/usecases/org-agent-turn-caps';
+import { getEvalNightlySwitches } from '@/app-layer/usecases/eval-nightly-switches';
 import { Heading } from '@/components/ui/typography';
 import { env } from '@/env';
 import { evalsCardVisible } from '@/lib/evals/evals-card-visibility';
+import { getDateFormatters } from '@/lib/i18n/date-format-server';
 import { OrgAgentSwitchesSection } from './OrgAgentSwitchesSection';
 import { OrgEvaluationsCard } from './OrgEvaluationsCard';
 import { OrgSettingsIntro } from './OrgSettingsIntro';
@@ -17,8 +19,11 @@ import { OrgSettingsIntro } from './OrgSettingsIntro';
  * decides for its workspaces when the deployment leaves them open, the
  * per-turn limits it sets as the ceiling for them (#4594), and — for
  * an org admin of any organization the operator has not opted out in
- * `EVALS_CARD_HIDDEN_ORG_SLUGS` — a read-only card describing the platform's
- * two LLM evaluation nightlies (owner decisions 2026-11-12).
+ * `EVALS_CARD_HIDDEN_ORG_SLUGS` — a card describing the platform's three LLM
+ * evaluation nightlies with each one's on/off state (owner decisions
+ * 2026-11-12 and 2026-11-27). Only an ORG_OWNER of an operator organization
+ * (`EVALS_SWITCH_ORG_SLUGS`) gets the switches; the usecase decides and the
+ * card renders its `canSwitch`.
  *
  * Every org member who can see the portfolio may read it; only
  * `canManageAgentSwitches` (ORG_ADMIN) may change a switch, and the section
@@ -50,6 +55,10 @@ export default async function OrgSettingsPage({ params }: PageProps) {
         hiddenIn: env.EVALS_CARD_HIDDEN_ORG_SLUGS,
     });
 
+    // Read only where the card shows: the switch state is not the reader's.
+    const evalSwitches = showEvaluations ? await getEvalNightlySwitches(ctx) : null;
+    const { formatDateTime } = await getDateFormatters();
+
     return (
         <div className="space-y-section" data-testid="org-settings-page">
             <div>
@@ -60,7 +69,7 @@ export default async function OrgSettingsPage({ params }: PageProps) {
                 initial={JSON.parse(JSON.stringify(switches))}
                 turnCaps={JSON.parse(JSON.stringify(turnCaps))}
             />
-            {showEvaluations && <OrgEvaluationsCard />}
+            {evalSwitches && <OrgEvaluationsCard switches={evalSwitches} formatDateTime={(iso) => formatDateTime(iso)} />}
         </div>
     );
 }

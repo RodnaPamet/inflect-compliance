@@ -31,6 +31,7 @@ function orgCtx(perms: Partial<OrgPermissionSet>): OrgContext {
             canSetMaturity: true,
             canManageAgentSwitches: true,
             canManageOwners: false,
+            canSwitchEvalNightlies: false,
             ...perms,
         },
     };

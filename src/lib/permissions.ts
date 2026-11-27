@@ -932,6 +932,14 @@ export type OrgPermissionSet = {
      * the `org_membership_last_owner_guard` trigger.
      */
     canManageOwners: boolean;
+    /**
+     * Turn an LLM evaluation nightly (garak, Ragas, Inspect) on or off
+     * (owner decision 2026-11-27). ORG_OWNER only, and only in an operator
+     * organization named in `EVALS_SWITCH_ORG_SLUGS`: that second condition is
+     * environmental, so the usecase asks it (`evalSwitchRefusal`). Reading the
+     * state takes only the card's visibility.
+     */
+    canSwitchEvalNightlies: boolean;
 };
 
 /**
@@ -961,6 +969,7 @@ export function getOrgPermissions(role: OrgRole): OrgPermissionSet {
                 canSetMaturity: true,
                 canManageAgentSwitches: true,
                 canManageOwners: true,
+                canSwitchEvalNightlies: true,
             };
         case 'ORG_ADMIN':
             return {
@@ -975,6 +984,7 @@ export function getOrgPermissions(role: OrgRole): OrgPermissionSet {
                 canSetMaturity: true,
                 canManageAgentSwitches: true,
                 canManageOwners: false,
+                canSwitchEvalNightlies: false,
             };
         case 'ORG_READER':
             return {
@@ -992,6 +1002,7 @@ export function getOrgPermissions(role: OrgRole): OrgPermissionSet {
                 canSetMaturity: false,
                 canManageAgentSwitches: false,
                 canManageOwners: false,
+                canSwitchEvalNightlies: false,
             };
         default: {
             // Defensive — Prisma's enum is closed, so the runtime
@@ -1011,6 +1022,7 @@ export function getOrgPermissions(role: OrgRole): OrgPermissionSet {
                 canSetMaturity: false,
                 canManageAgentSwitches: false,
                 canManageOwners: false,
+                canSwitchEvalNightlies: false,
             };
         }
     }

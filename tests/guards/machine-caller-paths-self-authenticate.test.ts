@@ -98,6 +98,12 @@ const CONTRACTS: ReadonlyArray<{
         gate: /verifyPlatformApiKey\s*\(/,
         why: 'PLATFORM_ADMIN_API_KEY, compared in constant time (#3132)',
     },
+    {
+        prefix: '/api/evals/nightly-switches',
+        handler: 'api/evals/nightly-switches/route.ts',
+        gate: /verifyEvalsSwitchReadToken\s*\(/,
+        why: 'the CI bearer token EVALS_SWITCH_READ_TOKEN, compared in constant time (owner decision 2026-11-27)',
+    },
 ];
 
 describe('machine-caller paths authenticate themselves', () => {
@@ -394,5 +400,40 @@ describe('/api/a2a: every exported method is the inbound endpoint or the publish
         } else {
             throw new Error(`${file} exports ${method}, which /api/a2a has no gate for`);
         }
+    });
+});
+
+/**
+ * `/api/evals/nightly-switches` — the evaluation nightlies' switch read (owner
+ * decision 2026-11-27). A GitHub runner asks it, so the entry opens the path;
+ * the handler is what refuses everybody without the CI token. Every exported
+ * method, derived from the directory, must gate itself, and the only method is
+ * a GET: a write here would be a write behind a read token.
+ */
+describe('/api/evals/nightly-switches: GET only, and it gates itself on the CI token', () => {
+    const DIR = path.join(APP, 'api/evals/nightly-switches');
+    const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
+    const src = fs.readFileSync(path.join(DIR, 'route.ts'), 'utf8');
+    const exported = METHODS.filter((m) => new RegExp(`export const ${m}\\s*=`).test(src));
+
+    it('exports GET and nothing else', () => {
+        expect(exported).toEqual(['GET']);
+        // No sub-route the entry would also open.
+        expect(fs.readdirSync(DIR)).toEqual(['route.ts']);
+    });
+
+    it('the GET verifies the token before it reads the switches', () => {
+        const body = codeOnly(declarationOf(src, 'GET'));
+        const gate = body.search(/verifyEvalsSwitchReadToken\s*\(/);
+        const read = body.search(/readEvalNightlySwitchesForCi\s*\(/);
+        expect(gate).toBeGreaterThan(-1);
+        expect(read).toBeGreaterThan(gate);
+    });
+
+    it('opens the exact path and nothing beside it', () => {
+        expect(isPublicPath('/api/evals/nightly-switches')).toBe(true);
+        expect(isPublicPath('/api/evals')).toBe(false);
+        expect(isPublicPath('/api/evals/other')).toBe(false);
+        expect(isPublicPath('/api/evals/nightly-switches-admin')).toBe(false);
     });
 });

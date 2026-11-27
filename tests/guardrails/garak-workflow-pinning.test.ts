@@ -198,10 +198,15 @@ describe('garak skips cleanly without its CI key', () => {
         expect(steps[0].run).toMatch(/present=false/);
     });
 
-    // Owner decision 2026-11-12: the nightly is off unless the repository
-    // variable says otherwise; a manual dispatch always runs.
-    it('a scheduled run is skipped unless GARAK_ENABLED is "true"', () => {
-        expect(steps[0].env?.ENABLED).toBe('${{ vars.GARAK_ENABLED }}');
+    // Owner decisions 2026-11-12 and 2026-11-27: the nightly is off unless the
+    // product's switch says otherwise, read from production over the CI token
+    // (tests/unit/evaluation-nightlies.test.ts runs the gate); a manual
+    // dispatch always runs.
+    it('a scheduled run is skipped unless the product switch for garak is on', () => {
+        expect(steps[0].env?.ENABLED).toBeUndefined();
+        expect(steps[0].env?.NIGHTLY).toBe('garak');
+        expect(steps[0].env?.SWITCH_URL).toBe('${{ vars.EVALS_SWITCH_URL }}');
+        expect(steps[0].env?.SWITCH_TOKEN).toBe('${{ secrets.EVALS_SWITCH_READ_TOKEN }}');
         expect(steps[0].env?.EVENT).toBe('${{ github.event_name }}');
         expect(steps[0].run).toContain('if [ "$EVENT" = "schedule" ] && [ "$ENABLED" != "true" ]; then');
     });

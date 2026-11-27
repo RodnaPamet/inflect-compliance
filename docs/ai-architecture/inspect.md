@@ -85,6 +85,27 @@ flowchart LR
   (`scripts/inspect-seed.ts`, the four seed tenants). No record exists yet:
   the key is an owner action.
 
+### The nightly's switch
+
+Owner decision 2026-11-27: the nightly is switched **in the product**, not by
+a GitHub repository variable. The state is the `inspect` row of the
+platform-level `EvalNightlySwitch` table (an absent row is off), shown as an
+On/Off badge on the **Evaluations** card of `/org/<slug>/settings`. Only an
+org owner of an operator organization (named in `EVALS_SWITCH_ORG_SLUGS`)
+gets the switch; every change is audited `ORG_EVAL_NIGHTLY_SWITCHED` on that
+organization's chain.
+
+On each scheduled run, the first step of `agent-evals.yml` asks production,
+`GET` on the repository variable `EVALS_SWITCH_URL` with
+`Authorization: Bearer` the secret `EVALS_SWITCH_READ_TOKEN`, and runs only
+when the answer's `inspect` is `true`. It fails closed: an unset URL or token, a
+failed request, a status other than 200, or an answer that is not a boolean
+for `inspect` leaves the nightly off, with a warning naming the reason class and
+never the token or the body. A manual dispatch runs once whatever the switch
+says, and asks nothing. Production holds no GitHub credential. The operator
+setup (the two env vars in `.env.prod`, the secret and the variable on GitHub)
+is in `docs/deployment.md`; the repository variable this replaced is retired.
+
 ## Fit, and what is deliberately not adopted
 
 **Adopted.** Inspect (MIT) as the harness for *governed-run evaluations*: a
@@ -267,8 +288,11 @@ and, for the seed,
 - [x] 1.5 `.github/workflows/agent-evals.yml`: nightly, both engines, D-EV-6
       budget, skips without `INSPECT_CI_ANTHROPIC_KEY` (amended 2026-11-12,
       owner: it falls back to the existing `ANTHROPIC_API_KEY` secret, and a
-      scheduled run is skipped unless the repository variable
-      `AGENT_EVALS_ENABLED` is `true`; a manual dispatch always runs), record validated and
+      scheduled run is skipped unless its switch is on; a manual dispatch
+      always runs. Since 2026-11-27 (owner decision) the switch is the
+      product's: the "inspect" switch on the org settings page's Evaluations
+      card, read by the workflow from production over a CI token, failing
+      closed — see "The nightly's switch" below), record validated and
       uploaded for a person to commit, dated `AGENT-EVAL-NON-BLOCKING-UNTIL:`
       marker parsed by a guard. With the fallback key, which is
       organisation-level, the app and worker are given

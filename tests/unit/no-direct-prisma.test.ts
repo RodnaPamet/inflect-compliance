@@ -144,6 +144,13 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // gated by canViewPortfolio, set by canManageAgentSwitches (ORG_ADMIN),
         // audited via ORG_AGENT_TURN_CAPS_CHANGED.
         'org-agent-turn-caps.ts',
+        // Owner decision 2026-11-27 — the LLM evaluation nightlies' switches,
+        // rows of the PLATFORM-level EvalNightlySwitch table (no tenantId, no
+        // RLS, like PlatformAgentKillSwitch). Read by the org settings card
+        // (org admin tier) and by the CI endpoint behind its bearer token; set
+        // by an ORG_OWNER of an operator organization (canSwitchEvalNightlies +
+        // EVALS_SWITCH_ORG_SLUGS), audited via ORG_EVAL_NIGHTLY_SWITCHED.
+        'eval-nightly-switches.ts',
         // ORG_INITIATIVES — org-scoped programme tracking; global prisma for
         // initiatives/links + withTenantDb for cross-tenant progress rollup.
         'org-security-initiative.ts',

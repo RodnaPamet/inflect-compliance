@@ -88,6 +88,8 @@ const KEPT_IN_ENGLISH: Readonly<Record<string, string>> = {
         "Product name, as admin.agentDetail.spending.rail.AP4M (#5333): Mastercard's own name for its machine-payments rail.",
     'agents.orphanPass.servicePrincipal':
         'Owner decision 2026-10-30 (#4553): "service principal" stays Microsoft\'s English term, as in Microsoft\'s Bulgarian documentation, and the line has nothing else to translate.',
+    'org.audit.evalNightly.garak':
+        'Product name: the NVIDIA LLM red-teaming tool spells itself in lowercase (owner decision 2026-11-27, the evaluation nightlies\' switches).',
 };
 
 describe('Bulgarian copy is Bulgarian (#4553)', () => {

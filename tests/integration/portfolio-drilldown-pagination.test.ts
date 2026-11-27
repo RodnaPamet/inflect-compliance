@@ -57,6 +57,7 @@ describeFn('Portfolio drill-down — cursor pagination (DB-backed)', () => {
             canSetMaturity: true,
             canManageAgentSwitches: true,
             canManageOwners: false,
+            canSwitchEvalNightlies: false,
             },
         };
     }
