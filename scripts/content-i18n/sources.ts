@@ -20,6 +20,8 @@ const TEXT_KEYS: ReadonlySet<string> = new Set([
     'name', 'title', 'description', 'summary', 'objective', 'guidance', 'annotation', 'rationale',
     'category', 'section', 'text', 'hint', 'prompt', 'label', 'question', 'helpText', 'evidenceHint',
     'suggestedRole', 'en',
+    // Control templates: shown on the control detail page (#5996).
+    'successCriteria', 'testingMethodology', 'defaultOwnerHint',
 ]);
 /**
  * The subset of `TEXT_KEYS` that is a HEADING: what lists, menus and pickers
