@@ -7,7 +7,6 @@ import { render, screen, waitFor } from '@testing-library/react';
 
 let locale = 'bg';
 jest.mock('next-intl', () => ({ useLocale: () => locale }));
-jest.mock('next/navigation', () => ({ useParams: () => ({ tenantSlug: 'acme' }) }));
 
 import { ContentText } from '@/components/ContentText';
 import { _resetContentTextCache } from '@/lib/content-i18n/use-content-text';
@@ -16,6 +15,7 @@ const fetchMock = jest.fn();
 
 beforeEach(() => {
     locale = 'bg';
+    window.history.pushState({}, '', '/t/acme/controls');
     _resetContentTextCache();
     fetchMock.mockReset();
     fetchMock.mockImplementation(async (_url: string, init: { body: string }) => {
@@ -48,6 +48,14 @@ it('asks once for every text first seen together, and shows the translations tha
 
 it('asks nothing for an English reader', async () => {
     locale = 'en';
+    render(<span data-testid="a"><ContentText text="Check the fire exits" /></span>);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByTestId('a').textContent).toBe('Check the fire exits');
+    expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it('asks nothing on a page outside a workspace', async () => {
+    window.history.pushState({}, '', '/org/acme/settings');
     render(<span data-testid="a"><ContentText text="Check the fire exits" /></span>);
     await new Promise((r) => setTimeout(r, 20));
     expect(screen.getByTestId('a').textContent).toBe('Check the fire exits');
