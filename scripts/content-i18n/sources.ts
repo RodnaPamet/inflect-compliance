@@ -21,6 +21,13 @@ const TEXT_KEYS: ReadonlySet<string> = new Set([
     'category', 'section', 'text', 'hint', 'prompt', 'label', 'question', 'helpText', 'evidenceHint',
     'suggestedRole', 'en',
 ]);
+/**
+ * The subset of `TEXT_KEYS` that is a HEADING: what lists, menus and pickers
+ * show. Translated first across every family (owner decision 2026-11-27);
+ * descriptions, steps and guidance follow family by family.
+ */
+const HEADING_KEYS: ReadonlySet<string> = new Set(['name', 'title', 'category', 'section', 'label', 'suggestedRole']);
+
 /** Keys whose value is a list of strings a person reads. */
 const TEXT_LIST_KEYS: ReadonlySet<string> = new Set(['checklist', 'artifacts', 'steps', 'options', 'examples']);
 
@@ -68,22 +75,25 @@ function isProse(value: string): boolean {
     return true;
 }
 
-function collect(node: unknown, out: Set<string>): void {
+function collect(node: unknown, out: Set<string>, headings?: Set<string>): void {
     if (Array.isArray(node)) {
-        for (const item of node) collect(item, out);
+        for (const item of node) collect(item, out, headings);
         return;
     }
     if (!node || typeof node !== 'object') return;
     for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
         if (typeof value === 'string') {
-            if (TEXT_KEYS.has(key) && isProse(value)) out.add(contentKey(value));
+            if (TEXT_KEYS.has(key) && isProse(value)) {
+                out.add(contentKey(value));
+                if (HEADING_KEYS.has(key)) headings?.add(contentKey(value));
+            }
         } else if (Array.isArray(value) && TEXT_LIST_KEYS.has(key)) {
             for (const item of value) {
                 if (typeof item === 'string' && isProse(item)) out.add(contentKey(item));
-                else collect(item, out);
+                else collect(item, out, headings);
             }
         } else {
-            collect(value, out);
+            collect(value, out, headings);
         }
     }
 }
@@ -95,6 +105,18 @@ function filesIn(dir: string, extensions: readonly string[]): string[] {
         .filter((f) => extensions.some((e) => f.endsWith(e)))
         .sort()
         .map((f) => path.join(abs, f));
+}
+
+/** Every catalogue string that is a heading somewhere (see `HEADING_KEYS`). */
+export function catalogueHeadings(): Set<string> {
+    const headings = new Set<string>();
+    const sink = new Set<string>();
+    for (const file of filesIn('prisma/fixtures', ['.json'])) collect(JSON.parse(fs.readFileSync(file, 'utf8')), sink, headings);
+    for (const file of [...filesIn('src/data/libraries', ['.yaml']), ...filesIn('prisma/catalogs', ['.yaml'])]) {
+        collect(yaml.load(fs.readFileSync(file, 'utf8')), sink, headings);
+    }
+    for (const title of GENERIC_TEMPLATE_TASK_TITLES) headings.add(contentKey(title));
+    return headings;
 }
 
 /** family → its strings, sorted. Strings in two or more families are under `shared` only. */
