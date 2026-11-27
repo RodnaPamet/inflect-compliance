@@ -38,7 +38,7 @@ import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { AppIcon } from '@/components/icons/AppIcon';
 import { Plus, Trash } from '@inflect/ui/components/ui/icons/glyphs';
 import { ViewsMenu } from '@/components/ui/views-menu';
-import { Paperclip, ChevronDown, ChevronLeft } from 'lucide-react';
+import { Paperclip, ChevronDown, ChevronLeft, PanelRight, PanelRightClose } from 'lucide-react';
 import {
     createColumns,
     useColumnsDropdown,
@@ -62,7 +62,7 @@ import {
     type FilterType,
 } from '@/components/ui/filter';
 import { EntityListPage } from '@/components/layout/EntityListPage';
-import { useThresholdLoadMore, useKeyboardShortcut, useToast, useToastWithUndo } from '@/components/ui/hooks';
+import { useThresholdLoadMore, useKeyboardShortcut, useToast, useToastWithUndo, useLocalStorage } from '@/components/ui/hooks';
 import { AsidePanel } from '@/components/ui/aside-panel';
 import {
     Accordion,
@@ -1288,6 +1288,29 @@ function ControlsPageInner({
         setSelectedTask(null);
         setSelectedControl(null);
     }, []);
+    // The side panel is optional (the toggle right of "Views"), remembered per
+    // browser and tenant. ON (the default): a single click on a control name or
+    // a task opens its quick-view in the docked side column. OFF: the side
+    // column is not rendered at all, so the table takes the full width, and a
+    // single click opens the control's or the task's own page instead.
+    // A double click opens the page either way.
+    const [sidePanelEnabled, setSidePanelEnabled] = useLocalStorage<boolean>(
+        `inflect:controls-side-panel:${tenantSlug}`,
+        true,
+    );
+    const toggleSidePanel = useCallback(() => {
+        // Turning it off drops an open quick-view with the column.
+        if (sidePanelEnabled) closeQuickView();
+        setSidePanelEnabled(!sidePanelEnabled);
+    }, [sidePanelEnabled, setSidePanelEnabled, closeQuickView]);
+    const openControlPage = useCallback(
+        (c: ControlListItem) => guardedPush(tenantHref(`/controls/${c.id}`)),
+        [guardedPush, tenantHref],
+    );
+    const openTaskPage = useCallback(
+        (task: ControlTask) => guardedPush(tenantHref(`/tasks/${task.id}`)),
+        [guardedPush, tenantHref],
+    );
     // After an inline panel edit, refresh the controls list so the new
     // name / owner / category show without a manual reload…
     const handlePanelSaved = useCallback(async () => {
@@ -1348,12 +1371,13 @@ function ControlsPageInner({
                     controlCategory={category ? categoryLabel(category) : null}
                     columnIds={columnIds}
                     renderEvidence={renderTaskEvidence}
-                    onTaskClick={setSelectedTask}
+                    onTaskClick={sidePanelEnabled ? setSelectedTask : openTaskPage}
+                    onTaskOpen={openTaskPage}
                     refreshToken={taskRefreshToken}
                 />
             );
         },
-        [tenantSlug, renderTaskEvidence, taskRefreshToken, categoryLabel],
+        [tenantSlug, renderTaskEvidence, taskRefreshToken, categoryLabel, sidePanelEnabled, openTaskPage],
     );
     const handleRowSelectionChange = useCallback(
         (rows: Row<ControlListItem>[]) =>
@@ -1395,13 +1419,24 @@ function ControlsPageInner({
             // isClickOnInteractiveChild() skips the row's select/navigate
             // handlers: name-click = quick-view + expand tasks; row
             // single-click = select; row double-click = full detail page.
+            // With the side panel switched off the name opens the control's
+            // page on a single click instead, and a double click on the name
+            // opens it either way (the button stops the row's own handler).
             // On a phone card the card itself opens the control, so
             // `TableTitleButton` renders the name as text there.
             cell: ({ row }) => (
                 <TableTitleButton
                     onClick={() => {
+                        if (!sidePanelEnabled) {
+                            openControlPage(row.original);
+                            return;
+                        }
                         openControlQuickView(row.original);
                         if (row.getCanExpand()) row.toggleExpanded(true);
+                    }}
+                    onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        openControlPage(row.original);
                     }}
                     id={`control-link-${row.original.id}`}
                     testId={`control-title-${row.original.id}`}
@@ -1695,7 +1730,7 @@ function ControlsPageInner({
     // `canEditControls` and the already-memoised callbacks, not those props
     // directly. They were in the array while the file-wide
     // `react-hooks/exhaustive-deps` disable hid the rule's opinion either way.
-    ]), showDeleted), [taskStats, openControlQuickView, verdictMap, showDeleted, handleRestore, deletedByLabel, t, FREQ_LABELS, STATUS_LABELS, sortAccessors, categoryLabel]);
+    ]), showDeleted), [taskStats, openControlQuickView, sidePanelEnabled, openControlPage, verdictMap, showDeleted, handleRestore, deletedByLabel, t, FREQ_LABELS, STATUS_LABELS, sortAccessors, categoryLabel]);
 
     // `orderColumns` spreads its input, so it returns a NEW array every
     // call — calling it inline in the `table` object would undo the memo
@@ -1999,7 +2034,17 @@ function ControlsPageInner({
     const composedAside = quickViewAside ? (
         // `xl:h-full xl:min-h-0` passes the bounded aside height down to the
         // panel card so its content scrolls (the card caps via max-h-full).
-        <div className="flex flex-col gap-default xl:h-full xl:min-h-0">{quickViewAside}</div>
+        //
+        // The quick-view reads at the TABLE's type scale: the record's title
+        // stays 14px (the table's name column), and everything else drops to
+        // the table's 12px (its other cells and headers). The field labels
+        // (`<Label>` and the panels' own `<label>`s) and the tabs are 14px in
+        // the panels themselves, and the panel body inherits the page's 16px;
+        // both override here rather than in the panels, because the task panel
+        // is shared with the Tasks pages, whose scale this does not change.
+        <div className="flex flex-col gap-default xl:h-full xl:min-h-0 text-xs [&_label]:text-xs [&_[role=tab]]:text-xs">
+            {quickViewAside}
+        </div>
     ) : (
         <div className="flex flex-col gap-default xl:h-full xl:min-h-0">
             {browseAside}
@@ -2010,7 +2055,7 @@ function ControlsPageInner({
     return (
         <EntityListPage<ControlListItem>
             className="animate-fadeIn gap-section"
-            aside={composedAside}
+            aside={sidePanelEnabled ? composedAside : undefined}
             banner={
                 <>
                     <TruncationBanner truncated={truncated} />
@@ -2212,6 +2257,22 @@ function ControlsPageInner({
                                 },
                             ]}
                         />
+                        <Tooltip content={sidePanelEnabled ? t('list.sidePanel.hide') : t('list.sidePanel.show')}>
+                            <button
+                                type="button"
+                                id="controls-side-panel-toggle"
+                                aria-pressed={sidePanelEnabled}
+                                aria-label={t('list.sidePanel.toggle')}
+                                onClick={toggleSidePanel}
+                                className={buttonVariants({ variant: 'secondary', size: 'icon' })}
+                            >
+                                {sidePanelEnabled ? (
+                                    <PanelRightClose className="size-4" aria-hidden />
+                                ) : (
+                                    <PanelRight className="size-4" aria-hidden />
+                                )}
+                            </button>
+                        </Tooltip>
                         {/* R2-P3 — the controls dashboard is a read-only KPI
                             view; ungated from controls.create so READERs
                             (who can't create) can still see posture. Only the

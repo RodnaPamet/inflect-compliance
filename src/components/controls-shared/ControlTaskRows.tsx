@@ -43,6 +43,7 @@ export function ControlTaskRows({
     columnIds,
     renderEvidence,
     onTaskClick,
+    onTaskOpen,
     refreshToken,
 }: {
     tenantSlug: string;
@@ -61,8 +62,13 @@ export function ControlTaskRows({
      * exactly (keeps the lucide import on the page, not here).
      */
     renderEvidence?: (count: number) => ReactNode;
-    /** Whole-row click → task quick-view in the side panel. */
+    /**
+     * Whole-row single click: the task quick-view in the side panel, or the
+     * task page when the page's side panel is switched off.
+     */
     onTaskClick?: (task: ControlTask) => void;
+    /** Whole-row double click: opens the task's own page. */
+    onTaskOpen?: (task: ControlTask) => void;
     /**
      * Monotonic refresh token. The fetch keys on `[tenantSlug, controlId]`,
      * which never change while a task is edited in the side-panel quick-view —
@@ -172,7 +178,8 @@ export function ControlTaskRows({
                     data-control-task={t.id}
                     data-task-quickview={t.id}
                     onClick={onTaskClick ? () => onTaskClick(t) : undefined}
-                    className={`group/subrow bg-bg-subtle/30 ${onTaskClick ? "cursor-pointer hover:bg-bg-muted/50" : ""} transition-colors`}
+                    onDoubleClick={onTaskOpen ? () => onTaskOpen(t) : undefined}
+                    className={`group/subrow bg-bg-subtle/30 ${onTaskClick || onTaskOpen ? "cursor-pointer hover:bg-bg-muted/50" : ""} transition-colors`}
                 >
                     {columnIds.map((columnId) => {
                         const isUtility = columnId === "select" || columnId === "menu";
