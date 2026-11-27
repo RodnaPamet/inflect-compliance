@@ -15,6 +15,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
+import { ContentText } from '@/components/ContentText';
 
 interface ControlRef {
     id: string;
@@ -123,7 +124,7 @@ export function InheritedEvidencePanel({
             cell: ({ row }) =>
                 row.original.control ? (
                     <TableTitleCell href={tenantHref(`/controls/${row.original.control.id}`)}>
-                        {row.original.control.code || row.original.control.annexId || row.original.control.name}
+                        {row.original.control.code || row.original.control.annexId || <ContentText text={row.original.control.name} />}
                     </TableTitleCell>
                 ) : (
                     <span className="text-xs text-content-subtle">—</span>

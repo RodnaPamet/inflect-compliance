@@ -27,6 +27,7 @@ import { Modal } from '@/components/ui/modal';
 import { NumberStepper } from '@/components/ui/number-stepper';
 import { Textarea } from '@/components/ui/textarea';
 import { UserCombobox } from '@/components/ui/user-combobox';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 export interface EditControlForm {
     name: string;
@@ -110,13 +111,14 @@ export function EditControlModal({
     onSubmit,
 }: EditControlModalProps) {
     const tx = useTranslations('controls');
+    const tc = useContentText();
     // Preserve a non-theme current category (legacy free-text / framework-seed
     // granular / custom) as its own option so it displays honestly and
     // round-trips — the editor must never silently drop a value it merely
     // failed to resolve against the four ISO themes.
     const resolvedCategoryOptions: ComboboxOption[] =
         form.category && !categoryOptions.some((o) => o.value === form.category)
-            ? [...categoryOptions, { value: form.category, label: form.category }]
+            ? [...categoryOptions, { value: form.category, label: tc(form.category) }]
             : categoryOptions;
     const AUTOMATION_TYPE_OPTIONS = buildAutomationTypeOptions(tx);
     const MITIGATION_TYPE_OPTIONS = buildMitigationTypeOptions(tx);

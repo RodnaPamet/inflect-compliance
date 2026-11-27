@@ -153,7 +153,7 @@ describe('audits/cycles — framework options', () => {
 describe('NewRiskModal — templateOptions', () => {
     it('projects the fetched templates into ComboboxOption shape', () => {
         expect(RISK_MODAL_SRC).toMatch(/templateOptions\s*=\s*useMemo/);
-        expect(RISK_MODAL_SRC).toMatch(/tmpl\.category\s*\?\s*`\$\{tmpl\.title\}/);
+        expect(RISK_MODAL_SRC).toMatch(/tmpl\.category\s*\?\s*`\$\{tc\(tmpl\.title\)\}/);
     });
 
     it('forwards the loading state to the Combobox', () => {
@@ -185,7 +185,7 @@ describe('Evidence forms — control linker', () => {
 
     it('folds annex id, code and name into the option label', () => {
         expect(EVIDENCE_CONTROLS_FIELD).toMatch(
-            /`\$\{c\.annexId \|\| c\.code \|\| tx\('formFields\.customControl'\)\}: \$\{c\.name\}`/,
+            /`\$\{c\.annexId \|\| c\.code \|\| tx\('formFields\.customControl'\)\}: \$\{tc\(c\.name\)\}`/,
         );
     });
 

@@ -17,6 +17,8 @@ import { useRiskMatrixConfig } from '@/lib/hooks/use-risk-matrix-config';
 import { resolveBandTone, type RiskSeverityTone } from '@/lib/risk-matrix/scoring';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { cn } from '@inflect/ui/lib/cn';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
+import { ContentText } from '@/components/ContentText';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -107,6 +109,7 @@ const CRITICALITY_VARIANT: Record<Criticality, StatusBadgeVariant> = {
 
 export function CoverageClient({ data, tenantSlug }: CoverageClientProps) {
     const t = useTranslations('coverage');
+    const tc = useContentText();
     const tenantHref = useTenantHref();
     const guardedPush = useGuardedPush();
     const { config: matrixConfig } = useRiskMatrixConfig();
@@ -117,8 +120,8 @@ export function CoverageClient({ data, tenantSlug }: CoverageClientProps) {
         {
             accessorKey: 'title',
             header: t('colRisk'),
-            cell: ({ getValue }) => (
-                <span className="font-medium text-content-emphasis">{getValue()}</span>
+            cell: ({ row }) => (
+                <span className="font-medium text-content-emphasis"><ContentText text={row.original.title} /></span>
             ),
         },
         {
@@ -374,7 +377,7 @@ export function CoverageClient({ data, tenantSlug }: CoverageClientProps) {
                                     )}
                                 </div>
                                 <p className="text-sm font-medium text-content-emphasis group-hover:text-[var(--brand-muted)] transition-colors line-clamp-2">
-                                    {ctrl.name}
+                                    {tc(ctrl.name)}
                                 </p>
                                 <p className="text-xs text-content-muted mt-1">
                                     {t('mitigates')} <span className="text-content-emphasis font-semibold">{ctrl.riskCount}</span> {ctrl.riskCount === 1 ? t('riskWordOne') : t('riskWordOther')}

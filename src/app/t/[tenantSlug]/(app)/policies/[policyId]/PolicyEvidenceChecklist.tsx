@@ -10,6 +10,7 @@ import { Heading, textLinkVariants } from '@/components/ui/typography';
 import Link from 'next/link';
 import type { PolicyEvidenceItemDTO } from '@/lib/dto/policy.dto';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface Props {
     policyId: string;
@@ -28,6 +29,7 @@ interface EvidenceOption { value: string; label: string }
  */
 export function PolicyEvidenceChecklist({ policyId, items, canWrite, onChanged }: Props) {
     const t = useTranslations('policies');
+    const tc = useContentText();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const [options, setOptions] = useState<EvidenceOption[]>([]);
@@ -97,7 +99,7 @@ export function PolicyEvidenceChecklist({ policyId, items, canWrite, onChanged }
                         className="flex items-start justify-between gap-compact p-compact"
                     >
                         <div className="flex-1 min-w-0">
-                            <span className="text-sm">{item.label}</span>
+                            <span className="text-sm">{tc(item.label)}</span>
                             {item.evidence && (
                                 <div className="mt-0.5 text-xs">
                                     <Link

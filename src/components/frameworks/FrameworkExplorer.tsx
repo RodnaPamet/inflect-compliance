@@ -57,6 +57,7 @@ import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 import { useIsBelowMd } from '@/components/ui/hooks';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // ─── Coverage shapes (subset of the existing coverage usecase output) ──
 
@@ -91,6 +92,7 @@ export function FrameworkExplorer({
     onRequirementSelected,
 }: FrameworkExplorerProps) {
     const t = useTranslations('panels.framework');
+    const tc = useContentText();
     // ── Derived: per-requirement control mappings, keyed by code. ────
     // The coverage usecase keys by `requirementCode` (not id), so we
     // build a lookup once and reuse it on every selection.
@@ -114,14 +116,18 @@ export function FrameworkExplorer({
             // "people" surfaces the whole PEOPLE theme. Requirements
             // match on code OR title.
             if (node.kind === 'section') {
-                return node.label.toLowerCase().includes(trimmed);
+                return (
+                    node.label.toLowerCase().includes(trimmed) ||
+                    tc(node.label).toLowerCase().includes(trimmed)
+                );
             }
             return (
                 (node.code ?? '').toLowerCase().includes(trimmed) ||
-                node.title.toLowerCase().includes(trimmed)
+                node.title.toLowerCase().includes(trimmed) ||
+                tc(node.title).toLowerCase().includes(trimmed)
             );
         });
-    }, [tree.nodes, trimmed]);
+    }, [tree.nodes, trimmed, tc]);
 
     // ── Expansion state. ──────────────────────────────────────────────
     // While a search is active we auto-expand every matching ancestor
@@ -333,7 +339,7 @@ export function FrameworkExplorer({
                         onExpandedChange={handleExpandedChange}
                         selectedId={selectedId}
                         onSelect={handleSelect}
-                        ariaLabel={t('requirementsAria', { name: tree.framework.name })}
+                        ariaLabel={t('requirementsAria', { name: tc(tree.framework.name) })}
                         renderItem={(node, ctx) => (
                             <FrameworkTreeRow
                                 node={node}
@@ -448,6 +454,7 @@ function FrameworkTreeRow({
 }: FrameworkTreeRowProps) {
     const t = useTranslations('panels.framework');
     const tRoot = useTranslations();
+    const tc = useContentText();
     // Epic 46.3 — compliance status comes from the server. Sections
     // get the aggregated status; requirements get their own. When
     // the tree was loaded without coverage context the status falls
@@ -523,7 +530,7 @@ function FrameworkTreeRow({
             id={node.id}
             label={
                 isSection ? (
-                    frameworkSectionLabel(node.label, tRoot)
+                    tc(frameworkSectionLabel(node.label, tRoot))
                 ) : (
                     // A requirement code never breaks mid-token ("A-/5.1").
                     <span className="whitespace-nowrap">{node.label}</span>
@@ -535,7 +542,7 @@ function FrameworkTreeRow({
                     // the code instead of dropping to a line of its own.
                     <span className="max-md:inline md:inline-flex md:items-center md:gap-1.5">
                         {indicator && <span className="max-md:mr-1.5 max-md:inline-block md:contents">{indicator}</span>}
-                        <span>{node.title}</span>
+                        <span>{tc(node.title)}</span>
                     </span>
                 )
             }
@@ -566,12 +573,13 @@ function FrameworkTreeRow({
 function SectionDetail({ node }: { node: FrameworkTreeNode }) {
     const t = useTranslations('panels.framework');
     const tRoot = useTranslations();
+    const tc = useContentText();
     return (
         <div className="p-5">
             <p className="text-xs uppercase tracking-wider text-content-subtle mb-1">
                 {t('section')}
             </p>
-            <Heading level={2}>{frameworkSectionLabel(node.label, tRoot)}</Heading>
+            <Heading level={2}>{tc(frameworkSectionLabel(node.label, tRoot))}</Heading>
             <p className="text-xs text-content-muted mt-2">
                 {node.descendantCount === 1
                     ? t('sectionCountOne', { count: node.descendantCount })
@@ -590,6 +598,7 @@ function RequirementDetail({
 }) {
     const t = useTranslations('panels.framework');
     const tr = useTranslations();
+    const tc = useContentText();
     const CONTROL_STATUS_LABELS: Record<string, string> = {
         NOT_STARTED: tr('controls.statusLabels.NOT_STARTED'), IN_PROGRESS: tr('controls.statusLabels.IN_PROGRESS'),
         IMPLEMENTED: tr('controls.statusLabels.IMPLEMENTED'), NEEDS_REVIEW: tr('controls.statusLabels.NEEDS_REVIEW'),
@@ -607,7 +616,7 @@ function RequirementDetail({
                         {node.code}
                     </code>
                     <Heading level={2}>
-                        {node.title}
+                        {tc(node.title)}
                     </Heading>
                     {node.complianceStatus && (
                         <ComplianceStatusIndicator
@@ -624,7 +633,7 @@ function RequirementDetail({
 
             {node.description && (
                 <p className="text-sm text-content-muted whitespace-pre-line">
-                    {node.description}
+                    {tc(node.description)}
                 </p>
             )}
 
@@ -639,7 +648,7 @@ function RequirementDetail({
                                 <code className="font-mono text-[var(--brand-default)] mr-2">
                                     {c.code}
                                 </code>
-                                {c.title}
+                                {tc(c.title)}
                             </li>
                         ))}
                     </ul>
@@ -670,7 +679,7 @@ function RequirementDetail({
                                     {c.controlCode}
                                 </code>
                                 <span className="text-content-default flex-1 truncate">
-                                    {c.controlName}
+                                    {tc(c.controlName)}
                                 </span>
                                 <StatusBadge variant={c.controlStatus === 'IMPLEMENTED'
                                             ? 'success'

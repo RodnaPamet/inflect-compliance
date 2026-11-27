@@ -266,16 +266,20 @@ export function assigneeOptionsFromTasks(
 
 export function controlOptionsFromTasks(
     tasks: ReadonlyArray<TaskControlLike>,
+    // Catalogue content lookup (`useContentText()`): a control installed from a
+    // template is named in the reader's language. The option VALUE is unchanged.
+    tc: (text: string) => string = (text) => text,
 ): FilterOption[] {
     const seen = new Map<string, FilterOption>();
     for (const t of tasks) {
         for (const c of [t.control, ...(t.linkedControls ?? [])]) {
             if (!c?.id || seen.has(c.id)) continue;
             const prefix = c.annexId || c.code || '';
+            const name = c.name ? tc(c.name) : c.name;
             seen.set(c.id, {
                 value: c.id,
-                label: prefix ? `${prefix}: ${c.name ?? ''}` : (c.name ?? c.id),
-                displayLabel: prefix || c.name || c.id,
+                label: prefix ? `${prefix}: ${name ?? ''}` : (name ?? c.id),
+                displayLabel: prefix || name || c.id,
             });
         }
     }
@@ -297,9 +301,11 @@ export function buildTaskFilters(
      * used and a chip that cannot be labelled.
      */
     currentUserId?: string | null,
+    /** Catalogue content lookup (`useContentText()`), for the control names. */
+    tc?: (text: string) => string,
 ) {
     const assigneeOpts = assigneeOptionsFromTasks(tasks);
-    const controlOpts = controlOptionsFromTasks(tasks);
+    const controlOpts = controlOptionsFromTasks(tasks, tc);
     // "Me" — the card is already labelled "Awaiting review", so the chip
     // reads "Awaiting review: Me". Repeating the whole phrase here would
     // also collide with the quick toggle's own accessible name.

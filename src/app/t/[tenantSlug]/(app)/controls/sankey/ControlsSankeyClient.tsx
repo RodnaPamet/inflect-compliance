@@ -15,11 +15,13 @@
  * surface, not a long-running workspace.
  */
 
+import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { SankeyChart } from '@/components/ui/SankeyChart';
 import type { TraceabilityGraph } from '@/lib/traceability-graph/types';
 import { Heading } from '@/components/ui/typography';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 export interface ControlsSankeyClientProps {
     initialGraph: TraceabilityGraph;
@@ -29,6 +31,21 @@ export function ControlsSankeyClient({
     initialGraph,
 }: ControlsSankeyClientProps) {
     const t = useTranslations('controls');
+    const tc = useContentText();
+    // Node labels that can hold catalogue text, in the reader's language: a
+    // risk's title, and a control's name (the label only when the control has
+    // no code; with a code the label IS the code and the name is `secondary`).
+    const graph = useMemo(
+        () => ({
+            ...initialGraph,
+            nodes: initialGraph.nodes.map((n) =>
+                n.kind === 'risk' || (n.kind === 'control' && n.secondary === null)
+                    ? { ...n, label: tc(n.label) }
+                    : n,
+            ),
+        }),
+        [initialGraph, tc],
+    );
     // R14-PR7 — standalone search input retired (the user's
     // directive: per-page searchbars die; users search via the
     // global command palette or page filters). For sankey
@@ -63,7 +80,7 @@ export function ControlsSankeyClient({
             {/* Below `md` the chart itself lists the flows, after a notice
                 that the diagram is drawn for a larger screen (owner
                 decision, 2026-11-23; `SankeyFlowList`). */}
-            <SankeyChart graph={initialGraph} searchQuery="" />
+            <SankeyChart graph={graph} searchQuery="" />
         </div>
     );
 }

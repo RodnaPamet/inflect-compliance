@@ -110,6 +110,9 @@ interface PolicyLike {
 export function categoryOptionsFromPolicies(
     policies: ReadonlyArray<PolicyLike>,
     knownCategories: ReadonlyArray<string> = [],
+    // Catalogue content lookup (`useContentText()`): a category a template
+    // filled is shown in the reader's language. The option VALUE is unchanged.
+    tc: (text: string) => string = (text) => text,
 ): FilterOption[] {
     const seen = new Set<string>();
     for (const c of knownCategories) {
@@ -122,7 +125,7 @@ export function categoryOptionsFromPolicies(
     }
     return Array.from(seen)
         .sort((a, b) => a.localeCompare(b))
-        .map((value) => ({ value, label: value }));
+        .map((value) => ({ value, label: tc(value) }));
 }
 
 export function buildPolicyFilters(
@@ -130,8 +133,10 @@ export function buildPolicyFilters(
     t: T = (k) => k,
     tGroup: TGroup = (k) => k,
     knownCategories: ReadonlyArray<string> = [],
+    /** Catalogue content lookup (`useContentText()`), for the category labels. */
+    tc?: (text: string) => string,
 ) {
-    const categoryOpts = categoryOptionsFromPolicies(policies, knownCategories);
+    const categoryOpts = categoryOptionsFromPolicies(policies, knownCategories, tc);
     return buildPolicyFilterDefs(t, tGroup).filters.map((f) =>
         f.key === 'category' ? { ...f, options: categoryOpts } : f,
     );

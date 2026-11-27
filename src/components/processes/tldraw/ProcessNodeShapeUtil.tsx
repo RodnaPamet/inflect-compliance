@@ -77,6 +77,7 @@ import { NODE_LINK_FIELD, linkFieldForNodeType, type LinkedNodeType } from '@/ap
 // the same design property the execution overlay states for itself and the
 // reason `process-shape-render` can keep rendering this util bare.
 import { useCheckpointReview } from '@/lib/processes/canvas-checkpoint-review';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 import {
     NODE_ACCENT_BORDER,
@@ -334,6 +335,21 @@ const CARD_TONE: Record<CardTone, string> = {
     neutral: 'text-content-muted',
 };
 
+const LINKED_TITLE_SEPARATOR = ' · ';
+
+/**
+ * A linked record's `key · name` with the name in the reader's language. The
+ * catalogue translates the name alone, so the title is looked up whole first (a
+ * record with no key) and then by the part after the key, which stays as stored.
+ */
+function linkedTitle(title: string, tc: (text: string) => string): string {
+    const whole = tc(title);
+    const at = title.indexOf(LINKED_TITLE_SEPARATOR);
+    if (whole !== title || at === -1) return whole;
+    const from = at + LINKED_TITLE_SEPARATOR.length;
+    return title.slice(0, from) + tc(title.slice(from));
+}
+
 /**
  * The linked record on a control, risk or asset node: `key · name`, then the
  * kind's facts (a risk's band chip, score and status; a control's status and
@@ -341,7 +357,11 @@ const CARD_TONE: Record<CardTone, string> = {
  * map. Plain text only. The link itself is changed in the inspector, never on
  * the canvas: a gesture on a shape has no path to the governed write.
  */
-function LinkedCardLines({ card, nodeKey }: { card: LinkedCard; nodeKey: string }) {
+function LinkedCardLines({ card, nodeKey, kind }: { card: LinkedCard; nodeKey: string; kind: LinkedNodeType }) {
+    const tc = useContentText();
+    // A linked control or risk reads `key · name`, and the name may be the
+    // catalogue's own (#5996); an asset's name is the workspace's.
+    const title = card.state === 'linked' && kind !== 'asset' ? linkedTitle(card.title, tc) : card.title;
     return (
         <span
             className="flex min-w-0 flex-col"
@@ -354,7 +374,7 @@ function LinkedCardLines({ card, nodeKey }: { card: LinkedCard; nodeKey: string 
                     card.state === 'linked' ? 'text-content-default' : CARD_TONE[card.tone]
                 }`}
             >
-                {card.title}
+                {title}
             </span>
             {card.detail ? (
                 <span className={`flex min-w-0 items-center gap-tight text-xs ${CARD_TONE[card.tone]}`}>
@@ -545,7 +565,9 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
                     {shape.props.subtitle}
                 </span>
             ) : null}
-            {linkCard ? <LinkedCardLines card={linkCard} nodeKey={shape.props.nodeKey || shape.id} /> : null}
+            {linkCard && linkKind ? (
+                <LinkedCardLines card={linkCard} kind={linkKind} nodeKey={shape.props.nodeKey || shape.id} />
+            ) : null}
             {ruleStatus ? (
                 <span
                     className={[

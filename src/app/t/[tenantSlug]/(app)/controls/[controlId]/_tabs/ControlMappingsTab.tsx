@@ -31,6 +31,8 @@ import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
 import { Textarea } from '@/components/ui/textarea';
 import type { FrameworkDTO, RequirementDTO, FrameworkMappingDTO } from '@/lib/dto';
+import { ContentText } from '@/components/ContentText';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // Per-framework applicability override, stored on the ControlRequirementLink.
 // The mappings GET (`/controls/:id/requirements` →
@@ -61,6 +63,7 @@ export function ControlMappingsTab({
 }: ControlMappingsTabProps) {
     const apiUrl = useTenantApiUrl();
     const t = useTranslations('controls');
+    const tc = useContentText();
     const triggerUndoToast = useToastWithUndo();
     const toast = useToast();
 
@@ -264,7 +267,9 @@ export function ControlMappingsTab({
                     header: t('mappingsTab.colFramework'),
                     cell: ({ row }) => (
                         <span className="text-sm text-content-emphasis">
-                            {row.original.fromRequirement?.framework?.name || '—'}
+                            {row.original.fromRequirement?.framework?.name
+                                ? <ContentText text={row.original.fromRequirement?.framework?.name} />
+                                : '—'}
                         </span>
                     ),
                 },
@@ -285,7 +290,9 @@ export function ControlMappingsTab({
                                         {fromReq.code}
                                     </CopyText>
                                 )}
-                                {fromReq?.title || fromReq?.description || '—'}
+                                {fromReq?.title || fromReq?.description
+                                    ? <ContentText text={fromReq?.title || fromReq?.description} />
+                                    : '—'}
                             </span>
                         );
                     },
@@ -384,9 +391,9 @@ export function ControlMappingsTab({
                 <div className={cn(cardVariants({ density: 'compact' }), 'space-y-compact')}>
                     <Combobox
                         id="framework-select"
-                        selected={frameworks.map((f) => ({ value: f.key ?? f.id ?? '', label: f.name })).find((o) => o.value === selectedFramework) ?? null}
+                        selected={frameworks.map((f) => ({ value: f.key ?? f.id ?? '', label: tc(f.name) })).find((o) => o.value === selectedFramework) ?? null}
                         setSelected={(opt) => setSelectedFramework(opt?.value ?? '')}
-                        options={frameworks.map((f) => ({ value: f.key ?? f.id ?? '', label: f.name }))}
+                        options={frameworks.map((f) => ({ value: f.key ?? f.id ?? '', label: tc(f.name) }))}
                         placeholder={t('mappingsTab.selectFramework')}
                         matchTriggerWidth
                     />
@@ -394,9 +401,9 @@ export function ControlMappingsTab({
                         <>
                             <Combobox
                                 id="requirement-select"
-                                selected={requirements.map((r) => ({ value: r.id, label: `${r.code ? `${r.code} — ` : ''}${r.title || r.description}` })).find((o) => o.value === selectedReq) ?? null}
+                                selected={requirements.map((r) => ({ value: r.id, label: `${r.code ? `${r.code} — ` : ''}${tc(r.title || r.description)}` })).find((o) => o.value === selectedReq) ?? null}
                                 setSelected={(opt) => setSelectedReq(opt?.value ?? '')}
-                                options={requirements.map((r) => ({ value: r.id, label: `${r.code ? `${r.code} — ` : ''}${r.title || r.description}` }))}
+                                options={requirements.map((r) => ({ value: r.id, label: `${r.code ? `${r.code} — ` : ''}${tc(r.title || r.description)}` }))}
                                 placeholder={t('mappingsTab.selectRequirement')}
                                 matchTriggerWidth
                             />

@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Combobox } from '@/components/ui/combobox';
 import { Button } from '@/components/ui/button';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 export const DEP_TYPES = ['PROCESS', 'ASSET', 'VENDOR', 'RISK'] as const;
 export type DepType = (typeof DEP_TYPES)[number];
@@ -56,6 +57,7 @@ export function DependencyPickerRow({
     disabled?: boolean;
 }) {
     const tx = useTranslations('audits');
+    const tc = useContentText();
     const depTypeLabel = useDepTypeLabel();
     const [type, setType] = useState<DepType>('ASSET');
     const [options, setOptions] = useState<{ id: string; label: string }[]>([]);
@@ -90,8 +92,9 @@ export function DependencyPickerRow({
     }, [tenantSlug, type]);
 
     const entityOptions = useMemo(
-        () => options.filter((o) => !excludeIds?.includes(o.id)).map((o) => ({ value: o.id, label: o.label })),
-        [options, excludeIds],
+        // A risk's title can be a risk template's; the other targets are named by people.
+        () => options.filter((o) => !excludeIds?.includes(o.id)).map((o) => ({ value: o.id, label: type === 'RISK' ? tc(o.label) : o.label })),
+        [options, excludeIds, type, tc],
     );
 
     const handleAdd = () => {

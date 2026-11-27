@@ -25,6 +25,7 @@ import { VelocityCard } from './VelocityCard';
 import type { DashboardPayload, DashboardSlot } from '@/app-layer/usecases/risk-dashboard';
 import { buildTailByRisk } from '@/lib/risk/per-risk-results';
 import { StatTile } from '../_shared/StatTile';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // B10 — Quantitative risk analytics shape. Mirrors the
 // RiskQuantitativeAnalytics interface in
@@ -114,6 +115,7 @@ export default function RiskDashboardPage() {
     const href = useTenantHref();
     const tenant = useTenantContext();
     const t = useTranslations('riskManager');
+    const tc = useContentText();
     const tRisks = useTranslations('risks');
     // RQ3-OB-A — every monetary figure speaks the tenant's currency.
     const money = useMoneyFormatter();
@@ -453,7 +455,7 @@ export default function RiskDashboardPage() {
                                         data-testid={`risk-quant-top-row-${row.id}`}
                                     >
                                         <span className="truncate text-content-emphasis">
-                                            {row.title}
+                                            {tc(row.title)}
                                         </span>
                                         <span className="tabular-nums text-content-muted">
                                             {formatTailAwareAle(row.ale, tailByRisk[row.id] ?? null, { money, compact: true })}
@@ -477,7 +479,7 @@ export default function RiskDashboardPage() {
                                         className="flex justify-between gap-default p-2 rounded text-sm"
                                     >
                                         <span className="truncate text-content-emphasis">
-                                            {c.category}
+                                            {tc(c.category)}
                                         </span>
                                         <span className="tabular-nums text-content-muted">
                                             {t('dash.categoryExposure', { money: money(c.totalAle), count: c.count })}
@@ -534,7 +536,7 @@ export default function RiskDashboardPage() {
                                                 >
                                                 {moneyBigger ? t('dash.chipMoneyBigger') : t('dash.chipScoreBigger')}
                                                 </span>
-                                                <span className="truncate text-content-emphasis">{f.title}</span>
+                                                <span className="truncate text-content-emphasis">{tc(f.title)}</span>
                                             </span>
                                             <span className="shrink-0 tabular-nums text-content-muted">
                                                 {moneyBigger
@@ -587,7 +589,7 @@ export default function RiskDashboardPage() {
                                     data-testid={`risk-stale-row-${r.riskId}`}
                                     data-reason-count={r.reasons.length}
                                 >
-                                    <span className="truncate text-content-emphasis">{r.title}</span>
+                                    <span className="truncate text-content-emphasis">{tc(r.title)}</span>
                                     <span className="shrink-0 text-xs text-content-muted">{r.description}</span>
                                 </Link>
                             );
@@ -613,7 +615,7 @@ export default function RiskDashboardPage() {
                             const daysOverdue = Math.floor((now.getTime() - new Date(r.nextReviewAt!).getTime()) / 86400000);
                             return (
                                 <Link key={r.id} href={href(`/risks/${r.id}?tab=assessment`)} className="flex justify-between items-center p-2 rounded hover:bg-bg-error transition">
-                                    <span className="text-sm text-content-emphasis">{r.title}</span>
+                                    <span className="text-sm text-content-emphasis">{tc(r.title)}</span>
                                     <span className="text-xs text-content-error">{t('daysOverdue', { days: daysOverdue })} · {r.treatmentOwner || t('noOwner')}</span>
                                 </Link>
                             );

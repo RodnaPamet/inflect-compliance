@@ -12,6 +12,7 @@ import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 import type { FrameworkUpdateView, FrameworkUpdateRequirement } from '@/app-layer/usecases/framework-delta';
 
 /** One delta as the review page shows it (`listTenantFrameworkUpdateViews`). */
@@ -50,6 +51,7 @@ export function FrameworkUpdatesClient({
     canCreateFindings: boolean;
 }) {
     const t = useTranslations('frameworkUpdates');
+    const tc = useContentText();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const [deltas, setDeltas] = useState(initialDeltas);
@@ -111,7 +113,7 @@ export function FrameworkUpdatesClient({
                         <Link href={tenantHref(`/frameworks/${encodeURIComponent(frameworkKey)}`)} className="font-mono text-content-default hover:underline">
                             {r.code}
                         </Link>
-                        {r.title && <span className="text-content-muted"> — {r.title}</span>}
+                        {r.title && <span className="text-content-muted"> — {tc(r.title)}</span>}
                     </li>
                 ))}
             </ul>
@@ -141,7 +143,7 @@ export function FrameworkUpdatesClient({
                                 <div className="flex items-center gap-tight">
                                     <StatusBadge variant={STATUS_VARIANT[d.status] ?? 'neutral'}>{t(`status.${d.status}`)}</StatusBadge>
                                     <span className="text-sm font-medium text-content-emphasis">
-                                        {t('versionChange', { name: d.frameworkName ?? d.frameworkKey, from: d.fromVersion, to: d.toVersion })}
+                                        {t('versionChange', { name: tc(d.frameworkName) ?? d.frameworkKey, from: d.fromVersion, to: d.toVersion })}
                                     </span>
                                     <span className="text-xs text-content-subtle">{formatDateTime(d.createdAt)}</span>
                                 </div>
@@ -184,7 +186,7 @@ export function FrameworkUpdatesClient({
                                         {d.flaggedControls.map((c) => (
                                             <li key={c.id}>
                                                 <Link href={tenantHref(`/controls/${c.id}`)} className="text-content-default hover:underline">
-                                                    {c.code ? `${c.code} — ${c.name}` : c.name}
+                                                    {c.code ? `${c.code} — ${tc(c.name)}` : tc(c.name)}
                                                 </Link>
                                             </li>
                                         ))}

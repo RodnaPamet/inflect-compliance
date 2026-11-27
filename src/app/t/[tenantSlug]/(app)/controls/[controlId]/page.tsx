@@ -87,6 +87,7 @@ import type {
 import { buildControlStatusLabels } from '../filter-defs';
 import { buildControlPatchBody } from '../_lib/control-write-values';
 import { PenWriting } from '@inflect/ui/components/ui/icons/glyphs/pen-writing';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // The detail status dropdown reuses the CANONICAL status vocabulary
 // (buildControlStatusLabels — the same i18n source the list badges + filter
@@ -157,6 +158,7 @@ const POLICY_STATUS_BADGE_VARIANT: Record<string, 'neutral' | 'info' | 'success'
 export default function ControlDetailPage() {
     const tx = useTranslations('controls');
     const tPolicies = useTranslations('policies');
+    const tc = useContentText();
     const STATUS_LABELS = buildStatusLabels(tx);
     const FREQ_LABELS = buildFreqLabels(tx);
     const AUTOMATION_TYPE_LABELS = buildAutomationTypeLabels(tx);
@@ -997,9 +999,9 @@ export default function ControlDetailPage() {
             breadcrumbs={[
                 { label: tx('detailPage.breadcrumbDashboard'), href: tenantHref('/dashboard') },
                 { label: tx('detailPage.breadcrumbControls'), href: tenantHref('/controls') },
-                { label: control.name },
+                { label: tc(control.name) },
             ]}
-            title={<span id="control-title">{control.name}</span>}
+            title={<span id="control-title">{tc(control.name)}</span>}
             prevNext={{
                 ids: controlIds,
                 currentId: controlId,
@@ -1107,7 +1109,7 @@ export default function ControlDetailPage() {
                               * a defect the design does not consider one.
                               */}
                             <p className="text-sm text-content-default mt-1 whitespace-pre-line">
-                                {control.objective
+                                {tc(control.objective)
                                     || (totalTasks > 0 || (control._count?.frameworkMappings ?? 0) > 0
                                         ? tx('detailPage.objectiveExpressedElsewhere')
                                         : tx('detailPage.objectiveEmpty'))}
@@ -1122,12 +1124,12 @@ export default function ControlDetailPage() {
                         {control.successCriteria && (
                             <div>
                                 <ConceptEyebrow label={tx('detailPage.eyebrowSuccessCriteria')} help={tx('conceptHelp.successCriteria')} helpLabel={tx('conceptHelp.successCriteriaHelp')} />
-                                <p className="text-sm text-content-default mt-1 whitespace-pre-line">{control.successCriteria}</p>
+                                <p className="text-sm text-content-default mt-1 whitespace-pre-line">{tc(control.successCriteria)}</p>
                             </div>
                         )}
                         <div>
                             <ConceptEyebrow label={tx('editModal.categoryLabel')} help={tx('conceptHelp.category')} helpLabel={tx('conceptHelp.categoryHelp')} />
-                            <p className="text-sm text-content-default mt-1">{control.category ? CATEGORY_LABELS[control.category] ?? control.category : '—'}</p>
+                            <p className="text-sm text-content-default mt-1">{control.category ? CATEGORY_LABELS[control.category] ?? tc(control.category) : '—'}</p>
                         </div>
                         <div>
                             <ConceptEyebrow label={tx('detailPage.eyebrowFrequency')} help={tx('conceptHelp.frequency')} helpLabel={tx('conceptHelp.frequencyHelp')} />
@@ -1367,7 +1369,7 @@ export default function ControlDetailPage() {
                     {control.testingMethodology && (
                         <div className={cardVariants({ density: 'compact' })}>
                             <span className="text-xs text-content-subtle uppercase">{tx('detailPage.eyebrowTestingMethodology')}</span>
-                            <p className="text-sm text-content-default mt-1 whitespace-pre-line">{control.testingMethodology}</p>
+                            <p className="text-sm text-content-default mt-1 whitespace-pre-line">{tc(control.testingMethodology)}</p>
                         </div>
                     )}
                     <div className={cardVariants({ density: 'compact' })}>
@@ -1398,7 +1400,7 @@ export default function ControlDetailPage() {
                                         href={tenantHref(`/policies/${link.policy.id}`)}
                                         className="text-sm text-content-link hover:underline truncate"
                                     >
-                                        {link.policy.title}
+                                        {tc(link.policy.title)}
                                     </a>
                                     <StatusBadge variant={POLICY_STATUS_BADGE_VARIANT[link.policy.status] ?? 'neutral'}>
                                         {POLICY_STATUS_KEY[link.policy.status]

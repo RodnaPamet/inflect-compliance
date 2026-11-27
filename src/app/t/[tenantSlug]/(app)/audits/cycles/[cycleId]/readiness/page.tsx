@@ -20,6 +20,7 @@ import { readinessVariant } from '@/lib/readiness/bands';
 import { ReadinessScoreRing, ReadinessLegend } from '../../ReadinessScoreRing';
 import type { ReadinessGap, ReadinessResult } from '@/app-layer/usecases/audit-readiness';
 import type { ReadinessRecommendation } from '@/lib/readiness/recommendations';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface ReadinessSnapshot { id: string; score: number; gapCount: number; computedAt: string }
 
@@ -52,6 +53,7 @@ function gapHref(tenantSlug: string, frameworkKey: string, g: ReadinessGap): str
 
 export default function CycleReadinessPage() {
     const tx = useTranslations('audits');
+    const tc = useContentText();
     const params = useParams();
     const tenantSlug = params.tenantSlug as string;
     const cycleId = params.cycleId as string;
@@ -112,10 +114,16 @@ export default function CycleReadinessPage() {
         value && tx.has(`readiness.gap.taskType.${value}` as Parameters<typeof tx>[0])
             ? tx(`readiness.gap.taskType.${value}` as Parameters<typeof tx>[0])
             : value ?? '—';
-    const gapTitle = (g: ReadinessGap): string =>
-        g.detail?.code === 'OPEN_AUDIT_FINDINGS'
-            ? tx('readiness.gap.openAuditFindingsTitle', { count: g.detail.count })
-            : g.title;
+    const gapTitle = (g: ReadinessGap): string => {
+        if (g.detail?.code === 'OPEN_AUDIT_FINDINGS') return tx('readiness.gap.openAuditFindingsTitle', { count: g.detail.count });
+        // A requirement or control gap is titled "<code>: <its catalogue
+        // title>" by the scorer, so the lookup is asked for the title alone.
+        const sep = g.title.indexOf(': ');
+        if (sep >= 0 && (g.type === 'UNMAPPED_REQUIREMENT' || g.type === 'MISSING_EVIDENCE' || g.type === 'MISSING_POLICY')) {
+            return `${g.title.slice(0, sep)}: ${tc(g.title.slice(sep + 2))}`;
+        }
+        return tc(g.title);
+    };
     const gapDetail = (g: ReadinessGap): string => {
         const d = g.detail;
         switch (d?.code) {
@@ -213,7 +221,7 @@ export default function CycleReadinessPage() {
                                 two "NIS2 readiness" numbers can't be confused. */}
                             {result.frameworkKey === 'NIS2'
                                 ? tx('readiness.nis2ControlCoverage')
-                                : tx('readiness.frameworkReadiness', { framework: result.frameworkName ?? result.frameworkKey })}
+                                : tx('readiness.frameworkReadiness', { framework: tc(result.frameworkName) ?? result.frameworkKey })}
                             <InfoTooltip
                                 aria-label={tx('readinessLegend.aria')}
                                 content={result.frameworkKey === 'NIS2' ? tx('readiness.nis2CoverageVsMaturity') : (

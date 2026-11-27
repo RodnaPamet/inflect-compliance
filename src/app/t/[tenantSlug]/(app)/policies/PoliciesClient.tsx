@@ -48,6 +48,8 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
 import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
 import { extractMutationError } from '@/lib/mutations';
+import { ContentText } from '@/components/ContentText';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // Status badge classes — keyed off the canonical PolicyStatus enum
 // values. POLICY_STATUS_LABELS in `filter-defs.ts` is the single
@@ -188,6 +190,7 @@ function PoliciesPageInner({
     translations: t,
 }: PoliciesClientProps) {
     const tx = useTranslations('policies');
+    const tc = useContentText();
     // Each flag is the conjunction the server enforces for that action — the
     // coarse tier AND the granular key — so the page never offers what the
     // route refuses (and never more than the base role allows):
@@ -553,8 +556,8 @@ function PoliciesPageInner({
     // chosen the facet offered only that one.
     const knownCategories = policiesData?.categoryOptions ?? initialCategoryOptions;
     const liveFilters = useMemo(
-        () => buildPolicyFilters(policies, (k, v) => tx(k as Parameters<typeof tx>[0], v as Parameters<typeof tx>[1]), (k) => tGroup(k as Parameters<typeof tGroup>[0]), knownCategories),
-        [policies, tx, tGroup, knownCategories],
+        () => buildPolicyFilters(policies, (k, v) => tx(k as Parameters<typeof tx>[0], v as Parameters<typeof tx>[1]), (k) => tGroup(k as Parameters<typeof tGroup>[0]), knownCategories, tc),
+        [policies, tx, tGroup, knownCategories, tc],
     );
 
     // R-filter-gear (#3) — the gear controls the quantifiable KPI CARDS
@@ -754,7 +757,7 @@ function PoliciesPageInner({
                 <TableTitleCell
                     href={tenantHref(`/policies/${row.original.id}`)}
                 >
-                    {row.original.title}
+                    <ContentText text={row.original.title} />
                 </TableTitleCell>
             ),
         },
@@ -780,8 +783,10 @@ function PoliciesPageInner({
             id: 'category',
             header: tx('colHeaders.category'),
             accessorFn: (p) => p.category || '—',
-            cell: ({ getValue }) => (
-                <span className="text-xs text-content-muted">{getValue()}</span>
+            cell: ({ getValue, row }) => (
+                <span className="text-xs text-content-muted">
+                    {row.original.category ? <ContentText text={row.original.category} /> : getValue()}
+                </span>
             ),
         },
         {

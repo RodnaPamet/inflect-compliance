@@ -16,6 +16,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantHref, useMoneyFormatter } from '@/lib/tenant-context-provider';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface BestValueRow {
     controlId: string;
@@ -34,6 +35,7 @@ interface BestValueRow {
 
 export function BestValueControls({ limit = 5 }: { limit?: number }) {
     const t = useTranslations('controls');
+    const tc = useContentText();
     const tenantHref = useTenantHref();
     // B1-4 — one formatter per product; the ?? '€' fallback lives in the
     // provider, not forked here.
@@ -92,7 +94,7 @@ export function BestValueControls({ limit = 5 }: { limit?: number }) {
                             href={tenantHref(`/controls/${row.controlId}`)}
                             className="block truncate text-content-default hover:text-content-emphasis"
                         >
-                            {row.code ? `${row.code} — ${row.name}` : row.name}
+                            {row.code ? `${row.code} — ${tc(row.name)}` : tc(row.name)}
                         </Link>
                         <p className="flex items-center gap-1.5 text-xs text-content-subtle">
                             <span className="truncate">

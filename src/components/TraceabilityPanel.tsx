@@ -15,6 +15,7 @@ import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface TraceabilityPanelProps {
     apiBase: string;            // e.g. /api/t/acme-corp
@@ -105,6 +106,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
     const toast = useToast();
     const t = useTranslations('panels');
     const tr = useTranslations();
+    const tc = useContentText();
 
     const RISK_STATUS_LABELS = useMemo<Record<string, string>>(() => ({
         OPEN: tr('risks.bulkStatus.open'), MITIGATING: tr('risks.bulkStatus.mitigating'),
@@ -417,9 +419,9 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                         <div className={cn(cardVariants({ density: 'compact' }), 'mb-3 space-y-tight')}>
                             <Combobox
                                 id="risk-select"
-                                selected={availableRisks.map((r) => ({ value: r.id, label: r.title, meta: { status: r.status } })).find((o: { value: string }) => o.value === addId) ?? null}
+                                selected={availableRisks.map((r) => ({ value: r.id, label: tc(r.title), meta: { status: r.status } })).find((o: { value: string }) => o.value === addId) ?? null}
                                 setSelected={(opt) => setAddId(opt?.value ?? '')}
-                                options={availableRisks.map((r) => ({ value: r.id, label: r.title, meta: { status: r.status } }))}
+                                options={availableRisks.map((r) => ({ value: r.id, label: tc(r.title), meta: { status: r.status } }))}
                                 optionDescription={(o) => (o.meta?.status ? t('trace.statusMeta', { status: o.meta.status }) : null)}
                                 placeholder={t('trace.selectRisk')}
                                 matchTriggerWidth
@@ -442,7 +444,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                                         const r = l.risk;
                                         return (
                                             <tr key={l.id} className={l.id?.startsWith('temp:') ? 'opacity-50 animate-pulse' : ''}>
-                                                <td className="text-sm text-content-default">{r?.title || '—'}</td>
+                                                <td className="text-sm text-content-default">{tc(r?.title) || '—'}</td>
                                                 <td><StatusBadge variant={RISK_STATUS_BADGE[r?.status ?? ''] || 'neutral'}>{r?.status ? (RISK_STATUS_LABELS[r.status] ?? r.status) : '—'}</StatusBadge></td>
                                                 <td className="text-sm text-content-emphasis font-medium">{r?.score ?? '—'}</td>
                                                 <td className="text-xs text-content-muted">{l.rationale || '—'}</td>
@@ -476,9 +478,9 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                         <div className={cn(cardVariants({ density: 'compact' }), 'mb-3 space-y-tight')}>
                             <Combobox
                                 id="control-select"
-                                selected={availableControls.map((c) => ({ value: c.id, label: c.code ? `${c.code} — ${c.name}` : c.name, meta: { status: c.status } })).find((o: { value: string }) => o.value === addId) ?? null}
+                                selected={availableControls.map((c) => ({ value: c.id, label: c.code ? `${c.code} — ${tc(c.name)}` : tc(c.name), meta: { status: c.status } })).find((o: { value: string }) => o.value === addId) ?? null}
                                 setSelected={(opt) => setAddId(opt?.value ?? '')}
-                                options={availableControls.map((c) => ({ value: c.id, label: c.code ? `${c.code} — ${c.name}` : c.name, meta: { status: c.status } }))}
+                                options={availableControls.map((c) => ({ value: c.id, label: c.code ? `${c.code} — ${tc(c.name)}` : tc(c.name), meta: { status: c.status } }))}
                                 optionDescription={(o) => (o.meta?.status ? t('trace.statusMeta', { status: o.meta.status }) : null)}
                                 placeholder={t('trace.selectControl')}
                                 matchTriggerWidth
@@ -515,7 +517,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                                         return (
                                             <tr key={l.id} className={l.id?.startsWith('temp:') ? 'opacity-50 animate-pulse' : ''}>
                                                 <td className="font-mono text-xs text-[var(--brand-muted)]">{c?.code || '—'}</td>
-                                                <td className="text-sm text-content-default">{c?.name || '—'}</td>
+                                                <td className="text-sm text-content-default">{tc(c?.name) || '—'}</td>
                                                 <td><StatusBadge variant="info">{c?.status ? (CONTROL_STATUS_LABELS[c.status] ?? c.status.replace(/_/g, ' ')) : '—'}</StatusBadge></td>
                                                 <td className="text-xs text-content-muted">{l.rationale || '—'}</td>
                                                 {canWriteControls && (

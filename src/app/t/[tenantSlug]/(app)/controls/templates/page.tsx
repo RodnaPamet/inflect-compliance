@@ -27,6 +27,7 @@ import {
     TemplateShowMore,
     useProgressiveCount,
 } from '@/components/controls-shared/template-library-phone';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // listControlTemplates → ControlTemplateRepository.list (ControlTemplate model).
 interface ControlTemplateRow {
@@ -58,10 +59,11 @@ export default function ControlTemplatesPage() {
     // would accept is offered the selection and the install bar.
     const canInstall = permissions.canWrite && appPermissions.controls.create;
     const t = useTranslations('controls');
+    const tc = useContentText();
     // An ISO 27002 theme constant (`ORGANIZATIONAL`, …) reads as its label in
     // every view — the table's column too, which showed the constant (#5882);
     // any other category is the library's own text.
-    const categoryLabel = (c: string) => (isControlCategoryTheme(c) ? t(`categoryLabels.${c}`) : c);
+    const categoryLabel = (c: string) => (isControlCategoryTheme(c) ? t(`categoryLabels.${c}`) : tc(c));
 
     // Epic 69 — SWR-backed list (was fetch-on-mount + setState-in-effect).
     // The API returns a bare array; `mutate` powers the inline retry.
@@ -162,6 +164,7 @@ export default function ControlTemplatesPage() {
               (tpl) =>
                   (tpl.code ?? '').toLowerCase().includes(filterQuery) ||
                   (tpl.title ?? '').toLowerCase().includes(filterQuery) ||
+                  (tc(tpl.title) ?? '').toLowerCase().includes(filterQuery) ||
                   (tpl.category ?? '').toLowerCase().includes(filterQuery) ||
                   // What the reader sees is what they search for.
                   (tpl.category ? categoryLabel(tpl.category) : '').toLowerCase().includes(filterQuery),
@@ -280,14 +283,14 @@ export default function ControlTemplatesPage() {
                         )}
                         <ul className="divide-y divide-border-subtle">
                             {phoneRows.map((tpl) => {
-                                const name = tpl.code ? `${tpl.code} ${tpl.title}` : tpl.title;
+                                const name = tpl.code ? `${tpl.code} ${tc(tpl.title)}` : tc(tpl.title);
                                 const boxId = `template-select-${tpl.id}`;
                                 const text = (
                                     <>
                                         {tpl.code && (
                                             <code className="block whitespace-nowrap text-xs text-content-muted">{tpl.code}</code>
                                         )}
-                                        <span className="block break-words font-medium text-content-emphasis">{tpl.title}</span>
+                                        <span className="block break-words font-medium text-content-emphasis">{tc(tpl.title)}</span>
                                         <span className="mt-tight flex flex-wrap items-center gap-tight text-xs text-content-subtle">
                                             {tpl.category && (
                                                 <StatusBadge variant="info">{categoryLabel(tpl.category)}</StatusBadge>
@@ -343,14 +346,14 @@ export default function ControlTemplatesPage() {
                                 <Checkbox
                                     checked={selectedIds.has(row.original.id)}
                                     onCheckedChange={() => toggle(row.original.id)}
-                                    aria-label={t('templates.selectRow', { name: row.original.code ? `${row.original.code} ${row.original.title}` : row.original.title })}
+                                    aria-label={t('templates.selectRow', { name: row.original.code ? `${row.original.code} ${tc(row.original.title)}` : tc(row.original.title) })}
                                 />
                             ),
                         };
                         const templateCols = createColumns<ControlTemplateRow>([
                             ...(canInstall ? [selectColumn] : []),
                             { accessorKey: 'code', header: t('templates.colCode'), cell: ({ getValue }) => <span className="text-xs text-content-muted font-mono">{getValue() || '—'}</span> },
-                            { accessorKey: 'title', header: t('templates.colName'), cell: ({ getValue }) => <span className="font-medium text-content-emphasis">{getValue()}</span> },
+                            { accessorKey: 'title', header: t('templates.colName'), cell: ({ getValue }) => <span className="font-medium text-content-emphasis">{tc(getValue() as string)}</span> },
                             {
                                 accessorKey: 'category', header: t('templates.colCategory'),
                                 cell: ({ getValue }) => getValue() ? <StatusBadge variant="info">{categoryLabel(getValue() as string)}</StatusBadge> : null,
@@ -367,7 +370,7 @@ export default function ControlTemplatesPage() {
                                     );
                                 },
                             },
-                            { accessorKey: 'description', header: t('templates.colDescription'), cell: ({ getValue }) => <span className="text-xs text-content-subtle truncate max-w-xs">{getValue() || '—'}</span> },
+                            { accessorKey: 'description', header: t('templates.colDescription'), cell: ({ getValue }) => <span className="text-xs text-content-subtle truncate max-w-xs">{tc(getValue() as string | null) || '—'}</span> },
                         ]);
                         return (
                             <DataTable

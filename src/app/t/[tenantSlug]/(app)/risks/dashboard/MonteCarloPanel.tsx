@@ -27,6 +27,7 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { activeDateLocale, formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTranslations } from 'next-intl';
 import { StatTile } from '../_shared/StatTile';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 /** RQ2-6 — appetite payload from GET /risk-appetite (config + status). */
 export interface AppetitePayload {
@@ -89,6 +90,7 @@ export function MonteCarloPanel({
     runUnavailable?: boolean;
 }) {
     const t = useTranslations('risks');
+    const tc = useContentText();
     const apiUrl = useTenantApiUrl();
     const href = useTenantHref();
     const money = useMoneyFormatter();
@@ -222,7 +224,7 @@ export function MonteCarloPanel({
                                         className="flex justify-between gap-default rounded p-2 text-sm hover:bg-bg-muted/50 transition-colors duration-100 ease-out"
                                         data-testid={`mc-top-contributor-${r.riskId}`}
                                     >
-                                        <span className="truncate text-content-emphasis">{r.title}</span>
+                                        <span className="truncate text-content-emphasis">{tc(r.title)}</span>
                                         <span className="tabular-nums text-content-muted">{money(r.aleMean)} · {Math.round(r.contribution * 100)}%</span>
                                     </Link>
                                 ))}

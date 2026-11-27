@@ -66,6 +66,7 @@ import type { RiskMatrixConfigShape } from '@/lib/risk-matrix/types';
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // RQ3-OB-D — a deduped movement arrow names the risks that took its
 // path, not just a count. The list is bounded (top N + "+M more") so
@@ -203,6 +204,7 @@ export function RiskMatrix({
     'data-testid': dataTestId = 'risk-matrix',
 }: RiskMatrixProps) {
     const t = useTranslations('common.chart');
+    const tc = useContentText();
     const title = titleProp ?? t('riskMatrix');
     // The toggle is internal-state-by-default but accepts an external
     // override via `swapAxesProp` so a parent (e.g. a saved view) can
@@ -568,7 +570,7 @@ export function RiskMatrix({
                                     // never blocks cell clicks); this single arrow
                                     // group opts back IN so the native <title> fires.
                                     const tooltip = movementArrowTitle(
-                                        a.titles,
+                                        a.titles.map((x) => tc(x)),
                                         MOVEMENT_ARROW_TOOLTIP_MAX,
                                         (n) => t('movementMore', { count: n }),
                                     );

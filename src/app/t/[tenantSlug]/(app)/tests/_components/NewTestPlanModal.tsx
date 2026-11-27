@@ -19,6 +19,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { TestStepsEditor, type TestStepDraft, serializeSteps, hasOrphanExpectedOutput } from '@/components/test-plans/TestStepsEditor';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface ControlOption { id: string; code: string | null; name: string }
 
@@ -34,6 +35,7 @@ export function NewTestPlanModal({
     onCreated: () => void;
 }) {
     const t = useTranslations('controlTests');
+    const tc = useContentText();
     const apiUrl = useTenantApiUrl();
     const toast = useToast();
 
@@ -62,7 +64,7 @@ export function NewTestPlanModal({
 
     const controlOptions: ComboboxOption[] = controls.map((c) => ({
         value: c.id,
-        label: `${c.code ? `${c.code} — ` : ''}${c.name}`,
+        label: `${c.code ? `${c.code} — ` : ''}${tc(c.name)}`,
     }));
     const freqOptions: ComboboxOption[] = FREQUENCIES.map((f) => ({
         value: f,

@@ -59,6 +59,7 @@ import { buildPolicyStatusLabels } from '../filter-defs';
 import { PolicySharePointSection } from './PolicySharePointSection';
 import { PolicyEvidenceChecklist } from './PolicyEvidenceChecklist';
 import { FormField } from '@/components/ui/form-field';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // Lazy-load loading states rendered via next-intl (module-scope dynamic()
 // loading fns can't call the hook directly, so they route through a component).
@@ -164,6 +165,7 @@ type ContentMode = 'MARKDOWN' | 'EXTERNAL_LINK';
 
 export default function PolicyDetailPage() {
     const t = useTranslations('policies');
+    const tc = useContentText();
     const locale = useLocale();
     // Same namespace the ApprovalBanner uses, so the per-version approval badge
     // reads with identical vocabulary instead of the raw enum.
@@ -572,7 +574,7 @@ export default function PolicyDetailPage() {
     const breadcrumbs = [
         { label: t('list.dashboard'), href: tenantHref('/dashboard') },
         { label: t('detail.crumbPolicies'), href: tenantHref('/policies') },
-        { label: policy?.title ?? t('detail.crumbFallback') },
+        { label: tc(policy?.title) ?? t('detail.crumbFallback') },
     ];
     if (loading) {
         return (
@@ -770,7 +772,7 @@ export default function PolicyDetailPage() {
             // inline span only kept the title on one line (an inline box
             // never clips), so a long title pushed the record pager off the
             // screen (#5879).
-            title={<span className="block sm:truncate" id="policy-title">{policy.title}</span>}
+            title={<span className="block sm:truncate" id="policy-title">{tc(policy.title)}</span>}
             prevNext={{
                 ids: policyIds,
                 currentId: policyId,
@@ -904,7 +906,7 @@ export default function PolicyDetailPage() {
                     <div className="flex-1 min-w-0">
                         {policy.description && <p className="text-sm text-content-muted mb-3">{policy.description}</p>}
                         <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-content-subtle">
-                            {policy.category && <span>{policy.category}</span>}
+                            {policy.category && <span>{tc(policy.category)}</span>}
                             {policy.owner && <span>{policy.owner.name}</span>}
                             {policy.nextReviewAt && (
                                 <span className={isOverdue ? 'text-content-error' : ''}>

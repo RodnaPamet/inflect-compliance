@@ -11,6 +11,7 @@
 import { useMemo } from 'react';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface RiskOption {
     id: string;
@@ -37,10 +38,12 @@ export function RiskPicker({
     id?: string;
 }) {
     const { data } = useTenantSWR<{ risks: RiskOption[] }>('/risks/options');
+    const tc = useContentText();
     const options: ComboboxOption[] = useMemo(() => {
-        const base = (data?.risks ?? []).map((r) => ({ value: r.id, label: r.title }));
+        // The label is the reader's language; `meta` keeps the stored title for `onChange`.
+        const base: ComboboxOption[] = (data?.risks ?? []).map((r) => ({ value: r.id, label: tc(r.title), meta: r.title }));
         return allowNone ? [{ value: '', label: noneLabel ?? '—' }, ...base] : base;
-    }, [data, allowNone, noneLabel]);
+    }, [data, allowNone, noneLabel, tc]);
 
     const selected = options.find((o) => {
         return o.value === (value ?? '');
@@ -54,7 +57,7 @@ export function RiskPicker({
             setSelected={(opt) =>
                 onChange(
                     opt && opt.value !== '' ? String(opt.value) : null,
-                    opt && opt.value !== '' ? String(opt.label) : undefined,
+                    opt && opt.value !== '' ? String(opt.meta) : undefined,
                 )
             }
             placeholder={placeholder}

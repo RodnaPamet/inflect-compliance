@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getTranslations } from 'next-intl/server';
+import { getLocale, getTranslations } from 'next-intl/server';
 
 import { getDateFormatters } from '@/lib/i18n/date-format-server';
 import { getTenantCtx } from '@/app-layer/context';
@@ -13,6 +13,8 @@ import {
 import { auditActionLabel, auditEntityLabel } from '@/lib/audit/audit-code-labels';
 import { Heading } from '@/components/ui/typography';
 import { Card } from '@/components/ui/card';
+import { localizeContentText } from '@/lib/content-i18n/dictionary';
+import type { Locale } from '@/lib/locale-constants';
 
 interface RecentActivityCardProps {
     tenantSlug: string;
@@ -45,6 +47,7 @@ export default async function RecentActivityCard({
     const ctx = await getTenantCtx({ tenantSlug });
     const t = await getTranslations('dashboard.activity');
     const tCodes = await getTranslations('auditCodes');
+    const locale = (await getLocale()) as Locale;
     // A label read mid-sentence: lower-case its first letter unless it opens
     // an acronym ("MCP инструмент" stays as it is).
     const midSentence = (label: string) =>
@@ -99,7 +102,8 @@ export default async function RecentActivityCard({
                     // The identifying text: the resolved title when we
                     // have one, otherwise the noun stands in as the
                     // link target. `linkPart` is what carries the href.
-                    const linkPart = log.title ?? nounText;
+                    const title = localizeContentText(locale, log.title);
+                    const linkPart = title ?? nounText;
                     const actor = (
                         <span className="text-content-default font-medium">
                             {log.actorName ?? t('systemActor')}
@@ -114,7 +118,7 @@ export default async function RecentActivityCard({
                     ) : actionLabel !== null ? (
                         <>
                             {actor}: {actionLabel}
-                            {log.title ? (
+                            {title ? (
                                 <>
                                     {' '}
                                     <span
@@ -124,7 +128,7 @@ export default async function RecentActivityCard({
                                                 : 'text-content-default'
                                         }
                                     >
-                                        “{log.title}”
+                                        “{title}”
                                     </span>
                                 </>
                             ) : null}
@@ -132,7 +136,7 @@ export default async function RecentActivityCard({
                     ) : (
                         <>
                             {actor}{' '}
-                            {verbText} {log.title ? nounText + ' ' : ''}
+                            {verbText} {title ? nounText + ' ' : ''}
                             <span
                                 className={
                                     href
@@ -140,7 +144,7 @@ export default async function RecentActivityCard({
                                         : 'text-content-default'
                                 }
                             >
-                                {log.title ? `“${linkPart}”` : linkPart}
+                                {title ? `“${linkPart}”` : linkPart}
                             </span>
                         </>
                     );

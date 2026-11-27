@@ -101,6 +101,7 @@ import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback
 import { controlBulkActionsFor, type ControlBulkAction } from './_lib/bulk-action-policy';
 import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
 import { ContentText } from '@/components/ContentText';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // ─── Constants ───
 
@@ -364,6 +365,7 @@ function ControlsPageInner({
     const guardedPush = useGuardedPush();
     const prefetchData = usePrefetchTenant();
     const t = useTranslations('controls');
+    const tc = useContentText();
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
     // Every write affordance below is gated on BOTH layers the server checks:
@@ -734,8 +736,8 @@ function ControlsPageInner({
     // NOT the client-filtered `controls` — otherwise selecting one derived
     // category would collapse the Category picker to just that value.
     const builtFilterDefs: FilterType[] = useMemo(
-        () => buildControlFilters(rawControls, tAdapter, tGroupAdapter),
-        [rawControls, tAdapter, tGroupAdapter],
+        () => buildControlFilters(rawControls, tAdapter, tGroupAdapter, tc),
+        [rawControls, tAdapter, tGroupAdapter, tc],
     );
     // `rawControls` is still narrowed by the SERVER-side filters, Owner among
     // them, so options built from it alone collapse to the owner just picked.
@@ -1440,7 +1442,7 @@ function ControlsPageInner({
                                 key={label}
                                 className="inline-flex items-center rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-content-muted"
                             >
-                                {label}
+                                <ContentText text={label} />
                             </span>
                         ))}
                     </div>
@@ -1460,7 +1462,7 @@ function ControlsPageInner({
                 if (!cat) {
                     return <span className="text-xs text-content-subtle">—</span>;
                 }
-                return <StatusBadge size="sm">{categoryLabel(cat.category)}</StatusBadge>;
+                return <StatusBadge size="sm"><ContentText text={categoryLabel(cat.category)} /></StatusBadge>;
             },
         },
         {
@@ -1843,7 +1845,7 @@ function ControlsPageInner({
                                     <span className="flex min-w-0 flex-1 items-center justify-between gap-tight pr-2">
                                         <span className="flex min-w-0 flex-col items-start gap-0.5">
                                             <span className="break-words text-left font-medium text-content-default">
-                                                {categoryLabel(g.category)}
+                                                {tc(categoryLabel(g.category))}
                                             </span>
                                             {g.frameworkLabel && (
                                                 <span
@@ -1880,8 +1882,8 @@ function ControlsPageInner({
                                                 >
                                                     <span className="truncate">
                                                         {c.code || c.annexId
-                                                            ? `${c.code || c.annexId} · ${c.name}`
-                                                            : c.name}
+                                                            ? `${c.code || c.annexId} · ${tc(c.name)}`
+                                                            : tc(c.name)}
                                                     </span>
                                                     <StatusBadge
                                                         size="sm"

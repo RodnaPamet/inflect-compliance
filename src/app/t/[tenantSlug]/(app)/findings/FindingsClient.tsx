@@ -27,6 +27,7 @@ import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback
 import { CreateFindingModal } from './CreateFindingModal';
 import { FindingDetailSheet } from './FindingDetailSheet';
 import { buildFindingFilters, FINDING_FILTER_KEYS, FINDING_STATUSES } from './filter-defs';
+import { ContentText } from '@/components/ContentText';
 
 /**
  * The register's address for one finding: `?finding=<id>` opens its panel.
@@ -331,7 +332,7 @@ function FindingsPageInner({
             accessorKey: 'title',
             header: t.findingTitle,
 
-            cell: ({ getValue }) => <TableTitleCell>{getValue()}</TableTitleCell>,
+            cell: ({ row }) => <TableTitleCell><ContentText text={row.original.title} /></TableTitleCell>,
         },
         {
             accessorKey: 'severity',
@@ -356,7 +357,7 @@ function FindingsPageInner({
                 if (!c) return <span className="text-xs text-content-subtle">—</span>;
                 return (
                     <Link href={`/t/${tenantSlug}/controls/${c.id}`} className="text-xs text-content-default underline underline-offset-2" onClick={(e) => e.stopPropagation()}>
-                        {c.code ?? c.name}
+                        {c.code ?? <ContentText text={c.name} />}
                     </Link>
                 );
             },

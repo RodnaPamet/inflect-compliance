@@ -18,6 +18,8 @@ import { useMoneyFormatter } from '@/lib/tenant-context-provider';
 import type { BowTieGraph } from './BowTieCanvas';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { ContentText } from '@/components/ContentText';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // xyflow is client-only + heavy — load the canvas on demand.
 const BowTieCanvas = dynamic(() => import('./BowTieCanvas').then((m) => m.BowTieCanvas), {
@@ -40,7 +42,7 @@ function BarrierChip({ b }: { b: Barrier }) {
     return (
         <ShadedRow padding="none" className="px-default py-tight text-sm">
             <div className="flex items-center justify-between gap-tight">
-                <span className="flex items-center gap-tight truncate text-content-emphasis"><ShieldCheck className="size-3.5 shrink-0" />{b.title}</span>
+                <span className="flex items-center gap-tight truncate text-content-emphasis"><ShieldCheck className="size-3.5 shrink-0" /><ContentText text={b.title} /></span>
                 <StatusBadge variant={effVariant(b.effectiveness)}>{b.effectiveness == null ? '—' : `${b.effectiveness}%`}</StatusBadge>
             </div>
         </ShadedRow>
@@ -49,6 +51,7 @@ function BarrierChip({ b }: { b: Barrier }) {
 
 export function BowTiePanel({ riskId }: { riskId: string }) {
     const t = useTranslations('risks');
+    const tc = useContentText();
     const money = useMoneyFormatter();
     const [view, setView] = useState<'canvas' | 'list'>('canvas');
     // B2-2 — see RiskHistoryPanel: the `reloadKey` counter existed only to
@@ -106,7 +109,7 @@ export function BowTiePanel({ riskId }: { riskId: string }) {
                 <div className="space-y-tight">
                     <Heading level={3} className="text-xs uppercase text-content-subtle">{t('bowtie.threats')}</Heading>
                     {p.threats.map((threat) => (
-                        <ShadedRow padding="none" key={threat.id} className="flex items-center gap-tight px-default py-tight text-sm text-content-emphasis"><Bolt className="size-3.5 shrink-0" />{threat.label}</ShadedRow>
+                        <ShadedRow padding="none" key={threat.id} className="flex items-center gap-tight px-default py-tight text-sm text-content-emphasis"><Bolt className="size-3.5 shrink-0" />{tc(threat.label)}</ShadedRow>
                     ))}
                 </div>
                 {/* Preventive barriers */}
@@ -118,7 +121,7 @@ export function BowTiePanel({ riskId }: { riskId: string }) {
                 <div className="flex flex-col items-center justify-center">
                     <div className="w-full rounded-lg border border-border-emphasis bg-bg-muted/30 p-default text-center">
                         <TriangleWarning className="mx-auto size-6 text-content-muted" />
-                        <div className="font-medium text-content-emphasis">{p.event.title}</div>
+                        <div className="font-medium text-content-emphasis">{tc(p.event.title)}</div>
                         <div className="mt-tight text-xs text-content-muted">{t('bowtie.scoreLabel')} {p.event.score} · {money(p.event.ale)}{t('perYear')}</div>
                     </div>
                 </div>
