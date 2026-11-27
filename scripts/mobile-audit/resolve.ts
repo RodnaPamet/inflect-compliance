@@ -245,6 +245,21 @@ export async function dataNames(db: PrismaClient): Promise<Set<string>> {
  * not library content: tenant data is `dataNames`' business, and a tenant's
  * own questionnaire (not `isGlobal`) is judged like any other text.
  */
+/**
+ * The audited workspace's OWN default language (`Tenant.defaultLocale`, #5932).
+ *
+ * Text the server writes into a record — a NIS2 gap task title, a
+ * task-assigned e-mail, a calendar event — is written in this language and is
+ * never re-worded on read, so it decides which locale's `workspaceText.*`
+ * renderings are the record's correct text rather than an interface leak
+ * (#5972, `buildWorkspaceTextMatcher`). No workspace row falls back to the
+ * column's own default rather than guessing the reader's language.
+ */
+export async function workspaceLocale(db: PrismaClient): Promise<string> {
+    const tenant = await db.tenant.findFirst({ where: { slug: SEED_TENANT_SLUG }, select: { defaultLocale: true } });
+    return tenant?.defaultLocale ?? 'en';
+}
+
 export async function libraryTexts(db: PrismaClient): Promise<Set<string>> {
     const [frameworks, requirements, clauses, controlTemplates, templateTasks, policyTemplates, questionnaires, questions, vendorTemplates, vendorSections, vendorQuestions] =
         await Promise.all([
