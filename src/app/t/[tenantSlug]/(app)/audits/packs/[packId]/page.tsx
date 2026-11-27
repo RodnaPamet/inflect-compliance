@@ -39,6 +39,7 @@ import { humanizeSnakeCase } from '@/lib/audit/activity-humanize';
 import { apiErrorMessage } from '@/lib/api-error';
 import { auditPackRefusal } from '@/lib/audit-pack-refusals';
 import { isNotFoundError, useAuditReadinessAccess } from '../../_lib/use-audit-access';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 const ENTITY_ICON: Record<string, AppIconName> = {
     CONTROL: 'controls', POLICY: 'policies', EVIDENCE: 'evidence', FILE: 'overview', ISSUE: 'warning',
@@ -128,6 +129,7 @@ export default function PackDetailPage() {
     const packId = params.packId as string;
     const apiUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);
     const tx = useTranslations('audits');
+    const tc = useContentText();
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
     // #4129 — every control below is gated on what the SERVER allows this role
@@ -165,7 +167,7 @@ export default function PackDetailPage() {
     // Part C — add-to-pack picker.
     const [addModalOpen, setAddModalOpen] = useState(false);
     const [addType, setAddType] = useState<AddableType>('CONTROL');
-    const [addOptions, setAddOptions] = useState<Array<{ id: string; label: string }>>([]);
+    const [addOptions, setAddOptions] = useState<Array<{ id: string; label: string; fromCatalogue: boolean }>>([]);
     const [addOptionsLoading, setAddOptionsLoading] = useState(false);
     // #4700 — a refused or failed list read is said in the picker; it used
     // to arrive as an empty list, which read as "nothing to add".
@@ -440,6 +442,9 @@ export default function PackDetailPage() {
                 setAddOptions(rows.map((row) => ({
                     id: String(row.id),
                     label: String(row.code || row.title || row.name || row.id),
+                    // A control's name or a policy's title can be its template's;
+                    // a code and an evidence title never are.
+                    fromCatalogue: type !== 'EVIDENCE' && !row.code && Boolean(row.title || row.name),
                 })));
             })
             .catch(() => setAddOptionsFailed(true))
@@ -530,9 +535,13 @@ export default function PackDetailPage() {
      */
     const itemName = (item: PackItem, snap: PackItemSnapshot): string => {
         if (snap.type === 'SOA_REPORT') {
-            return tx('packs.soaItemName', { framework: snap.frameworkName || snap.framework || '' });
+            return tx('packs.soaItemName', { framework: tc(snap.frameworkName) || snap.framework || '' });
         }
-        return snap.code || snap.title || snap.name || item.displayName || item.entityId;
+        // A control, policy or task can still carry its template's name; an
+        // evidence title, a file's name and a report's are not catalogue text.
+        const named = snap.title || snap.name || item.displayName;
+        const fromCatalogue = item.entityType === 'CONTROL' || item.entityType === 'POLICY' || item.entityType === 'ISSUE';
+        return snap.code || (fromCatalogue ? tc(named) : named) || item.entityId;
     };
 
     // Epic 62 — celebrate when the pack reaches its "complete" state
@@ -637,7 +646,7 @@ export default function PackDetailPage() {
                             ? [
                                   {
                                       label: tx('packs.framework'),
-                                      value: pack.cycle.frameworkName || pack.cycle.frameworkKey,
+                                      value: tc(pack.cycle.frameworkName) || pack.cycle.frameworkKey,
                                   } as const,
                               ]
                             : []),
@@ -1061,8 +1070,8 @@ export default function PackDetailPage() {
                             }
                         >
                             <Combobox
-                                options={addOptions.map((o): ComboboxOption => ({ value: o.id, label: o.label }))}
-                                selected={addOptions.filter((o) => o.id === addSelected).map((o) => ({ value: o.id, label: o.label }))[0] ?? null}
+                                options={addOptions.map((o): ComboboxOption => ({ value: o.id, label: o.fromCatalogue ? tc(o.label) : o.label }))}
+                                selected={addOptions.filter((o) => o.id === addSelected).map((o) => ({ value: o.id, label: o.fromCatalogue ? tc(o.label) : o.label }))[0] ?? null}
                                 setSelected={(opt) => setAddSelected(opt?.value ?? '')}
                                 placeholder={addOptionsLoading ? tx('packs.addPicker.loading') : tx('packs.addPicker.itemPlaceholder')}
                                 disabled={addOptionsLoading || addOptions.length === 0}

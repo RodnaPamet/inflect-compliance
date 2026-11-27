@@ -31,6 +31,8 @@ import {
     NewTaskFormSchema,
     type NewTaskFormValues,
 } from '@/lib/schemas/task-form';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
+import { composedContentLabel } from '../content-label';
 
 export type TaskType = NewTaskFormValues['type'];
 
@@ -62,6 +64,23 @@ export const LINK_ENTITY_TYPES = ['CONTROL', 'FRAMEWORK_REQUIREMENT', 'ASSET', '
 export const SELECTABLE_LINK_ENTITY_TYPES = LINK_ENTITY_TYPES.filter(
     (type) => type !== 'FRAMEWORK_REQUIREMENT',
 );
+
+/** Staged-link types whose record name can be catalogue text; the rest are named by a person. */
+const CATALOGUE_NAMED_LINK_TYPES: readonly string[] = ['CONTROL', 'FRAMEWORK_REQUIREMENT', 'RISK'];
+
+/**
+ * A staged link's display name in the reader's language, for the staged list
+ * and the link-failure warning. `tc` is `useContentText()`; the stored
+ * `label` is unchanged.
+ */
+export function pendingLinkLabel(
+    link: PendingLink,
+    tc: (text: string) => string,
+): string | undefined {
+    return link.label && CATALOGUE_NAMED_LINK_TYPES.includes(link.entityType)
+        ? composedContentLabel(link.label, ': ', tc)
+        : link.label;
+}
 
 // Extra type-conditional fields kept outside Zod (see file
 // header). Combined with NewTaskFormValues for the field surface.
@@ -137,6 +156,7 @@ export function useNewTaskForm({
 }: UseNewTaskFormOptions): NewTaskFormReturn {
     const apiUrl = useTenantApiUrl();
     const t = useTranslations('tasks');
+    const tc = useContentText();
     const toast = useToast();
     const telemetry = useFormTelemetry('NewTaskPage');
 
@@ -259,7 +279,7 @@ export function useNewTaskForm({
                     const detail = failedLinks
                         .map((l) =>
                             l.label
-                                ? `${linkTypeLabel(l.entityType)}: ${l.label}`
+                                ? `${linkTypeLabel(l.entityType)}: ${pendingLinkLabel(l, tc)}`
                                 : linkTypeLabel(l.entityType),
                         )
                         .join(', ');

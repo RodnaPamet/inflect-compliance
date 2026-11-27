@@ -15,6 +15,7 @@ import { TASK_SEVERITY_VARIANT } from '@/app-layer/domain/entity-status-mapping'
 import { DataTable, createColumns } from '@/components/ui/table';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
+import { ContentText } from '@/components/ContentText';
 // The canonical task-create modal (the SAME one the Tasks page "+ Task"
 // button opens). Reused here so a task created from a control / asset /
 // risk detail page is identical to a standalone task — full fields, and
@@ -154,7 +155,7 @@ export default function LinkedTasksPanel({
                         <TableTitleCell
                             href={tenantHref(`/tasks/${row.original.id}`)}
                         >
-                            {row.original.title}
+                            <ContentText text={row.original.title} />
                         </TableTitleCell>
                     ),
                 },

@@ -8,6 +8,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // Mirror of the server SuggestionResult shape (policy-template-mapping.ts).
 export interface SuggestedControlDTO {
@@ -43,6 +44,7 @@ interface Props {
 
 export function TemplateControlSuggestModal({ policyTitle, result, onConfirm, onSkip }: Props) {
     const t = useTranslations('policies');
+    const tc = useContentText();
     // Pre-check from_toolkit suggestions; leave curated unchecked — the
     // tenant opts into our judgment explicitly.
     const [checked, setChecked] = useState<Record<string, boolean>>(() => {
@@ -78,7 +80,7 @@ export function TemplateControlSuggestModal({ policyTitle, result, onConfirm, on
 
     return (
         <Modal showModal setShowModal={(o) => (o ? null : onSkip())}>
-            <Modal.Header title={t('templates.suggestTitle', { title: policyTitle })} />
+            <Modal.Header title={t('templates.suggestTitle', { title: tc(policyTitle) })} />
             <Modal.Body>
                 <div className="space-y-default">
                     {error && (
@@ -95,7 +97,7 @@ export function TemplateControlSuggestModal({ policyTitle, result, onConfirm, on
 
                     {result.frameworks.map((fw) => (
                         <div key={fw.frameworkKey} className="space-y-tight">
-                            <Heading level={3} className="text-sm">{fw.frameworkLabel}</Heading>
+                            <Heading level={3} className="text-sm">{tc(fw.frameworkLabel)}</Heading>
                             <ul className="space-y-tight">
                                 {fw.suggestions.map((s) => (
                                     <ShadedRow as="li" padding="none"
@@ -104,7 +106,7 @@ export function TemplateControlSuggestModal({ policyTitle, result, onConfirm, on
                                     >
                                         <Checkbox
                                             id={`suggest-${s.controlId}`}
-                                            aria-label={t('templates.linkControlAria', { name: s.controlName })}
+                                            aria-label={t('templates.linkControlAria', { name: tc(s.controlName) })}
                                             checked={!!checked[s.controlId]}
                                             onCheckedChange={() => toggle(s.controlId)}
                                             className="mt-0.5"
@@ -112,7 +114,7 @@ export function TemplateControlSuggestModal({ policyTitle, result, onConfirm, on
                                         <div className="flex-1">
                                             <div className="flex items-center gap-tight flex-wrap">
                                                 <span className="text-sm font-medium">
-                                                    {s.controlCode ? `${s.controlCode} — ` : ''}{s.controlName}
+                                                    {s.controlCode ? `${s.controlCode} — ` : ''}{tc(s.controlName)}
                                                 </span>
                                                 <StatusBadge variant={s.provenance === 'from_toolkit' ? 'info' : 'neutral'}>
                                                     {s.provenance === 'from_toolkit' ? t('templates.suggestToolkit') : t('templates.suggestCurated')}

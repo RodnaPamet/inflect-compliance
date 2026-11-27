@@ -49,6 +49,7 @@ import {
     toYMD,
 } from '@/components/ui/date-picker/date-utils';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface ControlOption {
     id: string;
@@ -116,8 +117,8 @@ export interface EditEvidenceModalProps {
     existingCategories?: ReadonlyArray<string>;
 }
 
-function controlLabel(c: ControlOption): string {
-    return `${c.annexId || c.code || 'Custom'}: ${c.name}`;
+function controlLabel(c: ControlOption, tc: (text: string) => string = (text) => text): string {
+    return `${c.annexId || c.code || 'Custom'}: ${tc(c.name)}`;
 }
 
 export function EditEvidenceModal({
@@ -133,6 +134,7 @@ export function EditEvidenceModal({
 }: EditEvidenceModalProps) {
     const apiUrl = useTenantApiUrl();
     const t = useTranslations('evidence');
+    const tc = useContentText();
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
     // Comma-separated in the input; normalised to an array on submit.
@@ -173,10 +175,16 @@ export function EditEvidenceModal({
         () =>
             controls.map((c) => ({
                 value: c.id,
-                label: controlLabel(c),
+                label: controlLabel(c, tc),
                 meta: c,
             })),
-        [controls],
+        [controls, tc],
+    );
+    // The chosen controls as shown: the state keeps the options as seeded,
+    // their names follow the reader's language.
+    const shownControls = useMemo(
+        () => selectedControls.map((o) => (o.meta ? { ...o, label: controlLabel(o.meta, tc) } : o)),
+        [selectedControls, tc],
     );
 
     // Seed from `initial` when the modal opens; reset dirty + error
@@ -542,7 +550,7 @@ export function EditEvidenceModal({
                                 id="edit-evidence-control-input"
                                 name="controlIds"
                                 options={controlOptions}
-                                selected={selectedControls}
+                                selected={shownControls}
                                 setSelected={(opts) => {
                                     setSelectedControls(opts);
                                     markDirty();
@@ -562,9 +570,9 @@ export function EditEvidenceModal({
                             description={t('edit.controlsReadOnlyDesc')}
                         >
                             <div id="edit-evidence-controls-readonly" className="text-sm text-content-default">
-                                {selectedControls.length > 0 ? (
+                                {shownControls.length > 0 ? (
                                     <ul className="space-y-tight">
-                                        {selectedControls.map((o) => (
+                                        {shownControls.map((o) => (
                                             <li key={o.value}>{o.label}</li>
                                         ))}
                                     </ul>

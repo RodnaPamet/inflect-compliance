@@ -44,6 +44,7 @@ import { useToast } from '@/components/ui/hooks';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { Pen2 } from '@inflect/ui/components/ui/icons/glyphs';
 import { extractMutationError } from '@/lib/mutations';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 const SEVERITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
 const TYPES = ['NONCONFORMITY', 'OBSERVATION', 'OPPORTUNITY'] as const;
@@ -143,6 +144,7 @@ export interface FindingDetailSheetProps {
 
 export function FindingDetailSheet({ findingId, onClose, canWrite, tenantSlug, onSaved }: FindingDetailSheetProps) {
     const t = useTranslations('findings');
+    const tc = useContentText();
     const tenantHref = useTenantHref();
     const [editing, setEditing] = useState(false);
 
@@ -158,7 +160,7 @@ export function FindingDetailSheet({ findingId, onClose, canWrite, tenantSlug, o
     const finding = detailQuery.data;
 
     const statusLabel = (s: string) => (STATUS_KEY[s] ? t(STATUS_KEY[s]) : s);
-    const controlLabel = (c: { code: string | null; name: string }) => (c.code ? `${c.code} · ${c.name}` : c.name);
+    const controlLabel = (c: { code: string | null; name: string }) => (c.code ? `${c.code} · ${tc(c.name)}` : tc(c.name));
 
     return (
         <Sheet
@@ -167,7 +169,7 @@ export function FindingDetailSheet({ findingId, onClose, canWrite, tenantSlug, o
                 if (!open) onClose();
             }}
             size="md"
-            title={finding?.title ?? t('detail.sheetTitle')}
+            title={tc(finding?.title) ?? t('detail.sheetTitle')}
         >
             {detailQuery.error ? (
                 <>
@@ -204,7 +206,7 @@ export function FindingDetailSheet({ findingId, onClose, canWrite, tenantSlug, o
                 />
             ) : (
                 <>
-                    <Sheet.Header title={finding.title}>
+                    <Sheet.Header title={tc(finding.title)}>
                         <div className="flex flex-wrap items-center gap-tight">
                             <StatusBadge variant={SEV_BADGE[finding.severity] ?? 'neutral'} id="finding-sheet-severity">
                                 {t(`severityOptions.${finding.severity}`)}
@@ -288,7 +290,7 @@ export function FindingDetailSheet({ findingId, onClose, canWrite, tenantSlug, o
                                                     className={textLinkVariants({ tone: 'link' })}
                                                 >
                                                     {risk.key ? `${risk.key} — ` : ''}
-                                                    {risk.title}
+                                                    {tc(risk.title)}
                                                 </Link>
                                             </li>
                                         ))}
@@ -354,6 +356,7 @@ function FindingEditForm({
     onSaved: () => Promise<void>;
 }) {
     const t = useTranslations('findings');
+    const tc = useContentText();
     const toast = useToast();
     const initial = useMemo(() => formFromDetail(finding), [finding]);
     const [form, setForm] = useState<EditForm>(initial);
@@ -382,17 +385,17 @@ function FindingEditForm({
         const rows = Array.isArray(data) ? data : (data?.rows ?? []);
         const options = rows.map((c) => {
             const code = c.annexId ?? c.code ?? null;
-            return { value: c.id, label: code ? `${code} · ${c.name}` : c.name };
+            return { value: c.id, label: code ? `${code} · ${tc(c.name)}` : tc(c.name) };
         });
         // A linked control the list does not return (past its cap) must still
         // read as selected rather than as "None".
         for (const c of [finding.control, finding.compensatingControl]) {
             if (c && !options.some((o) => o.value === c.id)) {
-                options.push({ value: c.id, label: c.code ? `${c.code} · ${c.name}` : c.name });
+                options.push({ value: c.id, label: c.code ? `${c.code} · ${tc(c.name)}` : tc(c.name) });
             }
         }
         return options;
-    }, [controlsQuery.data, finding.control, finding.compensatingControl]);
+    }, [controlsQuery.data, finding.control, finding.compensatingControl, tc]);
     const risks = useMemo<RiskOption[]>(() => {
         const data = risksQuery.data;
         const rows = Array.isArray(data) ? data : (data?.rows ?? []);
@@ -405,8 +408,8 @@ function FindingEditForm({
     const filteredRisks = useMemo(() => {
         const q = riskFilter.trim().toLowerCase();
         if (!q) return risks;
-        return risks.filter((r) => r.title.toLowerCase().includes(q) || (r.key ?? '').toLowerCase().includes(q));
-    }, [risks, riskFilter]);
+        return risks.filter((r) => r.title.toLowerCase().includes(q) || tc(r.title).toLowerCase().includes(q) || (r.key ?? '').toLowerCase().includes(q));
+    }, [risks, riskFilter, tc]);
 
     const toggleRisk = (id: string) =>
         setForm((prev) => ({
@@ -448,7 +451,7 @@ function FindingEditForm({
 
     return (
         <>
-            <Sheet.Header title={t('detail.editTitle')} description={finding.title} />
+            <Sheet.Header title={t('detail.editTitle')} description={tc(finding.title)} />
             <Sheet.Body>
                 <form id="finding-edit-form" onSubmit={handleSubmit} data-testid="finding-edit-form">
                     {error && (
@@ -604,7 +607,7 @@ function FindingEditForm({
                                                         data-testid={`finding-edit-risk-opt-${r.id}`}
                                                     />
                                                     <span className="w-16 shrink-0 text-xs text-content-muted">{r.key || 'RISK'}</span>
-                                                    <span className="truncate text-content-emphasis">{r.title}</span>
+                                                    <span className="truncate text-content-emphasis">{tc(r.title)}</span>
                                                 </label>
                                             ))
                                         )}

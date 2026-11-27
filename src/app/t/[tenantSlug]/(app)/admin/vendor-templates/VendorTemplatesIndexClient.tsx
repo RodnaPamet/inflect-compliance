@@ -32,6 +32,7 @@ import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { cardVariants } from '@/components/ui/card';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface TemplateRow {
     id: string;
@@ -53,6 +54,7 @@ export function VendorTemplatesIndexClient() {
     // which reads `vendors.edit`, not the coarse `canWrite` tier (#5313).
     const canAuthor = useTenantContext().appPermissions.vendors.edit;
     const t = useTranslations('admin');
+    const tc = useContentText();
 
     const [items, setItems] = useState<TemplateRow[] | null>(null);
     const [loading, setLoading] = useState(true);
@@ -221,7 +223,7 @@ export function VendorTemplatesIndexClient() {
                             >
                                 <div className="min-w-0 break-words">
                                     <div className="text-sm text-content-emphasis font-medium">
-                                        {row.name}
+                                        {tc(row.name)}
                                     </div>
                                     <div className="text-xs text-content-subtle">
                                         {t('vendorTemplates.rowMeta', {

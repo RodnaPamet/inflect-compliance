@@ -26,6 +26,7 @@ import { cn } from '@inflect/ui/lib/cn';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface DashboardMetrics {
     periodDays: number;
@@ -86,6 +87,7 @@ function toProgressVariant(color: string): ProgressBarVariant {
 
 export default function TestDashboardPage() {
     const t = useTranslations('controlTests');
+    const tc = useContentText();
     const tenantHref = useTenantHref();
 
     const [period, setPeriod] = useState(30);
@@ -266,8 +268,8 @@ export default function TestDashboardPage() {
                                     className="flex justify-between items-center p-2 rounded hover:bg-bg-muted/50 transition"
                                 >
                                     <div>
-                                        <span className="text-content-emphasis text-sm font-medium">{f.controlCode || f.controlName}</span>
-                                        {f.controlCode && <span className="text-content-muted text-xs ml-2">{f.controlName}</span>}
+                                        <span className="text-content-emphasis text-sm font-medium">{f.controlCode || tc(f.controlName)}</span>
+                                        {f.controlCode && <span className="text-content-muted text-xs ml-2">{tc(f.controlName)}</span>}
                                     </div>
                                     <StatusBadge variant="error" size="sm">{t('dashboard.nFailures', { count: f.failCount })}</StatusBadge>
                                 </Link>
@@ -313,7 +315,7 @@ export default function TestDashboardPage() {
                         {readiness.map(fw => (
                             <ShadedRow padding="lg" key={fw.frameworkKey}>
                                 <div className="flex items-center justify-between mb-3">
-                                    <Heading level={3}>{fw.frameworkName}</Heading>
+                                    <Heading level={3}>{tc(fw.frameworkName)}</Heading>
                                     <span className="text-xs text-content-muted">{t('dashboard.mappedControls', { count: fw.totalMappedControls })}</span>
                                 </div>
                                 <div className="grid grid-cols-3 gap-default">
@@ -325,7 +327,7 @@ export default function TestDashboardPage() {
                                         <ProgressBar
                                             value={fw.testPlanCoverage}
                                             variant={toProgressVariant(fw.testPlanCoverage >= 80 ? 'green' : fw.testPlanCoverage >= 50 ? 'amber' : 'red')}
-                                            aria-label={t('dashboard.fwPlanCoverageAria', { name: fw.frameworkName })}
+                                            aria-label={t('dashboard.fwPlanCoverageAria', { name: tc(fw.frameworkName) })}
                                         />
                                         <p className="text-xs text-content-subtle mt-1">{t('dashboard.withPlans', { count: fw.withTestPlan, total: fw.totalMappedControls })}</p>
                                     </div>
@@ -337,7 +339,7 @@ export default function TestDashboardPage() {
                                         <ProgressBar
                                             value={fw.testRunCoverage}
                                             variant={toProgressVariant(fw.testRunCoverage >= 80 ? 'green' : fw.testRunCoverage >= 50 ? 'amber' : 'red')}
-                                            aria-label={t('dashboard.fwRunCoverageAria', { name: fw.frameworkName })}
+                                            aria-label={t('dashboard.fwRunCoverageAria', { name: tc(fw.frameworkName) })}
                                         />
                                         <p className="text-xs text-content-subtle mt-1">{t('dashboard.tested', { count: fw.withRecentRun, total: fw.totalMappedControls })}</p>
                                     </div>
@@ -349,7 +351,7 @@ export default function TestDashboardPage() {
                                         <ProgressBar
                                             value={fw.passRate}
                                             variant={toProgressVariant(fw.passRate >= 80 ? 'green' : fw.passRate >= 50 ? 'amber' : 'red')}
-                                            aria-label={t('dashboard.fwPassRateAria', { name: fw.frameworkName })}
+                                            aria-label={t('dashboard.fwPassRateAria', { name: tc(fw.frameworkName) })}
                                         />
                                         <p className="text-xs text-content-subtle mt-1">{t('dashboard.passed', { count: fw.recentPasses, total: fw.recentRuns })}</p>
                                     </div>

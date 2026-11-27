@@ -2,6 +2,7 @@
 
 import { Heading } from '@/components/ui/typography';
 import type { CellCollision } from '@/lib/risk-collisions';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 /**
  * RQ3-5 — range-compression callouts: the same cell collisions the heatmap
@@ -32,6 +33,7 @@ export function RiskCollisionCallouts({
     /** Receives the canonical `L{likelihood}xI{impact}` cell token. */
     onDrillToCell: (cellToken: string) => void;
 }) {
+    const tc = useContentText();
     if (collisions.length === 0) return null;
 
     return (
@@ -48,7 +50,7 @@ export function RiskCollisionCallouts({
                         onClick={() => onDrillToCell(`L${c.likelihood}xI${c.impact}`)}
                     >
                         <span className="truncate text-content-emphasis">
-                            L{c.likelihood}×I{c.impact}: {c.minRisk.title} vs {c.maxRisk.title}
+                            L{c.likelihood}×I{c.impact}: {tc(c.minRisk.title)} vs {tc(c.maxRisk.title)}
                         </span>
                         <span className="shrink-0 tabular-nums text-content-muted">
                             {money(c.minRisk.ale)} vs {money(c.maxRisk.ale)} (~{Math.round(c.ratio)}×)

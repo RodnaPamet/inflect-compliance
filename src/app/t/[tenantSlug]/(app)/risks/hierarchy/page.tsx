@@ -22,6 +22,7 @@ import { RiskPicker } from '../_shared/RiskPicker';
 import { AnalyticsState } from '../_shared/AnalyticsState';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { apiErrorMessage } from '@/lib/api-error';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface Agg {
     nodeId: string;
@@ -65,6 +66,7 @@ function TreeRow({
 }) {
     const money = useMoneyFormatter();
     const t = useTranslations('risks');
+    const tc = useContentText();
     const tenantHref = useTenantHref();
     const [renaming, setRenaming] = useState(false);
     const [draft, setDraft] = useState(node.nodeName);
@@ -121,7 +123,7 @@ function TreeRow({
                 <ul className="space-y-tight pb-tight text-xs" style={{ paddingLeft: `${depth * 16 + 16}px` }} data-testid={`node-risks-${node.nodeId}`}>
                     {ownRisks.map((r) => (
                         <li key={r.id} className="flex items-center gap-tight">
-                            <Link href={tenantHref(`/risks/${r.id}`)} className="text-content-default underline underline-offset-2">{r.title || r.id}</Link>
+                            <Link href={tenantHref(`/risks/${r.id}`)} className="text-content-default underline underline-offset-2">{tc(r.title) || r.id}</Link>
                             {canEdit && (
                                 <Button size="sm" variant="ghost" onClick={() => onUnlink(node.nodeId, r.id)} data-testid={`node-unlink-${node.nodeId}-${r.id}`}>
                                     {t('hierarchy.unlinkRisk')}

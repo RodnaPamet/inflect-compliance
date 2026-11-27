@@ -23,6 +23,7 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { usePermissions } from '@/lib/tenant-context-provider';
 import { cn } from '@inflect/ui/lib/cn';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // Shapes cross-walked from the framework install API:
 //   framework → getFramework (framework/catalog.ts)
@@ -82,6 +83,7 @@ interface FrameworkPackSummary {
 
 export default function InstallWizardPage() {
     const tx = useTranslations('frameworks');
+    const tc = useContentText();
     const params = useParams();
     const searchParams = useSearchParams();
     const tenantSlug = params.tenantSlug as string;
@@ -292,7 +294,7 @@ export default function InstallWizardPage() {
             {/* Header */}
             <div>
                 <Heading level={1} className="mt-2" id="install-wizard-heading">
-                    {tx('install.heading', { name: framework.name })}
+                    {tx('install.heading', { name: tc(framework.name) })}
                 </Heading>
                 <p className="text-sm text-content-muted mt-1">
                     {tx('install.description')}
@@ -348,8 +350,8 @@ export default function InstallWizardPage() {
                                         className="mt-0.5"
                                     />
                                     <div>
-                                        <div className="text-sm font-medium text-content-emphasis">{p.name}</div>
-                                        {p.description && <div className="text-xs text-content-muted mt-0.5">{p.description}</div>}
+                                        <div className="text-sm font-medium text-content-emphasis">{tc(p.name)}</div>
+                                        {p.description && <div className="text-xs text-content-muted mt-0.5">{tc(p.description)}</div>}
                                         <div className="text-xs text-content-subtle mt-0.5">{packMeta(p)}</div>
                                     </div>
                                 </ShadedRow>
@@ -397,7 +399,7 @@ export default function InstallWizardPage() {
                                 >
                                     <RadioGroupItem value={p.key} />
                                     <div>
-                                        <div className="text-sm font-medium text-content-emphasis">{p.name}</div>
+                                        <div className="text-sm font-medium text-content-emphasis">{tc(p.name)}</div>
                                         <div className="text-xs text-content-subtle">{packMeta(p)}</div>
                                     </div>
                                 </ShadedRow>
@@ -438,7 +440,7 @@ export default function InstallWizardPage() {
                                 <div key={t.code} className="flex items-center gap-compact px-3 py-1.5 rounded-md text-sm">
                                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${t.alreadyInstalled ? 'bg-bg-success-emphasis' : 'bg-[var(--brand-default)]'}`} />
                                     <code className="text-xs text-content-subtle font-mono w-14 sm:w-24 flex-shrink-0 whitespace-nowrap">{t.code}</code>
-                                    <span className="text-content-default flex-1 min-w-0 break-words">{t.title}</span>
+                                    <span className="text-content-default flex-1 min-w-0 break-words">{tc(t.title)}</span>
                                     {t.alreadyInstalled && (t.missingMappings ?? 0) > 0 && (
                                         <span className="text-xs text-content-warning">{tx('install.missingCount', { count: t.missingMappings ?? 0 })}</span>
                                     )}

@@ -22,6 +22,7 @@ import type { RichTextContentType } from '@/components/ui/RichTextEditor';
 import type { NewPolicyFormReturn } from './useNewPolicyForm';
 import { ShadedRow } from '@/components/ui/shaded-row';
 import { LIBRARY_LANG } from '@/lib/library-language';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // Prompt-3.3 — the SAME Tiptap editor used for later versions (lazy, no SSR).
 const RichTextEditor = dynamic(
@@ -47,6 +48,7 @@ const POLICY_CATEGORIES = [
 
 export function NewPolicyFields({ form }: { form: NewPolicyFormReturn }) {
     const t = useTranslations('policies');
+    const tc = useContentText();
     const categoryOptions: ComboboxOption[] = useMemo(
         () => POLICY_CATEGORIES.map(([value, key]) => ({ value, label: t(`new.categories.${key}`) })),
         [t],
@@ -88,12 +90,14 @@ export function NewPolicyFields({ form }: { form: NewPolicyFormReturn }) {
                                 >
                                     {/* The template's title and category are the
                                         library's English, marked as such (#5924):
-                                        content, not interface text. */}
-                                    <span className="block" lang={tpl.language || LIBRARY_LANG} data-testid={`policy-template-text-${tpl.id}`}>
-                                        <span className="block font-medium">{tpl.title}</span>
+                                        content, not interface text. One the
+                                        catalogue translates is in the reader's
+                                        language and carries no mark. */}
+                                    <span className="block" data-testid={`policy-template-text-${tpl.id}`}>
+                                        <span className="block font-medium" lang={tc(tpl.title) === tpl.title ? tpl.language || LIBRARY_LANG : undefined}>{tc(tpl.title)}</span>
                                         {tpl.category && (
-                                            <span className="block text-xs text-content-subtle mt-0.5">
-                                                {tpl.category}
+                                            <span className="block text-xs text-content-subtle mt-0.5" lang={tc(tpl.category) === tpl.category ? tpl.language || LIBRARY_LANG : undefined}>
+                                                {tc(tpl.category)}
                                             </span>
                                         )}
                                     </span>

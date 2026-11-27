@@ -38,6 +38,7 @@ import {
     type SelfAssessmentAnswers,
 } from '@/lib/self-assessments/scoring';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 type SovereigntyT = ReturnType<typeof useTranslations>;
 
@@ -87,6 +88,7 @@ export function SovereigntySelfAssessmentStep({
     onSkip?: () => void;
 }) {
     const t = useTranslations('onboarding');
+    const tc = useContentText();
     const dimensionLabels = buildDimensionLabels(t);
     const dimLabel = (dim: { labelKey: string }): string => dimensionLabels[dim.labelKey] ?? dim.labelKey;
     const assessment = DIGITAL_SOVEREIGNTY_ASSESSMENT;
@@ -266,7 +268,7 @@ export function SovereigntySelfAssessmentStep({
                                             checked={a.createRisk}
                                             onCheckedChange={(v) => setApproval(g.dimensionId, { createRisk: v === true })}
                                         />
-                                        <span>{t('sovereignty.riskPrefix')}<span className="text-content-muted">{g.riskTitle}</span></span>
+                                        <span>{t('sovereignty.riskPrefix')}<span className="text-content-muted">{tc(g.riskTitle)}</span></span>
                                     </label>
                                     <label className="flex items-start gap-tight text-sm cursor-pointer">
                                         <Checkbox
@@ -274,7 +276,7 @@ export function SovereigntySelfAssessmentStep({
                                             checked={a.createControl}
                                             onCheckedChange={(v) => setApproval(g.dimensionId, { createControl: v === true })}
                                         />
-                                        <span>{t('sovereignty.controlPrefix')}<span className="text-content-muted">{g.controlName}</span></span>
+                                        <span>{t('sovereignty.controlPrefix')}<span className="text-content-muted">{tc(g.controlName)}</span></span>
                                     </label>
                                 </ShadedRow>
                             );

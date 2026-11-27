@@ -9,6 +9,8 @@ import { useTenantContext } from '@/lib/tenant-context-provider';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Monitor } from 'lucide-react';
 import { useSoASectionLabel } from '@/app/t/[tenantSlug]/(app)/reports/soa/section-label';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
+import { frameworkDisplayName } from '@/app/t/[tenantSlug]/(app)/reports/framework-name';
 
 interface SoAPrintViewProps {
     /** Where to go when there is no history to go back to (fresh tab). */
@@ -32,6 +34,7 @@ type ControlStatusValue = (typeof CONTROL_STATUSES)[number];
  */
 export function SoAPrintView({ report, backHref, soaHref }: SoAPrintViewProps) {
     const t = useTranslations('reports');
+    const tc = useContentText();
     const { tenantName } = useTenantContext();
     const sectionLabel = useSoASectionLabel();
     const { summary, entries } = report;
@@ -118,13 +121,13 @@ export function SoAPrintView({ report, backHref, soaHref }: SoAPrintViewProps) {
                 <div className="print-page">
                     <div className="border-b-2 border-border-emphasis pb-4 mb-6">
                         <Heading level={1} className="text-content-emphasis">{t('soa')}</Heading>
-                        <p className="text-sm text-content-muted mt-1">{report.frameworkName}</p>
+                        <p className="text-sm text-content-muted mt-1">{frameworkDisplayName(report.frameworkName, tc)}</p>
                     </div>
 
                     <table className="w-full text-sm mb-8">
                         <tbody>
                             <tr><td className="py-1 pr-4 font-semibold text-content-default w-48">{t('soaPrint.organization')}</td><td className="py-1">{tenantName}</td></tr>
-                            <tr><td className="py-1 pr-4 font-semibold text-content-default">{t('soaPrint.framework')}</td><td className="py-1">{report.frameworkName}</td></tr>
+                            <tr><td className="py-1 pr-4 font-semibold text-content-default">{t('soaPrint.framework')}</td><td className="py-1">{frameworkDisplayName(report.frameworkName, tc)}</td></tr>
                             <tr><td className="py-1 pr-4 font-semibold text-content-default">{t('soaPrint.generated')}</td><td className="py-1">{generatedDate}</td></tr>
                             <tr><td className="py-1 pr-4 font-semibold text-content-default">{t('soaPrint.totalControls')}</td><td className="py-1">{summary.total}</td></tr>
                         </tbody>
@@ -185,6 +188,7 @@ export function SoAPrintView({ report, backHref, soaHref }: SoAPrintViewProps) {
 
 function PrintRow({ entry }: { entry: SoAEntryDTO }) {
     const t = useTranslations('reports');
+    const tc = useContentText();
     const applicable = entry.applicable === true ? t('soaPrint.yes')
         : entry.applicable === false ? t('soaPrint.no')
         : t('soaPrint.unmappedVal');
@@ -194,13 +198,13 @@ function PrintRow({ entry }: { entry: SoAEntryDTO }) {
         : 'text-content-error font-semibold';
 
     const controlRefs = entry.mappedControls
-        .map(c => `${c.code || '—'} — ${c.title}`)
+        .map(c => `${c.code || '—'} — ${tc(c.title)}`)
         .join('\n');
 
     return (
         <tr className={entry.applicable === null ? 'bg-bg-error-emphasis' : ''}>
             <td className="border border-border-default px-2 py-1.5 font-mono text-xs">{entry.requirementCode}</td>
-            <td className="border border-border-default px-2 py-1.5">{entry.requirementTitle}</td>
+            <td className="border border-border-default px-2 py-1.5">{tc(entry.requirementTitle)}</td>
             <td className={`border border-border-default px-2 py-1.5 font-medium ${applicableClass}`}>{applicable}</td>
             <td className="border border-border-default px-2 py-1.5">
                 {/* R2-P5 — an excepted requirement is labelled as excepted (with

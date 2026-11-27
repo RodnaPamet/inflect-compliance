@@ -46,6 +46,8 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
+import { ContentText } from '@/components/ContentText';
 
 import { frameworkOrderKey } from './framework-order';
 
@@ -157,6 +159,7 @@ export function FrameworksClient({
     newUpdates = 0,
 }: FrameworksClientProps) {
     const t = useTranslations('frameworks');
+    const tc = useContentText();
     const [view, setView] = useViewMode('frameworks', 'cards');
     const href = (path: string) => `/t/${tenantSlug}${path}`;
 
@@ -360,7 +363,7 @@ export function FrameworksClient({
                                                 className={cn('text-content-emphasis hover:underline', TEXT_LINK_HIT_AREA)}
                                                 data-testid={`fw-title-link-${row.key}`}
                                             >
-                                                {row.name}
+                                                {tc(row.name)}
                                             </Link>
                                         </span>
                                     }
@@ -387,7 +390,7 @@ export function FrameworksClient({
                                 >
                                     {row.description && (
                                         <p className="text-xs text-content-muted line-clamp-2">
-                                            {row.description}
+                                            {tc(row.description)}
                                         </p>
                                     )}
                                     {row.provenance && (
@@ -417,7 +420,7 @@ export function FrameworksClient({
                                                     ? 'brand'
                                                     : 'neutral'
                                             }
-                                            aria-label={`${row.name} coverage`}
+                                            aria-label={`${tc(row.name)} coverage`}
                                         />
                                     )}
                                 </CardList.CardContent>
@@ -444,7 +447,7 @@ export function FrameworksClient({
                                     href={row.original.href}
                                     className="font-medium text-content-emphasis hover:underline"
                                 >
-                                    {row.original.name}
+                                    <ContentText text={row.original.name} />
                                 </Link>
                             ),
                         },

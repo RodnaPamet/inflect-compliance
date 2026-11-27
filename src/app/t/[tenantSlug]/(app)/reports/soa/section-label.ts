@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { isControlCategoryTheme } from '@/lib/controls/control-categories';
 import { iso27001DomainKey } from '@/lib/controls/control-taxonomy';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 /**
  * A SoA requirement's group, in the reader's language.
@@ -13,14 +14,15 @@ import { iso27001DomainKey } from '@/lib/controls/control-taxonomy';
  * as keys and were shown raw, on screen and on the printed statement. They get
  * the catalogue's labels (`controls.categoryLabels.*`,
  * `controls.isoDomainLabels.*`); any other value is the framework's own text and
- * passes through as stored. Only the LABEL changes: grouping still keys on the
- * stored value.
+ * goes through the catalogue content lookup (#5996). Only the LABEL changes:
+ * grouping still keys on the stored value.
  */
 export function useSoASectionLabel(): (section: string) => string {
     const tc = useTranslations('controls');
+    const content = useContentText();
     return (section) => {
         if (isControlCategoryTheme(section)) return tc(`categoryLabels.${section}`);
         const isoKey = iso27001DomainKey(section);
-        return isoKey ? tc(`isoDomainLabels.${isoKey}`) : section;
+        return isoKey ? tc(`isoDomainLabels.${isoKey}`) : content(section);
     };
 }

@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Combobox } from '@/components/ui/combobox';
 import { Button } from '@/components/ui/button';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 export const DEP_TYPES = ['PROCESS', 'ASSET', 'VENDOR', 'RISK'] as const;
 export type DepType = (typeof DEP_TYPES)[number];
@@ -56,9 +57,12 @@ export function DependencyPickerRow({
     disabled?: boolean;
 }) {
     const tx = useTranslations('audits');
+    const tc = useContentText();
     const depTypeLabel = useDepTypeLabel();
     const [type, setType] = useState<DepType>('ASSET');
     const [options, setOptions] = useState<{ id: string; label: string }[]>([]);
+    // The type the loaded options are of: they stay listed while the next type's load runs.
+    const [optionsType, setOptionsType] = useState<DepType | null>(null);
     const [loading, setLoading] = useState(false);
     const [loadError, setLoadError] = useState(false);
     const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -76,7 +80,10 @@ export function DependencyPickerRow({
         fetch(`/api/t/${tenantSlug}/business-continuity/dependency-options?type=${type}`)
             .then((r) => (r.ok ? r.json() : Promise.reject(new Error('load'))))
             .then((d: { options: { id: string; label: string }[] }) => {
-                if (active) setOptions(d.options ?? []);
+                if (active) {
+                    setOptions(d.options ?? []);
+                    setOptionsType(type);
+                }
             })
             .catch(() => {
                 if (active) setLoadError(true);
@@ -90,8 +97,9 @@ export function DependencyPickerRow({
     }, [tenantSlug, type]);
 
     const entityOptions = useMemo(
-        () => options.filter((o) => !excludeIds?.includes(o.id)).map((o) => ({ value: o.id, label: o.label })),
-        [options, excludeIds],
+        // A risk's title can be a risk template's; the other targets are named by people.
+        () => options.filter((o) => !excludeIds?.includes(o.id)).map((o) => ({ value: o.id, label: optionsType === 'RISK' ? tc(o.label) : o.label })),
+        [options, excludeIds, optionsType, tc],
     );
 
     const handleAdd = () => {

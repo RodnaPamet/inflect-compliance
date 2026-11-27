@@ -28,6 +28,7 @@ import { AnalyticsState } from '../_shared/AnalyticsState';
 import { sparkline } from '@/lib/ascii-sparkline';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { apiErrorMessage } from '@/lib/api-error';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 type Direction = 'HIGHER_IS_WORSE' | 'LOWER_IS_WORSE';
 type Frequency = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY';
@@ -113,6 +114,7 @@ const ragVariant = (r: string | null | undefined) => (r === 'RED' ? 'error' : r 
 
 export default function KriPage() {
     const t = useTranslations('risks');
+    const tc = useContentText();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const { tenantSlug, permissions, appPermissions } = useTenantContext();
@@ -328,7 +330,7 @@ export default function KriPage() {
                                         <>
                                             {t('kri.riskLabel')}:{' '}
                                             <Link href={tenantHref(`/risks/${k.risk.id}`)} className="text-content-default underline underline-offset-2">
-                                                {k.risk.title}
+                                                {tc(k.risk.title)}
                                             </Link>
                                         </>
                                     )}

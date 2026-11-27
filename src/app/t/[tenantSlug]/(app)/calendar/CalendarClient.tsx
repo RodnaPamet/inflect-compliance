@@ -62,8 +62,31 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { PageActions } from '@/components/layout/PageActions';
 import { CalendarConnectAction } from '@/app/t/[tenantSlug]/(app)/calendar/_components/connect/CalendarConnectAction';
 import { CalendarConnectOutcome } from '@/app/t/[tenantSlug]/(app)/calendar/_components/connect/CalendarConnectOutcome';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 const DAY_MS = 86_400_000;
+
+/**
+ * Sources whose event is named after catalogue content: a control, task, risk
+ * or policy installed from a template, a self-assessment finding. Such a name
+ * is shown in the reader's language. The other sources are named by a person
+ * (a vendor, an audit, a course).
+ */
+const CATALOGUE_NAMED_ENTITY_TYPES = new Set<CalendarEvent['entityType']>([
+    'CONTROL',
+    'CONTROL_TEST_PLAN',
+    'CONTROL_EXCEPTION',
+    'TASK',
+    'RISK',
+    'RISK_TREATMENT_PLAN',
+    'POLICY',
+    'FINDING',
+]);
+/** Sources whose `detail` is such a name: a test plan's control, a milestone's risk. */
+const CATALOGUE_DETAIL_ENTITY_TYPES = new Set<CalendarEvent['entityType']>([
+    'CONTROL_TEST_PLAN',
+    'TREATMENT_MILESTONE',
+]);
 
 type View = 'heatmap' | 'month' | 'gantt' | 'agenda';
 
@@ -114,6 +137,7 @@ function rangeForView(
 
 export function CalendarClient({ tenantSlug }: CalendarClientProps) {
     const t = useTranslations('calendar');
+    const tc = useContentText();
     const toast = useToast();
     const perms = usePermissions();
     const tier = useTenantContext().permissions;
@@ -258,13 +282,23 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
     const events: CalendarEvent[] = React.useMemo(() => {
         let list = (calQuery.data?.events ?? []).map((e) => ({
             ...e,
-            title: composeEventTitle(t, e),
+            title: composeEventTitle(t, {
+                ...e,
+                entityName:
+                    e.entityName && CATALOGUE_NAMED_ENTITY_TYPES.has(e.entityType)
+                        ? tc(e.entityName)
+                        : e.entityName,
+            }),
+            detail:
+                e.detail && CATALOGUE_DETAIL_ENTITY_TYPES.has(e.entityType)
+                    ? tc(e.detail)
+                    : e.detail,
         }));
         if (mineOnly) {
             list = list.filter((e) => e.ownerUserId === currentUserId);
         }
         return list;
-    }, [calQuery.data, t, mineOnly, currentUserId]);
+    }, [calQuery.data, t, tc, mineOnly, currentUserId]);
 
     const truncation = calQuery.data?.truncation;
     const omittedSources = calQuery.data?.omittedSources ?? [];

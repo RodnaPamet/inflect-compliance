@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@inflect/ui/lib/cn';
 import { riskCanCreate } from '../_shared/bulk-permissions';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // #4776 — the likelihood and impact pickers follow the workspace's matrix,
 // not a fixed 1–5: `applySession` refuses a value above the tenant's scale.
@@ -119,6 +120,7 @@ export default function AIRiskAssessmentPage() {
     const canCreate = riskCanCreate(tenant);
     const tx = useTranslations('risks');
     const ta = useTranslations('assets');
+    const tc = useContentText();
     const { config: matrixConfig } = useRiskMatrixConfig();
 
     // Phase state
@@ -571,9 +573,9 @@ export default function AIRiskAssessmentPage() {
                                                     aria-label={tx('ai.editTitleLabel')}
                                                 />
                                             ) : (
-                                                <Heading level={3}>{item.title}</Heading>
+                                                <Heading level={3}>{tc(item.title)}</Heading>
                                             )}
-                                            {item.category && <StatusBadge variant="info">{item.category}</StatusBadge>}
+                                            {item.category && <StatusBadge variant="info">{tc(item.category)}</StatusBadge>}
                                             {confidenceBadge(item.confidence)}
                                             <StatusBadge variant="neutral">{item.isFallback ? tx('ai.baseline') : tx('ai.aiSuggested')}</StatusBadge>
                                             {edited && !isEditing && (
@@ -591,14 +593,14 @@ export default function AIRiskAssessmentPage() {
                                                 aria-label={tx('ai.editDescriptionLabel')}
                                             />
                                         ) : (
-                                            <p className="text-sm text-content-default">{item.description}</p>
+                                            <p className="text-sm text-content-default">{tc(item.description)}</p>
                                         )}
 
                                         {/* Threat / Vulnerability */}
                                         {(item.threat || item.vulnerability) && !isEditing && (
                                             <div className="grid grid-cols-2 gap-default text-xs">
-                                                {item.threat && <div><span className="text-content-subtle uppercase font-semibold">{tx('threat')}</span><p className="text-content-muted mt-0.5">{item.threat}</p></div>}
-                                                {item.vulnerability && <div><span className="text-content-subtle uppercase font-semibold">{tx('vulnerability')}</span><p className="text-content-muted mt-0.5">{item.vulnerability}</p></div>}
+                                                {item.threat && <div><span className="text-content-subtle uppercase font-semibold">{tx('threat')}</span><p className="text-content-muted mt-0.5">{tc(item.threat)}</p></div>}
+                                                {item.vulnerability && <div><span className="text-content-subtle uppercase font-semibold">{tx('vulnerability')}</span><p className="text-content-muted mt-0.5">{tc(item.vulnerability)}</p></div>}
                                             </div>
                                         )}
 
@@ -644,13 +646,13 @@ export default function AIRiskAssessmentPage() {
                                                 {item.rationale && (
                                                     <div>
                                                         <span className="text-content-subtle uppercase font-semibold block mb-1">{tx('ai.rationale')}</span>
-                                                        {item.rationale}
+                                                        {tc(item.rationale)}
                                                     </div>
                                                 )}
                                                 {sr && sr.whyThisRisk && (
                                                     <div>
                                                         <span className="text-content-subtle uppercase font-semibold block mb-1">{tx('ai.whyThisRisk')}</span>
-                                                        <p className="text-content-default">{sr.whyThisRisk}</p>
+                                                        <p className="text-content-default">{tc(sr.whyThisRisk)}</p>
                                                     </div>
                                                 )}
                                                 {sr && sr.affectedAssetCharacteristics.length > 0 && (
@@ -658,7 +660,7 @@ export default function AIRiskAssessmentPage() {
                                                         <span className="text-content-subtle uppercase font-semibold block mb-1">{tx('ai.affectedChars')}</span>
                                                         <div className="flex flex-wrap gap-1">
                                                             {sr.affectedAssetCharacteristics.map((c, ci) => (
-                                                                <span key={ci} className="px-2 py-0.5 rounded bg-bg-elevated/60 text-content-default">{c}</span>
+                                                                <span key={ci} className="px-2 py-0.5 rounded bg-bg-elevated/60 text-content-default">{tc(c)}</span>
                                                             ))}
                                                         </div>
                                                     </div>
@@ -668,7 +670,7 @@ export default function AIRiskAssessmentPage() {
                                                         <span className="text-content-subtle uppercase font-semibold block mb-1">{tx('ai.controlThemes')}</span>
                                                         <div className="flex flex-wrap gap-1">
                                                             {sr.suggestedControlThemes.map((t, ti) => (
-                                                                <span key={ti} className="px-2 py-0.5 rounded bg-bg-info text-content-info">{t}</span>
+                                                                <span key={ti} className="px-2 py-0.5 rounded bg-bg-info text-content-info">{tc(t)}</span>
                                                             ))}
                                                         </div>
                                                     </div>
@@ -681,7 +683,7 @@ export default function AIRiskAssessmentPage() {
                                             <div className="flex flex-wrap gap-1.5">
                                                 <span className="text-xs text-content-subtle mr-1">{tx('ai.suggestedControls')}</span>
                                                 {controls.map((c, ci) => (
-                                                    <span key={ci} className="text-xs bg-bg-info text-content-info px-2 py-0.5 rounded">{c}</span>
+                                                    <span key={ci} className="text-xs bg-bg-info text-content-info px-2 py-0.5 rounded">{tc(c)}</span>
                                                 ))}
                                             </div>
                                         )}

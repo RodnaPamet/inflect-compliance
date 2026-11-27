@@ -73,6 +73,7 @@ import { useTranslations } from 'next-intl';
 import { buildRiskCategoryOptions } from './_shared/risk-options';
 import { extractMutationError } from '@/lib/mutations';
 import { useNewRiskForm } from './_form/useNewRiskForm';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // ─── Constants ──────────────────────────────────────────────────────
 
@@ -121,6 +122,7 @@ export function NewRiskModal({
     canLinkControls,
 }: NewRiskModalProps) {
     const tx = useTranslations('risks');
+    const tc = useContentText();
     // #4692 — the stored value stays English; the label is the user's language.
     const categoryOptions = useMemo(() => buildRiskCategoryOptions(tx), [tx]);
     const RISK_TREATMENT_OPTIONS = useMemo(
@@ -194,10 +196,10 @@ export function NewRiskModal({
         () =>
             templates.map((tmpl) => ({
                 value: tmpl.id,
-                label: tmpl.category ? `${tmpl.title} · ${tmpl.category}` : tmpl.title,
+                label: tmpl.category ? `${tc(tmpl.title)} · ${tc(tmpl.category)}` : tc(tmpl.title),
                 meta: tmpl,
             })),
-        [templates],
+        [templates, tc],
     );
 
     // ─── B2-8 — the shared form hook ───
@@ -585,7 +587,7 @@ export function NewRiskModal({
                                                     {c.annexId || 'CUST'}
                                                 </span>
                                                 <span className="text-content-emphasis">
-                                                    {c.name}
+                                                    {tc(c.name)}
                                                 </span>
                                             </label>
                                         ))}

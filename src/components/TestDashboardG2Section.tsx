@@ -29,6 +29,7 @@ import { formatDate } from '@inflect/ui/lib/format-date';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -78,6 +79,7 @@ export function TestDashboardG2Section({
 }: TestDashboardG2SectionProps) {
     const tenantHref = useTenantHref();
     const t = useTranslations('panels.testDashG2');
+    const tc = useContentText();
 
     // R3-P3 — the pass/fail donut was removed as a duplicate of the main
     // dashboard's Result Distribution card; `totalCompleted` still labels the
@@ -167,7 +169,7 @@ export function TestDashboardG2Section({
                                             {row.planName}
                                         </div>
                                         <div className="text-xs text-content-subtle truncate">
-                                            {row.controlName}
+                                            {tc(row.controlName)}
                                         </div>
                                     </div>
                                     <div className="text-right shrink-0 ml-3">

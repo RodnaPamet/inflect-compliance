@@ -12,6 +12,7 @@ import { TriangleWarning } from '@inflect/ui/components/ui/icons/glyphs/triangle
 import { CurrencyDollar } from '@inflect/ui/components/ui/icons/glyphs/currency-dollar';
 import { cn } from '@inflect/ui/lib/cn';
 import { useMoneyFormatter } from '@/lib/tenant-context-provider';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 export const BOWTIE_NODE_TYPES = {
     bowTieThreat: 'bowTieThreat',
@@ -30,8 +31,11 @@ const effTone = (e: number | null | undefined) =>
 function BowTieNodeImpl({ type, data }: NodeProps) {
     const money = useMoneyFormatter();
     const t = useTranslations('risks');
+    const tc = useContentText();
     const d = data as Record<string, unknown>;
-    const label = String(d.title ?? d.label ?? '');
+    const stored = String(d.title ?? d.label ?? '');
+    // A consequence's label is the projection's own wording, never catalogue text.
+    const label = type === BOWTIE_NODE_TYPES.bowTieConsequence ? stored : tc(stored);
 
     if (type === BOWTIE_NODE_TYPES.bowTieEvent) {
         return (

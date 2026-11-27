@@ -16,6 +16,7 @@ import { FormField } from '@/components/ui/form-field';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { unwrapCappedList, type CappedList } from '@/lib/list-backfill-cap';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface ControlOption {
     id: string;
@@ -37,6 +38,7 @@ export function BiaLinkControlModal({
     onLinked: () => void | Promise<void>;
 }) {
     const tx = useTranslations('audits');
+    const tc = useContentText();
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
@@ -75,8 +77,8 @@ export function BiaLinkControlModal({
         () =>
             unwrapCappedList(controlsData)
                 .filter((c) => !linkedControlIds.includes(c.id))
-                .map((c) => ({ value: c.id, label: c.code ? `${c.code} · ${c.name}` : c.name })),
-        [controlsData, linkedControlIds],
+                .map((c) => ({ value: c.id, label: c.code ? `${c.code} · ${tc(c.name)}` : tc(c.name) })),
+        [controlsData, linkedControlIds, tc],
     );
 
     /**

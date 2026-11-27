@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useAutosaveFields } from "@/components/ui/hooks";
-import { buildCategoryOptions } from "@/lib/controls/control-categories";
+import { buildCategoryOptions, isControlCategoryTheme } from "@/lib/controls/control-categories";
 import { Heading } from "@/components/ui/typography";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
@@ -27,6 +27,7 @@ import { PanelTabs } from "@/components/controls-shared/PanelTabs";
 import { PanelActivityFeed } from "@/components/controls-shared/PanelActivityFeed";
 import { choiceOrNull, textOrNull } from './_lib/control-write-values';
 import { buildControlStatusLabels } from './filter-defs';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 /** The subset of control row fields the panel needs to seed + display. */
 export interface PanelControl {
@@ -84,6 +85,7 @@ export function ControlEditPanel({
     onSaved: () => void;
 }) {
     const tx = useTranslations("controls");
+    const tc = useContentText();
     const FREQUENCY_OPTIONS = buildFrequencyOptions(tx);
     // The same localized status copy the table's Status column shows — the
     // badge used to print the enum with underscores swapped for spaces.
@@ -147,8 +149,13 @@ export function ControlEditPanel({
     // when it's a legacy/granular/custom string, so a non-theme category shows
     // honestly and round-trips instead of reading as "—".
     const CATEGORY_OPTIONS = useMemo(
-        () => buildCategoryOptions(category, (theme) => tx(`categoryLabels.${theme}`)),
-        [category, tx],
+        () =>
+            // A non-theme category is the stored text (a framework's own):
+            // its LABEL is shown in the reader's language, its value is not.
+            buildCategoryOptions(category, (theme) => tx(`categoryLabels.${theme}`)).map((o) =>
+                isControlCategoryTheme(o.value) ? o : { ...o, label: tc(o.label) },
+            ),
+        [category, tx, tc],
     );
     // Owner is not part of the PATCH field set (it has its own endpoint), so
     // it is held here — but it still has to follow `control` when the panel is
@@ -192,8 +199,10 @@ export function ControlEditPanel({
             </div>
 
             {/* Reflect the edited local state (not the stale `control.name` prop)
-                so the header tracks the name field live while editing. */}
-            <Heading level={3} className="break-words">{name}</Heading>
+                so the header tracks the name field live while editing. The stored
+                name is shown in the reader's language; text being typed is not
+                looked up. */}
+            <Heading level={3} className="break-words">{name === control.name ? tc(name) : name}</Heading>
 
             <PanelTabs<Tab>
                 tabs={[{ id: "details", label: tx("detail.tabs.details") }, { id: "activity", label: tx("detail.tabs.activity") }]}

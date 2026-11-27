@@ -46,6 +46,7 @@ import {
     vendorAssessmentStatusLabelKey,
 } from '@/app-layer/domain/entity-status-mapping';
 import { AssessmentPrefillPanel } from './_components/AssessmentPrefillPanel';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface Question {
     id: string;
@@ -128,6 +129,7 @@ export function VendorAssessmentReviewClient({
     const { permissions } = useTenantContext();
     const t = useTranslations('admin');
     const tv = useTranslations('vendors');
+    const tc = useContentText();
 
     const [view, setView] = useState<ReviewView | null>(null);
     const [loading, setLoading] = useState(true);
@@ -359,7 +361,7 @@ export function VendorAssessmentReviewClient({
                             {view.vendor.name}
                         </p>
                         <Heading level={1} className="mt-0.5">
-                            {view.template.name}
+                            {tc(view.template.name)}
                         </Heading>
                         <div className="flex items-center gap-tight mt-1 text-xs text-content-subtle">
                             <span>{t('assessmentReview.templateVersion', { version: view.template.version })}</span>
@@ -468,7 +470,7 @@ export function VendorAssessmentReviewClient({
                         data-testid={`section-${s.id}`}
                     >
                         <Heading level={2} className="mb-3">
-                            {s.title}
+                            {tc(s.title)}
                         </Heading>
                         <div className="space-y-compact">
                             {s.questions.map((q) => {
@@ -485,7 +487,7 @@ export function VendorAssessmentReviewClient({
                                     >
                                         <div className="md:col-span-5">
                                             <p className="text-sm text-content-emphasis">
-                                                {q.prompt}
+                                                {tc(q.prompt)}
                                             </p>
                                             <p className="text-xs text-content-subtle mt-1">
                                                 <StatusBadge variant="info" size="sm">
@@ -524,7 +526,7 @@ export function VendorAssessmentReviewClient({
                                                     className="mt-1"
                                                     type="text"
                                                     inputMode="decimal"
-                                                    aria-label={t('assessmentReview.overrideAria', { question: q.prompt })}
+                                                    aria-label={t('assessmentReview.overrideAria', { question: tc(q.prompt) })}
                                                     placeholder={t('assessmentReview.overridePlaceholder')}
                                                     value={
                                                         pointsText[q.id] ??
@@ -574,7 +576,7 @@ export function VendorAssessmentReviewClient({
                                             {editable ? (
                                                 <Textarea
                                                     rows={2}
-                                                    aria-label={t('assessmentReview.notesAria', { question: q.prompt })}
+                                                    aria-label={t('assessmentReview.notesAria', { question: tc(q.prompt) })}
                                                     value={ov.notes ?? ''}
                                                     onChange={(e) =>
                                                         setOverrides(

@@ -11,6 +11,7 @@ import { useMoneyFormatter, useTenantHref } from '@/lib/tenant-context-provider'
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface Vel { riskId: string; title: string; deltaPercent: number }
 interface VelocityResult {
@@ -21,6 +22,7 @@ interface VelocityResult {
 
 export function VelocityCard() {
     const t = useTranslations('risks');
+    const tc = useContentText();
     const money = useMoneyFormatter();
     const href = useTenantHref();
     // B2-2 — this used to be a bare fetch whose `.catch(() => {})` left `v`
@@ -69,7 +71,7 @@ export function VelocityCard() {
                     {v.topRising.length === 0 ? <p className="text-xs text-content-subtle">{t('velocity.none')}</p> : v.topRising.map((r) => (
                         <Link key={r.riskId} href={href(`/risks/${r.riskId}?tab=quantification`)} className="flex items-center gap-tight rounded py-tight text-sm hover:bg-bg-muted/50" data-testid={`velocity-rising-${r.riskId}`}>
                             <ArrowTrendUp className="size-3.5 shrink-0 text-content-error" />
-                            <span className="truncate text-content-emphasis">{r.title}</span>
+                            <span className="truncate text-content-emphasis">{tc(r.title)}</span>
                             <span className="ml-auto tabular-nums text-content-error">+{r.deltaPercent.toFixed(0)}%</span>
                         </Link>
                     ))}
@@ -79,7 +81,7 @@ export function VelocityCard() {
                     {v.topFalling.length === 0 ? <p className="text-xs text-content-subtle">{t('velocity.none')}</p> : v.topFalling.map((r) => (
                         <Link key={r.riskId} href={href(`/risks/${r.riskId}?tab=quantification`)} className="flex items-center gap-tight rounded py-tight text-sm hover:bg-bg-muted/50" data-testid={`velocity-falling-${r.riskId}`}>
                             <PercentageArrowDown className="size-3.5 shrink-0 text-content-success" />
-                            <span className="truncate text-content-emphasis">{r.title}</span>
+                            <span className="truncate text-content-emphasis">{tc(r.title)}</span>
                             <span className="ml-auto tabular-nums text-content-success">{r.deltaPercent.toFixed(0)}%</span>
                         </Link>
                     ))}

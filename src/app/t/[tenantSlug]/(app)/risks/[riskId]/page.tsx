@@ -47,6 +47,8 @@ import { InheritedMappingsPanel } from '@/components/InheritedMappingsPanel';
 import { extractMutationError } from '@/lib/mutations';
 import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
+import { riskCategoryMessageKey } from '@/lib/risk/categories';
 
 const TraceabilityPanel = dynamic(() => import('@/components/TraceabilityPanel'), {
     loading: () => <SkeletonCard lines={3} />,
@@ -140,6 +142,7 @@ export default function RiskDetailPage() {
     const hydratedNow = useHydratedNow();
     const { riskId } = useParams<{ riskId: string }>();
     const t = useTranslations('risks');
+    const tc = useContentText();
     const TREATMENT_OPTIONS = useMemo(
         () => buildRiskTreatmentOptions((k) => t(k as Parameters<typeof t>[0])),
         [t],
@@ -348,7 +351,7 @@ export default function RiskDetailPage() {
     const breadcrumbs = [
         { label: t('detail.bcDashboard'), href: href('/dashboard') },
         { label: t('detail.bcRisks'), href: href('/risks') },
-        { label: risk?.title ?? t('detail.bcFallback') },
+        { label: tc(risk?.title) ?? t('detail.bcFallback') },
     ];
     if (loading) {
         // RQ3-OB-B — structured skeleton instead of an empty shell.
@@ -407,7 +410,7 @@ export default function RiskDetailPage() {
             activeTab={activeTab}
             onTabChange={(k) => setActiveTab(k)}
 
-            title={<span id="risk-title-heading">{risk.title}</span>}
+            title={<span id="risk-title-heading">{tc(risk.title)}</span>}
             prevNext={{
                 ids: riskIds,
                 currentId: riskId,
@@ -692,14 +695,14 @@ export default function RiskDetailPage() {
                 {risk.description && (
                     <div>
                         <Eyebrow>{t('detail.description')}</Eyebrow>
-                        <p className="text-sm text-content-default whitespace-pre-wrap">{risk.description}</p>
+                        <p className="text-sm text-content-default whitespace-pre-wrap">{tc(risk.description)}</p>
                     </div>
                 )}
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
                     <div>
                         <Eyebrow>{t('detail.category')}</Eyebrow>
-                        <p className="text-sm">{risk.category ? riskCategoryLabel(t, risk.category) : '—'}</p>
+                        <p className="text-sm">{risk.category ? (riskCategoryMessageKey(risk.category) ? riskCategoryLabel(t, risk.category) : tc(risk.category)) : '—'}</p>
                     </div>
                     <div>
                         <Eyebrow>{t('detail.treatmentOwner')}</Eyebrow>
@@ -742,13 +745,13 @@ export default function RiskDetailPage() {
                 {risk.threat && (
                     <div>
                         <Eyebrow>{t('detail.threat')}</Eyebrow>
-                        <p className="text-sm text-content-default">{risk.threat}</p>
+                        <p className="text-sm text-content-default">{tc(risk.threat)}</p>
                     </div>
                 )}
                 {risk.vulnerability && (
                     <div>
                         <Eyebrow>{t('detail.vulnerability')}</Eyebrow>
-                        <p className="text-sm text-content-default whitespace-pre-wrap">{risk.vulnerability}</p>
+                        <p className="text-sm text-content-default whitespace-pre-wrap">{tc(risk.vulnerability)}</p>
                     </div>
                 )}
                 {risk.treatmentNotes && (

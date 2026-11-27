@@ -286,9 +286,12 @@ export function buildControlFilters(
     loaded: ReadonlyArray<CategorizableControl & { owner?: OwnerLike | null }>,
     t: T,
     tGroup: TGroup,
+    // Catalogue content lookup (`useContentText()`): a framework's persisted
+    // category is shown in the reader's language. The option VALUE is unchanged.
+    tc: (text: string) => string = (text) => text,
 ): FilterDef[] {
     const ownerOpts = ownerOptionsFromControls(loaded);
-    const categoryOpts = categoryOptionsFromControls(loaded, (value) => controlCategoryLabel(value, t));
+    const categoryOpts = categoryOptionsFromControls(loaded, (value) => tc(controlCategoryLabel(value, t)));
     return buildControlFilterDefs(t, tGroup).filters.map((f) => {
         if (f.key === 'ownerUserId') return { ...f, options: ownerOpts };
         if (f.key === 'category') return { ...f, options: categoryOpts };

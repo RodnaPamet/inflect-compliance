@@ -62,6 +62,8 @@ import { apiErrorMessage } from '@/lib/api-error';
 // page rendered the raw enum (`CRITICAL`) next to a filter chip reading
 // "Critical".
 import { taskSeverityLabels } from '../filter-defs';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
+import { composedContentLabel } from '../content-label';
 
 // Status tone AND label both come from the shared `TASK_STATUS_BADGE` map
 // (TP-1) — tone via `taskStatusVariant`, copy via the map's `labelKey`.
@@ -273,6 +275,7 @@ interface TaskActivityRow {
 
 export default function TaskDetailPage() {
     const t = useTranslations('tasks');
+    const tc = useContentText();
     const STATUS_LABELS = buildStatusLabels(t);
     const PRIORITY_LABELS = buildPriorityLabels(t);
     const TYPE_LABELS = buildTypeLabels(t);
@@ -805,7 +808,7 @@ export default function TaskDetailPage() {
         const title = taskQuery.data?.title ?? '';
         router.push(tenantHref('/tasks'));
         triggerUndoToast({
-            message: t('detail.taskDeleted', { title }),
+            message: t('detail.taskDeleted', { title: tc(title) }),
             undoMessage: t('detail.undo'),
             action: async () => {
                 const res = await fetch(apiUrl(`/tasks/${taskId}`), {
@@ -973,7 +976,7 @@ export default function TaskDetailPage() {
     const breadcrumbs = [
         { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
         { label: t('crumb.tasks'), href: tenantHref('/tasks') },
-        { label: task?.title ?? t('detail.crumbTaskFallback') },
+        { label: tc(task?.title) ?? t('detail.crumbTaskFallback') },
     ];
     if (loading) {
         return (
@@ -1052,19 +1055,19 @@ export default function TaskDetailPage() {
           }
         : task.finding
           ? {
-                label: t('source.findingLabel', { title: task.finding.title }),
+                label: t('source.findingLabel', { title: tc(task.finding.title) }),
                 href: tenantHref('/findings'),
-                why: t('source.findingWhy', { title: task.finding.title }),
+                why: t('source.findingWhy', { title: tc(task.finding.title) }),
                 linkId: 'task-source-finding-link',
             }
           : task.control && task.type === 'CONTROL_GAP'
             ? {
                   label: task.control.code
-                      ? t('source.controlLabel', { control: `${task.control.code} — ${task.control.name}` })
-                      : t('source.controlLabel', { control: task.control.name }),
+                      ? t('source.controlLabel', { control: `${task.control.code} — ${tc(task.control.name)}` })
+                      : t('source.controlLabel', { control: tc(task.control.name) }),
                   href: tenantHref(`/controls/${task.control.id}`),
                   why: t('source.controlWhy', {
-                      control: task.control.code ?? task.control.name,
+                      control: task.control.code ?? tc(task.control.name),
                   }),
                   linkId: 'task-source-control-link',
               }
@@ -1076,7 +1079,7 @@ export default function TaskDetailPage() {
             back={{ smart: true }}
             breadcrumbs={breadcrumbs}
 
-            title={<span id="task-title">{task.title}</span>}
+            title={<span id="task-title">{tc(task.title)}</span>}
             prevNext={{
                 ids: taskIds,
                 currentId: taskId,
@@ -1382,7 +1385,7 @@ export default function TaskDetailPage() {
                     <div className="grid grid-cols-2 gap-section">
                         <div className="col-span-2">
                             <span className="text-xs text-content-subtle uppercase">{t('detail.description')}</span>
-                            <p className="text-sm text-content-default mt-1 whitespace-pre-wrap">{task.description || t('detail.descriptionEmpty')}</p>
+                            <p className="text-sm text-content-default mt-1 whitespace-pre-wrap">{tc(task.description) || t('detail.descriptionEmpty')}</p>
                         </div>
                         <div>
                             <span className="text-xs text-content-subtle uppercase">{t('detail.type')}</span>
@@ -1420,7 +1423,7 @@ export default function TaskDetailPage() {
                                         className={textLinkVariants({ tone: 'link' })}
                                         id="task-control-link"
                                     >
-                                        {task.control.code} — {task.control.name}
+                                        {task.control.code} — {tc(task.control.name)}
                                     </Link>
                                 </p>
                             </div>
@@ -1814,6 +1817,20 @@ interface TaskLinkRow {
     path?: string | null;
 }
 
+// Linked records the links loader names with a code or key in front
+// (`A.5.1 — Access control`): a control, a risk, a framework requirement.
+const CODE_LED_LINK_TYPES = new Set(['CONTROL', 'RISK', 'FRAMEWORK_REQUIREMENT']);
+
+/**
+ * A linked record's name. A control, risk, requirement or policy can be named
+ * by catalogue text (installed from a template); the rest are named by a person.
+ */
+function LinkedEntityName({ entityType, name }: { entityType: string; name: string }) {
+    const tc = useContentText();
+    if (CODE_LED_LINK_TYPES.has(entityType)) return <>{composedContentLabel(name, ' — ', tc)}</>;
+    return <>{entityType === 'POLICY' ? tc(name) : name}</>;
+}
+
 function TaskLinksTable({
     links,
     loading,
@@ -1850,19 +1867,23 @@ function TaskLinksTable({
                     // only when the entity could not be resolved.
                     header: t('detail.linkEntityHeader'),
                     cell: ({ row }) => {
-                        const { name, path, entityId } = row.original;
+                        const { name, path, entityId, entityType } = row.original;
                         if (name && path) {
                             return (
                                 <Link
                                     href={tenantHref(path)}
                                     className={textLinkVariants({ tone: 'link' })}
                                 >
-                                    {name}
+                                    <LinkedEntityName entityType={entityType} name={name} />
                                 </Link>
                             );
                         }
                         if (name) {
-                            return <span className="text-sm text-content-default">{name}</span>;
+                            return (
+                                <span className="text-sm text-content-default">
+                                    <LinkedEntityName entityType={entityType} name={name} />
+                                </span>
+                            );
                         }
                         return (
                             <span className="text-sm text-content-subtle font-mono">{entityId}</span>

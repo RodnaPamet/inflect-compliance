@@ -29,6 +29,7 @@ import { ToggleGroup } from '@/components/ui/toggle-group';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@inflect/ui/components/ui/icons/loading-spinner';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // Required attribution — AISVS is CC-BY-SA-4.0; rendered wherever questions
 // show via `onboarding.aiGov.attribution` / `.disclaimer`.
@@ -121,6 +122,7 @@ export function AiGovSelfAssessmentStep({
     onSkip?: () => void;
 }) {
     const t = useTranslations('onboarding');
+    const tc = useContentText();
     const answerOptions = buildAnswerOptions(t);
     const archOptions = buildArchOptions(t);
     const [state, setState] = useState<AssessmentState | null>(null);
@@ -293,7 +295,7 @@ export function AiGovSelfAssessmentStep({
                             <AccordionTrigger>
                                 <span className="flex items-center gap-compact text-left">
                                     <StatusBadge variant="neutral" size="sm">D{domain.id}</StatusBadge>
-                                    <span className="font-medium">{domain.name}</span>
+                                    <span className="font-medium">{tc(domain.name)}</span>
                                     <span className="text-xs text-content-muted">{domAnswered}/{qs.length}</span>
                                 </span>
                             </AccordionTrigger>
@@ -310,7 +312,7 @@ export function AiGovSelfAssessmentStep({
                                             >
                                                 <div className="flex items-start gap-tight flex-wrap">
                                                     <span className="text-sm text-content-default flex-1 min-w-[12rem]">
-                                                        {q.text}
+                                                        {tc(q.text)}
                                                     </span>
                                                     <InfoTooltip
                                                         content={t('aiGov.mapsTo', { summary: mappingSummary(q.mappings) })}

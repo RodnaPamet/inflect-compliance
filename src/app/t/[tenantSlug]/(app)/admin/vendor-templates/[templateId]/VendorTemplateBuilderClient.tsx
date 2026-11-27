@@ -56,6 +56,7 @@ import { PrimaryAction } from '@/components/layout/PageActions';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 type AnswerType =
     | 'YES_NO'
@@ -205,6 +206,7 @@ export function VendorTemplateBuilderClient({
     // can contradict in either direction (#5313).
     const canAuthor = useTenantContext().appPermissions.vendors.edit;
     const t = useTranslations('admin');
+    const tc = useContentText();
     const triggerUndoToast = useToastWithUndo();
 
     const [tree, setTree] = useState<TemplateTree | null>(null);
@@ -598,9 +600,9 @@ export function VendorTemplateBuilderClient({
                     { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
                     { label: t('crumb.admin'), href: tenantHref('/admin') },
                     { label: t('crumb.vendorTemplates'), href: tenantHref('/admin/vendor-templates') },
-                    { label: tree.name },
+                    { label: tc(tree.name) },
                 ]}
-                title={tree.name}
+                title={tc(tree.name)}
                 meta={
                     <span className="flex flex-wrap items-center gap-tight text-xs text-content-subtle">
                         <span>{tree.key}</span>
@@ -795,6 +797,7 @@ function RowActions({
 /** What a question asks the vendor to choose from, in a few words. */
 function QuestionDetail({ question }: { question: Question }) {
     const t = useTranslations('admin');
+    const tc = useContentText();
     if (isChoice(question.answerType)) {
         const options = question.optionsJson ?? [];
         if (options.length === 0) {
@@ -802,7 +805,7 @@ function QuestionDetail({ question }: { question: Question }) {
         }
         return (
             <span className="text-xs text-content-subtle truncate">
-                {options.map((o) => o.label).join(' · ')}
+                {options.map((o) => tc(o.label)).join(' · ')}
             </span>
         );
     }
@@ -855,6 +858,7 @@ function SectionCard({
     onRemoveQuestion: (question: Question) => void;
 }) {
     const t = useTranslations('admin');
+    const tc = useContentText();
     const [editing, setEditing] = useState(false);
     const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
 
@@ -890,10 +894,10 @@ function SectionCard({
                             />
                         )}
                         <div className="min-w-0">
-                            <Heading level={2}>{section.title}</Heading>
+                            <Heading level={2}>{tc(section.title)}</Heading>
                             {section.description && (
                                 <p className="text-xs text-content-subtle mt-0.5">
-                                    {section.description}
+                                    {tc(section.description)}
                                 </p>
                             )}
                         </div>
@@ -905,10 +909,10 @@ function SectionCard({
                             onMove={onMove}
                             onEdit={() => setEditing(true)}
                             onRemove={onRemove}
-                            moveUpLabel={t('templateBuilder.moveSectionUp', { title: section.title })}
-                            moveDownLabel={t('templateBuilder.moveSectionDown', { title: section.title })}
-                            editLabel={t('templateBuilder.editSection', { title: section.title })}
-                            removeLabel={t('templateBuilder.removeSection', { title: section.title })}
+                            moveUpLabel={t('templateBuilder.moveSectionUp', { title: tc(section.title) })}
+                            moveDownLabel={t('templateBuilder.moveSectionDown', { title: tc(section.title) })}
+                            editLabel={t('templateBuilder.editSection', { title: tc(section.title) })}
+                            removeLabel={t('templateBuilder.removeSection', { title: tc(section.title) })}
                         />
                     )}
                 </div>
@@ -968,7 +972,7 @@ function SectionCard({
                                 className="w-full min-w-0 flex flex-col sm:w-auto sm:flex-1"
                                 data-testid={`prompt-of-${q.id}`}
                             >
-                                <span className="text-sm break-words">{q.prompt}</span>
+                                <span className="text-sm break-words">{tc(q.prompt)}</span>
                                 <QuestionDetail question={q} />
                             </div>
                             <StatusBadge variant="info" size="sm">
@@ -989,10 +993,10 @@ function SectionCard({
                                     onMove={(dir) => onMoveQuestion(q.id, dir)}
                                     onEdit={() => setEditingQuestionId(q.id)}
                                     onRemove={() => onRemoveQuestion(q)}
-                                    moveUpLabel={t('templateBuilder.moveQuestionUp', { prompt: q.prompt })}
-                                    moveDownLabel={t('templateBuilder.moveQuestionDown', { prompt: q.prompt })}
-                                    editLabel={t('templateBuilder.editQuestion', { prompt: q.prompt })}
-                                    removeLabel={t('templateBuilder.removeQuestion', { prompt: q.prompt })}
+                                    moveUpLabel={t('templateBuilder.moveQuestionUp', { prompt: tc(q.prompt) })}
+                                    moveDownLabel={t('templateBuilder.moveQuestionDown', { prompt: tc(q.prompt) })}
+                                    editLabel={t('templateBuilder.editQuestion', { prompt: tc(q.prompt) })}
+                                    removeLabel={t('templateBuilder.removeQuestion', { prompt: tc(q.prompt) })}
                                 />
                             )}
                         </div>

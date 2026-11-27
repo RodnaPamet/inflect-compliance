@@ -8,6 +8,32 @@ import { isDiffReviewable, type ProposalDiff } from '@/lib/agentic/proposal-diff
 import { proposalFieldLabelKey } from '@/lib/agentic/proposal-labels';
 import { ProcessMapProposalPreview } from '@/components/agentic/ProcessMapProposalPreview';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
+
+/**
+ * The fields whose value can be catalogue text: a control, risk or policy
+ * installed from a template still carries the template's own wording. Such a
+ * value is shown in the reader's language, in BOTH columns, so an unchanged
+ * field still reads the same on each side. Every other field is shown as
+ * stored.
+ */
+const CATALOGUE_TEXT_FIELDS: ReadonlySet<string> = new Set([
+    'title',
+    'name',
+    'description',
+    'category',
+    'threat',
+    'vulnerability',
+    'objective',
+    'successCriteria',
+    'testingMethodology',
+]);
+
+/** A field's value as the reviewer reads it. Display only: approval sends nothing from here. */
+function useFieldValue(): (field: string, value: string | null) => string | null {
+    const tc = useContentText();
+    return (field, value) => (CATALOGUE_TEXT_FIELDS.has(field) ? tc(value) ?? null : value);
+}
 
 /**
  * A field's name as a reviewer reads it ("Treatment notes"), not as it is stored
@@ -229,6 +255,7 @@ function ProposedOnlyList({
 }) {
     const t = useTranslations('agents');
     const fieldLabel = useFieldLabel();
+    const fieldValue = useFieldValue();
     return (
         <ul
             data-testid={`proposal-diff-content-${proposalId}`}
@@ -245,7 +272,7 @@ function ProposedOnlyList({
                         data-testid={`proposal-diff-after-${proposalId}-${f.field}`}
                         className="block whitespace-pre-wrap break-words text-sm text-content-default"
                     >
-                        {f.after ?? t('proposals.diff.emptyValue')}
+                        {fieldValue(f.field, f.after) ?? t('proposals.diff.emptyValue')}
                     </span>
                 </ShadedRow>
             ))}
@@ -257,6 +284,7 @@ function ProposedOnlyList({
 function BeforeAfterList({ proposalId, diff }: { proposalId: string; diff: ProposalDiff }) {
     const t = useTranslations('agents');
     const fieldLabel = useFieldLabel();
+    const fieldValue = useFieldValue();
     return (
         <ul
             data-testid={`proposal-diff-fields-${proposalId}`}
@@ -287,7 +315,7 @@ function BeforeAfterList({ proposalId, diff }: { proposalId: string; diff: Propo
                                 data-testid={`proposal-diff-before-${proposalId}-${f.field}`}
                                 className="block whitespace-pre-wrap break-words text-sm text-content-muted"
                             >
-                                {f.before ?? t('proposals.diff.emptyValue')}
+                                {fieldValue(f.field, f.before) ?? t('proposals.diff.emptyValue')}
                             </span>
                         </div>
                         <div>
@@ -298,7 +326,7 @@ function BeforeAfterList({ proposalId, diff }: { proposalId: string; diff: Propo
                                 data-testid={`proposal-diff-after-${proposalId}-${f.field}`}
                                 className="block whitespace-pre-wrap break-words text-sm text-content-default"
                             >
-                                {f.after ?? t('proposals.diff.emptyValue')}
+                                {fieldValue(f.field, f.after) ?? t('proposals.diff.emptyValue')}
                             </span>
                         </div>
                     </div>

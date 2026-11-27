@@ -90,6 +90,8 @@ import { useTranslations } from 'next-intl';
 import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
 import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
 import { apiErrorMessage } from '@/lib/api-error';
+import { ContentText } from '@/components/ContentText';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 /** Bulk-action status options (canonical BulkActionBar). Labels resolve
  *  through the `risks.bulkStatus.*` catalog inside the component. */
@@ -897,7 +899,7 @@ function RisksPageInner({
                     href={tenantHref(`/risks/${row.original.id}`)}
                     id={`risk-link-${row.original.id}`}
                 >
-                    {getValue<string>()}
+                    <ContentText text={getValue<string>()} />
                 </TableTitleCell>
             ),
         },
@@ -1576,6 +1578,7 @@ function RisksFilterToolbar({
     // shows the FULL filter defs.
     const tx = useTranslations('risks');
     const tGroup = useTranslations('common.filterGroups');
+    const tc = useContentText();
     // next-intl's scoped Translator types the key as a narrow union; the
     // filter-defs factory takes a plain (key: string) resolver. Adapt with a
     // thin arrow — the runtime accepts any dotted key in the namespace.
@@ -1585,8 +1588,9 @@ function RisksFilterToolbar({
                 risks,
                 (k, v) => tx(k as Parameters<typeof tx>[0], v as Parameters<typeof tx>[1]),
                 (k) => tGroup(k as Parameters<typeof tGroup>[0]),
+                tc,
             ),
-        [risks, tx, tGroup],
+        [risks, tx, tGroup, tc],
     );
     // The options are built from the risks loaded, which the filters narrow.
     const filters = useRetainedFilterOptions(builtFilters, RISK_ROW_DERIVED_FILTER_KEYS);

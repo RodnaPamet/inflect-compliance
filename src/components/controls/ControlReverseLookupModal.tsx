@@ -36,6 +36,7 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Heading } from "@/components/ui/typography";
 import { LoadingSpinner } from "@inflect/ui/components/ui/icons/loading-spinner";
+import { useContentText } from "@/lib/content-i18n/use-content-text";
 
 interface MapRef {
     mapId: string;
@@ -85,6 +86,7 @@ export function ControlReverseLookupModal({
     onOpenChange: (next: boolean) => void;
 }) {
     const t = useTranslations("panels.reverseLookup");
+    const tc = useContentText();
     const [maps, setMaps] = useState<MapRef[] | null>(null);
     const [requirements, setRequirements] = useState<RequirementRow[]>([]);
     const [risks, setRisks] = useState<TraceRiskRow[]>([]);
@@ -257,7 +259,7 @@ export function ControlReverseLookupModal({
                                 {requirements.map((r) => {
                                     const req = r.fromRequirement;
                                     const label =
-                                        req?.title || req?.description || "—";
+                                        tc(req?.title || req?.description) || "—";
                                     return (
                                         <li key={r.id} className={rowClass}>
                                             <span className="text-sm text-content-default">
@@ -270,7 +272,7 @@ export function ControlReverseLookupModal({
                                             </span>
                                             {req?.framework?.name && (
                                                 <span className="text-xs text-content-subtle">
-                                                    {req.framework.name}
+                                                    {tc(req.framework.name)}
                                                 </span>
                                             )}
                                         </li>
@@ -294,7 +296,7 @@ export function ControlReverseLookupModal({
                                                 href={`/t/${tenantSlug}/risks/${r.risk.id}`}
                                                 className={linkClass}
                                             >
-                                                {r.risk.title || "—"}
+                                                {tc(r.risk.title) || "—"}
                                             </Link>
                                         </li>
                                     ) : null,

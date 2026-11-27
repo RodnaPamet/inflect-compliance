@@ -41,7 +41,9 @@ import { isAuditReadOnly } from '@/lib/audit-lifecycle';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import type { StatusBadgeVariant } from '@/components/ui/status-badge';
 import { auditWriteErrorFrom, auditWriteFailureMessage } from './_lib/audit-write-error';
+import { checklistPromptText } from './_lib/checklist-prompt';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // listAudits → AuditRepository.list (auditListSelect). The lighter LIST row
 // (distinct from the detail AuditDetail). List map callback stays untyped.
@@ -150,6 +152,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
     // `tx` covers strings not threaded through the server `translations` prop
     // (nav links, list counters) — mirrors the assets/risks island pattern.
     const tx = useTranslations('audits');
+    const tc = useContentText();
     const toast = useToast();
     const [selected, setSelected] = useState<AuditDetail | null>(null);
     const [isFindingOpen, setIsFindingOpen] = useState(false);
@@ -198,7 +201,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
         selected?.frameworkKey ? CACHE_KEYS.frameworks.list() : null,
     );
     const frameworkName = (key: string) =>
-        (Array.isArray(frameworksQuery.data) ? frameworksQuery.data.find((f) => f.key === key)?.name : undefined) ?? key;
+        tc(Array.isArray(frameworksQuery.data) ? frameworksQuery.data.find((f) => f.key === key)?.name : undefined) ?? key;
     const cycleOptions = useMemo<ComboboxOption[]>(
         () => [
             { value: '', label: tx('hub.cyclePickerAll') },
@@ -753,13 +756,13 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                                     // there and ignores a top-level `aria-label` (#4531).
                                                     buttonProps={{
                                                         className: 'w-full sm:w-auto text-xs',
-                                                        'aria-label': tx('list.resultFor', { prompt: item.prompt }),
+                                                        'aria-label': tx('list.resultFor', { prompt: checklistPromptText(item.prompt, tc) }),
                                                     }}
                                                     caret
                                                 />
                                             )}
                                             <div className="flex-1">
-                                                <p className="text-sm text-content-default">{item.prompt}</p>
+                                                <p className="text-sm text-content-default">{checklistPromptText(item.prompt, tc)}</p>
                                                 {item.notes && <p className="text-xs text-content-subtle mt-1">{item.notes}</p>}
                                             </div>
                                             {/* R8-PR5 — checklist result restates the Combobox above it. Demote to `tone="subtle"` so the row reads as one state signal, not two competing pills. */}
@@ -794,7 +797,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                                 className="text-sm font-medium text-content-default underline-offset-2 hover:underline"
                                                 id={`audit-finding-link-${f.id}`}
                                             >
-                                                {f.title}
+                                                {tc(f.title)}
                                             </Link>
                                             {/* The severity's label, not the stored enum value. */}
                                             <StatusBadge variant={FINDING_SEVERITY_VARIANT[f.severity] ?? 'info'}>

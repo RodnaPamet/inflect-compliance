@@ -18,6 +18,7 @@ import { formatDate } from '@inflect/ui/lib/format-date';
 import { useState, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { useLocalizedPlanName } from '@/lib/agentic/use-localized-plan-name';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
@@ -127,6 +128,7 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
     const canRun = appPermissions.tests.execute;
     const t = useTranslations('controls');
     const planName = useLocalizedPlanName();
+    const tc = useContentText();
     // Second binding: the plan/run enum labels live in `controlTests` (where the
     // /tests register already localized them), so reuse those keys rather than
     // duplicating the vocabulary under `controls`.
@@ -265,7 +267,7 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
             {
                 // A skeleton while the control loads, not the word "Control"
                 // posing as its name (#4928); the word stays for screen readers.
-                label: control?.name ?? (
+                label: tc(control?.name) ?? (
                     <span data-testid="test-plan-control-crumb-loading">
                         <Skeleton className="inline-block h-3 w-20 align-middle" />
                         <span className="sr-only">{t('testPlan.crumbControl')}</span>

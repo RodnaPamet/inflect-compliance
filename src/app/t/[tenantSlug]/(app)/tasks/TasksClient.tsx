@@ -73,6 +73,7 @@ import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-
 import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
 import { apiErrorMessage } from '@/lib/api-error';
 import { ContentText } from '@/components/ContentText';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // Status → badge tone AND label both come from the shared
 // `TASK_STATUS_BADGE` map (TP-1) — tone via `taskStatusVariant`, copy via the
@@ -497,6 +498,7 @@ function TasksPageInner({
         loadMore: loadMoreTasks,
     } = useThresholdLoadMore(sortedTasks);
     const tGroup = useTranslations('common.filterGroups');
+    const tc = useContentText();
     const builtFilters = useMemo(
         () =>
             buildTaskFilters(
@@ -505,8 +507,9 @@ function TasksPageInner({
                 (k) => tGroup(k as Parameters<typeof tGroup>[0]),
                 // B2-4 — the awaiting-review facet's only option is you.
                 currentUserId,
+                tc,
             ),
-        [tasks, t, tGroup, currentUserId],
+        [tasks, t, tGroup, currentUserId, tc],
     );
     // The options are built from the tasks loaded, which the filters narrow.
     const liveFilters = useRetainedFilterOptions(builtFilters, TASK_ROW_DERIVED_FILTER_KEYS);

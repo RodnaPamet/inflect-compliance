@@ -40,6 +40,7 @@ import { DateRangePicker } from '@/components/ui/date-picker/date-range-picker';
 import type { DateRangeValue } from '@/components/ui/date-picker/types';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { AUDIT_PERIOD_PRESETS } from '../../_lib/audit-period-presets';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // The icon only. The framework's name comes from the catalogue
 // (`frameworkName`): this table used to carry English labels for two
@@ -91,6 +92,7 @@ interface DefaultPackPreview {
 
 export default function CycleDetailPage() {
     const tx = useTranslations('audits');
+    const tc = useContentText();
     const params = useParams();
     const router = useRouter();
     const tenantSlug = params.tenantSlug as string;
@@ -371,7 +373,7 @@ export default function CycleDetailPage() {
         );
     }
 
-    const fw = { icon: FW_ICON[cycle.frameworkKey] ?? ('shield' as AppIconName), label: cycle.frameworkName ?? cycle.frameworkKey };
+    const fw = { icon: FW_ICON[cycle.frameworkKey] ?? ('shield' as AppIconName), label: tc(cycle.frameworkName) ?? cycle.frameworkKey };
     const periodText = cycle.periodStartAt || cycle.periodEndAt
         ? `${cycle.periodStartAt ? formatDate(cycle.periodStartAt) : '…'} – ${cycle.periodEndAt ? formatDate(cycle.periodEndAt) : '…'}`
         : tx('cycleDetail.periodNotSet');

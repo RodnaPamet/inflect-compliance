@@ -83,6 +83,7 @@ import {
     usePaletteCommands,
     type PaletteCommand,
 } from './use-palette-commands';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // ─── Key rendering helpers ─────────────────────────────────────────────
 
@@ -172,6 +173,68 @@ const ENTITY_ORDER: EntityKind[] = [
     'framework',
     'asset',
 ];
+
+/**
+ * Kinds whose labels can hold catalogue text: a control, risk, policy or task
+ * installed from a template, a framework, a test plan. Evidence and assets are
+ * named by a person.
+ */
+const CATALOGUE_HIT_KINDS = new Set<EntityKind>([
+    'control',
+    'risk',
+    'policy',
+    'framework',
+    'task',
+    'test',
+]);
+
+/** Kinds whose title the search API leads with a code or key (`A.5.1 — Access control`). */
+const CODE_LED_HIT_KINDS = new Set<EntityKind>(['control', 'task', 'framework']);
+
+/**
+ * A label the search API composed with a code in front of a stored name
+ * (`A.5.1 — Access control`, `A.5.1 · Access control`), in the reader's
+ * language. The catalogue translates the name alone, and the code is not
+ * always there, so the label is looked up whole first and then by the part
+ * after the first separator; the code stays as stored. `tc` is
+ * `useContentText()`.
+ */
+function hitLabel(
+    tc: (text: string) => string,
+    label: string,
+    separator: string,
+): string {
+    const whole = tc(label);
+    const at = label.indexOf(separator);
+    if (whole !== label || at === -1) return whole;
+    const from = at + separator.length;
+    return label.slice(0, from) + tc(label.slice(from));
+}
+
+/** A hit's title. Only a code-led kind is split: any other title is one name. */
+function hitTitle(
+    tc: (text: string) => string,
+    kind: EntityKind,
+    title: string,
+): string {
+    if (!CATALOGUE_HIT_KINDS.has(kind)) return title;
+    return CODE_LED_HIT_KINDS.has(kind) ? hitLabel(tc, title, ' — ') : tc(title);
+}
+
+/** A hit's subtitle: a test plan's control, a risk's category before its score. */
+function hitSubtitle(
+    tc: (text: string) => string,
+    kind: EntityKind,
+    subtitle: string,
+): string {
+    if (kind === 'test') return hitLabel(tc, subtitle, ' · ');
+    if (kind === 'risk') {
+        // `Access control · Score 12`, or `Score 12` alone for a risk with no category.
+        const at = subtitle.lastIndexOf(' · ');
+        return at === -1 ? subtitle : tc(subtitle.slice(0, at)) + subtitle.slice(at);
+    }
+    return subtitle;
+}
 
 function groupByKind(
     results: EntitySearchResult[],
@@ -665,6 +728,7 @@ function EntityGroup({
     items: EntitySearchResult[];
     onSelect: (href: string) => void;
 }) {
+    const tc = useContentText();
     return (
         <Command.Group
             heading={heading}
@@ -698,10 +762,10 @@ function EntityGroup({
                         aria-hidden="true"
                         className="size-4 shrink-0 text-content-muted"
                     />
-                    <span className="min-w-0 flex-1 break-words">{r.primary}</span>
+                    <span className="min-w-0 flex-1 break-words">{hitTitle(tc, r.kind, r.primary)}</span>
                     {r.secondary && (
                         <span className="shrink-0 text-xs text-content-muted">
-                            {r.secondary}
+                            {hitSubtitle(tc, r.kind, r.secondary)}
                         </span>
                     )}
                     {r.badge && (
@@ -780,6 +844,7 @@ function RecentsGroup({
     ) => void;
 }) {
     const t = useTranslations('commandPalette');
+    const tc = useContentText();
     const entityMeta = useMemo(() => buildEntityMeta(t), [t]);
     return (
         <Command.Group
@@ -817,7 +882,7 @@ function RecentsGroup({
                         'data-[selected=true]:bg-bg-muted data-[selected=true]:text-content-emphasis',
                     )}
                 >
-                    <span className="min-w-0 flex-1 break-words">{item.title}</span>
+                    <span className="min-w-0 flex-1 break-words">{hitTitle(tc, item.type, item.title)}</span>
                     <span className="text-xs uppercase tracking-wider text-content-subtle">
                         {entityMeta[item.type]?.heading ?? SEARCH_TYPE_DEFAULTS[item.type]?.category}
                     </span>

@@ -25,6 +25,7 @@ import {
     TemplateShowMore,
     useProgressiveCount,
 } from '@/components/controls-shared/template-library-phone';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // getFramework (framework/catalog.ts) — only the name is read here.
 interface FrameworkSummary {
@@ -68,11 +69,12 @@ interface CatalogTemplate {
 export default function TemplateLibraryPage() {
     const tx = useTranslations('frameworks');
     const tControls = useTranslations('controls');
+    const tc = useContentText();
     // An ISO 27002 theme constant (`TECHNOLOGICAL`) reads as its label; any
     // other category is already prose and passes through.
     const categoryLabel = useCallback(
-        (c: string) => (isControlCategoryTheme(c) ? tControls(`categoryLabels.${c}`) : c),
-        [tControls],
+        (c: string) => (isControlCategoryTheme(c) ? tControls(`categoryLabels.${c}`) : tc(c)),
+        [tControls, tc],
     );
     const params = useParams();
     const searchParams = useSearchParams();
@@ -224,9 +226,9 @@ export default function TemplateLibraryPage() {
         return allTemplates.filter((t) =>
             (!category || t.category === category) &&
             (!section || t.requirements.some((r) => r.section === section)) &&
-            (!q || t.code.toLowerCase().includes(q) || t.title.toLowerCase().includes(q)),
+            (!q || t.code.toLowerCase().includes(q) || t.title.toLowerCase().includes(q) || tc(t.title).toLowerCase().includes(q)),
         );
-    }, [allTemplates, category, section, search]);
+    }, [allTemplates, category, section, search, tc]);
     const installed = templates.filter(t => t.installed).length;
     const available = templates.filter(t => !t.installed).length;
 
@@ -285,7 +287,7 @@ export default function TemplateLibraryPage() {
             <div className="flex items-center justify-between">
                 <div>
                     <Heading level={1} className="mt-2" id="template-library-heading">
-                        {framework ? tx('templates.heading', { name: framework.name }) : tx('templates.headingFallback')}
+                        {framework ? tx('templates.heading', { name: tc(framework.name) }) : tx('templates.headingFallback')}
                     </Heading>
                     <div className="flex gap-compact mt-1 text-xs text-content-subtle">
                         <span>{tx('templates.templatesCount', { count: templates.length })}</span>
@@ -377,12 +379,12 @@ export default function TemplateLibraryPage() {
                                         id={`template-select-${t.code}`}
                                         checked={isSelected}
                                         onCheckedChange={() => toggleSelect(t.code)}
-                                        label={tx('templates.selectTemplateAria', { code: t.code, title: t.title })}
+                                        label={tx('templates.selectTemplateAria', { code: t.code, title: tc(t.title) })}
                                     />
                                 ) : (
                                     <Checkbox
                                         checked={isSelected}
-                                        aria-label={tx('templates.selectTemplateAria', { code: t.code, title: t.title })}
+                                        aria-label={tx('templates.selectTemplateAria', { code: t.code, title: tc(t.title) })}
                                         onCheckedChange={() => toggleSelect(t.code)}
                                         className="mt-0.5"
                                     />
@@ -399,7 +401,7 @@ export default function TemplateLibraryPage() {
                                                 wraps; the code never breaks mid-token. */}
                                             <div className="flex items-center gap-tight max-md:flex-wrap">
                                                 <code className="text-xs text-[var(--brand-default)] font-mono whitespace-nowrap">{t.code}</code>
-                                                <span className="text-sm font-medium text-content-emphasis md:truncate max-md:order-last max-md:basis-full max-md:break-words" data-testid="template-title">{t.title}</span>
+                                                <span className="text-sm font-medium text-content-emphasis md:truncate max-md:order-last max-md:basis-full max-md:break-words" data-testid="template-title">{tc(t.title)}</span>
                                                 {t.installed ? (
                                                     <StatusBadge variant="success" className="flex-shrink-0">{tx('templates.installed')}</StatusBadge>
                                                 ) : (
@@ -434,7 +436,7 @@ export default function TemplateLibraryPage() {
                                     {isExpanded && (
                                         <div className="mt-3 space-y-compact border-t border-border-default/30 pt-3">
                                             {t.description && (
-                                                <p className="text-sm text-content-muted">{t.description}</p>
+                                                <p className="text-sm text-content-muted">{tc(t.description)}</p>
                                             )}
 
                                             {/* Requirements */}
@@ -444,8 +446,8 @@ export default function TemplateLibraryPage() {
                                                     {t.requirements.map((r, i: number) => (
                                                         <div key={i} className="flex items-center gap-tight text-xs">
                                                             <code className="text-[var(--brand-default)] font-mono">{r.code}</code>
-                                                            <span className="text-content-muted">{r.title}</span>
-                                                            <span className="text-content-subtle">({r.framework.name})</span>
+                                                            <span className="text-content-muted">{tc(r.title)}</span>
+                                                            <span className="text-content-subtle">({tc(r.framework.name)})</span>
                                                         </div>
                                                     ))}
                                                 </div>
@@ -458,7 +460,7 @@ export default function TemplateLibraryPage() {
                                                     {t.tasks.map((task, i: number) => (
                                                         <div key={i} className="flex items-center gap-tight text-xs">
                                                             <span className="w-1.5 h-1.5 rounded-full bg-border-emphasis" />
-                                                            <span className="text-content-default">{task.title}</span>
+                                                            <span className="text-content-default">{tc(task.title)}</span>
                                                         </div>
                                                     ))}
                                                 </div>
@@ -473,7 +475,7 @@ export default function TemplateLibraryPage() {
                                                         {evidenceHints.map((hint) => (
                                                             <div key={hint} className="flex items-center gap-tight text-xs">
                                                                 <span className="w-1.5 h-1.5 rounded-full bg-border-emphasis" />
-                                                                <span className="text-content-default">{hint}</span>
+                                                                <span className="text-content-default">{tc(hint)}</span>
                                                             </div>
                                                         ))}
                                                     </div>
