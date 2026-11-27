@@ -2031,7 +2031,17 @@ function ControlsPageInner({
     const composedAside = quickViewAside ? (
         // `xl:h-full xl:min-h-0` passes the bounded aside height down to the
         // panel card so its content scrolls (the card caps via max-h-full).
-        <div className="flex flex-col gap-default xl:h-full xl:min-h-0">{quickViewAside}</div>
+        //
+        // The quick-view reads at the TABLE's type scale: the record's title
+        // stays 14px (the table's name column), and everything else drops to
+        // the table's 12px (its other cells and headers). The field labels
+        // (`<Label>` and the panels' own `<label>`s) and the tabs are 14px in
+        // the panels themselves, and the panel body inherits the page's 16px;
+        // both override here rather than in the panels, because the task panel
+        // is shared with the Tasks pages, whose scale this does not change.
+        <div className="flex flex-col gap-default xl:h-full xl:min-h-0 text-xs [&_label]:text-xs [&_[role=tab]]:text-xs">
+            {quickViewAside}
+        </div>
     ) : (
         <div className="flex flex-col gap-default xl:h-full xl:min-h-0">
             {browseAside}

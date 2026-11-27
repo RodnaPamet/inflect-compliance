@@ -770,3 +770,51 @@ describe('Controls list — a stored theme category reads as its label', () => {
         expect(label.closest('button')).toHaveClass('min-w-0');
     });
 });
+
+// ─── The optional side panel (the toggle right of "Views") ───────────
+
+describe('Controls list — the side panel is optional', () => {
+    const toggle = () => document.getElementById('controls-side-panel-toggle') as HTMLElement;
+    const nameButton = () => screen.getByTestId(`control-title-${CUSTOM.id}`);
+
+    it('on by default: the name opens the quick view and does not navigate', async () => {
+        mountAs('OWNER');
+        await screen.findByText(CUSTOM.name);
+        await readsSettled();
+        expect(toggle().getAttribute('aria-pressed')).toBe('true');
+        fireEvent.click(nameButton());
+        await screen.findByTestId('control-edit-panel');
+        expect(mockNav.router.push).not.toHaveBeenCalled();
+    });
+
+    it('off: the side column goes, the name opens the control page, and the choice is remembered', async () => {
+        const view = mountAs('OWNER');
+        await screen.findByText(CUSTOM.name);
+        await readsSettled();
+        fireEvent.click(nameButton());
+        await screen.findByTestId('control-edit-panel');
+        fireEvent.click(toggle());
+        await waitFor(() => expect(toggle().getAttribute('aria-pressed')).toBe('false'));
+        expect(screen.queryByTestId('control-edit-panel')).toBeNull();
+        fireEvent.click(nameButton());
+        await waitFor(() =>
+            expect(mockNav.router.push).toHaveBeenCalledWith(`/t/acme/controls/${CUSTOM.id}`),
+        );
+        expect(screen.queryByTestId('control-edit-panel')).toBeNull();
+        view.unmount();
+        // A fresh mount reads the remembered choice.
+        mountAs('OWNER');
+        await screen.findByText(CUSTOM.name);
+        await waitFor(() => expect(toggle().getAttribute('aria-pressed')).toBe('false'));
+    });
+
+    it('a double click on the name opens the control page with the panel on', async () => {
+        mountAs('OWNER');
+        await screen.findByText(CUSTOM.name);
+        await readsSettled();
+        fireEvent.doubleClick(nameButton());
+        await waitFor(() =>
+            expect(mockNav.router.push).toHaveBeenCalledWith(`/t/acme/controls/${CUSTOM.id}`),
+        );
+    });
+});

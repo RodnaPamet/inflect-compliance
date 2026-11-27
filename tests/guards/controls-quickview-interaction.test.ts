@@ -30,7 +30,11 @@ const activityFeed = read("src/components/controls-shared/PanelActivityFeed.tsx"
 
 describe("Controls editable side-panel interaction", () => {
     it("the title cell is a <button> that opens the panel + expands inline tasks", () => {
-        expect(controls).toMatch(/onClick=\{[\s\S]{0,80}openControlQuickView\(row\.original\)/);
+        // With the side panel switched off the name opens the control page
+        // instead (the toggle right of "Views"), and a double click on the
+        // name opens the page either way.
+        expect(controls).toMatch(/onClick=\{\(\) => \{\s*if \(!sidePanelEnabled\) \{\s*openControlPage\(row\.original\);\s*return;\s*\}\s*openControlQuickView\(row\.original\)/);
+        expect(controls).toMatch(/onDoubleClick=\{\(e\) => \{\s*e\.stopPropagation\(\);\s*openControlPage\(row\.original\);/);
         // `TableTitleButton` forwards `testId` as `data-testid`.
         expect(controls).toMatch(/testId={`control-title-/);
         expect(controls).toMatch(/openControlQuickView\(row\.original\);[\s\S]{0,120}row\.toggleExpanded\(true\)/);
@@ -48,8 +52,11 @@ describe("Controls editable side-panel interaction", () => {
         expect(controls).toMatch(/<TaskEditPanel/);
         expect(controls).not.toMatch(/<ControlQuickView/);
         expect(controls).not.toMatch(/<TaskQuickView/);
-        // Clicking an inline task opens the task panel; saving refreshes the list.
-        expect(controls).toMatch(/onTaskClick=\{setSelectedTask\}/);
+        // Clicking an inline task opens the task panel (or, with the side
+        // panel off, the task page); a double click opens the task page;
+        // saving refreshes the list.
+        expect(controls).toMatch(/onTaskClick=\{sidePanelEnabled \? setSelectedTask : openTaskPage\}/);
+        expect(controls).toMatch(/onTaskOpen=\{openTaskPage\}/);
         expect(controls).toMatch(/onSaved=\{handlePanelSaved\}/);
     });
 
