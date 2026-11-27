@@ -223,7 +223,7 @@ const UNBOUNDED_INTERIOR_SPAN_BASELINE = 138;
 //   in `new-risk-modal.test.ts` that reached from the field id to a native
 //   `type="range"`; the fields are `<Slider id=…>` now, matched with no span.
 //   Both were bounded, so the unbounded baseline does not move.
-const INTERIOR_SPAN_BASELINE = 292;
+const INTERIOR_SPAN_BASELINE = 291;
 
 /**
  * `toMatch` arguments whose pattern this detector could not recover.
