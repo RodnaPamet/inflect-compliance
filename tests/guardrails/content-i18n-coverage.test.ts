@@ -10,7 +10,7 @@
  * Exact equality, no allowance: slack would let new untranslated text in
  * behind a translation of something else.
  */
-import { catalogueStrings } from '../../scripts/content-i18n/sources';
+import { catalogueHeadings, catalogueStrings } from '../../scripts/content-i18n/sources';
 import { translateContentText } from '@/lib/content-i18n/dictionary';
 import baseline from './content-i18n-coverage.baseline.json';
 
@@ -23,6 +23,15 @@ describe('catalogue content without a Bulgarian translation', () => {
 
     it('equals the recorded baseline, family by family', () => {
         expect(untranslated).toEqual(baseline);
+    });
+
+    // Headings are what lists, menus and pickers show, so they have no
+    // baseline: a new framework, control or task name comes with its Bulgarian
+    // text in `src/data/content-i18n/bg/<family>.json`, in the same diff.
+    it('leaves no heading untranslated: every name, title, category, section, label and role', () => {
+        const headings = catalogueHeadings();
+        expect(headings.size).toBeGreaterThan(2000);
+        expect([...headings].filter((s) => translateContentText('bg', s) === null).sort()).toEqual([]);
     });
 
     it('the extractor finds the catalogues (the count is not vacuous)', () => {

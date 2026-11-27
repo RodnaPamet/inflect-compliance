@@ -1,0 +1,20 @@
+{
+  "Backup Failure": "Неуспешно резервно копиране",
+  "Business Email Compromise": "Компрометиране на служебна електронна поща",
+  "Cloud Misconfiguration": "Неправилна облачна конфигурация",
+  "Cybersecurity": "Киберсигурност",
+  "DDoS Service Disruption": "Прекъсване на услугата от DDoS атака",
+  "Data Breach via SQL Injection": "Нарушение на сигурността на данните чрез SQL инжектиране",
+  "GDPR Non-Compliance": "Несъответствие с GDPR",
+  "Insider Data Theft": "Кражба на данни от вътрешно лице",
+  "Key Personnel Departure": "Напускане на ключов персонал",
+  "Legal": "Правен",
+  "License Violation": "Нарушение на лицензионни условия",
+  "Natural Disaster Impact": "Въздействие на природно бедствие",
+  "Phishing Attack Compromise": "Компрометиране чрез фишинг атака",
+  "Physical Server Room Intrusion": "Физическо проникване в сървърното помещение",
+  "Ransomware Infection": "Заразяване със софтуер за откуп",
+  "Third-Party Vendor Breach": "Пробив при външен доставчик",
+  "Vendor": "Доставчици",
+  "Weak Access Controls": "Слаб контрол на достъпа"
+}
