@@ -1,0 +1,113 @@
+# ───────────────────────────────────────────────────────────────
+#  Parse fidelity: the measurements behind the document parser
+#  (docs/ai-architecture/ragflow.md Phase 0.3-0.4, under D-L4-4)
+#
+#  D-L4-4 (owner, 2026-11-11) chose a Docling-class parsing-only service and
+#  keeps RAGFlow only if Docling fails the fidelity eval. This workflow is that
+#  eval's first form: it starts docling-serve (CPU image, by digest) on THIS
+#  RUNNER, parses the ten-document set in tests/fixtures/parse/ through the
+#  app's own DocumentParser seam (DOC_PARSER_BASE_URL, the in-deployment
+#  dial, the same Docling client the worker will run), scores heading recall,
+#  table-cell recall and row recall against the expected files, and samples
+#  the container's memory and CPU from start to the last document.
+#
+#  ON A GITHUB RUNNER, NEVER ON THE PRODUCTION VM. The capacity rule holds a
+#  new container off the VM until it is measured; this is the measurement. The
+#  record names the runner's CPU, so its latency and CPU figures are a
+#  runner's, not a promise about the VM. Memory is the figure the capacity
+#  budget reads (its parser row is a 3 GB estimate until this replaces it).
+#
+#  MANUAL ONLY, no secret, no input. The image digest is reviewed here, like
+#  code. Phase 3 adds a schedule and a dated non-blocking marker; until then a
+#  person dispatches it.
+#
+#  THE RECORD IS AN ARTIFACT, NOT A COMMIT (G11). It holds counts only; every
+#  rate is recomputed from it by scripts/parse-fidelity/score.ts. A record is
+#  committed through a pull request, whose CI re-reads it. This job holds
+#  `contents: read` and never pushes.
+#
+#  The documents sent to the service are the fixture set's synthetic files,
+#  to a container on 127.0.0.1. The only outbound traffic is the image pull.
+#  This job runs no Jest, so it uploads no coverage-shard artifact and sits
+#  outside the coverage partition (tests/guardrails/coverage-gate-population.test.ts).
+# ───────────────────────────────────────────────────────────────
+name: Parse fidelity
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: parse-fidelity
+  cancel-in-progress: false
+
+env:
+  # docling-serve-cpu v1.38.2 (published 2026-10-27), the multi-arch index digest.
+  # tests/unit/parse-fidelity-fixtures.test.ts refuses a reference without one.
+  DOCLING_IMAGE: ghcr.io/docling-project/docling-serve-cpu:v1.38.2@sha256:7a480a1604fa3b42efeddc7db9527690d9f9bc903226136013e2bfe6b1a4dfb0
+
+jobs:
+  docling:
+    name: Docling (CPU)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node + Prisma client
+        uses: ./.github/actions/setup-node-prisma
+
+      - name: Pull the image
+        run: docker pull "$DOCLING_IMAGE"
+
+      # Start to healthy is measured from `docker run` to the first 200 on
+      # /health. The synchronous convert endpoint waits up to five minutes, so
+      # a slow OCR page on a runner CPU is a long parse, not a refusal by the
+      # service; the client's own 120 s ceiling still applies.
+      - name: Start the service and wait for it
+        run: |
+          set -euo pipefail
+          start=$(date +%s%3N)
+          docker run -d --name docling -p 127.0.0.1:5001:5001 \
+            -e DOCLING_SERVE_ENABLE_UI=false \
+            -e DOCLING_SERVE_MAX_SYNC_WAIT=300 \
+            "$DOCLING_IMAGE" >/dev/null
+          for _ in $(seq 1 180); do
+            if curl -fsS -o /dev/null http://127.0.0.1:5001/health; then
+              echo "STARTUP_MS=$(( $(date +%s%3N) - start ))" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::docling-serve did not become healthy within three minutes"
+          docker logs --tail 40 docling || true
+          exit 1
+
+      - name: Parse the set and record
+        env:
+          SKIP_ENV_VALIDATION: '1'
+          DOC_PARSER_BASE_URL: http://127.0.0.1:5001
+        run: |
+          npx tsx scripts/parse-fidelity/run.ts measure \
+            --container docling \
+            --image "$DOCLING_IMAGE" \
+            --startup-ms "$STARTUP_MS" \
+            --out parse-fidelity-docling.json
+
+      - name: Summarise (recomputed from the record)
+        run: npx tsx scripts/parse-fidelity/run.ts summarize --record parse-fidelity-docling.json
+
+      - name: Upload the record
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: parse-fidelity-docling
+          path: parse-fidelity-docling.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Service log tail, on failure
+        if: failure()
+        run: docker logs --tail 40 docling || true

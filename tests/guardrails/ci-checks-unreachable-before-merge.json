@@ -94,6 +94,11 @@
         "reason": "Weekly check comparing pinned dependency overrides against the live npm registry; it needs network access to a moving external source, so its result is a function of time rather than of the diff.",
         "coveredBy": "tests/guards/overrides-effective.test.ts runs on every PR and enforces that each override is registered, effective and non-stale against the LOCKFILE. Only the 'is the upstream fix newer than our floor' half needs the registry."
     },
+    "parse-fidelity.yml:docling": {
+        "kind": "never",
+        "reason": "Manual dispatch only. It pulls the docling-serve CPU image (several GB) onto a GitHub runner and parses the ten-document fidelity set through the app's parser seam to measure the service's memory, CPU and fidelity for document parsing Phase 0 (D-L4-4). A record is a claim about one image digest at one moment, not about the diff; running it per PR would buy nothing but runner minutes and an image pull.",
+        "coveredBy": "tests/unit/parse-fidelity.test.ts runs on every PR: it checks every committed fixture against the manifest's sha256, re-derives every expected file from the specs that rendered the documents, proves the scoring (heading, table-cell and row recall; a refused document scores nothing; a stored rate, an empty record and self-contradicting counts are refused) on constructed records, and holds the workflow's shape (dispatch only, contents: read, the image by digest). RESIDUAL: whether the service parses the set, and the figures themselves, are known only when somebody dispatches it."
+    },
     "postgres-pgvector-image.yml:build-scan-push": {
         "kind": "never",
         "reason": "Manual dispatch and a schedule only (weekly, and daily when the upstream postgres:16-alpine digest moves), from main only. It publishes the postgres-pgvector image's moving line tag and an immutable per-build tag to GHCR (owner decisions D-L4-1 and D-L4-8), and publishing cannot meaningfully happen from a pull request: a PR's token must not reach `packages: write`.",

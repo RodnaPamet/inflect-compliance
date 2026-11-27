@@ -33,4 +33,7 @@ export const BINARY_EXTENSIONS: ReadonlySet<string> = new Set([
     '.mp3', '.mp4', '.webm', '.mov', '.wav',
     '.so', '.dll', '.dylib', '.exe', '.wasm',
     '.psd', '.sketch', '.fig',
+    // Office Open XML: a ZIP container, so as binary as `.zip` above
+    // (the parse-fidelity set in tests/fixtures/parse/).
+    '.docx', '.xlsx',
 ]);

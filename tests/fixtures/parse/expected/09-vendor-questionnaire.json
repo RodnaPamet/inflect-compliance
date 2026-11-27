@@ -1,0 +1,106 @@
+{
+  "id": "09-vendor-questionnaire",
+  "file": "09-vendor-questionnaire.xlsx",
+  "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "kind": "vendor security questionnaire export (spreadsheet)",
+  "lang": "en",
+  "ocr": false,
+  "headings": [],
+  "tables": [
+    {
+      "rows": [
+        [
+          "ID",
+          "Section",
+          "Question",
+          "Answer",
+          "Evidence"
+        ],
+        [
+          "Q1",
+          "Governance",
+          "Do you maintain an information security policy approved by management?",
+          "Yes",
+          "Policy v4"
+        ],
+        [
+          "Q2",
+          "Governance",
+          "Is the policy reviewed at least once a year?",
+          "Yes",
+          "Review minutes"
+        ],
+        [
+          "Q3",
+          "Access",
+          "Is multi-factor authentication enforced for all staff?",
+          "Yes",
+          "IdP report"
+        ],
+        [
+          "Q4",
+          "Access",
+          "Are access rights reviewed every quarter?",
+          "Yes",
+          "Q3 review"
+        ],
+        [
+          "Q5",
+          "Access",
+          "Are leavers removed within one business day?",
+          "Partially",
+          "HR process"
+        ],
+        [
+          "Q6",
+          "Data",
+          "Is customer data encrypted at rest?",
+          "Yes",
+          "Key policy"
+        ],
+        [
+          "Q7",
+          "Data",
+          "Where is customer data stored?",
+          "EU region",
+          "Data map"
+        ],
+        [
+          "Q8",
+          "Operations",
+          "Are backups tested at least quarterly?",
+          "Yes",
+          "Restore log"
+        ],
+        [
+          "Q9",
+          "Operations",
+          "Do you run vulnerability scans every month?",
+          "Yes",
+          "Scan report"
+        ],
+        [
+          "Q10",
+          "Incidents",
+          "Will you notify us of a breach within 24 hours?",
+          "Yes",
+          "DPA clause 9"
+        ],
+        [
+          "Q11",
+          "Incidents",
+          "Do you test your incident response plan?",
+          "No",
+          "Planned Q1"
+        ],
+        [
+          "Q12",
+          "Suppliers",
+          "Do you assess your own sub-processors?",
+          "Yes",
+          "Vendor register"
+        ]
+      ]
+    }
+  ]
+}

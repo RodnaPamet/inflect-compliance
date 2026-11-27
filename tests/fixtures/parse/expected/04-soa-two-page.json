@@ -1,0 +1,346 @@
+{
+  "id": "04-soa-two-page",
+  "file": "04-soa-two-page.pdf",
+  "mime": "application/pdf",
+  "kind": "Statement of Applicability PDF (a table across a page break)",
+  "lang": "en",
+  "ocr": false,
+  "headings": [
+    {
+      "text": "Statement of Applicability",
+      "level": 0
+    },
+    {
+      "text": "Annex A controls",
+      "level": 1
+    }
+  ],
+  "tables": [
+    {
+      "rows": [
+        [
+          "Control",
+          "Title",
+          "Applicable",
+          "Justification",
+          "Status"
+        ],
+        [
+          "5.1",
+          "Information security policies",
+          "Yes",
+          "Required by risk R-100",
+          "Implemented"
+        ],
+        [
+          "5.2",
+          "Security roles and responsibilities",
+          "Yes",
+          "Required by risk R-101",
+          "Partially implemented"
+        ],
+        [
+          "5.3",
+          "Segregation of duties",
+          "Yes",
+          "Required by risk R-102",
+          "Planned"
+        ],
+        [
+          "5.4",
+          "Management responsibilities",
+          "Yes",
+          "Required by risk R-103",
+          "Implemented"
+        ],
+        [
+          "5.5",
+          "Contact with authorities",
+          "Yes",
+          "Required by risk R-104",
+          "Partially implemented"
+        ],
+        [
+          "5.6",
+          "Contact with special interest groups",
+          "Yes",
+          "Required by risk R-105",
+          "Planned"
+        ],
+        [
+          "5.7",
+          "Threat intelligence",
+          "Yes",
+          "Required by risk R-106",
+          "Implemented"
+        ],
+        [
+          "5.8",
+          "Security in project management",
+          "Yes",
+          "Required by risk R-107",
+          "Partially implemented"
+        ],
+        [
+          "5.9",
+          "Inventory of information and assets",
+          "Yes",
+          "Required by risk R-108",
+          "Planned"
+        ],
+        [
+          "5.10",
+          "Acceptable use of assets",
+          "Yes",
+          "Required by risk R-109",
+          "Implemented"
+        ],
+        [
+          "5.11",
+          "Return of assets",
+          "No",
+          "No in-house development or physical site in scope",
+          "Not applicable"
+        ],
+        [
+          "5.12",
+          "Classification of information",
+          "Yes",
+          "Required by risk R-111",
+          "Planned"
+        ],
+        [
+          "5.13",
+          "Labelling of information",
+          "Yes",
+          "Required by risk R-112",
+          "Implemented"
+        ],
+        [
+          "5.14",
+          "Information transfer",
+          "Yes",
+          "Required by risk R-113",
+          "Partially implemented"
+        ],
+        [
+          "5.15",
+          "Access control",
+          "Yes",
+          "Required by risk R-114",
+          "Planned"
+        ],
+        [
+          "5.16",
+          "Identity management",
+          "Yes",
+          "Required by risk R-115",
+          "Implemented"
+        ],
+        [
+          "5.17",
+          "Authentication information",
+          "Yes",
+          "Required by risk R-116",
+          "Partially implemented"
+        ],
+        [
+          "5.18",
+          "Access rights",
+          "Yes",
+          "Required by risk R-117",
+          "Planned"
+        ],
+        [
+          "5.19",
+          "Security in supplier relationships",
+          "Yes",
+          "Required by risk R-118",
+          "Implemented"
+        ],
+        [
+          "5.20",
+          "Security in supplier agreements",
+          "Yes",
+          "Required by risk R-119",
+          "Partially implemented"
+        ],
+        [
+          "5.21",
+          "ICT supply chain security",
+          "Yes",
+          "Required by risk R-120",
+          "Planned"
+        ],
+        [
+          "5.22",
+          "Monitoring of supplier services",
+          "No",
+          "No in-house development or physical site in scope",
+          "Not applicable"
+        ],
+        [
+          "5.23",
+          "Security for cloud services",
+          "Yes",
+          "Required by risk R-122",
+          "Partially implemented"
+        ],
+        [
+          "5.24",
+          "Incident management planning",
+          "Yes",
+          "Required by risk R-123",
+          "Planned"
+        ],
+        [
+          "5.25",
+          "Assessment of security events",
+          "Yes",
+          "Required by risk R-124",
+          "Implemented"
+        ],
+        [
+          "5.26",
+          "Response to incidents",
+          "Yes",
+          "Required by risk R-125",
+          "Partially implemented"
+        ],
+        [
+          "5.27",
+          "Learning from incidents",
+          "Yes",
+          "Required by risk R-126",
+          "Planned"
+        ],
+        [
+          "5.28",
+          "Collection of evidence",
+          "Yes",
+          "Required by risk R-127",
+          "Implemented"
+        ],
+        [
+          "5.29",
+          "Security during disruption",
+          "Yes",
+          "Required by risk R-128",
+          "Partially implemented"
+        ],
+        [
+          "5.30",
+          "ICT readiness for continuity",
+          "Yes",
+          "Required by risk R-129",
+          "Planned"
+        ],
+        [
+          "5.31",
+          "Legal and contractual requirements",
+          "Yes",
+          "Required by risk R-130",
+          "Implemented"
+        ],
+        [
+          "5.32",
+          "Intellectual property rights",
+          "Yes",
+          "Required by risk R-131",
+          "Partially implemented"
+        ],
+        [
+          "5.33",
+          "Protection of records",
+          "No",
+          "No in-house development or physical site in scope",
+          "Not applicable"
+        ],
+        [
+          "5.34",
+          "Privacy and protection of PII",
+          "Yes",
+          "Required by risk R-133",
+          "Implemented"
+        ],
+        [
+          "5.35",
+          "Independent review of security",
+          "Yes",
+          "Required by risk R-134",
+          "Partially implemented"
+        ],
+        [
+          "5.36",
+          "Compliance with policies and standards",
+          "Yes",
+          "Required by risk R-135",
+          "Planned"
+        ],
+        [
+          "5.37",
+          "Documented operating procedures",
+          "Yes",
+          "Required by risk R-136",
+          "Implemented"
+        ],
+        [
+          "6.1",
+          "Screening",
+          "Yes",
+          "Required by risk R-137",
+          "Partially implemented"
+        ],
+        [
+          "6.2",
+          "Terms of employment",
+          "Yes",
+          "Required by risk R-138",
+          "Planned"
+        ],
+        [
+          "6.3",
+          "Awareness, education and training",
+          "Yes",
+          "Required by risk R-139",
+          "Implemented"
+        ],
+        [
+          "6.4",
+          "Disciplinary process",
+          "Yes",
+          "Required by risk R-140",
+          "Partially implemented"
+        ],
+        [
+          "6.5",
+          "Responsibilities after termination",
+          "Yes",
+          "Required by risk R-141",
+          "Planned"
+        ],
+        [
+          "6.6",
+          "Confidentiality agreements",
+          "Yes",
+          "Required by risk R-142",
+          "Implemented"
+        ],
+        [
+          "6.7",
+          "Remote working",
+          "No",
+          "No in-house development or physical site in scope",
+          "Not applicable"
+        ],
+        [
+          "6.8",
+          "Event reporting",
+          "Yes",
+          "Required by risk R-144",
+          "Planned"
+        ]
+      ]
+    }
+  ]
+}

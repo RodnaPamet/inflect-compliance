@@ -1,0 +1,81 @@
+{
+  "id": "06-iso27001-clauses",
+  "file": "06-iso27001-clauses.pdf",
+  "mime": "application/pdf",
+  "kind": "ISO 27001 clause list",
+  "lang": "en",
+  "ocr": false,
+  "headings": [
+    {
+      "text": "ISO/IEC 27001:2022 Requirements Checklist",
+      "level": 0
+    },
+    {
+      "text": "4 Context of the organization",
+      "level": 1
+    },
+    {
+      "text": "5 Leadership",
+      "level": 1
+    },
+    {
+      "text": "6 Planning",
+      "level": 1
+    },
+    {
+      "text": "6.1 Actions to address risks and opportunities",
+      "level": 2
+    },
+    {
+      "text": "7 Support",
+      "level": 1
+    },
+    {
+      "text": "8 Operation",
+      "level": 1
+    },
+    {
+      "text": "9 Performance evaluation",
+      "level": 1
+    },
+    {
+      "text": "10 Improvement",
+      "level": 1
+    },
+    {
+      "text": "Annex A themes",
+      "level": 1
+    }
+  ],
+  "tables": [
+    {
+      "rows": [
+        [
+          "Theme",
+          "Clause",
+          "Controls"
+        ],
+        [
+          "Organizational controls",
+          "A.5",
+          "37"
+        ],
+        [
+          "People controls",
+          "A.6",
+          "8"
+        ],
+        [
+          "Physical controls",
+          "A.7",
+          "14"
+        ],
+        [
+          "Technological controls",
+          "A.8",
+          "34"
+        ]
+      ]
+    }
+  ]
+}
