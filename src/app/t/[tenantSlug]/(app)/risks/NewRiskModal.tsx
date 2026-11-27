@@ -197,6 +197,7 @@ export function NewRiskModal({
             templates.map((tmpl) => ({
                 value: tmpl.id,
                 label: tmpl.category ? `${tc(tmpl.title)} · ${tc(tmpl.category)}` : tc(tmpl.title),
+                keywords: tmpl.category ? [tmpl.title, tmpl.category] : [tmpl.title],
                 meta: tmpl,
             })),
         [templates, tc],

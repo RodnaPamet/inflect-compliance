@@ -118,7 +118,7 @@ export function EditControlModal({
     // failed to resolve against the four ISO themes.
     const resolvedCategoryOptions: ComboboxOption[] =
         form.category && !categoryOptions.some((o) => o.value === form.category)
-            ? [...categoryOptions, { value: form.category, label: tc(form.category) }]
+            ? [...categoryOptions, { value: form.category, label: tc(form.category), keywords: [form.category] }]
             : categoryOptions;
     const AUTOMATION_TYPE_OPTIONS = buildAutomationTypeOptions(tx);
     const MITIGATION_TYPE_OPTIONS = buildMitigationTypeOptions(tx);

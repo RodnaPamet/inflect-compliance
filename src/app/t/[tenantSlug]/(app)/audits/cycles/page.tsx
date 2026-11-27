@@ -174,6 +174,7 @@ export default function AuditCyclesPage() {
             (Array.isArray(frameworkRows) ? frameworkRows : []).map((f) => ({
                 value: f.key,
                 label: f.version ? `${tc(f.name)} (${f.version})` : tc(f.name),
+                keywords: [f.name],
                 meta: { version: f.version ?? '' },
             })),
         [frameworkRows, tc],

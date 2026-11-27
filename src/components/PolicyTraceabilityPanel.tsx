@@ -182,7 +182,7 @@ export default function PolicyTraceabilityPanel({
     const linkedControlIds = useMemo(() => new Set((data?.controls ?? []).map((c) => c.control.id)), [data]);
     const linkOptions = availableControls
         .filter((c) => !linkedControlIds.has(c.id))
-        .map((c) => ({ value: c.id, label: c.code ? `${c.code} — ${tc(c.name)}` : tc(c.name) }));
+        .map((c) => ({ value: c.id, label: c.code ? `${c.code} — ${tc(c.name)}` : tc(c.name), keywords: [c.name] }));
 
     const handleLink = async (controlId: string) => {
         if (!controlLinksUrl || linking) return;

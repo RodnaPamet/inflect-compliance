@@ -94,6 +94,11 @@ export type FilterOption = {
    * (e.g. picker: "ACME Inc. — admin@acme.com", pill: "ACME Inc.").
    */
   displayLabel?: string;
+  /**
+   * More text the option is found by, never shown. A label shown in the
+   * reader's language passes the text it was stored as (#5996).
+   */
+  keywords?: string[];
   right?: ReactNode;
   icon?: FilterIcon;
   hideDuringSearch?: boolean;

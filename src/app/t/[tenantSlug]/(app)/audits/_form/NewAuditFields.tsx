@@ -75,7 +75,7 @@ export function NewAuditFields({
     ]);
     // The stored framework names, shown in the reader's language.
     const frameworks = useMemo<FrameworkOption[]>(
-        () => frameworkRows.map((f) => (f.value === '' ? f : { ...f, label: tc(f.label) })),
+        () => frameworkRows.map((f) => (f.value === '' ? f : { ...f, label: tc(f.label), keywords: [f.label] })),
         [frameworkRows, tc],
     );
     // feat/audit-cycle-unify — the "standalone" (no-cycle) option.

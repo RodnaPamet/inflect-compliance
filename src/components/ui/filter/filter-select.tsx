@@ -621,7 +621,7 @@ function FilterButton({
       // value (the top-level filter-type list), so cmdk has a
       // stable searchable token in both modes.
       value={`${label} ${option?.value ?? filter.key}`}
-      keywords={[label]}
+      keywords={[label, ...(option?.keywords ?? [])]}
       onSelect={onSelect}
       onMouseDown={(e) => {
         // Keep the search input focused when selecting with mouse

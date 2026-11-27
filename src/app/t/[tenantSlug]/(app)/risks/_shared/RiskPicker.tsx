@@ -41,7 +41,7 @@ export function RiskPicker({
     const tc = useContentText();
     const options: ComboboxOption[] = useMemo(() => {
         // The label is the reader's language; `meta` keeps the stored title for `onChange`.
-        const base: ComboboxOption[] = (data?.risks ?? []).map((r) => ({ value: r.id, label: tc(r.title), meta: r.title }));
+        const base: ComboboxOption[] = (data?.risks ?? []).map((r) => ({ value: r.id, label: tc(r.title), meta: r.title, keywords: [r.title] }));
         return allowNone ? [{ value: '', label: noneLabel ?? '—' }, ...base] : base;
     }, [data, allowNone, noneLabel, tc]);
 

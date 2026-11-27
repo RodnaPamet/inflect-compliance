@@ -419,9 +419,9 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                         <div className={cn(cardVariants({ density: 'compact' }), 'mb-3 space-y-tight')}>
                             <Combobox
                                 id="risk-select"
-                                selected={availableRisks.map((r) => ({ value: r.id, label: tc(r.title), meta: { status: r.status } })).find((o: { value: string }) => o.value === addId) ?? null}
+                                selected={availableRisks.map((r) => ({ value: r.id, label: tc(r.title), meta: { status: r.status }, keywords: [r.title] })).find((o: { value: string }) => o.value === addId) ?? null}
                                 setSelected={(opt) => setAddId(opt?.value ?? '')}
-                                options={availableRisks.map((r) => ({ value: r.id, label: tc(r.title), meta: { status: r.status } }))}
+                                options={availableRisks.map((r) => ({ value: r.id, label: tc(r.title), meta: { status: r.status }, keywords: [r.title] }))}
                                 optionDescription={(o) => (o.meta?.status ? t('trace.statusMeta', { status: o.meta.status }) : null)}
                                 placeholder={t('trace.selectRisk')}
                                 matchTriggerWidth
@@ -478,9 +478,9 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                         <div className={cn(cardVariants({ density: 'compact' }), 'mb-3 space-y-tight')}>
                             <Combobox
                                 id="control-select"
-                                selected={availableControls.map((c) => ({ value: c.id, label: c.code ? `${c.code} — ${tc(c.name)}` : tc(c.name), meta: { status: c.status } })).find((o: { value: string }) => o.value === addId) ?? null}
+                                selected={availableControls.map((c) => ({ value: c.id, label: c.code ? `${c.code} — ${tc(c.name)}` : tc(c.name), meta: { status: c.status }, keywords: [c.name] })).find((o: { value: string }) => o.value === addId) ?? null}
                                 setSelected={(opt) => setAddId(opt?.value ?? '')}
-                                options={availableControls.map((c) => ({ value: c.id, label: c.code ? `${c.code} — ${tc(c.name)}` : tc(c.name), meta: { status: c.status } }))}
+                                options={availableControls.map((c) => ({ value: c.id, label: c.code ? `${c.code} — ${tc(c.name)}` : tc(c.name), meta: { status: c.status }, keywords: [c.name] }))}
                                 optionDescription={(o) => (o.meta?.status ? t('trace.statusMeta', { status: o.meta.status }) : null)}
                                 placeholder={t('trace.selectControl')}
                                 matchTriggerWidth

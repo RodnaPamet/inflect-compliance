@@ -149,6 +149,7 @@ export function CreateFindingModal({
             controls.map((c) => ({
                 value: c.id,
                 label: c.annexId ? `${c.annexId} · ${tc(c.name)}` : tc(c.name),
+                keywords: [c.name],
             })),
         [controls, tc],
     );

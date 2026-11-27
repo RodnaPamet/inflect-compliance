@@ -1070,8 +1070,8 @@ export default function PackDetailPage() {
                             }
                         >
                             <Combobox
-                                options={addOptions.map((o): ComboboxOption => ({ value: o.id, label: o.fromCatalogue ? tc(o.label) : o.label }))}
-                                selected={addOptions.filter((o) => o.id === addSelected).map((o) => ({ value: o.id, label: o.fromCatalogue ? tc(o.label) : o.label }))[0] ?? null}
+                                options={addOptions.map((o): ComboboxOption => ({ value: o.id, label: o.fromCatalogue ? tc(o.label) : o.label, keywords: [o.label] }))}
+                                selected={addOptions.filter((o) => o.id === addSelected).map((o) => ({ value: o.id, label: o.fromCatalogue ? tc(o.label) : o.label, keywords: [o.label] }))[0] ?? null}
                                 setSelected={(opt) => setAddSelected(opt?.value ?? '')}
                                 placeholder={addOptionsLoading ? tx('packs.addPicker.loading') : tx('packs.addPicker.itemPlaceholder')}
                                 disabled={addOptionsLoading || addOptions.length === 0}

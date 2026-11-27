@@ -1381,6 +1381,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                                 .map((t) => ({
                                                     value: t.id,
                                                     label: tx('detail.templateOption', { name: tc(t.name), count: t._count?.questions || 0 }) + (t.isGlobal ? tx('detail.globalSuffix') : ''),
+                                                    keywords: [t.name],
                                                 }))
                                                 .find((o) => o.value === sendForm.templateVersionId) ?? null
                                         }
@@ -1390,6 +1391,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                         options={sendTemplates.map((t) => ({
                                             value: t.id,
                                             label: tx('detail.templateOption', { name: tc(t.name), count: t._count?.questions || 0 }) + (t.isGlobal ? tx('detail.globalSuffix') : ''),
+                                            keywords: [t.name],
                                         }))}
                                         placeholder={
                                             sendTemplates.length === 0
@@ -1740,11 +1742,11 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                                         options={
                                                             bundleItemType === 'VENDOR_DOCUMENT'
                                                                 ? docs.map((d) => ({ value: d.id, label: d.title || DOC_TYPE_LABELS[d.type] || d.type }))
-                                                                : assessments.map((a) => ({ value: a.id, label: tc(a.templateName) || a.id }))
+                                                                : assessments.map((a) => ({ value: a.id, label: tc(a.templateName) || a.id, keywords: [a.templateName] }))
                                                         }
                                                         selected={(bundleItemType === 'VENDOR_DOCUMENT'
                                                             ? docs.map((d) => ({ value: d.id, label: d.title || DOC_TYPE_LABELS[d.type] || d.type }))
-                                                            : assessments.map((a) => ({ value: a.id, label: tc(a.templateName) || a.id }))
+                                                            : assessments.map((a) => ({ value: a.id, label: tc(a.templateName) || a.id, keywords: [a.templateName] }))
                                                         ).find((o) => o.value === bundleItemId) ?? null}
                                                         setSelected={(opt) => setBundleItemId(opt?.value ?? '')}
                                                         placeholder={tx('detail.selectEntity')}

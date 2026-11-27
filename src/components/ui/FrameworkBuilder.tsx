@@ -48,6 +48,9 @@ import {
 import type { FrameworkTreePayload } from '@/lib/framework-tree/types';
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
+import { useTranslations } from 'next-intl';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
+import { frameworkSectionLabel } from '@/lib/framework-tree/section-label';
 
 // ─── Drag payload encoding ─────────────────────────────────────────────
 
@@ -83,6 +86,10 @@ export function FrameworkBuilder({
     // know if there are unsaved changes. Frozen via useMemo on
     // the tree's framework id — refreshes when the parent
     // refetches.
+    // Section and requirement names in the reader's language (#5996). Display
+    // only: the model, the drag ids and the saved order stay on the stored text.
+    const tRoot = useTranslations();
+    const tc = useContentText();
     const originalModel = useMemo(() => deriveBuilderModel(tree), [tree]);
     const [model, setModel] = useState<BuilderSection[]>(originalModel);
     const [saving, setSaving] = useState(false);
@@ -263,7 +270,7 @@ export function FrameworkBuilder({
                                     aria-hidden="true"
                                 />
                                 <Heading level={3} className="flex-1">
-                                    {section.label}
+                                    {tc(frameworkSectionLabel(section.label, tRoot))}
                                 </Heading>
                                 <span className="text-xs text-content-subtle">
                                     {section.requirements.length}
@@ -301,7 +308,7 @@ export function FrameworkBuilder({
                                                 {req.code}
                                             </code>
                                             <span className="truncate flex-1 min-w-0 text-content-default">
-                                                {req.title}
+                                                {tc(req.title)}
                                             </span>
                                         </div>
                                     </div>

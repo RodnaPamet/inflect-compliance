@@ -385,13 +385,13 @@ function FindingEditForm({
         const rows = Array.isArray(data) ? data : (data?.rows ?? []);
         const options = rows.map((c) => {
             const code = c.annexId ?? c.code ?? null;
-            return { value: c.id, label: code ? `${code} · ${tc(c.name)}` : tc(c.name) };
+            return { value: c.id, label: code ? `${code} · ${tc(c.name)}` : tc(c.name), keywords: [c.name] };
         });
         // A linked control the list does not return (past its cap) must still
         // read as selected rather than as "None".
         for (const c of [finding.control, finding.compensatingControl]) {
             if (c && !options.some((o) => o.value === c.id)) {
-                options.push({ value: c.id, label: c.code ? `${c.code} · ${tc(c.name)}` : tc(c.name) });
+                options.push({ value: c.id, label: c.code ? `${c.code} · ${tc(c.name)}` : tc(c.name), keywords: [c.name] });
             }
         }
         return options;

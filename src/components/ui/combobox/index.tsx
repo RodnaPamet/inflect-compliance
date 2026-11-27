@@ -97,6 +97,12 @@ export type ComboboxOption<TMeta = unknown> = {
     separatorAfter?: boolean;
     /** Pin to the top of the unfiltered list. */
     first?: boolean;
+    /**
+     * More text the option is found by, never shown. A label shown in the
+     * reader's language passes the text it was stored as (#5996), so a search
+     * for either finds it.
+     */
+    keywords?: string[];
 };
 
 // ─── Props ──────────────────────────────────────────────────────────
@@ -350,14 +356,15 @@ export function Combobox<
     // The whole option cannot go in the key — `label`, `icon` and
     // `disabledTooltip` are ReactNodes, and a React element holds a
     // circular `_owner`, so `JSON.stringify` on one throws. So the key
-    // carries `value` plus the flags that decide how an option renders,
-    // which is what a re-sync has to notice. Options with none of them set
-    // contribute a constant, so every existing caller keys exactly as
-    // before.
+    // carries `value`, the flags that decide how an option renders and a
+    // STRING label, which is what a re-sync has to notice. The label is
+    // there because a label shown in the reader's language arrives after
+    // the first render (#5996): without it the open list kept the stored
+    // text until the popover closed.
     const optionsSyncKey = options
         ?.map(
             (o) =>
-                `${o.value}\u0000${o.disabledTooltip ? 1 : 0}${o.first ? 1 : 0}${o.separatorAfter ? 1 : 0}`,
+                `${o.value}\u0000${o.disabledTooltip ? 1 : 0}${o.first ? 1 : 0}${o.separatorAfter ? 1 : 0}${typeof o.label === "string" ? `\u0000${o.label}` : ""}`,
         )
         .join("\u0001");
     useEffect(() => {
@@ -530,7 +537,7 @@ export function Combobox<
             .map((option, index) => ({
                 option,
                 index,
-                score: defaultFilter(option.label + option.value, search),
+                score: defaultFilter(option.label + option.value, search, option.keywords),
             }))
             .filter(({ score }) => score > 0)
             .sort((a, b) => b.score - a.score || a.index - b.index)
@@ -808,6 +815,7 @@ function Option<TMeta>({
                     onSelect={onSelect}
                     aria-selected={selected}
                     value={option.label + option?.value}
+                    keywords={option.keywords}
                 >
                     {multiple && (
                         <div className="text-content-default shrink-0">

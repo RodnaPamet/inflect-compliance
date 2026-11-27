@@ -138,7 +138,7 @@ export default function DiffPage() {
         () =>
             (frameworks ?? [])
                 .filter((f) => f.key !== frameworkKey)
-                .map((f) => ({ value: f.key, label: f.version ? `${tc(f.name)} v${f.version}` : tc(f.name) })),
+                .map((f) => ({ value: f.key, label: f.version ? `${tc(f.name)} v${f.version}` : tc(f.name), keywords: [f.name] })),
         [frameworks, frameworkKey, tc],
     );
     const chosen = options.find((o) => o.value === fromKey) ?? null;

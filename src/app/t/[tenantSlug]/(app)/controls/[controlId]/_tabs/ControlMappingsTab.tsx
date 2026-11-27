@@ -391,9 +391,9 @@ export function ControlMappingsTab({
                 <div className={cn(cardVariants({ density: 'compact' }), 'space-y-compact')}>
                     <Combobox
                         id="framework-select"
-                        selected={frameworks.map((f) => ({ value: f.key ?? f.id ?? '', label: tc(f.name) })).find((o) => o.value === selectedFramework) ?? null}
+                        selected={frameworks.map((f) => ({ value: f.key ?? f.id ?? '', label: tc(f.name), keywords: [f.name] })).find((o) => o.value === selectedFramework) ?? null}
                         setSelected={(opt) => setSelectedFramework(opt?.value ?? '')}
-                        options={frameworks.map((f) => ({ value: f.key ?? f.id ?? '', label: tc(f.name) }))}
+                        options={frameworks.map((f) => ({ value: f.key ?? f.id ?? '', label: tc(f.name), keywords: [f.name] }))}
                         placeholder={t('mappingsTab.selectFramework')}
                         matchTriggerWidth
                     />
@@ -401,9 +401,9 @@ export function ControlMappingsTab({
                         <>
                             <Combobox
                                 id="requirement-select"
-                                selected={requirements.map((r) => ({ value: r.id, label: `${r.code ? `${r.code} — ` : ''}${tc(r.title || r.description)}` })).find((o) => o.value === selectedReq) ?? null}
+                                selected={requirements.map((r) => ({ value: r.id, label: `${r.code ? `${r.code} — ` : ''}${tc(r.title || r.description)}`, keywords: [r.title || r.description || ''] })).find((o) => o.value === selectedReq) ?? null}
                                 setSelected={(opt) => setSelectedReq(opt?.value ?? '')}
-                                options={requirements.map((r) => ({ value: r.id, label: `${r.code ? `${r.code} — ` : ''}${tc(r.title || r.description)}` }))}
+                                options={requirements.map((r) => ({ value: r.id, label: `${r.code ? `${r.code} — ` : ''}${tc(r.title || r.description)}`, keywords: [r.title || r.description || ''] }))}
                                 placeholder={t('mappingsTab.selectRequirement')}
                                 matchTriggerWidth
                             />

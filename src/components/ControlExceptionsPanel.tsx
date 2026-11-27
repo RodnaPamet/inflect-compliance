@@ -387,6 +387,7 @@ function RequestExceptionDialog({
                 .map((c) => ({
                     value: c.id,
                     label: c.code ? `${c.code} — ${contentText(c.name)}` : contentText(c.name),
+                    keywords: [c.name],
                 })),
         [compensatingControlChoices, controlId, contentText],
     );

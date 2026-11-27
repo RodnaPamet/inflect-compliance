@@ -33,16 +33,29 @@ export function ControlsSankeyClient({
     const t = useTranslations('controls');
     const tc = useContentText();
     // Node labels that can hold catalogue text, in the reader's language: a
-    // risk's title, and a control's name (the label only when the control has
-    // no code; with a code the label IS the code and the name is `secondary`).
+    // risk's title, a control's name (the label only when the control has
+    // no code; with a code the label IS the code and the name is `secondary`)
+    // and a requirement's title. A requirement's label is `<code> <title>`
+    // (`build.ts`), and a code holds no space, so it is looked up whole and
+    // then by the part after the first space; the code stays as stored.
     const graph = useMemo(
         () => ({
             ...initialGraph,
-            nodes: initialGraph.nodes.map((n) =>
-                n.kind === 'risk' || (n.kind === 'control' && n.secondary === null)
-                    ? { ...n, label: tc(n.label) }
-                    : n,
-            ),
+            nodes: initialGraph.nodes.map((n) => {
+                if (n.kind === 'risk' || (n.kind === 'control' && n.secondary === null)) {
+                    return { ...n, label: tc(n.label) };
+                }
+                if (n.kind === 'requirement') {
+                    const whole = tc(n.label);
+                    const at = n.label.indexOf(' ');
+                    const label =
+                        whole !== n.label || at === -1
+                            ? whole
+                            : `${n.label.slice(0, at)} ${tc(n.label.slice(at + 1))}`;
+                    return { ...n, label };
+                }
+                return n;
+            }),
         }),
         [initialGraph, tc],
     );

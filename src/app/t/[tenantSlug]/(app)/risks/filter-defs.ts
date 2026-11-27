@@ -233,7 +233,7 @@ export function categoryOptionsFromRisks(
     }
     return Array.from(seen)
         .sort((a, b) => a.localeCompare(b))
-        .map((value) => ({ value, label: tc(value) }));
+        .map((value) => ({ value, label: tc(value), keywords: [value] }));
 }
 
 /**

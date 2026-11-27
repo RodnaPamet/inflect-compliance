@@ -469,6 +469,7 @@ function NodeLinkedEntityPicker({
                   options: controls.options.map((c) => ({
                       value: c.id,
                       label: formatControlLabel({ ...c, title: tc(c.title) }),
+                      keywords: [c.title],
                   })),
                   loading: controls.loading,
                   emptyHint: t("noControls"),
@@ -479,6 +480,7 @@ function NodeLinkedEntityPicker({
                     options: risks.options.map((r) => ({
                         value: r.id,
                         label: tc(r.title),
+                        keywords: [r.title],
                     })),
                     loading: risks.loading,
                     emptyHint: t("noRisks"),
@@ -604,6 +606,7 @@ function EdgeInspectorBody({
             tenantControls.map((c) => ({
                 value: c.id,
                 label: formatControlLabel({ ...c, title: tc(c.title) }),
+                keywords: [c.title],
             })),
         [tenantControls, tc],
     );

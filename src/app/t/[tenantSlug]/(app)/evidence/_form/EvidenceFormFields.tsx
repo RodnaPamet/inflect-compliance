@@ -45,6 +45,7 @@ export function EvidenceControlsField({
             controls.map((c) => ({
                 value: c.id,
                 label: `${c.annexId || c.code || tx('formFields.customControl')}: ${tc(c.name)}`,
+                keywords: [c.name],
                 meta: c,
             })),
         [controls, tx, tc],

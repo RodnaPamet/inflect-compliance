@@ -211,6 +211,7 @@ export function AuditPilotClient({
             return (json?.items ?? []).map((c) => ({
                 value: c.id,
                 label: `${c.code ?? c.annexId ?? ''} ${tc(c.name)}`.trim(),
+                keywords: [c.name],
             }));
         },
         [apiUrl, tc],

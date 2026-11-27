@@ -77,7 +77,7 @@ export function BiaLinkControlModal({
         () =>
             unwrapCappedList(controlsData)
                 .filter((c) => !linkedControlIds.includes(c.id))
-                .map((c) => ({ value: c.id, label: c.code ? `${c.code} · ${tc(c.name)}` : tc(c.name) })),
+                .map((c) => ({ value: c.id, label: c.code ? `${c.code} · ${tc(c.name)}` : tc(c.name), keywords: [c.name] })),
         [controlsData, linkedControlIds, tc],
     );
 

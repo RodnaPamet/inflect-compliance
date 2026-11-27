@@ -98,7 +98,7 @@ export function DependencyPickerRow({
 
     const entityOptions = useMemo(
         // A risk's title can be a risk template's; the other targets are named by people.
-        () => options.filter((o) => !excludeIds?.includes(o.id)).map((o) => ({ value: o.id, label: optionsType === 'RISK' ? tc(o.label) : o.label })),
+        () => options.filter((o) => !excludeIds?.includes(o.id)).map((o) => ({ value: o.id, label: optionsType === 'RISK' ? tc(o.label) : o.label, keywords: [o.label] })),
         [options, excludeIds, optionsType, tc],
     );
 

@@ -153,7 +153,7 @@ export function ControlEditPanel({
             // A non-theme category is the stored text (a framework's own):
             // its LABEL is shown in the reader's language, its value is not.
             buildCategoryOptions(category, (theme) => tx(`categoryLabels.${theme}`)).map((o) =>
-                isControlCategoryTheme(o.value) ? o : { ...o, label: tc(o.label) },
+                isControlCategoryTheme(o.value) ? o : { ...o, label: tc(o.label), keywords: [o.label] },
             ),
         [category, tx, tc],
     );

@@ -65,6 +65,7 @@ export function NewTestPlanModal({
     const controlOptions: ComboboxOption[] = controls.map((c) => ({
         value: c.id,
         label: `${c.code ? `${c.code} — ` : ''}${tc(c.name)}`,
+        keywords: [c.name],
     }));
     const freqOptions: ComboboxOption[] = FREQUENCIES.map((f) => ({
         value: f,

@@ -46,6 +46,7 @@
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState, type ComponentProps } from 'react';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // Combobox's `buttonProps` is typed against `ButtonProps`, which
 // extends `React.ButtonHTMLAttributes<HTMLButtonElement>` via VariantProps
@@ -71,7 +72,16 @@ export type EntityPickerKind =
 
 interface CandidateRow {
     id: string;
+    /** The label as stored: what a search for the stored text matches. */
     label: string;
+    /**
+     * For a kind whose name can come from a catalogue (a control, risk, task,
+     * policy or requirement installed from a template), the name alone and the
+     * code before it, so the picker can show the name in the reader's
+     * language (#5996) and keep the code as stored.
+     */
+    prefix?: string;
+    text?: string;
 }
 
 export interface FetchedCandidate {
@@ -92,6 +102,8 @@ function rowsFromResponse(
                 return {
                     id: r.id,
                     label: prefix ? `${prefix}: ${name}` : name,
+                    prefix,
+                    text: name,
                 };
             });
         case 'RISK':
@@ -101,6 +113,8 @@ function rowsFromResponse(
                 return {
                     id: r.id,
                     label: key ? `${key}: ${title}` : title,
+                    prefix: key,
+                    text: title,
                 };
             });
         case 'ASSET':
@@ -119,15 +133,11 @@ function rowsFromResponse(
                 label: (r.name as string) || untitled,
             }));
         case 'ISSUE':
-            return rows.map((r) => ({
-                id: r.id,
-                label: (r.title as string) || untitled,
-            }));
         case 'POLICY':
-            return rows.map((r) => ({
-                id: r.id,
-                label: (r.title as string) || untitled,
-            }));
+            return rows.map((r) => {
+                const title = (r.title as string) || untitled;
+                return { id: r.id, label: title, text: title };
+            });
         case 'AUDIT_PACK':
             return rows.map((r) => ({
                 id: r.id,
@@ -157,6 +167,8 @@ function rowsFromResponse(
                 return {
                     id: r.id,
                     label: code ? `${code}: ${title}` : title,
+                    prefix: code,
+                    text: title,
                 };
             });
         default:
@@ -408,13 +420,19 @@ export function EntityPicker({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tenantSlug, entityType, extraKey]);
 
+    const tc = useContentText();
     const options: ComboboxOption[] = useMemo(
         () =>
-            candidates.map((c) => ({
-                value: c.id,
-                label: c.label,
-            })),
-        [candidates],
+            candidates.map((c) =>
+                c.text === undefined
+                    ? { value: c.id, label: c.label }
+                    : {
+                          value: c.id,
+                          label: c.prefix ? `${c.prefix}: ${tc(c.text)}` : tc(c.text),
+                          keywords: [c.label],
+                      },
+            ),
+        [candidates, tc],
     );
 
     return (

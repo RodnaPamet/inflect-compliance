@@ -124,7 +124,7 @@ export function EditAuditModal({ open, setOpen, audit, save, onSaved }: EditAudi
     const frameworkRows = frameworksQuery.data;
     const frameworks = useMemo<ComboboxOption[]>(() => {
         if (!Array.isArray(frameworkRows)) return [noFramework];
-        return [noFramework, ...frameworkRows.map((f) => ({ value: f.key, label: tc(f.name) }))];
+        return [noFramework, ...frameworkRows.map((f) => ({ value: f.key, label: tc(f.name), keywords: [f.name] }))];
     }, [frameworkRows, noFramework, tc]);
 
     const cyclesQuery = useTenantSWR<Array<{ id: string; name: string; frameworkKey: string }>>(
