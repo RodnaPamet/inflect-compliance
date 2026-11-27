@@ -100,6 +100,7 @@ import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-
 import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
 import { controlBulkActionsFor, type ControlBulkAction } from './_lib/bulk-action-policy';
 import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
+import { ContentText } from '@/components/ContentText';
 
 // ─── Constants ───
 
@@ -1403,7 +1404,7 @@ function ControlsPageInner({
                     id={`control-link-${row.original.id}`}
                     testId={`control-title-${row.original.id}`}
                 >
-                    {row.original.name}
+                    <ContentText text={row.original.name} />
                 </TableTitleButton>
             ),
         },

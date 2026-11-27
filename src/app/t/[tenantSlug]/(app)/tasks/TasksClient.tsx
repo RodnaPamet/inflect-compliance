@@ -72,6 +72,7 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
 import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
 import { apiErrorMessage } from '@/lib/api-error';
+import { ContentText } from '@/components/ContentText';
 
 // Status → badge tone AND label both come from the shared
 // `TASK_STATUS_BADGE` map (TP-1) — tone via `taskStatusVariant`, copy via the
@@ -1004,7 +1005,7 @@ function TasksPageInner({
                         id={`task-link-${row.original.id}`}
                         testId={`task-title-${row.original.id}`}
                     >
-                        {row.original.title}
+                        <ContentText text={row.original.title} />
                     </TableTitleButton>
                 ),
             },
@@ -1133,7 +1134,7 @@ function TasksPageInner({
                     ...col,
                     cell: ({ row }: { row: { original: TaskListItem } }) => (
                         <span data-testid={`task-title-${row.original.id}`}>
-                            <TableTitleCell tintOn="self">{row.original.title}</TableTitleCell>
+                            <TableTitleCell tintOn="self"><ContentText text={row.original.title} /></TableTitleCell>
                         </span>
                     ),
                 }];
