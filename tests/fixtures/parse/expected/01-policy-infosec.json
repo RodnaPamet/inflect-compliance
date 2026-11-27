@@ -1,0 +1,86 @@
+{
+  "id": "01-policy-infosec",
+  "file": "01-policy-infosec.pdf",
+  "mime": "application/pdf",
+  "kind": "policy PDF (born digital)",
+  "lang": "en",
+  "ocr": false,
+  "headings": [
+    {
+      "text": "Information Security Policy",
+      "level": 0
+    },
+    {
+      "text": "1 Purpose",
+      "level": 1
+    },
+    {
+      "text": "2 Scope",
+      "level": 1
+    },
+    {
+      "text": "3 Roles and responsibilities",
+      "level": 1
+    },
+    {
+      "text": "4 Policy statements",
+      "level": 1
+    },
+    {
+      "text": "4.1 Access control",
+      "level": 2
+    },
+    {
+      "text": "4.2 Cryptography",
+      "level": 2
+    },
+    {
+      "text": "4.3 Supplier relationships",
+      "level": 2
+    },
+    {
+      "text": "5 Exceptions",
+      "level": 1
+    },
+    {
+      "text": "6 Review",
+      "level": 1
+    }
+  ],
+  "tables": [
+    {
+      "rows": [
+        [
+          "Role",
+          "Responsibility",
+          "Review frequency"
+        ],
+        [
+          "Chief Executive",
+          "Approves this policy and the risk appetite",
+          "Annual"
+        ],
+        [
+          "Security Officer",
+          "Maintains the risk register and the control set",
+          "Quarterly"
+        ],
+        [
+          "System Owner",
+          "Grants and recertifies access to the system",
+          "Quarterly"
+        ],
+        [
+          "People Team",
+          "Runs screening and security awareness training",
+          "Annual"
+        ],
+        [
+          "All Staff",
+          "Report suspected incidents within one hour",
+          "Continuous"
+        ]
+      ]
+    }
+  ]
+}

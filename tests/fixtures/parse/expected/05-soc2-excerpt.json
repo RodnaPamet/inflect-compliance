@@ -1,0 +1,70 @@
+{
+  "id": "05-soc2-excerpt",
+  "file": "05-soc2-excerpt.pdf",
+  "mime": "application/pdf",
+  "kind": "vendor SOC 2 Type II report excerpt (synthetic)",
+  "lang": "en",
+  "ocr": false,
+  "headings": [
+    {
+      "text": "Report on Controls Relevant to Security at Example Cloud Ltd",
+      "level": 0
+    },
+    {
+      "text": "Section I: Independent Service Auditor's Report",
+      "level": 1
+    },
+    {
+      "text": "Section IV: Description of Tests of Controls and Results",
+      "level": 1
+    }
+  ],
+  "tables": [
+    {
+      "rows": [
+        [
+          "Ref",
+          "Control activity",
+          "Test performed",
+          "Result"
+        ],
+        [
+          "CC6.1",
+          "Logical access to production systems requires multi-factor authentication through the corporate identity provider.",
+          "Inspected the identity provider configuration and a sample of 25 sign-in events.",
+          "No exceptions noted."
+        ],
+        [
+          "CC6.2",
+          "New user access is approved by the system owner before it is provisioned.",
+          "Inspected approval tickets for a sample of 25 new users.",
+          "One exception: access granted one day before approval."
+        ],
+        [
+          "CC6.3",
+          "Access of leavers is removed within one business day of termination.",
+          "Compared the HR leaver list with directory deactivation dates for 25 leavers.",
+          "No exceptions noted."
+        ],
+        [
+          "CC7.2",
+          "Security events are monitored and alerts are triaged within four hours.",
+          "Inspected the alert queue for a sample of 40 alerts.",
+          "No exceptions noted."
+        ],
+        [
+          "CC8.1",
+          "Changes to production are peer reviewed and pass automated tests before deployment.",
+          "Inspected change records for a sample of 40 deployments.",
+          "No exceptions noted."
+        ],
+        [
+          "A1.2",
+          "Backups are taken daily, and a restore is tested every quarter.",
+          "Inspected backup logs and the two quarterly restore test records.",
+          "No exceptions noted."
+        ]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "id": "10-incident-procedure",
+  "file": "10-incident-procedure.docx",
+  "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "kind": "incident response procedure (Word)",
+  "lang": "en",
+  "ocr": false,
+  "headings": [
+    {
+      "text": "Incident Response Procedure",
+      "level": 0
+    },
+    {
+      "text": "Detection",
+      "level": 1
+    },
+    {
+      "text": "Triage",
+      "level": 1
+    },
+    {
+      "text": "Notification",
+      "level": 1
+    },
+    {
+      "text": "Containment and recovery",
+      "level": 1
+    },
+    {
+      "text": "Lessons learned",
+      "level": 2
+    }
+  ],
+  "tables": [
+    {
+      "rows": [
+        [
+          "Report",
+          "Deadline",
+          "Recipient"
+        ],
+        [
+          "Early warning",
+          "Within 24 hours",
+          "National CSIRT"
+        ],
+        [
+          "Incident notification",
+          "Within 72 hours",
+          "National CSIRT"
+        ],
+        [
+          "Final report",
+          "Within one month",
+          "National CSIRT"
+        ]
+      ]
+    }
+  ]
+}

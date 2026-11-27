@@ -185,7 +185,11 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // Updated 2026-11-24 for the nightly whole-product mobile audit (#5899):
         // `mobile-audit.yml:audit` and `mobile-audit.yml:notify`, before
         // `override-freshness.yml` ('m' < 'o'). Two mid-file inserts, +10/-0.
-        keyOrderSha: 'fe8ed3630c59942fe12f978d097e6ecc6448ae5e0870e6d61d195e81cc06aacc',
+        // Updated 2026-11-27 for the parse-fidelity measurement (document
+        // parsing Phase 0.3): `parse-fidelity.yml:docling`, dispatch only,
+        // before `postgres-pgvector-image.yml` ('pa' < 'po'). One mid-file
+        // insert, +5/-0.
+        keyOrderSha: 'a957a4026e3cab330cfeee0236866969f9e9e66307b26a797ef161e444b61ac0',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,

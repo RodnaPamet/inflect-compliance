@@ -1,0 +1,58 @@
+{
+  "id": "07-scanned-access-review",
+  "file": "07-scanned-access-review.png",
+  "mime": "image/png",
+  "kind": "scanned access review sign-off (image, OCR)",
+  "lang": "en",
+  "ocr": true,
+  "headings": [
+    {
+      "text": "Quarterly Access Review Q3 2026",
+      "level": 0
+    },
+    {
+      "text": "Finance system",
+      "level": 1
+    },
+    {
+      "text": "Sign-off",
+      "level": 1
+    }
+  ],
+  "tables": [
+    {
+      "rows": [
+        [
+          "User",
+          "Role",
+          "Decision"
+        ],
+        [
+          "Anna Petrova",
+          "Approver",
+          "Keep"
+        ],
+        [
+          "Boris Ivanov",
+          "Administrator",
+          "Remove"
+        ],
+        [
+          "Clara Jones",
+          "Viewer",
+          "Keep"
+        ],
+        [
+          "David Smith",
+          "Approver",
+          "Modify"
+        ],
+        [
+          "Elena Georgieva",
+          "Viewer",
+          "Keep"
+        ]
+      ]
+    }
+  ]
+}

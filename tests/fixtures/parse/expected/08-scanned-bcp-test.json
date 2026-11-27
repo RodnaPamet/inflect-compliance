@@ -1,0 +1,52 @@
+{
+  "id": "08-scanned-bcp-test",
+  "file": "08-scanned-bcp-test.pdf",
+  "mime": "application/pdf",
+  "kind": "scanned evidence PDF with no text layer (OCR)",
+  "lang": "en",
+  "ocr": true,
+  "headings": [
+    {
+      "text": "Business Continuity Test Summary",
+      "level": 0
+    },
+    {
+      "text": "Test scope",
+      "level": 1
+    },
+    {
+      "text": "Results",
+      "level": 1
+    },
+    {
+      "text": "Follow-up actions",
+      "level": 1
+    }
+  ],
+  "tables": [
+    {
+      "rows": [
+        [
+          "Measure",
+          "Target",
+          "Achieved"
+        ],
+        [
+          "Recovery time",
+          "4 hours",
+          "2 hours 35 minutes"
+        ],
+        [
+          "Recovery point",
+          "15 minutes",
+          "6 minutes"
+        ],
+        [
+          "Data integrity checks",
+          "100%",
+          "100%"
+        ]
+      ]
+    }
+  ]
+}

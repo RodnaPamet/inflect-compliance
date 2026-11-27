@@ -121,7 +121,8 @@ const EXCLUSIONS: readonly { label: string; reason: string; covers: (rel: string
             'Files whose contents ARE bytes, so a control byte is content and not a ' +
             'typo. Extension set shared with tests/guardrails/no-secrets.test.ts via ' +
             'tests/helpers/binary-extensions.ts so the two sweeps cannot drift. ' +
-            'Covers src/app/favicon.ico, a real 65-byte 1x1 .ico.',
+            'Covers src/app/favicon.ico, a real 65-byte 1x1 .ico, and the parse-fidelity ' +
+            'set in tests/fixtures/parse/, the documents a parser is measured on.',
         covers: (rel) => BINARY_EXTENSIONS.has(path.extname(rel).toLowerCase()),
     },
 ];
@@ -152,11 +153,14 @@ const MIN_BYTES_READ = 10_000_000;
  * Today they remove 25 files: 5 under `public/` (Swagger UI, openapi.json,
  * .gitkeep), the 19 under `public/vendor/tldraw/<version>/fonts/` (16 fonts,
  * two licences, a notice; #5870 — a tldraw upgrade replaces that folder rather
- * than adding one), and `src/app/favicon.ico`. The headroom
- * is for a handful of future images. A widened exclusion is the one change
- * that would gut this sweep silently, so the count is asserted.
+ * than adding one), and `src/app/favicon.ico`. Plus the ten documents of the
+ * parse-fidelity set under `tests/fixtures/parse/` (five PDFs with text, a scanned
+ * PDF, a PNG, two XLSX and a DOCX; ragflow.md Phase 0.1), which are the bytes
+ * a document parser is measured on: 35 in all. The headroom is for a handful
+ * of future images. A widened exclusion is the one change that would gut this
+ * sweep silently, so the count is asserted.
  */
-const MAX_EXCLUDED_FILES = 30;
+const MAX_EXCLUDED_FILES = 40;
 
 interface Hit {
     byte: number;

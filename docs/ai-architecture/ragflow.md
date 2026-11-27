@@ -104,17 +104,28 @@ backend is the owner's choice with the numbers in front of them.
 decision rather than a preference.
 
 **Sub-phases.**
-- [ ] 0.1 Author a parse-fidelity fixture set under `tests/fixtures/parse/`:
+- [x] 0.1 Author a parse-fidelity fixture set under `tests/fixtures/parse/`:
       ten documents of the kinds the product actually holds — a policy PDF, an
       SoA table export, a vendor SOC 2 report excerpt (public sample), an
       ISO 27001 clause list, a scanned page for OCR, a questionnaire export —
-      each with the expected tables and section headings as JSON.
+      each with the expected tables and section headings as JSON. Done
+      2026-11-27: ten synthetic documents (two scans for OCR, one in
+      Bulgarian, a table across page breaks, two spreadsheets, a Word file),
+      each written once in `scripts/parse-fidelity/fixtures.ts`, which yields
+      both the file and its expected JSON; a unit test re-derives every
+      expectation and checks every file against `manifest.json`.
 - [ ] 0.2 Stand RAGFlow (slim image) up locally with its reference Compose;
       record memory/CPU at idle and during a parse, image digests, and the
-      number of containers.
+      number of containers. **Conditional since D-L4-4** (2026-11-11): RAGFlow
+      is measured only if Docling fails the fidelity eval.
 - [ ] 0.3 Stand a parsing-only alternative up the same way; same measurements.
+      Built 2026-11-27: the `Parse fidelity` workflow starts docling-serve
+      (CPU, by digest) on a GitHub runner and samples its memory and CPU from
+      start to the last document. Open until its first run is recorded.
 - [ ] 0.4 Run both over the fixture set; score table-cell recall and heading
-      recall.
+      recall. Built 2026-11-27: `scripts/parse-fidelity/score.ts` scores
+      heading, table-cell and row recall from raw counts, through the app's
+      own `DocumentParser` seam. Open until the first run's record exists.
 - [ ] 0.5 Write the D-L4-4 memo (implementation note) and the dependency
       governance entries for whichever images survive (digest-pinned, G5).
 

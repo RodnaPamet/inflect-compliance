@@ -1,0 +1,54 @@
+{
+  "files": [
+    {
+      "id": "01-policy-infosec",
+      "file": "01-policy-infosec.pdf",
+      "sha256": "032c75c9442b8a395fb96890bbb939915d31767d02820fead0f09dfb8cb976ca"
+    },
+    {
+      "id": "02-policy-bg",
+      "file": "02-policy-bg.pdf",
+      "sha256": "867275302616bc6780e98b3f60b951cfbe77e6abbef19409f091bfc291dea5db"
+    },
+    {
+      "id": "03-soa-export",
+      "file": "03-soa-export.xlsx",
+      "sha256": "52affc496f2493da7eddc4f31012c288f113ab4534d56bff2e0d6995cb27b636"
+    },
+    {
+      "id": "04-soa-two-page",
+      "file": "04-soa-two-page.pdf",
+      "sha256": "03e7d2ec902e035cf6e8ced895c2bf5df6b201ca80337a7fa34cb384d726921d"
+    },
+    {
+      "id": "05-soc2-excerpt",
+      "file": "05-soc2-excerpt.pdf",
+      "sha256": "9957ccc3b1c3fa16228575acdc0e0030471172c44425dc37cebc121378faa32d"
+    },
+    {
+      "id": "06-iso27001-clauses",
+      "file": "06-iso27001-clauses.pdf",
+      "sha256": "43180659474271031047a5977dce030a98f5b6d5dd3e29374c7a9e80897c52d6"
+    },
+    {
+      "id": "07-scanned-access-review",
+      "file": "07-scanned-access-review.png",
+      "sha256": "54c420d9e899ea2d214b57cb11cd698245b87f422f67c01575d8cecac63d3a45"
+    },
+    {
+      "id": "08-scanned-bcp-test",
+      "file": "08-scanned-bcp-test.pdf",
+      "sha256": "6fa3cffd5eb3fb7dbbd6fdea79a0c1cdbf1bc0d5724c141517351bd5f522b75c"
+    },
+    {
+      "id": "09-vendor-questionnaire",
+      "file": "09-vendor-questionnaire.xlsx",
+      "sha256": "9f8ddc32205cab91327cdca6a9eb54f78278de60b3f7cbfcc7ffa47dd1de7b3f"
+    },
+    {
+      "id": "10-incident-procedure",
+      "file": "10-incident-procedure.docx",
+      "sha256": "614b1da1e5fe7355664759853e655d256e6b0a0cfde3b77ba6c1c626ad45a9c2"
+    }
+  ]
+}
