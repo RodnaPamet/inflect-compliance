@@ -246,3 +246,41 @@ describe('THEME_INIT_SCRIPT — the pre-paint script follows the same rule', () 
         expect(themeWrites()).toEqual({ cookie: [], storage: [] });
     });
 });
+
+// ─── A host that is dark by default (followSystem={false}) ──────────────
+
+describe('ThemeProvider with followSystem={false}: dark until the person picks', () => {
+    const renderDarkByDefault = () =>
+        render(
+            <ThemeProvider followSystem={false}>
+                <Probe />
+            </ThemeProvider>,
+        );
+
+    it('a light OS still gets dark on a first visit, and nothing is written', () => {
+        systemLight = true;
+        renderDarkByDefault();
+
+        expect(shownTheme()).toBe('dark');
+        expect(htmlTheme()).toBe('dark');
+        expect(themeWrites()).toEqual({ cookie: [], storage: [] });
+    });
+
+    it('does not follow the OS while the page is open', () => {
+        renderDarkByDefault();
+        systemSwitchesTo('light');
+
+        expect(shownTheme()).toBe('dark');
+        expect(htmlTheme()).toBe('dark');
+        expect(listeners).toHaveLength(0);
+    });
+
+    it('a stored choice still wins, and the person can still pick light', () => {
+        seedCookie('light');
+        renderDarkByDefault();
+        expect(shownTheme()).toBe('light');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Toggle theme' }));
+        expect(shownTheme()).toBe('dark');
+    });
+});
