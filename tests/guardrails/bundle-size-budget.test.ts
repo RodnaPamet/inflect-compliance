@@ -304,7 +304,22 @@ const BUDGETS_KB: Record<string, number> = {
     // Combined when #5853 merged after #5858: 634.8 (#5858 on CI) + 3.7 (this
     // batch, measured locally above) = about 638.5 against 639, so 643 is the
     // combined measured + ~4. Re-measured on CI for the merge commit.
-    'dashboard': 643,
+    //
+    // Raised 643 -> 647 by catalogue content in the reader's language (#5997,
+    // step 1 of #5996; owner request 2026-11-27 that framework content follow
+    // the reader's language). CI's webpack builds, same route, KB:
+    //       main (d14f3d946, the build before this change)   642.6
+    //       #5997                                            643.2   (+0.6)
+    // Main had 0.4 KB left. The +0.6 is the lookup's client half, the only
+    // client code the change adds: `useContentText` (a per-page cache, one
+    // batched request per tick, a subscription so memoised columns refresh)
+    // and `<ContentText>`. It reaches this route through the chunk the
+    // controls pages share (`controls/[controlId]/page` 673.1 -> 673.7 and
+    // `controls/[controlId]/tests/[planId]/page` 690.5 -> 691.1, the same
+    // +0.6; `risks/[riskId]/page`, which shows no catalogue text yet, +0.1).
+    // The dictionaries themselves are server-only and are in no route's
+    // First Load JS. 647 is measured + ~4, the convention.
+    'dashboard': 647,
     // Raised 653 → 654 in the Tasks list fixes (#4300, #4278; owner decision).
     // Main measured this route at 652.9 KB (0.1 KB left); the PR measured
     // 653.2. The growth is in the task form and edit panel that the risk

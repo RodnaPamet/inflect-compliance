@@ -136,7 +136,7 @@ describe('every tenant API segment is classified', () => {
     // until it is mapped or listed below.
     const UNMAPPED = new Set([
         'agent-receipts', 'agents', 'ai', 'ai-systems', 'assistant',
-        'calendar', 'dashboard', 'notifications', 'onboarding', 'search', 'users',
+        'calendar', 'content-translations', 'dashboard', 'notifications', 'onboarding', 'search', 'users',
     ]);
 
     it('names each segment once, as mapped or as reachable by * keys only', () => {

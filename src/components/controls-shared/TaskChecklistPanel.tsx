@@ -15,6 +15,7 @@
  * cache contract), this owns the reading of two untyped JSON columns.
  */
 import { useTranslations } from 'next-intl';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { Heading } from '@/components/ui/typography';
@@ -85,6 +86,7 @@ export function TaskChecklistPanel({
     pendingItemId = null,
 }: TaskChecklistPanelProps) {
     const t = useTranslations('tasks.checklist');
+    const tc = useContentText();
     const hasGuidance = Boolean(guidance.phase || guidance.evidenceHint || guidance.suggestedRole);
     if (items.length === 0 && !hasGuidance) return null;
 
@@ -108,7 +110,7 @@ export function TaskChecklistPanel({
                             <div>
                                 <span className="text-xs text-content-subtle uppercase">{t('suggestedRole')}</span>
                                 <p className="text-sm text-content-default mt-1" id="task-template-role">
-                                    {guidance.suggestedRole}
+                                    {tc(guidance.suggestedRole)}
                                 </p>
                             </div>
                         )}
@@ -116,7 +118,7 @@ export function TaskChecklistPanel({
                             <div className="col-span-2">
                                 <span className="text-xs text-content-subtle uppercase">{t('evidenceHint')}</span>
                                 <p className="text-sm text-content-default mt-1 whitespace-pre-wrap" id="task-template-evidence-hint">
-                                    {guidance.evidenceHint}
+                                    {tc(guidance.evidenceHint)}
                                 </p>
                             </div>
                         )}
@@ -149,7 +151,7 @@ export function TaskChecklistPanel({
                                         checked={item.done}
                                         disabled={!canEdit || pendingItemId === item.id}
                                         onCheckedChange={(next) => onToggle(item.id, next === true)}
-                                        aria-label={t('stepAria', { position: index + 1, text: item.text })}
+                                        aria-label={t('stepAria', { position: index + 1, text: tc(item.text) })}
                                         className="mt-0.5"
                                     />
                                     <label htmlFor={checkboxId} className="text-sm cursor-pointer">
@@ -159,10 +161,10 @@ export function TaskChecklistPanel({
                                                 item.done && 'line-through text-content-muted',
                                             )}
                                         >
-                                            {item.text}
+                                            {tc(item.text)}
                                         </span>
                                         {item.hint && (
-                                            <span className="block text-xs text-content-muted mt-0.5">{item.hint}</span>
+                                            <span className="block text-xs text-content-muted mt-0.5">{tc(item.hint)}</span>
                                         )}
                                     </label>
                                 </li>
