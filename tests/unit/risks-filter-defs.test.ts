@@ -158,8 +158,10 @@ describe('buildRiskFilters', () => {
             t,
             tGroup,
         );
+        // `keywords` carries the stored text, so a category shown in the
+        // reader's language is still found by it (#5996).
         expect(live.find((f) => f.key === 'category')?.options).toEqual([
-            { value: 'Tech', label: 'Tech' },
+            { value: 'Tech', label: 'Tech', keywords: ['Tech'] },
         ]);
         const ownerOpts = live.find((f) => f.key === 'ownerUserId')?.options;
         expect(ownerOpts?.[0].value).toBe('u1');
