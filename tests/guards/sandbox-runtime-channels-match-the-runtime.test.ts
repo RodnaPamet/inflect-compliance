@@ -335,7 +335,7 @@ const VERIFIED_FACTS = [
         id: '0.1f',
         issue: 3931,
         verifiedAgainst: '0.1.6',
-        fact: 'there is no NVIDIA-published JS SDK; the official SDK is Python (requires_python >=3.11), so no flue-style isolation applies',
+        fact: 'measured against the registry at 0.1.6: no NVIDIA-published JS SDK, the official SDK Python (requires_python >=3.11), so no flue-style isolation applied. PREMISE SUPERSEDED 2026-11-19, the decision NOT superseded: the project moved to the ai-openshell org and now publishes @ai-openshell/sdk (TypeScript, repo ai-openshell/sdk-typescript, one real release at 0.1.10). This repository still depends on no OpenShell package from anybody -- 0 in every dependency section, 0 in the lockfile, re-measured 2026-11-27 -- but the reason is now a supply-chain CHOICE rather than the absence of a JS SDK, and the guard in agent-action-receipt enforces it either way',
     },
     {
         id: '0.1c',
