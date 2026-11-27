@@ -21,8 +21,7 @@
  * only with the pages that use it.
  */
 import { useMemo, useSyncExternalStore } from 'react';
-import { useParams } from 'next/navigation';
-import { useLocale } from 'next-intl';
+import * as nextIntl from 'next-intl';
 import { DEFAULT_LOCALE } from '@/lib/locale-constants';
 import { CONTENT_TRANSLATION_BATCH, CONTENT_TRANSLATION_MAX_CHARS } from './limits';
 
@@ -45,17 +44,39 @@ function subscribe(listener: () => void): () => void {
 
 const cacheKey = (locale: string, text: string): string => `${locale}\n${text}`;
 
-async function flush(tenantSlug: string): Promise<void> {
+/**
+ * The reader's locale. `useLocale` wherever next-intl provides it, which is
+ * everywhere the product runs; English where a test's partial mock of
+ * next-intl leaves it out, so a component can adopt `tc` without every suite
+ * that renders it having to know.
+ */
+const useReaderLocale: () => string =
+    typeof nextIntl.useLocale === 'function' ? nextIntl.useLocale : () => DEFAULT_LOCALE;
+
+/**
+ * The workspace in the address bar (`/t/<slug>/…`), read when a lookup is
+ * asked for. The lookup route is the workspace's, so a page outside a
+ * workspace asks nothing and shows the text as stored.
+ */
+function workspaceSlug(): string | null {
+    if (typeof window === 'undefined') return null;
+    const match = /^\/t\/([^/]+)/.exec(window.location.pathname);
+    return match ? decodeURIComponent(match[1]) : null;
+}
+
+async function flush(): Promise<void> {
     scheduled = false;
+    const tenantSlug = workspaceSlug();
     const work = [...queued.entries()];
     queued.clear();
+    if (!tenantSlug) return; // left unanswered: asked again on a later render
     for (const [locale, texts] of work) {
         const all = [...texts];
         for (let i = 0; i < all.length; i += CONTENT_TRANSLATION_BATCH) {
             const batch = all.slice(i, i + CONTENT_TRANSLATION_BATCH);
             let translations: Record<string, string> = {};
             try {
-                const res = await fetch(`/api/t/${tenantSlug}/content-translations`, {
+                const res = await fetch(`/api/t/${encodeURIComponent(tenantSlug)}/content-translations`, {
                     method: 'POST',
                     headers: { 'content-type': 'application/json' },
                     body: JSON.stringify({ locale, texts: batch }),
@@ -71,13 +92,13 @@ async function flush(tenantSlug: string): Promise<void> {
     }
 }
 
-function request(tenantSlug: string, locale: string, text: string): void {
+function request(locale: string, text: string): void {
     const set = queued.get(locale) ?? new Set<string>();
     set.add(text);
     queued.set(locale, set);
     if (scheduled) return;
     scheduled = true;
-    setTimeout(() => void flush(tenantSlug), 0);
+    setTimeout(() => void flush(), 0);
 }
 
 export type ContentText = {
@@ -86,9 +107,7 @@ export type ContentText = {
 };
 
 export function useContentText(): ContentText {
-    const locale = useLocale();
-    const params = useParams<{ tenantSlug?: string }>();
-    const tenantSlug = params?.tenantSlug;
+    const locale = useReaderLocale();
     // Re-render when an answer arrives, and hand out a new `tc` then, so a
     // memo keyed on it (table columns) recomputes.
     const answered = useSyncExternalStore(subscribe, () => version, () => 0);
@@ -99,15 +118,16 @@ export function useContentText(): ContentText {
         void answered;
         const tc = (text: string | null | undefined): string | null | undefined => {
             if (text === null || text === undefined || text === '') return text;
-            if (locale === DEFAULT_LOCALE || !tenantSlug) return text;
+            if (locale === DEFAULT_LOCALE) return text;
             if (text.length > CONTENT_TRANSLATION_MAX_CHARS) return text;
             const key = cacheKey(locale, text);
             if (cache.has(key)) return cache.get(key) ?? text;
-            request(tenantSlug, locale, text);
+            if (workspaceSlug() === null) return text;
+            request(locale, text);
             return text;
         };
         return tc as ContentText;
-    }, [locale, tenantSlug, answered]);
+    }, [locale, answered]);
 }
 
 /** Test seam: empty the cache between tests. */
