@@ -712,7 +712,7 @@
  "src/components/ui/entity-picker.tsx": {
   "classification": "COUPLED",
   "derivation": "audited",
-  "reason": "A typeahead over this product's ten linkable compliance entity types, with their API routes hardcoded in a switch. The domain IS the component. Copy itself is clean (all via next-intl)."
+  "reason": "A typeahead over this product's ten linkable compliance entity types, with their API routes hardcoded in a switch. The domain IS the component. Copy itself is clean (all via next-intl). It also imports `@/lib/content-i18n` to show catalogue names in the reader's language (#5996)."
  },
  "src/components/ui/entity-prev-next-nav.tsx": {
   "classification": "MIXED",

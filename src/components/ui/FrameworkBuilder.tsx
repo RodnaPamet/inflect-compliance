@@ -88,8 +88,10 @@ export function FrameworkBuilder({
     // refetches.
     // Section and requirement names in the reader's language (#5996). Display
     // only: the model, the drag ids and the saved order stay on the stored text.
-    const tRoot = useTranslations();
+    const tThemes = useTranslations('frameworkThemes');
     const tc = useContentText();
+    const sectionLabel = (label: string) =>
+        tc(frameworkSectionLabel(label, (key) => tThemes(key.slice('frameworkThemes.'.length))));
     const originalModel = useMemo(() => deriveBuilderModel(tree), [tree]);
     const [model, setModel] = useState<BuilderSection[]>(originalModel);
     const [saving, setSaving] = useState(false);
@@ -270,7 +272,7 @@ export function FrameworkBuilder({
                                     aria-hidden="true"
                                 />
                                 <Heading level={3} className="flex-1">
-                                    {tc(frameworkSectionLabel(section.label, tRoot))}
+                                    {sectionLabel(section.label)}
                                 </Heading>
                                 <span className="text-xs text-content-subtle">
                                     {section.requirements.length}

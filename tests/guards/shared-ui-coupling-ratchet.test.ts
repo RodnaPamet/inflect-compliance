@@ -131,7 +131,15 @@ const CEILINGS: Record<CouplingKind, { max: number; allowance: number }> = {
     // new mechanism. Its price is 10 call sites under `src/app/t/[tenantSlug]`
     // that pass `truncated` and nothing else, which is why it is a batch of its
     // own rather than a rider on this one.
-    'domain-import': { max: 33, allowance: 1 },
+    //
+    // 33 -> 34: `ui/entity-picker.tsx` imports `@/lib/content-i18n` so the
+    // names it lists (controls, risks, tasks, policies, requirements) show in
+    // the reader's language (#5996). The file was already COUPLED by audit
+    // ("the domain IS the component": ten entity types and their API routes),
+    // so this records an edge on a file nobody would vendor, not a shared
+    // primitive gaining one. The lookup cannot be a slot the host supplies
+    // without every one of its callers threading a translator through.
+    'domain-import': { max: 34, allowance: 1 },
     // Re-seated 16 -> 10 by #3096, which replaced the brand fill token with
     // `text-content-brand` in the six files where it painted real rendered
     // TEXT and so owed WCAG 1.4.3's 4.5:1 (badge, checklist-gear-button,
