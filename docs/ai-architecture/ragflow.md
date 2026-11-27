@@ -116,23 +116,31 @@ decision rather than a preference.
       expectation and checks every file against `manifest.json`.
 - [ ] 0.2 Stand RAGFlow (slim image) up locally with its reference Compose;
       record memory/CPU at idle and during a parse, image digests, and the
-      number of containers. **Conditional since D-L4-4** (2026-11-11): RAGFlow
-      is measured only if Docling fails the fidelity eval.
-- [ ] 0.3 Stand a parsing-only alternative up the same way; same measurements.
-      Built 2026-11-27: the `Parse fidelity` workflow starts docling-serve
-      (CPU, by digest) on a GitHub runner and samples its memory and CPU from
-      start to the last document. Its first run (2026-11-27) measured the
-      footprint and no fidelity: the service answered every document 422,
-      because the client still sent docling-serve's retired `file_sources`
-      field. The client now sends the v1 `sources` shape with an in-body
-      target, and a run where the request itself is refused fails instead of
-      passing. Open until a run's record is committed.
-- [ ] 0.4 Run both over the fixture set; score table-cell recall and heading
-      recall. Built 2026-11-27: `scripts/parse-fidelity/score.ts` scores
-      heading, table-cell and row recall from raw counts, through the app's
-      own `DocumentParser` seam. Open until the first run's record exists.
-- [ ] 0.5 Write the D-L4-4 memo (implementation note) and the dependency
+      number of containers. **Not run, by decision.** D-L4-4 makes RAGFlow's
+      measurement conditional on Docling failing, and D-L4-12 (owner,
+      2026-11-27) keeps Docling with its one gap, tables continued across a
+      page break, fixed in Phase 2 (2.5) rather than tried on RAGFlow.
+- [x] 0.3 Stand a parsing-only alternative up the same way; same measurements.
+      Done 2026-11-27: the `Parse fidelity` workflow starts docling-serve
+      v1.38.2 (CPU, by digest) on a GitHub runner and samples its memory and
+      CPU from start to the last document. Run 46022242747: image 2.07 GiB,
+      healthy in 20 s, 781 MiB idle, 2,314 MiB peak while parsing, all four
+      cores busy. Its first run (46015201223) measured the footprint and no
+      fidelity: the client still sent docling-serve's retired `file_sources`
+      field and every document was answered 422, fixed in #5991.
+- [x] 0.4 Run both over the fixture set; score table-cell recall and heading
+      recall. Done 2026-11-27, through the app's own `DocumentParser` seam:
+      heading recall 97.7% (43/44), table-cell recall 91.3% (473/518), row
+      recall 61.5% (72/117). 41 of the 45 missed rows are one document's: the
+      Statement of Applicability whose table crosses page breaks came back as
+      three tables.
+- [x] 0.5 Write the D-L4-4 memo (implementation note) and the dependency
       governance entries for whichever images survive (digest-pinned, G5).
+      Done 2026-11-27:
+      [`2026-11-27-document-parser-decision.md`](../implementation-notes/2026-11-27-document-parser-decision.md).
+      The image is digest-pinned in the workflow; its Compose service
+      (Phase 1.3) falls under `tests/guardrails/runtime-image-pinning.test.ts`
+      like every new image. The floors are D-L4-12.
 
 **Prompt.**
 ```text
@@ -277,6 +285,14 @@ layout-aware chunks; tables survive as tables.
 - [ ] 2.3 The chunker revision (parser backend + version + chunk policy) joins
       the mount-gate revision key.
 - [ ] 2.4 Re-index on `FileRecord` replacement; delete chunks on file purge.
+- [ ] 2.5 Stitch a table continued across a page break back into one table
+      before it is chunked (D-L4-12, owner 2026-11-27): consecutive tables on
+      consecutive pages with the same column count, the later one either
+      repeating the earlier one's header row (dropped when stitched) or
+      starting with no header. Docling returned the fidelity set's two-page
+      SoA as three tables with 5 of 46 rows whole; this is what lifts row
+      recall over D-L4-12's 80% floor, and the parse-fidelity record is the
+      test that it did.
 
 **Prompt.**
 ```text
@@ -321,6 +337,11 @@ produces a record.
 - [ ] 3.3 Table-aware answers: the assistant/agents receive table chunks as
       Markdown with the source reference; `guardUntrustedInput` scans them like
       any result (G4).
+- [ ] 3.4 The nightly holds D-L4-12's floors (owner, 2026-11-27): heading
+      recall at least 95%, table-cell recall at least 90%, row recall at least
+      80%, each over the whole set. Reported from Phase 0 on
+      (`PARSE_FIDELITY_FLOORS`, `scripts/parse-fidelity/score.ts`); a miss
+      fails the job only once the `PARSE-EVAL-NON-BLOCKING-UNTIL:` date passes.
 
 **Prompt.**
 ```text
