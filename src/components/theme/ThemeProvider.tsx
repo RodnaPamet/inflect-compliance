@@ -6,7 +6,9 @@
  * Thin client-side layer that flips `html[data-theme]` between `"dark"` (the
  * default) and `"light"`. It persists the user's CHOICE, in the cookie and in
  * localStorage. Until there is one, it follows the system `prefers-color-scheme`,
- * live, and writes nothing.
+ * live, and writes nothing, unless the host passes `followSystem={false}`:
+ * then an unchosen theme stays on the dark baseline whatever the OS says, and
+ * the OS is not listened to (a host whose brand is dark by default).
  *
  * ── WHEN IT WRITES ──────────────────────────────────────────────────────
  *
@@ -120,7 +122,18 @@ function applyTheme(theme: Theme) {
     document.documentElement.setAttribute(ATTR, theme);
 }
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
+export function ThemeProvider({
+    children,
+    followSystem = true,
+}: {
+    children: ReactNode;
+    /**
+     * With no stored choice, follow the OS `prefers-color-scheme` (the
+     * default), or stay on the dark baseline until the person picks a theme
+     * (false). A stored choice wins either way, and nothing is written.
+     */
+    followSystem?: boolean;
+}) {
     // Start in dark (the SSR default) and rehydrate on mount to avoid a
     // hydration mismatch when the stored theme differs from the SSR snapshot.
     const [theme, setThemeState] = useState<Theme>('dark');
@@ -134,7 +147,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         hasHydrated.current = true;
         const stored = readStoredTheme();
         chosen.current = stored !== null;
-        const next = stored ?? systemTheme();
+        const next = stored ?? (followSystem ? systemTheme() : 'dark');
         setThemeState(next);
         applyTheme(next);
         // Nothing is written here. A stored theme is already stored, and the
@@ -143,12 +156,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         // localStorage-only choices into the cookie. Such a visitor now
         // renders the `dark` server default, and the pre-paint script applies
         // their stored theme before the browser paints.)
-    }, []);
+    }, [followSystem]);
 
     // With no stored choice, keep following the OS while the page is open —
     // a system switch to light or dark at dusk repaints without a reload.
     // Never written: the next visit re-reads the OS, as this one did.
     useEffect(() => {
+        if (!followSystem) return;
         if (typeof window === 'undefined' || !window.matchMedia) return;
         const query = window.matchMedia(SYSTEM_LIGHT_QUERY);
         const follow = (event: MediaQueryListEvent) => {
@@ -159,7 +173,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         };
         query.addEventListener?.('change', follow);
         return () => query.removeEventListener?.('change', follow);
-    }, []);
+    }, [followSystem]);
 
     const setTheme = useCallback((next: Theme) => {
         // The one place a theme is stored: the user picked it.
