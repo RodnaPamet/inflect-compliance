@@ -594,11 +594,29 @@ describe('4.3 — the gateway deploys outside the canonical compose (#3964)', ()
  * #3931 asked whether the SDK is ESM-only, so phase 4 would know whether it
  * needs the `@flue/runtime` treatment: a jest project of its own and a boundary
  * module nothing in the main graph may import. The answer measured against the
- * registry is that there is no JavaScript SDK at all — `@nvidia/openshell-sdk`
- * is a 404, and of the 39 npm packages that mention OpenShell, none is
- * published by NVIDIA. The official SDK is Python (`pypi/openshell`,
- * `requires_python >=3.11`), which cannot enter a Node import graph under any
- * module format.
+ * registry in October was that there was no JavaScript SDK at all —
+ * `@nvidia/openshell-sdk` a 404, and of the 39 npm packages mentioning
+ * OpenShell, none published by NVIDIA.
+ *
+ * ═══ THAT PREMISE EXPIRED ON 2026-11-19, AND THIS TEST DID NOT ═══
+ *
+ * The project moved orgs (`NVIDIA/OpenShell` now redirects to
+ * `ai-openshell/openshell`) and now publishes a real, official TypeScript SDK:
+ * `@ai-openshell/sdk`, repo `ai-openshell/sdk-typescript`, one genuine release
+ * at 0.1.10. The Python SDK is still there (`pypi/openshell` 0.1.10,
+ * `requires_python >=3.11`).
+ *
+ * So the ORIGINAL REASONING no longer holds — "nothing to adopt" has become
+ * "something official to adopt" — while the DECISION is unchanged: this
+ * repository depends on no OpenShell package from anybody. What changed is why.
+ * It is now a supply-chain choice rather than an absence, and the threat model
+ * inverted with it: the risk used to be adopting a lookalike by mistake, and is
+ * now adopting the genuine article without anyone deciding to.
+ *
+ * The assertion needed no edit, which is the point of having written it as a
+ * pattern over every dependency section rather than an allowlist of names —
+ * `@ai-openshell/sdk` contains `openshell` and is caught. The case below pins
+ * that reach so it is measured rather than assumed.
  *
  * ═══ WHY A TEST AND NOT ONLY A NOTE ═══
  *
@@ -631,6 +649,29 @@ describe('0.1f — no OpenShell package is a dependency (#3931)', () => {
         'bundledDependencies',
         'bundleDependencies',
     ] as const;
+
+    it('the pattern reaches the names that exist today, official and lookalike', () => {
+        // A POSITIVE CONTROL FOR THE REGEX ITSELF. The claim above is that an
+        // allowlist-free pattern needs no maintenance when a new package
+        // appears; `@ai-openshell/sdk` appearing on 2026-11-19 is the first
+        // real test of that, and "it still passes" is also what a pattern that
+        // had stopped reaching anything would produce.
+        expect({
+            official: LOOKALIKE.test('@ai-openshell/sdk'),
+            oldScope: LOOKALIKE.test('@nvidia/openshell-sdk'),
+            lookalike: LOOKALIKE.test('@openkaiden/opnshll-sdk'),
+            bare: LOOKALIKE.test('openshell'),
+            goSdk: LOOKALIKE.test('@ai-openshell/sdk-go'),
+            unrelated: LOOKALIKE.test('lucide-react'),
+        }).toEqual({
+            official: true,
+            oldScope: true,
+            lookalike: true,
+            bare: true,
+            goSdk: true,
+            unrelated: false,
+        });
+    });
 
     it('names none in any dependency section of package.json', () => {
         // Every section, not just `dependencies`. A devDependency is still a
