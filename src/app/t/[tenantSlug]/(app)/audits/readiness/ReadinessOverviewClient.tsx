@@ -20,6 +20,7 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { Heading } from '@/components/ui/typography';
 import { KPIStat } from '@/components/ui/metric';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { InfoTooltip } from '@/components/ui/tooltip';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -44,6 +45,7 @@ interface TestReadiness { frameworkKey: string; frameworkName: string; testPlanC
 
 export function ReadinessOverviewClient({ tenantSlug }: { tenantSlug: string }) {
     const tx = useTranslations('audits');
+    const tc = useContentText();
     const apiUrl = useCallback((p: string) => `/api/t/${tenantSlug}${p}`, [tenantSlug]);
     // Each section reads on its own and says when its read failed. A failed or
     // refused read used to fall through to the empty state ("No audit cycles
@@ -130,7 +132,7 @@ export function ReadinessOverviewClient({ tenantSlug }: { tenantSlug: string }) 
                                 <Link key={c.id} href={`/t/${tenantSlug}/audits/cycles/${c.id}/readiness`}
                                     className={cn(cardVariants({ density: 'compact' }), 'flex items-center justify-between gap-compact hover:bg-bg-muted/50 transition block')}
                                     data-testid="overview-coverage-row">
-                                    <span className="text-sm font-medium">{c.name} <span className="text-content-subtle">· {c.frameworkName ?? c.frameworkKey}</span></span>
+                                    <span className="text-sm font-medium">{c.name} <span className="text-content-subtle">· {tc(c.frameworkName) ?? c.frameworkKey}</span></span>
                                     <span className="flex items-center gap-tight">
                                         {typeof score === 'number' ? (
                                             <StatusBadge variant={readinessVariant(score)}>{tx('overview.coverageScore', { pct: Math.round(score) })}</StatusBadge>
@@ -189,7 +191,7 @@ export function ReadinessOverviewClient({ tenantSlug }: { tenantSlug: string }) 
                     <div className="grid grid-cols-1 gap-default sm:grid-cols-2 lg:grid-cols-3">
                         {tests.data.map((t) => (
                             <div key={t.frameworkKey} className="rounded-lg border border-border-subtle p-3 space-y-tight">
-                                <p className="text-sm font-medium text-content-emphasis">{t.frameworkName}</p>
+                                <p className="text-sm font-medium text-content-emphasis">{tc(t.frameworkName)}</p>
                                 <div className="flex flex-wrap gap-tight">
                                     <StatusBadge variant={readinessVariant(t.testPlanCoverage)}>
                                         {tx('overview.planCoverage', { pct: Math.round(t.testPlanCoverage) })}

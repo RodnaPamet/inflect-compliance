@@ -29,6 +29,7 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { frameworkKindLabel } from '../framework-kind-label';
 import { frameworkHasClauseTracker, isIso27001Framework } from '@/lib/compliance/iso27001-clauses';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 type Tab = 'requirements' | 'packs' | 'coverage' | 'builder';
 
@@ -89,6 +90,7 @@ interface FrameworkPackSummary {
 
 export default function FrameworkDetailPage() {
     const t = useTranslations('frameworks');
+    const tc = useContentText();
     const params = useParams();
     const tenantSlug = params.tenantSlug as string;
     const frameworkKey = params.frameworkKey as string;
@@ -127,17 +129,20 @@ export default function FrameworkDetailPage() {
     // mean only the first framework ever celebrates).
     const { celebrate } = useCelebration(celebrationDedupe);
     const tRoot = useTranslations();
+    // Read here, not in the effect: `tc` changes with every answered lookup,
+    // and the effect should run again only when this name does.
+    const celebratedName = tc(framework?.name);
     useEffect(() => {
         if (coverage?.coveragePercent !== 100) return;
         const copy = milestoneCopy('framework-100', tRoot);
         celebrate(
             scopedMilestone('framework-100', frameworkKey, copy, {
-                descriptionOverride: framework?.name
-                    ? `${framework.name} — ${copy.description ?? ''}`.trim()
+                descriptionOverride: celebratedName
+                    ? `${celebratedName} — ${copy.description ?? ''}`.trim()
                     : undefined,
             }),
         );
-    }, [coverage?.coveragePercent, frameworkKey, framework?.name, celebrate, tRoot]);
+    }, [coverage?.coveragePercent, frameworkKey, celebratedName, celebrate, tRoot]);
 
     useEffect(() => {
         // Epic 46 — fetch the new `/tree` endpoint instead of the
@@ -204,7 +209,7 @@ export default function FrameworkDetailPage() {
         const snapshot = packs;
         setPacks((current) => current.map((p) => (p.key === pack.key ? { ...p, chosen: false } : p)));
         triggerUndoToast({
-            message: t('detail.packRemoved', { name: pack.name }),
+            message: t('detail.packRemoved', { name: tc(pack.name) }),
             undoMessage: t('detail.undo'),
             action: async () => {
                 const res = await fetch(apiUrl(`/frameworks/${frameworkKey}?action=remove-pack`), {
@@ -229,7 +234,7 @@ export default function FrameworkDetailPage() {
     const breadcrumbs = [
         { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
         { label: t('crumb.frameworks'), href: tenantHref('/frameworks') },
-        { label: framework?.name ?? frameworkKey },
+        { label: tc(framework?.name) ?? frameworkKey },
     ];
     if (loading) {
         return (
@@ -279,7 +284,7 @@ export default function FrameworkDetailPage() {
             back={{ smart: true }}
             breadcrumbs={breadcrumbs}
 
-            title={<span id="framework-detail-heading">{framework.name}</span>}
+            title={<span id="framework-detail-heading">{tc(framework.name)}</span>}
             prevNext={{
                 ids: frameworkKeys,
                 currentId: frameworkKey,
@@ -345,7 +350,7 @@ export default function FrameworkDetailPage() {
             activeTab={activeTab}
             onTabChange={(next) => setActiveTab(next as Tab)}
         >
-            {framework.description && <Caption className="-mt-2">{framework.description}</Caption>}
+            {framework.description && <Caption className="-mt-2">{tc(framework.description)}</Caption>}
 
             {/* Requirements Tab — Epic 46 tree explorer */}
             {activeTab === 'requirements' && (
@@ -369,8 +374,8 @@ export default function FrameworkDetailPage() {
                         <div key={p.id} className={cardVariants({ density: 'none' })}>
                             <div className="flex items-start justify-between">
                                 <div>
-                                    <Heading level={2}>{p.name}</Heading>
-                                    {p.description && <p className="text-sm text-content-muted mt-1">{p.description}</p>}
+                                    <Heading level={2}>{tc(p.name)}</Heading>
+                                    {p.description && <p className="text-sm text-content-muted mt-1">{tc(p.description)}</p>}
                                     <div className="flex items-center gap-compact mt-2 text-xs text-content-subtle">
                                         <span>{t('detail.templatesCount', { count: p._count?.templateLinks || 0 })}</span>
                                         {p.version && <span>v{p.version}</span>}
@@ -466,7 +471,7 @@ export default function FrameworkDetailPage() {
                                 {coverage.bySection.map((s) => (
                                     <div key={s.section}>
                                         <div className="flex items-center justify-between text-xs mb-1">
-                                            <span className="text-content-default">{s.section}</span>
+                                            <span className="text-content-default">{tc(s.section)}</span>
                                             <span className="text-content-muted">{s.mapped}/{s.total} ({s.coveragePercent}%)</span>
                                         </div>
                                         <ProgressBar
@@ -479,7 +484,7 @@ export default function FrameworkDetailPage() {
                                                         ? 'brand'
                                                         : 'neutral'
                                             }
-                                            aria-label={t('detail.sectionCoverageAria', { section: s.section })}
+                                            aria-label={t('detail.sectionCoverageAria', { section: tc(s.section) })}
                                         />
                                     </div>
                                 ))}
@@ -498,7 +503,7 @@ export default function FrameworkDetailPage() {
                                     <div key={i} className="flex items-center gap-compact px-3 py-1.5 rounded-md hover:bg-bg-muted/50 text-sm">
                                         <span className="w-2 h-2 rounded-full bg-border-emphasis flex-shrink-0" />
                                         <code className="text-xs text-content-subtle font-mono w-16 sm:w-28 flex-shrink-0 truncate">{r.code}</code>
-                                        <span className="text-content-muted">{r.title}</span>
+                                        <span className="text-content-muted">{tc(r.title)}</span>
                                     </div>
                                 ))}
                             </div>
@@ -518,7 +523,7 @@ export default function FrameworkDetailPage() {
                                 {coverage.outOfScopeRequirements.map((r) => (
                                     <div key={r.code} className="flex items-center gap-compact px-3 py-1.5 rounded-md text-sm">
                                         <code className="text-xs text-content-subtle font-mono w-16 sm:w-28 flex-shrink-0 truncate">{r.code}</code>
-                                        <span className="text-content-subtle">{r.title}</span>
+                                        <span className="text-content-subtle">{tc(r.title)}</span>
                                     </div>
                                 ))}
                             </div>

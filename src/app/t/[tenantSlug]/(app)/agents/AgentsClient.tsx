@@ -60,6 +60,7 @@ import { BUDGET_RUN_TOKEN_CEILING, MAX_MONTHLY_TOKEN_BUDGET, monthlyBudgetSettin
 import { isSettableConcurrencyCap, MAX_CONCURRENCY_CAP } from '@/lib/agentic/run-concurrency';
 import { apiRefusalMessage } from '@/lib/api-error';
 import { localizedCheckTitle } from '@/lib/agentic/agentic-check-titles';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 import { NumberStepper } from '@/components/ui/number-stepper';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { AgentsViewsMenu } from './AgentsViewsMenu';
@@ -857,6 +858,7 @@ type AssuranceSetupAnswer =
 export function ScheduleAssuranceChecks({ tenantSlug }: { tenantSlug: string }) {
     const t = useTranslations('agents');
     const tChecks = useTranslations('agentChecks');
+    const tc = useContentText();
     const router = useRouter();
     const [busy, setBusy] = useState(false);
     const [preview, setPreview] = useState<AssuranceSetupStep[] | null>(null);
@@ -925,7 +927,7 @@ export function ScheduleAssuranceChecks({ tenantSlug }: { tenantSlug: string }) 
                             <li key={s.check}>
                                 {t('register.assurance.schedule.previewLine', {
                                     title: localizedCheckTitle(s.check, s.title, tChecks),
-                                    control: s.control ? `${s.control.code ?? ''} ${s.control.name}`.trim() : '',
+                                    control: s.control ? `${s.control.code ?? ''} ${tc(s.control.name)}`.trim() : '',
                                 })}
                             </li>
                         ))}

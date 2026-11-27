@@ -17,6 +17,7 @@ import { Heading, textLinkVariants } from '@/components/ui/typography';
 import { ApiClientError } from '@/lib/api-client';
 import { cn } from '@inflect/ui/lib/cn';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 import type { AgentTabProps } from './types';
 
@@ -192,6 +193,7 @@ const STATUS_VARIANT: Record<CoverageStatus, StatusBadgeVariant> = {
 
 export function CoverageTab({ tenantSlug, agentId, refreshToken }: AgentTabProps) {
     const t = useTranslations('admin');
+    const tc = useContentText();
     const { data, error, isLoading, mutate } = useTenantSWR<AgentRiskCoverageReport>(
         `/admin/agents/${agentId}/coverage`,
     );
@@ -303,7 +305,7 @@ export function CoverageTab({ tenantSlug, agentId, refreshToken }: AgentTabProps
                     description={
                         data.framework
                             ? t('agentDetail.coverage.frameworkEmptyDescription', {
-                                  framework: data.framework.name,
+                                  framework: tc(data.framework.name),
                               })
                             : undefined
                     }
@@ -415,7 +417,7 @@ export function CoverageTab({ tenantSlug, agentId, refreshToken }: AgentTabProps
                             {data.framework && (
                                 <p className="text-xs text-content-muted">
                                     {t('agentDetail.coverage.measuredAgainst', {
-                                        framework: data.framework.name,
+                                        framework: tc(data.framework.name),
                                     })}
                                 </p>
                             )}
@@ -560,6 +562,7 @@ function RiskEntryCard({
     showReason: boolean;
 }) {
     const t = useTranslations('admin');
+    const tc = useContentText();
 
     const statusLabels: Record<CoverageStatus, string> = {
         COVERED: t('agentDetail.coverage.status.covered'),
@@ -624,11 +627,11 @@ function RiskEntryCard({
                             {entry.code}
                         </code>
                         <span className="text-sm font-medium text-content-emphasis">
-                            {entry.title}
+                            {tc(entry.title)}
                         </span>
                     </div>
                     {entry.section && (
-                        <p className="text-xs text-content-subtle">{entry.section}</p>
+                        <p className="text-xs text-content-subtle">{tc(entry.section)}</p>
                     )}
                 </div>
                 <StatusBadge variant={badgeVariant} size="sm" className="shrink-0">
@@ -663,13 +666,13 @@ function RiskEntryCard({
                         >
                             <div className="flex flex-wrap items-baseline gap-compact">
                                 <span className="text-xs text-content-default">
-                                    {route.frameworkName}
+                                    {tc(route.frameworkName)}
                                 </span>
                                 <code className="font-mono text-xs text-content-subtle">
                                     {route.requirementCode}
                                 </code>
                                 <span className="text-xs text-content-muted">
-                                    {route.requirementTitle}
+                                    {tc(route.requirementTitle)}
                                 </span>
                                 <StatusBadge variant="neutral" size="sm" icon={null}>
                                     {strengthLabels[route.strength] ?? route.strength}
@@ -698,6 +701,7 @@ function ControlList({
     tenantSlug: string;
 }) {
     const t = useTranslations('admin');
+    const tc = useContentText();
 
     const statusLabels: Record<string, string> = {
         NOT_STARTED: t('agentDetail.coverage.controlStatus.notStarted'),
@@ -720,7 +724,7 @@ function ControlList({
                         href={`/t/${tenantSlug}/controls/${control.id}`}
                         className={cn(textLinkVariants({ tone: 'link' }), 'min-w-0 truncate')}
                     >
-                        {control.code ? `${control.code} · ${control.name}` : control.name}
+                        {control.code ? `${control.code} · ${tc(control.name)}` : tc(control.name)}
                     </Link>
                     <span className="shrink-0 text-content-subtle">
                         {statusLabels[control.status] ?? control.status}

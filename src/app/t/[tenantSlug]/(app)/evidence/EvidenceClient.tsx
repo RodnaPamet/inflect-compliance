@@ -86,6 +86,7 @@ import { isScanServable, isScanInfected } from '@/lib/evidence-scan';
 import { ownerLabel } from '@/lib/evidence-owner-label';
 import { apiErrorMessage } from '@/lib/api-error';
 import { mayDownloadEvidenceFile } from '@/lib/evidence-download-access';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface Permissions {
     canRead: boolean;
@@ -220,11 +221,39 @@ interface EvidenceRow {
 /** EP-3 — condensed label for the linked-controls table cell. */
 function controlLinksLabel(
     links: EvidenceRow['evidenceControlLinks'] | undefined | null,
+    // Catalogue content lookup (`useContentText()`), for the cell; the sort
+    // and the accessor read the stored name.
+    tc: (text: string) => string = (text) => text,
 ): string {
     if (!links || links.length === 0) return '—';
     const first = links[0].control;
-    const prefix = first.annexId || first.code || first.name;
+    const prefix = first.annexId || first.code || tc(first.name);
     return links.length > 1 ? `${prefix} +${links.length - 1}` : prefix;
+}
+
+/**
+ * The Control cell: the first link condensed, every link in the tooltip. A
+ * component so the content lookup has a hook of its own, outside the columns
+ * memo.
+ */
+function ControlLinksCell({ links }: { links: EvidenceRow['evidenceControlLinks'] }) {
+    const tc = useContentText();
+    if (links.length === 0) {
+        return <span className="text-content-subtle">—</span>;
+    }
+    const label = controlLinksLabel(links, tc);
+    const full = links
+        .map((l) => {
+            const c = l.control;
+            const prefix = c.annexId || c.code || '';
+            return prefix ? `${prefix}: ${tc(c.name)}` : tc(c.name);
+        })
+        .join(', ');
+    return (
+        <Tooltip content={full}>
+            <span className="text-xs text-content-muted">{label}</span>
+        </Tooltip>
+    );
 }
 
 // Minimal control shape this page consumes (filter builder + upload modal).
@@ -291,6 +320,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
     // `translations` prop (retention labels, bulk actions, KPI labels,
     // empty states, tooltips, toasts, …). The prop `t` stays intact.
     const tx = useTranslations('evidence');
+    const tc = useContentText();
     const tGroup = useTranslations('common.filterGroups');
     // The Type column's label, in the reader's language — the resolver's
     // `label` is English and doubles as an identifier.
@@ -1064,8 +1094,9 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                 evidence,
                 (k, v) => tx(k as Parameters<typeof tx>[0], v as Parameters<typeof tx>[1]),
                 (k) => tGroup(k as Parameters<typeof tGroup>[0]),
+                tc,
             ),
-        [controls, evidence, tx, tGroup],
+        [controls, evidence, tx, tGroup, tc],
     );
     // The folder and category options are built from the evidence loaded,
     // which the filters narrow.
@@ -1209,25 +1240,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
             // EP-3 — many-to-many links; the cell condenses to the
             // first control's code/annex id + a "+N" overflow badge.
             accessorFn: (ev) => controlLinksLabel(ev.evidenceControlLinks),
-            cell: ({ row }) => {
-                const links = row.original.evidenceControlLinks ?? [];
-                if (links.length === 0) {
-                    return <span className="text-content-subtle">—</span>;
-                }
-                const label = controlLinksLabel(links);
-                const full = links
-                    .map((l) => {
-                        const c = l.control;
-                        const prefix = c.annexId || c.code || '';
-                        return prefix ? `${prefix}: ${c.name}` : c.name;
-                    })
-                    .join(', ');
-                return (
-                    <Tooltip content={full}>
-                        <span className="text-xs text-content-muted">{label}</span>
-                    </Tooltip>
-                );
-            },
+            cell: ({ row }) => <ControlLinksCell links={row.original.evidenceControlLinks ?? []} />,
         },
         {
             id: 'category',

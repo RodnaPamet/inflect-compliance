@@ -32,6 +32,7 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { isFinalizedNis2Run } from '@/lib/nis2-run-status';
 import { nis2QuestionLanguage, nis2Text } from '@/lib/nis2/question-language';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // Required CC BY 4.0 attribution — MUST render wherever the questions show.
 export const NIS2_ATTRIBUTION_TEXT =
@@ -95,6 +96,7 @@ export function Nis2SelfAssessmentStep({
 }) {
     const t = useTranslations('common.ui');
     const tn = useTranslations('onboarding.nis2Step');
+    const tc = useContentText();
     const label = (group: 'answer' | 'respondent' | 'criticality', value: string) =>
         tn.has(`${group}.${value}`) ? tn(`${group}.${value}`) : value;
     const locale = useLocale();
@@ -268,7 +270,7 @@ export function Nis2SelfAssessmentStep({
                                                         {nis2Text(q.plainText, lang)}
                                                     </span>
                                                     <InfoTooltip
-                                                        content={nis2Text(q.text, lang)}
+                                                        content={tc(nis2Text(q.text, lang))}
                                                         aria-label={t('regulatorWording')}
                                                     />
                                                     <StatusBadge

@@ -30,6 +30,7 @@ import { RiskPicker } from '../_shared/RiskPicker';
 import { AnalyticsState } from '../_shared/AnalyticsState';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface Scenario { id: string; name: string; status: string; investmentCost: number | null; computedRoi: number | null; createdAt: string }
 
@@ -62,6 +63,7 @@ const messageOf = (e: unknown, fallback: string) => (e instanceof Error && e.mes
 
 export default function RiskScenariosPage() {
     const t = useTranslations('risks');
+    const tc = useContentText();
     const apiUrl = useTenantApiUrl();
     const money = useMoneyFormatter();
     const router = useRouter();
@@ -356,7 +358,7 @@ export default function RiskScenariosPage() {
                         <ul className="space-y-tight" data-testid="scenario-overrides">
                             {overrides.map((o, i) => (
                                 <ShadedRow as="li" padding="none" key={`${o.riskId}-${o.field}`} className="flex items-center justify-between gap-default px-3 py-1.5 text-sm">
-                                    <span className="truncate text-content-emphasis">{o.label || o.riskId}</span>
+                                    <span className="truncate text-content-emphasis">{tc(o.label) || o.riskId}</span>
                                     <span className="tabular-nums text-content-muted">{fieldLabel(o.field)} → {formatValue(o.field, o.newValue)}</span>
                                     <Button size="sm" variant="ghost" onClick={() => removeOverride(i)}>{t('scenarios.removeOverride')}</Button>
                                 </ShadedRow>
@@ -463,7 +465,7 @@ export default function RiskScenariosPage() {
                             <ul className="space-y-tight">
                                 {shown.perRiskDeltas.map((d) => (
                                     <li key={d.riskId} className="flex justify-between gap-default text-sm">
-                                        <Link href={tenantHref(`/risks/${d.riskId}`)} className="truncate text-content-emphasis hover:underline" data-testid={`scenario-risk-link-${d.riskId}`}>{d.title}</Link>
+                                        <Link href={tenantHref(`/risks/${d.riskId}`)} className="truncate text-content-emphasis hover:underline" data-testid={`scenario-risk-link-${d.riskId}`}>{tc(d.title)}</Link>
                                         <span className="tabular-nums text-content-muted">{money(d.baselineAle)} → {money(d.scenarioAle)} ({d.deltaPercent.toFixed(0)}%)</span>
                                     </li>
                                 ))}

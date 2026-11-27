@@ -52,6 +52,7 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { extractMutationError } from '@/lib/mutations';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // Epic G-7 — the structured treatment plan now lives INSIDE the guided
 // assessment (Step 4), not scattered on the Overview tab. Dynamic-imported
@@ -196,6 +197,7 @@ export function RiskAssessmentPanel({
     onStatusChange: (status: string) => void | Promise<void>;
 }) {
     const t = useTranslations('risks');
+    const tc = useContentText();
     const apiUrl = useTenantApiUrl();
     const toast = useToast();
 
@@ -561,7 +563,7 @@ export function RiskAssessmentPanel({
                         {participating.map((c) => (
                             <li key={c.controlId} className="flex items-center gap-tight text-sm">
                                 <span className="text-content-default">
-                                    {c.code ? `${c.code} — ` : ''}{c.name}
+                                    {c.code ? `${c.code} — ` : ''}{tc(c.name)}
                                 </span>
                                 <span className="text-content-muted">
                                     {t('assessment.effective', {
@@ -580,7 +582,7 @@ export function RiskAssessmentPanel({
                         <ul className="space-y-tight">
                             {excluded.map((c) => (
                                 <li key={c.controlId}>
-                                    {c.code ? `${c.code} — ` : ''}{c.name}:{' '}
+                                    {c.code ? `${c.code} — ` : ''}{tc(c.name)}:{' '}
                                     {c.excludedReason === 'NO_EFFECTIVENESS'
                                         ? t('assessment.noEffectivenessSignal')
                                         : t('assessment.noMitigationType')}

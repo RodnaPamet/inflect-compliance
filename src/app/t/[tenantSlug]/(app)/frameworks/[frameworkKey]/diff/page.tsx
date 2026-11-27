@@ -11,6 +11,7 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { cn } from '@inflect/ui/lib/cn';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // computeRequirementsDiff (framework/fixtures.ts) — inline literal return.
 interface DiffRequirement {
@@ -67,6 +68,7 @@ type Outcome =
 
 export default function DiffPage() {
     const t = useTranslations('frameworks');
+    const tc = useContentText();
     const params = useParams();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -130,14 +132,14 @@ export default function DiffPage() {
 
     /** A framework's name, with its version only when it has one ("vnull" otherwise). */
     const label = (f: { name: string; version: string | null }) =>
-        f.version ? t('diff.nameVersion', { name: f.name, version: f.version }) : f.name;
+        f.version ? t('diff.nameVersion', { name: tc(f.name), version: f.version }) : tc(f.name);
 
     const options: ComboboxOption<string>[] = useMemo(
         () =>
             (frameworks ?? [])
                 .filter((f) => f.key !== frameworkKey)
-                .map((f) => ({ value: f.key, label: f.version ? `${f.name} v${f.version}` : f.name })),
-        [frameworks, frameworkKey],
+                .map((f) => ({ value: f.key, label: f.version ? `${tc(f.name)} v${f.version}` : tc(f.name), keywords: [f.name] })),
+        [frameworks, frameworkKey, tc],
     );
     const chosen = options.find((o) => o.value === fromKey) ?? null;
     const choose = (key: string) => {
@@ -244,8 +246,8 @@ export default function DiffPage() {
                             <div key={i} className={cn(cardVariants({ density: 'none' }), 'flex items-center gap-compact')}>
                                 <span className="text-content-success text-lg font-bold">+</span>
                                 <code className="text-xs text-[var(--brand-default)] font-mono w-28 flex-shrink-0">{r.code}</code>
-                                <span className="text-sm text-content-default">{r.title}</span>
-                                {r.section && <span className="text-xs text-content-subtle ml-auto">{r.section}</span>}
+                                <span className="text-sm text-content-default">{tc(r.title)}</span>
+                                {r.section && <span className="text-xs text-content-subtle ml-auto">{tc(r.section)}</span>}
                             </div>
                         ))}
 
@@ -253,8 +255,8 @@ export default function DiffPage() {
                             <div key={i} className={cn(cardVariants({ density: 'none' }), 'flex items-center gap-compact')}>
                                 <span className="text-content-error text-lg font-bold">−</span>
                                 <code className="text-xs text-content-muted font-mono w-28 flex-shrink-0 line-through">{r.code}</code>
-                                <span className="text-sm text-content-subtle line-through">{r.title}</span>
-                                {r.section && <span className="text-xs text-content-subtle ml-auto">{r.section}</span>}
+                                <span className="text-sm text-content-subtle line-through">{tc(r.title)}</span>
+                                {r.section && <span className="text-xs text-content-subtle ml-auto">{tc(r.section)}</span>}
                             </div>
                         ))}
 
@@ -268,17 +270,17 @@ export default function DiffPage() {
                                 <div className="ml-8 space-y-1">
                                     {r.changes.includes('title') && (
                                         <div className="text-xs">
-                                            <span className="text-content-error line-through">{r.from.title}</span>
+                                            <span className="text-content-error line-through">{tc(r.from.title)}</span>
                                             <span className="text-content-subtle mx-2">→</span>
-                                            <span className="text-content-success">{r.to.title}</span>
+                                            <span className="text-content-success">{tc(r.to.title)}</span>
                                         </div>
                                     )}
                                     {r.changes.includes('section') && (
                                         <div className="text-xs">
                                             <span className="text-content-subtle">{t('diff.section')} </span>
-                                            <span className="text-content-error">{r.from.section || t('diff.none')}</span>
+                                            <span className="text-content-error">{tc(r.from.section) || t('diff.none')}</span>
                                             <span className="text-content-subtle mx-2">→</span>
-                                            <span className="text-content-success">{r.to.section || t('diff.none')}</span>
+                                            <span className="text-content-success">{tc(r.to.section) || t('diff.none')}</span>
                                         </div>
                                     )}
                                     {/* #4732 — a description change was named and never shown. */}
@@ -286,11 +288,11 @@ export default function DiffPage() {
                                         <div className="text-xs space-y-1" data-testid="diff-description-change">
                                             <p>
                                                 <span className="text-content-subtle">{t('diff.before')} </span>
-                                                <span className="text-content-default whitespace-pre-line">{r.from.description || t('diff.none')}</span>
+                                                <span className="text-content-default whitespace-pre-line">{tc(r.from.description) || t('diff.none')}</span>
                                             </p>
                                             <p>
                                                 <span className="text-content-subtle">{t('diff.after')} </span>
-                                                <span className="text-content-default whitespace-pre-line">{r.to.description || t('diff.none')}</span>
+                                                <span className="text-content-default whitespace-pre-line">{tc(r.to.description) || t('diff.none')}</span>
                                             </p>
                                         </div>
                                     )}

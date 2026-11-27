@@ -31,6 +31,8 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { useIsBelowMd } from '@/components/ui/hooks';
 import { KpiStrip } from '@/components/ui/kpi-strip';
 import { useSoASectionLabel } from '@/app/t/[tenantSlug]/(app)/reports/soa/section-label';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
+import { frameworkDisplayName } from '@/app/t/[tenantSlug]/(app)/reports/framework-name';
 
 // ─── Types ───
 
@@ -113,6 +115,7 @@ function GapBadges({ entry }: { entry: SoAEntryDTO }) {
 
 export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientProps) {
     const t = useTranslations('reports');
+    const tc = useContentText();
     const router = useRouter();
     // R14-PR7 — standalone main-page search retired. The "Show gaps
     // only" toggle remains as the primary in-page filter; users
@@ -241,9 +244,13 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
         return controls.filter((c) => {
             if (alreadyMapped.has(c.id)) return false;
             if (!q) return true;
-            return (c.code ?? '').toLowerCase().includes(q) || c.name.toLowerCase().includes(q);
+            return (
+                (c.code ?? '').toLowerCase().includes(q) ||
+                c.name.toLowerCase().includes(q) ||
+                tc(c.name).toLowerCase().includes(q)
+            );
         });
-    }, [controls, mapModal, report.entries, mapSearch]);
+    }, [controls, mapModal, report.entries, mapSearch, tc]);
 
     const { summary } = report;
 
@@ -278,7 +285,7 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
                 ]}
                 title={t('soa')}
                 titleId="soa-heading"
-                description={`${report.frameworkName} — ${t('soaView.requirementsCount', { count: summary.total })}`}
+                description={`${frameworkDisplayName(report.frameworkName, tc)} — ${t('soaView.requirementsCount', { count: summary.total })}`}
             />
 
             {/* R2-P3 — the Statement of Applicability is an ISO-27001-Annex-A
@@ -521,7 +528,7 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
                                         {c.code || '—'}
                                     </span>
                                     <span className="ml-2 text-content-emphasis">
-                                        {c.name}
+                                        {tc(c.name)}
                                     </span>
                                 </div>
                                 {/* The map picker used to inline its own rule
@@ -636,6 +643,7 @@ function SoARow({
     tenantSlug: string;
 }) {
     const t = useTranslations('reports');
+    const tc = useContentText();
     const sectionLabel = useSoASectionLabel();
     const hasGap = entryHasGap(entry);
 
@@ -652,7 +660,7 @@ function SoARow({
             >
                 <td className="text-xs font-mono text-[var(--brand-default)]">{entry.requirementCode}</td>
                 <td className="text-sm text-content-emphasis">
-                    <div>{entry.requirementTitle}</div>
+                    <div>{tc(entry.requirementTitle)}</div>
                     {entry.section && <div className="text-xs text-content-subtle">{sectionLabel(entry.section)}</div>}
                 </td>
                 <td><ApplicabilityBadge value={entry.applicable} /></td>
@@ -734,6 +742,7 @@ function MappedControlsDetail({
     stacked?: boolean;
 }) {
     const t = useTranslations('reports');
+    const tc = useContentText();
     return (
         <div className={cn('space-y-tight', className)} data-testid={`soa-mapped-controls-${entry.requirementId}`}>
             <div className="text-xs uppercase tracking-wider text-content-subtle font-semibold">{t('soaView.mappedControls')}</div>
@@ -753,7 +762,7 @@ function MappedControlsDetail({
                         >
                             {c.code || c.controlId.slice(0, 8)}
                         </a>
-                        <span className={cn('text-content-emphasis', stacked && 'break-words')}>{c.title}</span>
+                        <span className={cn('text-content-emphasis', stacked && 'break-words')}>{tc(c.title)}</span>
                         <StatusBadgePrimitive variant={c.applicability === 'APPLICABLE' ? 'success' : 'neutral'}>
                             {c.applicability === 'APPLICABLE' ? t('soaView.applicable') : t('soaView.notApplicable')}
                         </StatusBadgePrimitive>
@@ -828,6 +837,7 @@ function SoACard({
     tenantSlug: string;
 }) {
     const t = useTranslations('reports');
+    const tc = useContentText();
     const sectionLabel = useSoASectionLabel();
     const hasGap = entryHasGap(entry);
     const detailId = `soa-card-detail-${entry.requirementId}`;
@@ -840,7 +850,7 @@ function SoACard({
             <div className="flex items-start justify-between gap-tight">
                 <div className="min-w-0">
                     <div className="text-xs font-mono text-[var(--brand-default)]">{entry.requirementCode}</div>
-                    <div className="text-sm font-medium text-content-emphasis break-words">{entry.requirementTitle}</div>
+                    <div className="text-sm font-medium text-content-emphasis break-words">{tc(entry.requirementTitle)}</div>
                     {entry.section && (
                         <div className="text-xs text-content-subtle" data-testid="soa-card-section">{sectionLabel(entry.section)}</div>
                     )}

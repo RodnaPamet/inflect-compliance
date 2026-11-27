@@ -38,6 +38,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { Heading } from '@/components/ui/typography';
 import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 import { AgentsViewsMenu, type AgentsViewsMenuProps } from '../AgentsViewsMenu';
 
@@ -123,6 +124,7 @@ export function AuditPilotClient({
     menu?: Omit<AgentsViewsMenuProps, 'current'>;
 }) {
     const t = useTranslations('agents');
+    const tc = useContentText();
     const localizedProcedure = useLocalizedProcedureName();
     const procedureName = (p: AuditPilotProcedure) => localizedProcedure(p.id, p.title);
     const apiUrl = useTenantApiUrl();
@@ -208,10 +210,11 @@ export function AuditPilotClient({
             } | null;
             return (json?.items ?? []).map((c) => ({
                 value: c.id,
-                label: `${c.code ?? c.annexId ?? ''} ${c.name}`.trim(),
+                label: `${c.code ?? c.annexId ?? ''} ${tc(c.name)}`.trim(),
+                keywords: [c.name],
             }));
         },
-        [apiUrl],
+        [apiUrl, tc],
     );
 
     const apply = async () => {

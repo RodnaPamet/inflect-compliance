@@ -23,6 +23,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { taskStatusVariant, taskStatusLabel } from "@/lib/task-status-badge";
+import { useContentText } from "@/lib/content-i18n/use-content-text";
 
 export interface ControlTask {
     id: string;
@@ -80,6 +81,7 @@ export function ControlTaskRows({
 }) {
     const tx = useTranslations("controls");
     const tTask = useTranslations("tasks");
+    const tc = useContentText();
     const [tasks, setTasks] = useState<ControlTask[] | null>(null);
     const [error, setError] = useState(false);
 
@@ -126,12 +128,12 @@ export function ControlTaskRows({
                 // Task title, indented to read as a child of the control.
                 return (
                     <span className="block truncate pl-6 text-sm text-content-default transition-colors group-hover/subrow:text-[var(--brand-default)]">
-                        {t.title}
+                        {tc(t.title)}
                     </span>
                 );
             case "category":
                 return controlCategory ? (
-                    <StatusBadge size="sm">{controlCategory}</StatusBadge>
+                    <StatusBadge size="sm">{tc(controlCategory)}</StatusBadge>
                 ) : (
                     <span className="text-xs text-content-subtle">—</span>
                 );

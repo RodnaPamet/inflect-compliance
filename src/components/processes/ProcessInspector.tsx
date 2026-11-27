@@ -60,6 +60,7 @@ import {
     formatAssetLabel,
     useTenantAssets,
 } from "@/lib/processes/use-tenant-assets";
+import { useContentText } from "@/lib/content-i18n/use-content-text";
 
 /**
  * PR-D polish — refresh cadence for linked-entity status. 30s
@@ -451,6 +452,7 @@ function NodeLinkedEntityPicker({
     // is shared module-scoped, so the 30s poll runs once per
     // tenant even with three concurrent hook mounts.
     const t = useTranslations("automation.inspector");
+    const tc = useContentText();
     const slug = tenantSlug ?? "";
     const controls = useTenantControls(slug, { pollMs: ENTITY_STATUS_POLL_MS });
     const risks = useTenantRisks(slug, { pollMs: ENTITY_STATUS_POLL_MS });
@@ -466,7 +468,8 @@ function NodeLinkedEntityPicker({
                   label: t("linkedControl"),
                   options: controls.options.map((c) => ({
                       value: c.id,
-                      label: formatControlLabel(c),
+                      label: formatControlLabel({ ...c, title: tc(c.title) }),
+                      keywords: [c.title],
                   })),
                   loading: controls.loading,
                   emptyHint: t("noControls"),
@@ -476,7 +479,8 @@ function NodeLinkedEntityPicker({
                     label: t("linkedRisk"),
                     options: risks.options.map((r) => ({
                         value: r.id,
-                        label: r.title,
+                        label: tc(r.title),
+                        keywords: [r.title],
                     })),
                     loading: risks.loading,
                     emptyHint: t("noRisks"),
@@ -569,6 +573,7 @@ function EdgeInspectorBody({
     onEdgeUpdate?: ProcessInspectorProps["onEdgeUpdate"];
 }) {
     const t = useTranslations("automation.inspector");
+    const tc = useContentText();
     const tEdges = useTranslations("automation.edges");
     const edgeMeta = useMemo(() => buildEdgeVariantMeta(tEdges), [tEdges]);
     const variantRaw = (edge.data as { variant?: unknown } | undefined)
@@ -600,9 +605,10 @@ function EdgeInspectorBody({
         () =>
             tenantControls.map((c) => ({
                 value: c.id,
-                label: formatControlLabel(c),
+                label: formatControlLabel({ ...c, title: tc(c.title) }),
+                keywords: [c.title],
             })),
-        [tenantControls],
+        [tenantControls, tc],
     );
     const selectedControlOptions = useMemo<ComboboxOption[]>(() => {
         const ids = new Set(

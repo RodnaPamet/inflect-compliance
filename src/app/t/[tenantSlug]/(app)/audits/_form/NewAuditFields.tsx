@@ -24,6 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import type { NewAuditFormReturn } from './useNewAuditForm';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 export interface NewAuditFieldsLabels {
     auditTitle: string;
@@ -61,6 +62,7 @@ export function NewAuditFields({
     labels: NewAuditFieldsLabels;
 }) {
     const tx = useTranslations('audits');
+    const tc = useContentText();
     const apiUrl = useTenantApiUrl();
     // The empty-value "No framework" option label is localised; memoised so it
     // stays reference-stable for the lazy-load effect below.
@@ -68,9 +70,14 @@ export function NewAuditFields({
         () => ({ value: '', label: tx('newModal.noFramework') }),
         [tx],
     );
-    const [frameworks, setFrameworks] = useState<FrameworkOption[]>([
+    const [frameworkRows, setFrameworks] = useState<FrameworkOption[]>([
         noFrameworkOption,
     ]);
+    // The stored framework names, shown in the reader's language.
+    const frameworks = useMemo<FrameworkOption[]>(
+        () => frameworkRows.map((f) => (f.value === '' ? f : { ...f, label: tc(f.label), keywords: [f.label] })),
+        [frameworkRows, tc],
+    );
     // feat/audit-cycle-unify — the "standalone" (no-cycle) option.
     const noCycleOption = useMemo<CycleOption>(
         () => ({ value: '', label: tx('newModal.noCycle') }),

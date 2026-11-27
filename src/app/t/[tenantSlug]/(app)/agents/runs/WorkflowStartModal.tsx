@@ -35,6 +35,7 @@ import {
 } from '@/lib/agentic/workflow-start-plan';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 import { sourceKindLabel } from '../reports/harness/source-kind-label';
 
@@ -134,6 +135,7 @@ export function WorkflowStartModal({
     onStart: (input: Record<string, string>) => void;
 }) {
     const t = useTranslations('agents');
+    const tc = useContentText();
     const [values, setValues] = useState<Record<string, string>>({});
     /** Problems are shown after the first submit, not while the person is still typing. */
     const [submitted, setSubmitted] = useState(false);
@@ -182,7 +184,9 @@ export function WorkflowStartModal({
 
     function control(field: StartField, spec: StartFieldSpec, id: string) {
         if (spec.kind === 'framework') {
-            const options = frameworks.options ?? [];
+            const options = (frameworks.options ?? []).map((o) =>
+                typeof o.label === 'string' ? { ...o, label: tc(o.label) } : o,
+            );
             return (
                 <Combobox
                     id={id}

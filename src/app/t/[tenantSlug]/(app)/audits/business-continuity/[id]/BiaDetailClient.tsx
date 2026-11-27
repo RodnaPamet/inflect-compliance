@@ -31,6 +31,7 @@ import { DependencyPickerRow, useDepTypeLabel } from '../BiaDependencyControls';
 import { buildBiaCriticalityLabels } from '../filter-defs';
 import { BiaLinkControlModal } from './BiaLinkControlModal';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface ImpactPoint {
     atHours: number;
@@ -113,9 +114,12 @@ async function refusalMessage(res: Response, fallback: string): Promise<string> 
  */
 export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail; tenantSlug: string; canWrite: boolean }) {
     const tx = useTranslations('audits');
+    const tc = useContentText();
     const router = useRouter();
     const toast = useToast();
     const depTypeLabel = useDepTypeLabel();
+    // A risk's title can be a risk template's; the other targets are named by people.
+    const depName = (d: ResolvedDependency) => (d.dependsOnType === 'RISK' ? tc(d.targetName) : d.targetName);
     const triggerUndoToast = useToastWithUndo();
     const [showLinkControl, setShowLinkControl] = useState(false);
     const [depError, setDepError] = useState<string | null>(null);
@@ -358,10 +362,10 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
                                         ·{' '}
                                         {d.targetPath ? (
                                             <Link href={`/t/${tenantSlug}${d.targetPath}`} className="text-content-link hover:underline">
-                                                {d.targetName}
+                                                {depName(d)}
                                             </Link>
                                         ) : (
-                                            <span className="text-content-muted">{d.targetName ?? tx('biaDetail.depMissing')}</span>
+                                            <span className="text-content-muted">{depName(d) ?? tx('biaDetail.depMissing')}</span>
                                         )}
                                     </span>
                                     {canWrite && (
@@ -369,7 +373,7 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
                                         variant="ghost"
                                         size="sm"
                                         onClick={() => removeDependency(d)}
-                                        aria-label={tx('biaDetail.depRemoveAria', { name: d.targetName ?? depTypeLabel(d.dependsOnType) })}
+                                        aria-label={tx('biaDetail.depRemoveAria', { name: depName(d) ?? depTypeLabel(d.dependsOnType) })}
                                     >
                                         {tx('biaDetail.depRemove')}
                                     </Button>
@@ -424,7 +428,7 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
                                         href={`/t/${tenantSlug}/controls/${c.id}`}
                                         className="text-sm font-medium text-content-link hover:underline"
                                     >
-                                        {c.code ? `${c.code} · ${c.name}` : c.name}
+                                        {c.code ? `${c.code} · ${tc(c.name)}` : tc(c.name)}
                                     </Link>
                                     {c.requirements.length === 0 ? (
                                         <p className="text-sm text-content-subtle">{tx('biaDetail.controlNoMappings')}</p>
@@ -432,7 +436,7 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
                                         <div className="flex flex-wrap gap-tight">
                                             {c.requirements.map((r, i) => (
                                                 <StatusBadge key={`${r.frameworkKey}:${r.code}:${i}`} variant="info">
-                                                    {r.frameworkName} · {r.code}
+                                                    {tc(r.frameworkName)} · {r.code}
                                                 </StatusBadge>
                                             ))}
                                         </div>

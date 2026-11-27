@@ -49,6 +49,7 @@ import { AppIcon } from '@/components/icons/AppIcon';
 import { Tooltip } from '@/components/ui/tooltip';
 import { buildTestFilters, TEST_FILTER_KEYS } from './filter-defs';
 import { apiErrorMessage } from '@/lib/api-error';
+import { ContentText } from '@/components/ContentText';
 
 /** Bulk-action status values, in the order the bar offers them. */
 const TEST_PLAN_STATUS_VALUES = ['ACTIVE', 'PAUSED', 'ARCHIVED'] as const;
@@ -714,7 +715,8 @@ function TestsRollupContent() {
                     id: 'control', header: t('colHeaders.control'), accessorFn: (p) => p.control?.code || p.control?.name || '—',
                     cell: ({ row }) => (
                         <TextLink href={tenantHref(`/controls/${row.original.control.id}`)} tone="muted" className="text-xs">
-                            {row.original.control?.code || row.original.control?.name || '—'}
+                            {row.original.control?.code
+                                || (row.original.control?.name ? <ContentText text={row.original.control.name} /> : '—')}
                         </TextLink>
                     ),
                 },
@@ -812,7 +814,7 @@ function TestsRollupContent() {
                     accessorFn: (c) => c.control?.code || c.control?.name || '',
                     cell: ({ row }) => row.original.control ? (
                         <TextLink href={tenantHref(`/controls/${row.original.control.id}`)} tone="muted" className="text-xs">
-                            {row.original.control.code || row.original.control.name}
+                            {row.original.control.code || <ContentText text={row.original.control.name} />}
                         </TextLink>
                     ) : <span className="text-content-subtle text-xs">—</span>,
                 },

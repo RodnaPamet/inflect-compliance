@@ -34,6 +34,7 @@ import { AUDIT_CYCLE_STATUS_VARIANT, DEFAULT_STATUS_VARIANT } from '../_lib/stat
 import { useAuditReadinessAccess } from '../_lib/use-audit-access';
 import { apiErrorMessage } from '@/lib/api-error';
 import { ReadinessScoreRing, ReadinessLegend } from './ReadinessScoreRing';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 
 const FW_META: Record<string, { icon: AppIconName; label: string; color: string }> = {
@@ -98,6 +99,7 @@ interface CreateCycleInput {
 
 export default function AuditCyclesPage() {
     const tx = useTranslations('audits');
+    const tc = useContentText();
     const toast = useToast();
     const params = useParams();
     const router = useRouter();
@@ -171,10 +173,11 @@ export default function AuditCyclesPage() {
         () =>
             (Array.isArray(frameworkRows) ? frameworkRows : []).map((f) => ({
                 value: f.key,
-                label: f.version ? `${f.name} (${f.version})` : f.name,
+                label: f.version ? `${tc(f.name)} (${f.version})` : tc(f.name),
+                keywords: [f.name],
                 meta: { version: f.version ?? '' },
             })),
-        [frameworkRows],
+        [frameworkRows, tc],
     );
     const selectedFw = fwOptions.find((o) => o.value === form.frameworkKey) ?? fwOptions[0] ?? null;
     const frameworksLoading = showForm && frameworksQuery.isLoading;
@@ -462,7 +465,7 @@ export default function AuditCyclesPage() {
                                             <StatusBadge variant={AUDIT_CYCLE_STATUS_VARIANT[c.status] || DEFAULT_STATUS_VARIANT}>{tx(`cycleStatus.${c.status}` as Parameters<typeof tx>[0])}</StatusBadge>
                                         </div>
                                         <Heading level={3} className="truncate">{c.name}</Heading>
-                                        <p className="text-xs text-content-muted mt-1">{meta.label} · v{c.frameworkVersion}</p>
+                                        <p className="text-xs text-content-muted mt-1">{tc(meta.label)} · v{c.frameworkVersion}</p>
                                         <div className="flex items-center gap-tight mt-1 text-xs text-content-subtle">
                                             <span>{tx('cycles.packCount', { count: c.packs?.length || 0 })}</span>
                                             <span>·</span>

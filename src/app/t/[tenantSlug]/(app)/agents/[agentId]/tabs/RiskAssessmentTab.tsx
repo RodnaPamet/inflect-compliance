@@ -25,6 +25,7 @@ import { ShadedRow } from '@/components/ui/shaded-row';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 import type { RegistryWritableTabProps } from './types';
 
@@ -248,6 +249,7 @@ export function RiskAssessmentTab({
     canManageRegistry,
 }: RegistryWritableTabProps) {
     const t = useTranslations('admin');
+    const tc = useContentText();
     const apiUrl = useTenantApiUrl();
     const toast = useToast();
 
@@ -614,8 +616,8 @@ export function RiskAssessmentTab({
                 .map((domain) => (
                     <section key={domain.id} className="space-y-default">
                         <div className="space-y-tight">
-                            <Heading level={3}>{domain.name}</Heading>
-                            <p className="text-xs text-content-muted">{domain.description}</p>
+                            <Heading level={3}>{tc(domain.name)}</Heading>
+                            <p className="text-xs text-content-muted">{tc(domain.description)}</p>
                         </div>
                         <ul className="space-y-compact">
                             {(questionsByDomain.get(domain.id) ?? []).map(renderQuestion)}
@@ -892,6 +894,7 @@ function QuestionRow({
     onSave: (questionId: string, answer: AnswerValue, note: string | null) => void;
 }) {
     const t = useTranslations('admin');
+    const tc = useContentText();
     const mappings = mappingLine(question.mappings);
     // The radiogroup's accessible name. Without it a screen reader meets
     // twenty consecutive unlabelled groups of Yes/Partially/No/N-A and the
@@ -918,11 +921,11 @@ function QuestionRow({
                     id={questionTextId}
                     className="min-w-[14rem] flex-1 text-sm text-content-emphasis"
                 >
-                    {question.text}
+                    {tc(question.text)}
                 </span>
             </div>
             {question.guidance && (
-                <p className="text-xs text-content-muted">{question.guidance}</p>
+                <p className="text-xs text-content-muted">{tc(question.guidance)}</p>
             )}
             {mappings && <p className="font-mono text-xs text-content-subtle">{mappings}</p>}
 

@@ -21,6 +21,7 @@ import { SettingRow } from '@/components/layout/SettingRow';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { useIsBelowMd } from '@/components/ui/hooks';
 import { correlationPairs, type CorrelationPair as Pair } from './correlation-pairs';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface Matrix { riskIds: string[]; riskTitles: string[]; matrix: number[][]; isPositiveSemiDefinite: boolean; isPositiveDefinite: boolean; minEigenvalue: number }
 interface Suggestion { riskAId: string; riskBId: string; suggestedCoefficient: number; reason: string }
@@ -37,6 +38,7 @@ function cellClass(v: number): string {
 
 export default function CorrelationMatrixPage() {
     const t = useTranslations('risks');
+    const tc = useContentText();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     /**
@@ -142,7 +144,7 @@ export default function CorrelationMatrixPage() {
     /** A risk's title by id, from the matrix the page already holds. */
     const titleOf = (id: string) => {
         const idx = m?.riskIds.indexOf(id) ?? -1;
-        return idx >= 0 && m ? m.riskTitles[idx] : id;
+        return idx >= 0 && m ? tc(m.riskTitles[idx]) : id;
     };
     const applySuggestion = async (s: Suggestion) => {
         try {
@@ -165,7 +167,7 @@ export default function CorrelationMatrixPage() {
 
     const editor = m && sel && (
         <div className="flex flex-wrap items-end gap-default rounded-md border border-border-emphasis p-default">
-            <span className="text-sm text-content-emphasis">{m.riskTitles[sel.i]} ↔ {m.riskTitles[sel.j]}</span>
+            <span className="text-sm text-content-emphasis">{tc(m.riskTitles[sel.i])} ↔ {tc(m.riskTitles[sel.j])}</span>
             <label className="block w-24 sm:w-32"><span className="text-xs text-content-muted">{t('correlations.coefficient')}</span>
                 <Input type="text" inputMode="decimal" value={coef} onChange={(e) => setCoef(e.target.value)} id="corr-coefficient" autoFocus />
             </label>
@@ -181,15 +183,15 @@ export default function CorrelationMatrixPage() {
     /** One pair on a phone: both risks as links, the figure, and Edit for a writer. */
     const renderPair = (p: Pair) => {
         if (!m) return null;
-        const a = m.riskTitles[p.i];
-        const b = m.riskTitles[p.j];
+        const a = tc(m.riskTitles[p.i]);
+        const b = tc(m.riskTitles[p.j]);
         const value = p.v.toFixed(2);
         const riskLink = (idx: number) => (
             <Link
                 href={tenantHref(`/risks/${m.riskIds[idx]}`)}
                 className="flex min-h-11 items-center break-words text-sm font-medium text-content-emphasis hover:underline"
             >
-                {m.riskTitles[idx]}
+                {tc(m.riskTitles[idx])}
             </Link>
         );
         return (
@@ -339,7 +341,7 @@ export default function CorrelationMatrixPage() {
                                     <th className="p-1" />
                                     {m.riskTitles.map((title, j) => (
                                         <th key={j} className="p-1 text-content-subtle">
-                                            <Tooltip content={title}><span className="block max-w-24 truncate">{title}</span></Tooltip>
+                                            <Tooltip content={tc(title)}><span className="block max-w-24 truncate">{tc(title)}</span></Tooltip>
                                         </th>
                                     ))}
                                 </tr>
@@ -348,7 +350,7 @@ export default function CorrelationMatrixPage() {
                                 {m.matrix.map((row, i) => (
                                     <tr key={i}>
                                         <td className="p-1 text-content-subtle">
-                                            <Tooltip content={m.riskTitles[i]}><span className="block max-w-24 truncate">{m.riskTitles[i]}</span></Tooltip>
+                                            <Tooltip content={tc(m.riskTitles[i])}><span className="block max-w-24 truncate">{tc(m.riskTitles[i])}</span></Tooltip>
                                         </td>
                                         {row.map((v, j) => (
                                             <td
@@ -363,7 +365,7 @@ export default function CorrelationMatrixPage() {
                                                     <button
                                                         type="button"
                                                         className="block w-full cursor-pointer p-1 hover:bg-bg-muted/50 focus-visible:outline focus-visible:outline-2"
-                                                        aria-label={t('correlations.editPairAria', { a: m.riskTitles[i], b: m.riskTitles[j], value: v.toFixed(2) })}
+                                                        aria-label={t('correlations.editPairAria', { a: tc(m.riskTitles[i]), b: tc(m.riskTitles[j]), value: v.toFixed(2) })}
                                                         onClick={() => { setSel({ i, j }); setCoef(String(v)); setSaveError(null); }}
                                                         data-testid={`corr-cell-${i}-${j}`}
                                                     >

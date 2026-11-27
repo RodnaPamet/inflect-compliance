@@ -14,6 +14,7 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
 import { evidenceCategoryChoices } from '@/lib/evidence-categories';
 import { EVIDENCE_DESCRIPTION_MAX } from '@/lib/evidence-description';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 export interface EvidenceControlOption {
     id: string;
@@ -38,14 +39,16 @@ export function EvidenceControlsField({
     description?: string;
 }) {
     const tx = useTranslations('evidence');
+    const tc = useContentText();
     const options = useMemo<ComboboxOption<EvidenceControlOption>[]>(
         () =>
             controls.map((c) => ({
                 value: c.id,
-                label: `${c.annexId || c.code || tx('formFields.customControl')}: ${c.name}`,
+                label: `${c.annexId || c.code || tx('formFields.customControl')}: ${tc(c.name)}`,
+                keywords: [c.name],
                 meta: c,
             })),
-        [controls, tx],
+        [controls, tx, tc],
     );
     return (
         <FormField label={tx('formFields.controlsLabel')} description={description ?? tx('formFields.controlsDesc')}>

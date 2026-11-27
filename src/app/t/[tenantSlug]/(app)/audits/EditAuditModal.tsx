@@ -28,6 +28,7 @@ import { Modal } from '@/components/ui/modal';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/hooks';
 import { auditWriteFailureMessage } from './_lib/audit-write-error';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 // The DatePicker's value is UTC midnight, so the wire date is its UTC
 // calendar day. A local-field reader moved the schedule a day earlier on
 // every save west of UTC (#5161).
@@ -69,6 +70,7 @@ export interface EditAuditModalProps {
 
 export function EditAuditModal({ open, setOpen, audit, save, onSaved }: EditAuditModalProps) {
     const tx = useTranslations('audits');
+    const tc = useContentText();
     const toast = useToast();
 
     const [title, setTitle] = useState(audit.title);
@@ -122,8 +124,8 @@ export function EditAuditModal({ open, setOpen, audit, save, onSaved }: EditAudi
     const frameworkRows = frameworksQuery.data;
     const frameworks = useMemo<ComboboxOption[]>(() => {
         if (!Array.isArray(frameworkRows)) return [noFramework];
-        return [noFramework, ...frameworkRows.map((f) => ({ value: f.key, label: f.name }))];
-    }, [frameworkRows, noFramework]);
+        return [noFramework, ...frameworkRows.map((f) => ({ value: f.key, label: tc(f.name), keywords: [f.name] }))];
+    }, [frameworkRows, noFramework, tc]);
 
     const cyclesQuery = useTenantSWR<Array<{ id: string; name: string; frameworkKey: string }>>(
         open ? CACHE_KEYS.audits.cycles() : null,
@@ -136,12 +138,12 @@ export function EditAuditModal({ open, setOpen, audit, save, onSaved }: EditAudi
     const cycles = useMemo<ComboboxOption[]>(() => {
         if (!Array.isArray(cycleRows)) return [noCycle];
         const nameOf = (key: string) =>
-            (Array.isArray(frameworkRows) ? frameworkRows.find((f) => f.key === key)?.name : undefined) ?? key;
+            tc(Array.isArray(frameworkRows) ? frameworkRows.find((f) => f.key === key)?.name : undefined) ?? key;
         return [
             noCycle,
             ...cycleRows.map((c) => ({ value: c.id, label: `${c.name} · ${nameOf(c.frameworkKey)}` })),
         ];
-    }, [cycleRows, frameworkRows, noCycle]);
+    }, [cycleRows, frameworkRows, noCycle, tc]);
 
     const submit = async (e: React.FormEvent) => {
         e.preventDefault();

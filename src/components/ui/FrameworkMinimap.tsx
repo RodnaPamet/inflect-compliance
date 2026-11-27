@@ -35,6 +35,7 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ComplianceStatusIndicator } from './ComplianceStatusIndicator';
 import { frameworkSectionLabel } from '@/lib/framework-tree/section-label';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 import {
     type MinimapSection,
     deriveMinimapSections,
@@ -203,6 +204,7 @@ function MinimapRow({
     onClick: () => void;
 }) {
     const tRoot = useTranslations();
+    const tc = useContentText();
     const status = section.status ?? 'unknown';
     return (
         <button
@@ -224,7 +226,7 @@ function MinimapRow({
                 className="self-stretch h-auto"
                 labelled={false}
             />
-            <span className="truncate flex-1 min-w-0">{frameworkSectionLabel(section.label, tRoot)}</span>
+            <span className="truncate flex-1 min-w-0">{tc(frameworkSectionLabel(section.label, tRoot))}</span>
             <span className="text-xs text-content-subtle tabular-nums">
                 {section.descendantCount}
             </span>

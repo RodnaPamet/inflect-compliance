@@ -54,6 +54,8 @@ import {
 import { cardVariants } from '@/components/ui/card';
 import LinkedTasksPanel from '@/components/LinkedTasksPanel';
 import { cn } from '@inflect/ui/lib/cn';
+import { ContentText } from '@/components/ContentText';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // Polish PR-1 — STATUS_BADGE / CRIT_BADGE moved to shared domain
 // mapping. Local aliases preserved so the dozens of inline-table
@@ -216,6 +218,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
     const params = use(props.params);
     const tx = useTranslations('vendors');
     const tCommon = useTranslations('common');
+    const tc = useContentText();
     const DOC_TYPE_LABELS = buildDocTypeLabels(tx);
     const DOC_TYPE_CB_OPTIONS = buildDocTypeCbOptions(DOC_TYPE_LABELS);
     const VENDOR_LINK_TYPE_OPTIONS = useMemo(() => buildVendorLinkTypeOptions(tx), [tx]);
@@ -1303,7 +1306,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                     {outstanding.map((a) => (
                                         <div key={a.id} className="flex flex-wrap items-center justify-between gap-compact border-b border-border-subtle pb-2 last:border-0 last:pb-0">
                                             <div className="min-w-0">
-                                                <p className="text-sm font-medium truncate">{a.templateName || '—'}</p>
+                                                <p className="text-sm font-medium truncate">{tc(a.templateName) || '—'}</p>
                                                 <p className="text-xs text-content-muted truncate">
                                                     {a.respondentEmail || '—'}
                                                     {' · '}
@@ -1377,7 +1380,8 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                             sendTemplates
                                                 .map((t) => ({
                                                     value: t.id,
-                                                    label: tx('detail.templateOption', { name: t.name, count: t._count?.questions || 0 }) + (t.isGlobal ? tx('detail.globalSuffix') : ''),
+                                                    label: tx('detail.templateOption', { name: tc(t.name), count: t._count?.questions || 0 }) + (t.isGlobal ? tx('detail.globalSuffix') : ''),
+                                                    keywords: [t.name],
                                                 }))
                                                 .find((o) => o.value === sendForm.templateVersionId) ?? null
                                         }
@@ -1386,7 +1390,8 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                         }
                                         options={sendTemplates.map((t) => ({
                                             value: t.id,
-                                            label: tx('detail.templateOption', { name: t.name, count: t._count?.questions || 0 }) + (t.isGlobal ? tx('detail.globalSuffix') : ''),
+                                            label: tx('detail.templateOption', { name: tc(t.name), count: t._count?.questions || 0 }) + (t.isGlobal ? tx('detail.globalSuffix') : ''),
+                                            keywords: [t.name],
                                         }))}
                                         placeholder={
                                             sendTemplates.length === 0
@@ -1574,7 +1579,9 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                     // soft-deleted rows — so keep the raw-id fallback: a
                                     // dangling link should still render and link out rather
                                     // than collapse to an empty row.
-                                    const label = l.entityName ?? (
+                                    // An asset is named by a person; a risk, control or
+                                    // task can still carry its catalogue name.
+                                    const label = (l.entityType === 'ASSET' ? l.entityName : tc(l.entityName)) ?? (
                                         <code className="text-xs">{l.entityId}</code>
                                     );
                                     return (
@@ -1735,11 +1742,11 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                                         options={
                                                             bundleItemType === 'VENDOR_DOCUMENT'
                                                                 ? docs.map((d) => ({ value: d.id, label: d.title || DOC_TYPE_LABELS[d.type] || d.type }))
-                                                                : assessments.map((a) => ({ value: a.id, label: a.templateName || a.id }))
+                                                                : assessments.map((a) => ({ value: a.id, label: tc(a.templateName) || a.id, keywords: [a.templateName] }))
                                                         }
                                                         selected={(bundleItemType === 'VENDOR_DOCUMENT'
                                                             ? docs.map((d) => ({ value: d.id, label: d.title || DOC_TYPE_LABELS[d.type] || d.type }))
-                                                            : assessments.map((a) => ({ value: a.id, label: a.templateName || a.id }))
+                                                            : assessments.map((a) => ({ value: a.id, label: tc(a.templateName) || a.id, keywords: [a.templateName] }))
                                                         ).find((o) => o.value === bundleItemId) ?? null}
                                                         setSelected={(opt) => setBundleItemId(opt?.value ?? '')}
                                                         placeholder={tx('detail.selectEntity')}
@@ -2083,7 +2090,8 @@ function VendorAssessmentsTable({ assessments, vendorId, tenantHref }: { assessm
                 {
                     id: 'template',
                     header: tx('detail.template'),
-                    cell: ({ row }) => row.original.templateName || '—',
+                    cell: ({ row }) =>
+                        row.original.templateName ? <ContentText text={row.original.templateName} /> : '—',
                 },
                 {
                     id: 'status',

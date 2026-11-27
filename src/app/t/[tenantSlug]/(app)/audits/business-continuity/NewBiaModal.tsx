@@ -38,6 +38,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { buildBiaCriticalityLabels } from './filter-defs';
 import { DependencyPickerRow, useDepTypeLabel, type DependencyDraft } from './BiaDependencyControls';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 
 const optionalHours = z.number().int().min(0).max(100_000).optional();
@@ -68,6 +69,7 @@ interface Props {
 
 export function NewBiaModal({ tenantSlug, processNodeId, onClose, onCreated }: Props) {
     const tx = useTranslations('audits');
+    const tc = useContentText();
     const CRITICALITY_OPTIONS = useMemo(
         () =>
             Object.entries(
@@ -209,7 +211,7 @@ export function NewBiaModal({ tenantSlug, processNodeId, onClose, onCreated }: P
                                                 className="flex items-center justify-between px-3 py-1.5 text-sm"
                                             >
                                                 <span className="text-content-default">
-                                                    <span className="text-content-subtle">{depTypeLabel(d.dependsOnType)}</span> · {d.label}
+                                                    <span className="text-content-subtle">{depTypeLabel(d.dependsOnType)}</span> · {d.dependsOnType === 'RISK' ? tc(d.label) : d.label}
                                                 </span>
                                                 <button
                                                     type="button"

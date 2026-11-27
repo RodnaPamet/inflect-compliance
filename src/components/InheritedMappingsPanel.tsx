@@ -15,6 +15,7 @@ import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { ContentText } from '@/components/ContentText';
 
 interface ControlRef {
     id: string;
@@ -94,7 +95,7 @@ export function InheritedMappingsPanel({
             accessorKey: 'title',
             header: t('col.title'),
             cell: ({ getValue }) => (
-                <span className="text-sm text-content-default">{getValue<string>()}</span>
+                <span className="text-sm text-content-default"><ContentText text={getValue<string>()} /></span>
             ),
         },
         {
@@ -103,7 +104,7 @@ export function InheritedMappingsPanel({
             cell: ({ row }) =>
                 row.original.framework ? (
                     <StatusBadge variant="info" size="sm">
-                        {row.original.framework.name}
+                        <ContentText text={row.original.framework.name} />
                         {row.original.framework.version
                             ? ` ${row.original.framework.version}`
                             : ''}
@@ -120,7 +121,7 @@ export function InheritedMappingsPanel({
                     <TableTitleCell href={tenantHref(`/controls/${row.original.control.id}`)}>
                         {row.original.control.code ||
                             row.original.control.annexId ||
-                            row.original.control.name}
+                            <ContentText text={row.original.control.name} />}
                     </TableTitleCell>
                 ) : (
                     <span className="text-xs text-content-subtle">—</span>

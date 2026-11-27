@@ -31,6 +31,7 @@ import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { apiErrorMessage } from '@/lib/api-error';
 import { isFinalizedNis2Run } from '@/lib/nis2-run-status';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // CC BY 4.0 attribution — carries everywhere derived NIS2 content renders.
 const NIS2_ATTRIBUTION =
@@ -118,6 +119,7 @@ export function Nis2GapLifecycleClient({
     canManage: boolean;
 }) {
     const tx = useTranslations('audits');
+    const tc = useContentText();
     const locale = useLocale();
     const lang = locale === 'bg' ? 'bg' : locale === 'de' ? 'de' : 'en';
     // Derived from the SAME registry key the reads use, so a write's URL and
@@ -479,7 +481,7 @@ export function Nis2GapLifecycleClient({
                                         <Checkbox
                                             checked={!!approved[s.questionId]}
                                             onCheckedChange={(v) => setApproved((prev) => ({ ...prev, [s.questionId]: !!v }))}
-                                            aria-label={tx('nis2Gap.approveAria', { title: s.title })}
+                                            aria-label={tx('nis2Gap.approveAria', { title: tc(s.title) })}
                                         />
                                         <div className="min-w-0 flex-1 space-y-tight">
                                             <div className="flex items-center gap-tight flex-wrap">
@@ -487,7 +489,7 @@ export function Nis2GapLifecycleClient({
                                                 <StatusBadge variant={critVariant(s.criticality)} size="sm">{codeLabel(tx, 'crit', s.criticality)}</StatusBadge>
                                                 {s.consequence === 'PERSONAL_LIABILITY' && <StatusBadge variant="error" size="sm">{tx('nis2Gap.personalLiability')}</StatusBadge>}
                                                 {s.fineExposure && <StatusBadge variant="warning" size="sm">{tx('nis2Gap.fineExposure')}</StatusBadge>}
-                                                <span className="text-sm font-medium text-content-emphasis">{s.title}</span>
+                                                <span className="text-sm font-medium text-content-emphasis">{tc(s.title)}</span>
                                             </div>
                                             <p className="text-xs text-content-muted">{tx('nis2Gap.reasonLegal', { reason: s.reason, legalBasis: s.legalBasis })}</p>
                                         </div>

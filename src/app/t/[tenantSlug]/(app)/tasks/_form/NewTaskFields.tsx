@@ -32,10 +32,12 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import {
     SELECTABLE_LINK_ENTITY_TYPES,
+    pendingLinkLabel,
     type NewTaskFormFields,
     type NewTaskFormReturn,
 } from './useNewTaskForm';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 type Tr = (key: string) => string;
 const optsFrom = (t: Tr, prefix: string, values: readonly string[]): ComboboxOption[] =>
@@ -63,6 +65,7 @@ export function NewTaskFields({
 }) {
     const t = useTranslations('tasks');
     const tCommon = useTranslations('common');
+    const tc = useContentText();
     const untitled = tCommon('ui.untitled');
     // A preset link (staged by the control / risk / asset page the form
     // was opened from) carries only a type and an id. Look its name up
@@ -377,7 +380,7 @@ export function NewTaskFields({
                                     {form.linkTypeLabel(l.entityType)}
                                 </StatusBadge>
                                 <span className="text-xs flex-1">
-                                    {l.label ?? t('new.linkedRecord')}
+                                    {pendingLinkLabel(l, tc) ?? t('new.linkedRecord')}
                                 </span>
                                 <Tooltip content={t('new.removeTooltip')}>
                                     <button

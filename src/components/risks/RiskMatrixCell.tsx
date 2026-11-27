@@ -42,6 +42,7 @@ import {
 import { formatCompactCurrency } from '@/lib/risk-coherence';
 import { useTranslations } from 'next-intl';
 import type { RiskMatrixConfigShape } from '@/lib/risk-matrix/types';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // ─── Props ──────────────────────────────────────────────────────────
 
@@ -195,6 +196,7 @@ export function RiskMatrixCell({
     // Every word in the cell's label, tooltip and summary is the reader's
     // language (#5309); the axis titles beside it already were.
     const t = useTranslations('common.chart');
+    const tc = useContentText();
     const riskNoun = (n: number) => (n === 1 ? t('riskOne') : t('riskOther'));
     const isEmpty = count <= 0;
     const money = formatMoney ?? ((v: number) => formatCompactCurrency(v));
@@ -240,7 +242,7 @@ export function RiskMatrixCell({
                 <ul className="mt-1 space-y-0.5 border-t border-border-subtle pt-1 text-content-muted">
                     {risks.slice(0, 8).map((r) => (
                         <li key={r.id} className="truncate">
-                            • {r.title}
+                            • {tc(r.title)}
                         </li>
                     ))}
                     {risks.length > 8 && (
@@ -429,6 +431,7 @@ function BubbleOverlay({
     fg: string;
 }) {
     const t = useTranslations('common.chart');
+    const tc = useContentText();
     // `count` is authoritative; `risks.length` guards the (pathological)
     // case where the two disagree so we never cram a multi-risk cell.
     const total = Math.max(count, risks.length);
@@ -471,9 +474,9 @@ function BubbleOverlay({
                     key={r.id}
                     className="truncate rounded-sm bg-white/15 px-1 py-[1px] text-xs font-medium leading-tight"
                     style={{ color: fg }}
-                    title={r.title}
+                    title={tc(r.title)}
                 >
-                    {r.title}
+                    {tc(r.title)}
                 </span>
             ))}
         </div>

@@ -129,7 +129,9 @@ describe("Dropdowns never truncate an option name", () => {
             expect(src).not.toMatch(/flex-1 truncate"/);
             expect(src).not.toMatch(/className="truncate">\{(s\.description|item\.title)\}/);
             expect(src).toMatch(/min-w-0 flex-1 break-words">\{c\.label\}/);
-            expect(src).toMatch(/min-w-0 flex-1 break-words">\{r\.primary\}/);
+            // The result label is looked up in the reader's language (#5996),
+            // so the span's child is the lookup, not the bare `r.primary`.
+            expect(src).toMatch(/min-w-0 flex-1 break-words">\{hitTitle\(tc, r\.kind, r\.primary\)\}/);
         });
     });
 

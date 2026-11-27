@@ -31,6 +31,7 @@ import { TERMINAL_TASK_STATUSES } from "@/app-layer/domain/task-status";
 import { Button } from "@/components/ui/button";
 import { apiErrorMessage } from "@/lib/api-error";
 import type { ControlTask } from "./ControlTaskRows";
+import { useContentText } from "@/lib/content-i18n/use-content-text";
 
 type OptT = (key: string) => string;
 const buildSeverityOptions = (t: OptT): ComboboxOption[] => [
@@ -140,6 +141,7 @@ export function TaskEditPanel({
 }) {
     const tx = useTranslations("sharedPanels");
     const tTask = useTranslations("tasks");
+    const tc = useContentText();
     // Each sits inside the task's edit rights: a read-only panel offers neither.
     const mayAssign = canWrite && canAssign;
     // The write TIER, not this panel's task-edit gate: `/evidence/uploads`
@@ -549,7 +551,7 @@ export function TaskEditPanel({
                     {taskStatusLabel(status, tTask)}
                 </StatusBadge>
             </div>
-            <Heading level={3} className="break-words">{task.title}</Heading>
+            <Heading level={3} className="break-words">{tc(task.title)}</Heading>
 
             <PanelTabs<Tab>
                 tabs={[{ id: "details", label: tx("detail.tabs.details") }, { id: "activity", label: tx("detail.tabs.activity") }]}

@@ -27,6 +27,8 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { LoadingSpinner } from '@inflect/ui/components/ui/icons/loading-spinner';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
+import { frameworkDisplayName } from '@/app/t/[tenantSlug]/(app)/reports/framework-name';
 
 // ─── Types (mirror generateReadinessReport's payload) ───
 interface InstalledFramework {
@@ -83,6 +85,7 @@ export function ReportsClient({
     canEdit,
 }: ReportsClientProps) {
     const tx = useTranslations('reports');
+    const tc = useContentText();
     // A stock template's name in the reader's language; a tenant's own as written (#5924).
     const tTemplates = useTranslations('riskReportTemplates');
     // The hub's risk-report card lists what the tenant ACTUALLY has, including
@@ -111,7 +114,7 @@ export function ReportsClient({
     const selectedFw =
         installedFrameworks.find((f) => f.key === selectedKey) ?? null;
     const isIso = selectedFw?.hasStatementOfApplicability ?? false;
-    const frameworkLabel = selectedFw?.name ?? readiness.framework.name;
+    const frameworkLabel = frameworkDisplayName(selectedFw?.name ?? readiness.framework.name, tc);
 
     // Which switch is current. A slow answer for a framework the user has
     // since moved off used to overwrite the report for the one now selected
@@ -149,7 +152,7 @@ export function ReportsClient({
 
     const frameworkOptions: ComboboxOption[] = installedFrameworks.map((f) => ({
         value: f.key,
-        label: f.name,
+        label: frameworkDisplayName(f.name, tc),
     }));
     const selectedOption =
         frameworkOptions.find((o) => o.value === selectedKey) ?? null;
@@ -395,7 +398,7 @@ export function ReportsClient({
                                     {readiness.bySection.map((sec) => (
                                         <div key={sec.section}>
                                             <div className="flex items-center justify-between text-xs mb-1">
-                                                <span className="text-content-default">{sec.section}</span>
+                                                <span className="text-content-default">{tc(sec.section)}</span>
                                                 <span className="text-content-muted">
                                                     {sec.mapped}/{sec.total} ({sec.coveragePercent}%)
                                                 </span>
@@ -410,7 +413,7 @@ export function ReportsClient({
                                                           ? 'brand'
                                                           : 'neutral'
                                                 }
-                                                aria-label={`${sec.section} coverage`}
+                                                aria-label={`${tc(sec.section)} coverage`}
                                             />
                                         </div>
                                     ))}
@@ -436,7 +439,7 @@ export function ReportsClient({
                                             <code className="text-xs text-content-subtle font-mono w-16 sm:w-28 flex-shrink-0 truncate">
                                                 {r.code}
                                             </code>
-                                            <span className="text-content-muted">{r.title}</span>
+                                            <span className="text-content-muted">{tc(r.title)}</span>
                                         </div>
                                     ))}
                                 </div>

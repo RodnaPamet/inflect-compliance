@@ -13,6 +13,7 @@ import { Heading, textLinkVariants } from '@/components/ui/typography';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { readinessBand, readinessVariant } from '@/lib/readiness/bands';
 import { useTenantHref } from '@/lib/tenant-context-provider';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 /**
  * "SOC 2 and NIS2 estimate" — on ISO 27001's Coverage tab, how far the
@@ -134,6 +135,7 @@ function EstimateSection({ framework, items }: { framework: EstimatedFramework; 
 
 function EstimateRow({ item }: { item: EstimateItem }) {
     const t = useTranslations('frameworks.detail.isoEstimate');
+    const tc = useContentText();
     // "No related control" is not 0% implemented (#4737).
     const related = item.controlCount > 0;
     return (
@@ -141,7 +143,7 @@ function EstimateRow({ item }: { item: EstimateItem }) {
             <div className="flex flex-wrap items-baseline justify-between gap-compact">
                 <span className="flex flex-wrap items-baseline gap-compact">
                     <code className="font-mono text-xs text-content-subtle">{item.code}</code>
-                    <span className="text-sm text-content-default">{item.title}</span>
+                    <span className="text-sm text-content-default">{tc(item.title)}</span>
                 </span>
                 {related ? (
                     <span className={`text-sm font-bold ${BAND_TEXT_CLASS[readinessBand(item.coverage)]}`}>
@@ -158,7 +160,7 @@ function EstimateRow({ item }: { item: EstimateItem }) {
                             value={item.coverage}
                             size="sm"
                             variant={readinessVariant(item.coverage) as 'success' | 'warning' | 'error'}
-                            aria-label={t('coverageAria', { title: item.title })}
+                            aria-label={t('coverageAria', { title: tc(item.title) })}
                         />
                     </div>
                     <span className="text-xs text-content-subtle">

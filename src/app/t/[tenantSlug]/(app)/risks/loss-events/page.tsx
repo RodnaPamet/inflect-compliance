@@ -41,6 +41,7 @@ import { RiskPicker } from '../_shared/RiskPicker';
 import { AnalyticsState } from '../_shared/AnalyticsState';
 import { computeLossCalibration } from '@/lib/risk/loss-calibration';
 import { StatTile } from '../_shared/StatTile';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 type Source = 'USER' | 'FINDING' | 'INCIDENT';
 interface Row {
@@ -94,6 +95,7 @@ const messageOf = (e: unknown, fallback: string) => (e instanceof Error && e.mes
 
 export default function LossEventsPage() {
     const t = useTranslations('risks');
+    const tc = useContentText();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const money = useMoneyFormatter();
@@ -360,7 +362,7 @@ export default function LossEventsPage() {
                                 <StatusBadge variant={r.status === 'within_band' ? 'success' : r.status === 'under_forecast' ? 'error' : 'warning'}>
                                     {t(`lossEvents.status_${r.status}` as string)}
                                 </StatusBadge>
-                                <span className="font-medium text-content-emphasis truncate max-w-xs">{r.title}</span>
+                                <span className="font-medium text-content-emphasis truncate max-w-xs">{tc(r.title)}</span>
                                 <span className="tabular-nums text-content-muted">
                                     {t('lossEvents.calibrationCompare', { actual: money(r.actual), p50: money(r.p50), p90: money(r.p90) })}
                                 </span>
@@ -471,7 +473,7 @@ export default function LossEventsPage() {
                                 {/* #4773 — the risk it is attributed to, and why this figure. */}
                                 {r.risk ? (
                                     <Link href={tenantHref(`/risks/${r.risk.id}`)} className="text-xs text-content-default underline underline-offset-2" data-testid={`loss-event-risk-${r.id}`}>
-                                        {r.risk.title}
+                                        {tc(r.risk.title)}
                                     </Link>
                                 ) : (
                                     <span className="text-xs text-content-subtle">{t('lossEvents.riskNone')}</span>

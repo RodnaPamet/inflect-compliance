@@ -28,6 +28,8 @@ import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { apiErrorMessage } from '@/lib/api-error';
 import { unwrapCappedList, type CappedList } from '@/lib/list-backfill-cap';
 import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
+import { ContentText } from '@/components/ContentText';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface ControlOption { id: string; code: string | null; name: string; status: string | null; }
 
@@ -116,6 +118,7 @@ export default function PolicyTraceabilityPanel({
     const [linking, setLinking] = useState(false);
     const t = useTranslations('panels');
     const tr = useTranslations();
+    const tc = useContentText();
     const triggerUndoToast = useToastWithUndo();
     const toast = useToast();
     // Link/unlink is available only when the page passes policyId + apiUrl + canWrite.
@@ -179,7 +182,7 @@ export default function PolicyTraceabilityPanel({
     const linkedControlIds = useMemo(() => new Set((data?.controls ?? []).map((c) => c.control.id)), [data]);
     const linkOptions = availableControls
         .filter((c) => !linkedControlIds.has(c.id))
-        .map((c) => ({ value: c.id, label: c.code ? `${c.code} — ${c.name}` : c.name }));
+        .map((c) => ({ value: c.id, label: c.code ? `${c.code} — ${tc(c.name)}` : tc(c.name), keywords: [c.name] }));
 
     const handleLink = async (controlId: string) => {
         if (!controlLinksUrl || linking) return;
@@ -234,7 +237,7 @@ export default function PolicyTraceabilityPanel({
             header: t('col.control'),
             cell: ({ row }) => (
                 <TableTitleCell href={tenantHref(`/controls/${row.original.control.id}`)}>
-                    {row.original.control.code || row.original.control.name}
+                    {row.original.control.code || <ContentText text={row.original.control.name} />}
                 </TableTitleCell>
             ),
         },
@@ -242,7 +245,7 @@ export default function PolicyTraceabilityPanel({
             id: 'name',
             header: t('col.name'),
             cell: ({ row }) => (
-                <span className="text-sm text-content-default">{row.original.control.name}</span>
+                <span className="text-sm text-content-default"><ContentText text={row.original.control.name} /></span>
             ),
         },
         {
@@ -250,7 +253,7 @@ export default function PolicyTraceabilityPanel({
             header: t('col.category'),
             cell: ({ row }) =>
                 row.original.control.category ? (
-                    <span className="text-sm text-content-muted">{row.original.control.category}</span>
+                    <span className="text-sm text-content-muted"><ContentText text={row.original.control.category} /></span>
                 ) : (
                     <span className="text-xs text-content-subtle">—</span>
                 ),
@@ -295,7 +298,7 @@ export default function PolicyTraceabilityPanel({
             header: t('col.risk'),
             cell: ({ row }) => (
                 <TableTitleCell href={tenantHref(`/risks/${row.original.risk.id}`)}>
-                    {row.original.risk.title}
+                    <ContentText text={row.original.risk.title} />
                 </TableTitleCell>
             ),
         },
@@ -304,7 +307,7 @@ export default function PolicyTraceabilityPanel({
             header: t('col.category'),
             cell: ({ row }) =>
                 row.original.risk.category ? (
-                    <span className="text-sm text-content-muted">{row.original.risk.category}</span>
+                    <span className="text-sm text-content-muted"><ContentText text={row.original.risk.category} /></span>
                 ) : (
                     <span className="text-xs text-content-subtle">—</span>
                 ),

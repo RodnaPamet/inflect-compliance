@@ -41,6 +41,7 @@ import { buttonVariants } from '@/components/ui/button-variants';
 import { formatTailAwareAle } from '@/lib/tail-language';
 import type { DashboardPayload, DashboardSlot } from '@/app-layer/usecases/risk-dashboard';
 import { buildTailByRisk } from '@/lib/risk/per-risk-results';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface BestValueRow {
     controlId: string;
@@ -74,6 +75,7 @@ export default function RiskBoardPage() {
     const href = useTenantHref();
     const tenant = useTenantContext();
     const t = useTranslations('riskManager');
+    const tc = useContentText();
     const money = useMoneyFormatter();
 
     // RQ3-9 — one orchestrated fetch for risks/analytics/coherence/
@@ -271,7 +273,7 @@ export default function RiskBoardPage() {
                                     href={href(`/risks/${row.id}?tab=quantification`)}
                                     className="flex-1 truncate text-content-emphasis hover:text-content-default"
                                 >
-                                    {row.title}
+                                    {tc(row.title)}
                                 </Link>
                                 <span className="shrink-0 tabular-nums text-content-muted">
                                     {formatTailAwareAle(row.ale, tailByRisk[row.id] ?? null, { money, compact: true })}
@@ -319,7 +321,7 @@ export default function RiskBoardPage() {
                                     href={href(`/controls/${row.controlId}`)}
                                     className="flex-1 truncate text-content-emphasis hover:text-content-default"
                                 >
-                                    {row.code ? `${row.code} — ${row.name}` : row.name}
+                                    {row.code ? `${row.code} — ${tc(row.name)}` : tc(row.name)}
                                 </Link>
                                 <span className="shrink-0 tabular-nums text-content-emphasis">
                                     {row.roiMultiple.toFixed(1)}×

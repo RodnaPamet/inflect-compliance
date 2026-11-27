@@ -45,6 +45,7 @@ import {
 } from '@/components/ui/date-picker/date-utils';
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
 import { apiErrorMessage } from '@/lib/api-error';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 interface ControlOption {
     id: string;
@@ -97,6 +98,7 @@ export function CreateFindingModal({
     apiUrl,
 }: CreateFindingModalProps) {
     const tx = useTranslations('findings');
+    const tc = useContentText();
     const SEVERITY_OPTIONS = useMemo(() => buildSeverityOptions(tx), [tx]);
     const TYPE_OPTIONS = useMemo(() => buildTypeOptions(tx), [tx]);
     const close = useCallback(() => setOpen(false), [setOpen]);
@@ -146,9 +148,10 @@ export function CreateFindingModal({
         () =>
             controls.map((c) => ({
                 value: c.id,
-                label: c.annexId ? `${c.annexId} · ${c.name}` : c.name,
+                label: c.annexId ? `${c.annexId} · ${tc(c.name)}` : tc(c.name),
+                keywords: [c.name],
             })),
-        [controls],
+        [controls, tc],
     );
 
     // Optional audit provenance picker — a register-created finding can be
@@ -169,9 +172,10 @@ export function CreateFindingModal({
         return risks.filter(
             (r) =>
                 r.title.toLowerCase().includes(q) ||
+                tc(r.title).toLowerCase().includes(q) ||
                 (r.key ?? '').toLowerCase().includes(q),
         );
-    }, [risks, riskFilter]);
+    }, [risks, riskFilter, tc]);
 
     const toggleRisk = (id: string) =>
         setSelectedRiskIds((prev) => {
@@ -475,7 +479,7 @@ export function CreateFindingModal({
                                                     <span className="w-16 shrink-0 text-xs text-content-muted">
                                                         {r.key || 'RISK'}
                                                     </span>
-                                                    <span className="truncate text-content-emphasis">{r.title}</span>
+                                                    <span className="truncate text-content-emphasis">{tc(r.title)}</span>
                                                 </label>
                                             ))
                                         )}

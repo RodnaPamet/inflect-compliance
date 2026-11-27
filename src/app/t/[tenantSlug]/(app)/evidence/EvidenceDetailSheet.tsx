@@ -49,6 +49,7 @@ import { mayDownloadEvidenceFile } from '@/lib/evidence-download-access';
 import { apiErrorMessage } from '@/lib/api-error';
 import { extractMutationError } from '@/lib/mutations';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // formatBytes now comes from @/lib/evidence-upload-limits. Its comment used
 // to say it mirrored FileDropzone's local helper — which it did, and a third
@@ -214,6 +215,7 @@ export function EvidenceDetailSheet({
     onReview,
 }: EvidenceDetailSheetProps) {
     const t = useTranslations('evidence');
+    const tc = useContentText();
     const toast = useToast();
     const tenantHref = useTenantHref();
     const tenantApiUrl = useTenantApiUrl();
@@ -352,7 +354,7 @@ export function EvidenceDetailSheet({
                         className={textLinkVariants({ tone: 'link' })}
                     >
                         {evidence.task.key ? `${evidence.task.key} — ` : ''}
-                        {evidence.task.title}
+                        {tc(evidence.task.title)}
                     </Link>
                 ),
             });
@@ -366,7 +368,7 @@ export function EvidenceDetailSheet({
                         className={textLinkVariants({ tone: 'link' })}
                     >
                         {evidence.risk.key ? `${evidence.risk.key} — ` : ''}
-                        {evidence.risk.title}
+                        {tc(evidence.risk.title)}
                     </Link>
                 ),
             });
@@ -411,7 +413,7 @@ export function EvidenceDetailSheet({
             });
         }
         return rows;
-    }, [evidence, tenantHref, t]);
+    }, [evidence, tenantHref, t, tc]);
 
     return (
         <Sheet
@@ -579,8 +581,8 @@ export function EvidenceDetailSheet({
                                                         })}
                                                     >
                                                         {prefix
-                                                            ? `${prefix}: ${l.control.name}`
-                                                            : l.control.name}
+                                                            ? `${prefix}: ${tc(l.control.name)}`
+                                                            : tc(l.control.name)}
                                                     </Link>
                                                     {canEditControlLinks && (
                                                         <button

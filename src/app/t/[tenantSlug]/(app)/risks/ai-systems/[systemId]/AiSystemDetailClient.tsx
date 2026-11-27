@@ -33,6 +33,7 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { aiActTierTone, isKnownAiActTier } from '@/lib/eu-ai-act/tier-display';
 import { apiErrorMessage } from '@/lib/api-error';
 import { formatDate } from '@inflect/ui/lib/format-date';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 const ClassifyAiSystemModal = dynamic(() => import('./ClassifyAiSystemModal').then((m) => m.ClassifyAiSystemModal));
 
@@ -97,6 +98,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 export function AiSystemDetailClient({ system, drafts: initialDrafts = [], tenantSlug, canWrite, canOpenApprovalQueue }: Props) {
     const tx = useTranslations('risks');
+    const tc = useContentText();
     const tierLabel = isKnownAiActTier(system.riskTier)
         ? tx(`aiSystems.filterEnums.riskTier.${system.riskTier}`)
         : system.riskTier;
@@ -236,13 +238,13 @@ export function AiSystemDetailClient({ system, drafts: initialDrafts = [], tenan
                             <li key={l.id} className="flex items-start gap-tight text-sm" data-testid={`ai-system-obligation-${l.id}`}>
                                 {/* #4777 — the framework's name, not its key, and a way to it. */}
                                 <StatusBadge variant="info" size="sm">
-                                    {l.requirement.framework.name} {l.requirement.code}
+                                    {tc(l.requirement.framework.name)} {l.requirement.code}
                                 </StatusBadge>
                                 <Link
                                     href={`/t/${tenantSlug}/frameworks/${encodeURIComponent(l.requirement.framework.key)}`}
                                     className="text-content-default underline-offset-2 hover:underline"
                                 >
-                                    {l.requirement.title}
+                                    {tc(l.requirement.title)}
                                 </Link>
                             </li>
                         ))}

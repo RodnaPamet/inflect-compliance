@@ -28,6 +28,7 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { UserCombobox } from '@/components/ui/user-combobox';
 import { DatePicker } from '@/components/ui/date-picker';
 import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 import { Heading } from '@/components/ui/typography';
 import { apiErrorMessage } from '@/lib/api-error';
 import { ShadedRow } from '@/components/ui/shaded-row';
@@ -124,6 +125,7 @@ export function ControlExceptionsPanel({
     const { mutate: swrMutate } = useSWRConfig();
     const t = useTranslations('panels.exceptions');
     const tc = useTranslations('common');
+    const contentText = useContentText();
     const apiBase = `/api/t/${tenantSlug}/controls/${controlId}/exceptions`;
 
     const exceptionsQuery = useSWR<{ rows: ExceptionSummary[] }>(
@@ -204,7 +206,7 @@ export function ControlExceptionsPanel({
                                     </span>
                                     {r.compensatingControl ? (
                                         <span className="text-xs text-content-muted">
-                                            {t('compensating', { name: r.compensatingControl.name })}
+                                            {t('compensating', { name: contentText(r.compensatingControl.name) })}
                                         </span>
                                     ) : null}
                                 </div>
@@ -371,6 +373,7 @@ function RequestExceptionDialog({
 }) {
     const t = useTranslations('panels.exceptions');
     const tc = useTranslations('common');
+    const contentText = useContentText();
     const [justification, setJustification] = useState('');
     const [compensatingControlId, setCompensatingControlId] = useState<string | null>(null);
     const [riskAcceptedByUserId, setRiskAcceptedByUserId] = useState(defaultRiskAcceptedByUserId);
@@ -383,9 +386,10 @@ function RequestExceptionDialog({
                 .filter((c) => c.id !== controlId)
                 .map((c) => ({
                     value: c.id,
-                    label: c.code ? `${c.code} — ${c.name}` : c.name,
+                    label: c.code ? `${c.code} — ${contentText(c.name)}` : contentText(c.name),
+                    keywords: [c.name],
                 })),
-        [compensatingControlChoices, controlId],
+        [compensatingControlChoices, controlId, contentText],
     );
 
     const [submitting, setSubmitting] = useState(false);

@@ -13,6 +13,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { Heading, textLinkVariants } from '@/components/ui/typography';
 import { cn } from '@inflect/ui/lib/cn';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 /**
  * "Coverage from your other frameworks" — the framework Coverage tab's second
@@ -77,6 +78,7 @@ export function InheritedCoveragePanel({
     frameworkKey: string;
 }) {
     const t = useTranslations('frameworks');
+    const tc = useContentText();
     const { data, error, isLoading, mutate } = useTenantSWR<InheritedCoveragePayload>(
         `/frameworks/${encodeURIComponent(frameworkKey)}?action=inherited-coverage`,
     );
@@ -156,7 +158,7 @@ export function InheritedCoveragePanel({
                                 <span className="text-content-subtle">{t('detail.inherited.reachedFrom')}</span>
                                 {data.sourceFrameworks.map((s) => (
                                     <StatusBadge key={s.key} variant="neutral" size="sm" icon={null}>
-                                        {t('detail.inherited.sourceCount', { name: s.name, count: s.requirements })}
+                                        {t('detail.inherited.sourceCount', { name: tc(s.name), count: s.requirements })}
                                     </StatusBadge>
                                 ))}
                             </div>
@@ -171,7 +173,7 @@ export function InheritedCoveragePanel({
                                 >
                                     <div className="flex flex-wrap items-baseline gap-compact">
                                         <code className="font-mono text-xs text-content-subtle">{requirement.code}</code>
-                                        <span className="text-sm text-content-default">{requirement.title}</span>
+                                        <span className="text-sm text-content-default">{tc(requirement.title)}</span>
                                         <StatusBadge
                                             variant={STATUS_VARIANT[requirement.status] ?? 'neutral'}
                                             size="sm"
@@ -187,9 +189,9 @@ export function InheritedCoveragePanel({
                                                 className="space-y-tight"
                                             >
                                                 <div className="flex flex-wrap items-baseline gap-compact text-xs">
-                                                    <span className="text-content-default">{route.frameworkName}</span>
+                                                    <span className="text-content-default">{tc(route.frameworkName)}</span>
                                                     <code className="font-mono text-content-subtle">{route.requirementCode}</code>
-                                                    <span className="text-content-muted">{route.requirementTitle}</span>
+                                                    <span className="text-content-muted">{tc(route.requirementTitle)}</span>
                                                     <StatusBadge variant="neutral" size="sm" icon={null}>
                                                         {strengthLabels[route.strength] ?? route.strength}
                                                     </StatusBadge>
@@ -201,7 +203,7 @@ export function InheritedCoveragePanel({
                                                                 href={`/t/${tenantSlug}/controls/${control.id}`}
                                                                 className={cn(textLinkVariants({ tone: 'link' }), 'truncate')}
                                                             >
-                                                                {control.code ? `${control.code} · ${control.name}` : control.name}
+                                                                {control.code ? `${control.code} · ${tc(control.name)}` : tc(control.name)}
                                                             </Link>
                                                         </li>
                                                     ))}

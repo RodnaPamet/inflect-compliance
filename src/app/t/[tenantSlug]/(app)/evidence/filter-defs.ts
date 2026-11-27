@@ -202,15 +202,19 @@ interface ControlLike {
  */
 export function controlOptionsFromControls(
     controls: ReadonlyArray<ControlLike>,
+    // Catalogue content lookup (`useContentText()`): a control installed from a
+    // template is named in the reader's language. The option VALUE is unchanged.
+    tc: (text: string) => string = (text) => text,
 ): FilterOption[] {
     const seen = new Map<string, FilterOption>();
     for (const c of controls) {
         if (!c.id || seen.has(c.id)) continue;
         const prefix = c.annexId || c.code || '';
+        const name = c.name ? tc(c.name) : c.name;
         seen.set(c.id, {
             value: c.id,
-            label: prefix ? `${prefix}: ${c.name}` : c.name,
-            displayLabel: prefix || c.name,
+            label: prefix ? `${prefix}: ${name}` : name,
+            displayLabel: prefix || name,
         });
     }
     return Array.from(seen.values()).sort((a, b) =>
@@ -284,8 +288,10 @@ export function buildEvidenceFilters(
     evidence: ReadonlyArray<EvidenceFolderLike & EvidenceCategoryLike> = [],
     t: T = (k) => k,
     tGroup: TGroup = (k) => k,
+    /** Catalogue content lookup (`useContentText()`), for the control names. */
+    tc?: (text: string) => string,
 ) {
-    const controlOpts = controlOptionsFromControls(controls);
+    const controlOpts = controlOptionsFromControls(controls, tc);
     const folderOpts = folderOptionsFromEvidence(evidence, t);
     const categoryOpts = categoryOptionsFromEvidence(evidence);
     return buildEvidenceFilterDefs(t, tGroup).filters.map((f) => {

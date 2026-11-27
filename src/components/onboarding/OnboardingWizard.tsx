@@ -46,6 +46,7 @@ import { Nis2SelfAssessmentStep } from './Nis2SelfAssessmentStep';
 import { AiGovSelfAssessmentStep } from './AiGovSelfAssessmentStep';
 import { SovereigntySelfAssessmentStep } from './SovereigntySelfAssessmentStep';
 import { ShadedRow } from '@/components/ui/shaded-row';
+import { useContentText } from '@/lib/content-i18n/use-content-text';
 
 // ─── Step Definitions ───
 //
@@ -220,6 +221,7 @@ function describeError(t: OnboardingT, e: unknown, fallback: string): string {
 
 export default function OnboardingWizard() {
     const t = useTranslations('onboarding');
+    const tc = useContentText();
     const { tenantSlug, permissions } = useTenantContext();
     const tenantHref = useTenantHref();
     const tenantApiUrl = useTenantApiUrl();
@@ -586,7 +588,7 @@ export default function OnboardingWizard() {
                         {installFailures.map((f) => (
                             <li key={`${f.framework}:${f.packKey}`}>
                                 {t('wizard.frameworks.installFailedItem', {
-                                    framework: f.name || f.framework,
+                                    framework: tc(f.name) || f.framework,
                                     message: f.message || t('wizard.frameworks.installFailedFallback'),
                                 })}
                             </li>
@@ -870,6 +872,7 @@ function frameworkBadge(fw: InstallableFramework): string | null {
 
 function FrameworkSelectionStep({ data, onUpdate }: { data: StepData; onUpdate: (d: StepData) => void }) {
     const t = useTranslations('onboarding');
+    const tc = useContentText();
     const { tenantSlug } = useTenantContext();
     const [frameworks, setFrameworks] = useState<InstallableFramework[]>([]);
     const [loading, setLoading] = useState(true);
@@ -956,10 +959,10 @@ function FrameworkSelectionStep({ data, onUpdate }: { data: StepData; onUpdate: 
                                 }`}
                             >
                                 <div className="flex items-center justify-between mb-2">
-                                    <span className="font-semibold text-content-emphasis text-sm">{fw.name}</span>
+                                    <span className="font-semibold text-content-emphasis text-sm">{tc(fw.name)}</span>
                                     {badge && <StatusBadge variant="info" size="sm">{t(badge)}</StatusBadge>}
                                 </div>
-                                {fw.description && <p className="text-xs text-content-muted leading-relaxed">{fw.description}</p>}
+                                {fw.description && <p className="text-xs text-content-muted leading-relaxed">{tc(fw.description)}</p>}
                                 <p className="mt-2 text-xs text-content-subtle">
                                     {fw.controlCount > 0 && <>{t(fw.controlCount === 1 ? 'wizard.frameworks.installsControl' : 'wizard.frameworks.installsControls', { count: fw.controlCount })}</>}
                                     {t(fw.requirementCount === 1 ? 'wizard.frameworks.requirement' : 'wizard.frameworks.requirements', { count: fw.requirementCount })}
@@ -976,7 +979,7 @@ function FrameworkSelectionStep({ data, onUpdate }: { data: StepData; onUpdate: 
                 const chosen = selectedPacks[fw.key] ?? [];
                 return (
                     <ShadedRow padding="lg" key={fw.key} className="space-y-compact" data-testid={`fw-packs-${fw.key.toLowerCase()}`}>
-                        <p className="text-sm font-semibold text-content-emphasis">{t('wizard.frameworks.choosePacks', { name: fw.name })}</p>
+                        <p className="text-sm font-semibold text-content-emphasis">{t('wizard.frameworks.choosePacks', { name: tc(fw.name) })}</p>
                         <p className="text-xs text-content-muted">{t('wizard.frameworks.choosePacksHint')}</p>
                         <div className="space-y-tight">
                             {(fw.packs ?? []).map(p => (
@@ -988,14 +991,14 @@ function FrameworkSelectionStep({ data, onUpdate }: { data: StepData; onUpdate: 
                                         className="mt-0.5"
                                     />
                                     <span>
-                                        <span className="block text-sm text-content-emphasis">{p.name}</span>
-                                        {p.description && <span className="block text-xs text-content-muted">{p.description}</span>}
+                                        <span className="block text-sm text-content-emphasis">{tc(p.name)}</span>
+                                        {p.description && <span className="block text-xs text-content-muted">{tc(p.description)}</span>}
                                     </span>
                                 </label>
                             ))}
                         </div>
                         {chosen.length === 0 && (
-                            <p className="text-xs text-content-warning">{t('wizard.frameworks.choosePacksRequired', { name: fw.name })}</p>
+                            <p className="text-xs text-content-warning">{t('wizard.frameworks.choosePacksRequired', { name: tc(fw.name) })}</p>
                         )}
                     </ShadedRow>
                 );
@@ -1076,6 +1079,7 @@ function AssetSetupStep({ data, onUpdate }: { data: StepData; onUpdate: (d: Step
 
 function ControlInstallStep({ data, onUpdate, allData }: { data: StepData; onUpdate: (d: StepData) => void; allData: StepData }) {
     const t = useTranslations('onboarding');
+    const tc = useContentText();
     const selectedFrameworks: string[] = allData['FRAMEWORK_SELECTION']?.selectedFrameworks || [];
     const fwLabels: Record<string, string> = allData['FRAMEWORK_SELECTION']?.frameworkLabels || {};
 
@@ -1092,7 +1096,7 @@ function ControlInstallStep({ data, onUpdate, allData }: { data: StepData; onUpd
                         <ShadedRow key={fw} className="flex items-center gap-compact">
                             <ShieldCheck className="w-5 h-5 text-brand-400" />
                             <div>
-                                <span className="text-sm font-medium text-content-emphasis">{fwLabels[fw] || fw}</span>
+                                <span className="text-sm font-medium text-content-emphasis">{tc(fwLabels[fw]) || fw}</span>
                                 <p className="text-xs text-content-subtle">{t('wizard.controls.willInstall')}</p>
                             </div>
                             <CheckCircle2 className="w-4 h-4 text-content-success ml-auto" />
@@ -1216,12 +1220,13 @@ function TeamSetupStep({ data, onUpdate }: { data: StepData; onUpdate: (d: StepD
 
 function ReviewStep({ completedSteps, allData }: { completedSteps: string[]; allData: StepData }) {
     const t = useTranslations('onboarding');
+    const tc = useContentText();
     const summaryItems = [
         { key: 'COMPANY_PROFILE', label: t('wizard.steps.companyProfile'), detail: allData['COMPANY_PROFILE']?.name || t('wizard.review.notConfigured') },
         { key: 'FRAMEWORK_SELECTION', label: t('wizard.steps.frameworks'), detail: (() => {
             const keys: string[] = allData['FRAMEWORK_SELECTION']?.selectedFrameworks || [];
             const labels: Record<string, string> = allData['FRAMEWORK_SELECTION']?.frameworkLabels || {};
-            return keys.map(k => labels[k] || k).join(', ') || t('wizard.review.noneSelected');
+            return keys.map(k => tc(labels[k]) || k).join(', ') || t('wizard.review.noneSelected');
         })() },
         { key: 'ASSET_SETUP', label: t('wizard.steps.assets'), detail: t('wizard.review.assetsAdded', { count: (allData['ASSET_SETUP']?.assets || []).length }) },
         { key: 'CONTROL_BASELINE_INSTALL', label: t('wizard.steps.controls'), detail: allData['CONTROL_BASELINE_INSTALL']?.confirmed ? t('wizard.review.baselineConfirmed') : t('wizard.review.pendingConfirmation') },

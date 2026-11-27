@@ -222,6 +222,9 @@ interface RiskLike {
  */
 export function categoryOptionsFromRisks(
     risks: ReadonlyArray<RiskLike>,
+    // Catalogue content lookup (`useContentText()`): a category a risk took
+    // from a template is shown in the reader's language. The VALUE is unchanged.
+    tc: (text: string) => string = (text) => text,
 ): FilterOption[] {
     const seen = new Set<string>();
     for (const r of risks) {
@@ -230,7 +233,7 @@ export function categoryOptionsFromRisks(
     }
     return Array.from(seen)
         .sort((a, b) => a.localeCompare(b))
-        .map((value) => ({ value, label: value }));
+        .map((value) => ({ value, label: tc(value), keywords: [value] }));
 }
 
 /**
@@ -275,9 +278,10 @@ export function buildRiskFilters(
     risks: ReadonlyArray<RiskLike>,
     t: T,
     tGroup: TGroup,
+    tc: (text: string) => string = (text) => text,
 ) {
     const defs = buildRiskFilterDefs(t, tGroup);
-    const categoryOpts = categoryOptionsFromRisks(risks);
+    const categoryOpts = categoryOptionsFromRisks(risks, tc);
     const ownerOpts = ownerOptionsFromRisks(risks);
     return defs.filters.map((f) => {
         if (f.key === 'category') return { ...f, options: categoryOpts };
