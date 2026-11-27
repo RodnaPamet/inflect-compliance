@@ -121,7 +121,12 @@ decision rather than a preference.
 - [ ] 0.3 Stand a parsing-only alternative up the same way; same measurements.
       Built 2026-11-27: the `Parse fidelity` workflow starts docling-serve
       (CPU, by digest) on a GitHub runner and samples its memory and CPU from
-      start to the last document. Open until its first run is recorded.
+      start to the last document. Its first run (2026-11-27) measured the
+      footprint and no fidelity: the service answered every document 422,
+      because the client still sent docling-serve's retired `file_sources`
+      field. The client now sends the v1 `sources` shape with an in-body
+      target, and a run where the request itself is refused fails instead of
+      passing. Open until a run's record is committed.
 - [ ] 0.4 Run both over the fixture set; score table-cell recall and heading
       recall. Built 2026-11-27: `scripts/parse-fidelity/score.ts` scores
       heading, table-cell and row recall from raw counts, through the app's

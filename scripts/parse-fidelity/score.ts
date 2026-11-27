@@ -255,6 +255,35 @@ export function parseMemUsage(s: string): number {
     return n / 1024 / 1024;
 }
 
+/**
+ * Refusals that say the MEASUREMENT broke, not the document: the service
+ * refused the request, answered in a shape the client does not read, was out
+ * of reach or out of the deployment, or the client routed the format nowhere.
+ * A record carrying one measured the plumbing, not the parser, so the workflow
+ * fails on it rather than reporting a zero as a finding. A document the service
+ * tried and could not convert (`PARSE_FAILED`, `PARTIAL_PARSE`, `EMPTY_DOCUMENT`,
+ * `TIMEOUT`) is a fidelity result, and scores as found nothing.
+ */
+export const MEASUREMENT_FAULTS: ReadonlySet<string> = new Set([
+    'UPSTREAM_REFUSED',
+    'AUTH_FAILED',
+    'CONTRACT_VIOLATION',
+    'EGRESS_REFUSED',
+    'UNREACHABLE',
+    'UNSUPPORTED_MEDIA',
+]);
+
+/** Why this record cannot stand as a measurement; empty when it can. */
+export function measurementFaults(record: ParseFidelityRecord): string[] {
+    const faults = record.cases
+        .filter((c) => MEASUREMENT_FAULTS.has(c.outcome))
+        .map((c) => `${c.id}: ${c.outcome}`);
+    if (record.cases.length > 0 && record.cases.every((c) => c.outcome !== 'ok')) {
+        faults.push(`every document was refused (${record.cases.length} of ${record.cases.length})`);
+    }
+    return faults;
+}
+
 function pct(r: Ratio): string {
     return r.rate === null ? 'n/a' : `${(r.rate * 100).toFixed(1)}% (${r.found}/${r.expected})`;
 }
