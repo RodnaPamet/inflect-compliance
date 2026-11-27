@@ -132,6 +132,10 @@ enum OrgAuditAction {
   /// turn may start, for the organization's workspaces (#4594). Carries the
   /// before and after of each cap that moved.
   ORG_AGENT_TURN_CAPS_CHANGED
+  /// An org owner of an operator organization (`EVALS_SWITCH_ORG_SLUGS`)
+  /// turned an LLM evaluation nightly on or off (owner decision 2026-11-27).
+  /// Carries the nightly and its before and after values.
+  ORG_EVAL_NIGHTLY_SWITCHED
 }
 
 enum MembershipStatus {

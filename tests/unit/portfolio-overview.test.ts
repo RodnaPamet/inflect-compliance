@@ -59,6 +59,7 @@ function ctxFor(): OrgContext {
             canSetMaturity: true,
             canManageAgentSwitches: true,
             canManageOwners: false,
+            canSwitchEvalNightlies: false,
         },
     };
 }

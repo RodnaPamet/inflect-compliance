@@ -178,6 +178,14 @@ export const MACHINE_CALLER_PREFIXES = [
         above is exact-or-subpath, never a bare `startsWith`.
     */
     '/api/admin',
+    // The LLM evaluation nightlies' switch read (owner decision 2026-11-27).
+    // A GitHub Actions runner, which has no cookie by construction, asks on
+    // each scheduled run whether its nightly is on. GET only, and it gates
+    // itself: `Authorization: Bearer <EVALS_SWITCH_READ_TOKEN>` compared in
+    // constant time by `verifyEvalsSwitchReadToken`, 503 while no token is
+    // configured. It answers three booleans and nothing else. EXACT-or-subpath
+    // like every entry, so `/api/evals` and its other children stay closed.
+    '/api/evals/nightly-switches',
 ];
 
 /**

@@ -50,6 +50,11 @@ name: Agent evals (Inspect, nightly)
 #     request a person opens from the artifact, because a committed record is
 #     evidence (G11) and evidence is not written by the job that produced it.
 #   - Runs no Jest, so it is NOT in the coverage partition.
+#   - THE SWITCH IS THE PRODUCT'S (owner decision 2026-11-27). A scheduled run
+#     asks production (repository variable EVALS_SWITCH_URL, bearer secret
+#     EVALS_SWITCH_READ_TOKEN) whether "inspect" is switched on, on the org
+#     settings page's Evaluations card, and stays off on any failure or any
+#     answer but true (first step). A dispatch runs once and asks nothing.
 #   - Unreachable from a pull request by design (schedule + dispatch only);
 #     registered in tests/guardrails/ci-checks-unreachable-before-merge.json.
 on:
@@ -130,14 +135,44 @@ jobs:
         id: key
         env:
           KEY: ${{ secrets.INSPECT_CI_ANTHROPIC_KEY || secrets.ANTHROPIC_API_KEY }}
-          ENABLED: ${{ vars.AGENT_EVALS_ENABLED }}
           EVENT: ${{ github.event_name }}
+          # The production switch endpoint (a repository VARIABLE: a URL, not a
+          # secret) and the bearer token it checks (a secret, read only here).
+          SWITCH_URL: ${{ vars.EVALS_SWITCH_URL }}
+          SWITCH_TOKEN: ${{ secrets.EVALS_SWITCH_READ_TOKEN }}
+          NIGHTLY: inspect
         run: |
-          # Owner decision 2026-11-12: the nightly is OFF unless the repo
-          # variable AGENT_EVALS_ENABLED is 'true' (GitHub -> Settings -> Variables ->
-          # Actions). A manual dispatch always runs, so a person can run it once.
+          # Owner decision 2026-11-27: the switch lives in the PRODUCT
+          # (Organization settings -> Evaluations), not in a repository
+          # variable. A scheduled run asks production whether the inspect
+          # nightly is on and FAILS CLOSED: an unset URL or token, a failed
+          # request, a status other than 200, or an answer that is not a
+          # boolean for "inspect" leaves it off, with a warning naming the
+          # reason class and never the token or the response body. A manual
+          # dispatch runs once whatever the switch says, and asks nothing.
+          ENABLED=false
+          if [ "$EVENT" = "schedule" ]; then
+            BODY="$(mktemp)"
+            STATUS=000
+            if [ -z "$SWITCH_URL" ] || [ -z "$SWITCH_TOKEN" ]; then
+              echo "::warning::The agent-evals switch was not read: the EVALS_SWITCH_URL variable or the EVALS_SWITCH_READ_TOKEN secret is not set."
+            elif ! STATUS="$(curl --fail --silent --proto '=https' --max-time 15 -H "Authorization: Bearer $SWITCH_TOKEN" -H 'Accept: application/json' -o "$BODY" -w '%{http_code}' "$SWITCH_URL" 2>/dev/null)"; then
+              if [ "${STATUS:-000}" = "000" ]; then
+                echo "::warning::The agent-evals switch was not read: the request to the switch endpoint failed or timed out."
+              else
+                echo "::warning::The agent-evals switch was not read: the switch endpoint answered HTTP $STATUS."
+              fi
+            elif [ "$STATUS" != "200" ]; then
+              echo "::warning::The agent-evals switch was not read: the switch endpoint answered HTTP $STATUS."
+            elif [ "$(jq -r --arg k "$NIGHTLY" '.[$k] | type' "$BODY" 2>/dev/null)" != "boolean" ]; then
+              echo "::warning::The agent-evals switch was not read: the answer holds no boolean for $NIGHTLY."
+            elif jq -e --arg k "$NIGHTLY" '.[$k] == true' "$BODY" >/dev/null; then
+              ENABLED=true
+            fi
+            rm -f "$BODY"
+          fi
           if [ "$EVENT" = "schedule" ] && [ "$ENABLED" != "true" ]; then
-            echo "::notice::The agent-evals nightly is switched off (repository variable AGENT_EVALS_ENABLED is not 'true'); dispatch the workflow to run it once."
+            echo "::notice::The agent-evals nightly is off: it is switched off in the product (Organization settings -> Evaluations) or its switch could not be read; dispatch the workflow to run it once."
             echo "present=false" >> "$GITHUB_OUTPUT"
           elif [ -z "$KEY" ]; then
             echo "::notice::neither INSPECT_CI_ANTHROPIC_KEY nor ANTHROPIC_API_KEY is set; the agent-evals run is skipped (owner action in docs/ai-architecture/inspect.md)."

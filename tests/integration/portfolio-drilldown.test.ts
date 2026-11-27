@@ -74,6 +74,7 @@ describeFn('Epic O-3 — portfolio drill-down lifecycle (DB-backed)', () => {
             canSetMaturity: true,
             canManageAgentSwitches: true,
             canManageOwners: false,
+            canSwitchEvalNightlies: false,
             },
         };
     }

@@ -22,6 +22,7 @@ describe('Epic O-2 — getOrgPermissions', () => {
             canSetMaturity: true,
             canManageAgentSwitches: true,
             canManageOwners: true,
+            canSwitchEvalNightlies: true,
         });
     });
 
@@ -39,6 +40,7 @@ describe('Epic O-2 — getOrgPermissions', () => {
             canSetMaturity: true,
             canManageAgentSwitches: true,
             canManageOwners: false,
+            canSwitchEvalNightlies: false,
         });
     });
 
@@ -55,6 +57,7 @@ describe('Epic O-2 — getOrgPermissions', () => {
             canSetMaturity: false,
             canManageAgentSwitches: false,
             canManageOwners: false,
+            canSwitchEvalNightlies: false,
         });
     });
 

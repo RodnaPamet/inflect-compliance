@@ -200,6 +200,8 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     AGENT_MANAGED_AGENTS: 'operator override of the per-workspace Managed Agents switch (#5964; unset leaves it to each workspace\'s owner) — a switch in this deployment, not an endpoint; the endpoint it opens is the customer\'s OWN Anthropic workspace, listed in the inventory as the opt-in per-tenant row `anthropic-workspace`',
     AGENT_PROFILES_TENANTS: 'operator allowlist of tenant slugs that opens the same agent profile surface to named tenants only — a list of this deployment\'s own tenants, not an external endpoint, and not a sub-processor',
     EVALS_CARD_HIDDEN_ORG_SLUGS: 'operator opt-out list of organization slugs whose org admins do not see the static Evaluations card on the org settings page — this deployment\'s own organizations, read by no request to anywhere, not an external endpoint, and not a sub-processor',
+    EVALS_SWITCH_ORG_SLUGS: 'operator list of organization slugs whose org owners may switch the LLM evaluation nightlies on the org settings page — this deployment\'s own organizations, read by no request to anywhere, not an external endpoint, and not a sub-processor',
+    EVALS_SWITCH_READ_TOKEN: 'inbound bearer token the GitHub Actions nightlies present to this deployment\'s read-only switch endpoint — compared on arrival, never sent anywhere; GitHub is the CALLER here, and the nightlies\' own model spend is a CI concern outside this deployment, so it names no endpoint and no sub-processor',
     // Step 2a (#4148). The Tool Runner engine's two model pins and the SDK's
     // ambient-headers variable. The models are ids at the EXISTING Anthropic
     // row, the same kind of value as AGENT_FLUE_MODEL, named in that row's (d)

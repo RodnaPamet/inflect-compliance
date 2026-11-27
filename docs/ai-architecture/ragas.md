@@ -53,8 +53,9 @@ flowchart LR
 ## Current state (true today)
 
 - **The harness and the nightly are built; no record exists yet** (Phase
-  1, 2026-11-16). `.github/workflows/rag-eval.yml` (off unless the repository
-  variable `RAG_EVAL_ENABLED` is `true`, non-blocking until 2027-02-28) builds
+  1, 2026-11-16). `.github/workflows/rag-eval.yml` (off unless its "ragas"
+  switch on the org settings page's Evaluations card is on — owner decision
+  2026-11-27, see "The nightly's switch" below — non-blocking until 2027-02-28) builds
   a corpus through the product's own usecases and index job against the
   deployment's TEI (`scripts/rag-eval/corpus.ts`), measures D-L4-9's two
   retrieval figures over `VectorRepository.search` against an exact scan of
@@ -132,6 +133,27 @@ flowchart LR
   cap, a cap above USD 6.50 and an unpriced model.
 - **Python runs nowhere in the app image** (G5). An eval harness in Python is
   a CI image, like the garak and ZAP containers.
+
+### The nightly's switch
+
+Owner decision 2026-11-27: the nightly is switched **in the product**, not by
+a GitHub repository variable. The state is the `ragas` row of the
+platform-level `EvalNightlySwitch` table (an absent row is off), shown as an
+On/Off badge on the **Evaluations** card of `/org/<slug>/settings`. Only an
+org owner of an operator organization (named in `EVALS_SWITCH_ORG_SLUGS`)
+gets the switch; every change is audited `ORG_EVAL_NIGHTLY_SWITCHED` on that
+organization's chain.
+
+On each scheduled run, the first step of `rag-eval.yml` asks production,
+`GET` on the repository variable `EVALS_SWITCH_URL` with
+`Authorization: Bearer` the secret `EVALS_SWITCH_READ_TOKEN`, and runs only
+when the answer's `ragas` is `true`. It fails closed: an unset URL or token, a
+failed request, a status other than 200, or an answer that is not a boolean
+for `ragas` leaves the nightly off, with a warning naming the reason class and
+never the token or the body. A manual dispatch runs once whatever the switch
+says, and asks nothing. Production holds no GitHub credential. The operator
+setup (the two env vars in `.env.prod`, the secret and the variable on GitHub)
+is in `docs/deployment.md`; the repository variable this replaced is retired.
 
 ## Fit, and what is deliberately not adopted
 
@@ -335,7 +357,8 @@ a vendor is still text to a vendor), G1.
       `evals/rag/records/<ragRetrieverRevisionId>.json` and a person commits
       it by PR, as Inspect's records are.
 - [x] 1.4 `.github/workflows/rag-eval.yml`: nightly at 00:40 UTC, off unless
-      `RAG_EVAL_ENABLED` is `true`; Postgres with pgvector, Redis and the
+      the product's "ragas" switch is on (a repository variable until the
+      owner's decision of 2026-11-27); Postgres with pgvector, Redis and the
       deployment's TEI image by digest; corpus, retrieval figures, judge,
       validate, upload, auto-issue on a D-L4-9 miss or a failed judge;
       `RAG-EVAL-NON-BLOCKING-UNTIL: 2027-02-28` parsed by

@@ -61,7 +61,8 @@ npm run lint              # eslint . (flat config, eslint.config.mjs)
 # base/enums/auth/vendor/audit-trail/audit-workflow/automation/processes plus
 # the compliance-domain split (controls, evidence, risk, frameworks, policy,
 # tasks, assets, personnel, findings, incidents, questionnaire, nis2,
-# ai-governance, trust-center, agentic, analytics, legacy-access, knowledge). See the Layer Structure
+# ai-governance, trust-center, agentic, analytics, legacy-access, knowledge,
+# evals). See the Layer Structure
 # section below and prisma/schema/README.md — `compliance.prisma` is an empty
 # stub and `audit.prisma` no longer exists.
 # Prisma reads every `.prisma` file in the folder and concatenates them at
@@ -242,6 +243,7 @@ prisma/schema/         → Multi-file Prisma schema (GAP-09):
                             analytics.prisma    — Denormalised dashboard snapshots
                             legacy-access.prisma— Legacy-app snapshots/accounts, identity aliases, resolutions + match verdicts
                             knowledge.prisma    — Knowledge-store chunks (encrypted text) + pgvector embeddings
+                            evals.prisma        — EvalNightlySwitch: platform-level on/off state of the LLM evaluation nightlies
                             compliance.prisma   — now an empty stub (do NOT add models here)
                             schema.prisma       — transitional sediment file (currently empty)
                           See prisma/schema/README.md and

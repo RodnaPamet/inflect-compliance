@@ -16688,7 +16688,14 @@
       "filterLabel": "Filter by action",
       "emptyFilteredTitle": "Nothing with this action",
       "emptyFilteredDesc": "No entry in the log has this action. Choose All actions to see every entry.",
-      "forbiddenMessage": "Only organization owners and admins read the audit log. Ask one of this organization's owners or admins."
+      "forbiddenMessage": "Only organization owners and admins read the audit log. Ask one of this organization's owners or admins.",
+      "actionEvalNightlySwitched": "Evaluation switched",
+      "deniedEvalsSwitchNotOperator": "Tried to switch an evaluation outside the platform operator's organization",
+      "evalNightly": {
+        "ragas": "Ragas",
+        "garak": "garak",
+        "inspect": "Inspect"
+      }
     },
     "controls": {
       "title": "Non-Performing Controls",
@@ -16927,26 +16934,47 @@
       },
       "evaluations": {
         "title": "Evaluations",
-        "description": "Two nightly evaluations test the platform's AI features. They run as GitHub Actions against a throwaway copy of the app built for the run, never against production, and they are switched on and off in the GitHub repository, not here. This card describes them; it does not show whether they are on.",
-        "offByDefault": "Off by default",
+        "description": "Three nightly evaluations test the platform's AI features. They run as GitHub Actions against a throwaway copy of the app built for the run, never against production. Each is switched on and off here: a scheduled run asks this deployment whether it is on.",
         "shared": {
-          "offByDefault": "Both are off by default: the nightly run happens only while its repository variable is set to true.",
-          "manualRun": "Running the workflow by hand from GitHub always runs it, whatever the variable says.",
-          "key": "Each uses its own dedicated key secret if one is set, and the shared <code>{shared}</code> secret otherwise."
+          "offByDefault": "Each is off until it is switched on here; an evaluation never switched on is off.",
+          "manualRun": "Running the workflow by hand from GitHub always runs it once, whatever its switch says.",
+          "key": "Each uses its own dedicated key secret if one is set, and the shared <code>{shared}</code> secret otherwise.",
+          "failClosed": "A scheduled run asks this deployment whether it is on, and stays off if it cannot get a clear answer."
         },
         "labels": {
           "tests": "What it tests",
           "schedule": "When it runs",
           "budget": "Spending cap",
+          "state": "State",
           "switch": "Switch",
           "key": "API key",
           "runs": "Runs"
         },
         "schedule": "Every night at {time} UTC, while switched on",
-        "switch": "Repository variable <code>{name}</code> set to <code>{value}</code>",
         "key": "<code>{dedicated}</code>, or <code>{shared}</code> if that is not set",
         "runsLink": "Open the {workflow} runs on GitHub",
-        "variablesLink": "Open the repository's Actions variables on GitHub",
+        "readOnly": "You can see whether each evaluation is on. Only an owner of the platform operator's organization can switch one on or off.",
+        "badge": {
+          "on": "On",
+          "off": "Off"
+        },
+        "state": {
+          "onSince": "On since {when} UTC",
+          "offSince": "Off since {when} UTC",
+          "neverSwitched": "Off — never switched on"
+        },
+        "switchHeldByOperator": "Held by the platform operator",
+        "toggle": {
+          "on": "On",
+          "off": "Off",
+          "spend": "While on, it may spend: {budget}"
+        },
+        "saveFailed": "The switch could not be saved. Try again.",
+        "ragas": {
+          "name": "Ragas — retrieval and answer quality",
+          "tests": "Measures how well the assistant finds and uses the platform's knowledge: how closely its search matches an exact search and how fast it answers, and the quality of the assistant's own answers over seeded policies, scored by a judge model.",
+          "budget": "USD {amount} a night: its share of a USD {cap} nightly cap shared with the garak evaluation ({decision})."
+        },
         "garak": {
           "name": "garak — red-team of the assistant",
           "tests": "Attacks the assistant the way an attacker would reach it — prompt injection, jailbreaks and data leakage — through the product's own endpoint, so the guards around the model are tested together with it.",
@@ -19501,6 +19529,7 @@
       "discovered_agent_attribution": "Discovered agent attribution",
       "discovered_third_party_app": "Discovered third party app",
       "employee": "Employee",
+      "eval_nightly_switch": "Evaluation nightly switch",
       "evidence": "Evidence",
       "evidence_asset_link": "Evidence asset link",
       "evidence_control_link": "Evidence control link",

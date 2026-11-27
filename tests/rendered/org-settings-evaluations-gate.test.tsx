@@ -31,8 +31,15 @@ jest.mock('@/app-layer/usecases/org-agent-switches', () => ({
 jest.mock('@/app-layer/usecases/org-agent-turn-caps', () => ({
     getOrgAgentTurnCaps: jest.fn(async () => ({})),
 }));
+// The card's live switch state (owner decision 2026-11-27): read only where
+// the card shows.
+const mockGetEvalNightlySwitches = jest.fn(async () => ({ nightlies: {}, canSwitch: false }));
+jest.mock('@/app-layer/usecases/eval-nightly-switches', () => ({
+    getEvalNightlySwitches: () => mockGetEvalNightlySwitches(),
+}));
 jest.mock('next-intl/server', () => ({
     getTranslations: async () => (key: string) => key,
+    getLocale: async () => 'en',
 }));
 jest.mock('@/app/org/[orgSlug]/(app)/settings/OrgAgentSwitchesSection', () => ({
     OrgAgentSwitchesSection: () => <div data-testid="org-agent-switches" />,
@@ -54,6 +61,7 @@ async function renderPage() {
 const ORIGINAL = process.env.EVALS_CARD_HIDDEN_ORG_SLUGS;
 afterEach(() => {
     cleanup();
+    mockGetEvalNightlySwitches.mockClear();
     if (ORIGINAL === undefined) delete process.env.EVALS_CARD_HIDDEN_ORG_SLUGS;
     else process.env.EVALS_CARD_HIDDEN_ORG_SLUGS = ORIGINAL;
 });
@@ -65,6 +73,7 @@ describe('org settings page — Evaluations card gate', () => {
         await renderPage();
         expect(screen.getByTestId('org-agent-switches')).toBeInTheDocument();
         expect(screen.getByTestId('org-evaluations')).toBeInTheDocument();
+        expect(mockGetEvalNightlySwitches).toHaveBeenCalledTimes(1);
     });
 
     it('shows the card to the org owner of an organization another one opted out', async () => {
@@ -88,5 +97,7 @@ describe('org settings page — Evaluations card gate', () => {
         await renderPage();
         expect(screen.getByTestId('org-agent-switches')).toBeInTheDocument();
         expect(screen.queryByTestId('org-evaluations')).toBeNull();
+        // The switch state is not read for a viewer the card is not shown to.
+        expect(mockGetEvalNightlySwitches).not.toHaveBeenCalled();
     });
 });

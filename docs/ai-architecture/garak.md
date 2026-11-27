@@ -20,7 +20,7 @@ inflect · ai architecture · garak · roadmap v1 · 2026-10-29
 | Wave | 3 (with the Layer 1 additions, so it measures them as they land) — but Phase 1 can start now against the existing guard |
 | Depends on | a model to probe (the external provider with a CI key; a local model only if Layer 5 is taken up) |
 | Unblocks | an evidence line for [`nemo-guardrails.md`](./nemo-guardrails.md) and [`presidio.md`](./presidio.md): a before/after |
-| Owner decisions | **D-EV-1 — decided (owner, 2026-11-11):** a Haiku-class external model through a dedicated CI key, hard-capped at USD 5 per night (USD 6.50 since the owner's amendment of 2026-11-17, shared with Ragas; garak's share is unchanged), seed data only. Owner actions it leaves: create the repository secret `GARAK_CI_ANTHROPIC_KEY` from a key in its own Anthropic workspace, and set that workspace's spend limit (the invoice-level backstop, see Phase 1). **Amended 2026-11-12 (owner):** without that secret the workflow uses the existing `ANTHROPIC_API_KEY` secret, so its spend counts against that key's workspace limit; and the nightly runs only while the repository variable `GARAK_ENABLED` is `true` (off by default). A manual dispatch always runs |
+| Owner decisions | **D-EV-1 — decided (owner, 2026-11-11):** a Haiku-class external model through a dedicated CI key, hard-capped at USD 5 per night (USD 6.50 since the owner's amendment of 2026-11-17, shared with Ragas; garak's share is unchanged), seed data only. Owner actions it leaves: create the repository secret `GARAK_CI_ANTHROPIC_KEY` from a key in its own Anthropic workspace, and set that workspace's spend limit (the invoice-level backstop, see Phase 1). **Amended 2026-11-12 (owner):** without that secret the workflow uses the existing `ANTHROPIC_API_KEY` secret, so its spend counts against that key's workspace limit; and the nightly runs only while its switch is on (off by default). A manual dispatch always runs. **Amended 2026-11-27 (owner):** the switch is the product's, the `garak` switch on the org settings page's Evaluations card, read by the workflow from production over a CI token and failing closed (see "The nightly's switch"); the repository variable is retired |
 | Complete at | Phase 3 |
 
 ## At a glance
@@ -93,6 +93,27 @@ flowchart LR
 - **Spend is capped** per assistant turn (`assistant/spend-ceiling.ts`) and per
   tenant per month (`monthly-budget-policy.ts`) — a red-team run can be
   budgeted with mechanisms that exist.
+
+### The nightly's switch
+
+Owner decision 2026-11-27: the nightly is switched **in the product**, not by
+a GitHub repository variable. The state is the `garak` row of the
+platform-level `EvalNightlySwitch` table (an absent row is off), shown as an
+On/Off badge on the **Evaluations** card of `/org/<slug>/settings`. Only an
+org owner of an operator organization (named in `EVALS_SWITCH_ORG_SLUGS`)
+gets the switch; every change is audited `ORG_EVAL_NIGHTLY_SWITCHED` on that
+organization's chain.
+
+On each scheduled run, the first step of `garak.yml` asks production,
+`GET` on the repository variable `EVALS_SWITCH_URL` with
+`Authorization: Bearer` the secret `EVALS_SWITCH_READ_TOKEN`, and runs only
+when the answer's `garak` is `true`. It fails closed: an unset URL or token, a
+failed request, a status other than 200, or an answer that is not a boolean
+for `garak` leaves the nightly off, with a warning naming the reason class and
+never the token or the body. A manual dispatch runs once whatever the switch
+says, and asks nothing. Production holds no GitHub credential. The operator
+setup (the two env vars in `.env.prod`, the secret and the variable on GitHub)
+is in `docs/deployment.md`; the repository variable this replaced is retired.
 
 ## Fit, and what is deliberately not adopted
 

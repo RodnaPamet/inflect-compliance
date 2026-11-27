@@ -65,7 +65,9 @@ curl http://localhost:3000/api/health | jq .
 | `AGENT_FLUE_MODEL` | Optional (default `claude-sonnet-5-5`) | The model the Flue agent runtime's external provider names, and the default model `npm run skills:evaluate` records skill evaluations against. Its own variable on purpose: the compliance-posture summary and the AI risk suggestions keep `ANTHROPIC_MODEL` (default `claude-haiku-4-5`), and setting one never moves the other. The credential and workspace are still the shared `ANTHROPIC_API_KEY` and `ANTHROPIC_WORKSPACE_ID`. A `LOCAL_ONLY` tenant's run never reads it; its model is `AI_LOCAL_MODEL`. It reaches the `app` and `worker` containers through the service's `env_file:`, like `ANTHROPIC_API_KEY`. |
 | `AGENT_FLUE_WORKER_MODEL` | Optional (unset) | The WORKER role's model (D-L3-1): the model a Flue run's subagents run on, on the same external provider, key and workspace as `AGENT_FLUE_MODEL`. Registered beside it at boot, never instead of it. Unset, blank or equal to `AGENT_FLUE_MODEL`, subagents run on the run's own model, which is the behaviour before the variable existed; each run's opening audit entry records both models and whether the worker's was configured or a fallback. A `LOCAL_ONLY` tenant's run never reads it; both its roles use `AI_LOCAL_MODEL` or are refused. |
 | `AUTOMATION_WEB_EVENTS_ENABLED` | Optional (unset = off) | Whether automation events emitted in the **web** process (a task, risk or control created through the UI or the API) reach the job queue and fire automation rules. Off by default; see "Automation rules from web events" below before turning it on. `1` or `true` turns it on; any other value is off. **On in production** since 2026-11-14 (owner decision): `deploy/docker-compose.prod.yml` sets it to `"1"` in the `app` service's `environment:`, which overrides any value in `.env.prod`. |
-| `EVALS_CARD_HIDDEN_ORG_SLUGS` | Optional (unset) | The opt-out list for the read-only **Evaluations** card on `/org/<slug>/settings`. Every organization's admins (owner or admin) see the card by default, a newly created organization included; comma-separated organization slugs listed here do not. Unset or empty hides it nowhere. The card describes the garak and Inspect CI nightlies (`garak.yml`, `agent-evals.yml`) and where their repository variables `GARAK_ENABLED` / `AGENT_EVALS_ENABLED` are set; it is static content, reads no live state and calls nothing, so this opt-out list is all there is to configure. Not a sub-processor. |
+| `EVALS_CARD_HIDDEN_ORG_SLUGS` | Optional (unset) | The opt-out list for the **Evaluations** card on `/org/<slug>/settings`. Every organization's admins (owner or admin) see the card by default, a newly created organization included; comma-separated organization slugs listed here do not. Unset or empty hides it nowhere. The card shows the three LLM evaluation nightlies (`rag-eval.yml`, `garak.yml`, `agent-evals.yml`) and whether each is switched on; who may switch them is `EVALS_SWITCH_ORG_SLUGS`, not this list. Not a sub-processor. |
+| `EVALS_SWITCH_ORG_SLUGS` | Optional (unset = nobody) | The **operator** organizations, comma-separated slugs, whose org owners may switch the LLM evaluation nightlies on and off on the Evaluations card (owner decision 2026-11-27). An allowlist: unset or empty names none, so nobody can switch and every nightly stays as it is (off unless switched on). Everybody else who sees the card reads the state. See [The evaluation nightlies' switches](#the-evaluation-nightlies-switches-evals_switch_read_token). Not a sub-processor. |
+| `EVALS_SWITCH_READ_TOKEN` | Optional (unset = every nightly off) | The bearer token the three nightly workflows present to `GET /api/evals/nightly-switches`; the same value is the GitHub secret `EVALS_SWITCH_READ_TOKEN`. At least 32 characters (`openssl rand -base64 48`); unset or shorter, the endpoint answers 503 and every scheduled nightly stays off. A real secret: never echo it. Not a sub-processor. |
 
 ## Docker Compose (Self-hosted / VPS)
 
@@ -231,6 +233,40 @@ other deployment:
 To turn it off again, remove the line from the compose file in a pull request,
 merge, and apply (`preflight`, then `apply`); the next web event is held again. The switch takes effect at the
 next event; executions that have already been queued run to completion.
+
+### The evaluation nightlies' switches (`EVALS_SWITCH_READ_TOKEN`)
+
+The three LLM evaluation nightlies (Ragas `rag-eval.yml`, garak `garak.yml`,
+Inspect `agent-evals.yml`) run on GitHub's runners against a throwaway copy of
+the app, never against production. Since 2026-11-27 (owner decision) each is
+switched **in the product**: an org owner of an operator organization turns it
+on or off on the Evaluations card of `/org/<slug>/settings`, the state is a row
+of `EvalNightlySwitch` (absent is off), and every change is audited
+`ORG_EVAL_NIGHTLY_SWITCHED`. Each scheduled run asks production
+`GET /api/evals/nightly-switches` with `Authorization: Bearer <token>`, which
+answers `{ "garak": bool, "ragas": bool, "inspect": bool }`, and runs only on
+`true` for its own key. Any failure (unset URL or token, network error, a
+status other than 200, an answer that is not a boolean) leaves the nightly off
+with a warning. A manual dispatch runs once and asks nothing. Production holds
+no GitHub credential.
+
+Setup, once, by the operator:
+
+1. **`.env.prod` on the VM:** `EVALS_SWITCH_READ_TOKEN=<a fresh random value,
+   at least 32 characters>` and `EVALS_SWITCH_ORG_SLUGS=<the operator
+   organization's slug>`. The app reads `.env.prod` through `env_file:`, so no
+   Compose change is needed; recreate the `app` container for it to read them.
+2. **GitHub → Settings → Secrets and variables → Actions:** the repository
+   **secret** `EVALS_SWITCH_READ_TOKEN`, the same value as in `.env.prod`, and
+   the repository **variable** `EVALS_SWITCH_URL`, the full https URL of
+   `/api/evals/nightly-switches` on the production host (a URL, not a secret).
+   The workflow refuses a plain-http URL.
+3. **Delete** the retired repository variables `GARAK_ENABLED`,
+   `RAG_EVAL_ENABLED` and `AGENT_EVALS_ENABLED`; nothing reads them.
+
+Until all of step 1 and step 2 are done every scheduled nightly is off and its
+run says why in a warning; that is the fail-closed direction, not a fault.
+Rotating the token is the same two edits, `.env.prod` first.
 
 ### The Managed Agents engine (`AGENT_MANAGED_AGENTS`), an operator override
 

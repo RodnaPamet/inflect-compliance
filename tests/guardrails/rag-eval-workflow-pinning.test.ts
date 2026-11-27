@@ -5,8 +5,9 @@
  *      marker, compared here with the real clock (the DAST lesson: a marker
  *      nobody parses never turns red). `continue-on-error` stands only on the
  *      judge step, and only while the marker stands.
- *   2. Off unless switched on: a scheduled run does nothing unless
- *      RAG_EVAL_ENABLED is 'true'; every later step reads the first step's
+ *   2. Off unless switched on: a scheduled run does nothing unless the
+ *      product's switch for "ragas" answers true (owner decision 2026-11-27);
+ *      every later step reads the first step's
  *      decision. Schedule and dispatch only.
  *   3. The model key reaches ONE process, the metering proxy: it is read in the
  *      first step (presence only) and the judge step (which hands it to the
@@ -86,7 +87,13 @@ describe('off unless switched on', () => {
     it('decides in the first step and conditions every later step on it', () => {
         const first = JOB.steps[0];
         expect(first.id).toBe('key');
-        expect(first.env?.ENABLED).toBe('${{ vars.RAG_EVAL_ENABLED }}');
+        // Owner decision 2026-11-27: the switch is the product's, read from
+        // production over the CI token (tests/unit/evaluation-nightlies.test.ts
+        // runs the gate); no repository variable switches it any more.
+        expect(first.env?.ENABLED).toBeUndefined();
+        expect(first.env?.NIGHTLY).toBe('ragas');
+        expect(first.env?.SWITCH_URL).toBe('${{ vars.EVALS_SWITCH_URL }}');
+        expect(first.env?.SWITCH_TOKEN).toBe('${{ secrets.EVALS_SWITCH_READ_TOKEN }}');
         expect(first.env?.EVENT).toBe('${{ github.event_name }}');
         expect(first.run).toContain('if [ "$EVENT" = "schedule" ] && [ "$ENABLED" != "true" ]; then');
         for (const s of JOB.steps.slice(1)) expect([s.name, s.if ?? '']).toEqual([s.name, expect.stringContaining("steps.key.outputs.present == 'true'")]);

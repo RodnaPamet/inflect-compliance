@@ -690,6 +690,18 @@ export const env = createEnv({
         // it is static content and this list is the only thing an operator sets.
         // Read only by the org settings page, through `evalsCardVisible`.
         EVALS_CARD_HIDDEN_ORG_SLUGS: z.string().optional(),
+        // The evaluation nightlies' switches (owner decision 2026-11-27). The
+        // OPERATOR organizations, comma-separated slugs, whose ORG_OWNERs may
+        // turn a nightly on or off on the card. Unset or empty: nobody can.
+        // Read only by `usecases/eval-nightly-switches.ts`.
+        EVALS_SWITCH_ORG_SLUGS: z.string().optional(),
+        // The bearer token the three nightly workflows present to
+        // `GET /api/evals/nightly-switches` (the same value is the GitHub
+        // secret EVALS_SWITCH_READ_TOKEN). Unset, or under 32 characters: the
+        // endpoint answers 503 and every scheduled nightly stays off. A plain
+        // optional string rather than `.min(32)`, so a short value disables
+        // the one endpoint instead of failing the deployment's boot.
+        EVALS_SWITCH_READ_TOKEN: z.string().optional(),
         // A2A HOST CONSUMERS (#3861) — admits a host that calls Inflect as a
         // CLIENT rather than as a peer agent: no card to pin, no Ed25519 key,
         // an OAuth2 bearer instead of a signed receipt.
@@ -1035,6 +1047,8 @@ export const env = createEnv({
         AGENT_MANAGED_AGENTS_HOSTED_API_KEY: process.env.AGENT_MANAGED_AGENTS_HOSTED_API_KEY,
         AUTOMATION_WEB_EVENTS_ENABLED: process.env.AUTOMATION_WEB_EVENTS_ENABLED,
         EVALS_CARD_HIDDEN_ORG_SLUGS: process.env.EVALS_CARD_HIDDEN_ORG_SLUGS,
+        EVALS_SWITCH_ORG_SLUGS: process.env.EVALS_SWITCH_ORG_SLUGS,
+        EVALS_SWITCH_READ_TOKEN: process.env.EVALS_SWITCH_READ_TOKEN,
         AGENT_FLUE_MODEL: process.env.AGENT_FLUE_MODEL,
         AGENT_FLUE_WORKER_MODEL: process.env.AGENT_FLUE_WORKER_MODEL,
         AGENT_TOOL_RUNNER_MODEL_BALANCED: process.env.AGENT_TOOL_RUNNER_MODEL_BALANCED,
