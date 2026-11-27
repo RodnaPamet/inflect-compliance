@@ -233,6 +233,13 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             // the peer itself (credential, signature, admission) — triaged
             // PROTOCOL_CREDENTIAL in api-route-has-some-authorization.
             'a2a',
+            // Owner decision 2026-11-27 — `/api/evals/nightly-switches`, the
+            // LLM evaluation nightlies' switch read. The caller is a GitHub
+            // Actions runner with no session; it reads three platform-level
+            // booleans (`EvalNightlySwitch`, no tenant column) behind a bearer
+            // token checked in the handler (`verifyEvalsSwitchReadToken`). It
+            // touches no tenant data and resolves no RequestContext.
+            'evals',
         ]);
 
         // Legacy routes are allowed as documented thin wrappers
