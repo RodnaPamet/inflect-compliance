@@ -27,6 +27,7 @@ import { promisify } from 'node:util';
 import type { FixtureExpectation } from './fixtures';
 import {
     PARSE_RECORD_FORMAT,
+    measurementFaults,
     parseMemUsage,
     renderSummary,
     scoreDocument,
@@ -153,6 +154,13 @@ function summarize(): void {
     // cannot read a step summary (the retriever benchmark's rule).
     console.log(md);
     if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, md + '\n');
+    // Printed first, judged second: the summary of a broken run is the
+    // diagnosis, so it is shown before the step fails on it.
+    const faults = measurementFaults(record);
+    if (faults.length > 0) {
+        for (const f of faults) console.log(`::error::Not a measurement: ${f}`);
+        process.exitCode = 1;
+    }
 }
 
 const command = process.argv[2];

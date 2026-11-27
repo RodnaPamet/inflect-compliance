@@ -3,7 +3,7 @@
  * service the operator runs inside the deployment (D-L4-4, owner 2026-11-11).
  *
  * It speaks docling-serve's `POST /v1/convert/source` with the document as a
- * base64 `file_sources` entry and asks for the `json` format only, then reads
+ * base64 `file` source and asks for the `json` format only, then reads
  * the answer's `DoclingDocument` into the seam's {@link ParsedDocument}. The
  * service is stateless by design — a document goes in, structure comes out,
  * nothing is kept — which is the property RAGFlow's dataset lifecycle had to
@@ -80,6 +80,13 @@ export const DOCLING_MIME_EXTENSIONS: Readonly<Record<string, string>> = {
  * The request body. `to_formats: ['json']` only: the Markdown and HTML
  * renderings would multiply the bytes read for nothing this client uses.
  * `image_export_mode: 'placeholder'` keeps page images out of the answer.
+ *
+ * `sources` with `kind: 'file'` is docling-serve's v1 shape. The client used to
+ * send `file_sources`, which the service no longer accepts: v1.38.2 answered
+ * every request 422, measured by the parse-fidelity workflow on its first run
+ * (2026-11-27). `target: { kind: 'inbody' }` is stated rather than left to the
+ * service: an omitted target resolves to a presigned URL wherever the
+ * deployment has artifact storage, and this client reads only an in-body answer.
  */
 export function buildConvertRequest(bytes: Uint8Array, ext: string): string {
     return JSON.stringify({
@@ -88,9 +95,10 @@ export function buildConvertRequest(bytes: Uint8Array, ext: string): string {
             do_ocr: true,
             image_export_mode: 'placeholder',
         },
-        file_sources: [
-            { base64_string: Buffer.from(bytes).toString('base64'), filename: `document.${ext}` },
+        sources: [
+            { kind: 'file', base64_string: Buffer.from(bytes).toString('base64'), filename: `document.${ext}` },
         ],
+        target: { kind: 'inbody' },
     });
 }
 

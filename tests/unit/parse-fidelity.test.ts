@@ -26,6 +26,7 @@ import {
 } from '../../scripts/parse-fidelity/fixtures';
 import {
     PARSE_RECORD_FORMAT,
+    measurementFaults,
     normalise,
     parseMemUsage,
     renderSummary,
@@ -263,6 +264,27 @@ describe('summarizeRecord', () => {
         expect(md).toContain('| All 1 documents | 50.0% (1/2) | 66.7% (4/6) | 66.7% (2/3) |');
         expect(md).toContain('| Peak memory while parsing | 2500 MiB |');
         expect(md).toContain('- a: "1 purpose"');
+    });
+});
+
+describe('measurementFaults', () => {
+    const refused = (id: string, outcome: string) => kase(id, { outcome, counts: scoreDocument(EXPECTED, null) });
+
+    it('passes a run where the service answered, even when a document failed to convert', () => {
+        expect(measurementFaults(record([kase('a'), refused('b', 'PARSE_FAILED'), refused('c', 'TIMEOUT')]))).toEqual([]);
+    });
+
+    it('fails the run the first dispatch produced: every request refused 422', () => {
+        expect(measurementFaults(record([refused('a', 'UPSTREAM_REFUSED'), refused('b', 'UPSTREAM_REFUSED')]))).toEqual([
+            'a: UPSTREAM_REFUSED',
+            'b: UPSTREAM_REFUSED',
+            'every document was refused (2 of 2)',
+        ]);
+    });
+
+    it('fails on one refusal about the request, and on a run with nothing converted', () => {
+        expect(measurementFaults(record([kase('a'), refused('b', 'CONTRACT_VIOLATION')]))).toEqual(['b: CONTRACT_VIOLATION']);
+        expect(measurementFaults(record([refused('a', 'PARSE_FAILED')]))).toEqual(['every document was refused (1 of 1)']);
     });
 });
 

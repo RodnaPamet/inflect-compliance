@@ -221,7 +221,14 @@ describe('the Docling backend maps a whole conversion and nothing else', () => {
         const headers = calls[0].init.headers as Record<string, string>;
         expect(headers['x-api-key']).toBe('k-123');
         const body = JSON.parse(String(calls[0].init.body));
-        expect(body.file_sources).toEqual([{ base64_string: Buffer.from(PDF.bytes).toString('base64'), filename: 'document.pdf' }]);
+        expect(body.sources).toEqual([
+            { kind: 'file', base64_string: Buffer.from(PDF.bytes).toString('base64'), filename: 'document.pdf' },
+        ]);
+        // The v1 shape: `file_sources` is refused 422 by docling-serve v1.38.2.
+        expect(body).not.toHaveProperty('file_sources');
+        // Stated, never left to the service, which would pick a presigned URL
+        // wherever artifact storage is on.
+        expect(body.target).toEqual({ kind: 'inbody' });
         expect(body.options.to_formats).toEqual(['json']);
         expect(String(calls[0].init.body)).not.toContain('Board minutes');
     });
