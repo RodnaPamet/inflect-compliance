@@ -3,7 +3,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { BG_DICTIONARIES } from '@/data/content-i18n/bg';
+import { BG_DICTIONARY_FILES, bgDictionaries } from '@/data/content-i18n/bg';
 import { localizeContentText, translateContentText, translateContentTexts } from '@/lib/content-i18n/dictionary';
 import { catalogueStrings } from '../../../scripts/content-i18n/sources';
 import { GENERIC_TEMPLATE_TASK_TITLES } from '../../../prisma/generic-template-tasks';
@@ -14,7 +14,10 @@ describe('Bulgarian content dictionaries', () => {
     it('every JSON file in the folder is registered in the index', () => {
         const files = fs.readdirSync(DIR).filter((f) => f.endsWith('.json')).map((f) => f.replace(/\.json$/, '')).sort();
         // `generic-tasks` is built in code from the titles' single owner.
-        expect(Object.keys(BG_DICTIONARIES).filter((k) => k !== 'generic-tasks').sort()).toEqual(files);
+        expect([...BG_DICTIONARY_FILES].sort()).toEqual(files);
+        // ...and every one of them loads: a file that fails to parse is logged
+        // and skipped at runtime, so this is where it has to fail.
+        expect(Object.keys(bgDictionaries()).filter((k) => k !== 'generic-tasks').sort()).toEqual(files);
     });
 
     // A heading that is only a proper name ("ISO/IEC 27001", "SOC 2") reads the
@@ -23,7 +26,7 @@ describe('Bulgarian content dictionaries', () => {
     it('every entry translates a string the catalogues hold, into Cyrillic or as the same name, keeping its placeholders', () => {
         const known = new Set([...catalogueStrings().values()].flat());
         const problems: string[] = [];
-        for (const [name, dictionary] of Object.entries(BG_DICTIONARIES)) {
+        for (const [name, dictionary] of Object.entries(bgDictionaries())) {
             for (const [source, target] of Object.entries(dictionary)) {
                 if (!known.has(source.trim())) problems.push(`${name}: not a catalogue string: ${source.slice(0, 60)}`);
                 if (!/[Ѐ-ӿ]/.test(target) && target !== source) problems.push(`${name}: no Cyrillic in the translation of: ${source.slice(0, 60)}`);

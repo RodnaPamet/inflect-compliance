@@ -195,6 +195,12 @@ COPY --from=builder /app/prisma ./prisma
 # dist/sync-framework-libraries.mjs at container start (the entrypoint's
 # step 1f). Without them the sync finds no libraries and imports nothing.
 COPY --from=builder /app/src/data/libraries ./src/data/libraries
+# The Bulgarian catalogue-content dictionaries (#5996), read from disk by
+# `bgDictionaries` in src/data/content-i18n/bg/index.ts at `process.cwd()` on
+# the first lookup. They are not imported, because 20 MB of JSON compiled into
+# the server bundle took the build past its memory ceiling. Without them every
+# catalogue text shows in English.
+COPY --from=builder /app/src/data/content-i18n ./src/data/content-i18n
 # The agent skills, read from disk by `loadSkillCorpus` in
 # src/lib/agentic/flue/skills/index.ts at `process.cwd()` on every Flue run
 # start, in the web tier and the worker alike. Without them every start fails

@@ -41,6 +41,8 @@ under "Terms settled across families when the long texts were translated".
 | `scripts/content-i18n/glossary-bg.md` | Gains the long-text style rules, the fixed long-text terms and the cross-family decisions. |
 | `tests/guardrails/content-i18n-coverage.test.ts` | Now asserts that no catalogue string is untranslated, in any family. |
 | `tests/guardrails/content-i18n-coverage.baseline.json` | Deleted: the per-family countdown reached zero. |
+| `src/data/content-i18n/bg/index.ts` | Reads the dictionaries from disk on first use instead of importing them. |
+| `Dockerfile` | Copies `src/data/content-i18n` into the runtime image, beside `src/data/libraries`. |
 
 ## Decisions
 
@@ -60,6 +62,15 @@ under "Terms settled across families when the long texts were translated".
 - **"Open" is never „открит“** for an open item, because it reads as
   "discovered"; it is „неприключен“. Every remaining „открит“ was checked
   against its English source: each one means "found" or "open sources".
+- **The dictionaries are read from disk, not imported.** When the long texts
+  were complete, the dictionaries reached 20 MB of JSON. Imported, that JSON
+  was compiled into every server chunk that reaches the lookup. The final
+  batch's build peaked at 12,683 MB against the 12,288 MB ceiling, so the
+  index now reads the files at `process.cwd()` on first use. The runtime image
+  copies the folder, as it does for the framework libraries, and
+  `catalogue-reaches-production.test.ts` holds that copy. A file that cannot
+  be read is logged and its strings show in English. The unit test loads
+  every file, so a broken one fails CI rather than a page.
 - **The translation is display-only.** A tenant-edited text is shown as
   written. A source string that changes loses its translation until the
   dictionary gains the new text, and the coverage test now fails CI when that
