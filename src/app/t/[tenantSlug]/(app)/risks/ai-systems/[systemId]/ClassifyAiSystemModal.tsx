@@ -101,9 +101,10 @@ export function ClassifyAiSystemModal({
     const [error, setError] = useState<string | null>(null);
 
     const notApplicable: ComboboxOption = { value: NOT_APPLICABLE, label: tx('aiSystems.detail.classifyModal.notApplicable') };
-    const toOptions = (opts: readonly { id: string; clause: string; label: string }[]): ComboboxOption[] => [
+    const tEu = useTranslations('euAiActOptions');
+    const toOptions = (opts: readonly { id: string }[]): ComboboxOption[] => [
         notApplicable,
-        ...opts.map((o) => ({ value: o.id, label: `${o.clause} — ${o.label}` })),
+        ...opts.map((o) => ({ value: o.id, label: tEu(o.id as Parameters<typeof tEu>[0]) })),
     ];
 
     const body = classificationRequestBody(draft);

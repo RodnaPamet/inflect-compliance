@@ -49,6 +49,16 @@ import { partitionByScope, resolveRequirementScope } from '../framework/pack-sco
  * this re-export is how server callers reach them, and is the reason a
  * renderer never needs to know what 80 and 50 are.
  */
+
+/**
+ * "<code>: <name>", or the name alone when the row has no code: a control
+ * created by hand need not carry one, and the title read "null: …". The page
+ * splits a coded title at ": " to look the name up in the catalogue.
+ */
+function codedTitle(code: string | null | undefined, name: string): string {
+    return code ? `${code}: ${name}` : name;
+}
+
 export {
     readinessBand,
     readinessVariant,
@@ -475,7 +485,7 @@ async function computeGenericReadiness(
             .slice(0, limits.controls)
             .forEach((c) => gaps.push({
                 type: 'MISSING_EVIDENCE', severity: 'MEDIUM',
-                title: `${c.code ?? ''}: ${c.name}`, details: 'No active evidence attached (archived/expired excluded)', detail: { code: 'NO_EVIDENCE' }, entityId: c.id,
+                title: codedTitle(c.code, c.name), details: 'No active evidence attached (archived/expired excluded)', detail: { code: 'NO_EVIDENCE' }, entityId: c.id,
             }));
     }
     const evidenceScore =
@@ -617,7 +627,7 @@ async function computeISO27001Readiness(ctx: RequestContext, cycle: AuditCycle, 
         .slice(0, limits.controls)
         .forEach((c) => gaps.push({
             type: 'MISSING_EVIDENCE', severity: 'MEDIUM',
-            title: `${c.code}: ${c.name}`, details: 'No active evidence attached (archived/expired excluded)', detail: { code: 'NO_EVIDENCE' }, entityId: c.id,
+            title: codedTitle(c.code, c.name), details: 'No active evidence attached (archived/expired excluded)', detail: { code: 'NO_EVIDENCE' }, entityId: c.id,
         }));
 
     // 4) Overdue tasks
@@ -791,7 +801,7 @@ async function computeNIS2Readiness(ctx: RequestContext, cycle: AuditCycle, limi
         .slice(0, limits.controls)
         .forEach((c) => gaps.push({
             type: 'MISSING_EVIDENCE', severity: 'MEDIUM',
-            title: `${c.code}: ${c.name}`, details: 'No active evidence for this control (archived/expired excluded)', detail: { code: 'NO_EVIDENCE' }, entityId: c.id,
+            title: codedTitle(c.code, c.name), details: 'No active evidence for this control (archived/expired excluded)', detail: { code: 'NO_EVIDENCE' }, entityId: c.id,
         }));
 
     // 3) Policy governance — a NIS2-scoped control should be backed by a
@@ -808,7 +818,7 @@ async function computeNIS2Readiness(ctx: RequestContext, cycle: AuditCycle, limi
         .slice(0, limits.controls)
         .forEach((c) => gaps.push({
             type: 'MISSING_POLICY', severity: 'MEDIUM',
-            title: `${c.code}: ${c.name}`, details: 'No governing policy linked to this control', detail: { code: 'NO_POLICY' }, entityId: c.id,
+            title: codedTitle(c.code, c.name), details: 'No governing policy linked to this control', detail: { code: 'NO_POLICY' }, entityId: c.id,
         }));
 
     // 4) Open issues

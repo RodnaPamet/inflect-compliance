@@ -14,6 +14,7 @@
  * explainer + the launch CTA. The page resolves the destination href
  * and passes it in — this primitive never builds tenant URLs itself.
  */
+import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { cn } from '@inflect/ui/lib/cn';
 
@@ -25,19 +26,18 @@ export interface AiAssistRailProps {
     aiHref: string;
 }
 
-const STEPS: ReadonlyArray<{ n: number; label: string }> = [
-    { n: 1, label: 'Pick the assets in scope' },
-    { n: 2, label: 'AI drafts candidate risks' },
-    { n: 3, label: 'Review, edit, and apply' },
-];
+const STEPS = [
+    { n: 1, key: 'step1' },
+    { n: 2, key: 'step2' },
+    { n: 3, key: 'step3' },
+] as const;
 
 export function AiAssistRail({ aiHref }: AiAssistRailProps) {
+    const t = useTranslations('risks.aiAssistRail');
     return (
         <div className="space-y-default" data-testid="ai-assist-rail">
             <p className="text-sm text-content-muted">
-                Let AI surface candidate risks from your asset inventory
-                — each one scored, with a rationale and suggested
-                controls.
+                {t('intro')}
             </p>
 
             <ol className="space-y-tight">
@@ -52,7 +52,7 @@ export function AiAssistRail({ aiHref }: AiAssistRailProps) {
                         >
                             {step.n}
                         </span>
-                        {step.label}
+                        {t(step.key)}
                     </li>
                 ))}
             </ol>
@@ -66,7 +66,7 @@ export function AiAssistRail({ aiHref }: AiAssistRailProps) {
                 data-testid="ai-assist-rail-cta"
             >
                 <Sparkle3 className="h-4 w-4" aria-hidden="true" />
-                Generate risk suggestions
+                {t('cta')}
             </Link>
         </div>
     );
