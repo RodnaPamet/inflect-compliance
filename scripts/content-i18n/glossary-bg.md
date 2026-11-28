@@ -119,6 +119,10 @@ consultant writing for a client: precise, formal, natural, never word-for-word.
 | cybersecurity incident | инцидент, свързан с киберсигурността | the form of the shipped NIS2 texts |
 | exercise inject | сценарийно съобщение | |
 | open sources (OSINT) | открити източници | the one sense in which „открит“ stays |
+| retention schedule (and "the schedule" meaning it) | таблица на сроковете за съхранение | owner decision 2026-11-28; never „график за съхранение“, which reads as a timetable. Feminine: agree participles and pronouns („одобрената таблица …, посочваща“, „в която“) |
+| authorisation (card payments: post-authorisation, the authorisation flow) | авторизация | owner decision 2026-11-28, the Bulgarian banking form. Access authorisation elsewhere stays „оторизация“ |
+| operating effectiveness | оперативна ефективност | owner decision 2026-11-28: kept |
+| significant deficiency / material weakness | съществен недостатък / съществена слабост | owner decision 2026-11-28: kept |
 
 # Glossary
 
