@@ -3479,7 +3479,7 @@
   "Walk each in-scope process and note every point where data leaves one system for another.": "Проследете стъпка по стъпка всеки процес в обхвата и отбележете всяка точка, в която данните преминават от една система в друга.",
   "Walk each override scenario past the person expected to detect it": "Обсъдете всеки сценарий за заобикаляне с лицето, от което се очаква да го открие",
   "Walk from the control register into the policy library so the framework's boundary is drawn from the controls that depend on it, rather than from whichever documents happen to exist.": "Тръгнете от регистъра на контролите към библиотеката с политики, така че границата на рамката да се очертае от контролите, които зависят от нея, а не от документите, които случайно съществуват.",
-  "Walk raters through worked examples before scoring opens": "Преминете с оценяващите през разработени примери, преди да започне оценяването",
+  "Walk raters through worked examples before scoring opens": "Преминете с оценяващите през подробни примери, преди да започне оценяването",
   "Walk the change through the process from transaction initiation to the ledger entry it produces.": "Проследете промяната през процеса – от иницииране на операцията до записването в главната книга, което тя поражда.",
   "Walk the holder through each control, the evidence it leaves and the limit that binds it.": "Запознайте заемащия длъжността с всеки контрол, доказателствата, които той оставя, и ограничението, което го обвързва.",
   "Walk the hosting inventory and name every instance of each in-scope system.": "Прегледайте описа на хостинга и посочете всеки екземпляр на всяка система в обхвата.",
