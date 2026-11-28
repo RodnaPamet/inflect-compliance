@@ -5269,7 +5269,8 @@
     "gapAnalysisHeading": "Gap analysis — {count} unmapped requirements",
     "noGaps": "Every requirement has at least one mapped control",
     "missingEvidenceHeading": "Controls missing evidence — {count}",
-    "riskTplMore": "+{count} more"
+    "riskTplMore": "+{count} more",
+    "sectionCoverageAria": "{section} coverage"
   },
   "riskReportTemplates": {
     "PORTFOLIO_SUMMARY": {
@@ -10465,7 +10466,8 @@
       "ariaLabel": "Frameworks",
       "coverageError": "Coverage couldn't be computed for this framework",
       "coverageUnknownShort": "—",
-      "coverageBelowOnePercent": "<1%"
+      "coverageBelowOnePercent": "<1%",
+      "coverageAria": "{name} coverage"
     },
     "kinds": {
       "isoStandard": "ISO standard",
@@ -12468,7 +12470,10 @@
       "behaviourScope": "Every agent-day the nightly fingerprint judged unlike the agent’s own baseline in the last {days} days (since {since}, UTC). Finding at z {finding}; latch threshold at z {latch}. Counts only, never content.",
       "behaviourUnscored": "The detector is on, but it has not scored any agent in this workspace yet.",
       "behaviourTruncated": "Only the newest {count} anomalies are shown; there are more in the window.",
-      "behaviourNone": "No anomalies in the window. The detector last scored a day on {day} (UTC)."
+      "behaviourNone": "No anomalies in the window. The detector last scored a day on {day} (UTC).",
+      "unobservableQuestion": {
+        "DIFF_EXPANSION": "whether the proposed content was looked at before it was approved"
+      }
     },
     "crumbDashboard": "Dashboard",
     "crumbAdmin": "Admin",
