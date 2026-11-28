@@ -52,6 +52,74 @@
 5. **AI system = „система с ИИ“**, inventory = „опис“, privacy = „неприкосновеност (на личния живот)“ with confidentiality = „поверителност“, unauthorized = „неразрешен“. These follow the official editions where the interface differs; the interface is aligned separately.
 6. **Every "(?)" in this file is settled for this run: use the term exactly as given.** Never copy "(?)" into a heading. If you are convinced a given term is wrong, still use it, and say so in your report.
 
+# Style rules for the long catalogue texts (descriptions, steps, guidance) — binding
+
+These texts are what a person reads on a control, requirement, task or risk page: a description,
+an objective, guidance, success criteria, a testing method, checklist steps, evidence hints, a
+question in a questionnaire. Translate them into the Bulgarian of a professional compliance
+consultant writing for a client: precise, formal, natural, never word-for-word.
+
+1. **Meaning first.** Say what the source says, completely, nothing added or left out. Re-order and
+   re-build sentences the way Bulgarian needs; never keep English word order for its own sake.
+2. **Terms from the glossary, always.** The glossary (below) fixes every domain term; the same English term is the same Bulgarian term in every
+   sentence. A heading that appears inside a text is written exactly as its translated heading.
+3. **Structure stays exactly as it is.** The same number of lines (line breaks), the same list markers
+   at the start of the same lines ("- ", "* ", "1."), the same paragraphs. Markdown (`**bold**`,
+   `` `code` ``, links) is kept, with only the visible words inside it translated.
+4. **Never translate:** URLs, e-mail addresses, file names and paths, commands, code, configuration
+   keys, HTTP headers, product names, standard and framework names, control and requirement codes
+   ("A.5.1", "CC6.1", "Art. 21(2)(a)" — see the heading rules for "Article"/"Член"), numbers and units,
+   `{placeholders}`. Acronyms follow the glossary's acronym table.
+5. **Register.** Instructions addressed to the reader use the polite imperative, 2nd person plural
+   ("Определете…", "Документирайте…"). Statements of what is required use the neutral passive or
+   "трябва да" as the source does ("Достъпът се преразглежда…", "Организацията трябва да…").
+   Keep "shall / must / should / may" distinctions: shall/must = "трябва да" / present passive;
+   should = "следва да"; may = "може да".
+6. **Bulgarian typography.** Quotation marks „…“; a dash between words " – " (en dash with spaces);
+   decimal comma; "e.g." = "напр.", "i.e." = "т.е.", "etc." = "и др.", "vs." = "срещу"; dates as in
+   the source. Do not add or remove a final full stop.
+7. **One output string per input string.** No notes, no alternatives, no explanations inside the text.
+8. **When the source is wrong or truncated,** translate what is there; never "fix" its content.
+
+## Fixed terms for long texts (binding in every family)
+
+| English | Bulgarian | Note |
+|---|---|---|
+| open (item, action, issue, finding, exception, ticket, gap) | неприключен | never „открит“: it reads as "discovered". "open a ticket / record" = „регистрирайте заявка / запис“ |
+| ticket | заявка | "ticket queue" = „опашка със заявки“ |
+| Evidence: / Analysis: / Output: (labels in testing methods) | Доказателства: / Анализ: / Резултат: | the label words only; keep the colon |
+| population (sampling) / sample | съвкупност / извадка | "select a sample of N" = „Изберете извадка от N“ |
+| re-perform | изпълнете повторно | |
+| sign off / sign-off | одобрете писмено / писмено одобрение | |
+| runbook / playbook | наръчник / сценарий за действие | |
+| staging (environment) | предпроизводствена среда | |
+| reviewer / approver / preparer | преглеждащ / одобряващ / изготвящ | |
+| workpaper | работен документ | |
+| tracker | регистър за проследяване | |
+| roster | списък | |
+| ageing (of items) | анализ по давност | |
+| Optional (a control marked optional) | Незадължителен (agrees with "контрол") | |
+| English gloss in brackets | do not add one | write „изрично съгласие“, not „изрично съгласие (opt-in)“ |
+
+## Terms settled across families when the long texts were translated (2026-11-28; binding)
+
+| English | Bulgarian | Note |
+|---|---|---|
+| timestamp | времеви печат | the eIDAS term; never „времева отметка“, „времева марка“, „времеви маркер“ or „времево клеймо“ |
+| chain of custody | верига на съхранение | never „верига на попечителство“ |
+| custody (standalone) / custodian | отговорност за съхранението / отговорник (за съхранението) | „попечител“ only for a financial custodian (custodian bank) |
+| worked example | подробен пример | never the calque „разработен пример“ |
+| sub-processor | подизпълнител (по обработването на лични данни) | not „подобработващ“ |
+| cable schedule | кабелна таблица | |
+| patch panel / patch room / patching | комутационен панел / комутационно помещение / комутация | not „пач панел“, „кросово помещение“, „кросиране“ |
+| risk appetite | апетит за риск | |
+| grouping requirement (a requirement that groups others) | групиращо изискване | |
+| detective control | разкриващ контрол | |
+| commit (version control) | къмит | |
+| cybersecurity incident | инцидент, свързан с киберсигурността | the form of the shipped NIS2 texts |
+| exercise inject | сценарийно съобщение | |
+| open sources (OSINT) | открити източници | the one sense in which „открит“ stays |
+
 # Glossary
 
 **How to use it.** Look the English term up in "Core terms"; the Bulgarian column is the term, the note says when another word applies (another sense, or an official title). A family section (below) overrides the core table inside that family only. Nouns are given in the singular, indefinite; inflect as the heading needs. `(?)` at the start of a note marks a term that is decided but still doubtful (see "Open questions"): use the term, never copy the mark.

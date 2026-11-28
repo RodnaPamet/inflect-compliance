@@ -13,7 +13,7 @@
  * Server-only: the dictionaries are large. The client asks through
  * `POST /api/t/:slug/content-translations`.
  */
-import { BG_DICTIONARIES } from '@/data/content-i18n/bg';
+import { bgDictionaries } from '@/data/content-i18n/bg';
 import { DEFAULT_LOCALE, type Locale } from '@/lib/locale-constants';
 import { CONTENT_TRANSLATION_MAX_CHARS, contentKey } from './limits';
 
@@ -22,7 +22,7 @@ let bgIndex: Map<string, string> | null = null;
 function bulgarian(): Map<string, string> {
     if (bgIndex) return bgIndex;
     const index = new Map<string, string>();
-    for (const dictionary of Object.values(BG_DICTIONARIES)) {
+    for (const dictionary of Object.values(bgDictionaries())) {
         for (const [source, target] of Object.entries(dictionary)) {
             const key = contentKey(source);
             // An empty target is "not translated yet", never a translation.

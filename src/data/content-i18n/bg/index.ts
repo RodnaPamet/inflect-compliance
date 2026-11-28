@@ -2,65 +2,78 @@
  * The Bulgarian content dictionaries (#5996), one JSON file per catalogue:
  * `{ "<English source text>": "<Bulgarian text>" }`.
  *
- * Imported statically so the server bundle carries them (a runtime `fs` read
- * would depend on output file tracing). A JSON file in this folder that is
- * missing from the list fails `tests/unit/content-i18n/dictionary.test.ts`.
- * `generic-tasks` is the one dictionary built in code (see its header).
+ * Read from disk on first use, NOT imported. Imported, the 20 MB of JSON was
+ * compiled into every server chunk that reaches the lookup, and the production
+ * build went past its memory ceiling once the long texts landed. The runtime
+ * image copies this folder (Dockerfile, held by
+ * `tests/guardrails/catalogue-reaches-production.test.ts`), and both tiers run
+ * in `/app`, so the path resolves against the working directory there as it
+ * does in a checkout.
+ *
+ * A JSON file in this folder that is missing from `BG_DICTIONARY_FILES` fails
+ * `tests/unit/content-i18n/dictionary.test.ts`. `generic-tasks` is the one
+ * dictionary built in code (see its header).
+ *
+ * Server-only (`node:fs`): the client asks through
+ * `POST /api/t/:slug/content-translations`.
  */
+import fs from 'node:fs';
+import path from 'node:path';
+import { logger } from '@/lib/observability';
 import { genericTasks } from './generic-tasks';
-import aiuc1 from './aiuc-1.json';
-import cisV8 from './cis-v8.json';
-import cosoIcf from './coso-icf.json';
-import dora from './dora.json';
-import euAiAct from './eu-ai-act.json';
-import euUasOps from './eu-uas-ops.json';
-import finosAigf from './finos-aigf.json';
-import gdpr from './gdpr.json';
-import generic from './generic.json';
-import imdaMgf from './imda-mgf.json';
-import internalControls from './internal-controls.json';
-import iso27001 from './iso-27001.json';
-import iso27701 from './iso-27701.json';
-import iso42001 from './iso-42001.json';
-import isoClauses from './iso-clauses.json';
-import nis2 from './nis2.json';
-import nistCsf from './nist-csf.json';
-import nistPrivacy from './nist-privacy.json';
-import nistSsdf from './nist-ssdf.json';
-import owaspAgentic from './owasp-agentic.json';
-import owaspAisvs from './owasp-aisvs.json';
-import owaspAsvs from './owasp-asvs.json';
-import policyTemplates from './policy-templates.json';
-import shared from './shared.json';
-import soc2 from './soc2.json';
-import vendorQuestionnaires from './vendor-questionnaires.json';
 
-export const BG_DICTIONARIES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-    'generic-tasks': genericTasks,
-    'aiuc-1': aiuc1,
-    'cis-v8': cisV8,
-    'coso-icf': cosoIcf,
-    dora,
-    'eu-ai-act': euAiAct,
-    'eu-uas-ops': euUasOps,
-    'finos-aigf': finosAigf,
-    gdpr,
-    generic,
-    'imda-mgf': imdaMgf,
-    'internal-controls': internalControls,
-    'iso-27001': iso27001,
-    'iso-27701': iso27701,
-    'iso-42001': iso42001,
-    'iso-clauses': isoClauses,
-    nis2,
-    'nist-csf': nistCsf,
-    'nist-privacy': nistPrivacy,
-    'nist-ssdf': nistSsdf,
-    'owasp-agentic': owaspAgentic,
-    'owasp-aisvs': owaspAisvs,
-    'owasp-asvs': owaspAsvs,
-    'policy-templates': policyTemplates,
-    shared,
-    soc2,
-    'vendor-questionnaires': vendorQuestionnaires,
-};
+export const BG_DICTIONARY_FILES = [
+    'aiuc-1',
+    'cis-v8',
+    'coso-icf',
+    'dora',
+    'eu-ai-act',
+    'eu-uas-ops',
+    'finos-aigf',
+    'gdpr',
+    'generic',
+    'imda-mgf',
+    'internal-controls',
+    'iso-27001',
+    'iso-27701',
+    'iso-42001',
+    'iso-clauses',
+    'nis2',
+    'nist-csf',
+    'nist-privacy',
+    'nist-ssdf',
+    'owasp-agentic',
+    'owasp-aisvs',
+    'owasp-asvs',
+    'policy-templates',
+    'shared',
+    'soc2',
+    'vendor-questionnaires',
+] as const;
+
+type Dictionary = Readonly<Record<string, string>>;
+
+let loaded: Readonly<Record<string, Dictionary>> | null = null;
+
+/**
+ * Every dictionary, keyed by family. A file that cannot be read or parsed is
+ * logged and left out, so its strings show in English rather than failing the
+ * page that asked; the unit test loads every file, so CI never ships one.
+ */
+export function bgDictionaries(): Readonly<Record<string, Dictionary>> {
+    if (loaded) return loaded;
+    const dir = path.join(process.cwd(), 'src/data/content-i18n/bg');
+    const out: Record<string, Dictionary> = { 'generic-tasks': genericTasks };
+    for (const name of BG_DICTIONARY_FILES) {
+        try {
+            out[name] = JSON.parse(fs.readFileSync(path.join(dir, `${name}.json`), 'utf8')) as Dictionary;
+        } catch (err) {
+            logger.error('content-i18n: a Bulgarian dictionary could not be read', {
+                dictionary: name,
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    }
+    loaded = out;
+    return out;
+}
