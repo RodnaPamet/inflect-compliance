@@ -73,7 +73,7 @@ export function SelectionSummaryPanel({
                     {count}
                 </span>
                 <span className="text-sm text-content-muted">
-                    {word} selected
+                    {tTable('nounSelected', { noun: word })}
                 </span>
             </p>
 

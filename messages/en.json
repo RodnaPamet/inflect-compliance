@@ -77,7 +77,8 @@
       "context": "Context",
       "detailSections": "Detail sections",
       "editColumns": "Edit columns",
-      "noItemsFound": "No items found"
+      "noItemsFound": "No items found",
+      "nounSelected": "{noun} selected"
     },
     "ui": {
       "shortcutUnpinNode": "Unpin the diagram node",
@@ -222,8 +223,8 @@
         "title": "Last refreshed {age}. Threshold: green <{warn}d, amber <{stale}d, red {stale}d+."
       },
       "sections": "Sections",
-      "noItems": "No items.",
-      "noTraceabilityLinks": "No traceability links to display."
+      "noItems": "No items",
+      "noTraceabilityLinks": "No traceability links to display"
     },
     "calendar": {
       "prevYear": "Go to previous year",
