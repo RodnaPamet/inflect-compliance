@@ -207,7 +207,23 @@
       },
       "noData": "No data",
       "expandAll": "Expand all",
-      "collapseAll": "Collapse all"
+      "collapseAll": "Collapse all",
+      "freshness": {
+        "fresh": "Fresh",
+        "stale": "Stale",
+        "outdated": "Outdated",
+        "unknown": "No refresh recorded",
+        "today": "today",
+        "yesterday": "yesterday",
+        "daysAgo": "{days}d ago",
+        "monthsAgo": "{months}mo ago",
+        "yearsAgo": "{years}y ago",
+        "titleUnknown": "No refresh timestamp on this evidence.",
+        "title": "Last refreshed {age}. Threshold: green <{warn}d, amber <{stale}d, red {stale}d+."
+      },
+      "sections": "Sections",
+      "noItems": "No items.",
+      "noTraceabilityLinks": "No traceability links to display."
     },
     "calendar": {
       "prevYear": "Go to previous year",
@@ -5114,7 +5130,9 @@
       "saving": "Saving…",
       "saved": "Finding saved.",
       "saveFailedGeneric": "Failed to save finding"
-    }
+    },
+    "resourceOne": "finding",
+    "resourceMany": "findings"
   },
   "reports": {
     "title": "Reports & Exports",
@@ -9843,7 +9861,10 @@
     "filterList": {
       "clearFilters": "Clear filters",
       "shortcutClearAll": "Clear all filters",
-      "removeFilter": "Remove the {label} filter"
+      "removeFilter": "Remove the {label} filter",
+      "operatorIs": "is",
+      "operatorIsNot": "is not",
+      "startTyping": "Start typing to search…"
     },
     "dataTableCards": {
       "actions": "Actions",
@@ -15324,6 +15345,20 @@
       "OWNER_SUBJECT_NEEDS_OWNER_CLOSER": "This review revokes or changes an Owner's access, which only an Owner can do. Ask an Owner to close it.",
       "AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER": "This review revokes or changes an AI admin's access, which only an Owner can do, as on the members page. Ask an Owner to close it.",
       "CAMPAIGN_SUBJECT_MAY_NOT_DECIDE_OWN_ACCESS": "You can't decide on your own access. The review's reviewer, or another Owner or Admin, decides that row."
+    },
+    "resource": {
+      "agentOne": "agent",
+      "agentMany": "agents",
+      "accountOne": "account",
+      "accountMany": "accounts",
+      "subjectOne": "subject",
+      "subjectMany": "subjects",
+      "narrowingOne": "narrowing",
+      "narrowingMany": "narrowings",
+      "withdrawalOne": "withdrawal",
+      "withdrawalMany": "withdrawals",
+      "sampleOne": "sample",
+      "sampleMany": "samples"
     }
   },
   "frameworkUpdates": {
@@ -15782,7 +15817,9 @@
     },
     "linkedTasks": {
       "empty": "No linked tasks",
-      "task": "Task"
+      "task": "Task",
+      "resourceOne": "task",
+      "resourceMany": "tasks"
     },
     "linkedTaskModal": {
       "title": "Create Task",

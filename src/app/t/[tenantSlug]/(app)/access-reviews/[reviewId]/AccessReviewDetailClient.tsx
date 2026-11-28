@@ -1771,7 +1771,7 @@ export function AccessReviewDetailClient({
                     columns={agentColumns}
                     getRowId={(d) => d.id}
                     emptyState={t('rosterEmpty')}
-                    resourceName={(p) => (p ? 'agents' : 'agent')}
+                    resourceName={(p) => (p ? t('resource.agentMany') : t('resource.agentOne'))}
                     data-testid="access-review-agent-table"
                 />
             ) : isConnected ? (
@@ -1780,7 +1780,7 @@ export function AccessReviewDetailClient({
                     columns={connectedColumns}
                     getRowId={(d) => d.id}
                     emptyState={t('rosterEmpty')}
-                    resourceName={(p) => (p ? 'accounts' : 'account')}
+                    resourceName={(p) => (p ? t('resource.accountMany') : t('resource.accountOne'))}
                     data-testid="access-review-connected-table"
                 />
             ) : (
@@ -1789,7 +1789,7 @@ export function AccessReviewDetailClient({
                     columns={decisionColumns}
                     getRowId={(d) => d.id}
                     emptyState={t('rosterEmpty')}
-                    resourceName={(p) => (p ? 'subjects' : 'subject')}
+                    resourceName={(p) => (p ? t('resource.subjectMany') : t('resource.subjectOne'))}
                     data-testid="access-review-roster-table"
                 />
             )}
@@ -1807,7 +1807,7 @@ export function AccessReviewDetailClient({
                         columns={narrowingColumns}
                         getRowId={(n) => n.id}
                         emptyState={t('rosterEmpty')}
-                        resourceName={(p) => (p ? 'narrowings' : 'narrowing')}
+                        resourceName={(p) => (p ? t('resource.narrowingMany') : t('resource.narrowingOne'))}
                         data-testid="access-review-agent-narrowings-table"
                     />
                 </section>
@@ -1827,7 +1827,7 @@ export function AccessReviewDetailClient({
                         columns={withdrawalColumns}
                         getRowId={(w) => w.id}
                         emptyState={t('rosterEmpty')}
-                        resourceName={(p) => (p ? 'withdrawals' : 'withdrawal')}
+                        resourceName={(p) => (p ? t('resource.withdrawalMany') : t('resource.withdrawalOne'))}
                         data-testid="access-review-agent-withdrawals-table"
                     />
                 </section>
@@ -1845,7 +1845,7 @@ export function AccessReviewDetailClient({
                         columns={sampleColumns}
                         getRowId={(x) => x.id}
                         emptyState={t('rosterEmpty')}
-                        resourceName={(p) => (p ? 'samples' : 'sample')}
+                        resourceName={(p) => (p ? t('resource.sampleMany') : t('resource.sampleOne'))}
                         data-testid="access-review-agent-sample-table"
                     />
                 </section>

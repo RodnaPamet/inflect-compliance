@@ -178,7 +178,7 @@ export function FrameworkMinimap({
             )}
         >
             <p className="text-xs font-semibold uppercase tracking-wider text-content-subtle px-1 mb-1">
-                Sections
+                {t('sections')}
             </p>
             {sections.map((section) => (
                 <MinimapRow

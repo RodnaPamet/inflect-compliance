@@ -40,6 +40,7 @@
  *     client'` so it never SSRs.
  */
 
+import { useTranslations } from 'next-intl';
 import { cn } from '@inflect/ui/lib/cn';
 import { cardVariants } from '@/components/ui/card';
 import {
@@ -332,6 +333,7 @@ export function GraphExplorer({
     nodeAsLinks = true,
     searchQuery = '',
 }: GraphExplorerProps) {
+    const tUi = useTranslations('common.ui');
     const highlight = useMemo(
         () => computeSearchHighlight(graph.nodes, graph.edges, searchQuery),
         [graph.nodes, graph.edges, searchQuery],
@@ -363,7 +365,7 @@ export function GraphExplorer({
                 )}
                 data-graph-empty="true"
             >
-                No traceability links to display.
+                {tUi('noTraceabilityLinks')}
             </div>
         );
     }

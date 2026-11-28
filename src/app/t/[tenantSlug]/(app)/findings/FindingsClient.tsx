@@ -514,7 +514,7 @@ function FindingsPageInner({
                             />
                         )
                     }
-                    resourceName={(p) => p ? 'findings' : 'finding'}
+                    resourceName={(p) => p ? tx('resourceMany') : tx('resourceOne')}
                     data-testid="findings-table"
                 />
             </ListPageShell.Body>

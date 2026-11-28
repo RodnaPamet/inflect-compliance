@@ -42,6 +42,7 @@
  *     for uncontrolled. Mixed use is rejected at the type level.
  */
 
+import { useTranslations } from 'next-intl';
 import { cn } from '@inflect/ui/lib/cn';
 import {
     type KeyboardEvent,
@@ -113,6 +114,7 @@ export type TreeViewProps<T extends TreeViewNode> = TreeViewBaseProps<T> &
 // ─── Component ─────────────────────────────────────────────────────────
 
 export function TreeView<T extends TreeViewNode>(props: TreeViewProps<T>) {
+    const tUi = useTranslations('common.ui');
     const {
         nodes,
         selectedId = null,
@@ -293,7 +295,7 @@ export function TreeView<T extends TreeViewNode>(props: TreeViewProps<T>) {
         >
             {rows.length === 0 ? (
                 <div className="px-3 py-6 text-sm text-content-subtle text-center">
-                    No items.
+                    {tUi('noItems')}
                 </div>
             ) : (
                 rows.map((row) => {

@@ -35,19 +35,8 @@ type FilterListProps = {
   className?: string;
 };
 
-function getOperatorLabel(operator: FilterOperator): string {
-  switch (operator) {
-    case "IS":
-    case "IS_ONE_OF":
-      return "is";
-
-    case "IS_NOT":
-    case "IS_NOT_ONE_OF":
-      return "is not";
-
-    default:
-      return "is";
-  }
+function isNegated(operator: FilterOperator): boolean {
+  return operator === "IS_NOT" || operator === "IS_NOT_ONE_OF";
 }
 
 export function FilterList({
@@ -509,7 +498,7 @@ function OperatorFilterPill({
                   setOperatorDropdownOpen(false);
                 }}
               >
-                is
+                {t("operatorIs")}
               </button>
               <button
                 type="button"
@@ -527,7 +516,7 @@ function OperatorFilterPill({
                   setOperatorDropdownOpen(false);
                 }}
               >
-                is not
+                {t("operatorIsNot")}
               </button>
             </div>
           }
@@ -542,11 +531,11 @@ function OperatorFilterPill({
               "active:scale-[0.98] motion-reduce:active:scale-100",
             )}
           >
-            {getOperatorLabel(operator)}
+            {isNegated(operator) ? t("operatorIsNot") : t("operatorIs")}
           </button>
         </Popover>
       ) : (
-        <div className="flex items-center px-3 py-2 text-content-muted">is</div>
+        <div className="flex items-center px-3 py-2 text-content-muted">{t("operatorIs")}</div>
       )}
 
       <Popover
