@@ -1,40 +1,41 @@
 /**
- * How much catalogue content still has no Bulgarian text (#5996).
+ * Every shipped catalogue string has Bulgarian text (#5996).
  *
  * `catalogueStrings()` lists every translatable string the shipped catalogues
- * hold, by family. A family's count here is how many of them the Bulgarian
- * dictionaries do not translate. The numbers only go DOWN: translating a
- * family lowers its entry (to 0, then the entry is deleted) in the same diff,
- * and a new English string with no translation raises a count and fails.
+ * hold, by family: headings (names, titles, categories, sections, labels,
+ * roles) and long texts (descriptions, guidance, steps, success criteria,
+ * testing methodology, owner hints). Each one must have an entry in
+ * `src/data/content-i18n/bg/<family>.json`, so a new or reworded English
+ * string comes with its Bulgarian text in the same diff.
  *
- * Exact equality, no allowance: slack would let new untranslated text in
- * behind a translation of something else.
+ * This replaced a per-family baseline that counted down while the long texts
+ * were being translated; it reached zero, so there is nothing left to count.
+ * Do not reintroduce an allowance: untranslated catalogue text shows as
+ * English to a Bulgarian reader, which is the defect #5996 fixed.
  */
 import { catalogueHeadings, catalogueStrings } from '../../scripts/content-i18n/sources';
 import { translateContentText } from '@/lib/content-i18n/dictionary';
-import baseline from './content-i18n-coverage.baseline.json';
 
 describe('catalogue content without a Bulgarian translation', () => {
-    const untranslated: Record<string, number> = {};
-    for (const [family, strings] of catalogueStrings()) {
-        const missing = strings.filter((s) => translateContentText('bg', s) === null).length;
-        if (missing > 0) untranslated[family] = missing;
-    }
-
-    it('equals the recorded baseline, family by family', () => {
-        expect(untranslated).toEqual(baseline);
+    it('leaves no catalogue string untranslated, in any family', () => {
+        const untranslated: Record<string, string[]> = {};
+        for (const [family, strings] of catalogueStrings()) {
+            const missing = strings.filter((s) => translateContentText('bg', s) === null);
+            // The first few per family are enough to find the edit that added them.
+            if (missing.length > 0) untranslated[family] = missing.slice(0, 5);
+        }
+        expect(untranslated).toEqual({});
     });
 
-    // Headings are what lists, menus and pickers show, so they have no
-    // baseline: a new framework, control or task name comes with its Bulgarian
-    // text in `src/data/content-i18n/bg/<family>.json`, in the same diff.
+    // Headings are what lists, menus and pickers show; checked on their own so
+    // a failure names them first.
     it('leaves no heading untranslated: every name, title, category, section, label and role', () => {
         const headings = catalogueHeadings();
         expect(headings.size).toBeGreaterThan(2000);
         expect([...headings].filter((s) => translateContentText('bg', s) === null).sort()).toEqual([]);
     });
 
-    it('the extractor finds the catalogues (the count is not vacuous)', () => {
+    it('the extractor finds the catalogues (the check is not vacuous)', () => {
         const all = [...catalogueStrings().values()].reduce((n, s) => n + s.length, 0);
         expect(all).toBeGreaterThan(30000);
     });

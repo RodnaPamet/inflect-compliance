@@ -1065,7 +1065,7 @@
   "Record the time each step took and every gap, with an owner for each fix.": "Запишете времето, което е отнела всяка стъпка, и всеки пропуск, като посочите отговорник за всяко коригиране.",
   "Record the tooling used to manage and deploy model versions.": "Запишете инструментите, използвани за управление и внедряване на версиите на моделите.",
   "Record the trigger for each designated class with the threshold value you set.": "Запишете задействащото условие за всеки определен клас заедно със зададената от вас прагова стойност.",
-  "Record the version or commit of every skill found.": "Запишете версията или комита на всяко открито умение.",
+  "Record the version or commit of every skill found.": "Запишете версията или къмита на всяко открито умение.",
   "Record what the vendor discloses about the sources and nature of its training data.": "Запишете какво оповестява доставчикът за източниците и естеството на своите обучителни данни.",
   "Record when the alert fired and who received it.": "Запишете кога е бил задействан сигналът и кой го е получил.",
   "Record where a treatment removes information the use case needs, and the decision.": "Запишете къде прилаганата мярка премахва информация, необходима за случая на употреба, и взетото решение.",
