@@ -65,47 +65,46 @@ interface FreshnessBadgeProps {
 // `bg-{success,warning,error}` tints sitting over `bg-default`.
 const LEVEL_STYLES: Record<
     FreshnessLevel,
-    { dot: string; text: string; bg: string; border: string; label: string }
+    { dot: string; text: string; bg: string; border: string }
 > = {
     fresh: {
         dot: 'bg-bg-success-emphasis',
         text: 'text-content-success',
         bg: 'bg-bg-success',
         border: 'border-border-success',
-        label: 'Fresh',
     },
     stale: {
         dot: 'bg-bg-warning-emphasis',
         text: 'text-content-warning',
         bg: 'bg-bg-warning',
         border: 'border-border-warning',
-        label: 'Stale',
     },
     outdated: {
         dot: 'bg-bg-error-emphasis',
         text: 'text-content-error',
         bg: 'bg-bg-error',
         border: 'border-border-error',
-        label: 'Outdated',
     },
     unknown: {
         dot: 'bg-content-subtle',
         text: 'text-content-muted',
         bg: 'bg-bg-muted',
         border: 'border-border-default',
-        label: 'No refresh recorded',
     },
 };
 
+type Translate = (key: string, values?: Record<string, string | number>) => string;
+
 /**
- * Pretty-print "n days/months ago" — short form that fits in a badge.
+ * Pretty-print "n days/months ago" — short form that fits in a badge, in the
+ * reader's language (`common.ui.freshness.*`).
  */
-function ageLabel(days: number): string {
-    if (days < 1) return 'today';
-    if (days === 1) return 'yesterday';
-    if (days < 30) return `${days}d ago`;
-    if (days < 365) return `${Math.round(days / 30)}mo ago`;
-    return `${Math.round(days / 365)}y ago`;
+function ageLabel(t: Translate, days: number): string {
+    if (days < 1) return t('freshness.today');
+    if (days === 1) return t('freshness.yesterday');
+    if (days < 30) return t('freshness.daysAgo', { days });
+    if (days < 365) return t('freshness.monthsAgo', { months: Math.round(days / 30) });
+    return t('freshness.yearsAgo', { years: Math.round(days / 365) });
 }
 
 export function FreshnessBadge({
@@ -125,6 +124,7 @@ export function FreshnessBadge({
     });
     const { level, ageDays } = result;
     const style = LEVEL_STYLES[level];
+    const label = t(`freshness.${level}`);
 
     // Native `title=` carries the threshold context to mouse / focus
     // users without forcing every consumer (or every test) to wire up
@@ -132,16 +132,16 @@ export function FreshnessBadge({
     // aria-label gives screen readers the level + age first.
     const titleContent =
         level === 'unknown'
-            ? 'No refresh timestamp on this evidence.'
-            : `Last refreshed ${ageLabel(ageDays!)}. Threshold: green <${warnAfterDays}d, amber <${staleAfterDays}d, red ${staleAfterDays}d+.`;
+            ? t('freshness.titleUnknown')
+            : t('freshness.title', { age: ageLabel(t, ageDays!), warn: warnAfterDays, stale: staleAfterDays });
 
     return (
         <span
             role="status"
             aria-label={
                 ageDays !== null
-                    ? t('freshnessLabelWithAge', { label: style.label, age: ageLabel(ageDays) })
-                    : t('freshnessLabel', { label: style.label })
+                    ? t('freshnessLabelWithAge', { label, age: ageLabel(t, ageDays) })
+                    : t('freshnessLabel', { label })
             }
             title={titleContent}
             data-freshness={level}
@@ -153,14 +153,14 @@ export function FreshnessBadge({
                 aria-hidden
             />
             {compact ? (
-                <span>{ageDays === null ? '—' : ageLabel(ageDays)}</span>
+                <span>{ageDays === null ? '—' : ageLabel(t, ageDays)}</span>
             ) : (
                 <>
                     <Activity size={12} aria-hidden />
-                    <span>{style.label}</span>
+                    <span>{label}</span>
                     {ageDays !== null && (
                         <span className="text-content-muted">
-                            · {ageLabel(ageDays)}
+                            · {ageLabel(t, ageDays)}
                         </span>
                     )}
                 </>

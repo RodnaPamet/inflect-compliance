@@ -517,7 +517,9 @@ function PackReports({
                     // rendered only its positive figures would read as complete.
                     <InlineNotice variant="warning" icon={null} data-testid="reports-approvals-unobservable">
                         {t('reports.approvalsUnobservable', {
-                            items: pack.approvals.body.unobservable.join(', '),
+                            items: pack.approvals.body.unobservable
+                                .map((code) => (code === 'DIFF_EXPANSION' ? t('reports.unobservableQuestion.DIFF_EXPANSION') : code))
+                                .join(', '),
                         })}
                     </InlineNotice>
                 )}

@@ -500,7 +500,7 @@ export function CalendarMonth({
                                                     'text-content-emphasis font-semibold',
                                             )}
                                             onClick={() => onSelectDate?.(ymd)}
-                                            aria-label={`${ymd}: ${dayEvents.length} event${dayEvents.length === 1 ? '' : 's'}`}
+                                            aria-label={`${ymd}: ${t('eventCount', { count: dayEvents.length })}`}
                                         >
                                             {cell.date.getUTCDate()}
                                         </button>

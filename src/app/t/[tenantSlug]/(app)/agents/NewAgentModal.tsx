@@ -116,9 +116,10 @@ export function NewAgentModal({
     const [apiError, setApiError] = useState<string | null>(null);
 
     const noneOption = { value: '', label: t('register.new.noneApplicable') };
-    const toClauseOptions = (opts: readonly { id: string; clause: string; label: string }[]) => [
+    const tEu = useTranslations('euAiActOptions');
+    const toClauseOptions = (opts: readonly { id: string }[]) => [
         noneOption,
-        ...opts.map((o) => ({ value: o.id, label: `${o.clause} — ${o.label}` })),
+        ...opts.map((o) => ({ value: o.id, label: tEu(o.id as Parameters<typeof tEu>[0]) })),
     ];
 
     const ownerOptions = owners.map((o) => ({ value: o.id, label: o.label }));

@@ -330,24 +330,13 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx': 2, // partial, 1 jsx + 1 prop
     'src/app/t/[tenantSlug]/(app)/policies/[policyId]/PolicySharePointSection.tsx': 1, // partial, 1 jsx
     'src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx': 1, // partial, 1 prop
-    'src/app/t/[tenantSlug]/(app)/risks/ai-systems/NewAiSystemModal.tsx': 3, // partial, 3 prop
     'src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx': 1, // partial, 1 prop
     'src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx': 1, // partial, 1 prop
     'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx': 1, // partial, 1 prop
     'src/components/TraceabilityPanel.tsx': 1, // partial, 1 prop
     'src/components/dev/swr-devtools.tsx': 6, // 6 jsx; the 3 a11y props left for common.ui (#3209 tranche 4)
     'src/components/ui/ComplianceStatusIndicator.tsx': 4, // no-intl, 4 prop
-    'src/components/ui/DonutChart.tsx': 1, // partial, 1 jsx
-    'src/components/ui/FrameworkBuilder.tsx': 3, // no-intl, 3 jsx
-    'src/components/ui/FrameworkMinimap.tsx': 1, // intl wired #3209; 1 jsx remains
-    'src/components/ui/FreshnessBadge.tsx': 4, // no-intl, 4 prop
-    'src/components/ui/GraphExplorer.tsx': 1, // no-intl, 1 jsx
     'src/components/ui/RichTextEditor.tsx': 1, // partial, 1 jsx
-    'src/components/ui/TreeView.tsx': 1, // no-intl, 1 jsx
-    'src/components/ui/ai-assist-rail.tsx': 5, // no-intl, 2 jsx + 3 prop
-    'src/components/ui/filter/filter-list.tsx': 1, // 1 jsx ("Clear Filters" now via ui.filterList; the Escape shortcut's description too)
-    'src/components/ui/filter/filter-select.tsx': 1, // 1 jsx (the "f" shortcut's description is now a catalog key)
-    'src/components/ui/selection-summary-panel.tsx': 1, // no-intl, 1 jsx
     'src/components/ui/table-load-more-footer.tsx': 1, // no-intl, 1 jsx
 };
 

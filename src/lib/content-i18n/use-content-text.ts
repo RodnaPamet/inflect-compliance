@@ -28,6 +28,14 @@ import { CONTENT_TRANSLATION_BATCH, CONTENT_TRANSLATION_MAX_CHARS } from './limi
 /** text → translation, or `null` when the catalogue has none. Keyed `<locale>\n<text>`. */
 const cache = new Map<string, string | null>();
 const queued = new Map<string, Set<string>>();
+/**
+ * Keys whose lookup is on the wire. Each answer re-renders every reader, and
+ * the texts of the batches still to come are asked for again on that render;
+ * without this set they were queued again and sent again, so a page of a few
+ * thousand texts sent each one many times over and could spend the read
+ * budget before the last batch went out.
+ */
+const inflight = new Set<string>();
 const listeners = new Set<() => void>();
 let version = 0;
 let scheduled = false;
@@ -69,12 +77,17 @@ async function flush(): Promise<void> {
     const tenantSlug = workspaceSlug();
     const work = [...queued.entries()];
     queued.clear();
-    if (!tenantSlug) return; // left unanswered: asked again on a later render
+    if (!tenantSlug) {
+        // Left unanswered: asked again on a later render.
+        for (const [locale, texts] of work) for (const text of texts) inflight.delete(cacheKey(locale, text));
+        return;
+    }
     for (const [locale, texts] of work) {
         const all = [...texts];
         for (let i = 0; i < all.length; i += CONTENT_TRANSLATION_BATCH) {
             const batch = all.slice(i, i + CONTENT_TRANSLATION_BATCH);
             let translations: Record<string, string> = {};
+            const release = () => { for (const text of batch) inflight.delete(cacheKey(locale, text)); };
             try {
                 const res = await fetch(`/api/t/${encodeURIComponent(tenantSlug)}/content-translations`, {
                     method: 'POST',
@@ -82,17 +95,22 @@ async function flush(): Promise<void> {
                     body: JSON.stringify({ locale, texts: batch }),
                 });
                 if (res.ok) translations = ((await res.json()) as { translations?: Record<string, string> }).translations ?? {};
-                else continue; // left unanswered: asked again on a later render
+                else { release(); continue; } // left unanswered: asked again on a later render
             } catch {
+                release();
                 continue;
             }
             for (const text of batch) cache.set(cacheKey(locale, text), translations[text] ?? null);
+            release();
             emit();
         }
     }
 }
 
 function request(locale: string, text: string): void {
+    const key = cacheKey(locale, text);
+    if (inflight.has(key)) return;
+    inflight.add(key);
     const set = queued.get(locale) ?? new Set<string>();
     set.add(text);
     queued.set(locale, set);
@@ -134,5 +152,6 @@ export function useContentText(): ContentText {
 export function _resetContentTextCache(): void {
     cache.clear();
     queued.clear();
+    inflight.clear();
     scheduled = false;
 }

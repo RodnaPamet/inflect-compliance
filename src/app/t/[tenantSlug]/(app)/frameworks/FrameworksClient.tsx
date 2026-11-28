@@ -420,7 +420,7 @@ export function FrameworksClient({
                                                     ? 'brand'
                                                     : 'neutral'
                                             }
-                                            aria-label={`${tc(row.name)} coverage`}
+                                            aria-label={t('list.coverageAria', { name: tc(row.name) })}
                                         />
                                     )}
                                 </CardList.CardContent>

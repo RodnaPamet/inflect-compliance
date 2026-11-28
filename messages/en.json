@@ -77,7 +77,8 @@
       "context": "Context",
       "detailSections": "Detail sections",
       "editColumns": "Edit columns",
-      "noItemsFound": "No items found"
+      "noItemsFound": "No items found",
+      "nounSelected": "{noun} selected"
     },
     "ui": {
       "shortcutUnpinNode": "Unpin the diagram node",
@@ -207,7 +208,23 @@
       },
       "noData": "No data",
       "expandAll": "Expand all",
-      "collapseAll": "Collapse all"
+      "collapseAll": "Collapse all",
+      "freshness": {
+        "fresh": "Fresh",
+        "stale": "Stale",
+        "outdated": "Outdated",
+        "unknown": "No refresh recorded",
+        "today": "today",
+        "yesterday": "yesterday",
+        "daysAgo": "{days}d ago",
+        "monthsAgo": "{months}mo ago",
+        "yearsAgo": "{years}y ago",
+        "titleUnknown": "No refresh timestamp on this evidence.",
+        "title": "Last refreshed {age}. Threshold: green <{warn}d, amber <{stale}d, red {stale}d+."
+      },
+      "sections": "Sections",
+      "noItems": "No items",
+      "noTraceabilityLinks": "No traceability links to display"
     },
     "calendar": {
       "prevYear": "Go to previous year",
@@ -2266,6 +2283,13 @@
       "reputational": "Reputational",
       "physical": "Physical",
       "humanResources": "Human resources"
+    },
+    "aiAssistRail": {
+      "intro": "Let AI surface candidate risks from your asset inventory — each one scored, with a rationale and suggested controls.",
+      "step1": "Pick the assets in scope",
+      "step2": "AI drafts candidate risks",
+      "step3": "Review, edit, and apply",
+      "cta": "Generate risk suggestions"
     }
   },
   "controls": {
@@ -5114,7 +5138,9 @@
       "saving": "Saving…",
       "saved": "Finding saved.",
       "saveFailedGeneric": "Failed to save finding"
-    }
+    },
+    "resourceOne": "finding",
+    "resourceMany": "findings"
   },
   "reports": {
     "title": "Reports & Exports",
@@ -5251,7 +5277,8 @@
     "gapAnalysisHeading": "Gap analysis — {count} unmapped requirements",
     "noGaps": "Every requirement has at least one mapped control",
     "missingEvidenceHeading": "Controls missing evidence — {count}",
-    "riskTplMore": "+{count} more"
+    "riskTplMore": "+{count} more",
+    "sectionCoverageAria": "{section} coverage"
   },
   "riskReportTemplates": {
     "PORTFOLIO_SUMMARY": {
@@ -9843,7 +9870,10 @@
     "filterList": {
       "clearFilters": "Clear filters",
       "shortcutClearAll": "Clear all filters",
-      "removeFilter": "Remove the {label} filter"
+      "removeFilter": "Remove the {label} filter",
+      "operatorIs": "is",
+      "operatorIsNot": "is not",
+      "startTyping": "Start typing to search…"
     },
     "dataTableCards": {
       "actions": "Actions",
@@ -10444,7 +10474,8 @@
       "ariaLabel": "Frameworks",
       "coverageError": "Coverage couldn't be computed for this framework",
       "coverageUnknownShort": "—",
-      "coverageBelowOnePercent": "<1%"
+      "coverageBelowOnePercent": "<1%",
+      "coverageAria": "{name} coverage"
     },
     "kinds": {
       "isoStandard": "ISO standard",
@@ -10741,6 +10772,12 @@
       "resumeHint": "Pick up where you left off. Answers save automatically.",
       "onlyNis2": "The gap self-assessment is only available for the NIS2 framework.",
       "adminOnly": "Only Owners and Admins can answer the NIS2 self-assessment. Its results are on the NIS2 gap assessment page."
+    },
+    "builder": {
+      "title": "Builder — reorder mode",
+      "hint": "Drag the handle on any row to reorder. Changes are saved per-tenant — the framework stays unchanged for everyone else.",
+      "discard": "Discard",
+      "save": "Save reorder"
     }
   },
   "tasks": {
@@ -12447,7 +12484,10 @@
       "behaviourScope": "Every agent-day the nightly fingerprint judged unlike the agent’s own baseline in the last {days} days (since {since}, UTC). Finding at z {finding}; latch threshold at z {latch}. Counts only, never content.",
       "behaviourUnscored": "The detector is on, but it has not scored any agent in this workspace yet.",
       "behaviourTruncated": "Only the newest {count} anomalies are shown; there are more in the window.",
-      "behaviourNone": "No anomalies in the window. The detector last scored a day on {day} (UTC)."
+      "behaviourNone": "No anomalies in the window. The detector last scored a day on {day} (UTC).",
+      "unobservableQuestion": {
+        "DIFF_EXPANSION": "whether the proposed content was looked at before it was approved"
+      }
     },
     "crumbDashboard": "Dashboard",
     "crumbAdmin": "Admin",
@@ -15324,6 +15364,20 @@
       "OWNER_SUBJECT_NEEDS_OWNER_CLOSER": "This review revokes or changes an Owner's access, which only an Owner can do. Ask an Owner to close it.",
       "AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER": "This review revokes or changes an AI admin's access, which only an Owner can do, as on the members page. Ask an Owner to close it.",
       "CAMPAIGN_SUBJECT_MAY_NOT_DECIDE_OWN_ACCESS": "You can't decide on your own access. The review's reviewer, or another Owner or Admin, decides that row."
+    },
+    "resource": {
+      "agentOne": "agent",
+      "agentMany": "agents",
+      "accountOne": "account",
+      "accountMany": "accounts",
+      "subjectOne": "subject",
+      "subjectMany": "subjects",
+      "narrowingOne": "narrowing",
+      "narrowingMany": "narrowings",
+      "withdrawalOne": "withdrawal",
+      "withdrawalMany": "withdrawals",
+      "sampleOne": "sample",
+      "sampleMany": "samples"
     }
   },
   "frameworkUpdates": {
@@ -15782,7 +15836,9 @@
     },
     "linkedTasks": {
       "empty": "No linked tasks",
-      "task": "Task"
+      "task": "Task",
+      "resourceOne": "task",
+      "resourceMany": "tasks"
     },
     "linkedTaskModal": {
       "title": "Create Task",
@@ -20410,5 +20466,30 @@
     "PEOPLE": "People controls",
     "PHYSICAL": "Physical controls",
     "TECHNOLOGICAL": "Technological controls"
+  },
+  "euAiActOptions": {
+    "subliminal_manipulation": "Art.5(1)(a) — Subliminal or purposefully manipulative techniques that distort behaviour and cause harm",
+    "exploits_vulnerabilities": "Art.5(1)(b) — Exploits vulnerabilities due to age, disability, or a specific social/economic situation",
+    "social_scoring": "Art.5(1)(c) — Social scoring leading to detrimental or unfavourable treatment",
+    "predictive_policing_profiling": "Art.5(1)(d) — Predicting criminal offending based solely on profiling or personality traits",
+    "facial_scraping": "Art.5(1)(e) — Untargeted scraping of facial images to build recognition databases",
+    "emotion_workplace_education": "Art.5(1)(f) — Inferring emotions in the workplace or education institutions",
+    "biometric_categorisation_sensitive": "Art.5(1)(g) — Biometric categorisation inferring sensitive attributes (race, beliefs, sexual orientation, …)",
+    "realtime_remote_biometric_le": "Art.5(1)(h) — Real-time remote biometric identification in public spaces for law enforcement",
+    "biometrics": "Annex III(1) — Biometrics — remote identification, categorisation, or emotion recognition",
+    "critical_infrastructure": "Annex III(2) — Safety component in critical infrastructure (digital, traffic, utilities)",
+    "education": "Annex III(3) — Education and vocational training (admissions, scoring, proctoring)",
+    "employment": "Annex III(4) — Employment, worker management, and access to self-employment",
+    "essential_services": "Annex III(5) — Access to essential services (credit scoring, benefits, emergency dispatch, insurance)",
+    "law_enforcement": "Annex III(6) — Law enforcement",
+    "migration_border": "Annex III(7) — Migration, asylum, and border control management",
+    "justice_democracy": "Annex III(8) — Administration of justice and democratic processes",
+    "direct_interaction": "Art.50(1) — Interacts directly with people (e.g. a chatbot / assistant)",
+    "synthetic_content": "Art.50(2) — Generates synthetic audio, image, video, or text content",
+    "emotion_or_biometric_categorisation": "Art.50(3) — Emotion recognition or biometric categorisation (not otherwise prohibited/high-risk)",
+    "deep_fake": "Art.50(4) — Produces deep-fake or manipulated image/audio/video content",
+    "none": "None / not applicable",
+    "roleDeployer": "Deployer — we use the system",
+    "roleProvider": "Provider — we develop / place it on the market"
   }
 }

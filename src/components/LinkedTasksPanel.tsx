@@ -262,7 +262,7 @@ export default function LinkedTasksPanel({
                 onRowClick={(row) =>
                     guardedPush(tenantHref(`/tasks/${row.original.id}`))
                 }
-                resourceName={(plural) => (plural ? 'tasks' : 'task')}
+                resourceName={(plural) => (plural ? t('linkedTasks.resourceMany') : t('linkedTasks.resourceOne'))}
                 emptyState={t('linkedTasks.empty')}
                 data-testid="linked-tasks-table"
             />

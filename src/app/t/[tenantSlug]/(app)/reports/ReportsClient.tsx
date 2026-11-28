@@ -77,6 +77,15 @@ interface ReportsClientProps {
  * report; the universal default is an on-screen per-framework Coverage/Readiness
  * view. SoA is an ISO-family-only entry in the catalog.
  */
+
+/**
+ * ISO 27001 Annex A themes: their sections arrive as these codes, worded by
+ * `frameworkThemes`. Every other framework's section is catalogue text. A
+ * local set, not `t.has()`, which most test mocks of next-intl lack.
+ */
+type IsoAnnexATheme = 'ORGANIZATIONAL' | 'PEOPLE' | 'PHYSICAL' | 'TECHNOLOGICAL';
+const ISO_ANNEX_A_THEMES: ReadonlySet<string> = new Set<IsoAnnexATheme>(['ORGANIZATIONAL', 'PEOPLE', 'PHYSICAL', 'TECHNOLOGICAL']);
+
 export function ReportsClient({
     installedFrameworks,
     defaultFrameworkKey,
@@ -88,6 +97,11 @@ export function ReportsClient({
     const tc = useContentText();
     // A stock template's name in the reader's language; a tenant's own as written (#5924).
     const tTemplates = useTranslations('riskReportTemplates');
+    const tTheme = useTranslations('frameworkThemes');
+    // ISO 27001 Annex A themes arrive as codes (ORGANIZATIONAL, …); other
+    // frameworks' sections are catalogue text.
+    const sectionLabel = (section: string) =>
+        ISO_ANNEX_A_THEMES.has(section) ? tTheme(section as IsoAnnexATheme) : tc(section);
     // The hub's risk-report card lists what the tenant ACTUALLY has, including
     // custom templates. Read-only and non-blocking: the card renders without it
     // and shows nothing until it arrives.
@@ -398,7 +412,7 @@ export function ReportsClient({
                                     {readiness.bySection.map((sec) => (
                                         <div key={sec.section}>
                                             <div className="flex items-center justify-between text-xs mb-1">
-                                                <span className="text-content-default">{tc(sec.section)}</span>
+                                                <span className="text-content-default">{sectionLabel(sec.section)}</span>
                                                 <span className="text-content-muted">
                                                     {sec.mapped}/{sec.total} ({sec.coveragePercent}%)
                                                 </span>
@@ -413,7 +427,7 @@ export function ReportsClient({
                                                           ? 'brand'
                                                           : 'neutral'
                                                 }
-                                                aria-label={`${tc(sec.section)} coverage`}
+                                                aria-label={tx('sectionCoverageAria', { section: sectionLabel(sec.section) })}
                                             />
                                         </div>
                                     ))}

@@ -668,6 +668,7 @@ const CommandEmpty = ({
   onSelect: () => void;
   askAI?: boolean;
 }>) => {
+  const tFilter = useTranslations("ui.filterList");
   // If the selected filter has no options (and shouldFilter is true,
   // meaning it's leveraging Command.List's native filtering and not external/async filtering),
   // show the search input as an option
@@ -680,7 +681,7 @@ const CommandEmpty = ({
     if (!search)
       return (
         <Command.Empty className="p-2 text-center text-sm text-content-muted">
-          Start typing to search...
+          {tFilter("startTyping")}
         </Command.Empty>
       );
 

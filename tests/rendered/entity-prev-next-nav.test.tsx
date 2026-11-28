@@ -303,7 +303,7 @@ describe('EntityPrevNextNav — labels come from the catalog, per locale', () =>
     //
     //   m  -ен / -ащ    актив, контрол, инцидент, риск, доставчик,
     //                   цикъл, пакет, преглед, анализ, тестов план
-    //   f  -на / -аща   политика, задача, рамка, ИИ система
+    //   f  -на / -аща   политика, задача, рамка, система с ИИ
     //   n  -но / -ащо   изпълнение          ← only one, and the easiest to miss
     //
     // The neuter row arrived with the audit/framework wave and was NOT covered
@@ -329,7 +329,7 @@ describe('EntityPrevNextNav — labels come from the catalog, per locale', () =>
         ['policy', 'Предишна политика', 'Следваща политика'],
         ['task', 'Предишна задача', 'Следваща задача'],
         ['framework', 'Предишна рамка', 'Следваща рамка'],
-        ['aiSystem', 'Предишна ИИ система', 'Следваща ИИ система'],
+        ['aiSystem', 'Предишна система с ИИ', 'Следваща система с ИИ'],
         ['testRun', 'Предишно изпълнение', 'Следващо изпълнение'],
     ];
 

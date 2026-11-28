@@ -89,6 +89,7 @@ export function FrameworkBuilder({
     // Section and requirement names in the reader's language (#5996). Display
     // only: the model, the drag ids and the saved order stay on the stored text.
     const tThemes = useTranslations('frameworkThemes');
+    const tBuilder = useTranslations('frameworks.builder');
     const tc = useContentText();
     const sectionLabel = (label: string) =>
         tc(frameworkSectionLabel(label, (key) => tThemes(key.slice('frameworkThemes.'.length))));
@@ -210,11 +211,10 @@ export function FrameworkBuilder({
             <div className="flex items-center justify-between flex-wrap gap-tight">
                 <div>
                     <Heading level={3}>
-                        Builder — reorder mode
+                        {tBuilder('title')}
                     </Heading>
                     <p className="text-xs text-content-muted">
-                        Drag the handle on any row to reorder. Changes are saved per-tenant — the
-                        framework stays unchanged for everyone else.
+                        {tBuilder('hint')}
                     </p>
                 </div>
                 <div className="flex items-center gap-tight">
@@ -226,7 +226,7 @@ export function FrameworkBuilder({
                         id="framework-builder-discard"
                     >
                         <Undo2 className="w-3.5 h-3.5" aria-hidden="true" />
-                        Discard
+                        {tBuilder('discard')}
                     </Button>
                     <Button
                         variant="primary"
@@ -240,7 +240,7 @@ export function FrameworkBuilder({
                         ) : (
                             <Save className="w-3.5 h-3.5" aria-hidden="true" />
                         )}
-                        Save reorder
+                        {tBuilder('save')}
                     </Button>
                 </div>
             </div>

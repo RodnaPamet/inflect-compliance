@@ -99,7 +99,9 @@ describe('Widget Empty State Handling', () => {
     test('DonutChart handles empty segments (total === 0)', () => {
         const content = readWidget('DonutChart.tsx');
         expect(content).toContain('total === 0');
-        expect(content).toContain('No data');
+        // The empty disc's label flows through next-intl (#5996), as StatusBreakdown's does.
+        expect(content).toContain("t('noData')");
+        expect(EN_CHART.noData).toBe('No data');
     });
 
     test('TrendCard handles empty points via the chart emptyState prop', () => {

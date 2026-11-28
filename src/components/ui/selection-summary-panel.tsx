@@ -16,6 +16,7 @@
  * selection state and the verb callbacks; this component is pure
  * presentation.
  */
+import { useTranslations } from 'next-intl';
 import { type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -56,6 +57,7 @@ export function SelectionSummaryPanel({
     actions = [],
     onClear,
 }: SelectionSummaryPanelProps) {
+    const tTable = useTranslations('common.table');
     const word = count === 1 ? resourceLabel.singular : resourceLabel.plural;
 
     return (
@@ -71,7 +73,7 @@ export function SelectionSummaryPanel({
                     {count}
                 </span>
                 <span className="text-sm text-content-muted">
-                    {word} selected
+                    {tTable('nounSelected', { noun: word })}
                 </span>
             </p>
 
@@ -104,7 +106,7 @@ export function SelectionSummaryPanel({
                 className="w-full justify-start text-content-muted"
                 onClick={onClear}
             >
-                Clear selection
+                {tTable('clearSelection')}
             </Button>
         </div>
     );

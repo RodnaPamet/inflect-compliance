@@ -25,19 +25,6 @@ import {
 } from '@/lib/eu-ai-act/classification';
 import { apiErrorMessage } from '@/lib/api-error';
 
-const NONE = { value: '', label: 'None / not applicable' };
-const toOptions = (opts: readonly { id: string; clause: string; label: string }[]) => [
-    NONE,
-    ...opts.map((o) => ({ value: o.id, label: `${o.clause} — ${o.label}` })),
-];
-
-const ROLE_OPTIONS = [
-    { value: 'DEPLOYER', label: 'Deployer — we use the system' },
-    { value: 'PROVIDER', label: 'Provider — we develop / place it on the market' },
-];
-const PROHIBITED_OPTIONS = toOptions(ART5_PROHIBITED_PRACTICES);
-const ANNEX_III_OPTIONS = toOptions(ANNEX_III_AREAS);
-const ART50_OPTIONS = toOptions(ART50_TRANSPARENCY_CASES);
 
 const formSchema = z.object({
     name: z.string().min(2, 'Name is required'),
@@ -60,6 +47,19 @@ interface Props {
 
 export function NewAiSystemModal({ tenantSlug, onClose, onCreated }: Props) {
     const tx = useTranslations('risks');
+    // The EU AI Act's options, worded in the reader's language (`euAiActOptions`).
+    const tEu = useTranslations('euAiActOptions');
+    const toOptions = (opts: readonly { id: string }[]) => [
+        { value: '', label: tEu('none') },
+        ...opts.map((o) => ({ value: o.id, label: tEu(o.id as Parameters<typeof tEu>[0]) })),
+    ];
+    const ROLE_OPTIONS = [
+        { value: 'DEPLOYER', label: tEu('roleDeployer') },
+        { value: 'PROVIDER', label: tEu('roleProvider') },
+    ];
+    const PROHIBITED_OPTIONS = toOptions(ART5_PROHIBITED_PRACTICES);
+    const ANNEX_III_OPTIONS = toOptions(ANNEX_III_AREAS);
+    const ART50_OPTIONS = toOptions(ART50_TRANSPARENCY_CASES);
     const [apiError, setApiError] = useState<string | null>(null);
     const {
         register,

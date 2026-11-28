@@ -304,7 +304,7 @@ export default function DonutChart({
                         fontSize="14"
                         fontFamily="Inter, system-ui, sans-serif"
                     >
-                        No data
+                        {t('noData')}
                     </text>
                 </svg>
             </div>

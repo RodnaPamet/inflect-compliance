@@ -46,6 +46,7 @@ jest.mock('@/app-layer/usecases/audit-readiness/packs', () => ({
 
 import {
     computeReadiness,
+    scoreReadiness,
     exportReadinessJson,
     exportUnmappedCsv,
     exportControlGapsCsv,
@@ -348,6 +349,46 @@ describe('CSV export — RFC 4180 escaping + audit emit', () => {
         const result = await exportControlGapsCsv(makeRequestContext('ADMIN'), 'c1');
 
         expect(result.filename).toBe('NIS2-control-gaps.csv');
+    });
+});
+
+describe('gap titles', () => {
+    it('titles a control with no code by its name alone, never "null: <name>"', async () => {
+        // A control created by hand need not carry a code. The scorer titles a
+        // gap "<code>: <name>", and the readiness page splits it at ": " to
+        // look the name up in the catalogue, so a missing code read
+        // "null: Политики за сигурност на информацията" on screen.
+        mockRunInTx.mockImplementationOnce(async () => ({ id: 'c1', frameworkKey: 'NIS2' }) as never);
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({ tenant: { findUnique: jest.fn().mockResolvedValue(null) } } as never),
+        );
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({ framework: { findFirst: jest.fn().mockResolvedValue(null) } } as never),
+        );
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({ control: { findMany: jest.fn().mockResolvedValue([]) } } as never),
+        );
+        const handMade = { id: 'k1', code: null, name: 'Hand-made control', evidenceControlLinks: [], _count: { policyLinks: 0 } };
+        const coded = { id: 'k2', code: 'NIS-1', name: 'Coded control', evidenceControlLinks: [], _count: { policyLinks: 0 } };
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({ control: { findMany: jest.fn().mockResolvedValue([handMade, coded]) } } as never),
+        );
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({ task: { findMany: jest.fn().mockResolvedValue([]) } } as never),
+        );
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({ auditCycle: { findFirst: jest.fn().mockResolvedValue({ id: 'c1' }) } } as never),
+        );
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({ finding: { count: jest.fn().mockResolvedValue(0) } } as never),
+        );
+
+        const result = await scoreReadiness(makeRequestContext('ADMIN'), 'c1');
+
+        const titles = result.gaps.filter((g) => g.entityId === 'k1').map((g) => g.title);
+        expect(titles.length).toBeGreaterThan(0);
+        expect(titles.every((t) => t === 'Hand-made control')).toBe(true);
+        expect(result.gaps.filter((g) => g.entityId === 'k2').map((g) => g.title)).toContain('NIS-1: Coded control');
     });
 });
 

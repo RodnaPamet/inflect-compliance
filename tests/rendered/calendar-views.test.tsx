@@ -180,9 +180,11 @@ describe('<CalendarMonth />', () => {
                 onSelectDate={onSelectDate}
             />,
         );
-        // Click day 15 button. The label includes "<ymd>: 0 events".
+        // Click day 15 button. The label is "<ymd>: <event count>", the count
+        // worded by `calendar.eventCount` (an ICU plural the global next-intl
+        // mock does not expand), so match on the date part.
         const dayBtn = screen.getByRole('button', {
-            name: /2026-06-15: 0 events/i,
+            name: /^2026-06-15: /,
         });
         await user.click(dayBtn);
         expect(onSelectDate).toHaveBeenCalledWith('2026-06-15');
