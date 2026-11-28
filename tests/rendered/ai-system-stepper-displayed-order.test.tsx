@@ -248,7 +248,7 @@ describe('AI-system stepper reads the order the registry displayed', () => {
         const next = view.container.querySelector('[data-testid="entity-nav-next"]') as HTMLButtonElement;
         // The stepper catalog carries an `aiSystem` phrase, so these read as
         // the entity — not the generic "Previous item" fallback the page shipped
-        // with. The Bulgarian pair (feminine: Предишна / Следваща ИИ система)
+        // with. The Bulgarian pair (feminine: Предишна / Следваща система с ИИ)
         // is asserted in tests/rendered/entity-prev-next-nav.test.tsx.
         expect(prev.getAttribute('aria-label')).toBe('Previous AI system');
         expect(next.getAttribute('aria-label')).toBe('Next AI system');
